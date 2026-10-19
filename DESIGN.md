@@ -208,10 +208,12 @@ and must not introduce a second black window inside it.
 - Bubbles and cards appear with a short rise-and-fade (about 0.24s). A status
   or task change may pop once.
 - Live loops are the status pulse and the shimmer sweep (1.6s). The running
-  chat indicator may animate the current Bot with a gentle hop in a fixed 28pt
-  slot. Real activity starts and completions trigger alternating reach, tilt,
-  and bounce gestures with a brief echo of the current activity glyph.
-  Gestures ease back to rest without moving surrounding content.
+  chat indicator draws a borderless 40pt Bot in a fixed 56pt slot. Real activity starts
+  and completions trigger alternating reaches, tilts, and hops, with a short
+  crouch, soft landing, and an echo of the current activity glyph. Rapid updates
+  blend from the current pose. Activity row geometry uses a 0.38s damped spring;
+  disclosures keep the short `dockEase` transition. Gestures stay within the
+  reserved area and its vertical padding.
 - Under Reduce Motion, every loop stops, disclosures are immediate, and
   geometry changes snap.
 
@@ -272,6 +274,7 @@ semibold name, 11pt role). When the identity can be switched, the block is a
 button with a trailing chevrons-up-down icon and the standard hover fill; a
 fixed identity shows neither. Actions are 28pt `DockIconButton`s: quiet ones
 first, then at most one `isProminent` action (the pane's create action) last.
+Bot avatars add no surrounding outline in any theme.
 
 **Interaction states.** Every row, header, and icon button uses the same
 four states:
@@ -372,7 +375,7 @@ dressing: borderless soft-gray cards on white, tinted sidebar, neutral user
 bubbles.
 
 **Skin identities.** Each skin has a short material signature in the gallery.
-Glass is frosted crystal; System is native graphite; Clean is porcelain.
+Glass is native Liquid Glass with a neutral graphite tint (it absorbed the old macOS skin); Clean is porcelain.
 Classic Hermes pairs midnight ink with brass; Ares uses oxblood and bronze;
 Monochrome is a graphite ledger; Cool Blue is a steel blueprint; Warm Light
 is cream stationery. Cartoon uses inked stickers; Terminal uses phosphor
@@ -388,7 +391,7 @@ Navigation and tabs honor the skin's selection treatment (inverted ink,
 underline, marker, bar, or tonal fill). Composers use the skin's panel radius,
 outline and material details without changing their footprint. Patterned skins
 use distinct static scanline, dot, rule, grid or crosshair backdrops; Clean,
-System, Glass, E-Ink and Swiss keep their canvas clear. No decorative loops.
+Glass, E-Ink and Swiss keep their canvas clear. No decorative loops.
 
 **Adding a theme (standard).** A theme is one `DockThemeID` case in
 `DockTheme.swift`. The `title`, `detail`, `appearance`, `style`, `hermesSkinID`
@@ -396,7 +399,7 @@ and palette `roles` switches are exhaustive (no `default`), so the compiler
 lists every place to fill in. Then:
 
 1. Pick `appearance` honestly: `.system` only for themes with distinct light and
-   dark palettes (`roles(_, dark:)`); native-material themes (System, Glass) must be `.system`.
+   dark palettes (`roles(_, dark:)`); native-material themes (Glass) must be `.system`.
 2. Set `style.material = .glass` for Liquid Glass; `usesNativeMaterial` derives
    from it. Never special-case a theme id in views; add a `DockThemeStyle` knob.
 3. Read colors only through `Color.dock*` tokens and `DockThemeStyle.current`.
@@ -434,7 +437,7 @@ Herm surface consumes these semantic tokens: navigation, workspace,
 conversations, composer, inspectors, repository tools, settings, popovers,
 menus, sheets, and confirmations. One shared theme store drives every window.
 The selected theme also sets the application appearance (Light, Dark, or system
-for System), so AppKit text, nested hosting views, menus, and sheets
+for the Glass skin), so AppKit text, nested hosting views, menus, and sheets
 resolve colors under the same theme. Every hosting root, including split-view
 panes, applies the themed default text color and control tint. Views must not
 use system label, separator, or window colors in themed surfaces, and content
@@ -1003,7 +1006,7 @@ the hue of the theme's base surface at fixed lightness, with saturation capped
 so strong themes tint rather than flood the scene. Furniture stays one
 honey-oak studio set with low-poly potted trees in every theme. Dark themes
 dim the same materials; light and sky follow the clock in every theme. The theme accent tints glass, signage and screens only. Room floor finishes blend toward the base floor so they stay calm
-in both appearances. System follows the system appearance. Changing the theme
+in both appearances. The Glass skin follows the system appearance. Changing the theme
 rebuilds the room materials, lights and background in place. Rooms are
 identified by numbered hanging signs with a title and a short subtitle that
 names the room's work (for example, QA Lab: Tests & verification). Bots stay small white robots in every theme, with a dark
@@ -1048,11 +1051,16 @@ hides the roster when both panels would crowd the scene.
 The sidebar is the reference implementation of the navigation patterns in
 the design system; other panes copy it rather than restyle it.
 
+The desktop panes default to 25% conversation list, 40% conversation, and 35%
+inspector, excluding the fixed navigation rail. Minimum readable widths take
+priority in smaller windows; dividers remain adjustable.
 The desktop conversation list keeps its 300pt minimum while resizing; the
 workspace takes the remaining width when both pane minimums cannot fit.
 Section headings stay on one line and truncate rather than wrapping vertically.
-When the conversation and inspector cannot fit side by side, the inspector
-uses the workspace pane with a Back to conversation action.
+The floating desktop shell keeps the conversation and inspector side by side
+when the inspector opens, using a 360pt conversation minimum (520pt in
+fullscreen). Expanding the inspector must not replace the conversation.
+Only the narrow single-workspace layout switches between those panes.
 
 The 56pt header bar holds the Bot switcher (avatar, name over role,
 chevrons-up-down when more than one Bot is visible) and two `DockIconButton`s:
@@ -1300,6 +1308,94 @@ The canonical session-attributed work and newest-first timeline retain their
 stable IDs, disclosures, durations, results, and bounded pagination. One empty
 state appears when there is no activity; refresh errors remain actionable.
 
+
+Chat retains the established `TurnActivityView`: live tool steps, `SignalTrace`,
+running-duration shimmer, and a compact expandable completed summary. Generated
+reply content must not replace or restyle this activity presentation.
+
+### Generated replies (experimental)
+
+Normal builds exclude `Features/GenerativeUI` and its tests. Enabling it requires
+`HERM_EXPERIMENTAL_GENERATIVE_UI=1` both when building and when launching. All
+host hooks go through `GenerativeUIIntegration`; disabled rendering delegates
+to the existing Markdown and streaming views, and disabled prompt preparation
+returns the original request. The feature owns its view state, draft values,
+parser, and HTML lifecycle. `DockModel`, `ChatMessage`, tool records, history
+parsing, and stored archives do not own experiment-specific state or fields.
+Legacy rendering context is hidden only in presentation; raw records remain
+unchanged.
+
+Hermes owns execution and transcripts; there is no additional workflow engine
+or operational store. In opt-in builds, rendering instructions travel through
+existing prompt submissions and remain hidden from the visible conversation.
+Protocol-owned answers and runtime-owned voice keep their existing contracts.
+Generated forms use existing destination-validated submission handling without
+adding rendering context or replacing the workspace composer.
+
+Compact live workflow cards, including PR commit/conflict graphs, are not yet
+implemented. Future cards must adapt existing authoritative stores inside this
+optional feature, retain the existing action handlers, and use current Dock
+tokens. They must not infer verified status from generic tool completion or
+replace the established activity presentation.
+
+Native surfaces use the current Dock canvas, surface, typography, border and
+action tokens. Tables scroll within bounded containers; charts use Apple Charts
+and the theme accent; gallery images do not fetch arbitrary remote resources
+on display. Forms reuse native Dock controls and destination-validated drafts.
+Generated content cannot declare verified Herm records, approvals, credentials,
+or direct tool actions. Source inspection is explicit. Plain-text projections
+serve copy, search, speech, and Result Peek. Existing runtime-owned export
+contracts remain unchanged; host text projections use `GenerativeUIIntegration`.
+
+Only complete, validated surfaces render. Limits are 1 MiB per surface, 100
+blocks, and 1,000 table rows or chart points per block. Unsupported or malformed
+content retains a readable fallback. Partial streamed JSON and HTML never run.
+
+HTML uses a native fallback card and explicit “Open interactive view” action.
+Its separate nonpersistent WebKit host embeds the document in an opaque-origin
+sandbox with scripts enabled, restrictive CSP, blocked resources and navigation,
+and no action bridge. It exposes no tools, credentials, session browser state,
+network, filesystem, downloads, popups or device permission access. Native Close
+and Reload remain outside authored content; process failure retains recovery
+and fallback. Only one preview may run, and session/profile changes destroy it.
+Theme variables and reduced-motion defaults are injected into the saved document;
+changing themes reloads an open HTML preview. Authored styles may customize the
+interactive content itself. See `docs/generative-ui.md` for isolation and removal.
+
+#### Generated card motion
+
+A generated card is one stable interactive surface. Its main visual, selection,
+details, and actions belong to the same state. A map may coordinate its camera,
+selected marker, route, and place detail; a PR card may coordinate its graph,
+checks, and recovery action. Keep explanatory assistant prose outside the card.
+
+Use the existing `dockEase` curve. Small control and detail transitions take
+0.16–0.22s. Spatial transitions such as moving a map camera or tracing a route
+may take 0.35–0.5s so the relationship remains legible. Respond to input at once;
+animation must never gate a control, an authoritative update, or a result.
+Preserve stable identities and animate changes in place. Avoid rebuilding or
+replaying an entire card when one value changes.
+
+Coordinate related motion from one selected item or confirmed revision. Rapid
+input interrupts the current transition and moves toward the newest state;
+do not queue transitions or use artificial waiting and staggered step reveals.
+Keep the card's surrounding layout and transcript anchor stable. No continuous
+camera drift, attention pulses, or entrance replay on unrelated streamed tokens.
+
+Reduce Motion and motion-free themes make camera, route, and layout changes
+immediate and stop decorative loops. Keep selection, focus, loading feedback,
+and all actions readable in that state. Keyboard selection must use the same
+state transition as pointer selection, with focus retained on the initiating
+control. Colors and materials follow the active Dock theme.
+
+Review a short interaction recording before enabling a new card: first display,
+place/item switching, rapid reversal, pending/error recovery, keyboard focus,
+and Reduce Motion. Check narrow/wide layouts and Light/Dark, Glass, and
+monochrome themes. Map cards require a supported source for actual places,
+routes, images, and locations; the offline HTML host does not gain network or
+device privileges for them. The map motion study in `docs/previews/` is an
+illustrative design fixture, not a connected map implementation.
+
 ### Kanban
 
 The fullscreen Kanban page uses a compact native board. Its header subtitle
@@ -1378,7 +1474,12 @@ The conversation workspace uses a stable cool-navy canvas in both fullscreen
 and compact layouts, independent of the sidebar concept selector. Its header
 is a single flat row.
 The session identity gets the flexible header width and may wrap to two lines.
-A view menu replaces the fixed destination icon strip. Voice is directly
+Chat, Talk, and repository PRs use visible 12pt text labels in one compact
+32pt outlined track. The selected segment is 28pt high inside a 44pt click
+target; hit-target size must not inflate the visible tab. Unselected tabs have
+no individual button surfaces. Selection uses the skin’s treatment, a semibold
+label, and a persistent underline, including in monochrome and without hover.
+The actions menu holds session actions. Voice is directly
 available from 520pt chat width; the inspector toggle remains direct from
 340pt and moves into the view menu below that. All destinations remain available
 at every width. Controls retain 44pt targets and resizing does not animate.
@@ -1401,8 +1502,8 @@ steering prompt's status sits in sentence case beside its timestamp. Fenced
 code blocks carry a quiet header with the lowercase language and a Copy action.
 Completed assistant
 responses keep a compact action rail permanently visible beneath the content.
-The rail uses tightly grouped 28pt controls, a subtle divider, and subdued
-monospaced metadata. Hover and keyboard focus strengthen the control surface but
+The rail uses tightly grouped 28pt controls and subdued monospaced metadata,
+without a divider before the hover-revealed timestamp. Hover and keyboard focus strengthen the control surface but
 never reveal or hide actions. The composer is one centered floating surface with
 the editor, attachments, model, reasoning, and send controls kept together.
 Attach, model, and reasoning are 28pt control-surface chips inside 44pt
@@ -1415,6 +1516,9 @@ surfaces when they represent an active decision or recovery path.
 The running indicator uses the responding Bot's stored avatar or generated
 face, falling back to the session profile and selected Bot for ordinary chats.
 Its gentle hop and activity-driven gestures stop under Reduce Motion and motion-free themes.
+Activity rows appear immediately; their insertion and the Bot's movement share
+one short spring transition. Disclosure and completion transitions use the same
+motion preference, with no delayed or queued row reveals.
 Unavailable bot rosters use the ordinary activity glyph. An explicit disabled
 `hermes-bots` runtime plugin status prevents roster loading. Desktop-only plugin
 preferences require a gateway contract before Herm can mirror them. Custom avatar
@@ -1711,3 +1815,57 @@ shared 24pt icon control with its pending state in place.
 Readiness follows the same aligned 104pt label column as Details. Freshness
 occupies the header action slot. Show conflicts once in the Merge fact with a
 warning icon and regular-weight text; recovery actions wrap below a divider.
+
+`DockIconButton.size` is the final control footprint, including its surface.
+Do not apply a padding-bearing button style around an already sized icon.
+GitHub header icons and Attach to chat use 28pt height; section actions use
+24pt. Match their neutral resting surfaces as well as glyph sizes.
+
+GitHub state switches keep a reserved spinner slot beside Open/Closed/History.
+Issues uses loading rows while a changed scope is fetching and a loading label
+in the existing count/status slot. Keep prior results for recovery, and disable
+the state selector during the active request.
+
+PR actions must be supported by the current item state. Conflict analysis and
+resolution belong only to open PRs with provider-confirmed conflicts; failed
+checks and unknown mergeability are not conflicts. Omit the Readiness recovery
+action row when it has no work to do. Closed PRs offer Reopen. Merged PRs show a compact success/remote-branch cleanup
+card instead of merge controls. Status mutation requires provider-confirmed edit permission.
+Empty check data is “No checks” only when coverage is available. Activity counts
+come from the rendered timeline items, including reviews.
+
+GitHub asynchronous actions show pending feedback inside their existing control:
+28pt item-action menus, 24pt section refresh icons, and compact save/reply/resolve
+buttons. Show the spinner only on the active action and disable conflicting
+submissions until it finishes. Failed choice loads replace loading with Retry;
+never leave a spinner running after an error. Preserve staged edits on failure.
+Capture the confirmed request before dismissing a dialog. Apply provider write
+results before background refreshes, and reject older reads that would undo them.
+
+PR diff file rows contain the disclosure, file path/status, and change counts.
+Do not add local Viewed switches or repeat a page-wide progress count per file.
+
+Landing uses GitHub's merge state to enable merging. `UNSTABLE` is mergeable
+with non-passing checks; show those checks as warnings, not inferred required
+blockers. Keep provider-reported blocks, permissions, reviews, drafts, queues,
+and expected-head checks. Use the compact method menu and a small primary merge
+button; recovery links name checks or requirements according to the situation.
+
+A confirmed merge updates shared PR state directly from the mutation response;
+stale REST/search results cannot undo this terminal state. Keep the selected PR
+detail visible after its open-list row disappears so branch cleanup is reachable.
+Offer Delete branch only for a merged PR with an unchanged, non-default,
+unprotected remote head and provider-confirmed deletion permission. Confirm the
+repository, branch, and revision; compare-and-delete the remote ref, preserve
+local worktrees, and keep a failed deletion separate from the successful merge.
+
+PR Summary shows Description first beneath the title/author, expanded initially,
+in the same Dock card treatment as Readiness and Details. Reuse the canonical
+Markdown view. Optional Projects failures occupy one quiet value/Retry row;
+keep diagnostic detail in help/accessibility text instead of a repeated orange
+provider-error paragraph. Retain previously loaded memberships on refresh errors.
+
+GitHub label pills use the repository-provided six-digit RGB color as their fill
+in both item details and label editors. Keep the shared pill geometry and regular
+text weight; choose black or white ink for maximum contrast. Invalid/missing
+provider colors retain the neutral theme treatment. Other metadata stays neutral.

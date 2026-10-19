@@ -148,6 +148,8 @@ The status colors match the rest of the app: blue means active, green means heal
 
 Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Long help wraps, stays within the display, and never takes keyboard focus.
 
+Chat message timestamps appear on hover, with no separator after the assistant message actions.
+
 ### How to use it
 
 | Action | Result |
@@ -168,14 +170,37 @@ Choose **Dots**, **Vertical line**, or **Ring** in **Settings → Appearance →
 
 ## Features
 
+### Generated replies (experimental)
+
+Generated replies are **off by default**. Normal builds exclude the experimental
+renderer and HTML host, keep existing prompts and Markdown, and retain live tool
+steps, the loading animation, and completed activity summaries.
+
+The optional feature lives in `Sources/Herm/Features/GenerativeUI`, behind one
+integration API. Opt-in builds can display validated `herm-ui` tables, charts,
+sources, galleries, forms, and explicitly opened offline HTML previews using
+Herm's theme. This is rendering infrastructure; compact live workflow cards
+such as a PR commit/conflict graph are not implemented yet.
+
+Future cards also include map/place comparisons. Their motion must coordinate
+selection, spatial changes, and details within one stable card, respect Reduce
+Motion, and follow the active theme. See the
+[motion study and acceptance criteria](docs/generative-ui.md#card-composition-and-motion).
+
+See [experimental setup, boundaries, and removal](docs/generative-ui.md) for
+developer opt-in instructions, supported content, and limitations.
+
 Workspace page headers use consistent text titles and subtitles, with refresh
 and other actions on the right. Buttons share 12pt themed labels, hover and
 pressed feedback, and disabled states. Primary actions use a quiet accent tint;
 secondary actions use the shared outlined or compact treatment.
+Workspace pages, including Settings, use a flat theme canvas without a corner glow.
 
 The default **Glass** appearance follows macOS Light/Dark with frosted panels
-and cool crystal surfaces. **System** keeps native popover blur and graphite
-chrome; **Clean** uses quiet porcelain surfaces.
+and cool crystal surfaces. **macOS** keeps native popover blur and graphite
+chrome; **Clean** uses quiet porcelain surfaces. System-following skins update
+automatically when macOS switches between Light and Dark, including while the
+workspace is open. Skin changes also apply to the side notch and its open preview.
 
 Choose from the skin gallery in **Settings → Appearance**. Every tile previews
 its own typography, material, geometry, and selection treatment. The 20 skins
@@ -188,11 +213,13 @@ motion-free; other skins respect Reduce Motion.
 
 ### Conversations
 
+The header shows compact labelled Chat, Talk, and repository PRs tabs. The selected tab has a themed fill or marker, semibold label, and persistent underline. Opening the inspector in the floating desktop panel keeps the conversation visible beside it. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
+
 Discord sessions show a compact tinted pill with the Discord icon beside the preview. Other session sources omit the origin pill.
 
-- **Streaming chat** with Markdown (including tables with optional outer pipes), images, tool output, and inline clarification requests.
+- **Streaming chat** with Markdown (including tables with optional outer pipes), images, tool output, and inline clarification requests. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
-- **Working bot**: the running indicator shows the current bot's avatar with gentle hops. Activity starts and completions trigger alternating reaches, tilts, and bounces with the current activity icon. Reduce Motion and motion-free themes keep it still.
+- **Working bot**: a larger, borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
 - **Transcript scrolling** yields immediately when you scroll upward during a reply and resumes following at the bottom. Jump to latest respects Reduce Motion.
 - **Steering during a turn**: guidance you type while Hermes is working is added to the running turn at the next tool boundary.
 - **Queued messages**: new submissions wait behind earlier messages, including a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
@@ -240,9 +267,9 @@ Each operation remains unavailable when its installed-runtime contract cannot be
 - The Pull requests page loads its list first, then fetches branch, check, and review details as rows come into view.
 - Create draft pull requests and edit a pull request's title or body, with a confirmation step.
 - Shared metadata uses wrapping pills for assigned labels, assignees, projects, milestones, and Development links. Labels, Projects V2 membership/Status, Milestone, assignees, and Development editors prepare changes locally and confirm before saving. Restricted Projects do not hide other details.
-- Readiness aligns state, check, review, and merge facts, shows freshness in the header, and groups conflict-recovery actions in a compact wrapping row. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. **Analyze conflict files** uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
+- Readiness aligns state, check, review, and merge facts, shows freshness in the header, and groups conflict-recovery actions in a compact wrapping row. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
 - Activity and discussion entries show the author’s GitHub avatar when available.
-- Discussion, review bodies, inline threads, replies, thread resolution, approval, and request-changes use the common Markdown renderer. Changed lines have line numbers and a context-menu comment action; viewed-file progress is scoped to the PR revision.
+- Discussion, review bodies, inline threads, replies, thread resolution, approval, and request-changes use the common Markdown renderer. Changed lines have line numbers and a context-menu comment action.
 - GitHub recovery links in readiness and landing use compact themed buttons with an external-link icon.
 - GitHub detail metadata uses compact label/value rows, with wrapping pills and section-specific recovery actions. Merge method and landing actions share a wrapping control row.
 - Landing controls show merge blockers inline, including missing reviews, failing/pending checks, conflicts, permissions, and branch updates. They use repository-supported methods, current permissions, confirmation, and expected-head protection. Auto-merge and queue requests display waiting/queued states separately from merged.
@@ -250,18 +277,21 @@ Each operation remains unavailable when its installed-runtime contract cannot be
 
 ### GitHub issues
 
+- PR and Issues headers share compact action spacing and keep window dragging clear of controls. The Issues repository filter uses the themed menu.
+- Header icon actions share a 28pt footprint; section refresh/edit actions use 24pt with no extra button-style padding.
 - PRs and Issues use compact New, refresh, recovery, landing, and inline discussion actions.
+- Switching Open, Closed, or History shows an in-place loading spinner; Issues shows loading rows while a new scope loads, retaining prior results if it fails.
 - PRs and Issues share a compact view-options menu with checked sort choices and separate save/restore actions.
 - A separate **Issues** module with My work and explicit repository scopes, open/closed/history views, metadata filters, sorting, and saved presentation preferences. Authored and assigned lists load in parallel; pagination reports incomplete coverage.
 - Create or edit issues, manage assignment and metadata, comment, close as completed/not planned, and reopen with confirmation. Descriptions, comments, and editor previews use the same native Markdown pipeline as chat.
 - Development links navigate between Issues and Pull requests. Descriptions and selected discussion entries can be attached to Hermes chats.
 - Lists and selected details refresh every 60 seconds while the page is active; errors pause automatic retry. Last successful content and per-item comment drafts are retained.
 
-See [GitHub workspace behavior and validation](docs/github-workspace.md).
+See [GitHub workspace behavior and validation](docs/github-workspace.md) and the [pull request page audit](docs/pull-request-page-audit.md).
 
 ### Developer tools
 
-- **Task plan above the composer**: a compact progress ring and count expand into readable steps, with an emphasized current step and completion marks. Progress, step changes, and disclosure animate briefly; Reduce Motion and motion-free themes keep them still.
+- **Task plan above the composer**: a compact progress ring and count expand into readable steps, with an emphasized current step and completion marks. The current step spins while the turn is working, including after reopening the task details. Progress, step changes, and disclosure animate briefly; Reduce Motion and motion-free themes keep them still.
 - **Explorer**: a repository browser with blame information. Project chats use their assigned folder immediately, even before the project list refreshes.
 - **Source Control** stays available in the inspector and its + menu while Git state loads or refreshes.
 - **Source Control / Changes**: compact Staged Changes and Changes lists with per-file and group stage/unstage actions, read-only diffs, and a commit message field (⌘Return commits staged changes only). A collapsible Commits section shows the latest 50 commits on the selected worktree’s branch, with author, date, references, and copyable hashes. Local review also checks added lines for conflict markers, likely credentials, and debug statements; credential values are never shown.
@@ -271,6 +301,7 @@ See [GitHub workspace behavior and validation](docs/github-workspace.md).
 
 ### File previews and revision notes
 
+- Chat file rows keep the filename and status on the left, with Download, Open preview, and available Open diff actions on the right.
 - Preview **Markdown, text/code, and images** inside Herm. Unsupported file types open in their default app.
 - Select text in a document to add a quoted review note, or add a general note. Notes are saved locally and remain highlighted in the preview.
 - Send draft notes as one **revision request to the session the preview came from**, rather than manually copying excerpts into a different conversation.
@@ -439,6 +470,7 @@ For more detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Herm doesn't yet support everything Hermes can do. Some features require additional frontend work or stable runtime support; others are deliberately left out for now:
 
+- Generated replies require an explicitly enabled experimental build and supported `herm-ui` content. Live workflow cards, full A2UI/MCP Apps compatibility, and connected HTML apps are not included.
 - Directly invoking arbitrary third-party MCP tools from Herm (catalog/setup, credentials, authorization, connection tests and removal are available through supported Hermes lifecycle methods)
 - Structured cron report contracts and more detailed diagnostics (recorded chat-backed run output can already be read)
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
