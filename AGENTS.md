@@ -1,7 +1,67 @@
-# Herm contributor guidance
+# Herm — agent guide
 
-Read `DESIGN.md` before changing a user-facing view. It is the source of
-truth for Herm UI behavior and styling.
+Herm is a native macOS (14+) menu-bar app, written as a Swift package in
+SwiftUI, that acts as the desktop front end for a local Hermes agent runtime.
+Hermes owns all agent and runtime state; Herm projects and drives it.
+
+This file is the single source of truth for every coding agent. `CLAUDE.md`
+and `GEMINI.md` are symlinks to it. Shared skills live in `.agents/skills/`;
+`.claude/skills` points there.
+
+## Read first
+
+| Doc | When |
+|---|---|
+| `ARCHITECTURE.md` | Repo map, module ownership, data flow, contracts |
+| `STANDARDS.md` | Naming, errors, testing, Definition of Done, commits |
+| `DESIGN.md` | Before touching any user-facing view (UI source of truth) |
+| `CONTRIBUTING.md` | Full local loop and PR checklist |
+| `docs/adr/` | Recorded exceptions and decisions |
+
+If `graphify-out/` or `.codegraph/` exists locally, query it before grepping.
+
+## Commands
+
+```sh
+make build                     # debug build
+swift test --disable-automatic-resolution --filter <SuiteName>   # iterate
+make lint                      # swift-format check (pre-existing debt is reported, not fatal)
+make check                     # full gate: lint + tests + smoke + release build (CI runs this)
+```
+
+- Run the relevant filtered suite locally. Do not run the full suite or
+  `make package` (DMG) locally unless asked; CI runs `make check`.
+- Never run `make run` / `Scripts/run-debug-app.sh` unless asked. Relaunching
+  kills the user's live Herm agents.
+
+## Boundaries
+
+- Herm is the front end only. Build features from existing Hermes RPCs, events
+  and CLI commands. Never patch or propose changes to the Hermes engine
+  (`~/.hermes/hermes-agent` is read-only).
+- Transport and process launch live in `HermesRuntime/`. Hermes CLI commands
+  are built as quoted words in `HermesCLIAdapter` and are capability-gated.
+- `WorkspaceStore` holds local preferences only. Never add a second durable
+  store for Hermes-owned data (sessions, agents, Kanban, terminal output).
+- Views render state; they do not parse RPC, build CLI words, or persist.
+- The app is named **Herm** everywhere. `HermesAgentDock` survives only in the
+  settings migration.
+
+## Code and tests
+
+- Swift 6 (tools 6.0), 4-space indent, subsystem prefixes (`Dock*`, `Hermes*`).
+  Put files in the module that owns the concern.
+- New parsing and state-transition logic ships with tests in `Tests/HermTests/`.
+  Extract pure helpers rather than testing views.
+- Every failure gets an honest unavailable/stale state. Never invent data.
+  External errors go through `HermesDiagnosticsService.safeSummary`.
+- No secrets in Herm state, logs, tests or commits.
+
+## Commits and PRs
+
+Conventional Commits (`feat: …`, `fix: …`), lowercase, imperative, one
+reviewable behavior per commit. Update `README.md` (and `DESIGN.md`) for
+user-visible changes. Do not commit or push unless asked.
 
 ## UI consistency
 

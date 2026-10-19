@@ -29,3 +29,4 @@ docs/notch-app-icon.md
 docs/workflow-execution-progress.md
 docs/architecture-restructure-plan.md
 Scripts/check-workflow-runtime.sh
+.claude/settings.local.json

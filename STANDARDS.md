@@ -4,7 +4,7 @@ updated: 2026-09-15 · enforced-by: Sentry review · exceptions: none without an
 
 ## Style & naming
 
-Swift 5 / SwiftUI, 4-space indentation. Types are prefixed by subsystem (`Dock*` for shared presentation, `Hermes*` for runtime boundary). Files live in the module directory that owns the concern — no cross-module grab-bags. Prefer value types and `enum` namespaces; mark UI-adjacent helpers `static` and pure so they stay testable.
+Swift 6 / SwiftUI, 4-space indentation. Types are prefixed by subsystem (`Dock*` for shared presentation, `Hermes*` for runtime boundary). Files live in the module directory that owns the concern — no cross-module grab-bags. Prefer value types and `enum` namespaces; mark UI-adjacent helpers `static` and pure so they stay testable.
 
 ## Error handling
 
