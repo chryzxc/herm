@@ -501,8 +501,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         // screen edge while ordinary presentations remain fully rounded.
         hostingView.layer?.masksToBounds = false
         hostingView.sizingOptions = []
-        workspaceHost = hostingView
-        panel.contentView = hostingView
+        let container = hostingView.panelContainer()
+        workspaceHost = container
+        panel.contentView = container
     }
 
     private func observeModel() {

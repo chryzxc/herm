@@ -48,7 +48,7 @@ struct EdgeResultContent: Equatable {
       return nil
     }
     return Self(
-      text: String(text.prefix(12_000)), artifacts: Array(artifacts.prefix(12)),
+      text: String(GenerativeUIIntegration.plainText(text).prefix(12_000)), artifacts: Array(artifacts.prefix(12)),
       revisionID: (reply["id"] as? String) ?? (reply["id"] as? NSNumber)?.stringValue)
   }
 }

@@ -608,11 +608,19 @@ final class BotModeModel: ObservableObject {
     /// the contract even when the batch probe starved.
     func refreshNow(force: Bool = false) async {
         guard let service, !isRefreshing, !isPolling else { return }
-        guard force || capabilityAvailable || inventory.availability == .ready else { return }
+        // `.unavailable` is a transport failure, so polling keeps retrying it.
+        guard force || capabilityAvailable || inventory.availability == .ready || inventory.availability == .unavailable else { return }
         // Background polls stay unpublished so the sidebar rail does not
         // rebuild twice every 10s; only explicit refreshes show a spinner.
         if force { isRefreshing = true } else { isPolling = true }
         let refreshed = await service.list()
+        // A timeout while Hermes is busy or a dropped socket must not wipe a
+        // roster Hermes already served: the selector, avatars and working
+        // Bots would vanish until restart. Keep it; the next poll retries.
+        if refreshed.availability == .unavailable, inventory.availability == .ready {
+            if force { isRefreshing = false } else { isPolling = false }
+            return
+        }
         capabilityAvailable = refreshed.availability == .ready
         if refreshed.availability != .ready {
             avatarImages = [:]
@@ -717,21 +725,22 @@ final class BotModeModel: ObservableObject {
         }
     }
 
-    /// Fills missing avatars only; existing artwork always belongs to the user.
-    func populateAvatars() async -> String {
+    /// Fills missing avatars, or with `all` replaces every avatar that isn't
+    /// already a Herm face (uploads included) so the whole roster animates.
+    func populateAvatars(all: Bool = false) async -> String {
         guard capabilityAvailable, let service else { return "Bot Mode is unavailable." }
         for bot in inventory.bots where bot.hasAvatar && avatarImages[bot.id] == nil {
             if let data = await service.avatarImageData(profileID: bot.id) { avatarImages[bot.id] = data }
         }
-        let targets = inventory.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar }
-        if targets.isEmpty { return "Every Bot already has an avatar." }
+        let targets = inventory.bots.filter { bot in
+            guard bot.hasAvatar else { return all || !bot.hasCustomAvatar }
+            return all && !(avatarImages[bot.id].map { BotAvatarView.matchesHermFace($0, id: bot.id) } ?? false)
+        }
+        if targets.isEmpty { return all ? "Every Bot already uses its Herm face." : "Every Bot already has an avatar." }
         var saved = 0
         var failure: String?
         for bot in targets {
-            let renderer = ImageRenderer(content: BotFaceMark(id: bot.id, size: 160))
-            renderer.scale = 1
-            guard let tiff = renderer.nsImage?.tiffRepresentation,
-                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+            guard let png = BotFaceMark.png(id: bot.id) else {
                 failure = "Could not render the avatar for \(bot.name)."
                 continue
             }

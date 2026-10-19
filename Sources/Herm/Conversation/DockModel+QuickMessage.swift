@@ -124,7 +124,7 @@ extension DockModel {
                     onCreated(destination)
                 }
                 params["session_id"] = runtimeID
-                params["text"] = clean
+                params["text"] = GenerativeUIIntegration.preparePrompt(clean)
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: params)
                 if !sessions.contains(where: { $0.scopedID == destination.scopedID }) { sessions.insert(destination, at: 0) }
                 updateSessionActivity(sessionID: destination.id, isWorking: true)
@@ -164,7 +164,7 @@ extension DockModel {
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": runtimeID])
                 var scope: [String: Any] = ["session_id": runtimeID, "profile": profileID]
                 guard let command else {
-                    scope["text"] = clean
+                    scope["text"] = GenerativeUIIntegration.preparePrompt(clean)
                     _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scope)
                     updateSessionActivity(sessionID: session.id, isWorking: true)
                     touchSession(sessionID: session.id, at: .now, preview: clean)
@@ -186,7 +186,7 @@ extension DockModel {
                 case "send", "skill":
                     let message = (payload["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     guard !message.isEmpty else { completion("/\(command.name): empty message", nil); return }
-                    scope["text"] = message
+                    scope["text"] = GenerativeUIIntegration.preparePrompt(message)
                     _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scope)
                     updateSessionActivity(sessionID: session.id, isWorking: true)
                     completion(nil, nil)

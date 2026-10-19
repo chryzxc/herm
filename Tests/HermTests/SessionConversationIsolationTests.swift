@@ -98,7 +98,7 @@ struct SessionConversationIsolationTests {
         try await waitUntil { rpc.requests.contains { $0.method == "prompt.submit" } }
         let submission = try #require(rpc.requests.first { $0.method == "prompt.submit" })
         #expect(submission.params["session_id"] as? String == "runtime-a-2")
-        #expect(submission.params["text"] as? String == "Follow up in A")
+        #expect(submission.params["text"] as? String == GenerativeUIIntegration.preparePrompt("Follow up in A"))
         #expect(model.queuedPrompts.map(\.text) == ["Follow up in B"])
     }
 
@@ -807,4 +807,15 @@ private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval 
     while !condition() && Date() < deadline {
         try await Task.sleep(for: .milliseconds(10))
     }
+}
+
+/// An approval from a runtime Herm switched away from must badge its durable row.
+@MainActor
+@Test func backgroundRuntimeApprovalMapsToItsDurableRow() {
+    let model = DockModel(initialSessionID: "durable-b")
+    model.sessionID = "runtime-b"
+    model.storageIDsByRuntimeID["runtime-a"] = "durable-a"
+    #expect(model.rowSessionID("runtime-a") == "durable-a")
+    #expect(model.rowSessionID("runtime-b") == "durable-b")
+    #expect(model.rowSessionID("unknown") == "unknown")
 }

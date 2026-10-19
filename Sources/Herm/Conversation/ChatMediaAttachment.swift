@@ -133,7 +133,7 @@ struct ChatMediaAttachmentCard: View {
     }
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 12) {
             HStack(spacing: 12) {
                 FileTypeIcon(fileName: name)
                 VStack(alignment: .leading, spacing: 2) {
@@ -176,6 +176,7 @@ struct ChatMediaAttachmentCard: View {
                     }
                 }
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
         .padding(10)
         .background(Color.dockSurface2.opacity(grouped ? 0 : 0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))

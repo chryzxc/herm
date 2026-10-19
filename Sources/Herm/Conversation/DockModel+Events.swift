@@ -524,6 +524,7 @@ extension DockModel {
                 refreshSessionTokenUsage()
             case "process":
                 let text = payload["text"] as? String ?? ""
+                completeBotDispatch(from: text)
                 if let notices = Self.kanbanNotices(from: text) {
                     for notice in notices {
                         appendBelowLiveTurn(ChatMessage(role: .hermes, text: notice.body,
@@ -740,7 +741,7 @@ extension DockModel {
             } else if voiceState.isNativeConversationActive {
                 voiceTelemetry.completedResponse()
                 voiceState = .speaking
-                let response = messages.last(where: { $0.role == .hermes })?.text ?? ""
+                let response = messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? ""
                 if speakReplyAfterVoicePrompt {
                     speakReplyAfterVoicePrompt = false
                     enqueueVoiceRequest(HermesFeatureIDs.ID.voiceTTS.rawValue, ["text": response])
@@ -943,6 +944,7 @@ extension DockModel {
             if Self.isDelegationTool(name) {
                 synthesizeSubagent(toolCallID: id, args: argsDict)
             }
+            recordBotDispatch(toolCallID: id, toolName: name, args: argsDict)
         case "tool.result", "tool_result", "tool.complete", "tool_complete":
             let id = (payload["id"] as? String)
                 ?? (payload["tool_id"] as? String)
@@ -968,6 +970,7 @@ extension DockModel {
                 activeToolCalls[index].diffPreview = diffPreview
                 if activeToolCalls[index].args == nil { activeToolCalls[index].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: id, result: result, payload: payload) }
+                bindBotDispatch(toolCallID: id, result: result)
             } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
                 let wasDelegation = Self.isDelegationTool(activeToolCalls[last].name)
                 if wasDelegation, let args = payload["args"] as? [String: Any] {
@@ -979,6 +982,7 @@ extension DockModel {
                 activeToolCalls[last].diffPreview = diffPreview
                 if activeToolCalls[last].args == nil { activeToolCalls[last].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload) }
+                bindBotDispatch(toolCallID: activeToolCalls[last].id, result: result)
             }
             if let todos = payload["todos"] as? [[String: Any]], let sessionID { applyTodos(todos, sessionID: sessionID) }
         case "todo.updated":

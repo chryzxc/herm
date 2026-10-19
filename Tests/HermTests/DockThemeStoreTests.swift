@@ -5,6 +5,49 @@ import Testing
 
 @MainActor
 struct DockThemeStoreTests {
+    @Test func existingNotchAndPreviewFollowSkinChanges() async throws {
+        _ = NSApplication.shared
+        let store = DockThemeStore.shared
+        let savedTheme = store.selectedThemeID
+        let savedAppearance = NSApp.appearance
+        defer { store.selectedThemeID = savedTheme; NSApp.appearance = savedAppearance }
+        for expanded in [false, true] {
+            store.selectedThemeID = .retro
+            let state = EdgeNotchState()
+            state.side = .right
+            state.expanded = expanded
+            let host = NSHostingView(rootView: EdgeNotchView(state: state, controlCenter: ControlCenterModel(), openDock: {}))
+            host.frame = NSRect(origin: .zero, size: expanded ? state.openSize : state.collapsedSize)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.close() }
+            for theme in [DockThemeID.retro, .terminal, .retro, .clean] {
+                store.selectedThemeID = theme
+                if theme == .clean {
+                    #expect(window.appearance == nil)
+                    NSApp.appearance = NSAppearance(named: .darkAqua)
+                }
+                try await Task.sleep(for: .milliseconds(150))
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let actual = try #require(bitmap.colorAt(x: bitmap.pixelsWide - 8, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+                var expectedColor: NSColor?
+                window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                    expectedColor = NSColor(DockThemePalette(theme: theme).background).usingColorSpace(.sRGB)
+                }
+                let expected = try #require(expectedColor)
+                // The narrow rail also carries the skin's accent glow.
+                #expect(abs(actual.redComponent - expected.redComponent) < 0.08, "\(theme), expanded: \(expanded)")
+                #expect(abs(actual.greenComponent - expected.greenComponent) < 0.08)
+                #expect(abs(actual.blueComponent - expected.blueComponent) < 0.08)
+                if theme == .clean { NSApp.appearance = nil }
+            }
+        }
+    }
+
     @Test func defaultsToGlassAndPersistsSelection() {
         let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -74,13 +117,12 @@ struct DockThemeStoreTests {
     @Test func registryMapsHermesSkinIDsAndAppearance() {
         #expect(DockThemeID.hermesClassic.hermesSkinID == "default")
         #expect(DockThemeID.warmLight.hermesSkinID == "warm-lightmode")
-        #expect(DockThemeID.nativeMacOS.appearance == .system)
-        #expect(DockThemeID.nativeMacOS.usesNativeMaterial)
+        #expect(DockThemeID(rawValue: "nativeMacOS") == nil)
         #expect(!DockThemeID.slate.usesNativeMaterial)
         #expect(DockThemeID.warmLight.appearance == .light)
         #expect(DockThemeID.slate.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.glass, .clean, .nativeMacOS, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island])
+        #expect(DockThemeID.hermOnly == [.glass, .clean, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island])
         #expect(DockThemeID.hermesClassic.style.fontDesign == .serif && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
         #expect(DockThemeID.terminal.style.glow > 0 && DockThemeID.terminal.style.selection == .invert)
         #expect(DockThemeID.dusk.style.accentGradient && DockThemeID.warmLight.style.cardShadow > 0)
@@ -98,7 +140,7 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.cartoon.style.stickerShadow > 0 && DockThemeID.cartoon.style.fontDesign == .rounded)
         #expect(DockThemeID.origami.appearance == .light && DockThemeID.origami.style.geometry == .folded)
         #expect(DockThemeID.origami.style.outlineWidth == 1 && DockThemeID.origami.style.pressScale == 0.98)
-        #expect(DockThemeID.nativeMacOS.style == DockThemeStyle() && DockThemeID.slate.style.backdrop == .grid)
+        #expect(DockThemeID.slate.style.backdrop == .grid)
     }
 
     @Test func retroIsAvailableWithoutHermesSkins() {
@@ -120,19 +162,19 @@ struct DockThemeStoreTests {
             view.update(markdown: "Unchanged **response**", kind: .prose)
             return view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
         }
-        let originalFont = apply(.nativeMacOS)
+        let originalFont = apply(.clean)
         #expect(apply(.terminal)?.isFixedPitch == true)
         let desktopFont = apply(.eInk)
         #expect(desktopFont == originalFont)
         #expect(desktopFont?.isFixedPitch == false)
         #expect(DockSkinPresentation.current.composerShadow == 0)
         #expect(DockSkinPresentation.current.composerRadius == 0)
-        #expect(apply(.nativeMacOS) == originalFont)
+        #expect(apply(.clean) == originalFont)
         #expect(DockSkinPresentation.current == DockSkinPresentation())
     }
 
-    @Test func nativePaletteUsesMacOSSemanticHuesAndTranslucentSurfaces() {
-        let palette = DockThemePalette(theme: .nativeMacOS)
+    @Test func glassPaletteIsNeutralAndTranslucent() {
+        let palette = DockThemePalette(theme: .glass)
         var darkBackground: NSColor?
         var darkAccent: NSColor?
         NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
@@ -143,7 +185,7 @@ struct DockThemeStoreTests {
         #expect(darkBackground != nil)
         #expect(abs((darkBackground?.alphaComponent ?? 0) - 0.16) < 0.01)
         #expect((darkBackground?.brightnessComponent ?? 1) < 0.15)
-        #expect((darkAccent?.blueComponent ?? 0) > 0.9)
+        #expect(abs((darkAccent?.blueComponent ?? 0) - (darkAccent?.redComponent ?? 1)) < 0.02)
     }
 
     @Test func runtimeChangesBeforePublishedThemeValueIsObserved() {
@@ -173,7 +215,7 @@ struct DockThemeStoreTests {
         let options = DockAppearanceCatalog.options(installedSkins: skins)
         #expect(options.count == DockThemeID.allCases.count)
         #expect(options.first(where: { $0.themeID == .slate })?.isHermesActive == true)
-        #expect(options.first(where: { $0.themeID == .nativeMacOS })?.isHermesInstalled == false)
+        #expect(options.first(where: { $0.themeID == .glass })?.isHermesInstalled == false)
         #expect(DockAppearanceCatalog.installedOptions(installedSkins: skins).map(\.themeID) == [.slate])
         #expect(DockAppearanceCatalog.unknownSkins(skins).map(\.id) == ["custom"])
     }

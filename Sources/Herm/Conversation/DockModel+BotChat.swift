@@ -189,6 +189,104 @@ extension DockModel {
         }
     }
 
+    /// A Bot this turn hands work to: Hermes' `message_agent` tool, or the
+    /// `hermes -p <bot> chat` command Bots use to DM each other.
+    static func botDispatch(toolName: String, args: [String: Any]) -> (profileID: String, summary: String)? {
+        if toolName == "message_agent" {
+            let target = ((args["target"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingPrefix("@").lowercased()
+            guard !target.isEmpty else { return nil }
+            return (target, String(((args["message"] as? String) ?? "").prefix(400)))
+        }
+        guard let command = args["command"] as? String,
+              let match = command.firstMatch(of: /\bhermes\s+(?:-p|--profile)\s+([\w-]+)\s+chat\b/) else { return nil }
+        let query = command.firstMatch(of: /\s-q\s+'([^']*)'/).map { String($0.1) }
+            ?? command.firstMatch(of: /\s-q\s+"([^"]*)"/).map { String($0.1) }
+        let brief = command.firstMatch(of: /--query-file\s+(\S+)/).map { "Brief: " + URL(fileURLWithPath: String($0.1)).lastPathComponent }
+        return (String(match.1), String((query ?? brief ?? command).prefix(400)))
+    }
+
+    func recordBotDispatch(toolCallID: String, toolName: String, args: [String: Any], at date: Date = Date()) {
+        guard let dispatch = Self.botDispatch(toolName: toolName, args: args),
+              let originSessionID = sessionStorageID ?? sessionID else { return }
+        let id = "bot-dispatch:\(toolCallID)"
+        guard !botActivityBySessionID[originSessionID, default: []].contains(where: { $0.id == id }) else { return }
+        insertBotActivity(BotActivityRecord(id: id, originSessionID: originSessionID, botID: dispatch.profileID,
+                                            botName: dispatch.profileID, summary: dispatch.summary, state: .working,
+                                            createdAt: date, updatedAt: date))
+    }
+
+    /// Bot DMs in stored history, including ones Herm never saw live. A DM
+    /// whose completion notice is not in the loaded rows only shows while
+    /// recent, so old ones never read as still working.
+    func restoreBotDispatches(calls: [ActiveToolCall], rows: [[String: Any]]) {
+        let notices = rows.compactMap { $0["text"] as? String }.filter { $0.contains("Background process proc_") }
+        for call in calls {
+            guard Self.botDispatch(toolName: call.name, args: call.args ?? [:]) != nil else { continue }
+            let processID = call.result.flatMap(Self.dispatchProcessID)
+            let finished = processID.map { id in notices.contains { $0.contains(id) } } ?? false
+            guard finished || Date().timeIntervalSince(call.startedAt) < 3 * 3600 else { continue }
+            recordBotDispatch(toolCallID: call.id, toolName: call.name, args: call.args ?? [:], at: call.startedAt)
+            if let result = call.result { bindBotDispatch(toolCallID: call.id, result: result) }
+        }
+        notices.forEach(completeBotDispatch(from:))
+    }
+
+    static func dispatchProcessID(_ result: String) -> String? {
+        guard let json = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any] else { return nil }
+        return [json["process_id"], json["session_id"]].compactMap { $0 as? String }.first { $0.hasPrefix("proc_") }
+    }
+
+    /// The dispatch tool returns at once with the background process id
+    /// (`process_id` from message_agent, `session_id` from terminal).
+    func bindBotDispatch(toolCallID: String, result: String) {
+        let id = "bot-dispatch:\(toolCallID)"
+        guard let json = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any] else { return }
+        let processID = Self.dispatchProcessID(result)
+        let error = (json["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        for originSessionID in botActivityBySessionID.keys {
+            guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else { continue }
+            if let error {
+                updateBotActivity(id: id, state: .failed, result: error)
+            } else if let processID {
+                botActivityBySessionID[originSessionID]![index].processID = processID
+                botActivityRevision &+= 1
+                enqueueBotActivityPersistence()
+            }
+            return
+        }
+    }
+
+    /// Hermes' notice when a Bot DM's process exits:
+    /// `Background process proc_… completed normally (exit code 0). … Output: … session_id: <id>`.
+    func completeBotDispatch(from text: String) {
+        guard let head = text.firstMatch(of: /Background process (proc_\w+) (\w+)/) else { return }
+        let processID = String(head.1)
+        guard let record = botActivityBySessionID.values.lazy.flatMap({ $0 }).first(where: { $0.processID == processID }) else { return }
+        let output = text.range(of: "Output:\n").map { String(text[$0.upperBound...]) } ?? ""
+        let botSessionID = output.matches(of: /session_id: (\S+)/).last.map { String($0.1) }
+        let reply = output.replacing(/\n*session_id: \S+\s*\]?\s*$/, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let ok = head.2 == "completed" && text.contains("exit code 0")
+        updateBotActivity(id: record.id, state: ok ? .completed : .failed, result: reply.isEmpty ? nil : String(reply.prefix(600)), botChatSessionID: botSessionID)
+    }
+
+    /// Bot DMs this session sent that have not finished.
+    var workingBotDispatches: [BotActivityRecord] {
+        guard let id = sessionStorageID ?? sessionID else { return [] }
+        return botActivityBySessionID[id, default: []].filter {
+            $0.id.hasPrefix("bot-dispatch:") && ($0.state == .working || $0.state == .queued)
+        }
+    }
+
+    /// This session's Bot DMs, keyed by the tool call that sent each one.
+    var botDispatchesByToolCallID: [String: BotActivityRecord] {
+        guard let id = sessionStorageID ?? sessionID else { return [:] }
+        let prefix = "bot-dispatch:"
+        return Dictionary(botActivityBySessionID[id, default: []].compactMap {
+            $0.id.hasPrefix(prefix) ? (String($0.id.dropFirst(prefix.count)), $0) : nil
+        }, uniquingKeysWith: { first, _ in first })
+    }
+
     func insertBotActivity(_ record: BotActivityRecord) {
         botActivityBySessionID[record.originSessionID, default: []].append(record)
         botActivityRevision &+= 1

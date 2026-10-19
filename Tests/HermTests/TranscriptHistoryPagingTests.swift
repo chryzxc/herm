@@ -157,6 +157,18 @@ struct TranscriptHistoryPagingTests {
         #expect(messages[1].responseDuration == 60)
     }
 
+    @Test func unansweredToolRowsSurviveAsTrailingActivity() {
+        let calls = #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{\"command\": \"ls\"}"}}]"#
+        let restored = DockModel.parseMessages(TranscriptHistoryPaging.displayRows(fromStoredRows: [
+            ["id": 1, "role": "user", "content": "scan the repo", "timestamp": 100.0],
+            ["id": 2, "role": "assistant", "content": "", "tool_calls": calls, "timestamp": 110.0],
+            ["id": 3, "role": "tool", "content": "ok", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
+        ]))
+        #expect(restored.messages.map(\.text) == ["scan the repo"])
+        #expect(restored.trailingActivity.map(\.name) == ["terminal"])
+        #expect(restored.trailingActivity.first?.result == "ok")
+    }
+
     @Test func resumeLoadsOnlyTheTailAndPagesEarlierHistoryOnDemand() async throws {
         let rpc = PagedTranscriptRPCClient()
         rpc.storedRows = storedTranscript(turns: 200)

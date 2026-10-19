@@ -71,7 +71,7 @@ struct VoiceQueueLifecycleTests {
     try await startVoice(model)
     event(model, "voice.transcript", ["text": "Stop"])
     for _ in 0..<100 where model.isSending { try await Task.sleep(for: .milliseconds(10)) }
-    #expect(client.submitted == ["Stop"])
+    #expect(client.submitted == [GenerativeUIIntegration.preparePrompt("Stop")])
     #expect(!model.isSending)
     #expect(model.status == .idle)
     #expect(model.voiceState == .inactive)
@@ -125,7 +125,7 @@ struct VoiceQueueLifecycleTests {
     while client.submitted.count < 2, Date() < deadline {
       try await Task.sleep(for: .milliseconds(20))
     }
-    #expect(client.submitted == ["First request", "Follow up"])
+    #expect(client.submitted == ["First request", "Follow up"].map { GenerativeUIIntegration.preparePrompt($0) })
     #expect(client.queuedSubmissions == [false, true])
     #expect(model.queuedPrompts.isEmpty)
     #expect(model.isSending)

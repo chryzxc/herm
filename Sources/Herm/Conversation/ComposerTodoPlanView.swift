@@ -19,7 +19,7 @@ struct ComposerTodoPlanView: View {
                         Circle().stroke(Color.dockBorderStrong, lineWidth: 2)
                         Circle()
                             .trim(from: 0, to: CGFloat(plan.done) / CGFloat(max(1, plan.items.count)))
-                            .stroke(DockStatusTone.complete.color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .stroke(Color.dockSuccess, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                     }
                     .frame(width: 16, height: 16)
@@ -30,9 +30,9 @@ struct ComposerTodoPlanView: View {
                         .foregroundStyle(Color.dockPrimaryText)
                         .contentTransition(.numericText())
                         .fixedSize()
-                    Text(plan.current?.content ?? "Plan finished")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
+                    Text(isExpanded ? "Tasks · \(plan.done) of \(plan.items.count) done" : plan.current?.content ?? "Plan finished")
+                        .font(.system(size: 12, weight: isExpanded ? .medium : .regular))
+                        .foregroundStyle(isExpanded ? Color.dockPrimaryText : Color.dockSecondaryText)
                         .lineLimit(1)
                         .contentTransition(.opacity)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -51,7 +51,7 @@ struct ComposerTodoPlanView: View {
 
             if isExpanded {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 2) {
                         // Hermes supplies ordered steps without IDs; keep each slot stable across status updates.
                         ForEach(Array(plan.items.enumerated()), id: \.offset) { _, item in
                             taskRow(item)
@@ -61,6 +61,7 @@ struct ComposerTodoPlanView: View {
                 .defaultScrollAnchor(.top)
                 .frame(maxHeight: 220)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
                 .padding(.bottom, 8)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -76,13 +77,13 @@ struct ComposerTodoPlanView: View {
         return HStack(alignment: .top, spacing: 10) {
             Group {
                 if active && isWorking && motion != nil {
-                    DockActivityIndicator(state: .running, size: 14, tint: DockStatusTone.working.color)
+                    DockActivityIndicator(state: .running, size: 14, tint: Color.dockAccent)
                 } else if active {
                     Circle().trim(from: 0, to: 0.7)
-                        .stroke(DockStatusTone.working.color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .stroke(Color.dockAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .frame(width: 12, height: 12)
                 } else if completed {
-                    DockIcon(.checkCircle, size: 14, color: DockStatusTone.complete.color)
+                    DockIcon(.checkCircle, size: 14, color: Color.dockSuccess)
                 } else if cancelled {
                     DockIcon(.xCircle, size: 14, color: .dockMetadataText)
                 } else {
@@ -95,7 +96,7 @@ struct ComposerTodoPlanView: View {
             .accessibilityHidden(true)
             Text(item.content)
                 .font(.system(size: 12, weight: active ? .semibold : .regular))
-                .foregroundStyle(active ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .foregroundStyle(active ? Color.dockPrimaryText : completed || cancelled ? Color.dockMetadataText : Color.dockSecondaryText)
                 .strikethrough(completed || cancelled, color: .dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -103,7 +104,7 @@ struct ComposerTodoPlanView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(active ? Color.dockSurface4 : .clear, in: RoundedRectangle(cornerRadius: DockThemeStyle.current.controlRadius))
+        .dockSelectionBackground(RoundedRectangle(cornerRadius: DockThemeStyle.current.controlRadius), active: active, fill: .dockSurface4, allowsInvert: false)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.content), \(item.status.replacingOccurrences(of: "_", with: " "))")
     }

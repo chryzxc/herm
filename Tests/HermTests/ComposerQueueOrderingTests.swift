@@ -13,7 +13,8 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
   var holdImageAttachment = false
   var pendingImageAttachment: CheckedContinuation<[String: Any], Never>?
   var submitted: [String] {
-    requests.filter { $0.method == "prompt.submit" }.compactMap { $0.params["text"] as? String }
+    // Queue assertions compare user material; rendering context is covered by submission tests.
+    requests.filter { $0.method == "prompt.submit" }.compactMap { $0.params["text"] as? String }.map(GenerativeUIIntegration.displayUserText)
   }
 
   func connect() async throws {}

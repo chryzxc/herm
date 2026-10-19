@@ -15,6 +15,7 @@ final class EdgeDockController: NSObject {
     private let openDock: () -> Void
     let state: EdgeNotchState
     private var petWindow: HermesPetWindow?
+    private weak var notchHost: EdgeDockHostingView<EdgeNotchView>?
     private var subscriptions = Set<AnyCancellable>()
     private var interactionMonitors: [Any] = []
     private var previousApplication: NSRunningApplication?
@@ -109,7 +110,8 @@ final class EdgeDockController: NSObject {
             }))
         host.onHoverChanged = { [weak self] value in self?.hoverChanged(value) }
         host.sizingOptions = []
-        panel.contentView = host
+        notchHost = host
+        panel.contentView = host.panelContainer()
         panel.onCancel = { [weak self] in self?.escapePreview() }
         installInteractionMonitors()
         controlCenter.pet.$info.combineLatest(controlCenter.pet.$sheet)
@@ -701,9 +703,9 @@ final class EdgeDockController: NSObject {
             state.detail = "Open this session to review its result"
         } else if state.activity.working {
             state.detail = "Working on this session’s request"
-        } else if let response = model.messages.last(where: { $0.role == .hermes }), !response.text.isEmpty {
+        } else if let response = model.messages.last(where: { $0.role == .hermes }), !GenerativeUIIntegration.readableText(response).isEmpty {
             let summary = replySummaries[response.id]
-            state.detail = summary ?? String(response.text.prefix(180))
+            state.detail = summary ?? String(GenerativeUIIntegration.readableText(response).prefix(180))
             summarizeIfEnabled(response)
             if state.activity.quiet { state.updateTitle = summary == nil ? "Latest update" : "Latest update · \(OnDeviceAssist.attribution) summary" }
         } else {
@@ -719,9 +721,9 @@ final class EdgeDockController: NSObject {
 
     private func summarizeIfEnabled(_ reply: ChatMessage) {
         guard UserDefaults.standard.bool(forKey: OnDeviceAssist.summarizeRepliesKey),
-              reply.text.count > 200, replySummaries[reply.id] == nil, summarizing.insert(reply.id).inserted else { return }
+              GenerativeUIIntegration.readableText(reply).count > 200, replySummaries[reply.id] == nil, summarizing.insert(reply.id).inserted else { return }
         Task { [weak self] in
-            let summary = await OnDeviceAssist.summarizeReply(reply.text)
+            let summary = await OnDeviceAssist.summarizeReply(GenerativeUIIntegration.readableText(reply))
             guard let self else { return }
             self.summarizing.remove(reply.id)
             guard let summary else { return }
@@ -987,7 +989,7 @@ final class EdgeDockController: NSObject {
 
     private func position(animated: Bool) {
         guard let placement else { return }
-        (panel.contentView as? EdgeDockHostingView<EdgeNotchView>)?.bottomHoverExclusion = state.side == .top ? 0 : state.petReserve
+        notchHost?.bottomHoverExclusion = state.side == .top ? 0 : state.petReserve
         let target = placement.frame(width: state.panelSize.width, height: state.panelSize.height).integral
         // On top the pet docks just right of the collapsed island, under the menu bar.
         let home = state.side == .top
@@ -1544,7 +1546,6 @@ struct EdgeNotchView: View {
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state.isQuiet)
         .dockThemedRoot()
-        .preferredColorScheme(theme.selectedThemeID.appearance == .light ? .light : theme.selectedThemeID.appearance == .dark ? .dark : nil)
         .id(theme.selectedThemeID)
     }
 
@@ -1845,6 +1846,15 @@ struct EdgeNotchShape: Shape {
 }
 
 final class EdgeDockHostingView<Content: View>: NSHostingView<Content> {
+    func panelContainer() -> NSView {
+        // A root NSHostingView can animate the window size even with sizingOptions empty.
+        // Keep panel sizing in AppKit so SwiftUI animation cannot reenter window layout.
+        let container = NSView(frame: frame)
+        autoresizingMask = [.width, .height]
+        container.addSubview(self)
+        return container
+    }
+
     var onHoverChanged: ((Bool) -> Void)?
     var bottomHoverExclusion: CGFloat = 0 { didSet { updateTrackingAreas() } }
     private var lastNotchHover: Bool?

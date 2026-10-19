@@ -14,7 +14,7 @@ final class ConversationMessageActionState: ObservableObject {
     }
 
     func copy(_ message: ChatMessage) {
-        let text = Self.readableText(message.text)
+        let text = Self.readableText(GenerativeUIIntegration.readableText(message))
         guard !text.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

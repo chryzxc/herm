@@ -160,7 +160,7 @@ private struct GroupChatSidebarRow: View {
             ForEach(Array(shown), id: \.memberID) { member in
                 Group {
                     if let bot = botMode.botsByID[member.profile] {
-                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 20)
+                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 20, orbits: isWorking)
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
                             .font(.system(size: 9, weight: .semibold))
@@ -534,7 +534,7 @@ struct GroupChatView: View {
                 ZStack {
                     Circle().fill(Color.dockSurface)
                     if let bot = botMode.botsByID[member.profile] {
-                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 22)
+                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 22, orbits: thinking.contains(member.memberID))
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
                             .font(.system(size: 12, weight: .semibold))
@@ -602,7 +602,7 @@ struct GroupChatView: View {
                     ForEach(events) { event in row(event) }
                     ForEach(thinkingMembers, id: \.memberID) { member in
                         HStack(alignment: .top, spacing: 10) {
-                            avatar(for: member)
+                            avatar(for: member, working: true)
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 8) {
                                     Text(member.displayName)
@@ -635,10 +635,10 @@ struct GroupChatView: View {
         case .user:
             HStack {
                 Spacer(minLength: 80)
-                let split = ReplyQuote.split(event.text)
+                let split = ReplyQuote.split(GenerativeUIIntegration.displayUserText(event.text))
                 VStack(alignment: .leading, spacing: 6) {
                     if let quote = split?.quote { ReplyQuoteChip(quote: quote) }
-                    Text.withFileIcons(AttributedString(split?.body ?? event.text), iconSize: 13)
+                    Text.withFileIcons(AttributedString(split?.body ?? GenerativeUIIntegration.displayUserText(event.text)), iconSize: 13)
                         .textSelection(.enabled)
                 }
                     .padding(.horizontal, 14)
@@ -657,7 +657,9 @@ struct GroupChatView: View {
                     if !tools.isEmpty {
                         TurnActivityView(activity: tools, runningSince: nil, duration: turnDuration(ending: event))
                     }
-                    MarkdownMessageView(markdown: event.text, cacheKey: event.id)
+                    GenerativeUIIntegration.renderReply(event.text) {
+                        MarkdownMessageView(markdown: event.text, cacheKey: event.id)
+                    }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     replyActions(for: event, author: member?.displayName ?? memberID)
                 }
@@ -680,7 +682,7 @@ struct GroupChatView: View {
     private func replyActions(for event: GroupRoomEvent, author: String) -> some View {
         let isSpeaking = voiceOutput.isSpeaking && speakingEventID == event.id
         return HStack(spacing: 0) {
-            DockCopyButton(event.text, accessibilityLabel: "Copy message", presentation: .icon, iconSize: 12)
+            DockCopyButton(GenerativeUIIntegration.plainText(event.text), accessibilityLabel: "Copy message", presentation: .icon, iconSize: 12)
                 .buttonStyle(DockPressButtonStyle())
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
@@ -739,9 +741,9 @@ struct GroupChatView: View {
     }
 
     @ViewBuilder
-    private func avatar(for member: GroupRoom.Member?) -> some View {
+    private func avatar(for member: GroupRoom.Member?, working: Bool = false) -> some View {
         if let member, let bot = botMode.botsByID[member.profile] {
-            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28)
+            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28, orbits: working)
         } else {
             Circle().fill(Color.dockSurface4).frame(width: 28, height: 28)
         }
@@ -931,7 +933,7 @@ struct GroupChatView: View {
                         Button(item.displayName) { modelMemberID = item.memberID }
                     }
                 } label: {
-                    BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 18)
+                    BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 18, orbits: thinkingMembers.contains { $0.memberID == member.memberID })
                 }
                 .buttonStyle(.dockHover)
                 .fixedSize()

@@ -41,7 +41,7 @@ extension DockModel {
         } else {
             text = "[image]"
         }
-        let submittedText = ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles)
+        let submittedText = GenerativeUIIntegration.preparePrompt(ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles))
         let sessionBeforeSend = sessionID
         let botActivityID = sessionBeforeSend.flatMap { eventSessionID in
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID

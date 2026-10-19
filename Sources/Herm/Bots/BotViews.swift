@@ -11,6 +11,8 @@ struct BotRosterPage: View {
     @State private var isShowingCreateSheet = false
     @State private var isPopulatingAvatars = false
     @State private var avatarResult: String?
+    @State private var showsAvatarTip = false
+    @State private var confirmsRegenerateAll = false
     @State private var editingBot: BotSummary?
     @State private var duplicatingBot: BotSummary?
     @State private var isShowingRoutineForm = false
@@ -19,6 +21,15 @@ struct BotRosterPage: View {
     @State private var selectedSection: BotRosterSection = .bots
     @State private var activityFilter: BotRosterActivityFilter = .all
     @State private var pendingRoutineRemoval: BotRoutine?
+
+    private func generateAvatars(all: Bool) {
+        showsAvatarTip = false
+        Task {
+            isPopulatingAvatars = true
+            avatarResult = await model.populateAvatars(all: all)
+            isPopulatingAvatars = false
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -125,17 +136,27 @@ struct BotRosterPage: View {
                     .disabled(!model.canCreateBots)
                     .help(model.canCreateBots ? "Create a new Hermes Bot profile" : "Bot creation requires a Hermes runtime with profile support")
                     Button {
-                        Task {
-                            isPopulatingAvatars = true
-                            avatarResult = await model.populateAvatars()
-                            isPopulatingAvatars = false
-                        }
+                        showsAvatarTip.toggle()
                     } label: {
                         DockActionLabel(title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
                     }
                     .controlSize(.regular)
                     .disabled(isPopulatingAvatars)
-                    .help("Create avatars for Bots that don't have one")
+                    .popover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
+                        BotAvatarGeneratorTip(
+                            pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
+                            onFillMissing: { generateAvatars(all: false) },
+                            onRegenerateAll: {
+                                showsAvatarTip = false
+                                confirmsRegenerateAll = true
+                            }
+                        )
+                    }
+                    .confirmationDialog("Regenerate all avatars?", isPresented: $confirmsRegenerateAll) {
+                        Button("Regenerate All") { generateAvatars(all: true) }
+                    } message: {
+                        Text("Every Bot gets its Herm face, replacing uploaded and generated images.")
+                    }
                 } else {
                     Button {
                         isShowingRoutineForm = true
@@ -964,5 +985,127 @@ struct MissionControlBotRow: View, Equatable {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .stroke(isFocused ? Color.dockAccent : Color.dockBorderLight, lineWidth: isFocused ? 1.5 : DockLayout.hairline)
             }
+    }
+}
+
+/// Live preview for Generate Avatars: the exact Hermes faces it will save,
+/// or shuffleable samples when every Bot already has one. Hover a face to
+/// set it working; click a sample for a new one. Opens on click and offers
+/// the two generate modes.
+private struct BotAvatarGeneratorTip: View {
+    let pending: [BotSummary]
+    let onFillMissing: () -> Void
+    let onRegenerateAll: () -> Void
+    @State private var samples = (0..<4).map { _ in UUID().uuidString }
+    @State private var hovered: String?
+
+    var body: some View {
+        let faces = pending.isEmpty ? samples.map { ($0, nil as String?) } : pending.prefix(4).map { ($0.id, Optional($0.name)) }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Herm faces for your Bots")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            HStack(spacing: 12) {
+                ForEach(faces, id: \.0) { id, name in
+                    VStack(spacing: 4) {
+                        BotFaceMark(id: id, size: 48, animated: true, busy: hovered == id)
+                            .background { if hovered == id { BotSwirlRing(id: id, size: 40) } }
+                            .overlay { if hovered == id { BotSwirlRing(id: id, size: 40, front: true) } }
+                            .scaleEffect(hovered == id ? 1.12 : 1)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.55), value: hovered)
+                            .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
+                            .onTapGesture {
+                                guard pending.isEmpty, let i = samples.firstIndex(of: id) else { return }
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { samples[i] = UUID().uuidString }
+                            }
+                            .transition(.scale.combined(with: .opacity))
+                        if let name {
+                            Text(name).font(.system(size: 10)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                        }
+                    }
+                    .frame(width: 56)
+                }
+            }
+            Text(pending.isEmpty
+                 ? "Faces blink and glance, and a star orbits them while their Bot works. Click a sample to shuffle."
+                 : "Faces blink and glance, and a star orbits them while their Bot works.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Label("Uploaded images stay still. Animations only work on Herm faces.", icon: .info)
+                .font(.system(size: 10))
+                .foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            VStack(spacing: 6) {
+                BotAvatarOptionCard(title: "Fill Missing",
+                                    detail: pending.isEmpty ? "Every Bot already has an avatar." : "Only Bots still using the placeholder.",
+                                    icon: .sparkle, badge: pending.isEmpty ? nil : "\(pending.count)",
+                                    done: pending.isEmpty, action: onFillMissing)
+                BotAvatarOptionCard(title: "Regenerate All", detail: "Replace every avatar so all Bots match and animate.",
+                                    icon: .arrowsClockwise, action: onRegenerateAll)
+            }
+        }
+        .padding(14)
+        .frame(width: 280, alignment: .leading)
+    }
+}
+
+/// One Generate Avatars mode: icon tile, title and detail, with a count badge
+/// or an "All set" check when there is nothing left to do.
+private struct BotAvatarOptionCard: View {
+    let title: String
+    let detail: String
+    let icon: Ph
+    var badge: String?
+    var done = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                DockIcon(icon, size: 14, color: done ? .dockMetadataText : .dockAccent)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(done ? Color.dockSurface4 : Color.dockAccent.opacity(hovering ? 0.22 : 0.14)))
+                    .rotationEffect(.degrees(hovering && !done ? (icon == .arrowsClockwise ? 90 : 12) : 0))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(title).font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(done ? Color.dockSecondaryText : Color.dockPrimaryText)
+                        if let badge {
+                            Text(badge).font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.dockAccent)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Capsule().fill(Color.dockAccent.opacity(0.14)))
+                        }
+                    }
+                    Text(detail).font(.system(size: 10)).foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                if done {
+                    DockIconLabel("All set", icon: .check)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.dockSuccess)
+                } else {
+                    DockIcon(.caretRight, size: 10, color: .dockMetadataText)
+                        .offset(x: hovering ? 2 : 0)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                .fill(hovering && !done ? Color.dockSurface6.opacity(0.8) : Color.dockSurface2.opacity(0.6)))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                .stroke(hovering && !done ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: DockLayout.hairline))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(done)
+        .onHover { hovering = $0 }
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hovering)
+        .accessibilityHint(detail)
     }
 }

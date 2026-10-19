@@ -619,6 +619,7 @@ extension DockModel {
                 resolvedSessionID: resolvedSessionID
             )
             sessionStorageID = Self.stableSessionID(from: result) ?? session.id
+            storageIDsByRuntimeID[resolvedSessionID] = sessionStorageID
             restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             persistActiveSessionID(sessionID)
             let model = (result["model"] as? String) ?? (result["model_name"] as? String)
@@ -656,7 +657,9 @@ extension DockModel {
             messages = restored.messages + [liveRow].compactMap { $0 }
             let stashedTurnActivity = sessionStorageID.flatMap { inFlightTurnActivityBySessionID.removeValue(forKey: $0) }
             if liveRow == nil, (result["running"] as? Bool) == true {
-                adoptRunningTurn(inflight: result["inflight"] as? [String: Any], activity: stashedTurnActivity ?? [])
+                adoptRunningTurn(inflight: result["inflight"] as? [String: Any], activity: stashedTurnActivity ?? restored.trailingActivity)
+            } else if liveRow == nil, !restored.trailingActivity.isEmpty {
+                showExternalTurn(restored.trailingActivity, generation: resumeGeneration)
             }
             rehydratePendingTranscriptImages(
                 restored.pendingImages,
@@ -677,6 +680,8 @@ extension DockModel {
             restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
             projectBotMessagesIntoActivity()
+            restoreBotDispatches(calls: restored.messages.flatMap(\.activity) + restored.trailingActivity,
+                                 rows: transcriptRows as? [[String: Any]] ?? [])
             scrollToLatestMessageRequest &+= 1
             cacheCurrentAgentState()
             refreshDelegationStatus()

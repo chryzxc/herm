@@ -36,33 +36,13 @@ extension DockPopover {
         }
     }
 
-    /// Icon segments for the session's work views. Talk keeps its own toggle beside it;
-    /// Explorer and Source Control live in the inspector's tabs.
     func sessionModeSwitcher(style: DockThemePalette) -> some View {
-        HStack(spacing: 2) {
-            ForEach(activeSessionRepositoryScope == nil ? [SessionWorkspaceMode.chat, .voice] : [.chat, .voice, .pullRequests]) { mode in
-                let isSelected = mode == sessionWorkspaceMode
-                Button { selectSessionMode(mode) } label: {
-                    DockIcon(mode.icon, size: DockLayout.toolbarIconSize, color: isSelected ? style.primaryText : style.secondaryText)
-                        .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize - 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 3, style: .continuous)
-                                .fill(isSelected ? style.selectedFill : .clear)
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.dockPress)
-                .help(mode.help)
-                .accessibilityLabel(mode.label)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .padding(2)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                .fill(style.surface4.opacity(0.5))
+        SessionModeTabStrip(
+            modes: activeSessionRepositoryScope == nil ? [.chat, .voice] : [.chat, .voice, .pullRequests],
+            selectedMode: sessionWorkspaceMode,
+            style: style,
+            onSelect: selectSessionMode
         )
-        .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: sessionWorkspaceMode)
     }
 
     func sessionViewMenu(includesInspector: Bool, style: DockThemePalette) -> some View {

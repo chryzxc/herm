@@ -125,7 +125,12 @@ struct MissionControlSidebarSnapshot: Equatable {
             projectProfileID: control.projectProfileID,
             isLoadingProjects: control.isRefreshing && control.projects.isEmpty,
             isRefreshingProjectNavigation: control.isRefreshingProjectNavigation,
-            attention: control.attention,
+            // Attention is keyed by the event's runtime sid; rows use the durable id.
+            attention: control.attention.map { item in
+                var item = item
+                item.reference.sessionID = item.reference.sessionID.map(model.rowSessionID)
+                return item
+            },
             latestActivities: control.latestActivities,
             pinnedSessions: model.pinnedSessions,
             localProjectPathBySessionID: localProjectPaths

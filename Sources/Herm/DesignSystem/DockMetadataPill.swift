@@ -4,6 +4,8 @@ import SwiftUI
 struct DockMetadataPill: View {
     let text: String
     var navigationIcon: Ph? = nil
+    var colorHex: String? = nil
+    private var labelColor: DockMetadataPillColor? { colorHex.flatMap(DockMetadataPillColor.init) }
 
     var body: some View {
         HStack(spacing: DockSpacing.micro) {
@@ -16,11 +18,33 @@ struct DockMetadataPill: View {
         }
             .font(DockTypography.body)
             .fontWeight(.regular)
-            .foregroundStyle(navigationIcon == nil ? Color.dockPrimaryText : Color.dockAccent)
+            .foregroundStyle(navigationIcon == nil ? (labelColor?.foreground ?? Color.dockPrimaryText) : Color.dockAccent)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Capsule().fill(Color.dockSurface4))
-            .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+            .background(Capsule().fill(labelColor?.background ?? Color.dockSurface4))
+            .overlay(Capsule().stroke(labelColor?.foreground.opacity(0.18) ?? Color.dockBorderLight, lineWidth: DockLayout.hairline))
+    }
+}
+
+/// Provider label colors use an opaque fill with the higher-contrast black/white ink.
+struct DockMetadataPillColor {
+    let red: Double
+    let green: Double
+    let blue: Double
+    let luminance: Double
+    var usesWhiteText: Bool { 1.05 / (luminance + 0.05) > (luminance + 0.05) / 0.05 }
+    var contrastRatio: Double { usesWhiteText ? 1.05 / (luminance + 0.05) : (luminance + 0.05) / 0.05 }
+    var background: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
+    var foreground: Color { usesWhiteText ? .white : .black }
+    init?(hex: String) {
+        let value = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard value.count == 6, value.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }),
+              let rgb = UInt32(value, radix: 16) else { return nil }
+        red = Double((rgb >> 16) & 255) / 255
+        green = Double((rgb >> 8) & 255) / 255
+        blue = Double(rgb & 255) / 255
+        func linear(_ channel: Double) -> Double { channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4) }
+        luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
     }
 }
 

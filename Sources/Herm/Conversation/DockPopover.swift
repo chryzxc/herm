@@ -280,8 +280,10 @@ struct DockPopover: View {
     }
 
     var body: some View {
-        observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(rootPopoverContent))))
+        // Bound the root's generic layout before observer modifiers copy its sheet state.
+        observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
             .environment(\.chatContextRouter, chatContextRouter)
+            .generativeUISession(model: model)
             // SwiftUI Text links would otherwise open in the default browser.
             .environment(\.openURL, OpenURLAction { InAppBrowser.open($0); return .handled })
     }

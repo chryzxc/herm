@@ -158,7 +158,7 @@ extension DockModel {
 
     /// Maps the open chat's runtime alias onto its stored row id.
     func rowSessionID(_ id: String) -> String {
-        quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : id)
+        quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : storageIDsByRuntimeID[id] ?? id)
     }
 
     var kanbanSessionID: String? {

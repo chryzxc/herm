@@ -20,6 +20,9 @@ struct BotActivityRecord: Identifiable, Equatable, Sendable, Codable {
     var result: String?
     var linkedCardID: String?
     var botChatSessionID: String?
+    /// Hermes background process running a Bot DM (`proc_…`); its completion
+    /// notice carries the Bot's reply and session.
+    var processID: String?
 
     init(id: String = UUID().uuidString, originSessionID: String, botID: String, botName: String, summary: String, state: BotActivityState = .queued, createdAt: Date = Date(), updatedAt: Date = Date(), result: String? = nil, linkedCardID: String? = nil, botChatSessionID: String? = nil) {
         self.id = id

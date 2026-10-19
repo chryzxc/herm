@@ -223,7 +223,7 @@ struct SessionKanbanActivityView: View {
             } else {
                 ForEach(sessionActivityBots) { bot in
                     HStack(alignment: .top, spacing: 9) {
-                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30)
+                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30, orbits: botWorkRows.contains { $0.botID == bot.id && $0.status == .running })
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
                                 Text(bot.name)

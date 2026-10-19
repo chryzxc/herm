@@ -293,7 +293,7 @@ extension DockModel {
                 ))
             }
         }
-        return RestoredTranscript(messages: messages, pendingImages: pendingImages, rowIDs: rowIDs)
+        return RestoredTranscript(messages: messages, pendingImages: pendingImages, rowIDs: rowIDs, trailingActivity: pendingActivity)
     }
 
     /// Tool calls an assistant history row requested, in either the OpenAI

@@ -75,6 +75,77 @@ extension DockModel {
         return (collected, cursor)
     }
 
+    /// A stored turn with tool calls but no reply, that this gateway is not
+    /// running: a Bot's `hermes -p <bot> chat -Q` writes straight to its
+    /// profile's state.db, so no events reach Herm. Show its activity as a
+    /// live turn and re-read stored rows until the reply lands.
+    func showExternalTurn(_ activity: [ActiveToolCall], generation: Int) {
+        // ponytail: idle-time heuristic; a single tool call quieter than this
+        // reads as finished. Switch to a Hermes liveness flag if one appears.
+        let idleLimit: TimeInterval = 15 * 60
+        guard let latest = activity.map(\.startedAt).max(), Date().timeIntervalSince(latest) < idleLimit else {
+            // Long dead: keep what it did visible instead of dropping it.
+            messages.append(ChatMessage(role: .hermes, text: "", timestamp: activity.first?.startedAt ?? Date(), botProfileID: activeBotProfileID, botDisplayName: activeBotDisplayName, activity: activity))
+            return
+        }
+        adoptRunningTurn(inflight: nil, activity: activity)
+        externalTurnWatchTask?.cancel()
+        externalTurnWatchTask = Task { @MainActor [weak self] in
+            var lastChange = Date()
+            var signature = ""
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard let self, generation == self.sessionResumeGeneration,
+                      self.streamingMessageID != nil,
+                      let storageID = self.sessionStorageID else { return }
+                let limit = min(
+                    TranscriptHistoryPaging.maximumPageRowLimit,
+                    max(TranscriptHistoryPaging.pageRowLimit, self.transcriptHistoryCursor?.nextOffset ?? 0)
+                )
+                guard let loaded = try? await self.fetchEarlierTranscriptRows(
+                    from: TranscriptHistoryCursor(storageSessionID: storageID, profileID: self.sessionProfileID),
+                    limit: limit,
+                    minimumDisplayRows: ConversationMessageWindow.initialLimit
+                ), generation == self.sessionResumeGeneration, self.streamingMessageID != nil else { continue }
+                let restored = Self.parseMessages(loaded.rows, defaultBotProfileID: self.activeBotProfileID, defaultBotDisplayName: self.activeBotDisplayName)
+                let next = Self.externalTurnSignature(restored.trailingActivity) + "|\(restored.messages.count)"
+                guard next != signature else {
+                    if Date().timeIntervalSince(lastChange) > idleLimit { self.endExternalTurn(commit: true); return }
+                    continue
+                }
+                signature = next
+                lastChange = Date()
+                let liveRow = self.messages.first { $0.id == self.streamingMessageID }
+                self.transcriptHistoryCursor = loaded.cursor
+                self.transcriptMessageIDsByRowID = restored.rowIDs
+                self.storedMessageReferences = StoredMessageReference.references(rows: loaded.rows, rowIDs: restored.rowIDs)
+                self.messages = restored.messages + [liveRow].compactMap { $0 }
+                if restored.trailingActivity.isEmpty {
+                    self.endExternalTurn(commit: false)
+                    self.scrollToLatestMessageRequest &+= 1
+                    return
+                }
+                self.streamingTurnActivity = restored.trailingActivity
+            }
+        }
+    }
+
+    private static func externalTurnSignature(_ activity: [ActiveToolCall]) -> String {
+        activity.map { "\($0.id):\($0.result?.count ?? -1)" }.joined(separator: ",")
+    }
+
+    /// Ends the mirrored turn: `commit` keeps its activity as a reply row,
+    /// otherwise the stored reply already replaced it.
+    private func endExternalTurn(commit: Bool) {
+        if commit { commitStreamingMessage() } else { discardStreamingMessage() }
+        streamingMessageID = nil
+        streamingTurnActivity = []
+        status = .idle
+        conversationActivityPhase = .idle
+        isSending = false
+        if let sessionStorageID { updateSessionActivity(sessionID: sessionStorageID, isWorking: false) }
+    }
+
     var canLoadEarlierTranscript: Bool {
         guard let cursor = transcriptHistoryCursor, cursor.hasMore, !isLoadingEarlierTranscript else { return false }
         return cursor.storageSessionID == sessionStorageID

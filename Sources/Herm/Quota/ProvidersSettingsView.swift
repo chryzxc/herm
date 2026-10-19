@@ -192,6 +192,7 @@ struct ProvidersSettingsView: View {
 
             if isExpanded {
                 detail(row)
+                    .padding(.top, 12)
                     .padding(.horizontal, 12)
                     .padding(.leading, 34)
                     .padding(.bottom, 12)

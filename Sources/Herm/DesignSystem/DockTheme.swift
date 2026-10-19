@@ -2,19 +2,18 @@ import AppKit
 import SwiftUI
 
 enum DockThemeID: String, CaseIterable, Identifiable, Codable {
-    case glass, clean, nativeMacOS, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud, island
+    case glass, clean, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud, island
     var id: String { rawValue }
     var hermesSkinID: String? {
-        switch self { case .nativeMacOS: nil; case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island: nil }
+        switch self { case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island: nil }
     }
     var title: String {
-        switch self { case .nativeMacOS: "System"; case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .clean: "Clean"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD"; case .island: "Island" }
+        switch self { case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .clean: "Clean"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD"; case .island: "Island" }
     }
     var signature: String {
         switch self {
-        case .glass: "Frosted crystal"
+        case .glass: "Liquid glass"
         case .clean: "Quiet porcelain"
-        case .nativeMacOS: "Native graphite"
         case .hermesClassic: "Midnight & brass"
         case .ares: "Oxblood & bronze"
         case .mono: "Graphite ledger"
@@ -37,9 +36,8 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
     }
     var detail: String {
         switch self {
-        case .glass: "Frosted panels, pill controls, and a polished glass rim. Follows macOS appearance."
+        case .glass: "Native macOS Liquid Glass with neutral graphite tint. Follows macOS appearance."
         case .clean: "Porcelain surfaces, soft gray selection, and borderless cards. Follows macOS appearance."
-        case .nativeMacOS: "Native menu blur, graphite chrome, and familiar blue selection. Follows macOS appearance."
         case .hermesClassic: "Midnight ink, brass accents, serif lettering, and fine gold selection bars."
         case .ares: "Oxblood panels, bronze contours, crisp corners, and hard offset shadows."
         case .mono: "Graphite surfaces, monospaced lettering, and inverted silver selection."
@@ -62,12 +60,12 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
     }
     var appearance: DockThemeAppearance {
         switch self {
-        case .nativeMacOS, .glass, .clean, .swiss: .system
+        case .glass, .clean, .swiss: .system
         case .warmLight, .cartoon, .brutalist, .origami, .eInk, .clay, .notebook, .retro: .light
         case .hermesClassic, .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud, .island: .dark
         }
     }
-    var usesNativeMaterial: Bool { self == .nativeMacOS || style.material == .glass }
+    var usesNativeMaterial: Bool { style.material == .glass }
     /// Themes Herm ships without a matching Hermes skin; always selectable.
     static var hermOnly: [DockThemeID] { allCases.filter { $0.hermesSkinID == nil } }
     var style: DockThemeStyle {
@@ -86,13 +84,12 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .dots, pressScale: 1, cardFill: 1, tintedSidebar: true)
         case .dusk: DockThemeStyle(controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 5, cardShadow: 10, accentGradient: true, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
         case .origami: DockThemeStyle(controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, selection: .bar, cardShadow: 6, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, accentGradient: true, pressScale: 0.97, neutralUserBubble: true, tintedSidebar: true)
+        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, pressScale: 0.97, neutralUserBubble: true, tintedSidebar: true)
         case .eInk: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 1, selection: .invert, animates: false, pressScale: 1, cardFill: 1, neutralUserBubble: true)
         case .swiss: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open, pressScale: 1, neutralUserBubble: true)
         case .clean: DockThemeStyle(controlRadius: 10, paneRadius: 18, outlineWidth: 0, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .slate: DockThemeStyle(controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .bar, backdrop: .grid, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
         case .island: DockThemeStyle(controlRadius: 14, paneRadius: 22, outlineWidth: 0, pressScale: 0.97, cardFill: 1, neutralUserBubble: true)
-        case .nativeMacOS: DockThemeStyle()
         }
     }
 }
@@ -222,7 +219,6 @@ struct DockThemePalette {
     fileprivate typealias Roles = (bg: String, surface: String, surface2: String, surface4: String, primary: String, secondary: String, metadata: String, accent: String, selected: String, divider: String, success: String, warning: String, destructive: String)
     fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         switch theme {
-        case .nativeMacOS: return isDark ? ("#15171C", "#282B32", "#1C1E24", "#373B44", "#D2D7E0", "#BCC2CF", "#959CAC", "#0A84FF", "#1F3D6B", "#3C4459", "#30D158", "#FF9F0A", "#FF453A") : ("#F2F2F7", "#FFFFFF", "#E5E5EA", "#D1D1D6", "#1C1C1E", "#4D4D52", "#646469", "#007AFF", "#D9E9FF", "#8E8E93", "#248A3D", "#C93400", "#D70015")
         case .hermesClassic: return isDark ? ("#1A1A2E", "#211F35", "#171728", "#333355", "#D3CCB4", "#BBB8AC", "#988964", "#E5B23E", "#3A3A55", "#544F67", "#8FBC8F", "#E3C04F", "#FF6B6B") : ("#F7F3E8", "#F1E8D3", "#FBF9F2", "#E9DFC6", "#3E321F", "#61523A", "#756549", "#B8860B", "#E8DCC2", "#D7C9A9", "#2E7D32", "#B45309", "#B4232F")
         case .ares: return isDark ? ("#1D1115", "#2B191E", "#160E12", "#48252B", "#CCC2AF", "#C7B4A5", "#AC7C78", "#DD4A3A", "#692620", "#6E584B", "#7BC96F", "#C7A96B", "#EF5350") : ("#F8EEE8", "#F1DDD3", "#FCF7F4", "#E8C6B8", "#3B201B", "#60433C", "#7E5850", "#DD4A3A", "#F0D1C7", "#DAB2A2", "#4CAF50", "#C7A96B", "#EF5350")
         case .mono: return isDark ? ("#1F1F1F", "#282828", "#181818", "#464646", "#C8C8C8", "#C8C8C8", "#909090", "#AAAAAA", "#505050", "#5E5E5E", "#B5B5B5", "#AAAAAA", "#D0D0D0") : ("#F5F5F5", "#EDEDED", "#FAFAFA", "#E2E2E2", "#202020", "#565656", "#696969", "#555555", "#E0E0E0", "#C7C7C7", "#5F5F5F", "#777777", "#8A8A8A")
@@ -239,7 +235,8 @@ struct DockThemePalette {
         case .hud: return ("#060B14", "#0C1626", "#09111E", "#12263D", "#A9DCEB", "#83B8CA", "#5C8796", "#19D3F3", "#0F3A52", "#1F5C75", "#3DEB9A", "#FFB020", "#FF4D5E")
         case .island: return ("#000000", "#141414", "#0A0A0A", "#262626", "#D9D9DC", "#B3B3B8", "#8A8A90", "#F5F5F7", "#2C2C2E", "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A")
         case .dusk: return ("#111019", "#1D1928", "#15121E", "#2A2436", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740", "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B")
-        case .glass: return isDark ? ("#11151C", "#1C232D", "#151B23", "#293340", "#D8D8DC", "#B4B4BA", "#8B8B94", "#8FD3E8", "#303035", "#3A3A3F", "#30D158", "#FF9F0A", "#FF453A") : ("#F4F4F5", "#FFFFFF", "#F8F8F9", "#E6E6E9", "#18181B", "#52525B", "#6B6B73", "#1F7A92", "#E2E2E6", "#D4D4D8", "#248A3D", "#C93400", "#D70015")
+        // Apple system grays and a graphite accent: neutral, like macOS 26 Liquid Glass.
+        case .glass: return isDark ? ("#1C1C1E", "#2C2C2E", "#232325", "#323234", "#D8D8DC", "#AEAEB2", "#8E8E93", "#AEAEB2", "#3A3A3C", "#48484A", "#30D158", "#FF9F0A", "#FF453A") : ("#F5F5F7", "#FFFFFF", "#FAFAFA", "#E8E8ED", "#1D1D1F", "#515154", "#6E6E73", "#6E6E73", "#E3E3E8", "#D2D2D7", "#248A3D", "#C93400", "#D70015")
         case .clean: return isDark ? ("#141414", "#1E1E1E", "#191919", "#2A2A2A", "#D6D6D6", "#B0B0B0", "#8C8C8C", "#C7C7CC", "#2C2C2C", "#303030", "#4CC27A", "#E5A640", "#FF6B6B") : ("#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#3A3A3C", "#EBEBEB", "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A")
         case .eInk: return ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#EDEDED", "#000000", "#2B2B2B", "#555555", "#000000", "#D9D9D9", "#000000", "#1A1A1A", "#333333", "#000000")
         case .swiss: return isDark ? ("#0A0A0A", "#0A0A0A", "#0A0A0A", "#1C1C1C", "#D4D4D4", "#B0B0B0", "#7A7A7A", "#FF3B30", "#2A1412", "#2E2E2E", "#9A9A9A", "#B0B0B0", "#FF3B30") : ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#F0F0F0", "#0A0A0A", "#4A4A4A", "#747474", "#E30613", "#FBE4E5", "#D9D9D9", "#555555", "#777777", "#E30613")
@@ -282,11 +279,10 @@ private struct Tokens {
                 })
             }
         }
-        // Native macOS is composited over AppKit's menu material. The navy
-        // tint matches dark menu-bar popovers (Battery, Wi-Fi) and is dense
-        // enough to neutralize colorful wallpapers while the blur shows through. Branded themes stay
-        // opaque so their authored colors render exactly as specified.
-        windowBackground = color({ $0.bg }, nativeAlpha: theme == .glass ? 0.62 : 0.60)
+        // Glass is composited over the system material. The neutral tint is
+        // dense enough to calm colorful wallpapers while the blur shows through.
+        // Branded themes stay opaque so their authored colors render exactly as specified.
+        windowBackground = color({ $0.bg }, nativeAlpha: 0.62)
         background = color({ $0.bg }, nativeAlpha: 0.16)
         surface = color({ $0.surface }, nativeAlpha: 0.40)
         surface2 = color({ $0.surface2 }, nativeAlpha: 0.32)

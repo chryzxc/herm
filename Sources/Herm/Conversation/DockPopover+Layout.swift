@@ -39,6 +39,7 @@ extension DockPopover {
         .onChange(of: model.isHermesConnected, initial: true) { _, connected in
             guard connected else { return }
             SessionBrowserStore.shared.activate(model: model, reconnect: true)
+            Task { await botMode.refreshNow(force: true) }
         }
         .onChange(of: model.browserSessionKey) { _, _ in
             guard model.isHermesConnected else { return }
@@ -209,7 +210,6 @@ extension DockPopover {
                                         collapsed: panelPresentation.collapsedSize))
             .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
             .dockThemedRoot()
-            .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light))
             .sheet(item: $selectedChatImage) { preview in
                 ChatImagePreviewModal(image: preview.image)
             }
@@ -330,7 +330,7 @@ extension DockPopover {
                 FullscreenPanelSplitView(
                     leading: missionControlQueue,
                     trailing: desktopTrailingWorkspace,
-                    leadingFraction: usesWindowChrome ? DesktopWorkspaceFractions.windowQueue : DesktopWorkspaceFractions.queue,
+                    leadingFraction: DesktopWorkspaceFractions.queue,
                     minimumLeadingWidth: 300,
                     minimumTrailingWidth: desktopTrailingMinimumWidth
                 )
@@ -391,6 +391,8 @@ extension DockPopover {
                 fullscreenSurface = .issues
             },
             isFullscreen: isFullscreen,
+            isHermesConnected: model.isHermesConnected,
+            onReconnect: { Task { try? await model.gateway.connect() } },
             isDockedWindow: usesWindowChrome,
             onFullscreenToggle: toggleFullscreen,
             onOpenWindow: onOpenWindow
@@ -404,8 +406,13 @@ extension DockPopover {
     /// the inspector's, or the inner split squeezes the conversation.
     var desktopTrailingMinimumWidth: CGFloat {
         guard !isGlobalSurfaceActive, sessionWorkspaceMode != .explorer else { return 360 }
-        let conversation = DesktopWorkspaceFractions.minimumConversationWidth
+        let conversation = desktopConversationMinimumWidth
         return isInspectorVisibleForDesktopWorkspace ? conversation + 1 + 360 : conversation
+    }
+
+    // The floating shell must fit the list, conversation, and inspector together.
+    var desktopConversationMinimumWidth: CGFloat {
+        DesktopWorkspaceFractions.minimumConversationWidth(isFullscreen: isFullscreen)
     }
 
     var desktopTrailingWorkspace: AnyView {
@@ -417,40 +424,21 @@ extension DockPopover {
             // keep their state across collapse/expand.
             let isVisible = isInspectorVisibleForDesktopWorkspace
             return AnyView(
-                GeometryReader { geometry in
-                    let minimumWidth = sessionWorkspaceMode == .explorer
-                        ? ExplorerWorkspaceMetrics.minimumNavigatorWidth + 1 + ExplorerWorkspaceMetrics.minimumEditorWidth
-                        : DesktopWorkspaceFractions.minimumConversationWidth + 1 + 360
-                    if isVisible, geometry.size.width < minimumWidth {
-                        VStack(spacing: 0) {
-                            // The session tab strip already carries the toggle.
-                            if !inspectorHasOwnToggle {
-                                HStack {
-                                    Spacer()
-                                    DockSidebarToggle(isCollapsed: false, edge: .trailing, action: toggleInspectorPanel)
-                                }
-                                .padding(.horizontal, 8)
-                            }
-                            contextPanel
-                        }
-                    } else {
-                        FullscreenPanelSplitView(
-                            leading: conversationColumn,
-                            trailing: contextPanel,
-                            // Fraction of the *remaining* space after the outer
-                            // queue split, chosen so the three visible columns land
-                            // at the DesktopWorkspaceFractions targets (queue /
-                            // conversation / inspector) rather than an even split.
-                            leadingFraction: sessionWorkspaceMode == .explorer ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
-                            initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
-                            minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : DesktopWorkspaceFractions.minimumConversationWidth,
-                            maximumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
-                            minimumTrailingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
-                            leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
-                            isTrailingCollapsed: !isVisible
-                        )
-                    }
-                }
+                FullscreenPanelSplitView(
+                    leading: conversationColumn,
+                    trailing: contextPanel,
+                    // Fraction of the *remaining* space after the outer
+                    // queue split, chosen so the three visible columns land
+                    // at the DesktopWorkspaceFractions targets (queue /
+                    // conversation / inspector) rather than an even split.
+                    leadingFraction: sessionWorkspaceMode == .explorer ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
+                    initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
+                    minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : desktopConversationMinimumWidth,
+                    maximumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
+                    minimumTrailingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
+                    leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
+                    isTrailingCollapsed: !isVisible
+                )
             )
         }
     }

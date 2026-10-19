@@ -15,9 +15,3 @@ enum ComposerLayout {
         min(max(measuredContentHeight, minHeight), maxHeight)
     }
 }
-
-enum ComposerToolbarPresentation {
-    static func showsReasoningLabel(for metrics: ConversationWorkspaceMetrics) -> Bool {
-        !metrics.usesCompactToolbarLabels
-    }
-}

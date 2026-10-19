@@ -6,6 +6,40 @@ import Testing
 
 @MainActor
 struct EdgePanelFrameTransitionTests {
+  @Test func defaultsChangesDuringLayoutCannotResizeTheNotchWindow() async throws {
+    let suite = "HermPanelSizingTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let panel = makePanel()
+    defer { panel.close() }
+    let host = EdgeDockHostingView(rootView: AnimatedNotch().defaultAppStorage(defaults))
+    host.sizingOptions = []
+    panel.contentView = host.panelContainer()
+    panel.orderFrontRegardless()
+    let frame = panel.frame
+    for expanded in [true, false, true, false] {
+      withAnimation(.easeInOut(duration: 0.1)) {
+        host.rootView = AnimatedNotch(expanded: expanded).defaultAppStorage(defaults)
+        defaults.set(expanded, forKey: "herm.chatListCollapsed")
+      }
+      panel.layoutIfNeeded()
+      try await Task.sleep(for: .milliseconds(150))
+      #expect(panel.frame == frame)
+      #expect(host.frame.size == panel.contentView?.bounds.size)
+    }
+  }
+
+  private struct AnimatedNotch: View {
+    var expanded = false
+    @AppStorage("herm.chatListCollapsed") private var collapsed = false
+    var body: some View {
+      Color.clear
+        .frame(width: expanded ? 368 : 66, height: expanded ? 360 : 97)
+        .animation(.easeInOut(duration: 0.1), value: expanded)
+        .opacity(collapsed ? 0.9 : 1)
+    }
+  }
+
   @Test func repeatedUnchangedPlacementDoesNotResizeTheHost() async throws {
     let panel = makePanel()
     defer { panel.close() }
@@ -78,7 +112,7 @@ struct EdgePanelFrameTransitionTests {
     panel.isReleasedWhenClosed = false
     let host = EdgeDockHostingView(rootView: Color.clear)
     host.sizingOptions = []
-    panel.contentView = host
+    panel.contentView = host.panelContainer()
     return panel
   }
 

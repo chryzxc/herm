@@ -67,7 +67,7 @@ final class VoiceOutput: ObservableObject {
     }
 
     private func cleaned(_ text: String) -> String {
-        text
+        GenerativeUIIntegration.plainText(text)
             .replacingOccurrences(of: "```", with: "")
             .replacingOccurrences(of: "#", with: "")
             .replacingOccurrences(of: "*", with: "")

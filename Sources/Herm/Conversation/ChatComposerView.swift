@@ -629,12 +629,10 @@ struct ChatComposerView: View {
             // text and images and drops custom icon views.
             HStack(spacing: 6) {
                 DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
-                if ComposerToolbarPresentation.showsReasoningLabel(for: metrics) {
-                    Text(sessionReasoningDisplayName)
-                        .font(DockTypography.control)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1)
-                }
+                Text(sessionReasoningDisplayName)
+                    .font(DockTypography.control)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
                 DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
             }
             .padding(.horizontal, 8)
@@ -1278,7 +1276,7 @@ private struct PinnedWorkStrip: View {
 
     var body: some View {
         let plan = model.todoPlan.flatMap { $0.sessionID == model.sessionID ? $0 : nil }
-            .flatMap { $0.done < $0.items.count || model.status == .working ? $0 : nil }
+            .flatMap { $0.done < $0.items.count ? $0 : nil }
         let tasks = model.currentSessionBackgroundTasks.filter { $0.status == .running }
         if plan != nil || !tasks.isEmpty {
             VStack(alignment: .leading, spacing: 4) {

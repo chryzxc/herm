@@ -498,11 +498,11 @@ struct NativeMarkdownHeightCache {
     private var entries: [(width: CGFloat, height: CGFloat)] = []
 
     func height(forWidth width: CGFloat) -> CGFloat? {
-        entries.first { abs($0.width - width) <= 0.5 }?.height
+        entries.first { $0.width == width }?.height
     }
 
     mutating func store(_ height: CGFloat, forWidth width: CGFloat) {
-        entries.removeAll { abs($0.width - width) <= 0.5 }
+        entries.removeAll { $0.width == width }
         entries.append((width, height))
         if entries.count > 4 { entries.removeFirst() }
     }
@@ -554,7 +554,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
 
     func measuredHeight(forWidth proposedWidth: CGFloat) -> CGFloat {
         let width = max(1, proposedWidth)
-        if let cached = cachedIntrinsicHeight, abs(cachedSolveWidth - width) <= 0.5 {
+        if let cached = cachedIntrinsicHeight, cachedSolveWidth == width {
             return cached
         }
         var frames: [CGRect] = []
@@ -580,7 +580,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
-        let widthChanged = abs(frame.width - newSize.width) > 0.5
+        let widthChanged = frame.width != newSize.width
         super.setFrameSize(newSize)
         if widthChanged {
             needsLayout = true
@@ -1149,6 +1149,7 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
     private var renderedMentionRevision: Int?
     private var renderedThemeRevision: Int?
     private var heights = NativeMarkdownHeightCache()
+    private var isMeasuringHeight = false
     private var quoteRanges: [NSRange] = []
     private var quoteBarColor: NSColor = .separatorColor
     /// Code presentation keeps its natural line width and scrolls
@@ -1157,9 +1158,6 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
 
     init() {
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        // Width is assigned explicitly per measurement. Tracking the view
-        // width would relayout the text for every SwiftUI probe.
-        container.widthTracksTextView = false
         container.lineFragmentPadding = 0
         let layout = NSLayoutManager()
         let storage = NSTextStorage()
@@ -1179,6 +1177,8 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         isAutomaticLinkDetectionEnabled = false
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
+        // Proposals own the width; apply this after NSTextView's resizing setup.
+        container.widthTracksTextView = false
         NotificationCenter.default.addObserver(self, selector: #selector(websiteIconLoaded), name: MarkdownWebsiteIcon.didLoad, object: nil)
     }
 
@@ -1257,6 +1257,13 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
             heights.store(0, forWidth: width)
             return 0
         }
+        // Sizing probes must not leave displayed text wrapped at a trial width.
+        let displayedWidth = bounds.width
+        isMeasuringHeight = true
+        defer {
+            isMeasuringHeight = false
+            if wrapsToWidth, displayedWidth > 1 { setContainerWidth(displayedWidth) }
+        }
         if wrapsToWidth { setContainerWidth(width) }
         layoutManager.ensureLayout(for: textContainer)
         let height = ceil(layoutManager.usedRect(for: textContainer).height)
@@ -1290,7 +1297,8 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if wrapsToWidth, newSize.width > 1 { setContainerWidth(newSize.width) }
+        // TextKit calls back here while measuring; keep the trial width intact.
+        if !isMeasuringHeight, wrapsToWidth, newSize.width > 1 { setContainerWidth(newSize.width) }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1307,7 +1315,7 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
     }
 
     private func setContainerWidth(_ width: CGFloat) {
-        guard let textContainer, abs(textContainer.containerSize.width - width) > 0.5 else { return }
+        guard let textContainer, textContainer.containerSize.width != width else { return }
         textContainer.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
     }
 }

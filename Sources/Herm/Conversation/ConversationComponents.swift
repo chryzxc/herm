@@ -482,10 +482,10 @@ struct SignalTrace: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathe = false
 
-    static let size: CGFloat = 28
+    static let size: CGFloat = 56
 
     private var liveStep: ActiveToolCall? { activity.last(where: { !$0.isComplete }) }
-    private var liveGlyph: Ph { Self.glyph(for: liveStep, phase: phase) }
+    private var liveGlyph: Ph { Self.glyph(for: liveStep) }
 
     var body: some View {
         let color = phase.color
@@ -493,10 +493,11 @@ struct SignalTrace: View {
             if let bot {
                 BotWorkingAvatarView(bot: bot, imageData: botAvatar,
                                      activitySignature: activity.map { "\($0.id):\($0.isComplete)" },
-                                     activityIcon: liveGlyph)
+                                     activityIcon: Self.glyph(for: activity.last))
             } else {
                 Circle()
                     .fill(color.opacity(breathe ? 0.18 : 0.08))
+                    .frame(width: 28, height: 28)
                     .scaleEffect(breathe ? 1 : 0.88)
                 // Keyed by glyph so each new step starts its own trace loop.
                 TracingGlyph(icon: liveGlyph, color: color)
@@ -504,7 +505,8 @@ struct SignalTrace: View {
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
         }
-        .frame(width: Self.size, height: Self.size)
+        // Without a Bot only the 28pt glyph shows; a 56pt frame left a wide gap before the text.
+        .frame(width: bot == nil ? 32 : Self.size, height: bot == nil ? 32 : Self.size)
         .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: liveGlyph)
         .animation(.easeInOut(duration: 0.3), value: phase)
         .onAppear {
@@ -514,11 +516,11 @@ struct SignalTrace: View {
         .accessibilityHidden(true)
     }
 
-    private static func glyph(for step: ActiveToolCall?, phase: Phase) -> Ph {
-        switch phase {
-        case .thinking: return .brain
-        case .compacting: return .arrowsInSimple
-        case .tool: return step.map { TurnActivityView.icon(for: $0.name) } ?? .wrench
+    private static func glyph(for step: ActiveToolCall?) -> Ph {
+        switch step?.name {
+        case ActiveToolCall.thinkingName?, nil: return .brain
+        case ActiveToolCall.compactionName?: return .arrowsInSimple
+        default: return step.map { TurnActivityView.icon(for: $0.name) } ?? .wrench
         }
     }
 }
@@ -577,6 +579,141 @@ private struct RunningShimmer: ViewModifier {
     }
 }
 
+/// Bots this session messaged that are still working after the turn that
+/// sent them ended: the huddle with the finished lead dimmed.
+struct BotCrewRow: View {
+  let from: BotSummary
+  let partners: [BotSummary]
+  let since: Date
+  var avatars: [String: Data] = [:]
+
+  var body: some View {
+    HStack(spacing: 12) {
+      BotHuddle(lead: from, partners: partners, avatars: avatars, leadDone: true)
+      VStack(alignment: .leading, spacing: 2) {
+        (Text(partners.map(\.name).formatted(.list(type: .and))).foregroundStyle(Color.dockPrimaryText)
+          + Text(" messaged by \(from.name)").fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
+          .font(.system(size: 12, weight: .semibold))
+          .lineLimit(1)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+          Text("Working for about \(TurnActivityView.roughDuration(context.date.timeIntervalSince(since)))")
+            .font(.system(size: 11))
+            .foregroundStyle(Color.dockMetadataText)
+            .modifier(RunningShimmer())
+        }
+      }
+    }
+    .padding(.vertical, 6)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// Consecutive Bot DMs in a turn's steps, one row per Bot with its task and
+/// live status. A finished row expands to the start of the Bot's reply.
+struct BotDispatchCard: View {
+  let records: [BotActivityRecord]
+  var botsByID: [String: BotSummary] = [:]
+  var avatars: [String: Data] = [:]
+  @State private var openIDs: Set<String> = []
+
+  var body: some View {
+    let working = records.filter(\.isLive).count
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 6) {
+        DockIcon(.envelopeSimple, size: 11, color: Color.dockMetadataText)
+        Text("Messaged \(records.count) Bot\(records.count == 1 ? "" : "s")" + (working > 0 && records.count > 1 ? " · \(working) working" : ""))
+      }
+      .font(.system(size: 11))
+      .foregroundStyle(Color.dockMetadataText)
+      .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 5)
+      ForEach(records) { record in
+        Divider().overlay(Color.dockBorderLight)
+        row(record)
+      }
+    }
+    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockPrimaryText.opacity(0.03)))
+    .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.75))
+    .padding(.leading, 24)
+    .padding(.vertical, 2)
+  }
+
+  @ViewBuilder
+  private func row(_ record: BotActivityRecord) -> some View {
+    let bot = botsByID[record.botID]
+    let reply = record.result.flatMap { $0.isEmpty ? nil : $0 }
+    let isOpen = openIDs.contains(record.id)
+    Button {
+      guard reply != nil, !record.isLive else { return }
+      if isOpen { openIDs.remove(record.id) } else { openIDs.insert(record.id) }
+    } label: {
+      HStack(spacing: 8) {
+        if let bot {
+          BotAvatarView(bot: bot, imageData: avatars[bot.id], size: 18, orbits: record.isLive)
+        }
+        Text(bot?.name ?? record.botName).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+        Text(record.summary).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+          .lineLimit(1).truncationMode(.tail)
+        Spacer(minLength: 8)
+        status(record)
+        if reply != nil, !record.isLive {
+          DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+        }
+      }
+      .padding(.horizontal, 10).padding(.vertical, 6)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.dockHover)
+    .help(record.state == .failed ? (reply ?? "Failed") : "")
+    if isOpen, let reply {
+      Text(reply)
+        .font(.system(size: 12))
+        .foregroundStyle(Color.dockSecondaryText)
+        .lineLimit(8)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 36).padding(.trailing, 10).padding(.bottom, 8)
+    }
+  }
+
+  @ViewBuilder
+  private func status(_ record: BotActivityRecord) -> some View {
+    Group {
+      switch record.state {
+      case .working, .queued, .waiting:
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+          HStack(spacing: 5) {
+            Circle().fill(Color.dockAccent).frame(width: 6, height: 6)
+            Text(Self.clock(context.date.timeIntervalSince(record.createdAt)))
+          }
+        }
+      case .failed:
+        HStack(spacing: 4) { Text("×").fontWeight(.bold).foregroundStyle(Color.dockDestructive); Text("failed") }
+      case .canceled:
+        Text("canceled")
+      case .completed:
+        HStack(spacing: 4) {
+          DockIcon(.check, size: 10, color: Color.dockSuccess)
+          Text(Self.clock(record.updatedAt.timeIntervalSince(record.createdAt)))
+        }
+      }
+    }
+    .font(.system(size: 11).monospacedDigit())
+    .foregroundStyle(Color.dockMetadataText)
+  }
+
+  /// "45s", "2m 14s", "1h 5m".
+  static func clock(_ seconds: TimeInterval) -> String {
+    let s = max(0, Int(seconds))
+    if s < 60 { return "\(s)s" }
+    if s < 3600 { return "\(s / 60)m \(s % 60)s" }
+    return "\(s / 3600)h \(s % 3600 / 60)m"
+  }
+}
+
+extension BotActivityRecord {
+  var isLive: Bool { state == .working || state == .queued || state == .waiting }
+}
+
 /// The tool calls behind one response, shown above its bubble. While the
 /// response streams the list stays open and grows per call; once complete it
 /// collapses to a "Worked for …" summary the reader can expand.
@@ -587,6 +724,12 @@ struct TurnActivityView: View {
   let duration: TimeInterval?
   var bot: BotSummary? = nil
   var botAvatar: Data? = nil
+  /// Bot DMs keyed by the tool call that sent them; those calls render as a card.
+  var dispatches: [String: BotActivityRecord] = [:]
+  /// Bots this session messaged that are still working, shown in the huddle.
+  var crew: [BotSummary] = []
+  var botsByID: [String: BotSummary] = [:]
+  var avatars: [String: Data] = [:]
   @State private var isExpanded = false
   @State private var expandedThoughtIDs: Set<String> = []
   @State private var expandedDiffIDs: Set<String> = []
@@ -595,33 +738,40 @@ struct TurnActivityView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       if let runningSince {
-        // Rows and the loader below share one slow curve so the loader glides as rows arrive.
-        steps.animation(stepMotion, value: stepSignature)
+        // One transaction keeps each new step and the Bot's movement together.
+        steps
         let phase = SignalTrace.Phase(activity: activity)
-        HStack(spacing: 10) {
-          SignalTrace(phase: phase, activity: visibleSteps, bot: bot, botAvatar: botAvatar)
+        let crew = bot.map { lead in self.crew.filter { $0.id != lead.id } } ?? []
+        HStack(spacing: crew.isEmpty ? 10 : 12) {
+          if let bot, !crew.isEmpty {
+            BotHuddle(lead: bot, partners: crew, avatars: avatars.merging(botAvatar.map { [bot.id: $0] } ?? [:]) { a, _ in a })
+          } else {
+            SignalTrace(phase: phase, activity: activity, bot: bot, botAvatar: botAvatar)
+          }
           VStack(alignment: .leading, spacing: 2) {
             // Live tool steps have their own row above; live compaction is named here instead.
             if bot != nil || phase == .compacting {
-              Text([bot?.name, phase == .compacting ? "Compacting context" : nil].compactMap { $0 }.joined(separator: " · "))
-                .font(.system(size: 12, weight: .semibold))
+              (Text([bot?.name, phase == .compacting ? "Compacting context" : nil].compactMap { $0 }.joined(separator: " · "))
                 .foregroundStyle(Color.dockPrimaryText)
+                + Text(crew.isEmpty ? "" : " with \(crew.map(\.name).formatted(.list(type: .and)))")
+                .fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
+                .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
-              Text("Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))")
+              Text("Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))"
+                   + (crew.isEmpty ? "" : " · \(crew.count) Bot\(crew.count == 1 ? "" : "s") working"))
                 .font(.system(size: bot == nil && phase != .compacting ? 12 : 11))
                 .foregroundStyle(Color.dockMetadataText)
                 .modifier(RunningShimmer())
             }
           }
         }
-        .animation(stepMotion, value: stepSignature)
         .padding(.vertical, 6)
-        .task(id: activity.map(\.id)) { await revealSteps() }
+        .transition(.opacity)
       } else {
         Button {
-          withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() }
+          withAnimation(disclosureMotion) { isExpanded.toggle() }
         } label: {
           HStack(spacing: 6) {
             Text(summary).font(.system(size: 12, weight: .medium))
@@ -633,10 +783,20 @@ struct TurnActivityView: View {
         }
         .buttonStyle(.dockHover)
         .accessibilityLabel(isExpanded ? "Hide activity" : "Show activity")
-        if isExpanded { steps }
+        .transition(.opacity)
+        if isExpanded {
+          steps
+        } else if segments.contains(where: { $0.records.contains(where: \.isLive) }) {
+          // Bots still working outlive the collapse until they finish.
+          VStack(alignment: .leading, spacing: 6) {
+            ForEach(segments.filter { $0.records.contains(where: \.isLive) }) { card($0.records) }
+          }
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .animation(stepMotion, value: stepSignature)
+    .animation(stepMotion, value: runningSince != nil)
   }
 
   /// Whole units only: "45 seconds", "3 minutes", "2 hours".
@@ -651,28 +811,45 @@ struct TurnActivityView: View {
     return duration.map { "Worked for \(Self.roughDuration($0)) · \(count)" } ?? "Worked · \(count)"
   }
 
-  /// Rows revealed so far while running. A new row is held back briefly, then
-  /// revealed on a slow curve so the loader lingers and glides down to make room.
-  @State private var revealedStepIDs: Set<String>?
-  private var stepMotion: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.6) }
-  private var stepSignature: [String] { visibleSteps.map { "\($0.id)\($0.isComplete)" } }
-  private var visibleSteps: [ActiveToolCall] {
-    guard runningSince != nil, let revealedStepIDs else { return activity }
-    return activity.filter { revealedStepIDs.contains($0.id) }
+  private var motionEnabled: Bool { !reduceMotion && DockThemeStyle.current.animates }
+  private var stepMotion: Animation? { motionEnabled ? .spring(response: 0.38, dampingFraction: 0.86) : nil }
+  private var disclosureMotion: Animation? { motionEnabled ? .dockEase(duration: 0.18) : nil }
+  private var stepSignature: [String] { activity.map { "\($0.id):\($0.isComplete):\(dispatches[$0.id]?.state.rawValue ?? "")" } }
+
+  /// One step, or a run of consecutive Bot DMs shown as one card.
+  private struct Segment: Identifiable {
+    let calls: [ActiveToolCall]
+    let records: [BotActivityRecord]
+    var id: String { calls[0].id }
   }
 
-  private func revealSteps() async {
-    let ids = Set(activity.map(\.id))
-    guard runningSince != nil, !reduceMotion, revealedStepIDs != nil else { revealedStepIDs = ids; return }
-    try? await Task.sleep(for: .milliseconds(250))
-    guard !Task.isCancelled else { return }
-    withAnimation(stepMotion) { revealedStepIDs = ids }
+  private var segments: [Segment] {
+    var result: [Segment] = []
+    for call in activity {
+      if let record = dispatches[call.id] {
+        if let last = result.last, !last.records.isEmpty {
+          result[result.count - 1] = Segment(calls: last.calls + [call], records: last.records + [record])
+          continue
+        }
+        result.append(Segment(calls: [call], records: [record]))
+      } else {
+        result.append(Segment(calls: [call], records: []))
+      }
+    }
+    return result
+  }
+
+  private func card(_ records: [BotActivityRecord]) -> some View {
+    BotDispatchCard(records: records, botsByID: botsByID, avatars: avatars)
   }
 
   private var steps: some View {
     VStack(alignment: .leading, spacing: 6) {
-      ForEach(visibleSteps) { call in
-        if call.name == ActiveToolCall.thinkingName {
+      ForEach(segments) { segment in
+        let call = segment.calls[0]
+        if !segment.records.isEmpty {
+          card(segment.records)
+        } else if call.name == ActiveToolCall.thinkingName {
           thoughtRow(call)
         } else if call.name == ActiveToolCall.compactionName {
           if call.isComplete { CompactionStepRow(call: call) }
@@ -680,9 +857,7 @@ struct TurnActivityView: View {
           toolRow(call)
         }
       }
-      // New rows fade in after the loader has started gliding down to make room.
-      // The row fades in once the loader is mostly out of its way.
-      .transition(.opacity.animation(.easeOut(duration: 0.3).delay(0.3)))
+      .transition(stepMotion == nil ? .identity : .opacity.combined(with: .offset(y: 6)))
     }
     .padding(.vertical, 4)
   }
@@ -695,7 +870,7 @@ struct TurnActivityView: View {
       : "Thinking"
     return VStack(alignment: .leading, spacing: 4) {
       Button {
-        withAnimation(.dockEase(duration: 0.18)) {
+        withAnimation(disclosureMotion) {
           if isOpen { expandedThoughtIDs.remove(call.id) } else { expandedThoughtIDs.insert(call.id) }
         }
       } label: {
@@ -731,7 +906,7 @@ struct TurnActivityView: View {
       let isOpen = expandedDiffIDs.contains(call.id)
       VStack(alignment: .leading, spacing: 4) {
         Button {
-          withAnimation(.dockEase(duration: 0.18)) {
+          withAnimation(disclosureMotion) {
             if isOpen { expandedDiffIDs.remove(call.id) } else { expandedDiffIDs.insert(call.id) }
           }
         } label: {

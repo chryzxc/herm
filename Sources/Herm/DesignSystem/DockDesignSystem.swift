@@ -340,10 +340,10 @@ struct DockIconButton: View {
             .frame(width: size, height: size)
             .background(shape.fill(isProminent
                                    ? style.accent.opacity(isHovering ? 0.24 : 0.14)
-                                   : isHovering ? style.surface4.opacity(0.7) : .clear))
+                                   : style.surface4.opacity(isHovering ? 0.9 : 0.6)))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.dockPress)
+        .buttonStyle(.dockHover)
         .disabled(isBusy)
         .onHover { isHovering = $0 }
         .help(label)

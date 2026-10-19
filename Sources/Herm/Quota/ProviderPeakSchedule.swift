@@ -66,6 +66,36 @@ extension ProviderPeakSchedule {
 
     static var syncedAt: Date? { UserDefaults.standard.object(forKey: syncedAtKey) as? Date }
 
+    private static let names = ["deepseek": "DeepSeek", "glm": "GLM"]
+
+    /// Tooltip text: when the sync happened and the windows it produced, in the
+    /// provider's timezone plus the viewer's local time.
+    static func syncSummary(syncedAt: Date, now: Date = .now) -> String {
+        let when = syncedAt.formatted(date: .abbreviated, time: .shortened)
+        let ago = syncedAt.formatted(.relative(presentation: .named, unitsStyle: .wide))
+        let lines = names.sorted { $0.key < $1.key }.compactMap { id, name in
+            schedule(for: id).map { "\(name): \($0.windowText(now: now))" }
+        }
+        return (["Peak hours synced \(when) (\(ago))."] + lines + ["Click to ask Hermes to search the web again."])
+            .joined(separator: "\n")
+    }
+
+    private func windowText(now: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let day = calendar.startOfDay(for: now)
+        let remote = Date.FormatStyle(date: .omitted, time: .shortened, timeZone: timeZone)
+        let local = Date.FormatStyle(date: .omitted, time: .shortened, timeZone: .current)
+        let parts = peakHours.compactMap { hours -> String? in
+            guard let start = calendar.date(byAdding: .hour, value: hours.lowerBound, to: day),
+                  let end = calendar.date(byAdding: .hour, value: hours.upperBound, to: day) else { return nil }
+            return "\(start.formatted(remote))–\(end.formatted(remote)) (your time \(start.formatted(local))–\(end.formatted(local)))"
+        }
+        let abbrev = timeZone.abbreviation(for: now) ?? timeZone.identifier
+        let days = weekdays.count == 7 ? "daily" : "Mon–Fri"
+        return "peak \(parts.joined(separator: ", ")) \(abbrev), \(days)"
+    }
+
     /// The synced schedule for a provider, falling back to the built-in one.
     static func schedule(for providerID: String) -> ProviderPeakSchedule? {
         let stored = UserDefaults.standard.data(forKey: storeKey).flatMap(parse)

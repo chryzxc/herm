@@ -304,6 +304,47 @@ struct ConversationRenderOptimizationTests {
         // A zero-width proposal must never lay text out one glyph per line.
         #expect(NativeMarkdownDocumentContainerView(frame: .zero).intrinsicContentSize.height == 0)
     }
+    @Test(arguments: DockThemeID.allCases)
+    func sizingProbesKeepRenderedResponseAtItsAssignedWidth(theme: DockThemeID) throws {
+        let savedTheme = DockThemeRuntime.current
+        let savedRevision = DockThemeRuntime.revision
+        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        DockThemeRuntime.current = theme
+        DockThemeRuntime.revision &+= 1
+        let source = """
+        ## A useful structure when a question surprises you
+
+        **Clarify → propose the simplest solution → explain failure cases → discuss trade-offs → describe verification.**
+
+        For example:
+
+        > Before choosing a design, I’d clarify the expected traffic and consistency requirements. I’d start with the existing database and a straightforward API. The main risks are concurrent writes and unsafe retries, so I’d protect those with atomic operations and idempotency. I’d add infrastructure only if measurements or requirements justify it.
+        """
+        let document = MarkdownRenderDocumentBuilder.build(
+            source: source, key: MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1))
+        let container = NativeMarkdownDocumentContainerView(frame: .zero)
+        container.apply(document: document)
+        for width: CGFloat in [620, 300, 740, 620, 619.75, 620.25, 300] {
+            let height = container.measuredHeight(forWidth: width)
+            container.setFrameSize(NSSize(width: width, height: height))
+            container.layoutSubtreeIfNeeded()
+            // SwiftUI may probe other widths without assigning a new frame.
+            _ = container.measuredHeight(forWidth: 250)
+            _ = container.measuredHeight(forWidth: 900)
+            #expect(container.measuredHeight(forWidth: width) == height)
+            container.needsLayout = true
+            container.layoutSubtreeIfNeeded()
+            for section in container.subviews.compactMap({ $0 as? NativeMarkdownTextSectionView }) {
+                let textContainer = try #require(section.textContainer)
+                let layout = try #require(section.layoutManager)
+                layout.ensureLayout(for: textContainer)
+                #expect(textContainer.containerSize.width == section.bounds.width)
+                #expect(ceil(layout.usedRect(for: textContainer).height) == section.bounds.height)
+                #expect(section.frame.maxY <= height)
+            }
+        }
+    }
+
     @Test func markdownKeepsOnlyWebAndMailLinksClickable() {
         let parsed = NativeMarkdownAttributedTextBuilder.inlineMarkdown(
             "[a](https://x.dev) [b](file:///Applications/Calculator.app) [c](vscode://x) [d](mailto:a@b.c)"

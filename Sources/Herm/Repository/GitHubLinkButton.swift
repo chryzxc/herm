@@ -8,10 +8,10 @@ struct GitHubLinkButton: View {
     var body: some View {
         Link(destination: destination) {
             DockIcon(.arrowSquareOut, size: 13, color: Color.dockSecondaryText)
-                .frame(width: 26, height: 26)
+                .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                        .fill(Color.dockControlSurface)
+                        .fill(Color.dockControlSurface.opacity(0.6))
                 )
         }
         .buttonStyle(.dockHover)

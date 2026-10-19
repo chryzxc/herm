@@ -63,6 +63,7 @@ final class HermesGateway: NSObject {
     private var nextID = 0
     private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
     private var timeoutTasks: [Int: Task<Void, Never>] = [:]
+    private var reconnectTask: Task<Void, Never>?
     private var backendOutput = ""
     private var backendStartWaiters: [CheckedContinuation<Void, Error>] = []
     private let connectionGate = HermesConnectionGate()
@@ -201,6 +202,7 @@ final class HermesGateway: NSObject {
     }
 
     func close() {
+        reconnectTask?.cancel(); reconnectTask = nil
         connectionGate.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
         urlSession?.invalidateAndCancel()
@@ -332,11 +334,13 @@ final class HermesGateway: NSObject {
     }
 
     private func receiveNext() {
-        socket?.receive { [weak self] result in
+        guard let current = socket else { return }
+        current.receive { [weak self] result in
             switch result {
             case .failure:
                 Task { @MainActor in
-                    guard let self else { return }
+                    // A closed or replaced socket's failure is not a drop.
+                    guard let self, self.socket === current else { return }
                     self.handleReceiveFailure()
                 }
             case .success(let message):
@@ -350,7 +354,7 @@ final class HermesGateway: NSObject {
                     } else {
                         DebugLog.write("receive: non-JSON or binary message")
                     }
-                    self.receiveNext()
+                    if self.socket === current { self.receiveNext() }
                 }
             }
         }
@@ -372,6 +376,26 @@ final class HermesGateway: NSObject {
         pending.removeAll()
         timeoutTasks.values.forEach { $0.cancel() }
         timeoutTasks.removeAll()
+        scheduleReconnect()
+    }
+
+    /// A dropped socket otherwise stays dropped until the next request, so a
+    /// running turn's events (steps, todos, Bot activity) freeze while Hermes
+    /// keeps working. Reconnecting fires `onConnectionChange(true)`, which
+    /// replays the missed events.
+    private func scheduleReconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = Task { @MainActor [weak self] in
+            var delay = 1.0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, let self, self.socket == nil else { return }
+                do { try await self.connect(); return } catch {
+                    DebugLog.write("reconnect: failed, retrying in \(Int(min(delay * 2, 30)))s")
+                }
+                delay = min(delay * 2, 30)
+            }
+        }
     }
 
     private func handle(_ object: [String: Any]) {

@@ -164,7 +164,7 @@ struct ConversationMessageRow: View, Equatable {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
-                let fullText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let fullText = GenerativeUIIntegration.displayUserText(message.text).trimmingCharacters(in: .whitespacesAndNewlines)
                 let replySplit = ReplyQuote.split(fullText)
                 let userText = replySplit?.body ?? fullText
                 Spacer(minLength: 40)
@@ -254,7 +254,8 @@ struct ConversationMessageRow: View, Equatable {
                                 BotAvatarView(
                                     bot: bot,
                                     imageData: avatarImages[bot.id],
-                                    size: 24
+                                    size: 24,
+                                    orbits: isStreamingMessage
                                 )
                             } else {
                                 BotFaceMark(id: botProfileID, size: 24, animated: true)
@@ -369,6 +370,11 @@ struct ConversationMessageRow: View, Equatable {
 
     @ViewBuilder
     private var assistantBody: some View {
+        GenerativeUIIntegration.renderReply(message.text) { standardAssistantBody }
+    }
+
+    @ViewBuilder
+    private var standardAssistantBody: some View {
         let segments = ChatMediaSegment.split(message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
         if segments == [.markdown(message.text)] {
             messageMarkdownView(message.text)
@@ -422,10 +428,6 @@ struct ConversationMessageRow: View, Equatable {
                 )
             }
             sendToBotMenu
-            Rectangle()
-                .fill(Color.dockBorderLight)
-                .frame(width: 1, height: 12)
-                .padding(.horizontal, 6)
             messageMetadata
         }
         .accessibilityElement(children: .contain)
@@ -722,7 +724,7 @@ struct BotChip: View {
     var body: some View {
         HStack(spacing: 4) {
             if let bot = botsByID[id] {
-                BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 16)
+                BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 16, orbits: false)
                 Text(bot.name)
             } else {
                 BotFaceMark(id: id, size: 16, animated: true)

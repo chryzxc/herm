@@ -11,7 +11,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
     let projectName: String?
     let attentionDot: SessionAttentionDot?
     let isPinned: Bool
-    var style = DockThemePalette(theme: .nativeMacOS)
+    var style = DockThemePalette(theme: .glass)
     let onSelect: () -> Void
     let onTogglePin: () -> Void
 
@@ -446,7 +446,7 @@ struct MissionControlBotSessionRow: View, Equatable {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            BotAvatarView(bot: bot, imageData: imageData, size: 30)
+            BotAvatarView(bot: bot, imageData: imageData, size: 30, orbits: session.isWorking)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(bot.name)

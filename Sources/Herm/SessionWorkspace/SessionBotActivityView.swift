@@ -63,6 +63,7 @@ struct SessionBotActivityView: View {
     }
 
     var body: some View {
+        let snapshot = snapshot
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("BOT ACTIVITY")
@@ -75,10 +76,21 @@ struct SessionBotActivityView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.vertical, 8)
+                    .transition(.opacity)
             } else {
-                listView
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(snapshot.list) { record in
+                        let bot = botMode.visibleBots.first(where: { $0.id == record.botID })
+                        BotActivityRow(record: record, bot: bot, avatar: bot.flatMap { botMode.avatarImages[$0.id] },
+                                       expanded: expandedRecordIDs.contains(record.id),
+                                       onToggle: { toggle(record.id) }, onOpenBotChat: onOpenBotChat)
+                            .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
+                    }
+                }
             }
         }
+        // New records slide in and state changes recolor smoothly.
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: snapshot.list.map { "\($0.id)|\($0.state.rawValue)" })
         .padding(embedded ? 0 : 12)
         .modifier(BotActivityGlassModifier(isEmbedded: embedded))
         .task(id: sessionID) {
@@ -87,86 +99,128 @@ struct SessionBotActivityView: View {
         }
     }
 
-    private var listView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(snapshot.list) { record in
-                activityRow(record)
-            }
+    private func toggle(_ id: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            if expandedRecordIDs.contains(id) { expandedRecordIDs.remove(id) } else { expandedRecordIDs.insert(id) }
+        }
+    }
+}
+
+/// One Bot's piece of work. The whole card toggles the result; a working Bot
+/// gets the star orbit and an accent outline.
+private struct BotActivityRow: View {
+    let record: BotActivityRecord
+    let bot: BotSummary?
+    let avatar: Data?
+    let expanded: Bool
+    let onToggle: () -> Void
+    let onOpenBotChat: ((BotSummary) -> Void)?
+    @State private var hovering = false
+
+    private var working: Bool { record.state == .working }
+    private var stateColor: Color {
+        switch record.state {
+        case .working: .dockAccent
+        case .waiting: .dockWarning
+        case .completed: .dockSuccess
+        case .failed: .dockDestructive
+        case .queued, .canceled: .dockMetadataText
         }
     }
 
-    private func activityRow(_ record: BotActivityRecord) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-            if let bot = botMode.visibleBots.first(where: { $0.id == record.botID }) {
-                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 34)
-            } else {
-                BotFaceMark(id: record.botID, size: 34, animated: true)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(record.botName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                Text(record.summary)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Text(record.state.label.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(record.state == .completed ? Color.dockSuccess : record.state == .failed ? Color.dockDestructive : Color.dockAccent)
-                .frame(minWidth: 62, alignment: .trailing)
-            Text(HumanDateFormatting.timeOnly(record.updatedAt))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color.dockMetadataText)
-            Button {
-                if expandedRecordIDs.contains(record.id) {
-                    expandedRecordIDs.remove(record.id)
-                } else {
-                    expandedRecordIDs.insert(record.id)
+            Button(action: onToggle) {
+                HStack(spacing: 10) {
+                    if let bot {
+                        BotAvatarView(bot: bot, imageData: avatar, size: 34, orbits: working)
+                    } else {
+                        BotFaceMark(id: record.botID, size: 34, animated: true, busy: working)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(record.botName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1)
+                        Text(record.summary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    statePill
+                    Text(HumanDateFormatting.timeOnly(record.updatedAt))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                    DockIcon(.caretDown, size: 10, color: hovering ? .dockSecondaryText : .dockMetadataText)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
-            } label: {
-                DockIcon(expandedRecordIDs.contains(record.id) ? .caretUp : .caretDown)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.dockMetadataText)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.dockHover)
-            .accessibilityLabel(expandedRecordIDs.contains(record.id) ? "Collapse \(record.botName) activity" : "Expand \(record.botName) activity")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Color.dockSurface4.opacity(0.72))
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(record.botName), \(record.summary), \(record.state.label)")
-            if expandedRecordIDs.contains(record.id) {
-                VStack(alignment: .leading, spacing: 5) {
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(record.botName), \(record.summary), \(record.state.label)")
+            .accessibilityHint(expanded ? "Collapse activity" : "Expand activity")
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 8) {
                     if let result = record.result, !result.isEmpty {
                         Text(result)
                             .font(.system(size: 11))
                             .foregroundStyle(Color.dockPrimaryText)
                             .textSelection(.enabled)
                     }
-                    if let bot = botMode.visibleBots.first(where: { $0.id == record.botID }) {
+                    if let bot {
                         Button("OPEN IN BOT CHAT") { onOpenBotChat?(bot) }
                             .buttonStyle(.dockCompact)
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
-                .padding(.horizontal, 56)
+                .padding(.leading, 56)
+                .padding(.trailing, 12)
                 .padding(.bottom, 10)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .background(hovering ? Color.dockSurface6.opacity(0.8) : Color.dockSurface4.opacity(0.72))
+        .overlay {
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                .stroke(working ? Color.dockAccent.opacity(0.45) : Color.dockBorderLight, lineWidth: working ? 1 : 0.5)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
+    }
+
+    private var statePill: some View {
+        HStack(spacing: 4) {
+            if [.working, .waiting, .queued].contains(record.state) {
+                BotActivityPulse(color: stateColor)
+            }
+            Text(record.state.label.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .contentTransition(.interpolate)
+        }
+        .foregroundStyle(stateColor)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(stateColor.opacity(0.14)))
+    }
+}
+
+/// A breathing dot for work still in flight. Still under Reduce Motion.
+private struct BotActivityPulse: View {
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Circle().fill(color)
+            .frame(width: 5, height: 5)
+            .phaseAnimator(reduceMotion ? [1.0] : [1.0, 0.35]) { dot, phase in
+                dot.opacity(phase).scaleEffect(0.8 + 0.2 * phase)
+            } animation: { _ in .easeInOut(duration: 0.8) }
     }
 }
 

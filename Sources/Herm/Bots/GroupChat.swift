@@ -356,7 +356,7 @@ final class GroupChatStore: ObservableObject {
         do {
             _ = try await client.request(HermesFeatureIDs.ID.groupsSend.rawValue, params: [
                 "room_id": roomID, "event_id": UUID().uuidString.lowercased(),
-                "payload": ["text": trimmed, "thread_id": thread]
+                "payload": ["text": GenerativeUIIntegration.preparePrompt(trimmed), "thread_id": thread]
             ])
             workingRooms.insert(roomID)
             errorMessage = nil

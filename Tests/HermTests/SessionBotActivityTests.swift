@@ -71,6 +71,29 @@ struct SessionBotActivityTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    @Test @MainActor func botDispatchRecognizesMessageAgentAndHermesChatCommands() {
+        #expect(DockModel.botDispatch(toolName: "message_agent", args: ["target": "@Sentry", "message": "review"])! == ("sentry", "review"))
+        #expect(DockModel.botDispatch(toolName: "terminal", args: ["command": "hermes -p forge chat -Q --query-file /tmp/brief-x.md --in ~"])! == ("forge", "Brief: brief-x.md"))
+        #expect(DockModel.botDispatch(toolName: "terminal", args: ["command": "hermes -p sentry chat -q 'check CRX'"])!.summary == "check CRX")
+        #expect(DockModel.botDispatch(toolName: "terminal", args: ["command": "hermes chat -q hi"]) == nil)
+    }
+
+    @Test @MainActor func botDispatchCompletesFromItsProcessNotice() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-dispatch-\(UUID().uuidString).json")
+        let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: SessionBotActivityRPCClient(relaySessionID: "unused"))
+        model.recordBotDispatch(toolCallID: "c1", toolName: "terminal", args: ["command": "hermes -p sentry chat -Q --query-file b.md"])
+        #expect(model.workingBotDispatches.map(\.botID) == ["sentry"])
+        model.bindBotDispatch(toolCallID: "c1", result: #"{"output": "Background process started", "session_id": "proc_abc123", "error": null}"#)
+        model.completeBotDispatch(from: "[IMPORTANT: Background process proc_abc123 completed normally (exit code 0).\nCommand: hermes -p sentry chat\nOutput:\nAPPROVED\n\nsession_id: 20261019_013550_afadee\n]")
+        let record = model.botActivityBySessionID["origin"]?.first
+        #expect(record?.state == .completed)
+        #expect(record?.result == "APPROVED")
+        #expect(record?.botChatSessionID == "20261019_013550_afadee")
+        #expect(model.workingBotDispatches.isEmpty)
+        model.shutdown()
+        try? FileManager.default.removeItem(at: url)
+    }
+
     @Test @MainActor func approvalAndClarificationEventsPauseAndResumeBotActivity() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-lifecycle-\(UUID().uuidString).json")
         let rpc = SessionBotActivityRPCClient(relaySessionID: "bot-session")

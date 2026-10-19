@@ -205,7 +205,7 @@ struct ComposerCompletionPopover: View {
         Button { onSelect(item) } label: {
             HStack(spacing: 10) {
                 if let bot = item.bot {
-                    BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18)
+                    BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18, orbits: false)
                 }
                 Text(item.display)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))

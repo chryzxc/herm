@@ -782,7 +782,7 @@ struct SessionActivityOverviewView: View {
     @ViewBuilder
     private func kanbanAssigneeAvatar(assignee: String?, bot: BotSummary?, status: String, size: CGFloat) -> some View {
         if let bot {
-            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: size)
+            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: size, orbits: statusColor(status) == .dockAccent)
                 .overlay(alignment: .bottomTrailing) { avatarStatusBadge(status) }
                 .accessibilityLabel("Assigned to \(bot.name)")
         } else if let assignee = nonEmpty(assignee), assignee != "Unassigned" {

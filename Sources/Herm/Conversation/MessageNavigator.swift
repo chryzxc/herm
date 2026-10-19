@@ -50,10 +50,10 @@ enum MessageNavigator {
                 target: MessageNavigatorTarget(sessionID: sessionID, messageID: message.id),
                 ordinal: index + 1,
                 roleLabel: message.role == .user ? "You" : "Hermes",
-                preview: boundedPreview(message.text, limit: limit),
+                preview: boundedPreview(GenerativeUIIntegration.readableText(message), limit: limit),
                 contentRevision: message.contentRevision,
                 hasImages: !message.images.isEmpty,
-                searchText: message.text
+                searchText: GenerativeUIIntegration.readableText(message)
             )
         }
         memo.store(items: projected, fingerprint: fingerprint)
@@ -493,7 +493,7 @@ struct MessageNavigatorView: View {
                     }
                     // The marker frame must sit inside the rail's bounds:
                     // SwiftUI drops hover for anything drawn outside its parent.
-                    .position(x: size.width - 38, y: markerY(at: index, count: markers.count, in: size.height))
+                    .position(x: size.width - 14, y: markerY(at: index, count: markers.count, in: size.height))
             }
 
             // One strip on top of the markers: the wave follows the pointer's y.
@@ -532,7 +532,7 @@ struct MessageNavigatorView: View {
                 .background(Color.dockSurface4, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-                .position(x: size.width - 131, y: min(max(previewY, 52), max(52, size.height - 40)))
+                .position(x: size.width - 107, y: min(max(previewY, 52), max(52, size.height - 40)))
                 .transition(.opacity)
                 .allowsHitTesting(false)
             }

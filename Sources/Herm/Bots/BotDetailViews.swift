@@ -129,6 +129,23 @@ struct BotProfileEditorSheet: View {
     }
 
     private var avatarRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            avatarButtons
+            if !clearsAvatar, !BotAvatarView.showsHermFace(avatarPreview ?? model.avatarImages[bot.id], id: bot.id) {
+                HStack(spacing: 8) {
+                    Label("This image won't animate. Blinking, spinning and reactions only work on Herm faces.", icon: .info)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Use Herm Face") { BotFaceMark.png(id: bot.id).map(applyPendingAvatar) }
+                        .buttonStyle(.dockSecondary)
+                        .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var avatarButtons: some View {
         HStack(spacing: 8) {
             Button("Upload…") { uploadAvatar() }
                 .buttonStyle(.dockSecondary)

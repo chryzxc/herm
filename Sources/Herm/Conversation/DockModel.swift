@@ -17,6 +17,9 @@ struct RestoredTranscript {
     let pendingImages: [PendingImages]
     /// Stored Hermes row id of each message that carried one.
     var rowIDs: [Int: UUID] = [:]
+    /// Tool calls after the last reply: a turn still running, possibly in
+    /// another process (a Bot's `hermes chat -Q`), or one that died.
+    var trailingActivity: [ActiveToolCall] = []
 }
 
 @MainActor
@@ -24,6 +27,9 @@ final class DockModel: ObservableObject {
     var interruptionCoordinator: HermInterruptionCoordinator?
     var completionNoticeIDs: [String: String] = [:]
     var quickSessionOwners: [String: QuickDestination] = [:]
+    /// Hermes keeps a runtime alive after Herm switches away; its approval and
+    /// clarify requests carry only the runtime sid, so rows need the durable id.
+    var storageIDsByRuntimeID: [String: String] = [:]
     @Published var status: HermesStatus = .idle
     @Published var isHermesConnected = false
     @Published var messages: [ChatMessage] = [] {
@@ -303,6 +309,7 @@ final class DockModel: ObservableObject {
     var gatewayReplayTask: Task<Void, Never>?
     var gatewayReplayInFlight = Set<String>()
     var delegationMonitoringTask: Task<Void, Never>?
+    var externalTurnWatchTask: Task<Void, Never>?
     var synthesizedSubagentIDs: Set<String> = []
     var cachedAgentSnapshot: AgentPresentationSnapshot?
     var cachedAgentSnapshotInputs: ([HermesSubagent], [AgentActivity], [ActiveToolCall])?

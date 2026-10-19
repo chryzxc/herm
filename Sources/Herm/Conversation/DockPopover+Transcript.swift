@@ -64,6 +64,7 @@ extension DockPopover {
                                     valuePromptRow(prompt)
                                         .id("value-prompt")
                                 }
+                                botHandoffRow
                             }
                             .padding(.vertical, 12)
                             .padding(.horizontal, 0)
@@ -596,18 +597,49 @@ extension DockPopover {
         }
     }
 
+    /// Bots this session messaged that are still working, one entry per Bot.
+    var workingCrew: [BotSummary] {
+        var seen = Set<String>()
+        return model.workingBotDispatches.compactMap { record in
+            seen.insert(record.botID).inserted ? botMode.botsByID[record.botID] : nil
+        }
+    }
+
+    @ViewBuilder
+    var botHandoffRow: some View {
+        let fromID = model.activeBotProfileID ?? model.sessionProfileID ?? botMode.selectedProfileID
+        let from = fromID.flatMap { botMode.botsByID[$0] } ?? botMode.visibleBots.first(where: \.isDefault)
+        let partners = workingCrew.filter { $0.id != from?.id }
+        // While the turn runs the huddle is its loading row instead.
+        if let from, !partners.isEmpty, model.streamingMessageIDForPresentation == nil {
+            BotCrewRow(from: from, partners: partners,
+                       since: model.workingBotDispatches.map(\.createdAt).min() ?? .now,
+                       avatars: botMode.avatarImages)
+                .padding(.horizontal, conversationMetrics.contentInset + 4)
+                .padding(.top, 8)
+                .transition(.opacity.combined(with: .offset(y: 6)))
+                .id("bot-handoff")
+        }
+    }
+
     @ViewBuilder
     func messageRow(_ message: ChatMessage) -> some View {
         let isStreaming = message.id == model.streamingMessageIDForPresentation
         let activity = isStreaming ? model.streamingTurnActivity : message.activity
         let workingBotID = message.botProfileID ?? model.activeBotProfileID ?? model.sessionProfileID ?? botMode.selectedProfileID
+        // An unknown or unset profile falls back to the default Bot, as the handoff row does.
+        let workingBot = workingBotID.flatMap { botMode.botsByID[$0] } ?? botMode.visibleBots.first(where: \.isDefault)
         if message.role == .hermes, isStreaming || !activity.isEmpty {
             TurnActivityView(
                 activity: activity,
                 runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,
                 duration: message.responseDuration,
-                bot: isStreaming ? workingBotID.flatMap { botMode.botsByID[$0] } : nil,
-                botAvatar: workingBotID.flatMap { botMode.avatarImages[$0] }
+                bot: isStreaming ? workingBot : nil,
+                botAvatar: workingBot.flatMap { botMode.avatarImages[$0.id] },
+                dispatches: model.botDispatchesByToolCallID,
+                crew: isStreaming ? workingCrew : [],
+                botsByID: botMode.botsByID,
+                avatars: botMode.avatarImages
             )
             .padding(.horizontal, conversationMetrics.contentInset + 4)
             .padding(.top, 8)
@@ -634,14 +666,14 @@ extension DockPopover {
                         await model.branchConversation(from: message)
                     }
                 },
-                onReadAloud: { voiceOutput.toggle(messageID: message.id, text: message.text) },
+                onReadAloud: { voiceOutput.toggle(messageID: message.id, text: GenerativeUIIntegration.readableText(message)) },
                 onRefresh: {
                     messageActionState.run(message.id, action: .refresh) {
                         await model.refreshCurrentSession()
                     }
                 },
                 onReply: {
-                    model.replyQuote = ReplyQuote(author: message.botDisplayName ?? botMode.botsByID[message.botProfileID ?? model.activeBotProfileID ?? ""]?.name ?? "Hermes", text: message.text)
+                    model.replyQuote = ReplyQuote(author: message.botDisplayName ?? botMode.botsByID[message.botProfileID ?? model.activeBotProfileID ?? ""]?.name ?? "Hermes", text: GenerativeUIIntegration.readableText(message))
                 },
                 showsPinAction: model.messagePinsSupported && model.storedMessageReferences[message.id] != nil
                     && message.systemEvent == nil && message.kanbanNotice == nil && !message.isError,
@@ -656,6 +688,7 @@ extension DockPopover {
                 loadKanbanDetail: { notice in await controlCenter.sessionKanbanTaskDetail(notice.taskSummary) }
             )
             .equatable()
+            .generativeUIMessage(model: model, message: message)
         }
     }
 

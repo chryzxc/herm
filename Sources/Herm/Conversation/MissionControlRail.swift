@@ -133,6 +133,8 @@ struct MissionControlRail: View {
     let onOpenPullRequests: () -> Void
     let onOpenIssues: () -> Void
     let isFullscreen: Bool
+    var isHermesConnected = true
+    var onReconnect: () -> Void = {}
     let isDockedWindow: Bool
     let onFullscreenToggle: () -> Void
     let onOpenWindow: (() -> Void)?
@@ -169,6 +171,7 @@ struct MissionControlRail: View {
             Spacer(minLength: 0)
             // Global window chrome: applies to the whole workspace, not one chat.
             VStack(spacing: 4) {
+                HermesConnectionButton(isConnected: isHermesConnected, style: style, onReconnect: onReconnect)
                 if let onOpenWindow {
                     destination(isDockedWindow ? "Switch to floating" : "Switch to window", icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style, action: onOpenWindow)
                 }
@@ -199,5 +202,30 @@ struct MissionControlRail: View {
             navigationState.selectGlobal(tab)
             onOpenGlobal(tab)
         }
+    }
+}
+
+/// Whether Herm's gateway socket to the Hermes backend is up. Offline is a
+/// button that retries the connection.
+private struct HermesConnectionButton: View {
+    let isConnected: Bool
+    let style: DockThemePalette
+    let onReconnect: () -> Void
+
+    var body: some View {
+        let title = isConnected ? "Connected to Hermes" : "Hermes offline · Click to reconnect"
+        Button { if !isConnected { onReconnect() } } label: {
+            DockIcon(isConnected ? .plugsConnected : .plugs, size: 15, color: style.secondaryText)
+                .frame(width: 38, height: 30)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(isConnected ? style.success : style.destructive)
+                        .frame(width: 7, height: 7)
+                        .padding(.top, 4).padding(.trailing, 7)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(title)
+        .accessibilityLabel(title)
     }
 }

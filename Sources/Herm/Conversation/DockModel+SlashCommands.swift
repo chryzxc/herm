@@ -132,6 +132,11 @@ extension DockModel {
                 try await sessionRPCClient.connect()
                 let sessionID = try await createAuthorizedSession(source: "herm")
                 guard self.sessionResumeGeneration == generation else { return }
+                // The agent builds lazily and slash.exec doesn't start it, so a plugin
+                // command that submits a turn on a fresh session is refused ("could not
+                // start the assistant"). Any waiting session RPC blocks on the build.
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": sessionID])
+                guard self.sessionResumeGeneration == generation else { return }
                 switch command.name {
                 case "compress", "compact":
                     // session.compress, not slash.exec: the worker times out on large sessions.

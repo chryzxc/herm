@@ -120,6 +120,7 @@ extension DockModel {
         sessionID = createdSessionID
         sessionProfileID = profileScopeID
         sessionStorageID = Self.stableSessionID(from: result) ?? createdSessionID
+        storageIDsByRuntimeID[createdSessionID] = sessionStorageID
         kanbanAttributionSessionID = createdSessionID
         persistActiveSessionID(sessionID)
         let model = (result["model"] as? String) ?? (result["model_name"] as? String)
@@ -498,7 +499,7 @@ extension DockModel {
             do {
                 let acknowledgment = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
-                    params: ["session_id": sessionID, "text": text]
+                    params: ["session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text)]
                 )
                 guard self.sessionResumeGeneration == requestGeneration,
                       self.sessionID == sessionID else { return }

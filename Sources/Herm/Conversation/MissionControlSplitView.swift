@@ -102,11 +102,12 @@ func splitPaneHost() -> NSHostingView<AnyView> {
 /// fullscreen or in its windowed/minimized popover presentation. The center
 /// conversation column is intentionally the largest share.
 enum DesktopWorkspaceFractions {
-    static let queue: CGFloat = 0.34
-    static let windowQueue: CGFloat = 0.24
-    static let conversation: CGFloat = 0.51
-    static let inspector: CGFloat = 0.27
-    static let minimumConversationWidth: CGFloat = 520
+    static let queue: CGFloat = 0.25
+    static let conversation: CGFloat = 0.40
+    static let inspector: CGFloat = 0.35
+    static func minimumConversationWidth(isFullscreen: Bool) -> CGFloat {
+        isFullscreen ? 520 : 360
+    }
     /// The inner split only sees the space left after the outer queue split,
     /// so its leading fraction must be re-derived against that remainder.
     static let conversationOfRemainder: CGFloat = conversation / (conversation + inspector)

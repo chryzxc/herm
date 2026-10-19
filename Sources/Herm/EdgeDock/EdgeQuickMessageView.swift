@@ -109,14 +109,20 @@ struct EdgeQuickMessageView: View {
                 Button("Back", action: close).buttonStyle(.dockPress)
             }
             destination
-            captureActions
             DockTextField("Message Hermes…", text: $state.quickDraft, axis: .vertical)
-                .textFieldStyle(.dockGlass)
-                .font(.system(size: 12))
-                .lineLimit(3...4)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .lineLimit(3...6)
                 .focused($focused)
                 .disabled(state.quickSending || state.quickNeedsReview)
                 .accessibilityLabel("Quick message")
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockCanvas.opacity(0.6)))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .stroke(focused ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: 0.5))
+            captureActions
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     attachments
@@ -200,14 +206,17 @@ struct EdgeQuickMessageView: View {
             Button("Attach", icon: .paperclip) {
                 let picker = NSOpenPanel(); picker.canChooseDirectories = false; picker.allowsMultipleSelection = true
                 if picker.runModal() == .OK { state.stageQuickFiles(picker.urls) }
-            }.disabled(state.quickSending || state.quickNeedsReview)
-            Button("Paste", icon: .clipboard, action: paste).disabled(state.quickSending || state.quickNeedsReview)
-            Menu("Drafts", icon: .clockCounterClockwise) {
-                ForEach(state.recoverableDrafts) { record in
-                    Button("\(record.destination.title) · \(record.text.isEmpty ? "Attachments" : String(record.text.prefix(32)))") { state.restoreQuickDraft(record) }
-                }
-            }.disabled(state.quickSending || state.quickPreparing > 0 || state.recoverableDrafts.isEmpty)
+            }.disabled(state.quickSending || state.quickNeedsReview).help("Attach files")
+            Button("Paste", icon: .clipboard, action: paste).disabled(state.quickSending || state.quickNeedsReview).help("Paste")
+            Spacer(minLength: 0)
             Menu("More", icon: .dotsThree) {
+                if !state.recoverableDrafts.isEmpty {
+                    Menu("Recover draft") {
+                        ForEach(state.recoverableDrafts) { record in
+                            Button("\(record.destination.title) · \(record.text.isEmpty ? "Attachments" : String(record.text.prefix(32)))") { state.restoreQuickDraft(record) }
+                        }
+                    }
+                }
                 if let session = state.captureRecord().destination.session {
                     Button("Capacity & session actions…") { state.capacityTarget = session }
                 }
@@ -222,7 +231,7 @@ struct EdgeQuickMessageView: View {
                 Button("Discard draft…", role: .destructive) { confirmingDiscard = true }
             }.disabled(state.quickSending || state.quickPreparing > 0)
         }
-        .font(.system(size: 11)).buttonStyle(.dockHover).labelStyle(.titleAndIcon)
+        .font(.system(size: 12)).buttonStyle(.dockHover).labelStyle(.titleAndIcon)
     }
 
     private var attachments: some View {

@@ -226,7 +226,7 @@ extension DockPopover {
         guard voiceOrbMode != .listening, voiceOrbMode != .idle, voiceOrbMode != .transcribing,
               let userIndex = model.messages.lastIndex(where: { $0.role == .user }) else { return (nil, nil) }
         let reply = model.messages[(userIndex + 1)...].last { $0.role == .hermes }
-        let text = reply?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let text = reply.map(GenerativeUIIntegration.readableText)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return (
             "“" + model.messages[userIndex].text + "”",
             reply.flatMap { text.isEmpty ? nil : ($0.id, text) }

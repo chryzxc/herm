@@ -708,21 +708,8 @@ struct DockPageHeader<Trailing: View>: View {
     private var refreshButton: some View {
         Group {
             if let onRefresh {
-                Button(action: onRefresh) {
-                    Group {
-                        if isRefreshing {
-                            ProgressView().controlSize(.small).tint(Color.dockSecondaryText)
-                        } else {
-                            DockIcon(.arrowsClockwise)
-                                .font(.system(size: 14, weight: .medium))
-                        }
-                    }
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.dockHover)
-                .disabled(isRefreshing)
-                .help("Refresh")
+                DockIconButton(icon: .arrowsClockwise, label: "Refresh", isBusy: isRefreshing,
+                               style: DockThemePalette(theme: DockThemeRuntime.current), action: onRefresh)
             }
         }
     }

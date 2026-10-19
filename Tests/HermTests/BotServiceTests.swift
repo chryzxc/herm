@@ -42,6 +42,18 @@ struct BotServiceTests {
         #expect(!client.methods.contains("profiles.set_asset"))
     }
 
+    @Test func regenerateAllReplacesEveryNonHermFaceIncludingUploads() async {
+        let client = BotFixtureClient(result: ["profiles": [
+            ["name": "uploaded", "has_avatar": true],
+            ["name": "custom", "has_avatar": true, "ui_meta": ["hermes-bots": ["custom": true]]]
+        ]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        await model.refreshNow(force: true)
+        _ = await model.populateAvatars(all: true)
+        #expect(client.methods.filter { $0 == "profiles.set_asset" }.count == 2)
+    }
+
     @Test func parsesRuntimeConfigFallbackChain() {
         let runtime = BotService.parseRuntimeConfig([
             "model": ["default": "gpt-6.1-sol", "provider": "openai-codex", "context_length": 200000],

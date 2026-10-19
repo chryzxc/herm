@@ -474,6 +474,20 @@ struct EdgeTaskPreview: View {
                     }
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     .accessibilityLabel("Assigned to \(bot?.name ?? assignee)")
+                } else if let bot = sessionBot(task) {
+                    // The session's Bot (or the default one) stands in for the
+                    // spinner: a working Herm face already orbits.
+                    let working = task.tone == .working
+                    BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 26, orbits: working)
+                        .overlay(alignment: .bottomTrailing) {
+                            if !working || !BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) {
+                                statusMark(task, size: 11)
+                                    .background(Circle().fill(Color.dockCanvas).padding(-1))
+                                    .offset(x: 3, y: 3)
+                            }
+                        }
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                        .accessibilityLabel("\(bot.name), \(task.displayStatus)")
                 } else {
                     statusMark(task)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -511,6 +525,13 @@ struct EdgeTaskPreview: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+    }
+
+    /// The Bot running a session row: its profile's Bot, else the default
+    /// Bot. Empty when the Bots plugin is off, which keeps the spinner.
+    private func sessionBot(_ task: EdgeNotchTask) -> BotSummary? {
+        guard let session = task.session else { return nil }
+        return bots.first { $0.id == session.profileID } ?? bots.first(where: \.isDefault)
     }
 
     @ViewBuilder

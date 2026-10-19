@@ -79,18 +79,27 @@ struct DockActivityIndicator: View {
     }
 
     /// Drawn arc rather than ProgressView, which ignores tint and washes out on avatars.
-    private func spinner(_ color: Color) -> some View {
-        let line = max(1.8, size * 0.16)
-        // 30fps is smooth for a 12pt spinner; display rate redrew every spinning row each frame.
-        return TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
-            let turn = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
-            Circle().stroke(color.opacity(0.25), lineWidth: line)
-                .overlay {
-                    Circle().trim(from: 0, to: 0.7).stroke(color, style: StrokeStyle(lineWidth: line, lineCap: .round))
-                        .rotationEffect(.degrees(turn * 360))
-                }
-                .padding(line / 2)
+    @ViewBuilder private func spinner(_ color: Color) -> some View {
+        if reduceMotion {
+            spinnerArc(color, turn: 0)
+        } else {
+            // Keep ticking when SwiftUI suspends animation timelines in task disclosures.
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { timeline in
+                let turn = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+                spinnerArc(color, turn: turn)
+                    .transaction { $0.animation = nil }
+            }
         }
+    }
+
+    private func spinnerArc(_ color: Color, turn: Double) -> some View {
+        let line = max(1.8, size * 0.16)
+        return Circle().stroke(color.opacity(0.25), lineWidth: line)
+            .overlay {
+                Circle().trim(from: 0, to: 0.7).stroke(color, style: StrokeStyle(lineWidth: line, lineCap: .round))
+                    .rotationEffect(.degrees(turn * 360))
+            }
+            .padding(line / 2)
     }
 }
 

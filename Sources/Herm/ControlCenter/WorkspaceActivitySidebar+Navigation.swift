@@ -415,19 +415,10 @@ extension WorkspaceActivitySidebar {
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    var observedSidebar: some View {
-        sidebarContent
-        .background {
-            ZStack {
-                Color.dockCanvas
-                RadialGradient(
-                    colors: [Color.dockAccent.opacity(0.055), .clear],
-                    center: UnitPoint(x: 0.9, y: 0),
-                    startRadius: 0,
-                    endRadius: 300
-                )
-            }
-        }
+    // Keep the cross-file sheet host independent of this projection's concrete SwiftUI layout.
+    var observedSidebar: AnyView {
+        AnyView(sidebarContent
+        .background(Color.dockCanvas)
         .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder], onCompletion: handleRepositoryImport)
         // Repository loading is owned by DockPopover's shared context-panel
         // task so switching Global/Session cannot let this view clear or race
@@ -518,8 +509,7 @@ extension WorkspaceActivitySidebar {
         .onChange(of: searchQuery) { _, query in
             guard selectedMode == .search else { return }
             control.search(query)
-        }
-
+        })
     }
 
     var modePicker: some View {

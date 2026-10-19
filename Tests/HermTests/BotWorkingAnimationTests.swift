@@ -17,7 +17,7 @@ struct BotWorkingAnimationTests {
     }
 
     @Test func adjacentUpdatesHaveDistinctBoundedGestures() {
-        let poses = (0..<3).map { BotWorkingPose.reaction(at: 0.6, variation: $0) }
+        let poses = (0..<3).map { BotWorkingPose.reaction(at: 0.5, variation: $0) }
         #expect(poses[0].reach < 0)
         #expect(abs(poses[1].reach) < 0.0001)
         #expect(poses[2].reach > 0)
@@ -33,6 +33,34 @@ struct BotWorkingAnimationTests {
         }
     }
 
+    @Test func hopsAnticipateAndLandBeforeSettling() {
+        let crouch = BotWorkingPose.reaction(at: 0.08, variation: 0)
+        #expect(crouch.lift == 0)
+        #expect(crouch.scaleX > 1 && crouch.scaleY < 1)
+        #expect(abs(BotWorkingPose.reaction(at: 0.5, variation: 0).lift - 1) < 0.0001)
+        let landing = BotWorkingPose.reaction(at: 1.02, variation: 0)
+        #expect(landing.lift < 0.0001)
+        #expect(landing.scaleX > 1 && landing.scaleY < 1)
+    }
+
+    @Test func rapidUpdatesContinueFromTheVisiblePose() {
+        var current = BotWorkingPose.at(0.5)
+        for update in 0..<20 {
+            let start = BotWorkingPose.reaction(at: 0, variation: update % 3, from: current)
+            #expect(start.lift == current.lift)
+            #expect(start.reach == current.reach)
+            #expect(start.rotation == current.rotation)
+            #expect(start.scaleX == current.scaleX && start.scaleY == current.scaleY)
+            let nextFrame = BotWorkingPose.reaction(at: 0.001, variation: update % 3, from: current)
+            #expect(abs(nextFrame.lift - current.lift) < 0.001)
+            #expect(abs(nextFrame.rotation - current.rotation) < 0.01)
+            current = BotWorkingPose.reaction(at: 0.3, variation: update % 3, from: current)
+        }
+        let settled = BotWorkingPose.reaction(at: BotWorkingPose.reactionDuration, variation: 0, from: current)
+        #expect(settled.lift == 0 && settled.reach == 0 && settled.rotation == 0)
+        #expect(settled.scaleX == 1 && settled.scaleY == 1)
+    }
+
     @Test func waitingMotionSettlesAndRepeats() {
         for tick in 0..<280 {
             let time = Double(tick) / 100
@@ -43,5 +71,14 @@ struct BotWorkingAnimationTests {
         }
         #expect(abs(BotWorkingPose.at(1.5).lift) < 0.0001)
         #expect(BotWorkingPose.at(-1).lift == 0)
+    }
+
+    @Test func faceSwirlVariesPerSegmentAndFadesBetweenMoves() {
+        let moves = Set((0..<40).map { segment in
+            Int(BotFacePose.swirl(at: (Double(segment) + 0.25) * BotFacePose.swirlSegment, seed: 42).0.rounded())
+        })
+        #expect(moves.count > 3)
+        let edge = BotFacePose.swirl(at: BotFacePose.swirlSegment * 7, seed: 42)
+        #expect(edge.1 < 0.001)
     }
 }

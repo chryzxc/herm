@@ -368,6 +368,11 @@ struct StreamingMessageText: View {
     @ObservedObject var streaming: StreamingText
 
     var body: some View {
+        GenerativeUIIntegration.renderReply(streaming.text, streaming: true) { standardBody }
+    }
+
+    @ViewBuilder
+    private var standardBody: some View {
         if streaming.text.utf8.count >= CompletedMarkdownRendererPolicy.nativeThresholdBytes {
             NativeStreamingMarkdownView(streaming: streaming, themeRevision: DockThemeRuntime.revision)
         } else {

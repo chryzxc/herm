@@ -72,6 +72,40 @@ struct WorkspaceActivitySidebarTests {
     }
 
     @MainActor
+    @Test func pluginsPageBuildsAndRendersInWorkspace() throws {
+        let sidebar = WorkspaceActivitySidebar(
+            model: DockModel(), botMode: BotModeModel(),
+            store: WorkspaceStore(fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("herm-plugins-\(UUID().uuidString).json")),
+            control: ControlCenterModel(), workflow: DeveloperWorkflowModel(),
+            initialMode: .capabilities, agentUpdateService: HermesUpdateService()
+        )
+        let pages = [
+            AnyView(sidebar),
+            AnyView(WorkflowIntegrationView(
+                destination: IntegrationDestination(profileID: nil),
+                client: sidebar.model.controlRPCClient, pageSection: .constant(.plugins)
+            ))
+        ]
+        for page in pages {
+            let host = NSHostingView(rootView: page)
+            host.frame = NSRect(x: 0, y: 0, width: 1000, height: 650)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless,
+                                  backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            window.display()
+            window.layoutIfNeeded()
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            #expect(bitmap.pixelsWide > 0 && bitmap.pixelsHigh > 0)
+        }
+    }
+
+    @MainActor
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews + view.subviews.flatMap(descendants)
     }
