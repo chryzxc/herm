@@ -99,7 +99,7 @@ struct GitHubPageLoadingTests {
         #expect(await transport.count("/repos/owner/repo/pulls/19/reviews") == 1)
         #expect(await transport.count("/repos/owner/repo/pulls/20") == 0)
         #expect(center.selected?.headBranch == "feature")
-        #expect(center.selected?.readinessLabel == "CHECKS FAILED")
+        #expect(center.selected?.readinessLabel == "Checks failed")
         #expect(center.filesByID[record.id]?.count == 1)
 
         await center.refreshSelectedDetail()

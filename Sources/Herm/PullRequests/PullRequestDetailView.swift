@@ -11,9 +11,8 @@ struct PullRequestDetailView: View {
     @StateObject private var reviewPreferences = PullRequestReviewPreferenceStore()
     @State private var selectedFileID: String?
     @State private var fileQuery = ""
-    @State private var viewedFiles = Set<String>()
     @State private var sourceDiffFileIDs: Set<String> = []
-    @State private var descriptionExpanded = false
+    @State private var descriptionExpanded = true
     @State private var checksExpanded = true
     @State private var activityExpanded = true
     private var commentDraft: String { center.commentDrafts[center.selectedID ?? ""] ?? "" }
@@ -27,7 +26,6 @@ struct PullRequestDetailView: View {
                 guard center.selectedID != nil, !center.isRefreshing else { return }
                 await center.loadSelectedDetail()
             }
-            .task(id: viewedKey) { viewedFiles = Set(UserDefaults.standard.stringArray(forKey: viewedKey) ?? []) }
             .sheet(item: $inlineTarget) { target in
                 if let record = center.selected { GitHubInlineCommentEditor(model: center.review(for: record), record: record, target: target) }
             }
@@ -36,10 +34,9 @@ struct PullRequestDetailView: View {
                 selectedFileID = nil
                 sourceDiffFileIDs.removeAll()
                 diffPresentationCache.removeAll()
-                descriptionExpanded = false
+                descriptionExpanded = true
                 checksExpanded = true
                 activityExpanded = true
-                viewedFiles = Set(UserDefaults.standard.stringArray(forKey: viewedKey) ?? [])
                 mutationCoordinator.cancel()
             }
             .confirmationDialog(
@@ -54,12 +51,12 @@ struct PullRequestDetailView: View {
                 case .comment:
                     Button("Post comment") {
                         Task {
-                            _ = await mutationCoordinator.confirm(using: center)
+                            _ = await mutationCoordinator.confirm(request, using: center)
                         }
                     }
                 case let .status(_, status):
                     Button(status == .closed ? "Close pull request" : status.rawValue, role: status == .closed ? .destructive : nil) {
-                        Task { _ = await mutationCoordinator.confirm(using: center) }
+                        Task { _ = await mutationCoordinator.confirm(request, using: center) }
                     }
                 }
                 Button("Cancel", role: .cancel) { mutationCoordinator.cancel() }
@@ -175,7 +172,8 @@ struct PullRequestDetailView: View {
                 GitHubAuthoringMenu(reference: pr.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(pr.id)
                 DockMenu {
                     Button(PullRequestChatLinkStore().sessionID(for: pr.id) == nil ? "Prepare review in Hermes" : "Open linked Hermes chat") { onOpenChat(pr) }
-                } label: { DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28) }
+                } label: { DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28)
+                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)) }
                 AttachToChatMenu(pill: true) { ChatContext(pullRequest: pr) }
                 }
             }
@@ -211,7 +209,7 @@ struct PullRequestDetailView: View {
     }
     private func summary(_ pr: PullRequestRecord) -> some View { VStack(alignment: .leading, spacing: 0) {
         Text(pr.title)
-            .font(.system(size: 20, weight: .semibold))
+            .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(Color.dockPrimaryText)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 26)
@@ -227,6 +225,14 @@ struct PullRequestDetailView: View {
         .foregroundStyle(Color.dockMetadataText)
         .padding(.top, 12)
         .padding(.bottom, 22)
+
+        VStack(alignment: .leading, spacing: 10) {
+            DockSectionHeader(title: "Description", isExpanded: $descriptionExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
+            if descriptionExpanded {
+                if pr.body.isEmpty { Text("No description provided.").foregroundStyle(Color.dockMetadataText) }
+                else { MarkdownMessageView(markdown: pr.body).frame(maxWidth: .infinity, alignment: .leading) }
+            }
+        }.font(DockTypography.body).dockCard(padding: 12).padding(.bottom, 12)
 
         VStack(alignment: .leading, spacing: 12) {
             summaryDetailRow(icon: .gitBranch, title: "Branch") {
@@ -244,10 +250,6 @@ struct PullRequestDetailView: View {
             summaryDetailRow(icon: .chats, title: "Comments") {
                 Text(pr.comments == 0 ? "No comments" : "\(pr.comments) comment\(pr.comments == 1 ? "" : "s")")
             }
-            summaryDetailRow(icon: .checkCircle, title: "Checks", color: checksColor(for: pr)) {
-                Text(checksLabel(for: pr))
-                    .foregroundStyle(checksColor(for: pr))
-            }
             summaryDetailRow(icon: .gitPullRequest, title: "Status") {
                 statusPicker(pr)
             }
@@ -259,25 +261,18 @@ struct PullRequestDetailView: View {
         .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
 
         PullRequestReadinessView(center: center, record: pr).padding(.top, 16)
-        PullRequestLandingView(record: pr, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.padding(.top, 12)
+        if pr.isOpenForWork || pr.mergedAt != nil {
+            PullRequestLandingView(record: pr, client: center.api.client, onLanded: { center.applyLandingSnapshot($0, for: pr) }) { Task { await center.refreshSelectedDetail() } }
+                .id(pr.id).padding(.top, 12)
+        }
         GitHubMetadataView(reference: pr.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }
             .id(pr.id).padding(.top, 16)
-
-        summarySectionHeader("Description", isExpanded: $descriptionExpanded).padding(.top, 20)
-        if descriptionExpanded {
-            if pr.body.isEmpty {
-                Text("No description provided.").font(.system(size: 13)).foregroundStyle(Color.dockMetadataText).padding(.top, 12)
-            } else {
-                MarkdownMessageView(markdown: pr.body).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 12)
-            }
-        }
 
         summarySectionHeader("Checks", count: pr.checks.isEmpty ? nil : pr.checks.count, isExpanded: $checksExpanded)
             .padding(.top, 20)
         if checksExpanded { checksSection(pr).padding(.top, 12) }
 
-        let activityCount = (center.commitsByID[pr.id] ?? []).count + (center.commentsByID[pr.id] ?? []).count + (center.eventsByID[pr.id] ?? []).filter { $0.presentation != nil }.count + 1
-        summarySectionHeader("Activity", count: activityCount, isExpanded: $activityExpanded)
+        summarySectionHeader("Activity", count: activityItems(pr).count, isExpanded: $activityExpanded)
             .padding(.top, 20)
         if activityExpanded {
             activitySection(pr).padding(.top, 12)
@@ -313,21 +308,14 @@ struct PullRequestDetailView: View {
     private func checksSection(_ pr: PullRequestRecord) -> some View {
         if pr.checks.isEmpty {
             HStack(spacing: 12) {
-            Text("No checks reported by GitHub.")
+            Text(pr.checksAvailable ? "No checks reported by GitHub." : "Check status unavailable. Refresh to retry.")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
-                Button {
+                DockIconButton(icon: .arrowsClockwise, label: "Refresh checks", isBusy: center.isLoadingDetail, size: 24, style: DockThemePalette(theme: DockThemeRuntime.current)) {
                     center.invalidateSelectedDetail()
                     detailRefreshID += 1
-                } label: {
-                    DockIcon(.arrowsClockwise, size: 15, color: Color.dockSecondaryText)
-                        .frame(width: 30, height: 30)
                 }
-                .buttonStyle(.dockHover)
-                .disabled(center.isLoadingDetail)
-                .help("Refresh checks")
-                .accessibilityLabel("Refresh checks")
             }
             .padding(.leading, 12)
             .padding(.trailing, 8)
@@ -356,34 +344,12 @@ struct PullRequestDetailView: View {
         }
     }
 
-    private func activitySection(_ pr: PullRequestRecord) -> some View {
-        var items = (center.commentsByID[pr.id] ?? []).map { GitHubConversationItem(id: "comment:" + $0.id, author: $0.author, summary: "commented", body: $0.body, date: $0.createdAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
-        items += (center.commitsByID[pr.id] ?? []).map { GitHubConversationItem(id: "commit:" + $0.id, author: $0.author, summary: $0.message, body: "", date: $0.committedAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
-        items += pr.reviews.map { GitHubConversationItem(id: "review:" + $0.id, author: $0.author, summary: $0.state.replacingOccurrences(of: "_", with: " ").capitalized, body: $0.body, date: $0.submittedAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
-        items += (center.eventsByID[pr.id] ?? []).compactMap { event in event.presentation.map { GitHubConversationItem(id: "event:" + event.id, author: event.actor, summary: $0.text, body: "", date: event.createdAt, url: nil, avatarURL: event.actorAvatarURL) } }
-        return GitHubTimelineView(reference: pr.reference, items: items.sorted { ($0.date ?? .distantPast) < ($1.date ?? .distantPast) })
+    private func activityItems(_ pr: PullRequestRecord) -> [GitHubConversationItem] {
+        pr.activityItems(comments: center.commentsByID[pr.id] ?? [], commits: center.commitsByID[pr.id] ?? [], events: center.eventsByID[pr.id] ?? [])
     }
 
-    private func activityRow(icon: Ph, iconColor: Color, title: String, detail: String? = nil, trailing: String? = nil, avatarURL: URL? = nil, age: String? = nil) -> some View {
-        HStack(spacing: 10) {
-            DockIcon(icon, size: 14, color: iconColor)
-                .frame(width: 24, height: 24)
-                .background(Circle().fill(Color.dockSurface4.opacity(0.55)))
-            VStack(alignment: .leading, spacing: detail == nil ? 0 : 5) {
-                Text(title).lineLimit(1)
-                if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(2) }
-            }
-            Spacer(minLength: 12)
-            if let trailing { Text(trailing).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText) }
-            if let avatarURL { AsyncImage(url: avatarURL) { phase in if let image = phase.image { image.resizable().scaledToFill() } else { avatarFallback } }.frame(width: 24, height: 24).clipShape(Circle()) }
-            if let age { Text(age).foregroundStyle(Color.dockMetadataText) }
-        }
-        .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(Color.dockSecondaryText)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+    private func activitySection(_ pr: PullRequestRecord) -> some View {
+        GitHubTimelineView(reference: pr.reference, items: activityItems(pr))
     }
 
     private func commentComposer(_ pr: PullRequestRecord) -> some View {
@@ -425,18 +391,23 @@ struct PullRequestDetailView: View {
     private func checkIcon(for check: GitHubCheckSummary) -> Ph { checkColor(for: check) == Color.dockSuccess ? .check : (checkColor(for: check) == Color.dockDestructive ? .x : .clock) }
     private func checkColor(for check: GitHubCheckSummary) -> Color {
         let conclusion = check.conclusion?.lowercased()
-        if ["success", "neutral", "skipped"].contains(conclusion) { return Color.dockSuccess }
+        if ["neutral", "skipped"].contains(conclusion) { return Color.dockMetadataText }
+        if conclusion == "success" { return Color.dockSuccess }
         if ["failure", "cancelled", "timed_out", "action_required"].contains(conclusion) { return Color.dockDestructive }
         return Color.dockWarning
     }
     private func checkPresentation(for check: GitHubCheckSummary) -> String {
-        guard check.status.lowercased() == "completed" else { return "Running" }
+        guard check.status.lowercased() == "completed" else {
+            return check.status.lowercased() == "in_progress" ? "Running" : (check.isPending ? "Pending" : "Status unknown")
+        }
         switch check.conclusion?.lowercased() {
         case "success": return "Passed"
         case "failure": return "Failed"
         case "cancelled": return "Cancelled"
         case "skipped", "neutral": return "Skipped"
-        default: return "Completed"
+        case "timed_out": return "Timed out"
+        case "action_required": return "Action required"
+        default: return "Status unknown"
         }
     }
 
@@ -465,45 +436,30 @@ struct PullRequestDetailView: View {
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+    @ViewBuilder
     private func statusPicker(_ pr: PullRequestRecord) -> some View {
         let current: PullRequestStatus = pr.state == "closed" ? .closed : (pr.isDraft ? .draft : .readyForReview)
-        return DockMenu {
-            ForEach(PullRequestStatus.allCases) { status in
-                Button {
-                    mutationCoordinator.requestStatus(status, for: pr)
-                } label: {
-                    HStack {
-                        Text(status.rawValue)
-                        Spacer()
-                        if status == current { Ph.check.image(size: 14) }
-                    }
+        if pr.availableStatusActions.isEmpty || pr.viewerCanUpdate != true {
+            Text(pr.mergedAt != nil ? "Merged" : current.rawValue)
+        } else {
+            DockMenu {
+                ForEach(pr.availableStatusActions) { status in
+                    Button(status.rawValue) { mutationCoordinator.requestStatus(status, for: pr) }
                 }
-                .disabled(status == .reopened && pr.state != "closed")
+            } label: {
+                HStack(spacing: 7) {
+                    if center.updatingStatusID == pr.id { ProgressView().controlSize(.mini) }
+                    Text(center.updatingStatusID == pr.id ? "Updating status…" : current.rawValue)
+                    DockIcon(.caretDown, size: 12, color: Color.dockSecondaryText)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
             }
-            .disabled(pr.mergedAt != nil)
-        } label: {
-            HStack(spacing: 7) {
-                if center.isUpdatingStatus { ProgressView().controlSize(.mini) }
-                Text(pr.mergedAt != nil ? "Merged" : current.rawValue)
-                DockIcon(.caretDown, size: 15, color: Color.dockSecondaryText)
-            }
-            .padding(.horizontal, 11)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.dockSurface2))
+            .disabled(center.isUpdatingStatus)
+            .help("Change pull request status")
+            .accessibilityLabel("Pull request status: \(current.rawValue)")
         }
-        .disabled(center.isUpdatingStatus)
-        .help("Change pull request status")
-        .accessibilityLabel("Pull request status: \(current.rawValue)")
-    }
-    private func checksLabel(for pr: PullRequestRecord) -> String {
-        if pr.checks.contains(where: { $0.isFailure }) { return "Failed" }
-        if pr.checks.contains(where: { $0.isPending }) { return "In progress" }
-        return !pr.checksAvailable ? "Some checks unavailable" : (pr.checks.isEmpty ? "No checks" : (pr.checks.allSatisfy(\.isSuccess) ? "Passed" : "Status unknown"))
-    }
-    private func checksColor(for pr: PullRequestRecord) -> Color {
-        if pr.checks.contains(where: { $0.isFailure }) { return Color.dockDestructive }
-        if pr.checks.contains(where: { $0.isPending }) { return Color.dockWarning }
-        return !pr.checksAvailable || pr.checks.isEmpty || !pr.checks.allSatisfy(\.isSuccess) ? Color.dockMetadataText : Color.dockSuccess
     }
     private func pullRequestAge(_ updatedAt: Date) -> String {
         let seconds = max(0, Date().timeIntervalSince(updatedAt))
@@ -681,8 +637,6 @@ struct PullRequestDetailView: View {
         .overlay(alignment: .trailing) { Color.dockBorderLight.frame(width: 0.5) }
     }
 
-    private var viewedKey: String { "hermes.pull-request-review.viewed." + (center.selectedID ?? "") + "." + (center.selected?.headRevision ?? "unknown") }
-
     private func fileSection(_ file: PullRequestFile) -> some View {
         let expanded = reviewPreferences.expandedFileIDs.contains(file.id)
         return VStack(alignment: .leading, spacing: 0) {
@@ -709,14 +663,6 @@ struct PullRequestDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
-            HStack {
-                Toggle("Viewed", isOn: Binding(get: { viewedFiles.contains(file.path) }, set: { value in
-                    if value { viewedFiles.insert(file.path) } else { viewedFiles.remove(file.path) }
-                    UserDefaults.standard.set(Array(viewedFiles).sorted(), forKey: viewedKey)
-                })).toggleStyle(.dockSwitch)
-                Text("\(viewedFiles.count) viewed at this revision").foregroundStyle(Color.dockMetadataText)
-                Spacer()
-            }.font(DockTypography.body).padding(.horizontal, 10).padding(.vertical, 4)
             if expanded {
                 fileContent(file)
                 if let pr = center.selected { PullRequestThreadListView(model: center.review(for: pr), record: pr, path: file.path).padding(8) }

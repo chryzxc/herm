@@ -6,6 +6,7 @@ struct PullRequestReadinessView: View {
     @State private var analysis: GitHubConflictAnalysis?
     @State private var analysisTask: Task<Void, Never>?
     @State private var analyzing = false
+    @State private var preparingResolution = false
     @State private var error: String?
     @Environment(\.chatContextRouter) private var chatRouter
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
@@ -21,24 +22,26 @@ struct PullRequestReadinessView: View {
                 DockIconButton(icon: .arrowsClockwise, label: "Refresh readiness", isBusy: center.isLoadingDetail(for: record.id), size: 24, style: style) { Task { await center.refreshSelectedDetail() } }
             }
             fact("State", record.mergedAt != nil ? "Merged" : (record.state == "closed" ? "Closed" : (record.isDraft ? "Draft · not ready for review" : "Open")))
-            fact("Checks", checksLabel)
+            fact("Checks", record.checksSummary)
             fact("Review", reviewLabel)
-            fact("Merge", mergeLabel, warning: record.mergeability == .conflicting)
+            fact("Merge", mergeLabel, warning: record.isOpenForWork && record.mergeability == .conflicting)
             if let warning = record.detailWarning { Text(warning).foregroundStyle(Color.dockWarning) }
-            if record.state != "closed" && record.mergedAt == nil {
+            if record.isOpenForWork && (record.mergeability == .conflicting || analyzing) {
                 Divider().overlay(Color.dockBorderLight)
                 DockChipFlow(spacing: 8) {
-                    Button {
-                        if analyzing { analysisTask?.cancel() } else { analyze() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            if analyzing { ProgressView().controlSize(.mini) }
-                            Text(analyzing ? "Cancel analysis" : "Analyze conflict files")
-                        }
-                    }.buttonStyle(.dockCompact)
-                    if record.mergeability == .conflicting || analysis?.hasConflicts == true {
-                        Button("Prepare resolution in Hermes") { Task { await prepareResolution() } }
-                            .buttonStyle(.dockCompact).disabled(chatRouter == nil)
+                    if record.canAnalyzeConflicts || analyzing {
+                        Button {
+                            if analyzing { analysisTask?.cancel() } else { analyze() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                if analyzing { ProgressView().controlSize(.mini) }
+                                Text(analyzing ? "Cancel analysis" : "Analyze conflict files")
+                            }
+                        }.buttonStyle(.dockCompact)
+                    }
+                    if record.mergeability == .conflicting, chatRouter != nil {
+                        Button { Task { await prepareResolution() } } label: { GitHubActionLabel(title: preparingResolution ? "Preparing…" : "Prepare resolution in Hermes", isBusy: preparingResolution) }
+                            .buttonStyle(.dockCompact).disabled(preparingResolution)
                     }
                     Link(destination: record.reference.webURL) {
                         HStack(spacing: 6) {
@@ -77,20 +80,13 @@ struct PullRequestReadinessView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 2)
     }
-    private var checksLabel: String {
-        let failed = record.checks.filter(\.isFailure).count
-        let pending = record.checks.filter(\.isPending).count
-        let passed = record.checks.filter { $0.conclusion == "success" }.count
-        let skipped = record.checks.filter { ["skipped", "neutral"].contains($0.conclusion ?? "") }.count
-        let summary = "\(passed) passed · \(failed) failed · \(pending) pending · \(skipped) skipped"
-        return record.checksAvailable ? (record.checks.isEmpty ? "No checks reported" : summary) : summary + " · coverage unavailable"
-    }
     private var reviewLabel: String {
+        if !record.isOpenForWork { return record.reviews.isEmpty ? "No reviews" : "\(record.reviews.count) reviews" }
         switch record.reviewDecision {
         case "APPROVED": return "Required review approved"
         case "CHANGES_REQUESTED": return "Changes requested"
         case "REVIEW_REQUIRED": return "Review required"
-        default: return record.reviewsAvailable ? (record.reviews.isEmpty ? "No reviews · requirements not reported" : "\(record.reviews.count) reviews · requirements not reported") : "Review status unavailable"
+        default: return "Review requirements unavailable"
         }
     }
     private var mergeLabel: String {
@@ -98,11 +94,12 @@ struct PullRequestReadinessView: View {
         if record.state == "closed" { return "Closed" }
         switch record.mergeability {
         case .conflicting: return "Conflicts must be resolved"
-        case .mergeable: return record.mergeState.map { "No merge conflicts · " + $0.replacingOccurrences(of: "_", with: " ").capitalized } ?? "No merge conflicts · other requirements may remain"
+        case .mergeable: return "No merge conflicts"
         case .unknown: return "Mergeability is being calculated or is unavailable. Refresh to check again."
         }
     }
     private func analyze() {
+        guard record.canAnalyzeConflicts else { return }
         analyzing = true; error = nil
         let snapshot = record
         analysisTask = Task {
@@ -112,10 +109,14 @@ struct PullRequestReadinessView: View {
                 guard !Task.isCancelled, snapshot.id == center.selectedID else { return }
                 analysis = result
                 await center.refreshSelectedDetail()
-            } catch is CancellationError {} catch { self.error = error.localizedDescription }
+            } catch is CancellationError {} catch {
+                if !Task.isCancelled, snapshot.id == center.selectedID { self.error = error.localizedDescription }
+            }
         }
     }
     private func prepareResolution() async {
+        guard record.isOpenForWork, record.mergeability == .conflicting, !preparingResolution else { return }
+        preparingResolution = true; defer { preparingResolution = false }
         var path = record.localPath
         if path.isEmpty {
             let panel = NSOpenPanel(); panel.title = "Choose the local repository for this PR"; panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false

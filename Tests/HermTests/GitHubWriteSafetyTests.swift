@@ -3,7 +3,7 @@ import Testing
 @testable import Herm
 
 private actor WriteSafetyTransport: GitHubIssueTransport {
-    enum Mode { case denied, staleHead, queue, restrictedProjects, linking }
+    enum Mode { case denied, staleHead, queue, restrictedProjects, linking, unstable, blocked }
     let mode: Mode
     var reads = 0
     var writes: [[String: String]] = []
@@ -19,11 +19,13 @@ private actor WriteSafetyTransport: GitHubIssueTransport {
         else if query.hasPrefix("mutation") {
             let input = variables["input"] as? [String: String] ?? [:]
             writes.append(input.merging(variables.compactMapValues { $0 as? String }, uniquingKeysWith: { a, _ in a }))
-            payload = ["data": ["accepted": ["clientMutationId": NSNull()]]]
-        } else if mode == .staleHead || mode == .queue {
+            if mode == .unstable {
+                payload = ["data": ["mergePullRequest": ["pullRequest": ["id": "PR", "headRefOid": String(repeating: "a", count: 40), "state": "MERGED", "isDraft": false, "mergedAt": "2026-10-18T00:01:00Z", "updatedAt": "2026-10-18T00:01:00Z", "repository": ["viewerPermission": "WRITE", "mergeCommitAllowed": true]]]]]
+            } else { payload = ["data": ["accepted": ["clientMutationId": NSNull()]]] }
+        } else if mode == .staleHead || mode == .queue || mode == .unstable || mode == .blocked {
             reads += 1
             let head = mode == .staleHead && reads > 1 ? String(repeating: "b", count: 40) : String(repeating: "a", count: 40)
-            payload = ["data": ["node": ["id": "PR", "headRefOid": head, "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "isMergeQueueEnabled": mode == .queue, "isInMergeQueue": !writes.isEmpty, "repository": ["viewerPermission": "WRITE", "mergeCommitAllowed": true]]]]
+            payload = ["data": ["node": ["id": "PR", "headRefOid": head, "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": mode == .unstable ? "UNSTABLE" : (mode == .blocked ? "BLOCKED" : "CLEAN"), "isMergeQueueEnabled": mode == .queue, "isInMergeQueue": !writes.isEmpty, "repository": ["viewerPermission": "WRITE", "mergeCommitAllowed": true]]]]
         } else if mode == .restrictedProjects {
             if query.contains("projectItems") { payload = ["errors": [["type": "FORBIDDEN", "message": "restricted"]]] }
             else if query.contains("closedByPullRequestsReferences") { payload = ["data": ["node": ["closedByPullRequestsReferences": ["nodes": [], "pageInfo": ["hasNextPage": false]]]]] }
@@ -49,7 +51,7 @@ struct GitHubWriteSafetyTests {
         #expect(blockers.contains("Mark this draft ready for review before merging."))
         #expect(blockers.contains("Resolve merge conflicts before merging."))
         #expect(blockers.contains("Required approving reviews are still missing."))
-        #expect(blockers.contains("Check status is incomplete or unavailable. Refresh to retry."))
+        #expect(snapshot.checkWarnings(for: record).contains("Check status is incomplete or unavailable. Refresh to retry."))
     }
     @Test func landingExplainsProviderRulesWithoutInventingSpecificRequirements() {
         var record = record(); record.checksAvailable = true
@@ -60,6 +62,31 @@ struct GitHubWriteSafetyTests {
         #expect(snapshot("BEHIND").mergeBlockers(for: record) == ["Update the PR branch with the latest base branch changes."])
         #expect(snapshot("BLOCKED").mergeBlockers(for: record) == ["GitHub reports an unmet repository rule. Open on GitHub to see the exact requirement."])
     }
+    @Test func nonPassingChecksWarnWithoutOverridingProviderMergeability() async throws {
+        let transport = WriteSafetyTransport(.unstable)
+        let service = GitHubLandingService(client: GitHubClient(transport: transport))
+        var pr = record(); pr.checksAvailable = true
+        pr.checks = [.init(id: "verify", name: "verify", status: "completed", conclusion: "failure", detailsURL: nil)]
+        let confirmed = try await service.snapshot(pr)
+        #expect(confirmed.canMergeNow)
+        #expect(confirmed.mergeBlockers(for: pr).isEmpty)
+        #expect(confirmed.checkWarnings(for: pr) == ["Failing checks: verify."])
+        let merged = try await service.perform(.merge, method: .merge, record: pr, confirmed: confirmed)
+        #expect(merged.status == "Merged")
+        #expect(await transport.mutations().first?["expectedHeadOid"] == pr.headRevision)
+    }
+    @Test func providerBlockedStateStillRejectsMergeWithFailingChecks() async throws {
+        let transport = WriteSafetyTransport(.blocked)
+        let service = GitHubLandingService(client: GitHubClient(transport: transport))
+        var pr = record(); pr.checksAvailable = true
+        pr.checks = [.init(id: "verify", name: "verify", status: "completed", conclusion: "failure", detailsURL: nil)]
+        let confirmed = try await service.snapshot(pr)
+        #expect(!confirmed.canMergeNow)
+        #expect(confirmed.mergeBlockers(for: pr).contains("GitHub reports an unmet repository rule. Open on GitHub to see the exact requirement."))
+        await #expect(throws: GitHubRequestError.forbidden) { try await service.perform(.merge, method: .merge, record: pr, confirmed: confirmed) }
+        #expect(await transport.mutations().isEmpty)
+    }
+
     @Test func changedHeadRejectsLandingBeforeAnyMutation() async throws {
         let transport = WriteSafetyTransport(.staleHead)
         let service = GitHubLandingService(client: GitHubClient(transport: transport))

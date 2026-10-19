@@ -7,6 +7,7 @@ struct PullRequestWorkspace: View {
     let onOpenChat: (PullRequestRecord) -> Void
     @State private var showsDetail = false
     @State private var refreshID = 0
+    @State private var loadedBrowse = GitHubBrowseOptions()
     @Environment(\.openGitHubItem) private var openItem
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dockTitleRow) private var titleRow
@@ -43,7 +44,9 @@ struct PullRequestWorkspace: View {
         .background(Color.dockCanvas)
         .task(id: refreshID) {
             if refreshID > 0 || !center.hasLoaded {
+                if refreshID > 0 { center.cancelLoads() }
                 await refreshActiveWorkspace()
+                if !Task.isCancelled, center.errorMessage == nil { loadedBrowse = center.browsing }
             }
         }
         .task {
@@ -64,7 +67,7 @@ struct PullRequestWorkspace: View {
 
     private var listPane: some View { VStack(spacing: 0) {
         VStack(spacing: 8) {
-            GitHubBrowseControls(kind: .pullRequest, client: center.api.client, repositories: center.repositories, options: $center.browsing, refresh: { refreshID += 1 }) { item in openItem(item) }
+            GitHubBrowseControls(kind: .pullRequest, client: center.api.client, repositories: center.repositories, options: $center.browsing, refresh: { refreshID += 1 }, onCreated: { item in openItem(item) }, isLoading: center.isRefreshing)
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
                 TextField("", text: $center.query, prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText))
@@ -88,11 +91,11 @@ struct PullRequestWorkspace: View {
         .padding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-        Text(center.errorMessage ?? center.coverage ?? "\(center.visible.count) pull requests")
+        Text(center.isRefreshing ? "Loading \(center.browsing.state.rawValue.lowercased()) pull requests…" : (center.errorMessage ?? center.coverage ?? "\(center.visible.count) pull requests"))
             .font(DockTypography.metadata).foregroundStyle(center.errorMessage != nil ? Color.dockWarning : Color.dockMetadataText).lineLimit(2).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).padding(.horizontal, 18)
         ScrollView {
             LazyVStack(spacing: 2) {
-                if center.isInitialLoad {
+                if center.isInitialLoad || (center.isRefreshing && center.browsing != loadedBrowse) {
                     ForEach(0..<6, id: \.self) { index in listLoadingRow(index: index) }
                 } else if center.visible.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {

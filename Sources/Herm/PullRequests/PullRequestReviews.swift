@@ -95,12 +95,18 @@ struct GitHubReviewService: Sendable {
     }
 }
 
+enum GitHubReviewPendingAction: Equatable {
+    case submit, reply(String), resolve(String), inline(String)
+}
+
 @MainActor
 final class PullRequestReviewModel: ObservableObject {
     let service: GitHubReviewService
     @Published private(set) var threads: [GitHubReviewThread] = []
     @Published private(set) var loading = false
-    @Published private(set) var busy = false
+    @Published private(set) var pendingAction: GitHubReviewPendingAction?
+    var busy: Bool { pendingAction != nil }
+    private var loadGeneration = UUID()
     @Published private(set) var revision: String?
     @Published private(set) var error: String?
     @Published var draft = ""
@@ -108,32 +114,35 @@ final class PullRequestReviewModel: ObservableObject {
     @Published var replies: [String: String] = [:]
     @Published var inlineDrafts: [String: String] = [:]
     init(client: GitHubClient) { service = GitHubReviewService(client: client) }
-    func refresh(_ record: PullRequestRecord) async {
-        guard !loading else { return }; loading = true; defer { loading = false }
+    func refresh(_ record: PullRequestRecord, force: Bool = false) async {
+        guard !loading || force else { return }
+        let token = UUID(); loadGeneration = token; loading = true
+        defer { if token == loadGeneration { loading = false } }
         do {
             let page = try await service.threads(record); try Task.checkCancellation()
+            guard token == loadGeneration else { return }
             threads = page.items; revision = record.headRevision; error = page.coverage.label
-        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled, token == loadGeneration { self.error = error.localizedDescription } }
     }
     func submit(_ record: PullRequestRecord) async -> Bool {
-        guard !busy else { return false }; busy = true; defer { busy = false }; let submitted = draft
-        do { try await service.submit(event, body: submitted, on: record); if draft == submitted { draft = "" }; error = nil; await refresh(record); return true }
+        guard !busy else { return false }; pendingAction = .submit; defer { pendingAction = nil }; let submitted = draft
+        do { try await service.submit(event, body: submitted, on: record); if draft == submitted { draft = "" }; error = nil; await refresh(record, force: true); return true }
         catch { self.error = error.localizedDescription; return false }
     }
     func reply(_ thread: GitHubReviewThread, record: PullRequestRecord) async {
-        guard !busy, threads.contains(where: { $0.id == thread.id }) else { return }; busy = true; defer { busy = false }
+        guard !busy, threads.contains(where: { $0.id == thread.id }) else { return }; pendingAction = .reply(thread.id); defer { pendingAction = nil }
         let submitted = replies[thread.id] ?? ""
-        do { try await service.reply(submitted, threadID: thread.id); if replies[thread.id] == submitted { replies[thread.id] = nil }; await refresh(record) }
+        do { try await service.reply(submitted, threadID: thread.id); if replies[thread.id] == submitted { replies[thread.id] = nil }; await refresh(record, force: true) }
         catch { self.error = error.localizedDescription }
     }
     func resolve(_ thread: GitHubReviewThread, record: PullRequestRecord) async {
-        guard !busy else { return }; busy = true; defer { busy = false }
-        do { try await service.resolve(thread); await refresh(record) } catch { self.error = error.localizedDescription }
+        guard !busy else { return }; pendingAction = .resolve(thread.id); defer { pendingAction = nil }
+        do { try await service.resolve(thread); await refresh(record, force: true) } catch { self.error = error.localizedDescription }
     }
     func postInline(_ target: GitHubInlineCommentTarget, record: PullRequestRecord) async -> Bool {
-        guard !busy else { return false }; busy = true; defer { busy = false }
+        guard !busy else { return false }; pendingAction = .inline(target.id); defer { pendingAction = nil }
         let body = inlineDrafts[target.id] ?? ""
-        do { try await service.inlineComment(body, target: target, on: record); if inlineDrafts[target.id] == body { inlineDrafts[target.id] = nil }; await refresh(record); return true }
+        do { try await service.inlineComment(body, target: target, on: record); if inlineDrafts[target.id] == body { inlineDrafts[target.id] = nil }; await refresh(record, force: true); return true }
         catch { self.error = error.localizedDescription; return false }
     }
 }
@@ -152,16 +161,16 @@ struct PullRequestReviewView: View {
                     Text("Review threads").font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Toggle("Unresolved only", isOn: $unresolvedOnly).toggleStyle(.dockSwitch)
-                    Button("Refresh") { Task { await model.refresh(record) } }.buttonStyle(.dockCompact).disabled(model.loading)
+                    Button { Task { await model.refresh(record) } } label: { GitHubActionLabel(title: "Refresh", isBusy: model.loading) }.buttonStyle(.dockCompact).disabled(model.loading || model.busy)
                 }
-                if model.loading { ProgressView("Loading reviews…") }
+
                 if let error = model.error { Text(error).foregroundStyle(Color.dockWarning) }
                 if model.revision != nil, model.threads.filter({ !unresolvedOnly || !$0.resolved }).isEmpty { Text(unresolvedOnly ? "No unresolved threads." : "No review threads.").foregroundStyle(Color.dockSecondaryText) }
                 PullRequestThreadListView(model: model, record: record, path: nil, unresolvedOnly: unresolvedOnly)
                 DockSectionHeader(title: "Submit review", style: DockThemePalette(theme: DockThemeRuntime.current))
                 Picker("Review", selection: $model.event) { ForEach(GitHubReviewEvent.allCases) { event in Text(event.title).tag(event) } }.pickerStyle(.menu)
                 GitHubMarkdownDraft(text: $model.draft)
-                Button(model.busy ? "Submitting…" : "Review and submit") { confirm = true }.buttonStyle(.dockPrimary).controlSize(.small)
+                Button { confirm = true } label: { GitHubActionLabel(title: model.pendingAction == .submit ? "Submitting…" : "Review and submit", isBusy: model.pendingAction == .submit) }.buttonStyle(.dockPrimary).controlSize(.small)
                     .disabled(model.busy || viewer == nil || record.state != "open" || record.headRevision == nil || model.draft.count > 10_000 || (model.event != .approve && model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || (model.event != .comment && viewer?.caseInsensitiveCompare(record.author) == .orderedSame))
             }.padding(16)
         }
@@ -193,9 +202,9 @@ struct PullRequestThreadListView: View {
                         if thread.partial { Text("Some comments are unavailable. Open the thread on GitHub.").foregroundStyle(Color.dockWarning) }
                         TextField("Reply", text: Binding(get: { model.replies[thread.id] ?? "" }, set: { model.replies[thread.id] = $0 }), axis: .vertical).textFieldStyle(.dockGlass)
                         HStack {
-                            Button("Reply") { pendingReply = thread.id }.buttonStyle(.dockCompact).disabled(model.busy || (model.replies[thread.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (model.replies[thread.id] ?? "").count > 10_000)
+                            Button { pendingReply = thread.id } label: { GitHubActionLabel(title: model.pendingAction == .reply(thread.id) ? "Posting…" : "Reply", isBusy: model.pendingAction == .reply(thread.id)) }.buttonStyle(.dockCompact).disabled(model.busy || (model.replies[thread.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (model.replies[thread.id] ?? "").count > 10_000)
                             if thread.resolved ? thread.canUnresolve : thread.canResolve {
-                                Button(thread.resolved ? "Unresolve thread" : "Resolve thread") { pendingResolve = thread.id }.buttonStyle(.dockCompact).disabled(model.busy)
+                                Button { pendingResolve = thread.id } label: { GitHubActionLabel(title: model.pendingAction == .resolve(thread.id) ? "Updating…" : (thread.resolved ? "Unresolve thread" : "Resolve thread"), isBusy: model.pendingAction == .resolve(thread.id)) }.buttonStyle(.dockCompact).disabled(model.busy)
                             }
                             if let url = thread.comments.first?.url { Link("GitHub", destination: url).buttonStyle(.dockLink) }
                         }
@@ -205,12 +214,12 @@ struct PullRequestThreadListView: View {
             if let error = model.error, path != nil { Text(error).foregroundStyle(Color.dockWarning) }
         }
         .task(id: record.headRevision) { if model.revision != record.headRevision { await model.refresh(record) } }
-        .confirmationDialog("Post reply to \(record.reference.title)?", isPresented: Binding(get: { pendingReply != nil }, set: { if !$0 { pendingReply = nil } }), titleVisibility: .visible) {
-            Button("Post reply") { let id = pendingReply; pendingReply = nil; if let thread = model.threads.first(where: { $0.id == id }) { Task { await model.reply(thread, record: record) } } }
+        .confirmationDialog("Post reply to \(record.reference.title)?", isPresented: Binding(get: { pendingReply != nil }, set: { if !$0 { pendingReply = nil } }), titleVisibility: .visible, presenting: pendingReply) { id in
+            Button("Post reply") { pendingReply = nil; if let thread = model.threads.first(where: { $0.id == id }) { Task { await model.reply(thread, record: record) } } }
             Button("Cancel", role: .cancel) { pendingReply = nil }
-        } message: { Text(model.replies[pendingReply ?? ""] ?? "") }
-        .confirmationDialog("Change review thread on \(record.reference.title)?", isPresented: Binding(get: { pendingResolve != nil }, set: { if !$0 { pendingResolve = nil } }), titleVisibility: .visible) {
-            Button("Confirm thread change") { let id = pendingResolve; pendingResolve = nil; if let thread = model.threads.first(where: { $0.id == id }) { Task { await model.resolve(thread, record: record) } } }
+        } message: { id in Text(model.replies[id] ?? "") }
+        .confirmationDialog("Change review thread on \(record.reference.title)?", isPresented: Binding(get: { pendingResolve != nil }, set: { if !$0 { pendingResolve = nil } }), titleVisibility: .visible, presenting: pendingResolve) { id in
+            Button("Confirm thread change") { pendingResolve = nil; if let thread = model.threads.first(where: { $0.id == id }) { Task { await model.resolve(thread, record: record) } } }
             Button("Cancel", role: .cancel) { pendingResolve = nil }
         }
     }
@@ -246,8 +255,9 @@ struct GitHubInlineCommentEditor: View {
         } footer: {
             Button("Cancel") { dismiss() }.buttonStyle(.dockSecondary).disabled(model.busy)
             Spacer()
-            Button("Post comment") { confirm = true }.buttonStyle(.dockPrimary).disabled(model.busy || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.wrappedValue.count > 10_000)
+            Button { confirm = true } label: { GitHubActionLabel(title: model.pendingAction == .inline(target.id) ? "Posting…" : "Post comment", isBusy: model.pendingAction == .inline(target.id)) }.buttonStyle(.dockPrimary).disabled(model.busy || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.wrappedValue.count > 10_000)
         }
+        .interactiveDismissDisabled(model.busy)
         .confirmationDialog("Post inline comment to \(record.reference.title)?", isPresented: $confirm, titleVisibility: .visible) {
             Button("Post comment") { Task { if await model.postInline(target, record: record) { dismiss() } } }
             Button("Cancel", role: .cancel) {}

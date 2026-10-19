@@ -160,7 +160,7 @@ struct GitHubConversationView: View {
             }
             if preview { MarkdownMessageView(markdown: model.draft).frame(minHeight: 100, alignment: .topLeading) }
             else { TextEditor(text: $model.draft).font(DockTypography.body).scrollContentBackground(.hidden).padding(8).frame(minHeight: 100).background(Color.dockControlSurface, in: DockThemeShape(cornerRadius: DockLayout.controlRadius)) }
-            HStack { Spacer(); Button(model.posting ? "Posting…" : "Post comment") { confirm = true }.buttonStyle(.dockPrimary).controlSize(.small).disabled(model.posting || model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.draft.count > 10_000) }
+            HStack { Spacer(); Button { confirm = true } label: { GitHubActionLabel(title: model.posting ? "Posting…" : "Post comment", isBusy: model.posting) }.buttonStyle(.dockPrimary).controlSize(.small).disabled(model.posting || model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.draft.count > 10_000) }
         }
         .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)
         .task { if !model.loaded { await model.refresh() } }

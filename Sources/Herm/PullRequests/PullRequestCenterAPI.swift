@@ -107,10 +107,15 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         } else { warning.append("Reviews are unavailable.") }
         var result = parse(payload, repository: record.repository, localPath: record.localPath)
         if let nodeID = result?.nodeID,
-           let data = try? await client.graphQL("query($id:ID!){node(id:$id){... on PullRequest{headRefOid baseRefOid mergeable mergeStateStatus reviewDecision}}}", variables: ["id": nodeID]),
+           let data = try? await client.graphQL("query($id:ID!){node(id:$id){... on PullRequest{headRefOid baseRefOid state mergedAt updatedAt mergeable mergeStateStatus reviewDecision viewerCanUpdate}}}", variables: ["id": nodeID]),
            let node = data["node"] as? [String: Any], node["headRefOid"] as? String == result?.headRevision {
+            if let mergedAt = date(node["mergedAt"]), node["state"] as? String == "MERGED" {
+                result?.mergedAt = mergedAt; result?.state = "closed"; result?.isDraft = false
+                if let updatedAt = date(node["updatedAt"]) { result?.updatedAt = updatedAt }
+            }
             result?.mergeState = node["mergeStateStatus"] as? String
             result?.reviewDecision = node["reviewDecision"] as? String
+            result?.viewerCanUpdate = node["viewerCanUpdate"] as? Bool
             result?.mergeability = GitHubMergeability(rawValue: (node["mergeable"] as? String ?? "UNKNOWN").lowercased()) ?? .unknown
         }
         result?.detailWarning = warning.isEmpty ? nil : warning.joined(separator: " ")
@@ -190,16 +195,32 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
 
     nonisolated func updateStatus(_ status: PullRequestStatus, for record: PullRequestRecord) async -> PullRequestRecord? {
         do {
+            var confirmed = record
             if status == .draft || status == .readyForReview {
                 var id = record.nodeID
                 if id == nil { id = (try await client.request(record.repository.apiRepositoryPath + "/pulls/\(record.number)") as? [String: Any])?["node_id"] as? String }
                 guard let id else { return nil }
                 let operation = status == .draft ? "convertPullRequestToDraft" : "markPullRequestReadyForReview"
-                _ = try await client.graphQL("mutation($id:ID!){\(operation)(input:{pullRequestId:$id}){pullRequest{id}}}", variables: ["id": id])
+                let data = try await client.graphQL("mutation($id:ID!){\(operation)(input:{pullRequestId:$id}){pullRequest{id isDraft state updatedAt}}}", variables: ["id": id])
+                guard let result = data[operation] as? [String: Any], let pr = result["pullRequest"] as? [String: Any],
+                      let draft = pr["isDraft"] as? Bool, let state = pr["state"] as? String else { return nil }
+                confirmed.isDraft = draft; confirmed.state = state.lowercased()
+                confirmed.updatedAt = date(pr["updatedAt"]) ?? confirmed.updatedAt
             } else {
-                _ = try await client.request(record.repository.apiRepositoryPath + "/pulls/\(record.number)", method: "PATCH", body: ["state": status == .closed ? "closed" : "open"])
+                guard let payload = try await client.request(record.repository.apiRepositoryPath + "/pulls/\(record.number)", method: "PATCH", body: ["state": status == .closed ? "closed" : "open"]) as? [String: Any],
+                      let updated = parse(payload, repository: record.repository, localPath: record.localPath) else { return nil }
+                confirmed.state = updated.state; confirmed.isDraft = updated.isDraft
+                confirmed.updatedAt = updated.updatedAt ?? confirmed.updatedAt
+                confirmed.mergedAt = updated.mergedAt
             }
-            return await detail(record)
+            // The write response owns lifecycle state; an immediate read may still be cached.
+            let refreshed = await detail(confirmed)
+            var updated = refreshed ?? confirmed
+            if refreshed == nil { updated.detailWarning = "Status updated. Other details could not be refreshed; refresh to retry." }
+            updated.isDraft = confirmed.isDraft; updated.state = confirmed.state; updated.mergedAt = confirmed.mergedAt
+            updated.updatedAt = max(updated.updatedAt ?? .distantPast, confirmed.updatedAt ?? .distantPast)
+            updated.refreshedAt = .now
+            return updated
         } catch { return nil }
     }
 

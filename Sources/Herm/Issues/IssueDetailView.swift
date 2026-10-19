@@ -94,7 +94,7 @@ struct IssueDetailView: View {
     private func issueContent(_ issue: GitHubIssueRecord) -> some View {
         let displayedIssue = center.detailByID[issue.id] ?? issue
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
                 HStack(spacing: 6) {
                     DockIcon(.folder, size: 12, color: Color.dockMetadataText)
                     Text(displayedIssue.repository.id)
@@ -106,9 +106,8 @@ struct IssueDetailView: View {
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .lineLimit(1)
                 Spacer(minLength: 12)
-                if center.loadingDetailID == issue.id {
-                    ProgressView().controlSize(.small)
-                }
+                    .frame(maxHeight: .infinity)
+                    .background { if titleRow != nil { TitlebarDoubleClickArea() } }
                 if let url = displayedIssue.webURL {
                     GitHubLinkButton(
                         destination: url,
@@ -116,15 +115,15 @@ struct IssueDetailView: View {
                     )
                 }
                 DockIconButton(icon: .arrowsClockwise, label: "Refresh issue details", isBusy: center.loadingDetailID == issue.id, style: DockThemePalette(theme: DockThemeRuntime.current)) { Task { await center.refreshSelectedDetail() } }
-                GitHubAuthoringMenu(reference: displayedIssue.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(displayedIssue.id)
+                GitHubAuthoringMenu(reference: displayedIssue.reference, client: center.api.client, onIssueStateChanged: { center.applyIssueState($0) }) { Task { await center.refreshSelectedDetail() } }.id(displayedIssue.id)
                 DockMenu {
                     Button(PullRequestChatLinkStore().sessionID(for: displayedIssue.id) == nil ? "Prepare in Hermes" : "Open linked Hermes chat") { onOpenChat(displayedIssue) }
-                } label: { DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28) }
+                } label: { DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28)
+                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)) }
                 AttachToChatMenu(pill: true) { ChatContext(issue: displayedIssue) }
             }
             .padding(.horizontal, 24)
             .frame(height: 52)
-            .background { if titleRow != nil { TitlebarDoubleClickArea() } }
             .background(titleRow != nil ? Color.dockSidebar : .clear)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 

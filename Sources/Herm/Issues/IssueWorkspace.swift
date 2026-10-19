@@ -11,6 +11,7 @@ struct IssueWorkspace: View {
     @State private var collapsedRepositories: Set<String> = []
     @State private var showsDetail = false
     @State private var refreshID = 0
+    @State private var loadedBrowse = GitHubBrowseOptions()
     @Environment(\.openGitHubItem) private var openItem
     @Environment(\.scenePhase) private var scenePhase
 
@@ -22,7 +23,11 @@ struct IssueWorkspace: View {
         }
         .background(Color.dockCanvas)
         .task(id: refreshID) {
-            if refreshID > 0 || !center.hasLoaded { await center.refresh(projects: projects) }
+            if refreshID > 0 || !center.hasLoaded {
+                if refreshID > 0 { center.cancelLoads() }
+                await center.refresh(projects: projects)
+                if !Task.isCancelled, center.errorMessage == nil { loadedBrowse = center.browsing }
+            }
         }
         .task {
             while !Task.isCancelled {
@@ -43,7 +48,7 @@ struct IssueWorkspace: View {
             issueToolbar
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    if center.isRefreshing && center.records.isEmpty {
+                    if center.isRefreshing && (center.records.isEmpty || center.browsing != loadedBrowse) {
                         ForEach(0..<6, id: \.self) { _ in issueLoadingRow }
                     } else if !center.hasLoaded && center.errorMessage != nil {
                         VStack(alignment: .leading, spacing: 5) {
@@ -96,7 +101,7 @@ struct IssueWorkspace: View {
 
     private var issueToolbar: some View {
         VStack(spacing: 8) {
-            GitHubBrowseControls(kind: .issue, client: center.api.client, repositories: center.repositories, options: $center.browsing, refresh: refresh) { openItem($0) }
+            GitHubBrowseControls(kind: .issue, client: center.api.client, repositories: center.repositories, options: $center.browsing, refresh: refresh, onCreated: { openItem($0) }, isLoading: center.isRefreshing)
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
                 TextField("Search issues", text: $center.query)
@@ -114,7 +119,7 @@ struct IssueWorkspace: View {
                     }
                 }
                 Spacer(minLength: 8)
-                Menu {
+                DockMenu {
                     Button("All repositories") { center.repositoryScope = nil }
                     ForEach(Array(Set(center.records.map(\.repository.id))).sorted(), id: \.self) { repository in
                         Button(repository) { center.repositoryScope = repository }
@@ -129,14 +134,16 @@ struct IssueWorkspace: View {
                         DockIcon(.caretDown, size: 9, color: Color.dockMetadataText)
                     }
                     .foregroundStyle(Color.dockSecondaryText)
-                    .frame(minHeight: 30)
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
                 }
-                .menuStyle(.borderlessButton)
+                .help("Filter loaded issues by repository")
             }
 
             HStack(spacing: 6) {
-                    DockIcon(.warning, size: 12, color: Color.dockWarning)
-                    Text(center.errorMessage ?? center.coverage ?? "\(center.visible.count) issues").foregroundStyle(center.errorMessage == nil ? Color.dockMetadataText : Color.dockWarning)
+                    if center.errorMessage != nil { DockIcon(.warning, size: 12, color: Color.dockWarning) }
+                    Text(center.isRefreshing ? "Loading \(center.browsing.state.rawValue.lowercased()) issues…" : (center.errorMessage ?? center.coverage ?? "\(center.visible.count) issues")).foregroundStyle(center.errorMessage == nil ? Color.dockMetadataText : Color.dockWarning)
                     Spacer(minLength: 0)
                 }.font(DockTypography.metadata).lineLimit(2).frame(height: 28, alignment: .leading)
         }

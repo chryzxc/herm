@@ -5,6 +5,7 @@ struct GitHubLabel: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let description: String
+    var color: String? = nil
 }
 struct GitHubMilestone: Identifiable, Equatable, Sendable {
     let id: String
@@ -74,7 +75,7 @@ struct GitHubMetadataService: Sendable {
         result.updatedAt = row["updated_at"] as? String
         result.labels = (row["labels"] as? [[String: Any]] ?? []).compactMap { row in
             guard let name = row["name"] as? String else { return nil }
-            return GitHubLabel(id: row["node_id"] as? String ?? name, name: name, description: row["description"] as? String ?? "")
+            return GitHubLabel(id: row["node_id"] as? String ?? name, name: name, description: row["description"] as? String ?? "", color: row["color"] as? String)
         }
         result.assignees = (row["assignees"] as? [[String: Any]] ?? []).compactMap { $0["login"] as? String }
         result.milestone = (row["milestone"] as? [String: Any]).flatMap(GitHubMilestone.parse)
@@ -197,7 +198,7 @@ struct GitHubMetadataService: Sendable {
         guard !page.coverage.partial else { throw GitHubRequestError.unavailable }
         return page.rows.compactMap { row in
             guard let name = row["name"] as? String else { return nil }
-            return GitHubLabel(id: row["node_id"] as? String ?? name, name: name, description: row["description"] as? String ?? "")
+            return GitHubLabel(id: row["node_id"] as? String ?? name, name: name, description: row["description"] as? String ?? "", color: row["color"] as? String)
         }
     }
     func milestones(_ reference: GitHubItemReference) async throws -> [GitHubMilestone] {

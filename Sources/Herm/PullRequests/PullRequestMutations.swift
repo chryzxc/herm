@@ -35,8 +35,12 @@ final class PullRequestMutationCoordinator: ObservableObject {
 
     func confirm(using center: PullRequestCenterModel) async -> Bool {
         guard let pending else { return false }
-        defer { self.pending = nil }
-        switch pending {
+        return await confirm(pending, using: center)
+    }
+
+    func confirm(_ request: PullRequestMutationRequest, using center: PullRequestCenterModel) async -> Bool {
+        pending = nil
+        switch request {
         case let .comment(record, body):
             return await center.addComment(body, to: record)
         case let .status(record, status):

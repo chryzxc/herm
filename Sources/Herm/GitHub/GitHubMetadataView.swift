@@ -64,7 +64,7 @@ struct GitHubMetadataView: View {
                 metadataSection(.labels, editable: model.basic?.canTriage == true) {
                     if let labels = model.basic?.labels, !labels.isEmpty {
                         DockChipFlow {
-                            ForEach(labels) { label in DockMetadataPill(text: label.name).textSelection(.enabled) }
+                            ForEach(labels) { label in DockMetadataPill(text: label.name, colorHex: label.color).textSelection(.enabled) }
                         }
                     } else { none("No labels") }
                 }
@@ -86,7 +86,9 @@ struct GitHubMetadataView: View {
                                 } else { DockMetadataPill(text: title).textSelection(.enabled) }
                             }
                         }
-                    } else { none(model.loading.contains("Projects") ? "Loading projects…" : "Projects unavailable") }
+                    } else if model.errors["Projects"] == nil {
+                        none(model.loading.contains("Projects") ? "Loading…" : "Unavailable")
+                    }
                 }
                 metadataSection(.milestone, editable: model.basic?.canTriage == true) {
                     if let milestone = model.basic?.milestone {
@@ -127,19 +129,27 @@ struct GitHubMetadataView: View {
             VStack(alignment: .leading, spacing: 6) {
                 content()
                 if let error = model.errors[section.rawValue] {
-                    Text(error).font(DockTypography.metadata).foregroundStyle(Color.dockWarning)
-                    Button("Retry") {
-                        Task {
-                            if section == .projects { await model.loadProjects() }
-                            else { await model.loadDevelopment() }
+                    HStack(spacing: 6) {
+                        if section == .projects {
+                            Text(model.projects == nil ? "Unavailable" : "Couldn’t refresh").foregroundStyle(Color.dockMetadataText)
+                        } else {
+                            Text("Couldn’t load").foregroundStyle(Color.dockMetadataText)
                         }
-                    }.buttonStyle(.dockCompact).disabled(model.loading.contains(section.rawValue))
+                        Button {
+                            Task {
+                                if section == .projects { await model.loadProjects() }
+                                else { await model.loadDevelopment() }
+                            }
+                        } label: { GitHubActionLabel(title: "Retry", isBusy: model.loading.contains(section.rawValue)) }
+                        .buttonStyle(.dockCompact).disabled(model.loading.contains(section.rawValue))
+                    }.help(error)
+                    .accessibilityHint(error)
                 }
             }
             .padding(.top, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             if editable {
-                DockIconButton(icon: .pencil, label: "Edit \(section.rawValue.lowercased())", size: 24, style: style) { editing = section }
+                DockIconButton(icon: .pencil, label: "Edit \(section.rawValue.lowercased())", size: 24, style: style) { editing = section }.disabled(!model.loading.isEmpty)
             }
         }
         .padding(.vertical, 6)
@@ -162,6 +172,8 @@ struct GitHubMetadataEditor: View {
     @State private var projects: [GitHubProject] = []
     @State private var search = ""
     @State private var lookup = ""
+    @State private var lookingUp = false
+    @State private var saving = false
     @State private var loaded = false
     @State private var busy = false
     @State private var error: String?
@@ -183,34 +195,37 @@ struct GitHubMetadataEditor: View {
         DockModal(title: "Edit \(section.rawValue.lowercased())", subtitle: model.reference.title, width: 520) {
             TextField("Filter choices", text: $search).textFieldStyle(.dockGlass)
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) { choices }
+                VStack(alignment: .leading, spacing: 10) { choices }.disabled(busy)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.frame(minHeight: 120, maxHeight: 340)
             if section == .projects || section == .development {
                 HStack {
                     TextField(section == .projects ? "GitHub Project URL" : "owner/repo#number or GitHub URL", text: $lookup).textFieldStyle(.dockGlass)
-                    Button("Look up") { Task { await lookUp() } }.buttonStyle(.dockCompact).disabled(busy || lookup.isEmpty)
+                    Button { Task { await lookUp() } } label: { GitHubActionLabel(title: lookingUp ? "Looking up…" : "Look up", isBusy: lookingUp) }.buttonStyle(.dockCompact).disabled(busy || lookup.isEmpty)
                 }
             }
             Text(error ?? " ").font(DockTypography.body).foregroundStyle(Color.dockWarning).frame(minHeight: 34, alignment: .topLeading)
         } footer: {
             Button("Cancel") { dismiss() }.buttonStyle(.dockSecondary).disabled(busy)
             Spacer()
-            if busy { ProgressView().controlSize(.small) }
-            Button("Review changes") { confirm = true }.buttonStyle(.dockPrimary).disabled(!loaded || busy)
+            Button { confirm = true } label: { GitHubActionLabel(title: saving ? "Saving…" : "Review changes", isBusy: saving) }.buttonStyle(.dockPrimary).disabled(!loaded || busy)
         }
         .confirmationDialog("Save changes to \(model.reference.title)?", isPresented: $confirm, titleVisibility: .visible) {
             Button("Save \(section.rawValue.lowercased())") { Task { await save() } }
             Button("Cancel", role: .cancel) {}
         } message: { Text(changeSummary) }
+        .interactiveDismissDisabled(busy)
         .task { await loadChoices() }
     }
     @ViewBuilder private var choices: some View {
-        if !loaded { ProgressView("Loading choices…") }
+        if !loaded {
+            if busy { ProgressView("Loading choices…") }
+            else { Button("Retry loading choices") { Task { await loadChoices() } }.buttonStyle(.dockCompact) }
+        }
         switch section {
         case .labels:
             ForEach(labels.filter { matches($0.name) }) { label in
-                Toggle(isOn: selection(label.name)) { VStack(alignment: .leading) { Text(label.name); if !label.description.isEmpty { Text(label.description).foregroundStyle(Color.dockSecondaryText) } } }.toggleStyle(.dockSwitch)
+                Toggle(isOn: selection(label.name)) { VStack(alignment: .leading) { DockMetadataPill(text: label.name, colorHex: label.color); if !label.description.isEmpty { Text(label.description).foregroundStyle(Color.dockSecondaryText) } } }.toggleStyle(.dockSwitch)
             }
         case .assignees:
             ForEach(assignees.filter(matches), id: \.self) { name in Toggle(name, isOn: selection(name)).toggleStyle(.dockSwitch) }
@@ -269,7 +284,8 @@ struct GitHubMetadataEditor: View {
         } catch { self.error = error.localizedDescription }
     }
     private func lookUp() async {
-        busy = true; defer { busy = false }
+        guard !busy else { return }
+        busy = true; lookingUp = true; defer { busy = false; lookingUp = false }
         do {
             if section == .projects {
                 let project = try await model.service.project(at: lookup)
@@ -284,7 +300,7 @@ struct GitHubMetadataEditor: View {
         } catch { self.error = error.localizedDescription }
     }
     private func save() async {
-        guard !busy else { return }; busy = true; defer { busy = false }
+        guard !busy else { return }; busy = true; saving = true; defer { busy = false; saving = false }
         do {
             let reference = model.resolvedReference
             switch section {

@@ -356,6 +356,7 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
     var mergeability: GitHubMergeability = .unknown
     var mergeState: String? = nil
     var reviewDecision: String? = nil
+    var viewerCanUpdate: Bool? = nil
     var checksAvailable = false
     var reviewsAvailable = false
     var refreshedAt: Date? = nil
@@ -367,12 +368,36 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
     /// separators (for example, render `4878`, never `4,878`).
     var displayNumber: String { String(number) }
 
+    var isOpenForWork: Bool { state == "open" && mergedAt == nil }
+    var canAnalyzeConflicts: Bool {
+        isOpenForWork && mergeability == .conflicting && headRevision != nil && baseRevision != nil
+    }
+    var availableStatusActions: [PullRequestStatus] {
+        guard mergedAt == nil else { return [] }
+        if state == "closed" { return [.reopened] }
+        guard state == "open" else { return [] }
+        return [isDraft ? .readyForReview : .draft, .closed]
+    }
+    var checksSummary: String {
+        var parts: [String] = []
+        for (count, label) in [(checks.filter { $0.conclusion == "success" }.count, "passed"),
+                               (checks.filter(\.isFailure).count, "failed"),
+                               (checks.filter(\.isPending).count, "pending"),
+                               (checks.filter { ["skipped", "neutral"].contains($0.conclusion ?? "") }.count, "skipped")] where count > 0 {
+            parts.append("\(count) \(label)")
+        }
+        let unknown = checks.filter { !$0.isSuccess && !$0.isFailure && !$0.isPending }.count
+        if unknown > 0 { parts.append("\(unknown) unknown") }
+        if !checksAvailable { parts.append("Check status incomplete") }
+        return parts.isEmpty ? "No checks reported" : parts.joined(separator: " · ")
+    }
+
     var readinessLabel: String {
         if mergedAt != nil { return "Merged" }
         if state == "closed" { return "Closed" }
         if mergeability == .conflicting { return "Conflicts" }
         if isDraft { return "Draft" }
-        if checks.contains(where: \.isFailure) { return "CHECKS FAILED" }
+        if checks.contains(where: \.isFailure) { return "Checks failed" }
         if reviewDecision == "CHANGES_REQUESTED" { return "Changes requested" }
         if checks.contains(where: \.isPending) { return "Checks running" }
         guard checksAvailable else { return "Checks not loaded" }
@@ -385,3 +410,14 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
 
 struct PullRequestCenterFailure: Error { let repository: String }
 
+
+extension PullRequestRecord {
+    func activityItems(comments: [PullRequestComment], commits: [PullRequestCommit], events: [PullRequestEvent]) -> [GitHubConversationItem] {
+        var items = comments.map { GitHubConversationItem(id: "comment:" + $0.id, author: $0.author, summary: "commented", body: $0.body, date: $0.createdAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
+        items += commits.map { GitHubConversationItem(id: "commit:" + $0.id, author: $0.author, summary: $0.message, body: "", date: $0.committedAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
+        items += reviews.map { GitHubConversationItem(id: "review:" + $0.id, author: $0.author, summary: $0.state.replacingOccurrences(of: "_", with: " ").capitalized, body: $0.body, date: $0.submittedAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
+        items += events.compactMap { event in event.presentation.map { GitHubConversationItem(id: "event:" + event.id, author: event.actor, summary: String($0.text.dropFirst((event.actor + " ").count)), body: "", date: event.createdAt, url: nil, avatarURL: event.actorAvatarURL) } }
+        return items.sorted { ($0.date ?? .distantPast) < ($1.date ?? .distantPast) }
+    }
+
+}

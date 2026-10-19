@@ -35,6 +35,7 @@ final class IssueCenterModel: ObservableObject {
     @Published private(set) var repositories: [GitHubRepositoryReference] = []
     private var generation = UUID()
     private var detailNeedsRefresh = Set<String>()
+    private var stateVersions: [String: UUID] = [:]
     private var conversations: [String: GitHubConversationModel] = [:]
 
     init(
@@ -163,15 +164,17 @@ final class IssueCenterModel: ObservableObject {
     func loadSelectedDetail(force: Bool = false) async {
         guard !Task.isCancelled, !isRefreshing, let issue = selected, (force || detailNeedsRefresh.contains(issue.id) || detailByID[issue.id] == nil) else { return }
         let token = generation
+        let stateVersion = stateVersions[issue.id]
         loadingDetailID = issue.id
         detailErrorMessage = nil
         defer {
             if token == generation, loadingDetailID == issue.id { loadingDetailID = nil }
         }
         let detail = await api.detail(issue)
-        guard token == generation, !Task.isCancelled, selectedIssueID == issue.id else { return }
+        guard token == generation, !Task.isCancelled, selectedIssueID == issue.id, stateVersion == stateVersions[issue.id] else { return }
         detailNeedsRefresh.remove(issue.id)
         if let detail {
+            if let currentDate = detailByID[issue.id]?.updatedAt, (detail.updatedAt ?? .distantPast) < currentDate { return }
             detailByID[issue.id] = detail
             if let index = records.firstIndex(where: { $0.id == issue.id }) { records[index] = detail }
         } else {
@@ -183,6 +186,18 @@ final class IssueCenterModel: ObservableObject {
         guard let id = selectedIssueID else { return }
         await loadSelectedDetail(force: true)
         if let record = detailByID[id] ?? selected { await conversation(for: record).refresh() }
+    }
+
+    func applyIssueState(_ updated: GitHubIssueRecord) {
+        stateVersions[updated.id] = UUID()
+        var result = detailByID[updated.id] ?? records.first(where: { $0.id == updated.id }) ?? updated
+        result.state = updated.state; result.updatedAt = updated.updatedAt ?? result.updatedAt
+        detailByID[result.id] = result
+        if (result.isOpen && browsing.state == .closed) || (!result.isOpen && browsing.state == .open) {
+            records.removeAll { $0.id == result.id }; repairSelection()
+        } else if let index = records.firstIndex(where: { $0.id == result.id }) {
+            records[index] = result
+        }
     }
 
     func resetFilters() {

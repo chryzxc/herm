@@ -41,6 +41,7 @@ struct GitHubBrowseControls: View {
     @Binding var options: GitHubBrowseOptions
     let refresh: () -> Void
     let onCreated: (GitHubItemReference) -> Void
+    var isLoading = false
     @State private var editing = false
     @State private var filters = false
     @State private var draft = GitHubBrowseOptions()
@@ -54,9 +55,27 @@ struct GitHubBrowseControls: View {
                 Divider()
                 Button("Repository and metadata filters…") { draft = options; filters = true }
             } label: { Text(options.repository.isEmpty ? "My work" : options.repository).lineLimit(1) }
-            Picker("State", selection: $options.state) { ForEach(GitHubBrowseState.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.menu).labelsHidden()
-                .onChange(of: options.state) { _, _ in refresh() }
+            HStack(spacing: 4) {
+                Picker("State", selection: $options.state) { ForEach(GitHubBrowseState.allCases) { Text($0.rawValue).tag($0) } }
+                    .pickerStyle(.menu).labelsHidden()
+                    .disabled(isLoading)
+                    .onChange(of: options.state) { _, _ in refresh() }
+                ProgressView().controlSize(.mini)
+                    .frame(width: 14, height: 14)
+                    .opacity(isLoading ? 1 : 0)
+                    .accessibilityLabel("Loading \(options.state.rawValue.lowercased()) \(kind == .issue ? "issues" : "pull requests")")
+                    .accessibilityHidden(!isLoading)
+            }
             Spacer(minLength: 0)
+            Button(action: refresh) {
+                DockIcon(.arrowClockwise, size: 14, color: Color.dockSecondaryText)
+                    .frame(width: 28, height: 28)
+                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+            }
+            .buttonStyle(.dockHover)
+            .disabled(isLoading)
+            .help("Refresh")
+            .accessibilityLabel("Refresh \(kind == .issue ? "issues" : "pull requests")")
             DockMenu {
                 DockMenuSection("Sort by") {
                     ForEach(GitHubBrowseSort.allCases) { sort in
@@ -83,7 +102,7 @@ struct GitHubBrowseControls: View {
             } label: {
                 DockIcon(.sliders, size: 14, color: Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
-                    .background(Color.dockControlSurface, in: DockThemeShape(cornerRadius: DockLayout.controlRadius))
+                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
             }
             .help("Sort and saved view")
             .accessibilityLabel("Sort and saved view")

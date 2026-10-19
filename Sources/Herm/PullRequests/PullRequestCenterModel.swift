@@ -9,8 +9,13 @@ final class PullRequestCenterModel: ObservableObject {
     private var detailChanges: AnyCancellable?
     private var recordChanges: AnyCancellable?
     private let mutationExecutor: any PullRequestMutationExecuting
+    private var statusVersions: [String: UUID] = [:]
     private var summaryTasks: [String: Task<PullRequestRecord?, Never>] = [:]
-    @Published private(set) var records: [PullRequestRecord] = [] {
+    private(set) var records: [PullRequestRecord] {
+        get { storedRecords }
+        set { storedRecords = newValue.map { $0.retainingMergedState(from: details.records[$0.id]) } }
+    }
+    @Published private var storedRecords: [PullRequestRecord] = [] {
         didSet {
             guard hasLoaded else { return }
             let previous = Dictionary(oldValue.map { ($0.id, $0.updatedAt) }, uniquingKeysWith: { a, _ in a })
@@ -29,6 +34,7 @@ final class PullRequestCenterModel: ObservableObject {
     @Published private(set) var loadingDetailIDs = Set<String>()
     @Published private(set) var isPostingComment = false
     @Published private(set) var isUpdatingStatus = false
+    @Published private(set) var updatingStatusID: String?
     @Published private(set) var errorMessage: String?
     @Published private(set) var failedRepositories: [String] = []
     @Published private(set) var viewerLogin: String?
@@ -69,7 +75,7 @@ final class PullRequestCenterModel: ObservableObject {
     func isLoadingDetail(for id: String) -> Bool { loadingDetailIDs.contains(id) }
     var selected: PullRequestRecord? {
         guard let row = records.first(where: { $0.id == selectedID }) else { return nil }
-        if var cached = details.records[row.id], (cached.updatedAt ?? .distantPast) >= (row.updatedAt ?? .distantPast), row.headRevision == nil || cached.headRevision == row.headRevision {
+        if var cached = details.records[row.id], cached.mergedAt != nil || ((cached.updatedAt ?? .distantPast) >= (row.updatedAt ?? .distantPast) && (row.headRevision == nil || cached.headRevision == row.headRevision)) {
             cached.localPath = row.localPath; return cached
         }
         return row
@@ -259,13 +265,17 @@ final class PullRequestCenterModel: ObservableObject {
     @discardableResult
     func loadSummary(for record: PullRequestRecord) async -> PullRequestRecord? {
         guard !Task.isCancelled, !isRefreshing else { return nil }
-        if let task = summaryTasks[record.id], !task.isCancelled { return await task.value }
+        if let task = summaryTasks[record.id], !task.isCancelled { return await task.value?.retainingMergedState(from: details.records[record.id]) }
         let token = generation
+        let statusVersion = statusVersions[record.id]
+        guard !isUpdatingStatus else { return nil }
         let api = api
         let task = Task { await api.detail(record) }
         summaryTasks[record.id] = task
-        let updated = await task.value
-        guard token == generation, !task.isCancelled else { return nil }
+        let updated = await task.value?.retainingMergedState(from: details.records[record.id])
+        guard token == generation, !task.isCancelled, statusVersion == statusVersions[record.id] else { return nil }
+        if let updated, let current = details.records[record.id],
+           let currentDate = current.updatedAt, (updated.updatedAt ?? .distantPast) < currentDate { return current }
         if let updated { details.records[record.id] = updated }
         if let updated, let index = records.firstIndex(where: { $0.id == record.id }) {
             records[index] = updated
@@ -346,17 +356,32 @@ final class PullRequestCenterModel: ObservableObject {
         return true
     }
 
+    func applyLandingSnapshot(_ snapshot: GitHubLandingSnapshot, for record: PullRequestRecord) {
+        guard snapshot.state == "MERGED", let mergedAt = snapshot.mergedAt,
+              snapshot.id == record.nodeID, snapshot.head == record.headRevision else { return }
+        statusVersions[record.id] = UUID()
+        summaryTasks.removeValue(forKey: record.id)?.cancel()
+        var updated = details.records[record.id] ?? records.first(where: { $0.id == record.id }) ?? record
+        updated.mergedAt = mergedAt; updated.state = "closed"; updated.isDraft = false
+        updated.updatedAt = snapshot.updatedAt ?? mergedAt; updated.refreshedAt = .now
+        details.records[record.id] = updated
+        if let index = records.firstIndex(where: { $0.id == record.id }) { records[index] = updated }
+    }
+
     func updateStatus(_ status: PullRequestStatus, for record: PullRequestRecord) async -> Bool {
         guard !isUpdatingStatus else { return false }
-        isUpdatingStatus = true
-        defer { isUpdatingStatus = false }
-        guard let updated = await mutationExecutor.updateStatus(status, for: record) else {
+        isUpdatingStatus = true; updatingStatusID = record.id; errorMessage = nil
+        statusVersions[record.id] = UUID()
+        summaryTasks.removeValue(forKey: record.id)?.cancel()
+        defer { isUpdatingStatus = false; updatingStatusID = nil }
+        guard let response = await mutationExecutor.updateStatus(status, for: record) else {
             errorMessage = "GitHub could not update this pull request status. Check your sign-in and try again."
             return false
         }
         summaryTasks.removeValue(forKey: record.id)?.cancel()
+        let updated = response.retainingMergedState(from: details.records[record.id])
         details.records[record.id] = updated
-        if status == .closed && browsing.state == .open {
+        if (updated.state == "closed" && browsing.state == .open) || (updated.state == "open" && browsing.state == .closed) {
             records.removeAll { $0.id == record.id }
             filesByID[record.id] = nil
             commentsByID[record.id] = nil
