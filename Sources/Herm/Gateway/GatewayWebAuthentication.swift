@@ -160,12 +160,19 @@ enum GatewayHTTP {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw HermesGateway.GatewayError.malformedResponse }
         if signIn { await GatewayWebAuthentication.shared.capture(response) }
-        let parsed = try? JSONSerialization.jsonObject(with: data)
+        let parsed = await parseJSON(data).value
         // A few dashboard routes (e.g. `/api/tools/toolsets`) answer with a bare array; callers read it under `items`.
         guard let json = parsed as? [String: Any] ?? (parsed as? [Any]).map({ ["items": $0] }) else {
             if !(200..<300).contains(response.statusCode) { throw HermesGateway.GatewayError.httpError(response.statusCode) }
             throw HermesGateway.GatewayError.malformedResponse
         }
         return (response.statusCode, json)
+    }
+
+    private struct ParsedJSON: @unchecked Sendable { let value: Any? }
+
+    /// Nonisolated async runs off the main actor: Kanban boards and transcript pages are large.
+    nonisolated private static func parseJSON(_ data: Data) async -> ParsedJSON {
+        ParsedJSON(value: try? JSONSerialization.jsonObject(with: data))
     }
 }

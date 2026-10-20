@@ -64,6 +64,9 @@ final class HermesGateway: NSObject {
     private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
     private var timeoutTasks: [Int: Task<Void, Never>] = [:]
     private var reconnectTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
+    /// The socket whose last ping got a pong; only then is Hermes "connected".
+    private var liveSocket: URLSessionWebSocketTask?
     private var backendOutput = ""
     private var backendStartWaiters: [CheckedContinuation<Void, Error>] = []
     private let connectionGate = HermesConnectionGate()
@@ -96,7 +99,7 @@ final class HermesGateway: NSObject {
     func connect() async throws {
         if socket != nil {
             DebugLog.write("connect: socket already exists")
-            onConnectionChange?(true)
+            if liveSocket === socket { onConnectionChange?(true) }
             return
         }
         try await connectionGate.perform { [weak self] in
@@ -127,9 +130,9 @@ final class HermesGateway: NSObject {
         task.maximumMessageSize = Self.maximumWebSocketMessageSize
         socket = task
         task.resume()
-        onConnectionChange?(true)
         DebugLog.write("connect: WebSocket task resumed")
         receiveNext()
+        startHeartbeat(task)
         // Hermes fails approval/clarify requests fast for a WebSocket client
         // that never says it answers server→client requests.
         Task { [weak self] in
@@ -203,6 +206,7 @@ final class HermesGateway: NSObject {
 
     func close() {
         reconnectTask?.cancel(); reconnectTask = nil
+        heartbeatTask?.cancel(); heartbeatTask = nil
         connectionGate.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
         urlSession?.invalidateAndCancel()
@@ -364,6 +368,37 @@ final class HermesGateway: NSObject {
         guard case .string(let text) = message,
               let data = text.data(using: .utf8) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// A resumed task is not an open socket, and a half-open one (sleep, dead
+    /// SSH tunnel) never fails a receive. Report connected only after a pong,
+    /// and tear the socket down when one does not arrive in time.
+    private func startHeartbeat(_ current: URLSessionWebSocketTask) {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                // A cancelled socket fails the pending ping, which ends the wait.
+                let deadline = Task {
+                    try? await Task.sleep(for: .seconds(10))
+                    if !Task.isCancelled { current.cancel(with: .goingAway, reason: nil) }
+                }
+                let alive = await withCheckedContinuation { continuation in
+                    current.sendPing { continuation.resume(returning: $0 == nil) }
+                }
+                deadline.cancel()
+                guard !Task.isCancelled, let self, self.socket === current else { return }
+                guard alive else {
+                    DebugLog.write("heartbeat: no pong")
+                    self.handleReceiveFailure()
+                    return
+                }
+                if self.liveSocket !== current {
+                    self.liveSocket = current
+                    self.onConnectionChange?(true)
+                }
+                try? await Task.sleep(for: .seconds(20))
+            }
+        }
     }
 
     private func handleReceiveFailure() {
