@@ -59,7 +59,6 @@ struct GitHubAuthoringMenu: View {
                 Button("Reopen issue") { pendingState = "open" }.disabled(state != "closed" || busy || !canManage)
             }
             Button("Copy link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reference.webURL.absoluteString, forType: .string) }
-            Link("Open on GitHub", destination: reference.webURL)
         } label: {
             Group {
                 if busy || loading { ProgressView().controlSize(.mini) }

@@ -210,6 +210,9 @@ extension DockPopover {
                                         collapsed: panelPresentation.collapsedSize))
             .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
             .dockThemedRoot()
+            .modifier(ExpandedReviewHost(model: model, router: expandedReviewRouter,
+                titleRow: usesWindowChrome ? DockTitleRow(height: DockWindowChrome.titleRowHeight,
+                    leadingClearance: DockWindowChrome.fullWidthTrafficLightClearance) : nil))
             .sheet(item: $selectedChatImage) { preview in
                 ChatImagePreviewModal(image: preview.image)
             }
@@ -426,7 +429,7 @@ extension DockPopover {
             return AnyView(
                 FullscreenPanelSplitView(
                     leading: conversationColumn,
-                    trailing: contextPanel,
+                    trailing: contextPanel.environment(\.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty),
                     // Fraction of the *remaining* space after the outer
                     // queue split, chosen so the three visible columns land
                     // at the DesktopWorkspaceFractions targets (queue /

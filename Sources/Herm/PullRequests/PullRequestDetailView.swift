@@ -5,6 +5,10 @@ struct PullRequestDetailView: View {
     @ObservedObject var center: PullRequestCenterModel
     let onOpenChat: (PullRequestRecord) -> Void
 
+    @State private var readingGuide = false
+    @StateObject private var guide = ReviewGuideCoordinator()
+    @ObservedObject private var watches = PullRequestWatchStore.shared
+    @Environment(\.chatContextRouter) private var contextRouter
     @State private var detailRefreshID = 0
     @State private var detailTab = 0
     @State private var inlineTarget: GitHubInlineCommentTarget?
@@ -22,6 +26,12 @@ struct PullRequestDetailView: View {
 
     var body: some View {
         detailPane
+            .sheet(isPresented: $readingGuide) {
+                if let model = contextRouter?.model, let pr = center.selected {
+                    ReviewGuideView(coordinator: guide, model: model,
+                        currentIdentity: (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown"), directory: pr.localPath.isEmpty ? nil : pr.localPath).modifier(ReviewSheetContext())
+                }
+            }
             .task(id: "\(center.selectedID ?? ""):\(center.isRefreshing):\(detailRefreshID)") {
                 guard center.selectedID != nil, !center.isRefreshing else { return }
                 await center.loadSelectedDetail()
@@ -85,9 +95,10 @@ struct PullRequestDetailView: View {
         if let pr = center.selected, pr.changedFiles == nil, center.filesByID[pr.id] == nil {
             detailLoadingPane
         } else if let pr = center.selected { VStack(alignment: .leading, spacing: 0) {
-        detailHeader(pr)
+        // Header stays above the scroller so scrolled content never draws over or steals clicks from it.
+        detailHeader(pr).zIndex(1)
         if detailTab == 0 {
-            ScrollView { summary(pr).padding(.horizontal, 24) }
+            ScrollView { summary(pr).padding(.horizontal, 24) }.clipped()
         } else if detailTab == 2 {
             PullRequestReviewView(model: center.review(for: pr), record: pr, viewer: center.viewerLogin) { Task { await center.refreshSelectedDetail() } }
         } else {
@@ -551,6 +562,28 @@ struct PullRequestDetailView: View {
 
     private func codeToolbar(fileIDs: Set<String>) -> some View {
         HStack(spacing: 4) {
+            if let pr = center.selected {
+                DockMenu {
+                    Button(watches.contains(pr) ? "Stop watching" : "Watch pull request") { watches.toggle(pr) }
+                    Button("Generate review guide") {
+                        guard let model = contextRouter?.model else { return }
+                        guide.start(model: model, directory: pr.localPath.isEmpty ? nil : pr.localPath,
+                            identity: (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown"),
+                            documents: (center.filesByID[pr.id] ?? []).compactMap { file in file.patch.map { DiffDocument(path: file.path, patch: $0) } },
+                            partial: (center.filesByID[pr.id] ?? []).contains { $0.patch == nil })
+                    }.disabled(guide.requesting || guide.uncertain || !center.filesAreCurrent(for: pr) || contextRouter?.model == nil)
+                    if guide.session != nil { Button("Read guide") { readingGuide = true } }
+                    if let session = guide.session {
+                        Button("Open review conversation") { contextRouter?.model?.resumeSession(session); contextRouter?.onOpened(session.id) }
+                    }
+                    if let message = guide.message { Text(message) }
+                    if let error = watches.error { Text(error) }
+                } label: {
+                    PullRequestReviewToolbarIcon(name: .dotsThree, accessibilityLabel: "Review actions", tooltip: "Review actions")
+                }
+                .fixedSize()
+                .help("Review actions")
+            }
             DockMenu {
                 Toggle("Enable word wrap", isOn: $reviewPreferences.wordWrap)
                 Toggle("Enable rich preview", isOn: $reviewPreferences.richPreview)
@@ -709,72 +742,22 @@ struct PullRequestDetailView: View {
 
     @ViewBuilder
     private func diffPatch(_ patch: String, file: PullRequestFile) -> some View {
-        let rows = diffPresentationCache.rows(for: patch)
-        Group {
-            if reviewPreferences.diffMode == .split {
-                // Split reviews must always start with both sides visible. Each
-                // pane shares the available viewport instead of sizing itself to
-                // the longest line in the patch.
-                diffRows(rows, file: file)
-            } else if reviewPreferences.wordWrap {
-                diffRows(rows, file: file)
-            } else {
-                ScrollView(.horizontal, showsIndicators: true) { diffRows(rows, file: file).fixedSize(horizontal: true, vertical: false) }
+        SharedDiffView(patch: patch, path: file.path, preferredSplit: reviewPreferences.diffMode == .split,
+                       wraps: reviewPreferences.wordWrap, wordDiffs: reviewPreferences.wordDiffs,
+                       onComment: (center.selected?.state == "open" && center.selected?.headRevision != nil) ? { line in
+            if let pr = center.selected, center.filesAreCurrent(for: pr), let revision = pr.headRevision,
+               pr.state == "open", let number = line.newLine ?? line.oldLine {
+                inlineTarget = GitHubInlineCommentTarget(path: file.path, line: number,
+                    side: line.newLine == nil ? "LEFT" : "RIGHT", revision: revision)
             }
-        }
-        .font(.system(size: 11, design: .monospaced))
-        .textSelection(.enabled)
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+        } : nil, contextLoader: { lines in
+            guard let pr = center.selected, center.filesAreCurrent(for: pr) else { throw GitHubRequestError.changed }
+            let service = PullRequestContextService(client: center.review(for: pr).service.client)
+            let value = try await service.expand(record: pr, file: file, patch: patch, lines: lines)
+            guard center.selected?.id == pr.id, center.filesAreCurrent(for: pr), center.selected?.headRevision == pr.headRevision else { throw GitHubRequestError.changed }
+            return value
+        }, comparison: center.selected.map(DiffComparisonIdentity.pullRequest), revisionNotes: center.selected.map { pr in ReviewDraftStore.shared.notes(key: (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":pr:" + pr.id) })
+        .id((contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":" + (center.selected?.id ?? "") + ":" + file.path)
     }
 
-    @ViewBuilder
-    private func diffRows(_ rows: [PullRequestDiffSplitRow], file: PullRequestFile) -> some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(rows) { row in
-                if reviewPreferences.diffMode == .split, row.left?.kind == .hunk {
-                    diffLineView(row.left, counterpart: nil, file: file)
-                } else if reviewPreferences.diffMode == .split {
-                    HStack(spacing: 0) {
-                        splitDiffColumn(row.left, counterpart: row.right?.text, file: file)
-                        Color.dockBorderLight.frame(width: 0.5)
-                        splitDiffColumn(row.right, counterpart: row.left?.text, file: file)
-                    }
-                } else if let left = row.left, let right = row.right, left.kind == .deletion, right.kind == .addition {
-                    diffLineView(left, counterpart: right.text, file: file)
-                    diffLineView(right, counterpart: left.text, file: file)
-                } else {
-                    diffLineView(row.left ?? row.right, counterpart: nil, file: file)
-                }
-            }
-        }
-    }
-
-    private func splitDiffColumn(_ line: PullRequestDiffLine?, counterpart: String?, file: PullRequestFile) -> some View {
-        diffLineView(line, counterpart: counterpart, file: file)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(0)
-    }
-
-    @ViewBuilder
-    private func diffLineView(_ line: PullRequestDiffLine?, counterpart: String?, file: PullRequestFile) -> some View {
-        if let line {
-            HStack(spacing: 0) {
-                Text(line.oldLine.map(String.init) ?? " ").frame(width: 38, alignment: .trailing)
-                Text(line.newLine.map(String.init) ?? " ").frame(width: 38, alignment: .trailing).padding(.trailing, 8)
-                PullRequestDiffLineView(
-                line: line,
-                counterpart: counterpart,
-                wordDiffsEnabled: reviewPreferences.wordDiffs && (line.kind == .addition || line.kind == .deletion)
-                )
-            }.foregroundStyle(Color.dockMetadataText)
-            .contextMenu {
-                if let pr = center.selected, center.filesAreCurrent(for: pr), let revision = pr.headRevision, pr.state == "open", let number = line.newLine ?? line.oldLine {
-                    Button("Comment on line \(number)") { inlineTarget = GitHubInlineCommentTarget(path: file.path, line: number, side: line.newLine == nil ? "LEFT" : "RIGHT", revision: revision) }
-                }
-            }
-        } else {
-            Color.clear.frame(maxWidth: .infinity, minHeight: 19)
-        }
-    }
 }
-

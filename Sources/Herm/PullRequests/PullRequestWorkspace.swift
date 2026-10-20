@@ -78,14 +78,8 @@ struct PullRequestWorkspace: View {
             .background(Color.dockControlSurface)
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
-            HStack(spacing: 4) {
-                ForEach(PullRequestFilter.allCases) { filter in
-                    DockTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
-                        center.filter = filter
-                    }
-                }
-                Spacer(minLength: 8)
-            }
+            PullRequestFilterPicker(selection: $center.filter)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

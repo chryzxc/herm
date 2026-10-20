@@ -75,6 +75,7 @@ struct ConversationScrollAnchor: Equatable {
 }
 
 struct DockPopover: View {
+    @StateObject var expandedReviewRouter = ExpandedReviewRouter()
     @ObservedObject var model: DockModel
     @ObservedObject var panelPresentation: DockPanelPresentation
     @ObservedObject var controlCenter: ControlCenterModel

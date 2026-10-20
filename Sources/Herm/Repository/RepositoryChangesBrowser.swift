@@ -14,6 +14,8 @@ struct RepositoryChangesBrowser: View {
 
     var isInspector = false
 
+    @Environment(\.expandedReviewRouter) private var reviewRouter
+    @State private var showingReview = false
     @State private var diffs: [String: RepositoryDiff] = [:]
     @State private var expandedFileIDs: Set<String> = []
     @State private var loadingFileIDs: Set<String> = []
@@ -23,6 +25,8 @@ struct RepositoryChangesBrowser: View {
     @State private var diffGeneration = UUID()
     @State private var isCommitPopoverPresented = false
 
+    private var reviewScope: String { WorkspaceIdentity.session(model) + ":repository:" + (projectPath ?? "") }
+    private var revisionNotes: RevisionNoteStore { ReviewDraftStore.shared.notes(key: reviewScope) }
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     private var actionsDisabled: Bool { workflow.isRefreshing || workflow.isMutatingSourceControl || projectPath != workflow.repository.path }
     @State private var isStagedExpanded = true
@@ -45,6 +49,17 @@ struct RepositoryChangesBrowser: View {
     private func browser(_ changes: RepositoryChangeSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             sourceControlHeader(changes)
+            HStack {
+                Button("Review comparisons") {
+                    if let projectPath, let reviewRouter, reviewRouter.present(LocalReviewWorkspace(closeAction: { reviewRouter.close() }, path: projectPath, model: model)) { return }
+                    showingReview = true
+                }.buttonStyle(.dockCompact)
+                if let projectPath { ProjectActionsMenu(path: projectPath, model: model) }
+                Spacer()
+            }.padding(.vertical, 8)
+            .sheet(isPresented: $showingReview) {
+                if let projectPath { LocalReviewWorkspace(path: projectPath, model: model).modifier(ReviewSheetContext()) }
+            }
 
             if !isInspector, case .available = workflow.githubIntegrationState {
                 pullRequestsSection
@@ -488,17 +503,12 @@ struct RepositoryChangesBrowser: View {
                 if lines.isEmpty {
                     diffNotice(file.status == .untracked || file.status == .added ? "Binary or empty file." : "No textual diff is available for this file.")
                 } else {
-                    let diffLines = LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(lines) { line in PullRequestDiffLineView(line: line) }
-                    }
-                    // Short diffs hug their content; long ones scroll inside the card.
-                    ViewThatFits(in: .vertical) {
-                        diffLines
-                        ScrollView { diffLines }
-                    }
-                    .frame(maxHeight: Self.maxDiffHeight)
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
+                    SharedDiffView(patch: diff.text, path: file.path, contextLoader: file.status == .untracked ? nil : { lines in
+                        try await RepositoryComparisonService.expandedPatch(path: projectPath ?? "", file: file.path,
+                            arguments: file.isStaged ? ["diff", "--no-ext-diff", "--cached"] : ["diff", "--no-ext-diff"], original: diff.text, lines: lines, renameSource: file.renameSource)
+                    }, projectPath: projectPath,
+                        comparison: projectPath.map { DiffComparisonIdentity(repository: $0, revision: workflow.repository.headRevision ?? "unavailable", fingerprint: workflow.repositoryFingerprint ?? "") }, revisionNotes: revisionNotes)
+                        .id(reviewScope + ":" + file.id)
                 }
                 if diff.isTruncated { diffNotice("Diff truncated for safe display.", color: .dockWarning) }
             } else if loadingFileIDs.contains(file.id) {

@@ -126,6 +126,8 @@ struct IssueDetailView: View {
             .frame(height: 52)
             .background(titleRow != nil ? Color.dockSidebar : .clear)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            .background(Color.dockCanvas)
+            .zIndex(1)
 
             if let error = center.detailErrorMessage {
                 Text(error)
@@ -158,6 +160,7 @@ struct IssueDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
             }
+            .clipped()
         }
     }
 

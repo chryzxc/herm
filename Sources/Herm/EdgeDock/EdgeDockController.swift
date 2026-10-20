@@ -1761,7 +1761,15 @@ struct EdgeNotchView: View {
                                    }
                                },
                                hasNewerResult: state.tasks.contains { $0.id == target.task.id && $0.session?.profileID == target.session.profileID && $0.phase == .finished && $0 != target.task },
-                               showingComparison: $state.showingResultComparison)
+                               showingComparison: $state.showingResultComparison,
+                               reviewInWorkspace: { comparison in
+                                   let key = QuickDestination(profileID: target.session.profileID, sessionID: target.session.id).sessionKey
+                                   guard let path = comparison?.path ?? DeveloperWorkflowModel.shared.turnBaselines[key]?.path else { return }
+                                   quickMessageModel.resumeSession(target.session)
+                                   state.resultTarget = nil
+                                   openDock()
+                                   ObservedRequestChanges.shared.requestedReview = ObservedReviewRequest(session: target.session, path: path, comparison: comparison)
+                               })
                     .id(target.id)
     }
 

@@ -49,7 +49,7 @@ struct EdgeResultContent: Equatable {
     }
     return Self(
       text: String(GenerativeUIIntegration.plainText(text).prefix(12_000)), artifacts: Array(artifacts.prefix(12)),
-      revisionID: (reply["id"] as? String) ?? (reply["id"] as? NSNumber)?.stringValue)
+      revisionID: (TranscriptHistoryPaging.rowID(reply, key: "row_id") ?? TranscriptHistoryPaging.rowID(reply)).map(String.init) ?? (reply["id"] as? String))
   }
 }
 
@@ -70,6 +70,8 @@ struct EdgeResultPeek: View {
   @State private var revision = 0
   @State private var previousContent: EdgeResultContent?
   @State private var comparison: ResultTextComparison?
+  @State private var localComparison: ObservedRequestComparison?
+  var reviewInWorkspace: ((ObservedRequestComparison?) -> Void)?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -152,6 +154,13 @@ struct EdgeResultPeek: View {
       Divider().overlay(Color.dockBorderLight)
       HStack {
         Button("Reply", action: reply).buttonStyle(.dockCompact)
+        if localComparison != nil, reviewInWorkspace != nil {
+          Button("Review changes") { reviewInWorkspace?(localComparison) }.buttonStyle(.dockCompact)
+        }
+        if localComparison == nil, reviewInWorkspace != nil, GatewayConnectionStore.shared.launchSettings.mode == .local,
+           DeveloperWorkflowModel.shared.turnBaselines[QuickDestination(profileID: target.session.profileID, sessionID: target.session.id).sessionKey] != nil {
+          Button("Current Git changes") { reviewInWorkspace?(nil) }.buttonStyle(.dockCompact)
+        }
         Spacer()
         Button("Open session", action: openSession).buttonStyle(.dockCompact)
       }
@@ -181,7 +190,10 @@ struct EdgeResultPeek: View {
         } else {
           content = loaded
         }
-        if loaded != nil { reviewed() }
+        if let loaded {
+          localComparison = await ObservedRequestChanges.shared.current(for: target.session, replyID: loaded.revisionID)
+          reviewed()
+        }
       } catch {
         guard !Task.isCancelled else { return }
         self.error = DockModel.safeUserDiagnostic(error.localizedDescription)

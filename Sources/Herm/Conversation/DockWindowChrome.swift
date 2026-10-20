@@ -9,6 +9,8 @@ enum DockWindowChrome {
     static let titleRowHeight: CGFloat = 52
     /// Space the session list keeps clear of the traffic lights, measured from its leading edge beside the 52pt rail.
     static let trafficLightClearance: CGFloat = 28
+    /// Full-width overlays start before the 52pt navigation rail.
+    static let fullWidthTrafficLightClearance: CGFloat = 52 + trafficLightClearance
     /// Leading inset of the sidebar toggle in every title row, so it never moves as panes collapse.
     static let sidebarToggleLeading: CGFloat = trafficLightClearance + 4
     /// Hairline under the title row, drawn by each column so it runs the full window width.

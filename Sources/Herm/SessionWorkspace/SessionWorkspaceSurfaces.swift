@@ -118,42 +118,43 @@ struct SessionPullRequestsSurface: View {
     }
 
     private var filterBar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 3) {
-                ForEach(PullRequestFilter.allCases) { filter in
-                    DockTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
-                        center.filter = filter
-                    }
-                }
-            }
-            Divider().frame(height: 22)
-            HStack(spacing: 8) {
-                DockIcon(.magnifyingGlass, size: 16, color: Color.dockMetadataText)
-                TextField("", text: $center.query, prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText))
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .background(Color.dockCanvas.opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-
-            if let repositoryPath {
-                Button {
-                    Task { await center.refreshScoped(repositoryPath: repositoryPath) }
-                } label: {
-                    DockIcon(.arrowsClockwise, size: 15, color: Color.dockSecondaryText)
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(DockPressButtonStyle())
-                .disabled(center.isRefreshing)
-                .help("Refresh pull requests")
-                .accessibilityLabel("Refresh pull requests")
+        VStack(spacing: DockSpacing.control) {
+            searchField
+            HStack(spacing: DockSpacing.control) {
+                PullRequestFilterPicker(selection: $center.filter)
+                Spacer(minLength: DockSpacing.control)
+                refreshButton
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 11)
-        .background(Color.dockSurface2.opacity(0.45))
+        .font(DockTypography.body)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.dockCanvas)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
+            TextField("", text: $center.query, prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText))
+                .textFieldStyle(.plain)
+                .accessibilityLabel("Search pull requests")
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .background(Color.dockControlSurface)
+        .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
+    }
+
+    @ViewBuilder private var refreshButton: some View {
+        if let repositoryPath {
+            DockIconButton(icon: .arrowsClockwise, label: "Refresh pull requests", isBusy: center.isRefreshing,
+                           style: DockThemePalette(theme: DockThemeRuntime.current)) {
+                Task { await center.refreshScoped(repositoryPath: repositoryPath) }
+            }
+        }
+    }
+
 }
 
 /// The shared disconnected state for every session workspace surface. A
@@ -255,9 +256,7 @@ struct SessionChangeDiffPreview: View {
         } else if let diff {
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(PullRequestDiffPresentation.lines(diff.text)) { line in
-                        PullRequestDiffLineView(line: line)
-                    }
+                    SharedDiffView(patch: diff.text, path: diff.path)
                 }
                 .fixedSize(horizontal: true, vertical: false)
             }

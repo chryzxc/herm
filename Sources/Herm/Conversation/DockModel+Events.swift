@@ -47,8 +47,10 @@ extension DockModel {
         }
         if let owner = params["session_id"] as? String, type == "message.start" || type == "message.complete" || failed {
             let origin = interruptionNotice(.information, owner: owner)
+            let receipt = params["persisted_turn"] as? [String: Any]
+            let completionRow = receipt?["complete"] as? Bool == true ? receipt.flatMap { TranscriptHistoryPaging.rowID($0, key: "final_assistant_row_id") } : nil
             DeveloperWorkflowModel.shared.observeTurnBaseline(origin: QuickDestination(profileID: origin.profileID, sessionID: origin.sourceID),
-                started: type == "message.start", completed: type == "message.complete", failed: failed)
+                started: type == "message.start", completed: type == "message.complete", failed: failed, completionRowID: completionRow)
         }
         captureObservedKanbanTaskIDs(type: type, params: params)
         eventRouter.route(type: type, params: params)

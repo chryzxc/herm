@@ -286,12 +286,15 @@ private struct DockMenuRowButton: View {
 private struct DockMenuToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         Button { configuration.isOn.toggle() } label: {
-            HStack(spacing: 8) {
-                DockIcon(.check, size: 12, color: Color.dockPrimaryText).opacity(configuration.isOn ? 1 : 0).frame(width: 14)
+            HStack(spacing: 12) {
                 configuration.label
+                Spacer(minLength: 0)
+                DockIcon(configuration.isOn ? .checkSquare : .square, size: 14,
+                         color: configuration.isOn ? Color.dockPrimaryText : Color.dockSecondaryText)
             }
         }
         .buttonStyle(DockMenuRowStyle())
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
     }
 }
 
