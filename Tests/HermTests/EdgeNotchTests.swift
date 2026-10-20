@@ -194,6 +194,8 @@ struct EdgeNotchTests {
         #expect(top.workspaceInsets.top == 40)
         // The top corners away from the camera still dock to the side.
         #expect(EdgeDockPlacement.dragged(to: NSPoint(x: 1550, y: 990), screenFrame: screen, visibleFrame: visible).side == .right)
+        // Secondary displays never get the island.
+        #expect(EdgeDockPlacement.dragged(to: NSPoint(x: 820, y: 990), screenFrame: screen, visibleFrame: visible, allowsTop: false).side == .right)
     }
 
     @MainActor @Test func announcementGlimpsesOnlyTheUpdatedRow() {

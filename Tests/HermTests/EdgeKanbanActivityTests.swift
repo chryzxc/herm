@@ -147,6 +147,8 @@ struct EdgeKanbanProjectionTests {
     @Test func backgroundRefreshKeepsAggregateIndependentAndRetainsFailedSnapshot() async throws {
         let client = NotchKanbanClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        // Each background poll here must reach the client, not the shared read.
+        control.cli?.backgroundBoardReadReuse = 0
         control.refreshGlobalKanban()
         try await settle(control)
         #expect(control.globalKanbanTasks.first?.status == "running")
@@ -178,6 +180,8 @@ struct EdgeKanbanProjectionTests {
     @Test func cardNavigationSelectsOwningBoardAndClearsVisibleFilters() async throws {
         let client = NotchKanbanClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        // Each background poll here must reach the client, not the shared read.
+        control.cli?.backgroundBoardReadReuse = 0
         control.refreshGlobalKanban()
         try await settle(control)
         let task = KanbanTaskSummary(id: "task", boardSlug: "other", title: "Other board card",

@@ -55,7 +55,7 @@ struct SessionKanbanActivityView: View {
                 let live = model.status == .working || control.sessionKanbanTasks.contains {
                     !["done", "archived", "completed"].contains($0.status.lowercased())
                 }
-                try? await Task.sleep(for: .seconds(live ? 3 : 15))
+                try? await Task.sleep(for: .seconds(live ? 5 : 15))
                 guard !Task.isCancelled else { continue }
                 control.refreshSessionKanban(for: sessionID, quiet: true)
             }
