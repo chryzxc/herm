@@ -209,7 +209,9 @@ extension DockModel {
 
     @discardableResult
     func stop() -> Task<Void, Never>? {
-        guard interruptState != .requesting, let sessionID else { return nil }
+        // Re-sendable while `.requesting`: if Hermes never ends the turn (a stuck
+        // request or a redirect race), a later click must still interrupt.
+        guard let sessionID else { return nil }
         interruptGeneration &+= 1
         let requestGeneration = interruptGeneration
         interruptState = .requesting
@@ -269,11 +271,12 @@ extension DockModel {
                           profileID: profile, sourceID: stable, eventID: identity)
     }
 
-    func publishWorkflowNotice(_ notice: HermNotice, body: String) {
+    func publishWorkflowNotice(_ notice: HermNotice, body: String, openURL: URL? = nil) {
         if interruptionCoordinator?.admit(notice, channel: .system) == false { return }
         guard defaults.bool(forKey: completionNotificationsKey), !isPopoverVisible, HermesAppRuntime.supportsUserNotifications else { return }
         let content = UNMutableNotificationContent()
         content.title = notice.kind.title; content.body = String(body.prefix(240)); content.sound = .default
+        if let openURL, openURL.scheme == "https", openURL.host == "github.com" { content.userInfo["herm.open-pr"] = openURL.absoluteString }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil))
     }
 

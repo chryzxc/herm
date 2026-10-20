@@ -111,6 +111,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private var keepAwakeObservers = Set<AnyCancellable>()
     private var dockTileStatus: DockTileStatus?
     private var quickCaptureHotKey: QuickCaptureHotKey?
+    private var windowCaptureHotKey: QuickCaptureHotKey?
     private var spotlightIndex: SessionSpotlightIndex?
     static let keepAwakeKey = "herm.keepAwakeWhileWorking.v1"
     /// The running delegate, for App Intents, which have no other route to the models.
@@ -132,6 +133,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // AppKit's first tooltip waits ~1s; later ones are instant. Make the
         // first match so icon-only buttons explain themselves on hover.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
+        DispatchQueue.global(qos: .utility).async { AgentBrowser.reapOrphans() }
         let edge = EdgeDockController(model: model, controlCenter: controlCenter, interruptions: interruptions, openQuota: { [weak self] in
             self?.dockPanel?.showQuota()
         }, openKanban: { [weak self] task in
@@ -173,7 +175,14 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         dockTileStatus = DockTileStatus(model: model)
         installCommandDoubleTapShortcut()
         spotlightIndex = SessionSpotlightIndex(model: model)
+        PullRequestWatchStore.shared.onNotice = { [weak model] reference, changes in
+            model?.publishWorkflowNotice(HermNotice(kind: .information, source: .repository, profileID: nil,
+                sourceID: reference.id, eventID: UUID().uuidString), body: "\(reference.id): " + changes.joined(separator: " · "), openURL: reference.url)
+        }
+        PullRequestWatchStore.shared.start()
+        _ = DesktopCaptureService.shared
         quickCaptureHotKey = QuickCaptureHotKey { [weak self] in self?.edgeDock?.toggleQuickCapture() }
+        windowCaptureHotKey = QuickCaptureHotKey(identifier: 2, preference: { DesktopCaptureShortcut.stored }) { [weak self] in self?.edgeDock?.captureWindow() }
         writeStatusItemDiagnosticIfRequested()
         HermAppUpdater.shared.isBusy = { [model] in model.isSending || model.status == .working }
         HermAppUpdater.shared.start()
@@ -322,6 +331,9 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
 
     func applicationWillTerminate(_ notification: Notification) {
         edgeDock?.shutdown()
+        PullRequestWatchStore.shared.stop()
+        ReviewDraftStore.shared.flush()
+        TerminalWorkspaceStore.shared.shutdown()
         QuickDraftStore.shared.flush()
         FilePreviewCenter.shared.flushSaves()
         // This is deliberately explicit: a menu-bar app can terminate without
@@ -334,11 +346,15 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         let choice = HermNotificationAction.choice(for: response.actionIdentifier)
         let requestID = response.notification.request.content.userInfo[HermNotificationAction.requestIDKey] as? String
         let reply = (response as? UNTextInputNotificationResponse)?.userText
+        let prURL = (response.notification.request.content.userInfo["herm.open-pr"] as? String).flatMap(URL.init(string:))
         await MainActor.run { [weak self] in
             if let choice, let requestID {
                 self?.model.answerApproval(requestID: requestID, choice: choice)
             } else if let requestID, let reply {
                 self?.model.answerClarification(requestID: requestID, text: reply)
+            } else if let prURL, prURL.scheme == "https", prURL.host == "github.com" {
+                self?.dockPanel?.showFromNotification()
+                InAppBrowser.open(prURL)
             } else {
                 self?.dockPanel?.showFromNotification()
             }
