@@ -274,7 +274,8 @@ final class EdgeDockController: NSObject {
     }
 
     var placement: EdgeDockPlacement? {
-        let screen = NSScreen.screens.first {
+        // The top island belongs to the primary (menu-bar) display only; side tabs follow the chosen display.
+        let screen = state.side == .top ? NSScreen.screens.first : NSScreen.screens.first {
             ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber) == displayID
         } ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else { return nil }
@@ -405,7 +406,8 @@ final class EdgeDockController: NSObject {
                 id: model.navigationSessionID ?? "current", title: state.sessionTitle, phase: phase,
                 statusLabel: label, detail: request?.summary ?? state.detail, updatedAt: nil, isCurrent: true,
                 isStatusCurrent: activity.status != .offline, session: nil, choices: request?.choices ?? [],
-                attentionRequest: request?.responseTarget)
+                attentionRequest: request?.responseTarget,
+                profileID: model.activeBotProfileID ?? model.sessionProfileID)
         }
         var tasks = EdgeNotchTask.merged(EdgeNotchTask.build(current: current, sessions: latestSessions,
                                         activity: latestActivityLabels,
@@ -894,6 +896,16 @@ final class EdgeDockController: NSObject {
         setQuickMessageFocus(true)
     }
 
+    func captureWindow() {
+        if workspacePresented { model.captureDesktopWindow(); return }
+        // Capture first, before taking focus away from the originating application.
+        if !state.composing { state.selectQuickTarget(nil) }
+        state.captureWindow { [weak self] in
+            guard let self else { return }
+            expandTask?.cancel(); setExpanded(true); setQuickMessageFocus(true)
+        }
+    }
+
     private func escapePreview() {
         guard NSApp.modalWindow == nil, panel.attachedSheet == nil, !panel.dockHasInteractiveChildWindow else { return }
         if state.showingResultComparison { state.showingResultComparison = false; return }
@@ -968,7 +980,8 @@ final class EdgeDockController: NSObject {
         (ended ? NSCursor.arrow : NSCursor.closedHand).set()
         let point = NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
-            let location = EdgeDockPlacement.dragged(to: point, screenFrame: screen.frame, visibleFrame: screen.visibleFrame)
+            let location = EdgeDockPlacement.dragged(to: point, screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
+                                                     allowsTop: screen == NSScreen.screens.first)
             displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
             state.side = location.side
             fraction = location.fraction
@@ -1173,7 +1186,11 @@ final class EdgeNotchState: ObservableObject {
     }
 
     var recoverableDrafts: [QuickDraftRecord] {
-        draftStore.records.filter { $0.destination.profileID == quickProfileID }.sorted { $0.updatedAt > $1.updatedAt }
+        draftStore.records.filter { $0.savedName == nil && $0.destination.profileID == quickProfileID }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    var savedPrompts: [QuickDraftRecord] {
+        draftStore.records.filter { $0.savedName != nil && $0.destination.profileID == quickProfileID }.sorted { ($0.savedName ?? "") < ($1.savedName ?? "") }
     }
 
     func captureRecord() -> QuickDraftRecord {
@@ -1194,6 +1211,17 @@ final class EdgeNotchState: ObservableObject {
 
     func restoreQuickDraft(_ record: QuickDraftRecord) {
         guard !quickSending, quickPreparing == 0 else { return }
+        if record.savedName != nil {
+            guard !quickNeedsReview else { quickResult = "Review the interrupted draft before inserting a saved prompt."; return }
+            guard !record.files.contains(where: { $0.kind == .pdf }) || !quickFiles.contains(where: { $0.kind == .pdf }) else {
+                quickResult = "Keep or remove the existing PDF before inserting this saved prompt."; return
+            }
+            quickDraft += (quickDraft.isEmpty ? "" : "\n\n") + ChatContext.prompt(record.text, contexts: record.contexts ?? [])
+            for file in record.files where !quickFiles.contains(where: { $0.digest == file.digest && $0.name == file.name }) { quickFiles.append(file) }
+            quickSources += record.sources
+            saveQuickDraft(); composing = true
+            return
+        }
         applyingDraft = true
         quickRecordID = record.id
         quickTarget = record.destination.session
@@ -1225,7 +1253,24 @@ final class EdgeNotchState: ObservableObject {
         quickRecordID = nil; quickDraft = ""; quickFiles = []; quickSources = []
         quickNeedsReview = false; quickProjectPath = path
         applyingDraft = false
-        if let saved = draftStore.records.first(where: { $0.destination.key == captureRecord().destination.key }) { restoreQuickDraft(saved) }
+        if let saved = draftStore.records.first(where: { $0.savedName == nil && $0.destination.key == captureRecord().destination.key }) { restoreQuickDraft(saved) }
+    }
+
+    func captureWindow(completion: @escaping () -> Void = {}) {
+        guard !quickSending, !quickNeedsReview else { return }
+        let owner = captureRecord().id
+        quickPreparing += 1
+        Task { @MainActor in
+            defer { quickPreparing -= 1; completion() }
+            do {
+                let captured = try await DesktopCaptureService.shared.capture()
+                guard let data = captured.image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data),
+                      let png = bitmap.representation(using: .png, properties: [:]) else { throw QuickDraftError.message("The capture could not be prepared.") }
+                let file = try await draftStore.pasteImage(png)
+                guard captureRecord().id == owner else { draftStore.removeOwned(file.fallbackURL); return }
+                quickFiles.append(file); quickSources.append(captured.context); saveQuickDraft()
+            } catch { if captureRecord().id == owner { quickResult = error.localizedDescription } }
+        }
     }
 
     func stageQuickFiles(_ urls: [URL]) {
@@ -1327,7 +1372,7 @@ final class EdgeNotchState: ObservableObject {
         quickDraft = ""; quickFiles = []; quickSources = []; quickNeedsReview = false
         applyingDraft = false
         let key = captureRecord().destination.key
-        if let record = draftStore.records.first(where: { $0.destination.key == key }) {
+        if let record = draftStore.records.first(where: { $0.savedName == nil && $0.destination.key == key }) {
             restoreQuickDraft(record); quickReplyTask = task
         }
         quickResult = nil

@@ -26,7 +26,7 @@ enum QuickDraftSubmission {
     }
     guard
       !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        || !draft.files.isEmpty || !draft.sources.isEmpty
+        || !draft.files.isEmpty || !draft.sources.isEmpty || !(draft.contexts ?? []).isEmpty
     else { throw QuickDraftError.message("Capture a message or file first.") }
     // Validate every reference before creating a session or queuing an upload.
     for file in draft.files { _ = try await file.encoded() }
@@ -44,7 +44,8 @@ enum QuickDraftSubmission {
       }
       var scope: [String: Any] = [:]
       if let profile = draft.destination.profileID { scope["profile"] = profile }
-      if draft.destination.sessionID == nil {
+      let creatingSession = draft.destination.sessionID == nil
+      if creatingSession {
         var create = scope
         create["source"] = "herm"
         create["idempotency_key"] = draft.id.uuidString
@@ -130,6 +131,16 @@ enum QuickDraftSubmission {
         return runtime
       }
       let runtime = try await validateDestination()
+      if creatingSession, let path = draft.destination.projectPath,
+         let preferred = ProjectPreferences.shared.modelID(path), let session = draft.destination.session {
+        let workflow = HermesWorkflowRPC(client: client, profileID: draft.destination.profileID)
+        let available = try DockModel.runtimeModelOptions(from: await workflow.modelOptions(runtime))
+        guard let option = available.first(where: { $0.id == preferred }) else {
+          throw QuickDraftError.message("The preferred project model is unavailable. Open the new session and choose an available model. Your draft was kept.")
+        }
+        try await workflow.setSessionModel(session, option: option)
+      }
+
       if let old = draft.destination.runtimeID, old != runtime,
         draft.files.contains(where: \.uploaded)
       {
@@ -207,11 +218,12 @@ enum QuickDraftSubmission {
         throw QuickSubmissionFailure(
           message: "The destination changed after upload. Review the session.", uncertain: true)
       }
-      let material = ([draft.text] + draft.sources + draft.files.compactMap(\.reference)).filter {
+      let material = ([ChatContext.prompt(draft.text, contexts: draft.contexts ?? [])] + draft.sources + draft.files.compactMap(\.reference)).filter {
         !$0.isEmpty
       }.joined(separator: "\n\n")
       var prompt = scope
-      prompt["text"] = material.isEmpty ? "Review these attachments." : material
+      let text = material.isEmpty ? "Review these attachments." : material
+      prompt["text"] = draft.requestsVisualReply == false ? text : GenerativeUIIntegration.preparePrompt(text)
       if let directory = validatedDirectory, let beforeSubmit {
         await beforeSubmit(draft, directory)
         guard try await validateDestination() == runtime else {

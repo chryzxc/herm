@@ -28,6 +28,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
     var answerState: AttentionAnswerState? = nil
     var isFailure = false
     var routine: RoutineReference? = nil
+    /// The open session's Bot profile; the current row has no `session`.
+    var profileID: String? = nil
 
     static func choiceLabel(_ choice: String) -> String {
         switch choice {
@@ -530,8 +532,9 @@ struct EdgeTaskPreview: View {
     /// The Bot running a session row: its profile's Bot, else the default
     /// Bot. Empty when the Bots plugin is off, which keeps the spinner.
     private func sessionBot(_ task: EdgeNotchTask) -> BotSummary? {
-        guard let session = task.session else { return nil }
-        return bots.first { $0.id == session.profileID } ?? bots.first(where: \.isDefault)
+        guard task.session != nil || task.isCurrent else { return nil }
+        let profileID = task.session?.profileID ?? task.profileID
+        return bots.first { $0.id == profileID } ?? bots.first(where: \.isDefault)
     }
 
     @ViewBuilder
@@ -703,8 +706,10 @@ struct EdgeDeliveryQuestion: Hashable, Sendable {
         guard !sessionID.isEmpty, choices.contains(choice) else {
             throw QuickDraftError.message("This question no longer has a valid answer destination.")
         }
-        return QuickDraftRecord(destination: QuickDestination(profileID: profileID,
+        var record = QuickDraftRecord(destination: QuickDestination(profileID: profileID,
             sessionID: sessionID, title: "Bot Chat"), text: answerText(choice))
+        record.requestsVisualReply = false
+        return record
     }
 
     static var directory: URL {

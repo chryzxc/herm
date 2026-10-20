@@ -184,12 +184,13 @@ enum WorkflowRecipe: String, CaseIterable, Identifiable {
 
 enum DockAction: Hashable, Identifiable {
     case tab(ControlTab)
-    case newChat, focusComposer, stop, voice, refresh, artifacts, restartDock
+    case captureWindow, newChat, focusComposer, stop, voice, refresh, artifacts, restartDock
     case workflow(WorkflowRecipe)
 
     var id: String {
         switch self {
         case .tab(let tab): "tab.\(tab.rawValue)"
+        case .captureWindow: "capture-window"
         case .newChat: "new-chat"
         case .focusComposer: "focus-composer"
         case .stop: "stop"
@@ -221,6 +222,7 @@ enum DockActionRegistry {
             DockActionDescriptor(action: .tab(tab), title: "Open \(tab.tabLabel)", subtitle: "Navigate to \(tab.tabLabel)", icon: tab.icon, category: "Navigation", keywords: [tab.rawValue], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
         }
         let basics = [
+            DockActionDescriptor(action: .captureWindow, title: "Capture window", subtitle: "Attach the last active app window to your draft", icon: .image, category: "Context", keywords: ["screenshot", "window", "capture"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: .notePencil, category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .focusComposer, title: "Focus composer", subtitle: "Return to Ask", icon: .cursorText, category: "Session", keywords: ["ask", "prompt"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .stop, title: "Stop active request", subtitle: "Interrupt the active Hermes turn", icon: .stopCircle, category: "Session", keywords: ["interrupt", "cancel"], isAvailable: isWorking, unavailableReason: isWorking ? nil : "No active request", requiresConfirmation: false),

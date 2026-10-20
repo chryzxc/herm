@@ -15,7 +15,7 @@ struct ComposerCompletionItem: Identifiable, Equatable {
     var id: String { "\(group)|\(text)" }
 }
 
-enum ComposerCompletionTrigger: Equatable {
+enum ComposerCompletionTrigger: Hashable {
     /// The draft is a slash command being typed: the command token or its argument.
     case slash(String)
     /// A `/skill` reference dropped mid-message; desktop offers skills only here.
@@ -150,6 +150,8 @@ struct ComposerCompletionPopover: View {
     let items: [ComposerCompletionItem]
     let selectedIndex: Int
     var avatarImages: [String: Data] = [:]
+    /// Replaces the key hints when a picked Bot would not be reached.
+    var notice: String? = nil
     let onSelect: (ComposerCompletionItem) -> Void
 
     var body: some View {
@@ -179,9 +181,10 @@ struct ComposerCompletionPopover: View {
             }
             .frame(maxHeight: 280)
 
-            Text("↑↓ to navigate · ↩ or ⇥ to select · esc to dismiss")
+            Text(notice ?? "↑↓ to navigate · ↩ or ⇥ to select · esc to dismiss")
                 .font(.system(size: 10))
-                .foregroundStyle(Color.dockMetadataText)
+                .foregroundStyle(notice == nil ? Color.dockMetadataText : Color.dockSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)

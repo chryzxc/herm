@@ -32,6 +32,52 @@ enum ComposerMentionPresentation {
         return DirectBotRequest(profileID: profileID, text: requestText)
     }
 
+    /// The composer's relay route: a leading mention sends the rest of the
+    /// text; otherwise a message naming exactly one roster Bot anywhere goes
+    /// to that Bot whole, so its reply lands in this session. Several Bots
+    /// stay with the session agent.
+    static func botRelayRequest(in text: String, profileIDs: [String]) -> DirectBotRequest? {
+        if let leading = directBotRequest(in: text, profileIDs: profileIDs) { return leading }
+        let mentioned = mentionedProfiles(in: text, profileIDs: profileIDs)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard mentioned.count == 1,
+              trimmed.split(whereSeparator: \.isWhitespace).contains(where: { !$0.hasPrefix("@") }) else { return nil }
+        return DirectBotRequest(profileID: mentioned[0], text: trimmed)
+    }
+
+    /// Why a Bot picked into `draft` would not be reached, shown in the `@`
+    /// popover. Herm's relay is text-only and takes one Bot; anything else
+    /// goes to the session agent, which has `message_agent` only in a Bot Chat.
+    static func relayNotice(draft: String, profileIDs: [String], hasAttachments: Bool,
+                            isQueued: Bool, inBotChat: Bool) -> String? {
+        guard !inBotChat else { return nil }
+        if hasAttachments {
+            return "Bots get text only. Remove attachments and context to send this to a Bot."
+        }
+        if isQueued {
+            return "A queued prompt is pending. Send to a Bot once it finishes."
+        }
+        let typed = activeToken(in: draft).map { String(draft.dropLast($0.count)) } ?? draft
+        if !mentionedProfiles(in: typed, profileIDs: profileIDs).isEmpty {
+            return "One Bot per message. Mentioning two only works in a Bot Chat."
+        }
+        return nil
+    }
+
+    /// Roster profiles mentioned in `text`, in first-mention order.
+    static func mentionedProfiles(in text: String, profileIDs: [String]) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"(?:^|\s)@([a-z0-9][a-z0-9_-]*)(?![a-z0-9_@/:-])"#, options: .caseInsensitive) else { return [] }
+        let source = text as NSString
+        var resolved: [String] = []
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)) {
+            let handle = source.substring(with: match.range(at: 1))
+            guard let profile = profileIDs.first(where: { $0.caseInsensitiveCompare(handle) == .orderedSame }),
+                  !resolved.contains(profile) else { continue }
+            resolved.append(profile)
+        }
+        return resolved
+    }
+
     /// Direct Bot relay currently accepts text only. Attachments must remain
     /// on the ordinary session submission path until Hermes exposes a Bot
     /// attachment contract.
@@ -42,15 +88,7 @@ enum ComposerMentionPresentation {
     /// Mirrors Hermes Desktop's identification-only mention middleware.
     /// Delivery belongs to the session agent's message_agent tool.
     static func annotatedPrompt(_ text: String, profileIDs: [String]) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"(?:^|\s)@([a-z0-9][a-z0-9_-]*)(?![a-z0-9_@/:-])"#, options: .caseInsensitive) else { return text }
-        let source = text as NSString
-        var resolved: [String] = []
-        for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)) {
-            let handle = source.substring(with: match.range(at: 1))
-            guard let profile = profileIDs.first(where: { $0.caseInsensitiveCompare(handle) == .orderedSame }),
-                  !resolved.contains(profile) else { continue }
-            resolved.append(profile)
-        }
+        let resolved = mentionedProfiles(in: text, profileIDs: profileIDs)
         guard !resolved.isEmpty else { return text }
         let identities = resolved.map { "@\($0) = agent profile \"\($0)\" (message_agent target: \"\($0 == "default" ? "hermes" : $0)\")" }.joined(separator: "; ")
         return text + "\n\n[@mentions resolved from the Bot Mode roster — the user is referring to: " + identities

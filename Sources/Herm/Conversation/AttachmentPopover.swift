@@ -6,6 +6,9 @@ import SwiftUI
 enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
     case files
     case folder
+    case captureWindow = "capture-window"
+    case savedPrompts = "saved-prompts"
+    case conversation = "conversation"
     case images
     case pasteImage = "paste-image"
     case url
@@ -16,6 +19,9 @@ enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .files: "Files"
+        case .savedPrompts: "Saved prompts"
+        case .conversation: "Conversation excerpts"
+        case .captureWindow: "Capture window"
         case .folder: "Folder"
         case .images: "Images"
         case .pasteImage: "Paste image"
@@ -27,6 +33,9 @@ enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
     var icon: Ph {
         switch self {
         case .files: .file
+        case .savedPrompts: .quotes
+        case .conversation: .chatCircleText
+        case .captureWindow: .image
         case .folder: .folder
         case .images: .image
         case .pasteImage: .clipboardText

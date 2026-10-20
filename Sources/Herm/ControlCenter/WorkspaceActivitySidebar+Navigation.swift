@@ -758,6 +758,7 @@ extension WorkspaceActivitySidebar {
     func run(_ command: DockAction) {
         switch command {
         case .tab(let tab): select(tab)
+        case .captureWindow: model.captureDesktopWindow(); model.requestComposerFocus()
         case .newChat: model.newChat(); model.requestComposerFocus()
         case .focusComposer: model.requestComposerFocus()
         case .stop: model.stop()

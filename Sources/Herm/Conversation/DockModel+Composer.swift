@@ -19,6 +19,13 @@ extension DockModel {
               !isRestoringSession,
               sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
 
+        if sessionID == nil, let path = newSessionProjectPath,
+           let preferred = ProjectPreferences.shared.modelID(path), sessionModelOptionID == nil,
+           !runtimeModelOptions.contains(where: { $0.id == preferred }) {
+            reportAttachmentError("The preferred project model is unavailable. Select an available model before sending. Your draft is kept.")
+            return
+        }
+
         if queued == nil, hasQueuedOrRedirectingPrompt {
             queueDraft()
             return
@@ -61,6 +68,7 @@ extension DockModel {
         submittedMessageIDForPin = messages.last?.id
         status = .working
         isSending = true
+        if let sessionID { turnStartedAtBySession[sessionID] = Date() }
         if voiceState.isNativeConversationActive, !isVoicePromptActive {
             nativeVoiceCapture.receivedTranscript(hasText: true)
             voiceState = .thinking
@@ -87,6 +95,28 @@ extension DockModel {
                       self.sessionID == promptSessionID else { return }
                 touchSession(sessionID: promptSessionID, at: Date(), preview: text)
 
+                var fileReferences: [String] = []
+                if contexts.contains(where: { $0.attachmentURL != nil }) {
+                    let capabilities = try await sessionRPCClient.request(HermesFeatureIDs.ID.gatewayCapabilities.rawValue, params: [:])
+                    guard capabilities["per_session_exclusive_submit"] as? Bool == true else {
+                        throw QuickDraftError.message("This Hermes runtime cannot confirm protected file attachments. Your pasted text is retained; open its chip and choose Paste as text.")
+                    }
+                }
+                for context in contexts {
+                    guard let url = context.attachmentURL else { continue }
+                    let encoded = try await AttachmentPayload.encoded(at: url, maximumBytes: 8 * 1024 * 1024)
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
+                    let attached = try await sessionRPCClient.request(HermesFeatureIDs.ID.fileAttach.rawValue,
+                        params: scopedSessionParams(["session_id": promptSessionID,
+                            "data_url": "data:text/plain;base64," + encoded, "name": url.lastPathComponent]))
+                    guard attached["attached"] as? Bool == true,
+                          let reference = attached["ref_text"] as? String, reference.hasPrefix("@file:"), !reference.contains("\n") else {
+                        throw QuickDraftError.message("Hermes could not attach the pasted text. The draft context is retained for retry.")
+                    }
+                    fileReferences.append(reference)
+                }
+                let outgoingText = fileReferences.isEmpty ? submittedText : GenerativeUIIntegration.preparePrompt(
+                    ComposerMentionPresentation.annotatedPrompt(text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: composerMentionProfiles))
                 for attachedImage in attachedImages {
                     let base64 = try await AttachmentPayload.encoded(at: attachedImage.fileURL)
                     guard self.sessionResumeGeneration == sendGeneration,
@@ -143,7 +173,7 @@ extension DockModel {
                     await DeveloperWorkflowModel.shared.captureTurnBaseline(origin: baselineOrigin, path: directory, attemptID: baselineAttempt)
                     guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
                 }
-                let acknowledgment = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": submittedText, "queued": queued != nil]))
+                let acknowledgment = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": outgoingText, "queued": queued != nil]))
                 if acknowledgment["status"] as? String == "streaming" { DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(origin: baselineOrigin, attemptID: baselineAttempt) }
                 submissionReported = true
                 onSubmission?(nil)
@@ -158,6 +188,10 @@ extension DockModel {
                       sessionBeforeSend == nil || self.sessionID == sessionBeforeSend else { return }
                 DebugLog.write("model: send failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 cleanupImageAttachments(attachedImages)
+                for context in contexts where context.attachmentURL != nil && !attachedContexts.contains(where: { $0.id == context.id }) {
+                    var retained = context; retained.inlineToken = nil
+                    attachedContexts.append(retained)
+                }
                 let transportFailure: Bool
                 if let gatewayError = error as? HermesGateway.GatewayError {
                     switch gatewayError {
@@ -235,7 +269,17 @@ extension DockModel {
                 HermesFeatureIDs.ID.sessionRedirect.rawValue,
                 params: ["session_id": sessionID, "text": submittedText]
             )
-            let redirectStatus = (result?["status"] as? String)?.lowercased()
+            var redirectStatus = (result?["status"] as? String)?.lowercased()
+            // Redirect is refused between model requests (or on an agent without it)
+            // while the turn is still live; steer lands on the next tool result.
+            if redirectStatus != "redirected", redirectStatus != "queued",
+               self.sessionResumeGeneration == steeringGeneration, self.sessionID == sessionID, self.status == .working {
+                let steered = try? await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.sessionSteer.rawValue,
+                    params: ["session_id": sessionID, "text": submittedText]
+                )
+                if (steered?["status"] as? String)?.lowercased() == "queued" { redirectStatus = "redirected" }
+            }
             var redirect = self.redirectingPrompts[queueSessionID] ?? RedirectingPrompt(runtimeSessionID: sessionID)
             if redirectStatus == "queued", redirect.completedTurns < 2, !redirect.wasInterrupted {
                 redirect.isQueuedByHermes = true
@@ -341,10 +385,8 @@ extension DockModel {
               sessionID != nil, let sessionID = queuedPromptSessionID,
               redirectingPrompts[sessionID] == nil,
               let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID }) else { return }
-        let next = queuedPrompts.remove(at: index)
-        guard next.id == editingQueuedPromptID else { return send(next) }
-        editingQueuedPromptID = nil
-        moveIntoComposer(next)
+        guard queuedPrompts[index].id != editingQueuedPromptID else { return }
+        send(queuedPrompts.remove(at: index))
     }
 
     /// Appends outside text (Services menu) to the composer without sending it.
@@ -362,11 +404,36 @@ extension DockModel {
         if replyQuote == nil { replyQuote = prompt.replyQuote }
     }
 
-    /// Queued prompts are edited in the composer (like Codex): text and
-    /// attachments leave the queue until re-submitted.
+    /// Hold the original payload and position until the user saves or cancels.
     func editQueuedPrompt(_ id: UUID) {
         guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
-        moveIntoComposer(queuedPrompts.remove(at: index))
+        editingQueuedPromptID = id
+        editingQueuedPromptText = queuedPrompts[index].contexts.reduce(queuedPrompts[index].text) { value, context in context.inlineToken.map { value.replacingOccurrences(of: $0, with: "") } ?? value }
+    }
+
+    func finishQueuedPromptEdit(save: Bool) {
+        if save, let id = editingQueuedPromptID, let prompt = queuedPrompts.first(where: { $0.id == id }) {
+            updateQueuedPrompt(id, text: editingQueuedPromptText + prompt.contexts.compactMap(\.inlineToken).joined())
+        }
+        editingQueuedPromptID = nil
+        editingQueuedPromptText = ""
+        drainQueuedPromptIfIdle()
+    }
+
+    func moveQueuedPrompt(_ id: UUID, offset: Int) {
+        guard let index = queuedPrompts.firstIndex(where: { $0.id == id }),
+              let destination = queuedPromptSessionID, queuedPrompts[index].sessionID == destination else { return }
+        let peers = queuedPrompts.indices.filter { queuedPrompts[$0].sessionID == destination }
+        guard let position = peers.firstIndex(of: index), peers.indices.contains(position + offset) else { return }
+        queuedPrompts.swapAt(index, peers[position + offset])
+    }
+
+    func reorderQueuedPrompt(_ source: UUID, before target: UUID) {
+        guard source != target, let from = queuedPrompts.firstIndex(where: { $0.id == source }),
+              let to = queuedPrompts.firstIndex(where: { $0.id == target }),
+              queuedPrompts[from].sessionID == queuedPrompts[to].sessionID else { return }
+        let item = queuedPrompts.remove(at: from)
+        queuedPrompts.insert(item, at: from < to ? to - 1 : to)
     }
 
     func submitComposerInput(mentionProfiles: [String]? = nil) {

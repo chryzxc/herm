@@ -6,7 +6,7 @@ import Testing
 struct AttachmentPopoverTests {
     @Test func exposesAttachmentActionsInStableOrder() {
         #expect(AttachmentPopoverAction.allCases.map(\.id) == [
-            "files", "folder", "images", "paste-image", "url", "prompt-snippets"
+            "files", "folder", "capture-window", "saved-prompts", "conversation", "images", "paste-image", "url", "prompt-snippets"
         ])
     }
 

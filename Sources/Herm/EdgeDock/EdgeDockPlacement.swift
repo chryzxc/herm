@@ -64,9 +64,10 @@ struct EdgeDockPlacement: Equatable {
                       y: y, width: width, height: height)
     }
 
-    static func dragged(to point: NSPoint, screenFrame: NSRect, visibleFrame: NSRect) -> Self {
+    /// `allowsTop` is false off the primary display: the island only hangs from the main screen.
+    static func dragged(to point: NSPoint, screenFrame: NSRect, visibleFrame: NSRect, allowsTop: Bool = true) -> Self {
         let fraction = min(1, max(0, (point.y - visibleFrame.minY) / max(1, visibleFrame.height)))
-        if point.y >= visibleFrame.maxY - 24, abs(point.x - screenFrame.midX) < screenFrame.width / 4 {
+        if allowsTop, point.y >= visibleFrame.maxY - 24, abs(point.x - screenFrame.midX) < screenFrame.width / 4 {
             return Self(side: .top, fraction: fraction, screenFrame: screenFrame, visibleFrame: visibleFrame)
         }
         return Self(side: point.x < screenFrame.midX ? .left : .right, fraction: fraction,

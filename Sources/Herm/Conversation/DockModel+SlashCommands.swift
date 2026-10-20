@@ -52,8 +52,10 @@ extension DockModel {
                     let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
                     return ComposerCompletion.slashResult(from: payload, hidden: { dispositions[$0] != nil || ComposerCompletion.terminalOnlyCommands.contains($0) })
                 }
-                await loadSlashCatalogIfNeeded()
+                // The catalog only filters rows, so fetch it alongside the completion.
+                async let catalog: Void = loadSlashCatalogIfNeeded()
                 let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
+                await catalog
                 return ComposerCompletion.slashResult(from: payload, hidden: isSlashCommandHidden)
             case .skill(let token):
                 params["text"] = token

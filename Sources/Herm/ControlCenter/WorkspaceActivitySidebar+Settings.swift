@@ -20,6 +20,10 @@ extension WorkspaceActivitySidebar {
                 SettingsSection(title: "Theme", subtitle: "Colors and skins", tint: .dockAccent) {
                     appearanceSection
                 }
+                SettingsSection(title: "Replies", subtitle: "Visual content", tint: .dockAccent) {
+                    GenerativeUISettings()
+                        .padding(.vertical, -8)
+                }
                 sidebarPreferencesSection
                 chatQuotaPreferencesSection
                 SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
@@ -581,6 +585,10 @@ extension WorkspaceActivitySidebar {
 
     var generalPreferencesSection: some View {
         VStack(alignment: .leading, spacing: 17) {
+            SettingsSection(title: "Window capture", subtitle: "", tint: .dockAccent) {
+                DesktopCaptureSettings()
+                    .padding(.vertical, -8)
+            }
             SettingsSection(title: "Restart", subtitle: "Herm and Hermes gateway", tint: .dockAccent) {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -638,10 +646,16 @@ extension WorkspaceActivitySidebar {
                     Divider().overlay(Color.dockBorderLight)
                     SettingsPreferenceRow(title: "Quick capture", detail: "Open a new message in the notch from any app. If nothing happens, another app is using the chord.") {
                         Picker("Quick capture", selection: $captureChord) {
-                            ForEach(QuickCaptureChord.allCases) { Text($0.title).tag($0) }
+                            ForEach(QuickCaptureChord.allCases) { Text($0.title).tag($0).disabled($0 != .off && $0 == windowCaptureChord) }
                         }
                         .labelsHidden()
                         .frame(width: 140)
+                    }
+                    Divider().overlay(Color.dockBorderLight)
+                    SettingsPreferenceRow(title: "Capture window", detail: "Capture the foreground window into a draft for review. Unassigned by default.") {
+                        Picker("Capture window", selection: $windowCaptureChord) {
+                            ForEach(QuickCaptureChord.allCases) { Text($0.title).tag($0).disabled($0 != .off && $0 == captureChord) }
+                        }.labelsHidden().frame(width: 140)
                     }
                 }
                 .padding(.vertical, -8)

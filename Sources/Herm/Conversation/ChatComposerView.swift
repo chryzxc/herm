@@ -21,6 +21,11 @@ struct ChatComposerView: View {
     @State private var composerHeight: CGFloat = 44
     @State private var isComposerPulsing = false
     @State private var sendKick = 0
+    @State private var contextCaret = 0
+    @State private var inspectingContext: ChatContext?
+    @State private var contextPreviewOwner: String?
+    @State private var showingSavedPrompts = false
+    @State private var showingConversationContext = false
     @State private var pasteMonitor: Any?
     @State private var showingAttachmentPopover = false
     @State private var showingFilePicker = false
@@ -78,6 +83,19 @@ struct ChatComposerView: View {
                 isComposerFocused = true
             }
             .onDisappear { dictation.stop() }
+            .onChange(of: model.attachedContexts) { previous, _ in
+                model.embedInlineContexts(previous: previous, caret: isComposerFocused ? contextCaret : nil)
+            }
+            .sheet(item: $inspectingContext) { context in
+                ComposerContextPreview(context: context) { text in
+                    guard contextPreviewOwner == WorkspaceIdentity.session(model), model.attachedContexts.contains(where: { $0.id == context.id }) else { return }
+                    if let token = context.inlineToken, model.draft.contains(token) { model.draft = model.draft.replacingOccurrences(of: token, with: text) }
+                    else { model.stageDraft(text) }
+                    model.attachedContexts.removeAll { $0.id == context.id }
+                }
+            }
+            .sheet(isPresented: $showingSavedPrompts) { SavedPromptLibrary(model: model) }
+            .sheet(isPresented: $showingConversationContext) { ConversationContextPicker(model: model) }
             .onAppear {
                 DebugLog.write("composer: appeared")
                 completions.configure(
@@ -129,7 +147,10 @@ struct ChatComposerView: View {
                               event.charactersIgnoringModifiers?.lowercased() == "v" else {
                             return event
                         }
-                        let consumed = MainActor.assumeIsolated { dockModel.pasteImageFromPasteboard() }
+                        let consumed = MainActor.assumeIsolated {
+                            if !event.modifierFlags.contains(.shift), dockModel.stageLargePaste() { return true }
+                            return dockModel.pasteImageFromPasteboard()
+                        }
                         return consumed ? nil : event
                     }
                 }
@@ -185,6 +206,7 @@ struct ChatComposerView: View {
                     items: completions.result.items,
                     selectedIndex: completions.index,
                     avatarImages: botMode.avatarImages,
+                    notice: mentionRelayNotice(trigger),
                     onSelect: { completions.accept($0) }
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -217,6 +239,7 @@ struct ChatComposerView: View {
                         model.isComposerEditing = focused
                     },
                     onCaretMoved: { text, caret in
+                        contextCaret = caret
                         // Moving the caret retargets or closes an open popover; only typing opens one.
                         completions.caretMoved(text: text, caret: caret)
                     },
@@ -225,6 +248,8 @@ struct ChatComposerView: View {
                         return composer.pendingCaret
                     },
                     onTextChanged: { text, caret in
+                        contextCaret = caret
+                        model.removeDeletedInlineContexts()
                         completions.update(for: text, caret: caret)
                         // A large paste can change NSTextView's content size
                         // without updating its internal scroll origin. Defer
@@ -236,7 +261,8 @@ struct ChatComposerView: View {
                     },
                     onContentHeightChanged: { contentHeight in
                         composerHeight = ComposerLayout.height(for: contentHeight)
-                    }
+                    },
+                    contexts: model.attachedContexts, onInspectContext: { contextPreviewOwner = WorkspaceIdentity.session(model); inspectingContext = $0 }
                 )
                     // The native scroll view remains bounded while its document
                     // grows, so wheel and trackpad scrolling stay inside the
@@ -274,7 +300,7 @@ struct ChatComposerView: View {
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 Button(action: { model.removePendingImage(image) }) {
                                     DockIcon(.x)
                                         .font(.system(size: 10, weight: .bold))
@@ -287,7 +313,7 @@ struct ChatComposerView: View {
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 4)
-                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface))
                             .contextMenu {
                                 Button("Add Text from Image to Message") { Task { await model.stageText(from: image) } }
                             }
@@ -300,13 +326,18 @@ struct ChatComposerView: View {
                     HStack(spacing: 8) {
                         ForEach(model.attachedContexts) { context in
                             HStack(spacing: 7) {
-                                DockIcon(.chatCircleText)
-                                    .foregroundStyle(Color.dockAccent)
-                                Text(context.title)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(Color.dockPrimaryText)
-                                    .lineLimit(1)
-                                    .frame(maxWidth: 240, alignment: .leading)
+                                Button {
+                                    contextPreviewOwner = WorkspaceIdentity.session(model)
+                                    inspectingContext = context
+                                } label: {
+                                    HStack(spacing: 7) {
+                                        DockIcon(.chatCircleText).foregroundStyle(Color.dockAccent)
+                                        Text(context.title).font(DockTypography.body)
+                                            .lineLimit(1).frame(maxWidth: 240, alignment: .leading)
+                                    }
+                                }
+                                .buttonStyle(.dockCompact)
+                                .accessibilityLabel("Inspect context: " + context.title)
                                 Button { model.removeAttachedContext(context) } label: {
                                     DockIcon(.x)
                                         .font(.system(size: 10, weight: .bold))
@@ -315,12 +346,12 @@ struct ChatComposerView: View {
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.dockHover)
-                                .help("Remove context")
+                                .help("Remove context").accessibilityLabel("Remove context: " + context.title)
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
-                            .help(context.body)
+                            .help("Inspect context")
                         }
                     }
                 }
@@ -654,8 +685,8 @@ struct ChatComposerView: View {
     private func submitComposerInput() {
         if !reduceMotion { sendKick += 1 }
         // Hermes only gives message_agent to canonical Bot Chat sessions, so a
-        // single leading roster mention is delivered through bot_relay.deliver
-        // into that Bot's Bot Chat. Attachments and in-flight turns keep the
+        // message naming one roster Bot is delivered through bot_relay.deliver
+        // into that Bot's Bot Chat and its reply projected here. Attachments and in-flight turns keep the
         // ordinary path until Hermes exposes a profile-scoped attachment API.
         // A busy foreground turn doesn't block it: relay runs in the Bot's own
         // chat, while steering would hand the mention to an agent without
@@ -666,7 +697,7 @@ struct ChatComposerView: View {
                hasImages: !model.pendingImages.isEmpty,
                hasPDF: model.pendingPDFURL != nil
            ),
-           let request = ComposerMentionPresentation.directBotRequest(
+           let request = ComposerMentionPresentation.botRelayRequest(
                 in: composer.text,
                 profileIDs: botMode.visibleBots.map(\.id)
            ),
@@ -680,6 +711,18 @@ struct ChatComposerView: View {
         model.submitComposerInput(mentionProfiles: botMode.visibleBots.map { $0.id })
     }
 
+    private func mentionRelayNotice(_ trigger: ComposerCompletionTrigger) -> String? {
+        guard case .mention = trigger, completions.result.items.contains(where: { $0.bot != nil }) else { return nil }
+        let current = model.sessionStorageID ?? model.sessionID
+        return ComposerMentionPresentation.relayNotice(
+            draft: composer.text,
+            profileIDs: botMode.visibleBots.map(\.id),
+            hasAttachments: !model.attachedContexts.isEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil,
+            isQueued: model.hasQueuedOrRedirectingPrompt,
+            inBotChat: current != nil && botMode.visibleBots.contains { $0.chat?.sessionID == current }
+        )
+    }
+
     private var pasteImageAvailable: Bool {
         DockModel.pasteboardHoldsImageOnly(.general)
     }
@@ -687,6 +730,12 @@ struct ChatComposerView: View {
     private func handleAttachmentAction(_ action: AttachmentPopoverAction) {
         showingAttachmentPopover = false
         switch action {
+        case .savedPrompts:
+            showingSavedPrompts = true
+        case .conversation:
+            showingConversationContext = true
+        case .captureWindow:
+            model.captureDesktopWindow()
         case .files:
             showingFilePicker = true
         case .images:
@@ -941,6 +990,7 @@ enum SessionTokenFormatting {
 /// remains available for a custom response.
 /// Prompts parked until the active turn settles; not yet submitted, so removable.
 private struct QueuedPromptList: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var model: DockModel
     let prompts: [QueuedPrompt]
 
@@ -964,14 +1014,14 @@ private struct QueuedPromptList: View {
                     }
                     if isEditing {
                         DockTextField("Queued message", text: Binding(
-                            get: { prompt.text },
-                            set: { model.updateQueuedPrompt(prompt.id, text: $0) }
+                            get: { model.editingQueuedPromptText },
+                            set: { model.editingQueuedPromptText = $0 }
                         ), axis: .vertical)
-                            .textFieldStyle(.plain)
+                            .textFieldStyle(.dockGlass)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1...4)
-                            .onSubmit { model.editingQueuedPromptID = nil }
+                            .onSubmit { model.finishQueuedPromptEdit(save: true) }
                     } else {
                         Text(label(for: prompt))
                             .font(.system(size: 12, weight: .medium))
@@ -981,13 +1031,16 @@ private struct QueuedPromptList: View {
                     }
                     Spacer(minLength: 0)
                     rowButton(isEditing ? .check : .pencilSimple, label: isEditing ? "Done editing" : "Edit queued message") {
-                        if isEditing { model.editingQueuedPromptID = nil } else { model.editQueuedPrompt(prompt.id) }
+                        if isEditing { model.finishQueuedPromptEdit(save: true) } else { model.editQueuedPrompt(prompt.id) }
                     }
-                    if model.canSteerQueuedPrompt(prompt) {
+                    if isEditing {
+                        Button("Cancel") { model.finishQueuedPromptEdit(save: false) }.buttonStyle(.dockCompact)
+                    }
+                    if !isEditing, model.canSteerQueuedPrompt(prompt) {
                         rowButton(.arrowBendDownRight, label: "Steer into the running turn") {
                             model.steerQueuedPrompt(prompt.id)
                         }
-                    } else if model.canSendQueuedPromptNow(prompt) {
+                    } else if !isEditing, model.canSendQueuedPromptNow(prompt) {
                         rowButton(.arrowUp, label: "Stop the running turn and send this now") {
                             model.sendQueuedPromptNow(prompt.id)
                         }
@@ -995,6 +1048,16 @@ private struct QueuedPromptList: View {
                     rowButton(.x, label: "Remove queued message") {
                         model.removeQueuedPrompt(prompt.id)
                     }
+                }
+                .draggable(prompt.id.uuidString)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let value = items.first, let id = UUID(uuidString: value) else { return false }
+                    model.reorderQueuedPrompt(id, before: prompt.id)
+                    return true
+                }
+                .contextMenu {
+                    Button("Move up") { model.moveQueuedPrompt(prompt.id, offset: -1) }
+                    Button("Move down") { model.moveQueuedPrompt(prompt.id, offset: 1) }
                 }
                 .transition(.asymmetric(insertion: .opacity, removal: .move(edge: .top).combined(with: .opacity)))
                 .padding(.leading, prompt.images.isEmpty ? 10 : 5)
@@ -1010,7 +1073,7 @@ private struct QueuedPromptList: View {
                 )
             }
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: prompts.map(\.id))
+        .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: prompts.map(\.id))
     }
 
     private func rowButton(_ icon: Ph, label: String, action: @escaping () -> Void) -> some View {
@@ -1030,7 +1093,7 @@ private struct QueuedPromptList: View {
         var parts: [String] = []
         if let pdf = prompt.pdfURL { parts.append("[PDF: \(pdf.lastPathComponent)]") }
         parts.append(contentsOf: prompt.contexts.map { "[\($0.title)]" })
-        if !prompt.text.isEmpty { parts.append(prompt.text) }
+        if !prompt.text.isEmpty { parts.append(prompt.contexts.reduce(prompt.text) { value, context in context.inlineToken.map { value.replacingOccurrences(of: $0, with: "[" + context.title + "]") } ?? value }) }
         return parts.joined(separator: " ")
     }
 }
@@ -1062,6 +1125,8 @@ struct ComposerInputEditor: NSViewRepresentable {
     let onTextChanged: (String, Int) -> Void
     let onContentHeightChanged: (CGFloat) -> Void
     var inset = NSSize(width: 16, height: 0)
+    var contexts: [ChatContext] = []
+    var onInspectContext: ((ChatContext) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -1079,7 +1144,8 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
-        textView.string = text.displayBullets
+        textView.contexts = contexts; textView.onInspectContext = onInspectContext
+        textView.textStorage?.setAttributedString(InlineContextCodec.render(text.displayBullets, contexts: contexts))
         textView.font = DockSkinPresentation.nativeFont(size: 14)
         textView.textColor = NSColor(Color.dockPrimaryText)
         textView.insertionPointColor = NSColor(Color.dockAccent)
@@ -1113,12 +1179,13 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
+        textView.contexts = contexts; textView.onInspectContext = onInspectContext
         textView.font = DockSkinPresentation.nativeFont(size: 14)
         textView.textColor = NSColor(Color.dockPrimaryText)
         textView.insertionPointColor = NSColor(Color.dockAccent)
-        if textView.string.markdownBullets != text {
+        if InlineContextCodec.serialize(textView.attributedString()).markdownBullets != text {
             context.coordinator.isSynchronizingText = true
-            textView.string = text.displayBullets
+            textView.textStorage?.setAttributedString(InlineContextCodec.render(text.displayBullets, contexts: contexts))
             context.coordinator.isSynchronizingText = false
         }
         if let caret = takePendingCaret() {
@@ -1152,7 +1219,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             if !isSynchronizingText { bulletizeCurrentLine(textView) }
-            let markdown = textView.string.markdownBullets
+            let markdown = InlineContextCodec.serialize(textView.attributedString()).markdownBullets
             if !isSynchronizingText, parent.text != markdown {
                 parent.text = markdown
                 parent.onTextChanged(markdown, textView.selectedRange().location)
@@ -1178,7 +1245,7 @@ struct ComposerInputEditor: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isSynchronizingText, let textView = notification.object as? NSTextView else { return }
-            parent.onCaretMoved(textView.string.markdownBullets, textView.selectedRange().location)
+            parent.onCaretMoved(InlineContextCodec.serialize(textView.attributedString()).markdownBullets, textView.selectedRange().location)
         }
 
         /// Typing "- " at a line start shows a "•" bullet; the binding keeps markdown "- ".
@@ -1209,6 +1276,28 @@ private final class ComposerInputTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
     var onDropFiles: (([URL]) -> Void)?
+    var contexts: [ChatContext] = []
+    var onInspectContext: ((ChatContext) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+        if index < (string as NSString).length,
+           let attachment = textStorage?.attribute(.attachment, at: index, effectiveRange: nil) as? InlineContextAttachment,
+           let context = contexts.first(where: { $0.inlineToken == attachment.token }) {
+            onInspectContext?(context); return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func writeSelection(to pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        guard type == .string, let storage = textStorage, selectedRange().length > 0 else { return super.writeSelection(to: pasteboard, type: type) }
+        let selected = storage.attributedSubstring(from: selectedRange())
+        let serialized = InlineContextCodec.serialize(selected)
+        let readable = contexts.reduce(serialized) { value, context in
+            context.inlineToken.map { value.replacingOccurrences(of: $0, with: "[" + context.title + "]") } ?? value
+        }
+        return pasteboard.setString(readable, forType: .string)
+    }
 
     /// Dropped files become attachments; NSTextView would otherwise insert their paths as text.
     private func droppedFileURLs(_ sender: NSDraggingInfo) -> [URL] {
@@ -1276,7 +1365,7 @@ private struct PinnedWorkStrip: View {
 
     var body: some View {
         let plan = model.todoPlan.flatMap { $0.sessionID == model.sessionID ? $0 : nil }
-            .flatMap { $0.done < $0.items.count ? $0 : nil }
+            .flatMap { model.status == .working && $0.done < $0.items.count ? $0 : nil }
         let tasks = model.currentSessionBackgroundTasks.filter { $0.status == .running }
         if plan != nil || !tasks.isEmpty {
             VStack(alignment: .leading, spacing: 4) {

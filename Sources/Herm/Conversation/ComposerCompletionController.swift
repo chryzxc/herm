@@ -11,6 +11,9 @@ final class ComposerCompletionController: ObservableObject {
     /// UTF-16 caret the active trigger was detected at.
     private var caret = 0
     private var task: Task<Void, Never>?
+    /// Last answer per trigger, shown instantly on reopen. ponytail: unbounded but
+    /// one entry per distinct typed token; clear on `configure` if it ever grows.
+    private var cache: [ComposerCompletionTrigger: ComposerCompletion.Result] = [:]
     private var model: DockModel?
     private var botMode: BotModeModel?
     private var text: () -> String = { "" }
@@ -54,6 +57,7 @@ final class ComposerCompletionController: ObservableObject {
         if detected != nil, detected == trigger, caret == self.caret { return }
         self.caret = caret
         task?.cancel()
+        let isFirstKeystroke = trigger == nil
         trigger = detected
         guard let detected else {
             close()
@@ -63,14 +67,29 @@ final class ComposerCompletionController: ObservableObject {
            ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: wasMention, isPickerVisible: true) {
             Task { @MainActor [botMode] in await botMode?.refreshNow(force: true) }
         }
+        // Show what is already known (local Bots, last RPC answer for this exact
+        // trigger) right away; the RPC below replaces it. Only while nothing is
+        // open, so a refinement doesn't flash stale rows.
+        if isFirstKeystroke {
+            let cached = cache[detected] ?? ComposerCompletion.Result(items: botItems(for: detected))
+            if !cached.items.isEmpty {
+                result = cached
+                index = 0
+                onOpenChanged(true)
+            }
+        }
         task = Task { @MainActor in
-            // Same debounce as desktop's live completion adapter.
-            try? await Task.sleep(for: .milliseconds(60))
+            // Same debounce as desktop's live completion adapter, skipped on the
+            // opening keystroke so the popover isn't held back by it.
+            if !isFirstKeystroke { try? await Task.sleep(for: .milliseconds(60)) }
             guard !Task.isCancelled else { return }
             let found = await model.composerCompletions(for: detected, bots: botItems(for: detected), profile: profileID)
             guard !Task.isCancelled, trigger == detected else { return }
-            result = found
-            index = 0
+            cache[detected] = found
+            if found != result {
+                result = found
+                index = 0
+            }
             onOpenChanged(!found.items.isEmpty)
         }
     }

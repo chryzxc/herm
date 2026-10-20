@@ -148,6 +148,7 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(ChatQuotaSettingsKey.dropBanner) var showsQuotaDropBanner = true
     @AppStorage(DoubleTapShortcut.workspaceKey) var workspaceShortcut = DoubleTapShortcut.command
     @AppStorage(DoubleTapShortcut.notchKey) var notchShortcut = DoubleTapShortcut.option
+    @AppStorage(DesktopCaptureShortcut.key) var windowCaptureChord = QuickCaptureChord.off
     @AppStorage(QuickCaptureChord.key) var captureChord = QuickCaptureChord.optionSpace
     @AppStorage("hermes.notch.side") var notchSide: EdgeDockSide = .right
     @ObservedObject var agentUpdateService: HermesUpdateService

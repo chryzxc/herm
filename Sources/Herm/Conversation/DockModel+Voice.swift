@@ -90,6 +90,11 @@ extension DockModel {
             )
         }
 
+        let project = newSessionProjectPath
+        if sessionModelOptionID == nil, let project, let preferred = ProjectPreferences.shared.modelID(project),
+           !runtimeModelOptions.contains(where: { $0.id == preferred }) {
+            throw QuickDraftError.message("The preferred project model is unavailable. Select an available model before sending. Your draft is kept.")
+        }
         isCreatingSession = true
         defer { isCreatingSession = false }
         var createParams: [String: Any] = ["source": source]
@@ -101,7 +106,7 @@ extension DockModel {
         }
         // Hermes rejects sessionless model switches; a new-chat pick rides on
         // session.create as a per-session override instead.
-        if let id = sessionModelOptionID,
+        if let id = sessionModelOptionID ?? project.flatMap({ ProjectPreferences.shared.modelID($0) }),
            let option = runtimeModelOptions.first(where: { $0.id == id }) {
             createParams["model"] = option.model
             createParams["provider"] = option.provider
