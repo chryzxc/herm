@@ -1325,7 +1325,7 @@ state appears when there is no activity; refresh errors remain actionable.
 
 
 Chat retains the established `TurnActivityView`: live tool steps, `SignalTrace`,
-running-duration shimmer, and a compact expandable completed summary. Generated
+stable duration text with separate animated live-work decoration, and a compact expandable completed summary. Generated
 reply content must not replace or restyle this activity presentation.
 
 ### Generated replies
