@@ -4,6 +4,8 @@ import Darwin
 @MainActor
 final class LocalTerminalSession: ObservableObject, Identifiable {
     let id = UUID()
+    @Published private(set) var projectCommand: LocalProjectCommand?
+    private var projectCommandTail = ""
 
     enum State: Equatable {
         case idle
@@ -79,6 +81,13 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     @Published private(set) var lastVerificationRun: VerificationRun?
     lazy var emulator = SessionTerminalEmulator(session: self)
 
+    var shellProcessID: pid_t { processID }
+    var hasForegroundJob: Bool {
+        guard masterFD >= 0, processID > 0 else { return false }
+        let foreground = tcgetpgrp(masterFD)
+        return foreground > 0 && foreground != processID
+    }
+
     private var masterFD: Int32 = -1
     private var processID: pid_t = 0
     private var handle: FileHandle?
@@ -144,6 +153,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
                     self.handle = nil
                     self.masterFD = -1
                     self.processID = 0
+                    if self.projectCommand?.isRunning == true { self.projectCommand?.interrupted = true }
                     self.state = .exited
                 }
                 return
@@ -152,6 +162,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
             Task { @MainActor [weak self] in
                 guard let self, self.lifecycleID == lifecycleID, self.masterFD >= 0 else { return }
                 self.emulator.view.feed(byteArray: Array(data)[...])
+                self.consumeProjectCommand(String(decoding: data, as: UTF8.self))
                 self.consume(text)
                 if self.state == .starting { self.state = .ready }
             }
@@ -180,6 +191,24 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         guard masterFD >= 0, verificationRun == nil, !command.isEmpty else { return false }
         send(command + "\n")
         return true
+    }
+
+    @discardableResult
+    func runProjectCommand(_ command: String) -> Bool {
+        let id = UUID()
+        guard projectCommand?.isRunning != true, !hasForegroundJob,
+              let payload = LocalProjectCommand.payload(command: command, id: id), masterFD >= 0 else { return false }
+        projectCommand = LocalProjectCommand(id: id, command: command)
+        projectCommandTail = ""
+        send(payload)
+        return true
+    }
+    private func consumeProjectCommand(_ output: String) {
+        guard let command = projectCommand, command.isRunning else { return }
+        projectCommandTail += output
+        if let code = LocalProjectCommand.exitCode(id: command.id, output: projectCommandTail) {
+            projectCommand?.exitCode = code; projectCommandTail = ""; state = .ready
+        } else { projectCommandTail = String(projectCommandTail.suffix(512)) }
     }
 
     private func send(_ text: String) {
@@ -286,9 +315,13 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     }
 
     func close() {
+        if projectCommand?.isRunning == true { projectCommand?.interrupted = true }
+        projectCommandTail = ""
         lifecycleID = UUID()
         handle?.readabilityHandler = nil
         if masterFD >= 0 {
+            let foreground = tcgetpgrp(masterFD)
+            if foreground > 0, foreground != getpgrp() { kill(-foreground, SIGHUP) }
             if let data = "exit\n".data(using: .utf8) {
                 try? handle?.write(contentsOf: data)
             }

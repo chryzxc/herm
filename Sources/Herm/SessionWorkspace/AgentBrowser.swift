@@ -181,10 +181,45 @@ final class AgentBrowser: ObservableObject {
     private struct Endpoint { let port: Int; let ws: URL }
     static let preferredPort = 9333
 
-    private func launch() async throws -> Endpoint {
+    nonisolated static var profileRoot: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        let profile = support.appendingPathComponent("Herm/AgentBrowser/\(key.profileDirectory)", isDirectory: true)
+        return support.appendingPathComponent("Herm/AgentBrowser", isDirectory: true)
+    }
+
+    /// A Herm that dies without quitting (crash, force quit, debug relaunch) never sends
+    /// willTerminate, so its Chromes get reparented to launchd and keep running forever.
+    /// Run at launch, before any session starts a browser.
+    nonisolated static func reapOrphans() {
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = ["-ax", "-o", "pid=,ppid=,command="]
+        let pipe = Pipe()
+        ps.standardOutput = pipe
+        ps.standardError = FileHandle.nullDevice
+        guard (try? ps.run()) != nil else { return }
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        ps.waitUntilExit()
+        let orphans = orphanPIDs(psOutput: output, profileRoot: profileRoot.path)
+        for pid in orphans { kill(pid, SIGTERM) }
+        if !orphans.isEmpty {
+            let count = orphans.count
+            Task { @MainActor in DebugLog.write("agent browser: reaped \(count) orphaned Chrome processes") }
+        }
+    }
+
+    /// Top-level Chromes (parent is launchd) on a Herm agent-browser profile. Helpers die with them.
+    nonisolated static func orphanPIDs(psOutput: String, profileRoot: String) -> [pid_t] {
+        psOutput.split(separator: "\n").compactMap { line in
+            let fields = line.split(separator: " ", maxSplits: 2)
+            guard fields.count == 3, fields[1] == "1",
+                  fields[2].contains("--user-data-dir=\(profileRoot)/") else { return nil }
+            return pid_t(fields[0])
+        }
+    }
+
+    private func launch() async throws -> Endpoint {
+        let profile = Self.profileRoot.appendingPathComponent(key.profileDirectory, isDirectory: true)
         try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
         let portFile = profile.appendingPathComponent("DevToolsActivePort")
         // A browser left running by an earlier Herm keeps the profile locked; reuse it.

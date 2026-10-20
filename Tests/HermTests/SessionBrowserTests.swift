@@ -31,6 +31,19 @@ struct SessionBrowserTests {
     #expect(store.workspace(for: b) === second)
   }
 
+  @Test func reapsOnlyOrphanedAgentBrowserChromes() {
+    let root = "/Users/me/Library/Application Support/Herm/AgentBrowser"
+    let chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new"
+    let ps = """
+        3099     1 \(chrome) --user-data-dir=\(root)/abc --no-first-run
+        3148  3099 Google Chrome Helper --user-data-dir=\(root)/abc
+       10580 75208 \(chrome) --user-data-dir=\(root)/def
+         500     1 \(chrome) --user-data-dir=/tmp/other
+         600     1 /usr/sbin/cfprefsd agent
+      """
+    #expect(AgentBrowser.orphanPIDs(psOutput: ps, profileRoot: root) == [3099])
+  }
+
   @Test func botProfilesHaveSeparateBrowserIdentities() {
     let a = SessionBrowserKey(profileID: "one", sessionID: "chat")
     let b = SessionBrowserKey(profileID: "two", sessionID: "chat")

@@ -16,6 +16,7 @@ struct DockModal<Content: View, Footer: View>: View {
     let content: Content
     let footer: Footer
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEnabled) private var isEnabled
 
     init(
         icon: Ph? = nil,
@@ -56,7 +57,7 @@ struct DockModal<Content: View, Footer: View>: View {
         .frame(width: width)
         .background(Color.dockCanvas)
         .dockThemedRoot()
-        .onExitCommand { dismiss() }
+        .onExitCommand { if isEnabled { dismiss() } }
     }
 
     private var header: some View {

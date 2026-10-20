@@ -10,7 +10,7 @@ final class SessionTerminalEmulator: NSObject, @preconcurrency TerminalViewDeleg
 
     init(session: LocalTerminalSession) {
         self.session = session
-        view = TerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 12, weight: .regular),
+        view = ContextTerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 12, weight: .regular),
                             options: TerminalOptions(scrollback: LocalTerminalSession.maxOutputLines))
         super.init()
         view.terminalDelegate = self
@@ -31,9 +31,11 @@ final class SessionTerminalEmulator: NSObject, @preconcurrency TerminalViewDeleg
 
 struct SessionTerminalCanvas: NSViewRepresentable {
     let session: LocalTerminalSession
+    var onAttach: ((String, Int, Int) -> Void)? = nil
 
     func makeNSView(context: Context) -> TerminalView {
         let view = session.emulator.view
+        (view as? ContextTerminalView)?.onAttach = onAttach
         applyTheme(view)
         DispatchQueue.main.async { [weak view] in
             guard let view, let window = view.window else { return }
@@ -42,10 +44,27 @@ struct SessionTerminalCanvas: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ view: TerminalView, context: Context) { applyTheme(view) }
+    func updateNSView(_ view: TerminalView, context: Context) {
+        (view as? ContextTerminalView)?.onAttach = onAttach
+        applyTheme(view)
+    }
 
     private func applyTheme(_ view: TerminalView) {
         view.nativeBackgroundColor = NSColor(Color.dockCanvas)
         view.nativeForegroundColor = NSColor(Color.dockPrimaryText)
+    }
+}
+
+final class ContextTerminalView: TerminalView {
+    var onAttach: ((String, Int, Int) -> Void)?
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        let item = NSMenuItem(title: "Attach to chat", action: #selector(attachSelection), keyEquivalent: "")
+        item.target = self; item.isEnabled = !selection.getSelectedText().isEmpty && onAttach != nil
+        menu.addItem(item)
+        return menu
+    }
+    @objc private func attachSelection() {
+        onAttach?(selection.getSelectedText(), selection.start.row + 1, selection.end.row + 1)
     }
 }

@@ -2,64 +2,25 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Real interactive terminal view following DESIGN.md glass pane & typography specifications.
-@MainActor
-private final class TerminalTabStore: ObservableObject {
-    @Published private(set) var sessions: [LocalTerminalSession]
-    @Published var selectedID: LocalTerminalSession.ID
-    private var subscriptions: [AnyCancellable] = []
-
-    init() {
-        let session = LocalTerminalSession()
-        sessions = [session]
-        selectedID = session.id
-        observe(session)
-    }
-
-    var selected: LocalTerminalSession {
-        sessions.first(where: { $0.id == selectedID }) ?? sessions[0]
-    }
-
-    func add(directory: String) {
-        let session = LocalTerminalSession()
-        sessions.append(session)
-        observe(session)
-        selectedID = session.id
-        session.start(directory: directory)
-    }
-
-    func closeSelected() {
-        guard sessions.count > 1 else {
-            selected.close()
-            return
-        }
-        let index = sessions.firstIndex(where: { $0.id == selectedID }) ?? 0
-        sessions[index].close()
-        sessions.remove(at: index)
-        subscriptions.removeAll()
-        sessions.forEach(observe)
-        selectedID = sessions[min(index, sessions.count - 1)].id
-    }
-
-    func closeAll() {
-        sessions.forEach { $0.close() }
-    }
-
-    private func observe(_ session: LocalTerminalSession) {
-        session.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &subscriptions)
-    }
-}
-
 struct SessionTerminalView: View {
+    var discoveryActive = true
     let projectPath: String?
     let recipes: [VerificationRecipe]
     let repositoryID: String?
     let repositoryFingerprint: String?
     /// Bumped by the inspector's + menu to open another shell.
     var newShellRequest = 0
-    @StateObject private var terminalTabs = TerminalTabStore()
+    @ObservedObject private var terminalTabs: TerminalTabStore
+    @Environment(\.chatContextRouter) private var contextRouter
+    @State private var confirmingClose = false
+
+    init(projectPath: String?, recipes: [VerificationRecipe], repositoryID: String?, repositoryFingerprint: String?,
+         workspaceKey: String = "local", newShellRequest: Int = 0, discoveryActive: Bool = true) {
+        self.discoveryActive = discoveryActive
+        self.projectPath = projectPath; self.recipes = recipes; self.repositoryID = repositoryID
+        self.repositoryFingerprint = repositoryFingerprint; self.newShellRequest = newShellRequest
+        self.terminalTabs = TerminalWorkspaceStore.shared.workspace(key: workspaceKey + ":" + (projectPath ?? "home"))
+    }
     @State private var isHoveringNewShell = false
 
     private var directory: String { projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path }
@@ -80,28 +41,60 @@ struct SessionTerminalView: View {
                 verificationRunBanner(run)
             }
 
-            SessionTerminalCanvas(session: terminal)
-                .id(terminal.id)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.top, 8)
+            GeometryReader { geometry in
+                if terminalTabs.splitIDs.count > 1 {
+                    // Stack narrow panes without changing the stored split preference.
+                    if terminalTabs.splitAxis == 0 && geometry.size.width >= CGFloat(visibleSessions.count) * 280 {
+                        HSplitView { ForEach(visibleSessions) { pane($0).frame(minWidth: 160) } }
+                    } else {
+                        VSplitView { ForEach(visibleSessions) { pane($0).frame(minHeight: 100) } }
+                    }
+                } else { pane(terminal) }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(.top, 8)
 
         }
         .background(Color.dockCanvas)
-        .task(id: projectPath) {
-            terminal.start(directory: directory)
+        .task(id: terminal.id) {
+            for session in visibleSessions + [terminal] where session.workingDirectory == nil { session.start(directory: directory) }
         }
         .onChange(of: newShellRequest) { _, _ in terminalTabs.add(directory: directory) }
-        .onDisappear { terminalTabs.closeAll() }
+        .confirmationDialog("Close the running terminal?", isPresented: $confirmingClose) {
+            Button("Close terminal", role: .destructive) { terminalTabs.closeSelected() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("The foreground command will stop. Other terminals stay open.") }
+    }
+
+    private var visibleSessions: [LocalTerminalSession] {
+        terminalTabs.sessions.filter { terminalTabs.splitIDs.contains($0.id) }
+    }
+    private func split(axis: Int) {
+        if terminalTabs.splitIDs.isEmpty { terminalTabs.splitIDs = [terminal.id] }
+        terminalTabs.splitAxis = axis
+        terminalTabs.add(directory: directory)
+        terminalTabs.splitIDs.append(terminal.id)
+    }
+    private func pane(_ session: LocalTerminalSession) -> some View {
+        SessionTerminalCanvas(session: session) { excerpt, start, end in
+            let bytes = Array(excerpt.utf8.prefix(32 * 1024))
+            let content = String(decoding: bytes, as: UTF8.self)
+            let label = "Terminal lines \(start)–\(end)"
+            contextRouter?.model?.attachedContexts.append(ChatContext(id: UUID().uuidString, title: label,
+                body: "\(label) (\(session.workingDirectory.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Home"))\n```\n\(content)\n```" + (bytes.count < excerpt.utf8.count ? "\nExcerpt truncated at 32 KiB." : "")))
+        }.id(session.id)
     }
 
     private var terminalTabBar: some View {
         HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(terminalTabs.sessions) { session in
-                        terminalTab(session)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(terminalTabs.sessions) { session in
+                            terminalTab(session).id(session.id)
+                        }
                     }
                 }
+                .onAppear { proxy.scrollTo(terminalTabs.selectedID, anchor: .trailing) }
+                .onChange(of: terminalTabs.selectedID) { _, id in proxy.scrollTo(id, anchor: .trailing) }
             }
 
             Spacer(minLength: 0)
@@ -121,7 +114,7 @@ struct SessionTerminalView: View {
             .buttonStyle(.plain)
             .onHover { isHoveringNewShell = $0 }
             .animation(.dockEase(duration: 0.12), value: isHoveringNewShell)
-            .help("New terminal session")
+            .help("New terminal session").accessibilityLabel("New terminal session")
         }
         .padding(.horizontal, 0)
         .padding(.top, 8)
@@ -138,7 +131,7 @@ struct SessionTerminalView: View {
                 .lineLimit(1)
             Button {
                 terminalTabs.selectedID = session.id
-                terminalTabs.closeSelected()
+                if terminal.hasForegroundJob { confirmingClose = true } else { terminalTabs.closeSelected() }
             } label: {
                 DockIcon(.x)
                     .font(.system(size: 9, weight: .semibold))
@@ -174,6 +167,10 @@ struct SessionTerminalView: View {
                 Button("Restart") { terminal.start(directory: directory) }
                     .buttonStyle(.dockCompact)
             }
+            if let command = terminal.projectCommand {
+                Text(command.isRunning ? "Running action…" : command.exitCode.map { "Action exited \($0)" } ?? "Action interrupted")
+                    .font(DockTypography.metadata).foregroundStyle(command.exitCode.map { $0 == 0 ? Color.dockSuccess : Color.dockWarning } ?? Color.dockSecondaryText)
+            }
             Spacer(minLength: 8)
 
             if !recipes.isEmpty {
@@ -199,7 +196,11 @@ struct SessionTerminalView: View {
                 .disabled(terminal.state != .ready)
             }
 
+            LocalServersMenu(processIDs: terminalTabs.sessions.map(\.shellProcessID), active: discoveryActive)
             DockMenu {
+                Button("Split horizontally") { split(axis: 0) }.disabled(terminalTabs.splitIDs.count >= 4)
+                Button("Split vertically") { split(axis: 1) }.disabled(terminalTabs.splitIDs.count >= 4)
+                Button("Show selected shell only") { terminalTabs.splitIDs = [] }
                 Button("Clear output") { terminal.clear() }
                 Button("Interrupt", action: terminal.interrupt)
                     .disabled(!canInterrupt)

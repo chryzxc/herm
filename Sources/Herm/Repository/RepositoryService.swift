@@ -904,7 +904,7 @@ enum RepositoryService {
         return nil
     }
 
-    private static func isSafeRelativePath(_ path: String) -> Bool {
+    static func isSafeRelativePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
 
@@ -964,7 +964,7 @@ enum RepositoryService {
         return nil
     }
 
-    private static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (output: String, exitCode: Int32) {
+    static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (output: String, exitCode: Int32) {
         guard !Task.isCancelled else { return ("", 1) }
         return await Task.detached(priority: .utility) {
             let process = Process()

@@ -10,6 +10,7 @@ struct SessionFilesView: View {
     var scope: SessionRepositoryScope? = nil
     var isCompact = false
     var onOpenFile: ((SessionRepositoryScope, RepositoryFileDocument) -> Void)? = nil
+    @Environment(\.chatContextRouter) private var contextRouter
     @State private var entries: [ProjectFileEntry] = []
     @State private var gitStatus: [String: RepositoryFileStatus] = [:]
     @State private var branch: String?
@@ -25,6 +26,13 @@ struct SessionFilesView: View {
     @State private var showsGeneratedFiles = false
     @State private var openRequestID = UUID()
 
+    private var presentationIdentity: String {
+        (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? scope?.identity ?? "local") + ":files:" + (projectPath ?? "")
+    }
+    private func savePresentation() {
+        WorkspacePresentationStore.shared.saveReferences(ExplorerPresentation(selected: selectedPath, openFile: document?.path,
+            expandedDirectories: Array(expandedDirectories.sorted().prefix(200))), identity: presentationIdentity)
+    }
     private static let indentWidth: CGFloat = 12
 
     var body: some View {
@@ -49,9 +57,24 @@ struct SessionFilesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: "\(projectPath ?? ""):\(showsGeneratedFiles)") {
-            await reload(resetDisclosure: true)
+        .task(id: "\(presentationIdentity):\(showsGeneratedFiles)") {
+            let identity = presentationIdentity
+            let saved = WorkspacePresentationStore.shared.loadReferences(ExplorerPresentation.self, identity: identity)
+            selectedPath = saved?.selected
+            expandedDirectories = Set((saved?.expandedDirectories ?? []).filter(RepositoryService.isSafeRelativePath))
+            await reload(resetDisclosure: false)
+            guard !Task.isCancelled, presentationIdentity == identity else { return }
+            if onOpenFile == nil, document == nil, let file = saved?.openFile, let projectPath,
+               RepositoryService.isSafeRelativePath(file) {
+                let loaded = await RepositoryService.loadDocument(path: projectPath, filePath: file)
+                guard !Task.isCancelled, presentationIdentity == identity else { return }
+                document = loaded
+                if loaded == nil { error = "The previously open file is unavailable. Choose another file or refresh Explorer." }
+            }
         }
+        .onChange(of: selectedPath) { _, _ in savePresentation() }
+        .onChange(of: document?.path) { _, _ in savePresentation() }
+        .onChange(of: expandedDirectories) { _, _ in savePresentation() }
         .onChange(of: scope?.identity ?? projectPath ?? "") { _, _ in
             openRequestID = UUID()
             isOpeningFile = false

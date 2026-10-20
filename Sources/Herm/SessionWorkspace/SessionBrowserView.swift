@@ -125,13 +125,15 @@ struct SessionBrowserView: View {
     @ObservedObject var model: DockModel
     let workspace: SessionBrowserWorkspace
     let isPrimary: Bool
+    var discoveryActive = true
     @AppStorage("sessionInspector.browserViewport") private var viewportRaw = 0
     @ObservedObject private var browser: BrowserController
     @ObservedObject private var agent: AgentBrowser
     @State private var field = ""
     @FocusState private var isEditingAddress: Bool
 
-    init(model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil) {
+    init(model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil, discoveryActive: Bool = true) {
+        self.discoveryActive = discoveryActive
         self.model = model
         self.workspace = workspace
         isPrimary = browser == nil
@@ -198,6 +200,10 @@ struct SessionBrowserView: View {
         }
         .onAppear {
             browser.model = model
+            if browser.currentURL == nil, browser.address.isEmpty || browser.address == "about:blank",
+               let restored = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL {
+                browser.address = restored
+            }
             field = pageURL.isEmpty ? browser.address : pageURL
             guard isPrimary else { return }
             agent.model = model
@@ -209,6 +215,10 @@ struct SessionBrowserView: View {
             guard let url, !showsAgent else { return }
             if !isEditingAddress { field = url }
             browser.address = url
+            let key = WorkspaceIdentity.session(model)
+            var presentation = WorkspacePresentationStore.shared.load(key) ?? InspectorPresentation()
+            presentation.browserURL = WorkspacePresentationStore.restorableBrowserURL(url)
+            WorkspacePresentationStore.shared.save(presentation, identity: key)
         }
         .onChange(of: agent.activePage, initial: true) { _, page in
             guard showsAgent, let url = page?.url else { return }
@@ -245,6 +255,8 @@ struct SessionBrowserView: View {
                            isProminent: annotating, style: palette) {
                 if showsAgent { agent.annotating.toggle() } else { browser.annotating.toggle() }
             }
+            LocalServersMenu(processIDs: TerminalWorkspaceStore.shared.processIDs(matching:
+                WorkspaceIdentity.session(model)), active: discoveryActive)
             moreMenu
         }
     }
