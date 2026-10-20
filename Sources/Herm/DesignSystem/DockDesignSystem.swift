@@ -198,15 +198,20 @@ struct DockShimmerTrack: View {
 extension View {
     /// The floating panel treatment for anything drawn over a scene or edge:
     /// 92% canvas, hairline border, 12pt radius, and a soft drop shadow.
+    @ViewBuilder
     func dockHUDPanel() -> some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.paneRadius + 2, role: .pane)
-        return self
+        if DockThemeStyle.current.material == .glass {
+            dockLiquidGlass(shape)
+        } else {
+            self
             .background(Color.dockOpaqueCanvas)  // dockCanvas is translucent in native themes
             .background(Color.dockCanvas.opacity(0.92))
             .clipShape(shape)
             .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.outline))
             .dockFoldCrease()
             .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
+        }
     }
 
     /// Signage card: the SwiftUI counterpart of an office task bubble. A raised

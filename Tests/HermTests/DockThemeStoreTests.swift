@@ -175,16 +175,20 @@ struct DockThemeStoreTests {
 
     @Test func glassPaletteIsNeutralAndTranslucent() {
         let palette = DockThemePalette(theme: .glass)
+        var darkWindow: NSColor?
         var darkBackground: NSColor?
         var darkAccent: NSColor?
         NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
+            darkWindow = NSColor(palette.windowBackground).usingColorSpace(.sRGB)
             darkBackground = NSColor(palette.background).usingColorSpace(.sRGB)
             darkAccent = NSColor(palette.accent).usingColorSpace(.sRGB)
         }
 
-        #expect(darkBackground != nil)
-        #expect(abs((darkBackground?.alphaComponent ?? 0) - 0.16) < 0.01)
-        #expect((darkBackground?.brightnessComponent ?? 1) < 0.15)
+        // The window tint is the only layer; page canvases and the sidebar stay clear.
+        #expect(abs((darkWindow?.alphaComponent ?? 0) - 0.40) < 0.01)
+        #expect((darkWindow?.brightnessComponent ?? 1) < 0.15)
+        #expect(darkBackground?.alphaComponent == 0)
+        #expect(palette.sidebarBackground == palette.background)
         #expect(abs((darkAccent?.blueComponent ?? 0) - (darkAccent?.redComponent ?? 1)) < 0.02)
     }
 

@@ -172,8 +172,18 @@ larger surfaces. Status pills and other semantic capsules remain capsules so
 their meaning stays consistent across themes.
 
 Themes also set `DockThemeStyle.material`, `selection`, `chrome`, and
-`animates`. Glass uses blurred material panels with pill controls and a light
-top edge. E-Ink inverts selected tabs and disables all animation. Swiss drops
+`animates`. Glass matches macOS Liquid Glass: one window tint over the system
+glass (page canvases and the sidebar stay clear), native `glassEffect` cards,
+controls, inputs and floating panels (`dockFloatingSurface`), no outlines, and
+`DockPaneBackground` under sheets and overlays.
+
+Surfaces must be theme-aware. Never paint a box, field, chip or track with
+`fill(Color.dockSurface…)` / `.background(Color.dockControlSurface)` directly:
+use `shape.dockSurfaceFill(fallback)` (glass on Glass, `fallback` elsewhere),
+`shape.dockSelectionFill(isSelected, fallback:)` for selected rows,
+`.dockPaneTint(color)` for full-width header/column tints (clear on Glass), and
+`dockFloatingSurface` for menus and popovers. Skeletons, avatars and status
+pills keep plain tints. E-Ink inverts selected tabs and disables all animation. Swiss drops
 card fills and strokes (`chrome: .open`), marks selection with a 2pt accent
 underline, and uses a single-rule composer (`DockSkinPresentation.Composer.line`).
 
@@ -335,8 +345,10 @@ will appear or what to do next.
   with reduced emphasis. Text labels use at least 12pt; pending feedback stays
   in the same control. Preserve keyboard activation and native focus indication.
 - Action labels use `DockTypography.control` (12pt medium) and themed text. Primary
-  actions use `dockPrimaryText` over the canvas (neutral glass in Glass) with a 14% accent tint,
-  increasing to 24% on hover and 30% while pressed, with an accent contour.
+  actions use `dockPrimaryText` over the canvas with a 14% accent tint,
+  increasing to 24% on hover and 30% while pressed, with an accent contour. In
+  Glass they are accent-tinted interactive glass (like `.glassProminent`) with
+  `dockOnAccentText` labels; secondary actions are plain interactive glass.
   All shared action styles show hover/press feedback and suppress hover emphasis
   when disabled. Keep theme geometry, material, and reduced-motion behavior.
 - Keep icon controls visually compact but give them a 44pt minimum hit target.

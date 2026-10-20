@@ -423,6 +423,8 @@ struct NativePopoverBackground: NSViewRepresentable {
 struct DockWindowBackground: View {
     // Observed so the canvas repaints on theme switch; it has no other inputs.
     @ObservedObject private var themeStore = DockThemeStore.shared
+    /// Outline for the glass rim; pass the clip shape so curved edges (notch) keep it.
+    var shape = AnyShape(Rectangle())
 
     /// Glass samples the real backdrop with the system Liquid Glass effect
     /// (macOS 26+); older systems and System skin use the blur material.
@@ -431,7 +433,7 @@ struct DockWindowBackground: View {
             // glassEffect alone barely blurs; blur the backdrop first so text
             // from windows behind Herm cannot be read through it.
             NativePopoverBackground(material: .hudWindow)
-                .overlay(Color.clear.glassEffect(.regular, in: Rectangle()))
+                .overlay(Color.clear.glassEffect(.regular, in: shape))
         } else {
             NativePopoverBackground(material: DockThemeRuntime.current == .glass ? .underWindowBackground : .popover)
         }
@@ -445,6 +447,14 @@ struct DockWindowBackground: View {
         } else {
             Color.dockCanvas.overlay(DockBackdrop())
         }
+    }
+}
+
+/// Backing for sheets and panes layered over other content: the window's own
+/// glass on the glass skin (so nothing beneath shows through), else the canvas.
+struct DockPaneBackground: View {
+    var body: some View {
+        if DockThemeRuntime.current.usesNativeMaterial { DockWindowBackground() } else { Color.dockCanvas }
     }
 }
 
@@ -462,8 +472,14 @@ struct DockPressButtonStyle: ButtonStyle {
             .font(DockTypography.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(3)
-            .background(shape.fill(Color.dockControlSurface.opacity(isHovering && isEnabled ? 0.9 : 0.55)))
-            .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.hairline))
+            .background {
+                if DockThemeStyle.current.material == .glass {
+                    Color.clear.dockLiquidGlass(shape, interactive: true)
+                } else {
+                    shape.fill(Color.dockControlSurface.opacity(isHovering && isEnabled ? 0.9 : 0.55))
+                        .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.hairline))
+                }
+            }
             .contentShape(shape)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .opacity(!isEnabled ? 0.42 : configuration.isPressed ? 0.86 : 1)
@@ -540,21 +556,22 @@ struct DockPrimaryButtonStyle: ButtonStyle {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         let tint = configuration.role == .destructive ? Color.dockDestructive : Color.dockAccent
         let highlighted = isHovering && isEnabled
+        // Glass matches macOS `.glassProminent`: accent-tinted glass, no outline or canvas.
+        let isGlass = DockThemeStyle.current.material == .glass
         configuration.label
             .font(DockTypography.control)
-            .foregroundStyle(Color.dockPrimaryText)
+            .foregroundStyle(isGlass ? Color.dockOnAccentText : Color.dockPrimaryText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
-            .background(shape.fill(tint.opacity(configuration.isPressed ? 0.30 : highlighted ? 0.24 : 0.14)))
             .background {
-                if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, interactive: true)
+                if isGlass {
+                    Color.clear.dockLiquidGlass(shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true)
                 } else {
-                    shape.fill(Color.dockCanvas)
+                    shape.fill(tint.opacity(configuration.isPressed ? 0.30 : highlighted ? 0.24 : 0.14))
+                        .background(shape.fill(Color.dockCanvas))
+                        .overlay(shape.stroke(tint.opacity(highlighted ? 0.6 : 0.35), lineWidth: DockLayout.outline))
                 }
             }
-            .background(shape.fill(Color.dockCanvas))
-            .overlay(shape.stroke(tint.opacity(highlighted ? 0.6 : 0.35), lineWidth: DockLayout.outline))
             .dockStickerShadow(shape, pressed: configuration.isPressed)
             .dockEmboss(shape, pressed: configuration.isPressed)
             .dockBevel(pressed: configuration.isPressed)
@@ -585,18 +602,14 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
             .background {
-                if DockThemeStyle.current.material == .glass && isHovering && isEnabled {
-                    shape.fill(Color.dockSurface4.opacity(0.7))
-                }
-            }
-            .background {
+                // Glass matches macOS `.glass`: interactive glass supplies hover/press and rim, so no outline.
                 if DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(shape, interactive: true)
                 } else {
                     shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6))
+                        .overlay(shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, DockLayout.outline)))
                 }
             }
-            .overlay(shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, DockLayout.outline)))
             .dockStickerShadow(shape, pressed: configuration.isPressed)
             .dockEmboss(shape, pressed: configuration.isPressed)
             .dockBevel(pressed: configuration.isPressed)
@@ -657,8 +670,21 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
             .frame(minHeight: DockLayout.controlHeight)
             // The shared canvas keeps inputs consistent across panes; the
             // plain field style removes the warm native field fill.
-            .background(shape.fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+            .background(DockFieldBackground(shape: shape))
             .overlay(DockBevel(pressed: true))
+    }
+}
+
+/// A View so the glass branch runs main-actor isolated (TextFieldStyle bodies are not).
+private struct DockFieldBackground: View {
+    let shape: DockThemeShape
+
+    var body: some View {
+        if DockThemeStyle.current.material == .glass {
+            Color.clear.dockLiquidGlass(shape)
+        } else {
+            shape.fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline)
+        }
     }
 }
 
@@ -923,7 +949,7 @@ struct DockCallout<Content: View>: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.dockSurface)
+        .background(shape.dockSurfaceFill(Color.dockSurface))
         .clipShape(shape)
         .overlay(shape.stroke(tint.opacity(0.35), lineWidth: DockLayout.hairline))
         .dockFoldCrease()
@@ -985,8 +1011,7 @@ struct DockCalloutDisclosure: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                .fill(Color.dockSurface2.opacity(0.6))
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                .dockSurfaceFill(Color.dockSurface2.opacity(0.6), stroke: Color.dockBorderLight)
         )
     }
 }
@@ -1143,14 +1168,42 @@ extension ToggleStyle where Self == DockToggleStyle {
 }
 
 extension Shape {
-    /// Input/composer background: Liquid Glass on the glass skin, else the solid surface.
+    /// Theme-aware box/control fill: Liquid Glass on the glass skin, else `fallback`.
+    /// Use it for any card, field, chip or segmented track instead of `fill(Color.dockSurface…)`.
+    /// Neutral outlines are dropped on glass (native glass has its own rim);
+    /// pass `strokeOnGlass` for strokes that carry state such as focus or tint.
     @MainActor @ViewBuilder
-    func dockInputFill() -> some View {
+    func dockSurfaceFill(_ fallback: Color, interactive: Bool = false, stroke: Color? = nil, lineWidth: CGFloat = DockLayout.hairline, strokeOnGlass: Bool = false) -> some View {
         if DockThemeStyle.current.material == .glass {
-            Color.clear.dockLiquidGlass(self)
+            Color.clear.dockLiquidGlass(self, interactive: interactive)
+                .overlay { if strokeOnGlass, let stroke { self.stroke(stroke, lineWidth: lineWidth) } }
         } else {
-            fill(Color.dockSurface2)
+            fill(fallback).overlay { if let stroke { self.stroke(stroke, lineWidth: lineWidth) } }
         }
+    }
+
+    /// Theme-aware row selection: the selected row becomes interactive glass on
+    /// the glass skin (hover keeps `fallback`); other skins always use `fallback`.
+    @MainActor @ViewBuilder
+    func dockSelectionFill(_ isSelected: Bool, fallback: Color) -> some View {
+        if isSelected && DockThemeStyle.current.material == .glass {
+            Color.clear.dockLiquidGlass(self, interactive: true)
+        } else {
+            fill(fallback)
+        }
+    }
+
+    /// Input/composer background.
+    @MainActor
+    func dockInputFill() -> some View { dockSurfaceFill(Color.dockSurface2) }
+}
+
+extension View {
+    /// Theme-aware full-width tint for headers, list columns and footers: clear on
+    /// the glass skin (the window glass is the only layer), else `color`.
+    @MainActor @ViewBuilder
+    func dockPaneTint(_ color: Color) -> some View {
+        if DockThemeStyle.current.material == .glass { self } else { background(color) }
     }
 }
 
@@ -1170,6 +1223,17 @@ extension View {
                     LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1
                 ))
+        }
+    }
+
+    /// Floating panels (menus, popovers, navigators): Liquid Glass on the glass
+    /// skin; elsewhere an opaque canvas so content beneath never bleeds through.
+    @ViewBuilder
+    func dockFloatingSurface<S: Shape>(_ shape: S, tint: Color = .clear, stroke: Color = .dockBorder, lineWidth: CGFloat = DockLayout.hairline) -> some View {
+        if DockThemeStyle.current.material == .glass {
+            dockLiquidGlass(shape)
+        } else {
+            background(shape.fill(tint)).background(shape.fill(Color.dockOpaqueCanvas)).overlay(shape.stroke(stroke, lineWidth: lineWidth))
         }
     }
 

@@ -232,7 +232,13 @@ private struct DockMenuPanel<Content: View>: View {
         }
         .onPreferenceChange(DockMenuHeightKey.self) { contentHeight = $0 }
         .frame(height: contentHeight > 0 ? min(contentHeight, 440) : nil)
-        .background { Color.dockOpaqueCanvas; Color.dockSurface }
+        .background {
+            if DockThemeStyle.current.material == .glass {
+                Color.clear.dockLiquidGlass(Rectangle())
+            } else {
+                Color.dockOpaqueCanvas; Color.dockSurface
+            }
+        }
     }
 }
 

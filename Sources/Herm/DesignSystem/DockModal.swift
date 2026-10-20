@@ -51,11 +51,11 @@ struct DockModal<Content: View, Footer: View>: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity)
-                    .background(Color.dockSurface.opacity(0.35))
+                    .dockPaneTint(Color.dockSurface.opacity(0.35))
             }
         }
         .frame(width: width)
-        .background(Color.dockCanvas)
+        .background(DockPaneBackground())
         .dockThemedRoot()
         .onExitCommand { if isEnabled { dismiss() } }
     }
@@ -195,9 +195,15 @@ struct DockModalButtonStyle: ButtonStyle {
             .foregroundStyle(isPrimary ? Color.dockOnAccentText : Color.dockPrimaryText)
             .padding(.horizontal, 16)
             .frame(minWidth: 92, minHeight: DockLayout.controlHeight)
-            .background(shape.fill(isPrimary ? Color.dockAccent : Color.dockControlSurface))
-            .overlay(shape.stroke(isPrimary ? Color.clear : Color.dockBorder, lineWidth: DockLayout.outline))
-            .overlay(shape.fill(Color.black.opacity(configuration.isPressed ? 0.12 : 0)))
+            .background {
+                if DockThemeStyle.current.material == .glass {
+                    Color.clear.dockLiquidGlass(shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true)
+                } else {
+                    shape.fill(isPrimary ? Color.dockAccent : Color.dockControlSurface)
+                        .overlay(shape.stroke(isPrimary ? Color.clear : Color.dockBorder, lineWidth: DockLayout.outline))
+                        .overlay(shape.fill(Color.black.opacity(configuration.isPressed ? 0.12 : 0)))
+                }
+            }
             .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.42)
     }

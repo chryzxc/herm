@@ -84,7 +84,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .dots, pressScale: 1, cardFill: 1, tintedSidebar: true)
         case .dusk: DockThemeStyle(controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 5, cardShadow: 10, accentGradient: true, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
         case .origami: DockThemeStyle(controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, selection: .bar, cardShadow: 6, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, pressScale: 0.97, neutralUserBubble: true, tintedSidebar: true)
+        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, pressScale: 0.97, neutralUserBubble: true)
         case .eInk: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 1, selection: .invert, animates: false, pressScale: 1, cardFill: 1, neutralUserBubble: true)
         case .swiss: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open, pressScale: 1, neutralUserBubble: true)
         case .clean: DockThemeStyle(controlRadius: 10, paneRadius: 18, outlineWidth: 0, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
@@ -280,10 +280,13 @@ private struct Tokens {
             }
         }
         // Glass is composited over the system material. The neutral tint is
-        // dense enough to calm colorful wallpapers while the blur shows through.
+        // light so the wallpaper reads through like native Liquid Glass; the
+        // blur underneath keeps text from windows behind Herm unreadable.
         // Branded themes stay opaque so their authored colors render exactly as specified.
-        windowBackground = color({ $0.bg }, nativeAlpha: 0.62)
-        background = color({ $0.bg }, nativeAlpha: 0.16)
+        windowBackground = color({ $0.bg }, nativeAlpha: 0.40)
+        // Clear so nested page canvases never stack into darker panes; the
+        // window tint above is the only layer over the glass.
+        background = color({ $0.bg }, nativeAlpha: 0)
         surface = color({ $0.surface }, nativeAlpha: 0.40)
         surface2 = color({ $0.surface2 }, nativeAlpha: 0.32)
         surface4 = color({ $0.surface4 }, nativeAlpha: 0.60)
