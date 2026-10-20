@@ -158,7 +158,7 @@ struct SettingsSection<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .fill(Color.dockSurface.opacity(0.34))
+                    .dockSurfaceFill(Color.dockSurface.opacity(0.34))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)

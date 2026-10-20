@@ -66,7 +66,7 @@ struct SessionPullRequestsSurface: View {
                 pullRequestList
             }
         }
-        .background(Color.dockSurface2.opacity(0.55))
+        .dockPaneTint(Color.dockSurface2.opacity(0.55))
         .task(id: repositoryPath) {
             guard let repositoryPath, !repositoryPath.isEmpty else { return }
             await center.refreshScoped(repositoryPath: repositoryPath)
@@ -142,7 +142,7 @@ struct SessionPullRequestsSurface: View {
         }
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34)
-        .background(Color.dockControlSurface)
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
         .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
     }
 

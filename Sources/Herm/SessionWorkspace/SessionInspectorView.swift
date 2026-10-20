@@ -411,7 +411,7 @@ struct SessionInspector: View {
                     .onChange(of: proxy.size.width) { _, width in isCompactStrip = width < 420 }
             }
         )
-        .background(Color.dockSurface2.opacity(0.58))
+        .dockPaneTint(Color.dockSurface2.opacity(0.58))
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 

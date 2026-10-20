@@ -244,9 +244,7 @@ struct RepositoryCodeWorkspaceView: View {
         }
         .padding(12)
         .frame(width: 280, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockOpaqueCanvas))
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: DockLayout.hairline))
+        .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous), stroke: .dockBorderStrong)
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     }
 
@@ -269,7 +267,7 @@ struct RepositoryCodeWorkspaceView: View {
         .lineLimit(1)
         .padding(.horizontal, 12)
         .frame(height: 26)
-        .background(Color.dockSurface2.opacity(0.5))
+        .dockPaneTint(Color.dockSurface2.opacity(0.5))
     }
 
     @ViewBuilder

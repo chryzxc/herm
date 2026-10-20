@@ -70,7 +70,7 @@ struct GitHubBrowseControls: View {
             Button(action: refresh) {
                 DockIcon(.arrowClockwise, size: 14, color: Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
-                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
             }
             .buttonStyle(.dockHover)
             .disabled(isLoading)
@@ -102,7 +102,7 @@ struct GitHubBrowseControls: View {
             } label: {
                 DockIcon(.sliders, size: 14, color: Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
-                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
             }
             .help("Sort and saved view")
             .accessibilityLabel("Sort and saved view")

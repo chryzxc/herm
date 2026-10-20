@@ -126,7 +126,7 @@ struct FileTypeIcon: View {
         }
         .padding(size * 0.18)
         .frame(width: size, height: size)
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2))
         .accessibilityHidden(true)
     }
 }

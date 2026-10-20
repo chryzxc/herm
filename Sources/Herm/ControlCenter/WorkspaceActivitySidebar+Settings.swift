@@ -432,7 +432,7 @@ extension WorkspaceActivitySidebar {
                         .padding(.horizontal, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .frame(height: 36)
-                        .background(Color.dockControlSurface)
+                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
                         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     }

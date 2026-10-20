@@ -221,7 +221,7 @@ struct MessagingWorkspaceView: View {
                 }
             }
             .padding(16)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.dockSurface))
+            .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
     }

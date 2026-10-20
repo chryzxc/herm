@@ -323,8 +323,7 @@ private extension View {
         padding(12)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                    .fill(Color.dockSurface6.opacity(0.94))
-                    .stroke(tint.opacity(0.3), lineWidth: 0.6)
+                    .dockSurfaceFill(Color.dockSurface6.opacity(0.94), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
             )
             .shadow(color: tint.opacity(0.18), radius: 16)
     }

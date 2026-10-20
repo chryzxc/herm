@@ -431,7 +431,7 @@ private struct HermesConfigFieldRow: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 54, maxHeight: 120)
                     .padding(6)
-                    .background(Color.dockControlSurface)
+                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
                     .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     .padding(.bottom, 10)

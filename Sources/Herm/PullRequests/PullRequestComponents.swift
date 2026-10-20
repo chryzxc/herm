@@ -38,7 +38,7 @@ struct PullRequestRowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).fill(isSelected ? Color.dockAccent.opacity(0.16) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.16) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
     }
@@ -88,7 +88,7 @@ struct PullRequestFileTreeRow: View {
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
-                    .fill(isSelected ? Color.dockAccent.opacity(0.16) : (isHovered && !node.isDirectory ? Color.dockSurface4.opacity(0.5) : Color.clear))
+                    .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.16) : (isHovered && !node.isDirectory ? Color.dockSurface4.opacity(0.5) : Color.clear))
             )
             .contentShape(Rectangle())
         }

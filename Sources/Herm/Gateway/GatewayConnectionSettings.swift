@@ -117,7 +117,7 @@ enum GatewayTokenStore {
     }
 
     private static func query(_ account: String) -> [CFString: Any] {
-        [kSecClass: kSecClassGenericPassword, kSecAttrService: "app.herm.gateway", kSecAttrAccount: account]
+        [kSecClass: kSecClassGenericPassword, kSecAttrService: "io.github.chryzxc.Herm.gateway", kSecAttrAccount: account]
     }
 }
 

@@ -263,7 +263,7 @@ struct AutomationWorkspaceView: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 64)
-            .background(Color.dockSurface2)
+            .dockPaneTint(Color.dockSurface2)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             placeholder("No run selected", detail: "Runs for this automation appear in History. Pick one to read its output.")
         }
@@ -644,7 +644,7 @@ struct AutomationWorkspaceView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2).fill(Color.dockSurface.opacity(0.5)))
+                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2).dockSurfaceFill(Color.dockSurface.opacity(0.5)))
                     }
                 }
             }
@@ -734,7 +734,7 @@ struct AutomationWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(Color.dockSurface.opacity(0.5)))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockSurface.opacity(0.5)))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius).strokeBorder(Color.dockBorderLight, lineWidth: 0.5))
     }
 
@@ -902,7 +902,7 @@ private struct AutomationRunDetailPanel: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 64)
-            .background(Color.dockSurface2)
+            .dockPaneTint(Color.dockSurface2)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {

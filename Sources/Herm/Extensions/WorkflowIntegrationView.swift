@@ -450,7 +450,7 @@ struct WorkflowIntegrationView: View {
         if let preview = model.preview {
           Text(preview).font(.system(size: 12)).textSelection(.enabled)
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.dockSurface))
+            .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
         }
         MemoryCorrectionView(service: model.service)
         group("MCP servers", count: model.servers.count) {
@@ -1059,7 +1059,7 @@ struct WorkflowIntegrationView: View {
   private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 0, content: content)
       .padding(.horizontal, 12)
-      .background(RoundedRectangle(cornerRadius: 10).fill(Color.dockSurface))
+      .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
       .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.dockBorderLight, lineWidth: 0.5))
   }
   /// One line per item: name (plus a description only when it adds something), controls trailing.

@@ -408,7 +408,7 @@ private struct KanbanTaskCard: View {
                     }
                 }
                     .frame(width: 28, height: 22)
-                    .background(Color.dockSurface2.opacity(0.9), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.9)))
                     .contentShape(Rectangle())
             }
             // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
@@ -442,7 +442,7 @@ private struct KanbanTaskCard: View {
             .frame(width: KanbanBoardView.laneWidth - 40, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color.dockSurface2)
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(lane.color.opacity(0.6), lineWidth: 1))
     }

@@ -115,7 +115,7 @@ private struct GroupChatSidebarRow: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
-            .fill(isSelected ? style.selectedFill : isHovered ? style.selectedFill.opacity(0.4) : .clear))
+            .dockSelectionFill(isSelected, fallback: isSelected ? style.selectedFill : isHovered ? style.selectedFill.opacity(0.4) : .clear))
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         .dockHoverable().onTapGesture(perform: onOpen)
         .onHover { isHovered = $0 }
@@ -307,7 +307,7 @@ struct NewGroupChatSheet: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.dockSurface2))
+        .background(RoundedRectangle(cornerRadius: 8).dockSurfaceFill(Color.dockSurface2))
     }
 }
 
@@ -735,7 +735,7 @@ struct GroupChatView: View {
             actions()
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.dockSurface2))
+        .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface2))
         .padding(.horizontal, 20)
         .padding(.top, 8)
     }
@@ -762,7 +762,7 @@ struct GroupChatView: View {
                 .buttonStyle(.dockPrimary)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.dockSurface2))
+        .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface2))
         .padding(.horizontal, 20)
         .padding(.top, 8)
     }

@@ -170,7 +170,7 @@ struct AgentBoardView: View {
                 }
             }
             .padding(2)
-            .background(Color.dockSurface4)
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
             .accessibilityElement(children: .contain)
@@ -298,7 +298,7 @@ struct AgentBoardView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 40)
-        .background(Color.dockSurface2)
+        .dockPaneTint(Color.dockSurface2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -526,7 +526,7 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockSurface4))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface4))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
@@ -562,7 +562,7 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockSurface4))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface4))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
@@ -599,7 +599,7 @@ struct AgentBoardView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color.dockSurface4)
+        .dockPaneTint(Color.dockSurface4)
         .overlay(alignment: .leading) { Color.dockAccent.opacity(0.55).frame(width: 1) }
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .accessibilityElement(children: .combine)

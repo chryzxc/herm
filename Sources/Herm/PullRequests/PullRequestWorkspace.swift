@@ -75,7 +75,7 @@ struct PullRequestWorkspace: View {
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
-            .background(Color.dockControlSurface)
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             PullRequestFilterPicker(selection: $center.filter)

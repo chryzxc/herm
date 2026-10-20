@@ -522,7 +522,7 @@ struct RepositoryChangesBrowser: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.dockSurface2)
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2))
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         .padding(.top, 4)

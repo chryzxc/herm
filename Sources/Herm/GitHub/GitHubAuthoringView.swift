@@ -64,7 +64,7 @@ struct GitHubAuthoringMenu: View {
                 if busy || loading { ProgressView().controlSize(.mini) }
                 else { DockIcon(.dotsThree, size: 14, color: Color.dockSecondaryText) }
             }.frame(width: 28, height: 28)
-                .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
         }
         .disabled(busy || loading)
         .help("GitHub item actions").accessibilityLabel(busy ? "Updating issue…" : (loading ? "Loading item actions…" : "GitHub item actions"))
@@ -145,7 +145,7 @@ struct GitHubItemEditor: View {
             }
             Group {
                 if preview { ScrollView { MarkdownMessageView(markdown: text.isEmpty ? "No description provided." : text).frame(maxWidth: .infinity, alignment: .leading) } }
-                else { TextEditor(text: $text).font(DockTypography.body).scrollContentBackground(.hidden).padding(8).background(Color.dockControlSurface, in: DockThemeShape(cornerRadius: DockLayout.controlRadius)) }
+                else { TextEditor(text: $text).font(DockTypography.body).scrollContentBackground(.hidden).padding(8).background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)) }
             }.frame(height: 260)
             Text(error ?? " ").font(DockTypography.body).foregroundStyle(Color.dockWarning).frame(minHeight: 34, alignment: .topLeading)
         } footer: {

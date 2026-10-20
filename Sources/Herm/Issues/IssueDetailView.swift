@@ -119,7 +119,7 @@ struct IssueDetailView: View {
                 DockMenu {
                     Button(PullRequestChatLinkStore().sessionID(for: displayedIssue.id) == nil ? "Prepare in Hermes" : "Open linked Hermes chat") { onOpenChat(displayedIssue) }
                 } label: { DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28)
-                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)) }
+                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6))) }
                 AttachToChatMenu(pill: true) { ChatContext(issue: displayedIssue) }
             }
             .padding(.horizontal, 24)

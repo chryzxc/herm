@@ -554,7 +554,7 @@ extension WorkspaceActivitySidebar {
                 if expandedCronReportIDs.contains(job.id) {
                     MarkdownMessageView(markdown: report)
                         .padding(10)
-                        .background(Color.dockSurface2.opacity(0.72))
+                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.72)))
                         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -680,8 +680,7 @@ extension WorkspaceActivitySidebar {
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(Color.dockSurface)
-                    .stroke(Color.dockBorder, lineWidth: 0.5)
+                    .dockSurfaceFill(Color.dockSurface, stroke: Color.dockBorder, lineWidth: 0.5)
             )
     }
 

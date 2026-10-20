@@ -159,7 +159,7 @@ struct GitHubConversationView: View {
                 Spacer(); Text("\(model.draft.count)/10000").font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
             }
             if preview { MarkdownMessageView(markdown: model.draft).frame(minHeight: 100, alignment: .topLeading) }
-            else { TextEditor(text: $model.draft).font(DockTypography.body).scrollContentBackground(.hidden).padding(8).frame(minHeight: 100).background(Color.dockControlSurface, in: DockThemeShape(cornerRadius: DockLayout.controlRadius)) }
+            else { TextEditor(text: $model.draft).font(DockTypography.body).scrollContentBackground(.hidden).padding(8).frame(minHeight: 100).background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)) }
             HStack { Spacer(); Button { confirm = true } label: { GitHubActionLabel(title: model.posting ? "Posting…" : "Post comment", isBusy: model.posting) }.buttonStyle(.dockPrimary).controlSize(.small).disabled(model.posting || model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.draft.count > 10_000) }
         }
         .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)

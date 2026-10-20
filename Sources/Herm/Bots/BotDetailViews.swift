@@ -116,8 +116,7 @@ struct BotProfileEditorSheet: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-            .fill(Color.dockControlSurface)
-            .stroke(Color.dockBorder, lineWidth: 0.5)
+            .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: 0.5)
     }
 
     private func capabilityLabel(_ title: String, enabled: Int, total: Int) -> some View {
@@ -561,8 +560,7 @@ struct BotRoutineFormSheet: View {
                     .frame(minHeight: DockLayout.controlHeight)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .fill(Color.dockControlSurface)
-                            .stroke(Color.dockBorder, lineWidth: 0.5)
+                            .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: 0.5)
                     )
                 }
             }

@@ -323,8 +323,7 @@ private struct VoicePillCard: View {
         .frame(maxWidth: maxWidth, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                .fill(Color.dockSurface6.opacity(0.92))
-                .stroke(tint.opacity(0.3), lineWidth: 0.6)
+                .dockSurfaceFill(Color.dockSurface6.opacity(0.92), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
         )
         .shadow(color: tint.opacity(0.18), radius: 16)
         .fixedSize(horizontal: false, vertical: true)
@@ -380,8 +379,7 @@ struct VoiceRecentTranscript: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                .fill(Color.dockSurface6.opacity(0.95))
-                .stroke(Color.dockAccent.opacity(0.25), lineWidth: 0.6)
+                .dockSurfaceFill(Color.dockSurface6.opacity(0.95), stroke: Color.dockAccent.opacity(0.25), lineWidth: 0.6, strokeOnGlass: true)
         )
         .shadow(color: Color.dockAccent.opacity(0.15), radius: 16)
     }

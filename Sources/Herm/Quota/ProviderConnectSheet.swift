@@ -364,8 +364,7 @@ struct ProviderConnectSheet: View {
                     .frame(minHeight: DockLayout.controlHeight)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .fill(Color.dockControlSurface)
-                            .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                            .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
                     )
                 }
             }

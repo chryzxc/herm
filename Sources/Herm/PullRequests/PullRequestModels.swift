@@ -243,7 +243,7 @@ struct PullRequestReviewToolbarIcon: View {
         .frame(width: 28, height: 28)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                .fill(isSelected ? Color.dockSurface4 : (isHovered ? Color.dockSurface4.opacity(0.72) : Color.clear))
+                .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockSurface4 : (isHovered ? Color.dockSurface4.opacity(0.72) : Color.clear))
         )
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .onHover { isHovered = $0 }

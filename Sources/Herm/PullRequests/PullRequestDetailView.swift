@@ -184,7 +184,7 @@ struct PullRequestDetailView: View {
                 DockMenu {
                     Button(PullRequestChatLinkStore().sessionID(for: pr.id) == nil ? "Prepare review in Hermes" : "Open linked Hermes chat") { onOpenChat(pr) }
                 } label: { DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28)
-                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)) }
+                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6))) }
                 AttachToChatMenu(pill: true) { ChatContext(pullRequest: pr) }
                 }
             }
@@ -268,7 +268,7 @@ struct PullRequestDetailView: View {
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(Color.dockSecondaryText)
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
         .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
 
         PullRequestReadinessView(center: center, record: pr).padding(.top, 16)
@@ -331,7 +331,7 @@ struct PullRequestDetailView: View {
             .padding(.leading, 12)
             .padding(.trailing, 8)
             .frame(minHeight: 44)
-            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
         } else {
             VStack(spacing: 0) {
                 ForEach(pr.checks) { check in
@@ -350,7 +350,7 @@ struct PullRequestDetailView: View {
                     if check.id != pr.checks.last?.id { Divider().padding(.leading, 47) }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
             .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
     }
@@ -370,7 +370,7 @@ struct PullRequestDetailView: View {
                 .scrollContentBackground(.hidden)
                 .padding(12)
                 .frame(minHeight: 104)
-                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
                 .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
             if commentDraft.isEmpty {
                 Text("Leave a comment")
@@ -465,7 +465,7 @@ struct PullRequestDetailView: View {
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 28)
-                .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
             }
             .disabled(center.isUpdatingStatus)
             .help("Change pull request status")

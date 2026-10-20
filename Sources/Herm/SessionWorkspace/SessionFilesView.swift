@@ -172,7 +172,7 @@ struct SessionFilesView: View {
             .background(alignment: .leading) { indentGuides(depth: entry.depth) }
             .background {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isSelected ? Color.dockAccent.opacity(0.16) : hoveredPath == entry.path ? Color.dockSurface4.opacity(0.55) : .clear)
+                    .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.16) : hoveredPath == entry.path ? Color.dockSurface4.opacity(0.55) : .clear)
             }
             .contentShape(Rectangle())
         }
@@ -300,7 +300,7 @@ struct SessionFilesView: View {
         }
         .padding(.horizontal, 9)
         .frame(height: 30)
-        .background(Color.dockSurface2.opacity(0.72))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.72)))
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .padding(.horizontal, 4)
         .padding(.bottom, 8)

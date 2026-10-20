@@ -162,8 +162,7 @@ struct ProviderSignInFlow: View {
                         .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .fill(Color.dockControlSurface)
-                                .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                                .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
                         )
                     }
                 }
@@ -269,8 +268,7 @@ struct ProviderSignInFlow: View {
         .frame(maxHeight: 150)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .fill(Color.dockSurface.opacity(0.4))
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                .dockSurfaceFill(Color.dockSurface.opacity(0.4), stroke: Color.dockBorderLight, lineWidth: DockLayout.hairline)
         )
         .padding(.top, 6)
     }

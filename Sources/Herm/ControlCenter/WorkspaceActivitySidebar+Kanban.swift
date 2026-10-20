@@ -193,7 +193,7 @@ extension WorkspaceActivitySidebar {
         kanbanToolbarControls
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color.dockSurface.opacity(0.28))
+            .dockPaneTint(Color.dockSurface.opacity(0.28))
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -286,7 +286,7 @@ extension WorkspaceActivitySidebar {
         .foregroundStyle(Color.dockSecondaryText)
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color.dockSurface2.opacity(0.76))
+        .background(Capsule().dockSurfaceFill(Color.dockSurface2.opacity(0.76)))
         .clipShape(Capsule())
     }
 
@@ -566,11 +566,11 @@ extension WorkspaceActivitySidebar {
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Color.dockSurface)
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         }
         .padding(12)
-        .background(Color.dockSurface2)
+        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).dockSurfaceFill(Color.dockSurface2))
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
@@ -955,7 +955,7 @@ extension WorkspaceActivitySidebar {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Color.dockSecondaryText)
             .frame(width: 28, height: 28)
-            .background(Color.dockSurface2.opacity(0.6), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.6)))
             .contentShape(Rectangle())
     }
 

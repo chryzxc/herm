@@ -33,8 +33,7 @@ extension WorkspaceActivitySidebar {
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(Color.dockControlSurface)
-                    .stroke(Color.dockBorder, lineWidth: 0.5)
+                    .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: 0.5)
             )
             if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -129,7 +128,7 @@ extension WorkspaceActivitySidebar {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .fill(Color.dockSurface.opacity(0.34))
+                .dockSurfaceFill(Color.dockSurface.opacity(0.34))
         )
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

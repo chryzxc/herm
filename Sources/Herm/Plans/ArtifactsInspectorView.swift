@@ -254,7 +254,7 @@ struct ArtifactsInspectorView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .background(shape.fill(Color.dockSurface2).stroke(Color.dockBorderLight, lineWidth: DockLayout.outline))
+        .background(shape.dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.outline))
     }
 
     private var partialFailureBanner: some View {
@@ -460,7 +460,7 @@ struct ArtifactsInspectorView: View {
             DockIcon(.link)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface2))
         }
     }
 
@@ -475,7 +475,7 @@ struct ArtifactsInspectorView: View {
             .scaledToFit()
             .padding(4)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface2))
             .accessibilityHidden(true)
     }
 
@@ -553,7 +553,7 @@ struct ArtifactsInspectorView: View {
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 260, maxHeight: 520)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
         } else if let textPreview, textPreview.id == record.id {
             switch textPreview.content {
             case .text(let text, let truncated):
@@ -579,7 +579,7 @@ struct ArtifactsInspectorView: View {
                             .padding(.vertical, 8)
                     }
                 }
-                .background(Color.dockSurface, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
                 .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight))
             case .missing:
                 previewPlaceholder(icon: .warning, title: "File no longer exists", detail: "It was moved or deleted after the session produced it.")
@@ -615,7 +615,7 @@ struct ArtifactsInspectorView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, minHeight: 180)
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
     }
 
     private func detailActions(_ record: ArtifactRecord) -> some View {
@@ -763,7 +763,7 @@ struct ArtifactsInspectorView: View {
             }
         }
         .padding(3)
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).dockSurfaceFill(Color.dockSurface2))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).stroke(Color.dockBorderLight))
     }
 
@@ -839,7 +839,7 @@ struct ArtifactsInspectorView: View {
             imagePreview(for: record)
                 .frame(maxWidth: .infinity)
                 .frame(height: 118)
-                .background(Color.dockSurface2)
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             Text(record.label)
@@ -861,7 +861,7 @@ struct ArtifactsInspectorView: View {
             }
         }
         .padding(10)
-        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.55)))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Image \(record.label), from \(record.sessionTitle)")
     }
@@ -932,7 +932,7 @@ struct ArtifactsInspectorView: View {
             artifactAction("Open") { open(record.value) }
         }
         .padding(10)
-        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.55)))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(record.kind == .link ? "Link" : "File") \(record.label), from \(record.sessionTitle)")
     }

@@ -68,7 +68,7 @@ struct IssueRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .fill(isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
+                .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

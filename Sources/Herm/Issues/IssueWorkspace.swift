@@ -90,7 +90,7 @@ struct IssueWorkspace: View {
                 }.padding(.horizontal, 8).padding(.vertical, 6)
             }
         }
-        .background(Color.dockSurface2.opacity(0.55))
+        .dockPaneTint(Color.dockSurface2.opacity(0.55))
         .onMoveCommand { direction in
             let rows = center.visible
             guard !rows.isEmpty, direction == .up || direction == .down else { return }
@@ -109,7 +109,7 @@ struct IssueWorkspace: View {
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
-            .background(Color.dockControlSurface)
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             HStack(spacing: 4) {
@@ -136,7 +136,7 @@ struct IssueWorkspace: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.horizontal, 8)
                     .frame(height: 28)
-                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
                 }
                 .help("Filter loaded issues by repository")
             }

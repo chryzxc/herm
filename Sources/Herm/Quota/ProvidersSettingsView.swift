@@ -86,8 +86,7 @@ struct ProvidersSettingsView: View {
                 .frame(height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .fill(Color.dockControlSurface)
-                        .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                        .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
                 )
                 DockSegmentedPicker(selection: $filter, options: [(.all, "All"), (.connected, "Connected"), (.available, "Available")])
                 Button { load() } label: {
@@ -141,7 +140,7 @@ struct ProvidersSettingsView: View {
                     providerRow(row)
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                                .fill(Color.dockSurface.opacity(0.34))
+                                .dockSurfaceFill(Color.dockSurface.opacity(0.34))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)

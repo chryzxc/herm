@@ -155,7 +155,7 @@ struct PullRequestLandingView: View {
                                     DockIcon(.caretDown, size: 12, color: Color.dockSecondaryText)
                                 }
                                 .font(DockTypography.body).padding(.horizontal, 10).frame(height: 28)
-                                .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+                                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
                             }
                             .disabled(busy || loading).help("Merge method").accessibilityLabel("Merge method: \(method.title)")
                         }

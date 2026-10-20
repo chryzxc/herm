@@ -417,7 +417,7 @@ struct QuotaWorkspaceView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                .fill(Color.dockSurface)
+                .dockSurfaceFill(Color.dockSurface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
@@ -540,7 +540,7 @@ struct QuotaWorkspaceView: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                        .fill(Color.dockSurface4)
+                        .dockSurfaceFill(Color.dockSurface4)
                 )
             }
             .help("Drag to reorder")
@@ -613,7 +613,7 @@ struct QuotaWorkspaceView: View {
             .frame(maxWidth: 280, minHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
-                    .fill(Color.dockControlSurface)
+                    .dockSurfaceFill(Color.dockControlSurface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
