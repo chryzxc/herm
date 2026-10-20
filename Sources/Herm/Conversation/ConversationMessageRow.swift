@@ -407,7 +407,7 @@ struct ConversationMessageRow: View, Equatable {
                                 ChatMediaAttachmentCard(path: path, grouped: true)
                             }
                         }
-                        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.55)))
                         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
                     }
                 }

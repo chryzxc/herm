@@ -191,7 +191,11 @@ extension DockPopover {
                 fullscreenGlobalTab = .quota
                 fullscreenSurface = .global
             }
-            .background { DockWindowBackground() }
+            .background { DockWindowBackground(shape: AnyShape(DockPanelSurfaceShape(
+                isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
+                cornerRadius: usesWindowChrome ? 0 : 22,
+                edgeSide: panelPresentation.edgeSide
+            ))) }
             .clipShape(DockPanelSurfaceShape(
                 isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
                 cornerRadius: usesWindowChrome ? 0 : 22,
@@ -203,7 +207,7 @@ extension DockPopover {
                     cornerRadius: usesWindowChrome ? 0 : 22,
                     edgeSide: panelPresentation.edgeSide
                 )
-                    .stroke(Color.dockBorderStrong, lineWidth: panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline)
+                    .stroke(Color.dockBorderStrong, lineWidth: DockThemeStyle.current.material == .glass ? 0 : (panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline))
             }
             .modifier(EdgeSurfaceReveal(isActive: panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen,
                                         side: panelPresentation.edgeSide, revealed: panelPresentation.isRevealed,

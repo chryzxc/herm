@@ -986,7 +986,7 @@ struct TurnActivityView: View, Equatable {
             }
           }
           .frame(maxHeight: 280)
-          .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockCanvas))
+          .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockCanvas))
           .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
           .padding(.leading, 24)
         }

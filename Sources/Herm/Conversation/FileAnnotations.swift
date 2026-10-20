@@ -43,7 +43,7 @@ final class FilePreviewCenter: ObservableObject {
     }
 
     private let fileURL: URL
-    private let saveQueue = DispatchQueue(label: "app.herm.Herm.file-reviews-save", qos: .utility)
+    private let saveQueue = DispatchQueue(label: "io.github.chryzxc.Herm.file-reviews-save", qos: .utility)
 
     init(fileURL: URL? = nil) {
         let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

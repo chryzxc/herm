@@ -313,7 +313,7 @@ struct ChatComposerView: View {
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 4)
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface))
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).dockSurfaceFill(Color.dockSurface))
                             .contextMenu {
                                 Button("Add Text from Image to Message") { Task { await model.stageText(from: image) } }
                             }
@@ -350,7 +350,7 @@ struct ChatComposerView: View {
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
+                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
                             .help("Inspect context")
                         }
                     }
@@ -376,7 +376,7 @@ struct ChatComposerView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
             }
             ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) { error in
                 HStack(spacing: 6) {
@@ -960,7 +960,7 @@ private struct SessionContextRing: View {
         .foregroundStyle(Color.dockPrimaryText)
         .padding(16)
         .frame(width: 340, alignment: .leading)
-        .background(Color.dockSurface)
+        .dockPaneTint(Color.dockSurface)
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {

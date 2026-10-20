@@ -83,7 +83,7 @@ struct FilePreviewPane: View {
                         reviewBar
                     }
                 }
-                .background(Color.dockSurface2)
+                .dockPaneTint(Color.dockSurface2)
                 .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
             }
         }
@@ -118,7 +118,7 @@ struct FilePreviewPane: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 48)
-        .background(Color.dockSurface2)
+        .dockPaneTint(Color.dockSurface2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -610,8 +610,7 @@ private struct AnnotationEditor: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(Color.dockSurface2)
-                    .stroke(isFocused ? Color.dockAccent.opacity(0.45) : Color.dockBorderLight, lineWidth: 1)
+                    .dockSurfaceFill(Color.dockSurface2, stroke: isFocused ? Color.dockAccent.opacity(0.45) : Color.dockBorderLight, lineWidth: 1)
             )
     }
 

@@ -68,9 +68,7 @@ struct BotActivityBanner: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Capsule().fill(Color.dockSurface2))
-                .background(.thickMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+                .dockFloatingSurface(Capsule(), tint: .dockSurface2, stroke: .dockBorderLight)
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
             }
         }

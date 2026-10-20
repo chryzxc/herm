@@ -426,10 +426,7 @@ struct MessageNavigatorView: View {
                 }
             }
         }
-        // dockSurface2 is translucent in native themes; put an opaque base under it so chat text doesn't bleed through.
-        .background(Color.dockOpaqueCanvas, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous), lineWidth: 0.5)
         .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
         .onAppear { isSearchFocused = true }
     }
@@ -528,9 +525,7 @@ struct MessageNavigatorView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .frame(width: 160, alignment: .leading)
-                .background(Color.dockOpaqueCanvas, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                .background(Color.dockSurface4, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+                .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), lineWidth: 0.5)
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                 .position(x: size.width - 107, y: min(max(previewY, 52), max(52, size.height - 40)))
                 .transition(.opacity)

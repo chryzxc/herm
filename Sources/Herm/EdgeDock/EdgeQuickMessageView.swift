@@ -83,7 +83,7 @@ struct EdgeQuickMessageView: View {
             }
             .padding(.leading, 10)
             .padding(.trailing, 3)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockCanvas.opacity(0.6)))
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockCanvas.opacity(0.6)))
             .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(focused ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: 0.5))
             Text(state.quickResult ?? unavailableReason ?? "⌘↩ to send")
@@ -271,7 +271,7 @@ struct EdgeQuickMessageView: View {
             } label: {
                 DockIcon(.dotsThree, size: 14, color: Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
-                    .background(Color.dockControlSurface.opacity(0.6), in: DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
+                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
             }
             .disabled(state.quickSending || state.quickPreparing > 0)
             .help("More message actions").accessibilityLabel("More message actions")

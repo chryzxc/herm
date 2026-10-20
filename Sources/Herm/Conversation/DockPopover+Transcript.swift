@@ -765,8 +765,7 @@ extension DockPopover {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .fill(Color.dockSurface)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
+                .dockSurfaceFill(Color.dockSurface, stroke: Color.dockBorderLight, lineWidth: 0.5)
         )
     }
 
@@ -791,8 +790,7 @@ extension DockPopover {
                 .padding(.vertical, 8)
                 .background(
                     DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                        .fill(Color.dockSurface2)
-                        .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                        .dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.hairline)
                 )
 
                 if let reason = approval.reason {

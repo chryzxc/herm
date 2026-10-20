@@ -59,7 +59,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
             }
         }
         .padding(2)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface4))
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
     }
 }
 
@@ -270,7 +270,7 @@ struct EdgeQuotaPreview: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface2))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
                 .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
             }
         }
@@ -580,10 +580,7 @@ struct ChatQuotaBanner: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(maxWidth: metrics.readingWidth)
-                    // Theme surfaces are translucent; the material keeps chat text from showing through.
-                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface2))
-                    .background(.thickMaterial, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+                    .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), tint: .dockSurface2, stroke: .dockBorderLight)
                     .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
                     .padding(.horizontal, metrics.contentInset)
                     .padding(.top, 8)

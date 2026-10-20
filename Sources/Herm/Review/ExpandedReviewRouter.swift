@@ -86,7 +86,7 @@ struct ExpandedReviewHost: ViewModifier {
             .overlay {
                 ZStack {
                     ForEach(router.layers) { layer in
-                        layer.content.environment(\.dockTitleRow, titleRow).background(Color.dockCanvas)
+                        layer.content.environment(\.dockTitleRow, titleRow).background(DockPaneBackground())
                             .opacity(layer.id == router.layers.last?.id ? 1 : 0)
                             .disabled(layer.id != router.layers.last?.id)
                             .allowsHitTesting(layer.id == router.layers.last?.id)

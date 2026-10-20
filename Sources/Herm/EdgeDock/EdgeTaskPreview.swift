@@ -313,7 +313,7 @@ struct EdgeTaskPreview: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                    .fill(isHovered || isReplying ? Color.dockSurface4.opacity(0.6) : task.isCurrent ? Color.dockSurface4.opacity(0.35) : .clear)
+                    .dockSelectionFill(isHovered || isReplying, fallback: isHovered || isReplying ? Color.dockSurface4.opacity(0.6) : task.isCurrent ? Color.dockSurface4.opacity(0.35) : .clear)
             )
             .animation(.dockEase(duration: 0.16), value: isReplying)
         }
@@ -423,7 +423,7 @@ struct EdgeTaskPreview: View {
         Button { isReplying ? closeReply() : reply(task) } label: {
             DockIcon(isReplying ? .x : .arrowBendUpLeft, size: 13, color: .dockSecondaryText)
                 .frame(width: 24, height: 24)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockSurface4.opacity(isReplying ? 0.9 : 0.5)))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface4.opacity(isReplying ? 0.9 : 0.5), interactive: true))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.dockPress)
@@ -679,7 +679,7 @@ struct EdgePreviewFooterButton: View {
             .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 30, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                    .fill(isHovering ? Color.dockSurface4.opacity(0.6) : .clear)
+                    .dockSelectionFill(isHovering, fallback: isHovering ? Color.dockSurface4.opacity(0.6) : .clear)
             )
             .contentShape(Rectangle())
         }

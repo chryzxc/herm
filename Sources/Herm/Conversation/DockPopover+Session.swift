@@ -316,7 +316,7 @@ extension DockPopover {
             .accessibilityLabel("Thinking depth for \(configurationScopeLabel): \(sessionReasoningDisplayName)")
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .background(Color.dockSurface4)
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4))
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

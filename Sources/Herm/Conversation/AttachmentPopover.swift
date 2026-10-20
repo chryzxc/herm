@@ -150,7 +150,7 @@ struct AttachmentPopover: View {
         }
         .padding(12)
         .frame(width: 250)
-        .background(Color.dockSurface2)
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

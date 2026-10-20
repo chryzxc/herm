@@ -47,7 +47,7 @@ struct RevisionNoteExcerpt: View {
             }
         }
         .frame(height: min(132, max(44, CGFloat(lines.count) * 18 + 24)))
-        .background(Color.dockSurface)
+        .dockPaneTint(Color.dockSurface)
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         .accessibilityLabel("Captured source")

@@ -419,7 +419,7 @@ extension DockPopover {
         }
         .padding(.horizontal, 16)
         .frame(height: 64)
-        .background(Color.dockSurface2)
+        .dockPaneTint(Color.dockSurface2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 

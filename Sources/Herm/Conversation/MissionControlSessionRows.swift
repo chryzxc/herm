@@ -49,7 +49,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
             .help(isPinned ? "Unpin conversation" : "Pin conversation")
         }
-        .background(isSelected ? style.selectedFill : Color.clear)
+        .background(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).dockSelectionFill(isSelected, fallback: isSelected ? style.selectedFill : Color.clear))
         .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
     }
 

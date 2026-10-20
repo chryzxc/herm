@@ -1561,9 +1561,9 @@ struct EdgeNotchView: View {
             // panel and back, so the two states read as a single growing notch.
             .background {
                 // The top island wears the black Island skin and drops the outline
-                // so it blends with the camera housing.
-                shell(DockWindowBackground().clipShape(EdgeNotchShape(side: state.side))
-                    .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: state.side == .top ? 0 : 1) })
+                // so it blends with the camera housing; Glass uses its own rim.
+                shell(DockWindowBackground(shape: AnyShape(EdgeNotchShape(side: state.side))).clipShape(EdgeNotchShape(side: state.side))
+                    .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: state.side == .top || DockThemeStyle.current.material == .glass ? 0 : 1) })
             }
             // Attach drag gesture to parent so it works in both collapsed and expanded states
             .simultaneousGesture(DragGesture(minimumDistance: 6)
@@ -1643,7 +1643,7 @@ struct EdgeNotchView: View {
                         }
                     }
                     .padding(2)
-                    .background(DockThemeShape(cornerRadius: 14).fill(Color.dockSurface4.opacity(0.6)))
+                    .background(DockThemeShape(cornerRadius: 14).dockSurfaceFill(Color.dockSurface4.opacity(0.6)))
                     if isIsland {
                         // Leave the camera housing clear; the controls sit in the ears either side.
                         Spacer(minLength: state.notchSize.width + 12)
@@ -1802,8 +1802,8 @@ struct EdgeNotchView: View {
                 .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
                 .padding(.horizontal, 8)
                 .frame(height: 24)
-                .background(DockThemeShape(cornerRadius: 12).fill(isSelected ? Color.dockAccentMuted : .clear))
-                .overlay(DockThemeShape(cornerRadius: 12).stroke(isSelected ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1))
+                .background(DockThemeShape(cornerRadius: 12).dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccentMuted : .clear))
+                .overlay(DockThemeShape(cornerRadius: 12).stroke(isSelected && DockThemeStyle.current.material != .glass ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)

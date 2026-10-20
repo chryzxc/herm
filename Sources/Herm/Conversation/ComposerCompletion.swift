@@ -188,13 +188,12 @@ struct ComposerCompletionPopover: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(Color.dockSurface6.opacity(0.5))
+                .dockPaneTint(Color.dockSurface6.opacity(0.5))
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
-        .background(Color.dockOpaqueCanvas)
-        .background(Color.dockSurface2)
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), stroke: .clear)
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
