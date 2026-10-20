@@ -144,7 +144,10 @@ final class ControlCenterModel: ObservableObject {
 
     weak var dockModel: DockModel?
     var kanbanChatSyncAnchor: UUID?
+    var kanbanChatSyncSessionID: String?
     var kanbanChatSyncedEventAt: [String: Date?] = [:]
+    /// Last `kanban show` per card, keyed by its `latestEventAt`; survives anchor resets.
+    var kanbanChatDetailCache: [String: (eventAt: Date?, detail: KanbanTaskDetail)] = [:]
     /// Feed session ID → its Hermes source, and every session already judged.
     var kanbanChatFeeds: [String: String] = [:]
     var kanbanChatCheckedSessionIDs: Set<String> = []
@@ -174,6 +177,11 @@ final class ControlCenterModel: ObservableObject {
     /// published projection, but must not make already loaded work disappear
     /// while the same read-only query refreshes in the background.
     var sessionKanbanTasksByRequest: [SessionKanbanProjectionRequest: [KanbanTaskSummary]] = [:]
+    /// Observed card IDs (`board|id`) whose `kanban show` returned no usable
+    /// card. Each lookup spawns a Hermes CLI process, so polling must not
+    /// retry them on every refresh.
+    // ponytail: cleared only on app restart; add expiry if a missed card can later appear.
+    var unrecoverableKanbanTaskIDs: Set<String> = []
     var kanbanBoardsGeneration = UUID()
     var kanbanStatsGeneration = UUID()
     var kanbanAssigneesGeneration = UUID()

@@ -44,7 +44,7 @@ struct HermesCLIAdapterTests {
 
         let result = try await adapter.kanbanList(filter: KanbanListFilter(status: "ready"))
 
-        #expect(client.httpPaths == ["/api/plugins/kanban/boards", "/api/plugins/kanban/board?board=default"])
+        #expect(client.httpPaths == ["/api/plugins/kanban/boards", "/api/plugins/kanban/board?board=default&include_archived=true"])
         #expect(result.succeeded)
         #expect(result.stdout.contains("ready-task"))
         #expect(result.stdout.contains("\"board_slug\":\"default\""))
@@ -105,7 +105,7 @@ struct HermesCLIAdapterTests {
         #expect(client.commands.last == "'hermes' 'kanban' 'boards' 'list' '--json' '--all'")
 
         _ = try await adapter.kanbanList(boardSlug: "client-board")
-        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client-board"])
+        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client-board&include_archived=true"])
     }
 
     @Test func kanbanBoardScopeSafelyEncodesQueryReservedCharacters() async throws {
@@ -114,7 +114,25 @@ struct HermesCLIAdapterTests {
 
         _ = try await adapter.kanbanList(boardSlug: "client&ops=west")
 
-        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client%26ops%3Dwest"])
+        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client%26ops%3Dwest&include_archived=true"])
+    }
+
+    @Test func kanbanPollersShareOneBoardReadUntilACardChanges() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        let path = "/api/plugins/kanban/board?board=client-board&include_archived=true"
+
+        _ = try await adapter.kanbanList(boardSlug: "client-board")
+        _ = try await adapter.kanbanList(boardSlug: "client-board", filter: KanbanListFilter(includeArchived: true), background: true)
+        _ = try await adapter.kanbanShow(boardSlug: "client-board", taskID: "t_1")
+        _ = try await adapter.kanbanList(boardSlug: "client-board", background: true)
+        #expect(client.httpPaths == [path])
+
+        // An explicit refresh, or any card change, reads fresh.
+        _ = try await adapter.kanbanList(boardSlug: "client-board")
+        _ = try await adapter.kanbanComment(boardSlug: "client-board", taskID: "t_1", text: "done")
+        _ = try await adapter.kanbanList(boardSlug: "client-board", background: true)
+        #expect(client.httpPaths == [path, path, path])
     }
 
     @Test func aggregateKanbanIncludesArchivedBoardsOnlyWhenRequested() async throws {

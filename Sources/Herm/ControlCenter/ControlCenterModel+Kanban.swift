@@ -86,8 +86,8 @@ extension ControlCenterModel {
                 // into assumed status lanes delays publication until every
                 // request completes and drops any future Hermes status value.
                 let result = scope.isAggregate
-                    ? try await cli.kanbanListAggregate(filter: activeFilter)
-                    : try await cli.kanbanList(boardSlug: requestedBoardSlug, filter: activeFilter)
+                    ? try await cli.kanbanListAggregate(filter: activeFilter, background: trigger == .background)
+                    : try await cli.kanbanList(boardSlug: requestedBoardSlug, filter: activeFilter, background: trigger == .background)
                 let parsed = result.succeeded
                     ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
                     : nil
@@ -116,31 +116,43 @@ extension ControlCenterModel {
                     let knownIDs = Set(refreshedTasks.map(\.id))
                     let observedIDs = dockModel?.observedKanbanTaskIDs ?? []
                     for taskID in observedIDs where !knownIDs.contains(taskID) {
-                        guard let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID),
-                              shown.succeeded,
-                              let task = Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug) else { continue }
+                        let missKey = "\(requestedBoardSlug ?? "")|\(taskID)"
+                        guard !unrecoverableKanbanTaskIDs.contains(missKey),
+                              let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID) else { continue }
+                        guard shown.succeeded,
+                              let task = Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug) else {
+                            unrecoverableKanbanTaskIDs.insert(missKey)
+                            continue
+                        }
                         refreshedTasks.append(task)
                     }
                 }
-                guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
                 // Automatic polling commonly returns the same board. Avoid
                 // publishing an unchanged array: the Kanban surface observes
                 // this model, so an unnecessary publish forces SwiftUI to
                 // re-diff every visible lane while the user is scrolling.
+                // Comparing ~1000 cards took the main thread ~50ms per poll.
+                let (published, visible) = (globalKanbanTasks, kanbanTasks)
+                let (globalDiffers, visibleDiffers) = await Task.detached(priority: .utility) { [refreshedTasks] in
+                    (published != refreshedTasks, visible != refreshedTasks)
+                }.value
+                guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
+                // An edit landing during the compare fails the identity check
+                // below (Array == short-circuits on shared storage) and republishes.
                 var taskDataChanged = false
                 if scope.isAggregate {
-                    if globalKanbanTasks != refreshedTasks {
+                    if globalDiffers || globalKanbanTasks != published {
                         globalKanbanTasks = refreshedTasks
                         taskDataChanged = true
                     }
                     if !globalKanbanIsCurrent { globalKanbanIsCurrent = true }
                     // Before board inventory has selected a board, the
                     // aggregate is the only valid visible projection.
-                    if selectedKanbanBoardSlug == nil, kanbanTasks != refreshedTasks {
+                    if selectedKanbanBoardSlug == nil, visibleDiffers || kanbanTasks != visible {
                         kanbanTasks = refreshedTasks
                         taskDataChanged = true
                     }
-                } else if kanbanTasks != refreshedTasks {
+                } else if visibleDiffers || kanbanTasks != visible {
                     kanbanTasks = refreshedTasks
                     taskDataChanged = true
                 }
@@ -300,7 +312,8 @@ extension ControlCenterModel {
                 let result = try await cli.kanbanList(
                     boardSlug: requestedBoardSlug,
                     // Finished session cards get archived; keep them in Recent.
-                    filter: KanbanListFilter(includeArchived: true, sort: "updated")
+                    filter: KanbanListFilter(includeArchived: true, sort: "updated"),
+                    background: quiet
                 )
                 let parsed = result.succeeded
                     ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
@@ -344,8 +357,10 @@ extension ControlCenterModel {
                 // missing ones, or rehydrating a busy session takes minutes.
                 let knownIDs = Set(parsed.map(\.id))
                 for taskID in observedIDs where !knownIDs.contains(taskID) {
-                    guard let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID),
-                          shown.succeeded,
+                    let missKey = "\(requestedBoardSlug ?? "")|\(taskID)"
+                    guard !self.unrecoverableKanbanTaskIDs.contains(missKey),
+                          let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID) else { continue }
+                    guard shown.succeeded,
                           // A card owned by another session (e.g. an id that
                           // merely appeared in `kanban list` output) is not ours.
                           Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug)
@@ -354,7 +369,10 @@ extension ControlCenterModel {
                             shown.stdout,
                             boardSlug: requestedBoardSlug,
                             sessionID: requestedSessionID
-                          ) else { continue }
+                          ) else {
+                        self.unrecoverableKanbanTaskIDs.insert(missKey)
+                        continue
+                    }
                     sessionTasks.append(task)
                 }
                 guard !Task.isCancelled,
@@ -637,13 +655,27 @@ extension ControlCenterModel {
         if kanbanChatSyncAnchor != floor.id {
             kanbanChatSyncAnchor = floor.id
             kanbanChatSyncedEventAt = [:]
-            kanbanChatFeeds = [:]
-            kanbanChatCheckedSessionIDs = []
+            // A reload of the same chat keeps its discovered feeds; cached
+            // cards skip discovery, so only a new chat starts over.
+            if kanbanChatSyncSessionID != dockModel.kanbanSessionID {
+                kanbanChatSyncSessionID = dockModel.kanbanSessionID
+                kanbanChatFeeds = [:]
+                kanbanChatCheckedSessionIDs = []
+            }
         }
         for task in tasks where (task.latestEventAt ?? .distantFuture) >= floor.timestamp
             && kanbanChatSyncedEventAt[task.id] != task.latestEventAt {
-            guard let detail = try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug, cli: cli).detail,
-                  kanbanChatSyncAnchor == floor.id else { continue }
+            // A live external turn reloads the transcript every few seconds,
+            // minting a new anchor each time. Re-insert from the last read of
+            // an unchanged card instead of spawning `kanban show` again.
+            if let cached = kanbanChatDetailCache[task.id], cached.eventAt == task.latestEventAt {
+                kanbanChatSyncedEventAt[task.id] = task.latestEventAt
+                dockModel.insertKanbanBoardNotices(KanbanNotice.boardEventNotices(for: cached.detail))
+                continue
+            }
+            guard let detail = try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug, cli: cli).detail else { continue }
+            kanbanChatDetailCache[task.id] = (task.latestEventAt, detail)
+            guard kanbanChatSyncAnchor == floor.id else { continue }
             kanbanChatSyncedEventAt[task.id] = task.latestEventAt
             dockModel.insertKanbanBoardNotices(KanbanNotice.boardEventNotices(for: detail))
             await discoverFeedSessions(mentioning: task.id, anchor: floor.id)

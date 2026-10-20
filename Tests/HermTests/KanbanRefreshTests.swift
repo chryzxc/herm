@@ -23,8 +23,8 @@ struct KanbanRefreshTests {
 
         #expect(control.selectedKanbanBoardSlug == "latest")
         #expect(control.kanbanTasks.map(\.boardSlug) == ["latest", "latest"])
-        #expect(client.paths.contains("/api/plugins/kanban/board?board=latest"))
-        #expect(!client.paths.contains("/api/plugins/kanban/board?board=other"))
+        #expect(client.paths.contains("/api/plugins/kanban/board?board=latest&include_archived=true"))
+        #expect(!client.paths.contains("/api/plugins/kanban/board?board=other&include_archived=true"))
         #expect(control.pendingActionIDs.isEmpty)
     }
 
