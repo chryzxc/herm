@@ -11,22 +11,25 @@ struct GenerativeUIIsolationTests {
     ```
     """
 
-    @Test func normalBuildDoesNotIncludeExperiment() {
-        #if HERM_EXPERIMENTAL_GENERATIVE_UI
-        #expect(GenerativeUIIntegration.isCompiledIn)
-        #else
-        #expect(!GenerativeUIIntegration.isCompiledIn)
+    @Test func preferenceDefaultsOnAndChangesImmediately() {
+        let key = GenerativeUIIntegration.preferenceKey
+        let old = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(old, forKey: key) }
+        UserDefaults.standard.removeObject(forKey: key)
+        #expect(GenerativeUIIntegration.isEnabled)
+        UserDefaults.standard.set(false, forKey: key)
         #expect(!GenerativeUIIntegration.isEnabled)
         #expect(GenerativeUIIntegration.preparePrompt("Request") == "Request")
-        #expect(GenerativeUIIntegration.plainText(surface) == surface)
-        #endif
+        UserDefaults.standard.set(true, forKey: key)
+        #expect(GenerativeUIIntegration.preparePrompt("Request").contains("Herm rendering context"))
     }
 
-    @Test func disabledBoundaryKeepsPromptsAndRepliesUnchanged() {
-        for text in ["", "Hello", "ANSWER task: Yes", "```swift\nprint(1)\n```", surface] {
-            #expect(GenerativeUIIntegration.preparePrompt(text, enabled: false) == text)
-            #expect(GenerativeUIIntegration.plainText(text, enabled: false) == text)
-        }
+    @Test func normalBuildIncludesVisualsWithReadableDisabledFallback() {
+        #expect(GenerativeUIIntegration.isCompiledIn)
+        #expect(GenerativeUIIntegration.preparePrompt("Request", enabled: false) == "Request")
+        #expect(GenerativeUIIntegration.preparePrompt("Request", enabled: true).contains("Herm rendering context"))
+        #expect(GenerativeUIIntegration.plainText(surface, enabled: false).contains("Readable result"))
+        #expect(!GenerativeUIIntegration.plainText(surface, enabled: false).contains("<script>"))
     }
 
     @Test func presentationDoesNotRewriteCanonicalMessagesOrToolArchives() throws {
@@ -51,7 +54,7 @@ struct GenerativeUIIsolationTests {
 
     @Test func disabledRendererUsesExistingContent() async throws {
         var appeared = false
-        let root = GenerativeUIIntegration.renderReply(surface, enabled: false) {
+        let root = GenerativeUIIntegration.renderReply("Plain reply", enabled: false) {
             Text("Existing conversation renderer").onAppear { appeared = true }
         }
         let host = NSHostingView(rootView: root)

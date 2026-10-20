@@ -128,9 +128,9 @@ enum RichResourcePolicy {
 }
 
 /// Assistant-only extension of the canonical fence grammar. GitHub/user Markdown stays ordinary Markdown.
-struct RichDocument: Equatable {
+struct RichDocument: Equatable, Sendable {
   static let maximumBytes = 1_048_576
-  enum Segment: Equatable {
+  enum Segment: Equatable, Sendable {
     case markdown(String)
     case surface(RichSurface, source: String)
     case unavailable(String, source: String)

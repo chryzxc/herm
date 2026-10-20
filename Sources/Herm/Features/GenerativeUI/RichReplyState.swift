@@ -76,16 +76,27 @@ final class RichReplyContext {
   let revision: Int
   let sourceKey: String
 
-  init(model: DockModel, message: ChatMessage, state: RichReplyState) {
+  convenience init(model: DockModel, message: ChatMessage, state: RichReplyState) {
+    self.init(
+      model: model, message: message, destination: Self.destination(for: model),
+      reference: model.storedMessageReferences[message.id], state: state)
+  }
+
+  init(
+    model: DockModel, message: ChatMessage, destination: QuickDestination,
+    reference: StoredMessageReference?, state: RichReplyState
+  ) {
     self.model = model
-    destination = QuickDestination(
-      profileID: model.sessionProfileID ?? model.profileScopeID,
-      sessionID: model.navigationSessionID, title: model.currentSessionTitle ?? "Session")
+    self.destination = destination
     messageID = message.id
     revision = message.contentRevision
-    sourceKey = state.sourceKey(
-      session: destination.sessionKey, message: message,
-      reference: model.storedMessageReferences[message.id])
+    sourceKey = state.sourceKey(session: destination.sessionKey, message: message, reference: reference)
+  }
+
+  @MainActor static func destination(for model: DockModel) -> QuickDestination {
+    QuickDestination(
+      profileID: model.sessionProfileID ?? model.profileScopeID,
+      sessionID: model.navigationSessionID, title: model.currentSessionTitle ?? "Session")
   }
 
   var isCurrent: Bool {
@@ -112,6 +123,7 @@ final class RichReplyContext {
     do {
       let answer = try draft.answer(fields: fields)
       var record = draft.submission ?? QuickDraftRecord(destination: destination, text: "")
+      record.requestsVisualReply = false
       record.text = "Answer to \(surface.title) (surface \(surface.id)):\n\(answer)"
       record.delivery = .submitting
       draft.submission = record

@@ -1,19 +1,11 @@
-# Experimental generated replies
+# Generative UI in Herm
 
-This feature is off by default. Normal builds do not compile its renderer,
-Charts views, form state, or WebKit host. They send existing prompts and use the
-existing Markdown/streaming renderer and activity/loading presentation.
+Generative UI ships in normal builds. Settings → Appearance → Generative UI is on
+by default and applies immediately. Turning it off preserves canonical messages and
+shows readable fallbacks. HTML always needs an explicit Open action.
 
-For development, enable it at both build and launch time:
 
-```sh
-HERM_EXPERIMENTAL_GENERATIVE_UI=1 swift run Herm
-```
-
-An opt-in binary launched without that environment variable also uses the
-existing UI. Setting the variable cannot enable a binary built without the
-feature. No preferences, runtime patches, or database migrations are installed.
-Compact live workflow cards such as the reference PR graph remain future work.
+No build or launch environment variable is required.
 
 ## Card composition and motion
 
@@ -54,7 +46,7 @@ Glass/monochrome appearance, and actual map integration still need acceptance.
 
 ## Isolation and maintenance
 
-- `Sources/Herm/Features/GenerativeUI/` contains the optional implementation;
+- `Sources/Herm/Features/GenerativeUI/` contains the implementation;
   `Tests/HermTests/Features/GenerativeUI/` contains its focused tests.
 - `GenerativeUIIntegration.swift` is the host boundary. Rendering, prompt
   preparation, text projections, and view-lifetime hooks go through that API.
@@ -63,32 +55,23 @@ Glass/monochrome appearance, and actual map integration still need acceptance.
 - Presentation scopes own unsent form values and preview lifetime. Existing
   destination-validated submission handlers remain authoritative. The feature
   adds no executor, event ingestion, tool interception, or transcript store.
-- Disabled builds return the original content and prompts. A small compatibility
-  projection hides rendering context saved by earlier experimental builds
-  without rewriting those records.
+- When disabled, future prompts omit rendering instructions and existing replies
+  use readable text projections. Legacy rendering context stays hidden without
+  rewriting canonical records. Active HTML previews close immediately.
 - New workflow cards belong here, using read-only adapters over existing stores
   and existing action handlers. Keep provider-confirmed state separate from
   generated content; do not derive a merge result from an assistant claim.
 
-To remove the experiment, delete the optional implementation/test folders,
-remove their build flag and exclusion rules from `Package.swift`, and reduce
-the integration API to its disabled branches. Its host call sites can then be
-removed incrementally. Keep the legacy context projection if old conversations
-need it. No archive migration or operational rollback is required.
-
-Run the default regression tests with `swift test`; test the opt-in implementation
-with `HERM_EXPERIMENTAL_GENERATIVE_UI=1 swift test`. `GenerativeUIIsolationTests`
-checks the disabled fallback, unchanged requests and canonical message text,
-and compatibility with older tool archives. The optional suites cover parsing,
-form drafts, and WebKit isolation. CI keeps its default `make check` job and
-also builds and tests the opt-in feature in a separate job, so a disabled
-feature cannot silently stop compiling.
+Run `swift test` for ordinary regression, generated-content, and WebKit isolation
+checks. `GenerativeUIIsolationTests` covers shipping availability, readable
+fallbacks, canonical message preservation, and compatibility with old archives.
+The focused suites cover validation, forms, and the offline HTML host.
 
 ## Response format
 
 Only assistant conversation content recognizes a fenced `herm-ui` JSON object.
 Use ordinary Markdown whenever an interactive view adds no value. Rendering
-context is appended only when the experiment is enabled, to workspace,
+context is appended only when the setting is enabled, to workspace,
 quick-message, group and client-submitted voice requests through the existing
 submission paths; it does not change the model or require an additional model
 call. Runtime-owned voice turns remain compatible.

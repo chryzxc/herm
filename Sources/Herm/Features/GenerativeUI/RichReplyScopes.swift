@@ -15,21 +15,22 @@ struct RichReplySessionScope<Content: View>: View {
     }
 }
 
+/// Takes the model's values as plain inputs instead of observing DockModel:
+/// observing re-rendered every mounted row (past their `.equatable()`) on
+/// each of DockModel's publications.
 struct RichReplyMessageScope<Content: View>: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
     let message: ChatMessage
+    let destination: QuickDestination
+    let reference: StoredMessageReference?
     let content: Content
     @Environment(\.richReplyState) private var state
 
     var body: some View {
         if let state {
             content
-                .environment(\.richReplyContext, RichReplyContext(model: model, message: message, state: state))
-                .onChange(of: model.storedMessageReferences[message.id]) { _, reference in
-                    let destination = QuickDestination(profileID: model.sessionProfileID ?? model.profileScopeID,
-                        sessionID: model.navigationSessionID)
-                    _ = state.sourceKey(session: destination.sessionKey, message: message, reference: reference)
-                }
+                .environment(\.richReplyContext, RichReplyContext(
+                    model: model, message: message, destination: destination, reference: reference, state: state))
         } else { content }
     }
 }

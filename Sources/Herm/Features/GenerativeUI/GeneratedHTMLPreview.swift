@@ -50,6 +50,8 @@ struct GeneratedHTMLPreview: View {
   let html: String
   let identity: String
   @State private var revision = 0
+  var expanded = false
+  @State private var showingExpanded = false
   @StateObject private var state = GeneratedHTMLLoadState()
 
   var body: some View {
@@ -57,6 +59,7 @@ struct GeneratedHTMLPreview: View {
       HStack(spacing: 8) {
         Text("Interactive view").font(.system(size: 12, weight: .medium))
         Spacer()
+        if !expanded { Button("Expand") { showingExpanded = true }.buttonStyle(.dockCompact) }
         Button("Reload") {
           state.error = nil
           revision += 1
@@ -67,14 +70,19 @@ struct GeneratedHTMLPreview: View {
         Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning)
           .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
       } else {
-        GeneratedHTMLWebView(html: html, state: state).id(
+        Group { if !showingExpanded { GeneratedHTMLWebView(html: html, state: state) } }.id(
           "\(identity):\(revision):\(DockThemeRuntime.revision)"
         )
-        .frame(height: 420)
+        .frame(minHeight: expanded ? 500 : 420, maxHeight: expanded ? .infinity : 420)
         .overlay {
           if state.loading { ProgressView().controlSize(.small).allowsHitTesting(false) }
         }
       }
+    }
+    .sheet(isPresented: $showingExpanded) {
+      GeneratedHTMLPreview(html: html, identity: identity, expanded: true)
+        .padding(16).frame(minWidth: 800, idealWidth: 1100, minHeight: 600, idealHeight: 780)
+        .background(Color.dockCanvas)
     }
   }
 }

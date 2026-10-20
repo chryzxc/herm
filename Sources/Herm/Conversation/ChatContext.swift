@@ -2,16 +2,24 @@ import SwiftUI
 
 /// A block of context (a Kanban card, a pull request, an issue) attached to
 /// the composer. It renders as a chip and is prepended to the next prompt.
-struct ChatContext: Identifiable, Equatable {
+struct ChatContext: Identifiable, Equatable, Codable, Sendable {
+    enum Kind: String, Codable, Sendable { case general, terminal, diff, conversation, file, capture }
+    var kind = Kind.general
+    var inlineToken: String? = nil
     /// Stable source identity, so attaching the same item twice is a no-op.
     let id: String
     let title: String
     let body: String
     /// Project a new chat should be scoped to, when the source has one.
+    var attachmentURL: URL? = nil
     var projectPath: String? = nil
 
     static func prompt(_ text: String, contexts: [ChatContext]) -> String {
-        (contexts.map(\.body) + [text]).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        var rendered = text
+        for context in contexts {
+            if let token = context.inlineToken { rendered = rendered.replacingOccurrences(of: token, with: context.body) }
+        }
+        return (contexts.filter { $0.inlineToken == nil }.map(\.body) + [rendered]).filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
     init(id: String, title: String, body: String, projectPath: String? = nil) {

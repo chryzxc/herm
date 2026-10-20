@@ -198,7 +198,7 @@ struct QuickDraftTests {
       uploads.allSatisfy {
         $0.1["session_id"] as? String == "runtime" && $0.1["profile"] as? String == "research"
       })
-    #expect(rpc.calls.last?.1["text"] as? String == "Review this\n\n@file:docs/sample.txt")
+    #expect(rpc.calls.last?.1["text"] as? String == GenerativeUIIntegration.preparePrompt("Review this\n\n@file:docs/sample.txt"))
   }
 
   @Test func partialUploadRetriesOnlyUnacknowledgedFiles() async throws {

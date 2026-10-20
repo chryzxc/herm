@@ -141,11 +141,14 @@ struct QuickDraftRecord: Codable, Identifiable, Equatable, Sendable {
   var text = ""
   var files: [QuickDraftFile] = []
   var sources: [String] = []
+  var contexts: [ChatContext]? = nil
+  var requestsVisualReply: Bool? = nil
+  var savedName: String? = nil
   var uploadMessageCount: Int? = nil
   var uploadDirectory: String? = nil
   var delivery = Delivery.editing
   var updatedAt = Date()
-  var isEmpty: Bool { text.isEmpty && files.isEmpty && sources.isEmpty && delivery == .editing }
+  var isEmpty: Bool { text.isEmpty && files.isEmpty && sources.isEmpty && (contexts ?? []).isEmpty && delivery == .editing }
 }
 
 /// User content has its own file; Hermes state and transcripts never enter this store.
@@ -216,11 +219,20 @@ final class QuickDraftStore: ObservableObject {
   }
 
   func removeOwned(_ url: URL) {
-    guard let directory,
-      url.resolvingSymlinksInPath().deletingLastPathComponent()
-        == directory.appendingPathComponent("images").resolvingSymlinksInPath()
+    guard !records.contains(where: { $0.files.contains(where: { $0.fallbackURL == url }) || ($0.contexts ?? []).contains(where: { $0.attachmentURL == url }) }), let directory,
+      ["images", "attachments"].contains(where: { url.resolvingSymlinksInPath().deletingLastPathComponent() == directory.appendingPathComponent($0).resolvingSymlinksInPath() })
     else { return }
     writes.async { try? FileManager.default.removeItem(at: url) }
+  }
+
+  func storePastedText(_ data: Data) throws -> URL {
+    guard data.count <= 8 * 1024 * 1024, let directory else { throw QuickDraftError.message("Draft attachment storage is unavailable.") }
+    let folder = directory.appendingPathComponent("attachments", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    let url = folder.appendingPathComponent("paste-" + UUID().uuidString + ".txt")
+    try data.write(to: url, options: .atomic)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    return url
   }
 
   func pasteImage(_ data: Data) async throws -> QuickDraftFile {

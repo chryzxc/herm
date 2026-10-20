@@ -1,44 +1,27 @@
 import SwiftUI
 
-/// The only boundary between Herm and the optional presentation experiment.
-/// Core records stay unchanged; disabled builds use the existing views and prompts.
+/// Single boundary for presentation extensions; Hermes records remain unchanged.
 enum GenerativeUIIntegration {
-    static let environmentKey = "HERM_EXPERIMENTAL_GENERATIVE_UI"
-
-    static var isCompiledIn: Bool {
-        #if HERM_EXPERIMENTAL_GENERATIVE_UI
-        true
-        #else
-        false
-        #endif
-    }
-
+    static let preferenceKey = "herm.generativeUI.enabled"
+    static var isCompiledIn: Bool { true }
     static var isEnabled: Bool {
-        isCompiledIn && ProcessInfo.processInfo.environment[environmentKey] == "1"
+        UserDefaults.standard.object(forKey: preferenceKey) as? Bool ?? true
     }
 
     static func preparePrompt(_ text: String, enabled: Bool = isEnabled) -> String {
-        #if HERM_EXPERIMENTAL_GENERATIVE_UI
-        if enabled { return RichPromptContext.prepare(text) }
-        #endif
-        return text
+        enabled ? RichPromptContext.prepare(text) : text
     }
 
+    /// Text projections remain readable even when visual rendering is disabled.
     static func plainText(_ text: String, enabled: Bool = isEnabled) -> String {
-        #if HERM_EXPERIMENTAL_GENERATIVE_UI
-        if enabled { return RichDocument(displayUserText(text)).plainText }
-        #endif
-        return displayUserText(text)
+        RichDocument(displayUserText(text)).plainText
     }
 
     static func readableText(_ message: ChatMessage) -> String {
-        if message.role == .hermes, message.systemEvent == nil, message.kanbanNotice == nil {
-            return plainText(message.text)
-        }
-        return displayUserText(message.text)
+        message.role == .hermes && message.systemEvent == nil && message.kanbanNotice == nil
+            ? plainText(message.text) : displayUserText(message.text)
     }
 
-    /// Hide context saved by earlier experimental builds without changing Hermes records.
     static func displayUserText(_ text: String) -> String {
         guard text.hasSuffix("\n[/Herm rendering context]"),
               let context = text.range(of: "\n\n[Herm rendering context v1]\n", options: .backwards)
@@ -48,40 +31,56 @@ enum GenerativeUIIntegration {
 
     @MainActor @ViewBuilder
     static func renderReply<Content: View>(
-        _ text: String, streaming: Bool = false, enabled: Bool = isEnabled,
+        _ text: String, streaming: Bool = false, enabled: Bool? = nil,
         @ViewBuilder fallback: () -> Content
     ) -> some View {
-        #if HERM_EXPERIMENTAL_GENERATIVE_UI
-        if enabled, text.contains("herm-ui") {
-            let document = RichDocument(text, streaming: streaming)
-            if document.hasSurfaces { RichDocumentView(document: document) }
-            else { fallback() }
-        } else { fallback() }
-        #else
-        fallback()
-        #endif
+        GenerativeReply(text: text, streaming: streaming, override: enabled, fallback: fallback())
+    }
+}
+
+private struct GenerativeReply<Content: View>: View {
+    let text: String
+    let streaming: Bool
+    let override: Bool?
+    let fallback: Content
+    @AppStorage(GenerativeUIIntegration.preferenceKey) private var enabled = true
+    @State private var parsed: RichDocument?
+    @State private var parsedSource: String?
+    @State private var parsedStreaming = false
+    @Environment(\.richReplyContext) private var context
+    var body: some View {
+        Group {
+            if text.contains("herm-ui"), let document = parsed, parsedSource == text, parsedStreaming == streaming {
+                if override ?? enabled { RichDocumentView(document: document) }
+                else { MarkdownMessageView(markdown: document.plainText) }
+            } else if text.contains("herm-ui") {
+                if override ?? enabled {
+                    Text("Preparing visual reply…").font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).frame(minHeight: 44)
+                } else { MarkdownMessageView(markdown: GenerativeUIIntegration.plainText(text)) }
+            } else { fallback }
+        }
+        .task(id: text + (streaming ? "-streaming" : "-complete")) {
+            guard text.contains("herm-ui") else { parsed = nil; parsedSource = nil; return }
+            let source = text
+            let isStreaming = streaming
+            let identity = context.map { "\($0.sourceKey):\($0.revision)" } ?? "standalone"
+            let value = await RichDocumentCache.shared.document(source, identity: identity, streaming: isStreaming)
+            guard !Task.isCancelled else { return }
+            parsed = value; parsedSource = source; parsedStreaming = isStreaming
+        }
+        .onChange(of: enabled) { _, value in
+            if !value { GeneratedHTMLCoordinator.shared.close() }
+        }
     }
 }
 
 extension View {
-    @MainActor @ViewBuilder
-    func generativeUISession(model: DockModel) -> some View {
-        #if HERM_EXPERIMENTAL_GENERATIVE_UI
-        if GenerativeUIIntegration.isEnabled { RichReplySessionScope(model: model, content: self) }
-        else { self }
-        #else
-        self
-        #endif
+    @MainActor func generativeUISession(model: DockModel) -> some View {
+        RichReplySessionScope(model: model, content: self)
     }
-
-    @MainActor @ViewBuilder
-    func generativeUIMessage(model: DockModel, message: ChatMessage) -> some View {
-        #if HERM_EXPERIMENTAL_GENERATIVE_UI
-        if GenerativeUIIntegration.isEnabled {
-            RichReplyMessageScope(model: model, message: message, content: self)
-        } else { self }
-        #else
-        self
-        #endif
+    @MainActor func generativeUIMessage(model: DockModel, message: ChatMessage) -> some View {
+        RichReplyMessageScope(
+            model: model, message: message, destination: RichReplyContext.destination(for: model),
+            reference: model.storedMessageReferences[message.id], content: self)
     }
 }
