@@ -47,14 +47,16 @@ struct MarkdownMessageView: View, Equatable {
   let markdown: String
   private let bodySize: CGFloat
   private let bodyWeight: NSFont.Weight
-  @State private var identity = UUID()
+  /// Every message shares one identity, so the render cache is keyed by
+  /// content. A per-view UUID missed the cache whenever paging remounted a row.
+  private static let identity = UUID()
   typealias RenderBlock = MarkdownRenderDocumentBuilder.RenderBlock
   init(markdown: String, cacheResult: Bool = true, cacheKey: String? = nil, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
     self.markdown = markdown; self.bodySize = bodySize; self.bodyWeight = bodyWeight
   }
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.markdown == rhs.markdown && lhs.bodySize == rhs.bodySize && lhs.bodyWeight == rhs.bodyWeight }
   var body: some View {
-    NativeMarkdownDocumentHost(source: markdown, key: MarkdownRenderKey(messageID: identity, contentRevision: markdown.hashValue, themeRevision: DockThemeRuntime.revision, segment: Int(bodySize * 100 + bodyWeight.rawValue * 10)), bodySize: bodySize, bodyWeight: bodyWeight)
+    NativeMarkdownDocumentHost(source: markdown, key: MarkdownRenderKey(messageID: Self.identity, contentRevision: markdown.hashValue, themeRevision: DockThemeRuntime.revision, segment: Int(bodySize * 100 + bodyWeight.rawValue * 10)), bodySize: bodySize, bodyWeight: bodyWeight)
   }
   static func renderBlocks(for markdown: String) -> [RenderBlock] { MarkdownRenderDocumentBuilder.renderBlocks(for: markdown) }
   static func codeBlockLanguages(in markdown: String) -> [String?] { MarkdownRenderDocumentBuilder.codeBlockLanguages(in: markdown) }

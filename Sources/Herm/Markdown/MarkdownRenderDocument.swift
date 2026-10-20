@@ -70,7 +70,8 @@ enum MarkdownRenderDocumentCache {
 
     static func document(for source: String, key: MarkdownRenderKey) -> MarkdownRenderDocument {
         let cacheKey = "\(key.messageID.uuidString):\(key.contentRevision):\(key.themeRevision):\(key.segment)" as NSString
-        if let entry = cache.object(forKey: cacheKey) {
+        // Keys carry a content hash, not the content; confirm before reuse.
+        if let entry = cache.object(forKey: cacheKey), entry.document.source == source {
             DebugLog.writePerformance("markdown_document_cache_hit bytes=\(source.utf8.count)")
             return entry.document
         }
