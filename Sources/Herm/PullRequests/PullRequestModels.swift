@@ -6,6 +6,26 @@ enum PullRequestFilter: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+struct PullRequestFilterPicker: View {
+    @Binding var selection: PullRequestFilter
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            DockTabBar(options: PullRequestFilter.allCases, selection: $selection, title: { $0.rawValue })
+                .fixedSize(horizontal: true, vertical: false)
+            DockMenuPicker(title: selection.rawValue, selection: $selection) {
+                ForEach(PullRequestFilter.allCases) { filter in
+                    DockMenuOption(filter.rawValue, value: filter)
+                }
+            }
+            .font(DockTypography.control)
+            .frame(height: 30)
+            .accessibilityLabel("Pull request filter")
+            .accessibilityValue(selection.rawValue)
+        }
+    }
+}
+
 final class PullRequestChatLinkStore: ObservableObject {
     private let defaults = UserDefaults.standard
     private let key = "hermes.pull-request-chat-links"
@@ -22,13 +42,14 @@ final class PullRequestChatLinkStore: ObservableObject {
     }
 }
 
-struct PullRequestFile: Identifiable, Equatable {
+struct PullRequestFile: Identifiable, Equatable, Sendable {
     let path: String
     let status: String
     let additions: Int
     let deletions: Int
     let patch: String?
     let webURL: URL?
+    var previousPath: String? = nil
     var id: String { path }
 }
 
@@ -186,81 +207,10 @@ enum PullRequestFileTreeBuilder {
     }
 }
 
-enum PullRequestDiffLineKind: Equatable {
-    case context, addition, deletion, hunk, metadata
-}
-
-struct PullRequestDiffLine: Identifiable, Equatable {
-    let index: Int
-    let text: String
-    let kind: PullRequestDiffLineKind
-    var oldLine: Int? = nil
-    var newLine: Int? = nil
-    var id: Int { index }
-
-    init(index: Int, text: String, kindOverride: PullRequestDiffLineKind? = nil) {
-        self.index = index
-        self.text = text
-        if let kindOverride { kind = kindOverride }
-        else if text.hasPrefix("@@") { kind = .hunk }
-        else if text.hasPrefix("+++") || text.hasPrefix("---") { kind = .metadata }
-        else if text.hasPrefix("+") { kind = .addition }
-        else if text.hasPrefix("-") { kind = .deletion }
-        else { kind = .context }
-    }
-}
-
-struct PullRequestDiffSplitRow: Identifiable, Equatable {
-    let id: Int
-    let left: PullRequestDiffLine?
-    let right: PullRequestDiffLine?
-}
-
-enum PullRequestDiffPresentation {
-    static func lines(_ patch: String) -> [PullRequestDiffLine] {
-        var old: Int?; var new: Int?
-        return patch.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, text in
-            let inHunk = old != nil && new != nil
-            let override: PullRequestDiffLineKind? = inHunk && text.hasPrefix("---") ? .deletion : (inHunk && text.hasPrefix("+++") ? .addition : nil)
-            var line = PullRequestDiffLine(index: index, text: String(text), kindOverride: override)
-            if line.kind == .hunk {
-                let fields = text.split(separator: " ")
-                if fields.count >= 3 {
-                    old = fields[1].dropFirst().split(separator: ",").first.flatMap { Int($0) }
-                    new = fields[2].dropFirst().split(separator: ",").first.flatMap { Int($0) }
-                }
-            } else if !text.hasPrefix("\\"), line.kind != .metadata {
-                if line.kind != .addition { line.oldLine = old; old = old.map { $0 + 1 } }
-                if line.kind != .deletion { line.newLine = new; new = new.map { $0 + 1 } }
-            }
-            return line
-        }
-    }
-
-    static func splitRows(_ lines: [PullRequestDiffLine]) -> [PullRequestDiffSplitRow] {
-        var rows: [PullRequestDiffSplitRow] = []
-        var cursor = 0
-        while cursor < lines.count {
-            let line = lines[cursor]
-            if line.kind == .deletion {
-                var deletions: [PullRequestDiffLine] = []
-                while cursor < lines.count, lines[cursor].kind == .deletion { deletions.append(lines[cursor]); cursor += 1 }
-                var additions: [PullRequestDiffLine] = []
-                while cursor < lines.count, lines[cursor].kind == .addition { additions.append(lines[cursor]); cursor += 1 }
-                for index in 0..<max(deletions.count, additions.count) {
-                    rows.append(PullRequestDiffSplitRow(id: rows.count, left: index < deletions.count ? deletions[index] : nil, right: index < additions.count ? additions[index] : nil))
-                }
-            } else if line.kind == .addition {
-                rows.append(PullRequestDiffSplitRow(id: rows.count, left: nil, right: line))
-                cursor += 1
-            } else {
-                rows.append(PullRequestDiffSplitRow(id: rows.count, left: line, right: line))
-                cursor += 1
-            }
-        }
-        return rows
-    }
-}
+typealias PullRequestDiffLineKind = DiffLineKind
+typealias PullRequestDiffLine = DiffLine
+typealias PullRequestDiffSplitRow = DiffSplitRow
+typealias PullRequestDiffPresentation = DiffPresentation
 
 /// Keeps patch parsing out of SwiftUI's scrolling/layout pass. A patch is
 /// immutable for the lifetime of a loaded pull request, so its presentation

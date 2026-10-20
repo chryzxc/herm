@@ -152,7 +152,8 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
                 additions: (row["additions"] as? NSNumber)?.intValue ?? 0,
                 deletions: (row["deletions"] as? NSNumber)?.intValue ?? 0,
                 patch: row["patch"] as? String,
-                webURL: (row["blob_url"] as? String).flatMap(URL.init)
+                webURL: (row["blob_url"] as? String).flatMap(URL.init),
+                previousPath: row["previous_filename"] as? String
             )
         }
     }

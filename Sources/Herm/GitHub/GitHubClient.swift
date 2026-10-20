@@ -52,7 +52,11 @@ struct GitHubClient: Sendable {
     func request(_ path: String, query: [String: String] = [:], method: String = "GET", body: [String: Any]? = nil) async throws -> Any {
         try Task.checkCancellation()
         try await rateLimit.check()
-        guard path.hasPrefix("/"), !path.contains(".."), var components = URLComponents(string: "https://api.github.com" + path) else { throw GitHubRequestError.malformed }
+        // Compare routes contain `...`; reject traversal segments rather than filename punctuation.
+        guard path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("?"), !path.contains("#"),
+              let decoded = path.removingPercentEncoding, !decoded.contains("\\"),
+              !decoded.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }),
+              var components = URLComponents(string: "https://api.github.com" + path) else { throw GitHubRequestError.malformed }
         components.queryItems = query.sorted { $0.key < $1.key }.map(URLQueryItem.init)
         guard let url = components.url else { throw GitHubRequestError.malformed }
         var request = URLRequest(url: url)
