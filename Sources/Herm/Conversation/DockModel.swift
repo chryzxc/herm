@@ -188,6 +188,9 @@ final class DockModel: ObservableObject {
     @Published var observedKanbanTaskRevision = 0
     @Published var backgroundTasks: [HermesBackgroundTask] = []
     @Published var runtimeConfiguration: HermesRuntimeConfiguration?
+    var runtimeConfigurationRefresh = HermesRuntimeConfigurationRefresh()
+    var isRuntimeModelMutationPending = false
+    var runtimeModelMutationError: String?
     @Published var isLoadingRuntimeConfiguration = false
     @Published var runtimeConfigurationError: String?
     @Published var runtimeModelOptionsError: String?
