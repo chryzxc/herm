@@ -19,6 +19,23 @@ DEBUG_CACHE_DIR="$PROJECT_DIR/.build/debug-cache"
 mkdir -p "$DEBUG_CACHE_DIR/clang-module-cache" "$DEBUG_CACHE_DIR/swiftpm-cache" "$DEBUG_CACHE_DIR/scratch"
 export CLANG_MODULE_CACHE_PATH="$DEBUG_CACHE_DIR/clang-module-cache"
 
+# Serialize launches. Concurrent runs (terminal, agents, worktrees) would each
+# pass the close step below and leave several Herm instances alive; queued, the
+# last run closes the previous one, so exactly one stays up.
+LOCK_DIR="$DEBUG_CACHE_DIR/run-debug-app.lock"
+until mkdir "$LOCK_DIR" 2>/dev/null; do
+    holder=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+        rm -rf "$LOCK_DIR"
+        continue
+    fi
+    echo "Waiting for another Herm launch (pid ${holder:-?}) to finish..."
+    sleep 1
+done
+echo $$ >"$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR"' EXIT
+trap 'exit 1' INT TERM
+
 # Always ask SwiftPM to build. It is incremental, but it owns the full input
 # graph (including generated sources and package metadata), unlike a shell
 # timestamp probe that can incorrectly reuse an old executable after edits.
