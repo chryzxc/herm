@@ -18,6 +18,10 @@
     <string>DockAppIcon</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Herm shows your events beside Hermes' scheduled runs and can attach them to a chat. It never changes your calendar.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Herm shows reminders with due dates on its Calendar page and can turn them into Kanban tasks. It never changes your reminders.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Herm uses the microphone to transcribe your spoken prompts.</string>
     <key>NSAudioCaptureUsageDescription</key>
