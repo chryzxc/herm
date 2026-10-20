@@ -1,13 +1,12 @@
 import Charts
 import SwiftUI
 
-/// The fullscreen Usage destination: what Hermes has spent, read from its
+/// The Activity page's Spend tab: what Hermes has spent, read from its
 /// `/api/analytics/usage` report. The Dock only draws; every figure is Hermes'.
 struct UsageWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
     @AppStorage(Self.daysKey) private var days = 30
     @State private var expandedModels: Set<String> = []
-    @Environment(\.dockTitleRow) private var titleRow
 
     static let daysKey = "dock.usage.days"
     static var storedDays: Int { UserDefaults.standard.object(forKey: daysKey) as? Int ?? 30 }
@@ -16,13 +15,11 @@ struct UsageWorkspaceView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // In the window the page header carries these controls.
-            if titleRow == nil { toolbar }
+            toolbar
 
             if let report = control.tokenUsage {
                 overview(report)
                 DailyUsageChart(daily: report.daily)
-                UsageHeatmap(daily: control.yearActivity)
                 modelsSection(report)
                 if !report.tasks.isEmpty { tasksSection(report) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
@@ -46,7 +43,6 @@ struct UsageWorkspaceView: View {
         }
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task { control.refreshYearActivity() }
     }
 
     /// Indent that lines sub-rows up under the model name, past the provider icon.
@@ -434,8 +430,7 @@ private struct DailyUsageChart: View {
             .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockOpaqueCanvas))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 1))
+        .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous), stroke: .dockBorderLight, lineWidth: 1)
     }
 }
 
@@ -472,7 +467,6 @@ struct UsageToolbar: View {
                 style: DockThemePalette(theme: DockThemeRuntime.current)
             ) {
                 control.refreshTokenUsage(days: days)
-                control.refreshYearActivity()
             }
         }
     }

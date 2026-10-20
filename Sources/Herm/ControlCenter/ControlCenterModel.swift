@@ -67,7 +67,6 @@ final class ControlCenterModel: ObservableObject {
     @Published var sessionUsage: SessionUsageSummary?
     @Published var sessionContext: SessionContextSummary?
     /// A year of daily usage for the heatmap, independent of the range picker.
-    @Published var yearActivity: [TokenUsageReport.Day] = []
     var tokenUsageGeneration = UUID()
     var tokenUsageModelRows: [String: Any] = [:]
     @Published var workCalendar: WorkCalendarIndex?

@@ -144,6 +144,7 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(SidebarVisibilityKey.issues) var showsIssuesInSidebar = true
     @AppStorage(SidebarVisibilityKey.office) var showsOfficeInSidebar = true
     @AppStorage(SidebarVisibilityKey.calendar) var showsCalendarInSidebar = true
+    @AppStorage("dock.activity.tab") var activityTab = ActivityTab.work
     @AppStorage(ChatQuotaSettingsKey.chip) var showsQuotaChip = true
     @AppStorage(ChatQuotaSettingsKey.dropBanner) var showsQuotaDropBanner = true
     @AppStorage(DoubleTapShortcut.workspaceKey) var workspaceShortcut = DoubleTapShortcut.command
@@ -191,7 +192,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     // Dashboard-style pages read badly stretched edge to edge; boards, diffs and previews keep the full width.
-    var readingWidthModes: Set<ControlTab> { [.quota, .usage, .core] }
+    var readingWidthModes: Set<ControlTab> { [.quota, .core] }
 
     @AppStorage("herm.settingsRailCollapsed") var isSettingsRailCollapsed = false
     /// Set in the window: page toolbars move up into the title row like a native toolbar.

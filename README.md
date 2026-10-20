@@ -346,6 +346,18 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 - Filters for status, assignee, "mine", and session are passed to Hermes.
 - While open, the board refreshes every five seconds with live work and every fifteen seconds otherwise. Board and filter changes made during a refresh load the latest selection automatically.
 
+### Activity
+
+- **Work** shows what shipped each day: sessions, finished tasks, commits, automation runs, and cost.
+- **Spend** shows token usage and cost by model and day.
+
+### Calendar
+
+- Shows your Mac Calendar events and dated Reminders alongside upcoming Hermes automation runs and Kanban tasks in progress, in Week or Month view.
+- Read-only: Herm asks for Calendar and Reminders access only when you click **Connect** on the Calendar page, and never changes your calendars. If access was refused earlier, Connect resets Herm's own decision so macOS asks again in place; a Privacy Settings link appears only if macOS still refuses.
+- Turn Mac data on or off with **Calendars → Show Calendar & Reminders**; when off, Herm does not read EventKit at all. The same menu hides individual calendars and reminder lists.
+- For any item: **Attach to chat**, **Create Kanban task**, or open it in Calendar or Reminders. **Plan this day in chat** starts a chat with the day's agenda. For timed events, **Schedule prep…** creates a one-shot Hermes automation 15, 30, or 60 minutes before the event starts.
+
 ### Office Preview
 
 - A 3D office where each bot has its own character. Bots with running work sit at computers, bots in review go to Mission Control, and bots that are planning use the Kanban room. Idle bots take coffee breaks and walk around the garden.
@@ -475,7 +487,7 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 - Directly invoking arbitrary third-party MCP tools from Herm (catalog/setup, credentials, authorization, connection tests and removal are available through supported Hermes lifecycle methods)
 - Structured cron report contracts and more detailed diagnostics (recorded chat-backed run output can already be read)
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
-- Calendar, email, and iMessage integrations
+- Email and iMessage integrations, and writing to Calendar or Reminders (the Calendar page is read-only)
 - Deleting bot profiles and connecting to Hermes on another machine (group chats are already available when supported by Hermes)
 - Force-pushing and dispatching GitHub workflows; native conflict editing and arbitrary Projects custom-field editing
 

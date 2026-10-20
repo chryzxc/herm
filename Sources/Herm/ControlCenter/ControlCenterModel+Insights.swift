@@ -60,17 +60,6 @@ extension ControlCenterModel {
         }
     }
 
-    func refreshYearActivity() {
-        guard let rpc else { return }
-        let bindingGeneration = clientBindingGeneration
-        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
-        Task { @MainActor in
-            guard let result = try? await rpc.usageAnalytics(days: 365),
-                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
-            yearActivity = Self.parseTokenUsage(result).daily
-        }
-    }
-
     /// Loads one month of work for the Calendar tab. A month already fetched
     /// is rebuilt from cache unless `force` is set.
     func refreshWorkCalendar(month: Date, repoPaths: [String], force: Bool = false) {

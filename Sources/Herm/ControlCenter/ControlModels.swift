@@ -1582,6 +1582,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .automations: "Automate"
         case .officePreview: "Office"
         case .core: "Settings"
+        case .usage: "Activity"
         default: rawValue
         }
     }
@@ -1592,6 +1593,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .automations: "Automation"
         case .officePreview: "Office"
         case .core: "Settings"
+        case .usage: "Activity"
         default: rawValue
         }
     }
@@ -1619,6 +1621,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .automations: "Automation"
         case .officePreview: "Office"
         case .core: "Settings"
+        case .usage: "Activity"
         default: rawValue
         }
     }
@@ -1633,8 +1636,8 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .officePreview: "Live bot assignments in a simulated 3D office"
         case .core: "Runtime health, permissions, and session tools"
         case .quota: "Provider capacity and reset windows"
-        case .usage: "Tokens, cost, and tools Hermes has used"
-        case .calendar: "What shipped and what was worked on, day by day"
+        case .usage: "What shipped, what was worked on, and what it cost"
+        case .calendar: "Your Mac calendar, reminders, and upcoming agent runs"
         case .capabilities: "Connectors, plugins, skills and MCP servers"
         case .messaging: "Run Hermes from Telegram, Discord, Slack and more"
         }

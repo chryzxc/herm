@@ -22,8 +22,22 @@ extension WorkspaceActivitySidebar {
                 officePreviewContent
             } else if selectedMode == .automations {
                 AutomationWorkspaceView(control: control)
+            } else if selectedMode == .usage {
+                activityContent
             } else if selectedMode == .calendar {
-                calendarContent
+                VStack(alignment: .leading, spacing: 0) {
+                    pageHeader
+                    CalendarWorkspaceView(
+                        control: control,
+                        onOpenTask: { task in
+                            select(.kanban)
+                            control.revealKanbanTask(task)
+                        },
+                        onOpenAutomations: { select(.automations) }
+                    )
+                    .padding(.horizontal, 16)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
             } else if selectedMode == .capabilities {
                 VStack(alignment: .leading, spacing: 0) {
                     pageHeader
@@ -51,9 +65,8 @@ extension WorkspaceActivitySidebar {
                             case .officePreview: officePreviewContent
                             case .core: coreContent
                             case .quota: quotaContent
-                            case .usage: UsageWorkspaceView(control: control)
-                            // Rendered outside this ScrollView so the calendar can stay pinned.
-                            case .calendar, .capabilities, .messaging: EmptyView()
+                            // Rendered outside this ScrollView so the work calendar can stay pinned.
+                            case .usage, .calendar, .capabilities, .messaging: EmptyView()
                             }
                         }
                         .frame(maxWidth: readingWidthModes.contains(selectedMode) ? 1280 : .infinity, alignment: .topLeading)
@@ -104,7 +117,8 @@ extension WorkspaceActivitySidebar {
             AnyView(DockPageHeader(
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
-                trailing: { if titleRow != nil { UsageToolbar(control: control) } }
+                // Only the page switch; each tab's own controls sit in its first row.
+                trailing: { DockTabBar(options: ActivityTab.allCases, selection: $activityTab, title: \.rawValue) }
             ))
         } else {
             AnyView(DockPageHeader(
@@ -256,23 +270,40 @@ extension WorkspaceActivitySidebar {
         .id(selectedSettingsCategory)
     }
 
-    /// Owns its own scrolling: the calendar stays put while the day detail scrolls.
-    var calendarContent: some View {
+    /// Work owns its own scrolling (the grid stays put while the day detail
+    /// scrolls); Spend is a plain reading-width scroll page.
+    var activityContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             pageHeader
-            CalendarWorkspaceView(
-                control: control,
-                repoPaths: calendarRepoPaths,
-                botsByID: Dictionary(botMode.bots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
-                avatarImages: botMode.avatarImages,
-                onOpenTask: { task in
-                    select(.kanban)
-                    control.revealKanbanTask(task)
-                },
-                onOpenUsage: { select(.usage) }
-            )
-            .task { await botMode.refreshNow() }
-            .padding(.horizontal, 16)
+            switch activityTab {
+            case .work:
+                WorkActivityView(
+                    control: control,
+                    repoPaths: calendarRepoPaths,
+                    botsByID: Dictionary(botMode.bots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                    avatarImages: botMode.avatarImages,
+                    onOpenTask: { task in
+                        select(.kanban)
+                        control.revealKanbanTask(task)
+                    },
+                    onOpenUsage: { activityTab = .spend }
+                )
+                .task {
+                    control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)
+                    await botMode.refreshNow()
+                }
+                .padding(.horizontal, 16)
+            case .spend:
+                ScrollView {
+                    UsageWorkspaceView(control: control)
+                        .frame(maxWidth: 1280, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+                }
+                .clipped()
+                .task { control.refreshTokenUsage(days: UsageWorkspaceView.storedDays) }
+            }
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -432,10 +463,6 @@ extension WorkspaceActivitySidebar {
             // opened Quota or Kanban tab never misses its first request.
             if selectedMode == .quota {
                 control.refreshProviderQuota()
-            } else if selectedMode == .usage {
-                control.refreshTokenUsage(days: UsageWorkspaceView.storedDays)
-            } else if selectedMode == .calendar {
-                control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)
             } else if selectedMode == .kanban {
                 applyKanbanFilters()
             } else if selectedMode == .officePreview {
@@ -466,10 +493,6 @@ extension WorkspaceActivitySidebar {
             switch mode {
             case .quota:
                 control.refreshProviderQuota()
-            case .usage:
-                control.refreshTokenUsage(days: UsageWorkspaceView.storedDays)
-            case .calendar:
-                control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)
             case .kanban:
                 // Re-apply this surface's visible controls. This prevents a
                 // session-only query started from Activity from leaking into
@@ -641,7 +664,7 @@ extension WorkspaceActivitySidebar {
         }
     }
 
-    /// Every repository Herm has attached to a session, for the Calendar's git log.
+    /// Every repository Herm has attached to a session, for the Activity page's git log.
     var calendarRepoPaths: [String] {
         Array(Set(store.tasks.compactMap(\.projectPath) + [store.projectPath].compactMap { $0 }))
     }
