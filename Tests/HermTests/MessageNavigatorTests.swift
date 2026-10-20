@@ -133,7 +133,7 @@ final class MessageNavigatorTests: XCTestCase {
             let window = ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: totalCount)
             XCTAssertLessThanOrEqual(
                 window.count,
-                2 * ConversationMessageWindow.pageSize + 1,
+                ConversationMessageWindow.jumpContextAbove + 1 + ConversationMessageWindow.jumpContextBelow,
                 "window at index \(index) exceeded the jump bound"
             )
             XCTAssertTrue(window.contains(index))
@@ -165,7 +165,7 @@ final class MessageNavigatorTests: XCTestCase {
         var visibleSpan: ClosedRange<Int> = 20...31
         var exposedUpperBounds: [Int] = [range.upperBound]
 
-        for _ in 0..<40 {
+        for _ in 0..<(totalCount / ConversationMessageWindow.pageSize + 1) {
             let next = ConversationMessageWindow.revealLater(
                 range,
                 totalCount: totalCount,
@@ -203,7 +203,7 @@ final class MessageNavigatorTests: XCTestCase {
         var range = ConversationMessageWindow.jumpWindow(aroundIndex: 19, totalCount: totalCount)
         var visibleSpan: ClosedRange<Int> = 20...31
 
-        for _ in 0..<60 {
+        for _ in 0..<(totalCount / ConversationMessageWindow.pageSize + 1) {
             range = ConversationMessageWindow.revealLater(
                 range,
                 totalCount: totalCount,
@@ -223,7 +223,7 @@ final class MessageNavigatorTests: XCTestCase {
         var visibleSpan: ClosedRange<Int> = range.lowerBound...(range.lowerBound + ConversationMessageWindow.pageSize - 1)
         var lowerBounds: [Int] = []
 
-        for _ in 0..<40 {
+        for _ in 0..<(totalCount / ConversationMessageWindow.pageSize + 1) {
             let next = ConversationMessageWindow.revealEarlier(
                 range,
                 totalCount: totalCount,
@@ -339,7 +339,7 @@ final class MessageNavigatorTests: XCTestCase {
         let window = plan?.windowRange ?? 0..<0
         XCTAssertLessThanOrEqual(
             window.count,
-            2 * ConversationMessageWindow.pageSize + 1
+            ConversationMessageWindow.jumpContextAbove + 1 + ConversationMessageWindow.jumpContextBelow
         )
         XCTAssertTrue(window.contains(19))
         XCTAssertTrue(
@@ -380,7 +380,7 @@ final class MessageNavigatorTests: XCTestCase {
         let window = receivedEffect?.windowRange ?? 0..<0
         XCTAssertLessThanOrEqual(
             window.count,
-            2 * ConversationMessageWindow.pageSize + 1
+            ConversationMessageWindow.jumpContextAbove + 1 + ConversationMessageWindow.jumpContextBelow
         )
         XCTAssertTrue(window.contains(19))
         XCTAssertFalse(receivedEffect?.isAtBottom ?? true)
