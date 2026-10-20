@@ -44,8 +44,7 @@ make check                     # full gate: lint + tests + smoke + release build
 - `WorkspaceStore` holds local preferences only. Never add a second durable
   store for Hermes-owned data (sessions, agents, Kanban, terminal output).
 - Views render state; they do not parse RPC, build CLI words, or persist.
-- The app is named **Herm** everywhere. `HermesAgentDock` survives only in the
-  settings migration.
+- The app is named **Herm** everywhere; its bundle ID is `io.github.chryzxc.Herm`.
 
 ## Code and tests
 

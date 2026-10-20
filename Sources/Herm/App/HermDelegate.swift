@@ -118,8 +118,6 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     static private(set) weak var current: HermDelegate?
 
     override init() {
-        // Must run before the models read defaults or state files.
-        LegacyAppIdentity.migrate()
         model = DockModel()
         controlCenter = ControlCenterModel()
         super.init()
@@ -416,7 +414,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         // Temporarily keep the status item hidden: the movable notch is the launcher.
         // Retain its identity so restoring the menu-bar option later is reversible.
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.autosaveName = "app.herm.Herm.statusItem"
+        statusItem.autosaveName = "io.github.chryzxc.Herm.statusItem"
         statusItem.isVisible = false
         super.init()
 

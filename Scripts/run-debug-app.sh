@@ -6,7 +6,7 @@
 set -eu
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-APP_IDENTIFIER="app.herm.Herm"
+APP_IDENTIFIER="io.github.chryzxc.Herm"
 PROCESS_NAME="Herm"
 
 cd "$PROJECT_DIR"

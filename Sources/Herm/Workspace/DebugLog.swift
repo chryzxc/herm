@@ -107,7 +107,7 @@ final class ConversationPerformanceMonitor {
 /// block the main actor for every gateway event while responses stream.
 /// Mutable state is confined to the serial `queue`.
 private final class DebugLogWriter: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "app.herm.Herm.log-writer", qos: .utility)
+    private let queue = DispatchQueue(label: "io.github.chryzxc.Herm.log-writer", qos: .utility)
     private let maximumFileSize: UInt64 = 1_048_576
     private let sizeCheckInterval = 256
     private var openFileURL: URL?
