@@ -468,6 +468,11 @@ struct QuotaWorkspaceView: View {
                     .help("Hermes picks this account for the next request (hermes auth list marks it ←).")
             }
 
+            if control.isQuotaOnly(snapshot) {
+                QuotaHealthPill(text: "Quota only", color: .dockMetadataText)
+                    .help("Not a Hermes provider. Herm only reads its quota; it isn't in Settings → Providers.")
+            }
+
             if let label = QuotaWorkspacePresentation.healthLabel(snapshot) {
                 QuotaHealthPill(text: label, color: Self.color(for: health))
             }

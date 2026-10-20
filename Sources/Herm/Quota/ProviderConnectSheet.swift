@@ -231,21 +231,36 @@ struct ProviderConnectSheet: View {
     }
 
     private func saveAPIKey() {
-        guard !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
         testStartedAt = .now
-        if let row = hermesRow {
-            saveHermesKey(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines), row)
-        } else {
-            control.saveProviderAPIKey(apiKeyInput, for: descriptor)
-            refreshStoredKeyState()
-        }
         apiKeyInput = ""
+        saveError = nil
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            // Providers is the source of truth: make sure its catalog is loaded
+            // so the key lands in Hermes instead of a Herm-only store.
+            if hermesRow == nil { try? await control.loadHermesProviderRows() }
+            guard let row = hermesRow else {
+                testStartedAt = nil
+                saveError = "Couldn't reach Hermes to save this key. Check Settings → Providers."
+                return
+            }
+            do {
+                try await control.saveHermesProviderKey(key, row: row)
+                refreshStoredKeyState()
+            } catch {
+                testStartedAt = nil
+                saveError = error.localizedDescription
+            }
+        }
     }
 
     /// The Settings → Providers row this key belongs to: the key then lives in
     /// Hermes' .env, the same place Settings writes it.
     private var hermesRow: HermesProviderRow? {
-        control.hermesRow(for: descriptor).flatMap { $0.access == .apiKey ? $0 : nil }
+        control.hermesRow(for: descriptor)
     }
 
     private func saveHermesKey(_ key: String?, _ row: HermesProviderRow) {

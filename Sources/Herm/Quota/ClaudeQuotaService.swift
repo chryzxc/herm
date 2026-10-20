@@ -63,6 +63,14 @@ enum ClaudeQuotaService {
             tokenCache.set(token)
             return token
         }
+        // On macOS, the Claude Code CLI stores its OAuth credentials in the login
+        // Keychain (service "Claude Code-credentials"). Check it first: a leftover
+        // dotfile from an older login holds a stale token that the usage endpoint
+        // answers with a permanent 429.
+        if let data = await loadKeychainCredentialsData(), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let token = token(fromCredentialsJSON: json) {
+            tokenCache.set(token)
+            return token
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         let files = [home.appendingPathComponent(".claude/.credentials.json"), home.appendingPathComponent(".config/claude-code/.credentials.json")]
         for file in files {
@@ -71,12 +79,6 @@ enum ClaudeQuotaService {
                 tokenCache.set(token)
                 return token
             }
-        }
-        // On macOS, the Claude Code CLI stores its OAuth credentials in the login
-        // Keychain (service "Claude Code-credentials") instead of a dotfile.
-        if let data = await loadKeychainCredentialsData(), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let token = token(fromCredentialsJSON: json) {
-            tokenCache.set(token)
-            return token
         }
         return nil
     }

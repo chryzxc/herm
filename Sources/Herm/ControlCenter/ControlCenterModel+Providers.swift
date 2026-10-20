@@ -105,6 +105,8 @@ extension ControlCenterModel {
         hermesProviderRows = HermesProviderRow.rows(from: result)
     }
 
+    private static let quotaHermesSlugs = ["opencode": "opencode-go", "glm": "zai", "kimi": "kimi-coding"]
+
     /// The Settings → Providers row that backs a quota entry, if any. Only
     /// Codex and API-key entries are Hermes-backed; Claude CLI and Antigravity
     /// sign in outside Hermes.
@@ -113,7 +115,17 @@ extension ControlCenterModel {
         if case .apiKey = descriptor.connect { hermesBacked = true } else { hermesBacked = descriptor.id == "codex-hermes" }
         guard hermesBacked else { return nil }
         let id = descriptor.id == "codex-hermes" ? "codex" : descriptor.id
-        return hermesProviderRows?.first { QuotaWorkspacePresentation.quotaProviderID(for: $0.slug) == id && $0.access != .external }
+        let matches = hermesProviderRows?.filter { QuotaWorkspacePresentation.quotaProviderID(for: $0.slug) == id && $0.access != .external }
+        // Several Hermes slugs share one quota id (opencode-go/-zen, kimi-coding/-cn); take the one the quota reader reads.
+        return matches?.first { $0.slug == Self.quotaHermesSlugs[id] } ?? matches?.first
+    }
+
+    /// True for a quota card Hermes doesn't own (Claude CLI, Antigravity):
+    /// it is only monitored here and has no Settings → Providers row.
+    func isQuotaOnly(_ snapshot: ProviderQuotaSnapshot) -> Bool {
+        guard hermesProviderRows != nil, snapshot.hermesCredential == nil,
+              let descriptor = QuotaProviderCatalog.descriptor(for: snapshot.provider) else { return false }
+        return hermesRow(for: descriptor) == nil
     }
 
     /// Quota catalog entries whose Hermes provider is listed in Settings.
