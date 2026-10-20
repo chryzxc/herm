@@ -216,6 +216,10 @@ and must not introduce a second black window inside it.
   reserved area and its vertical padding.
 - Under Reduce Motion, every loop stops, disclosures are immediate, and
   geometry changes snap.
+- Decorative Bot motion (working poses, busy faces, orbit stars, huddle turns)
+  pauses while Herm is neither the active app nor holding a key panel; every
+  animated frame re-renders the whole window. Spinners and the notch work
+  marker keep running because they carry status.
 
 ### Components
 
@@ -323,6 +327,9 @@ will appear or what to do next.
   with navigation cues, tabs, icon actions, and chevron disclosures. Never use
   `.plain`, `.borderless`, or `.dockHover` for a standalone text action. A
   tooltip, pointer change, or hover-only color/outline is not a resting cue.
+- Menu toggle labels use the normal leading row inset, with a visible checked
+  or unchecked box at the trailing edge. Do not reserve a blank leading gutter
+  for an invisible checkmark.
 - Secondary and compact action outlines remain visible in every skin,
   including Glass and open chrome. Keep disabled outlines and labels visible
   with reduced emphasis. Text labels use at least 12pt; pending feedback stays
@@ -693,6 +700,12 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   A failed new-session submission retains its created session for retry. The workspace draft and attachments remain untouched. Pending
   and rejected sends stay in place; rejected text remains available for retry.
   Busy chats and offline state explain why sending is unavailable.
+- The quick-message header groups its title and destination picker, with a standard
+  compact Back action. The editor and Attach/Paste/More controls share one themed
+  input surface. Attach and Paste use compact button styles; More uses a 28pt icon.
+  Low quota is a compact advisory: a threshold-colored icon, readable provider
+  allowance text, and a secondary update time that confirms sending is available.
+  Attachments and status scroll within the fixed body; the footer stays in place.
 - Explicitly entering the composer gives the panel keyboard focus and prevents
   pointer-exit dismissal and automatic announcements from interrupting typing.
   Back, Escape, tab changes, or Open Herm leave composition. The separate draft
@@ -1313,20 +1326,17 @@ Chat retains the established `TurnActivityView`: live tool steps, `SignalTrace`,
 running-duration shimmer, and a compact expandable completed summary. Generated
 reply content must not replace or restyle this activity presentation.
 
-### Generated replies (experimental)
+### Generated replies
 
-Normal builds exclude `Features/GenerativeUI` and its tests. Enabling it requires
-`HERM_EXPERIMENTAL_GENERATIVE_UI=1` both when building and when launching. All
-host hooks go through `GenerativeUIIntegration`; disabled rendering delegates
-to the existing Markdown and streaming views, and disabled prompt preparation
-returns the original request. The feature owns its view state, draft values,
-parser, and HTML lifecycle. `DockModel`, `ChatMessage`, tool records, history
-parsing, and stored archives do not own experiment-specific state or fields.
-Legacy rendering context is hidden only in presentation; raw records remain
-unchanged.
+Generative UI is included in normal builds and tests. Settings → Appearance has one
+Generative UI toggle, on by default. Changes apply immediately: disabling closes any
+active HTML view, requests ordinary replies, and projects saved visual replies as
+readable text. Canonical Hermes records remain unchanged. All host hooks continue
+through `GenerativeUIIntegration`; the feature owns parsing, form state, and HTML
+lifecycle. Legacy rendering instructions remain hidden only in presentation.
 
 Hermes owns execution and transcripts; there is no additional workflow engine
-or operational store. In opt-in builds, rendering instructions travel through
+or operational store. Rendering instructions travel through
 existing prompt submissions and remain hidden from the visible conversation.
 Protocol-owned answers and runtime-owned voice keep their existing contracts.
 Generated forms use existing destination-validated submission handling without
@@ -1334,7 +1344,7 @@ adding rendering context or replacing the workspace composer.
 
 Compact live workflow cards, including PR commit/conflict graphs, are not yet
 implemented. Future cards must adapt existing authoritative stores inside this
-optional feature, retain the existing action handlers, and use current Dock
+feature, retain the existing action handlers, and use current Dock
 tokens. They must not infer verified status from generic tool completion or
 replace the established activity presentation.
 
@@ -1789,6 +1799,27 @@ requested, waiting, queued, failed, and merged results honestly. Description,
 comment, review, and edit-preview Markdown use the chat's canonical native
 rendering pipeline and follow the active theme.
 
+Pull request filter labels stay on one line at their intrinsic width. When tabs
+cannot fit, use the shared menu picker showing the selected filter. Session pull
+request toolbars follow the Issues list layout: full-width search first, filters
+and refresh below, 14pt horizontal gutters, 8pt row spacing, and a canvas background
+with a bottom hairline. Use unmodified shared tab/menu controls without extra tracks
+or outlines.
+
+Pull request and issue headers expose Open on GitHub through their dedicated
+external-link button only. The item actions menu keeps editing and Copy link
+without duplicating the open action.
+
+The Code toolbar exposes review actions through a 28pt ellipsis icon using
+`DockMenu`, with “Review actions” help and accessibility text.
+
+The Reviews tab separates thread browsing from the review composer with a quiet
+divider. Thread filters wrap below the title in narrow panes. Loading, unavailable,
+and empty thread messages share a stable content slot; empty threads explain where
+to add line comments. The review type sits beside “Your review”. Write and Preview
+share one bordered input surface, with a visible editor prompt, character limit,
+and a trailing primary submit action. Empty preview explains that no text is present.
+
 Assigned GitHub metadata uses `DockMetadataPill` and the shared `DockChipFlow`
 layout. Pills wrap within the detail pane; empty, loading, and unavailable
 messages remain plain text. Linked pills preserve their navigation actions.
@@ -1869,3 +1900,72 @@ GitHub label pills use the repository-provided six-digit RGB color as their fill
 in both item details and label editors. Keep the shared pill geometry and regular
 text weight; choose black or white ink for maximum contrast. Invalid/missing
 provider colors retain the neutral theme treatment. Other metadata stays neutral.
+
+
+### Native review and local workflows
+
+Shared diffs use the existing Dock canvas and code tokenizer. File navigation remains
+flat, with a 220–360pt expanded navigator and a compact picker in narrow contexts.
+Split presentation falls back to unified below 680pt without changing the preference.
+Full-width expanded review headers reserve the navigation rail plus traffic-light
+clearance. File titles show the filename with its parent path as supporting text.
+Diff toolbars use the standard Unified/Split tab treatment and 28pt shared
+icon controls for wrapping, Find, context loading, and expansion. Wrap retains
+an active tint and an accessible On/Off value; context loading uses an in-place
+spinner. Every icon has a descriptive tooltip and accessibility label.
+Unified/Split choices reflect the visible layout. Panes under 680pt and one-sided
+diffs disable Split and
+render a single full-width source pane. Escape closes the expanded file review.
+
+Expanded review uses the existing workspace/modal treatment and restores the source
+conversation. Read-only code has native selection, Find, and line-number gutters;
+private revision notes are distinct from provider review comments. Expanding local
+context validates the captured comparison and never combines stale source silently.
+
+Review guides are explicit requests in a separate Hermes conversation. Generated
+explanations never become verification evidence. Source changes invalidate their
+references. All review and comparison source stays bounded in memory; durable stores
+hold only user drafts or presentation references.
+
+Terminals are owned by the session-scoped terminal workspace store, not SwiftUI view
+lifetime. Switching sections or conversations preserves shells. At most four split
+panes are visible per group. Closing an active foreground job requires confirmation.
+App termination stops all owned shells; restored tabs start fresh shells. Terminal
+excerpts are user context and never count as verification evidence.
+
+Project commands run only after Run, in validated project-relative directories. No
+repository-discovered setup executes automatically. Preview discovery is limited to
+Herm terminal process descendants and never opens a server automatically. Desktop
+capture stages one explicit window in a draft, with optional app text off by default.
+Capture failures retain the draft. Saved prompts restore for editing without sending.
+
+PR watching stores stable references, respects notification preferences and quiet
+mode, and performs provider reads only. Model comparison launches are explicit,
+use existing Hermes sessions/background tasks, and never rank or merge results.
+
+New preference switches use `SettingsPreferenceRow` with the same small, accent-tinted
+native switch as adjacent settings, aligned to the trailing edge. The label and
+explanation occupy the leading column. Appearance → Replies contains Generative UI;
+optional capture text belongs to General → Window capture. Do not place capture
+permissions in the reply-presentation group. Compact diff controls wrap using the
+shared flow layout, and long revision notes put editing actions below their text.
+Terminal panes retain their preferred split axis but stack vertically when a horizontal
+split would make them unreadable. Pending model-comparison launches disable sheet dismissal, including Escape.
+Visual acceptance includes inspecting the exported native fixtures, not only checking
+that export succeeded. Check compact and workspace widths across light, dark, Glass,
+monochrome, and motion-free themes. Settings fixtures include an established preference
+row beside the new controls so alignment and control treatment can be compared directly.
+
+Private revision-note editors use a compact, content-sized Dock modal: file and
+line metadata, a flat numbered source excerpt, a labeled note input, then trailing
+Cancel and Add/Save actions. Changed-source notices use a warning icon with quiet
+supporting text. Review trays place the count and Send revision in their header;
+file metadata and Edit/Remove share a wrapping row, followed by readable-width note
+text and stale-source status. Explain why sending is unavailable beside the tray.
+
+Terminal and Browser Previews use a compact, surfaced globe/label/chevron control
+and a shared 320pt themed popover. Its header owns refresh feedback; rows separate
+process names from monospaced loopback addresses and include an open arrow. Empty,
+checking, and failed discovery occupy one stable slot. Failed refreshes retain
+previous rows with an explicit stale subtitle. Discovery pauses under hidden surfaces
+and rejects results from a previous terminal scope. Opening remains an explicit click.

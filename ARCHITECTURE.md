@@ -19,6 +19,8 @@ updated: 2026-10-17 · head: 938aeb6 (+ folder restructure)
 - `DesignSystem/` — theme, component styles, icons (`PhosphorIcons`), modal/menu/hover primitives.
 - `Bots/` — Bot roster page, avatar presentation (stable FNV-1a fallback identity), bot editor, bot chat routing.
 - `Repository/` — GitHub remote discovery, pull-request center, source control, code editor.
+- `Review/` — shared immutable diff documents, native canvas, read-only comparison loading, private revision notes, captured local changes, and review-guide coordination.
+- `Projects/` — explicitly configured local actions, project model preferences, and model comparison launch coordination.
 - `SessionWorkspace/` — session-scoped file explorer, browser, terminal, activity overview.
 - `Gateway/` — gateway state, connection health, recovery guidance.
 - `Workspace/` — `WorkspaceStore`: persistent local state (preferences, filters, cached metadata). Never a second copy of Hermes-owned data.

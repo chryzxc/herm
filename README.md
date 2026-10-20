@@ -170,25 +170,15 @@ Choose **Dots**, **Vertical line**, or **Ring** in **Settings → Appearance →
 
 ## Features
 
-### Generated replies (experimental)
+### Generated replies
 
-Generated replies are **off by default**. Normal builds exclude the experimental
-renderer and HTML host, keep existing prompts and Markdown, and retain live tool
-steps, the loading animation, and completed activity summaries.
+**Settings → Appearance → Generative UI** is on by default and applies immediately.
+Hermes can return native tables, charts, sources, galleries, and forms when they help;
+simple replies remain Markdown. Turning the setting off shows readable text and stops
+requesting visual formatting. Interactive HTML requires **Open interactive view** and
+runs in a separate offline sandbox with no tools, credentials, files, or network access.
 
-The optional feature lives in `Sources/Herm/Features/GenerativeUI`, behind one
-integration API. Opt-in builds can display validated `herm-ui` tables, charts,
-sources, galleries, forms, and explicitly opened offline HTML previews using
-Herm's theme. This is rendering infrastructure; compact live workflow cards
-such as a PR commit/conflict graph are not implemented yet.
-
-Future cards also include map/place comparisons. Their motion must coordinate
-selection, spatial changes, and details within one stable card, respect Reduce
-Motion, and follow the active theme. See the
-[motion study and acceptance criteria](docs/generative-ui.md#card-composition-and-motion).
-
-See [experimental setup, boundaries, and removal](docs/generative-ui.md) for
-developer opt-in instructions, supported content, and limitations.
+See [visual reply formats and isolation](docs/generative-ui.md).
 
 Workspace page headers use consistent text titles and subtitles, with refresh
 and other actions on the right. Buttons share 12pt themed labels, hover and
@@ -259,11 +249,21 @@ repair uses Hermes' own installation, credential and OAuth paths. Targeted subag
 labels queued corrections honestly; fingerprinted memory entries can be inspected and corrected.
 Each operation remains unavailable when its installed-runtime contract cannot be verified.
 
+Quick message uses a shared composer surface, a destination picker beside its title,
+and a compact quota advisory above the fixed send footer.
+
 ### Pull requests
 
 - Open pull requests for the session's repository, with check status, review state, blockers, and deep links.
 - The session header shows Pull Requests only when the session is connected to a project or repository.
+- Pull request filters adapt to narrow panes with a compact selection menu; session search stays in the full-width first row, matching the Issues layout.
+- Pull request and issue headers provide one GitHub open button; the actions menu keeps editing and Copy link.
 - Summary, Code, and Reviews tabs keep their full clickable area when the detail header shares the window title row.
+- Reviews groups thread filters and feedback in clear sections, with an editor prompt, Markdown preview, and character limit.
+- Diff toolbars use a grouped layout switch and compact icon actions, with a visible wrap state and loading spinner for additional context.
+- Expanded reviews keep file titles clear of window controls, show explicit Unified/Split choices, and use the full width for added or deleted files.
+- Review-option menus align labels to the left and show checked or unchecked boxes on the right.
+- The Code toolbar uses an ellipsis menu for review actions, including watching a pull request and generating a review guide.
 - The Pull requests page loads its list first, then fetches branch, check, and review details as rows come into view.
 - Create draft pull requests and edit a pull request's title or body, with a confirmation step.
 - Shared metadata uses wrapping pills for assigned labels, assignees, projects, milestones, and Development links. Labels, Projects V2 membership/Status, Milestone, assignees, and Development editors prepare changes locally and confirm before saving. Restricted Projects do not hide other details.
@@ -471,7 +471,7 @@ For more detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Herm doesn't yet support everything Hermes can do. Some features require additional frontend work or stable runtime support; others are deliberately left out for now:
 
-- Generated replies require an explicitly enabled experimental build and supported `herm-ui` content. Live workflow cards, full A2UI/MCP Apps compatibility, and connected HTML apps are not included.
+- Generated replies require supported `herm-ui` content. Generative UI ships enabled by default and can be disabled in Appearance. Live workflow cards, full A2UI/MCP Apps compatibility, and connected HTML apps are not included.
 - Directly invoking arbitrary third-party MCP tools from Herm (catalog/setup, credentials, authorization, connection tests and removal are available through supported Hermes lifecycle methods)
 - Structured cron report contracts and more detailed diagnostics (recorded chat-backed run output can already be read)
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
@@ -480,6 +480,33 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 - Force-pushing and dispatching GitHub workflows; native conflict editing and arbitrary Projects custom-field editing
 
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
+
+### Native review and workflow tools
+
+- Source Control's **Review comparisons** opens staged, working-tree, branch, and
+  commit comparisons from local Git, without fetching. Search covers loaded files;
+  incomplete coverage and changed sources remain visible.
+- Shared native diffs support syntax colors, split/unified layouts, wrapping, Find,
+  expanded review, private line-range revision notes, and validated local context expansion.
+- Revision notes stage context in the source conversation. GitHub line comments can
+  be collected as local review drafts and published together by **Submit review**.
+- Private revision-note editors show numbered captured source above the note field.
+  The tray keeps **Send revision** in its header and explains when an owning
+  conversation is required.
+- **Generate review guide** requests analysis in a separate Hermes conversation. It
+  preserves the original task and draft and does not claim an execution sandbox.
+- Terminals survive inspector and session navigation, support splits, and attach
+  selected output to chat. Closing the app ends shells; reopening starts fresh ones.
+- **Actions** stores manually launched project commands. **Previews** finds loopback
+  servers in Herm's terminal process trees. Its themed panel lists process names and
+  addresses, supports Refresh, and labels stale results. Nothing runs or opens automatically.
+- Composer attachments include window capture, saved prompts, and selected conversation
+  excerpts. Large pastes become text-file context; Command-Shift-V keeps text editable.
+  Optional app text is configured in **Settings → General → Window capture**.
+  **Settings → Appearance → Replies → Generative UI** controls visual replies.
+- PR watching is opt-in and passive while Herm runs. It never starts agent work.
+- Local model comparisons create separate worktrees and Hermes sessions, retaining
+  successful launches and failed-worktree recovery independently.
 
 ## Development
 
