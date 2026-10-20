@@ -58,11 +58,11 @@ final class ComposerCompletionController: ObservableObject {
         self.caret = caret
         task?.cancel()
         let isFirstKeystroke = trigger == nil
-        trigger = detected
         guard let detected else {
             close()
             return
         }
+        trigger = detected
         if case .mention = detected,
            ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: wasMention, isPickerVisible: true) {
             Task { @MainActor [botMode] in await botMode?.refreshNow(force: true) }
@@ -102,10 +102,12 @@ final class ComposerCompletionController: ObservableObject {
 
     func close() {
         task?.cancel()
-        trigger = nil
-        result = ComposerCompletion.Result()
-        index = 0
-        onOpenChanged(false)
+        task = nil
+        let wasOpen = trigger != nil || !result.items.isEmpty
+        if trigger != nil { trigger = nil }
+        if result != ComposerCompletion.Result() { result = ComposerCompletion.Result() }
+        if index != 0 { index = 0 }
+        if wasOpen { onOpenChanged(false) }
     }
 
     /// The draft split at the trigger's caret; completions rewrite only `before`.
