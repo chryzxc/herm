@@ -19,6 +19,7 @@ struct ConversationScrollObserverTests {
         let controller = ConversationScrollController()
         let recorder = Recorder()
         let tailScroll = ConversationTailScrollScheduler()
+        let presentation = ConversationScrollPresentationState()
         defer { tailScroll.cancel() }
         let content = ScrollView {
             VStack(spacing: 0) {
@@ -34,6 +35,7 @@ struct ConversationScrollObserverTests {
                     onScrollSettled: { geometry in recorder.settledTops.append(geometry.visibleTop) },
                     onScrollAwayFromBottom: {
                         recorder.scrollsAwayFromBottom += 1
+                        presentation.isAtBottom = false
                         tailScroll.cancel()
                     }
                 )
@@ -65,6 +67,7 @@ struct ConversationScrollObserverTests {
         let offset: CGFloat = document.isFlipped ? -12 : 12
         clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: clip.bounds.origin.y + offset))
         #expect(recorder.scrollsAwayFromBottom == 1)
+        #expect(!presentation.isAtBottom)
         #expect(recorder.settledTops.count == settledCount)
         try await Task.sleep(for: .milliseconds(160))
         #expect(recorder.tailScrolls == 0)
