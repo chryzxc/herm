@@ -62,7 +62,10 @@ struct ConversationMessageRow: View, Equatable {
     let onPin: () -> Void
     let forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)?
     @State private var sendTarget: BotSummary?
-    @State private var isHovering = false
+    @State private var hoverPresentation: ConversationRowHoverPresentation
+    #if DEBUG
+    @Environment(\.conversationRowEvaluation) private var evaluation
+    #endif
 
     let loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)?
     init(
@@ -89,7 +92,8 @@ struct ConversationMessageRow: View, Equatable {
         isPinned: Bool = false,
         onPin: @escaping () -> Void = {},
         forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)? = nil,
-        loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)? = nil
+        loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)? = nil,
+        hoverPresentation: ConversationRowHoverPresentation = ConversationRowHoverPresentation()
     ) {
         self.message = message
         self.isStreamingMessage = isStreamingMessage
@@ -115,6 +119,7 @@ struct ConversationMessageRow: View, Equatable {
         self.onPin = onPin
         self.forwardContent = forwardContent
         self.loadKanbanDetail = loadKanbanDetail
+        self._hoverPresentation = State(initialValue: hoverPresentation)
     }
 
     nonisolated static func == (lhs: ConversationMessageRow, rhs: ConversationMessageRow) -> Bool {
@@ -162,6 +167,9 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     var body: some View {
+        #if DEBUG
+        let _ = evaluation?("message", -1)
+        #endif
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
                 let fullText = GenerativeUIIntegration.displayUserText(message.text).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -230,10 +238,9 @@ struct ConversationMessageRow: View, Equatable {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(Color.dockAccent)
                         }
-                        Text(message.timeLabel)
+                        ConversationRowHoverTimestamp(text: message.timeLabel, hover: hoverPresentation)
                             .font(DockTypography.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
-                            .opacity(isHovering ? 1 : 0)
                         HStack(spacing: 0) {
                             actionButton(.copy, action: onCopy)
                             if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
@@ -242,7 +249,7 @@ struct ConversationMessageRow: View, Equatable {
                     .padding(.horizontal, 4)
                     .padding(.top, 2)
                 }
-                .onHover { isHovering = $0 }
+                .onHover { hoverPresentation.isHovering = $0 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
@@ -337,7 +344,7 @@ struct ConversationMessageRow: View, Equatable {
                         messageMetadata
                     }
                 }
-                .onHover { isHovering = $0 }
+                .onHover { hoverPresentation.isHovering = $0 }
             }
         }
         .padding(.horizontal, metrics.contentInset)
@@ -489,9 +496,12 @@ struct ConversationMessageRow: View, Equatable {
             if let modelName = message.modelName {
                 Text("· \(modelName)")
             }
-            Text(message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil
-                ? "· \(message.timeLabel)" : message.timeLabel)
-                .opacity(isHovering || message.isError ? 1 : 0)
+            ConversationRowHoverTimestamp(
+                text: message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil
+                    ? "· \(message.timeLabel)" : message.timeLabel,
+                hover: hoverPresentation,
+                alwaysVisible: message.isError
+            )
         }
         .font(DockTypography.machineMetadata)
         .foregroundStyle(Color.dockMetadataText)
@@ -565,11 +575,17 @@ struct SystemEventCard: View {
     let event: SystemEvent
     let text: String
     let timeLabel: String
-    @State private var isExpanded = false
-    @State private var isHovering = false
+    @State var isExpanded = false
+    @State var hoverPresentation = ConversationRowHoverPresentation()
+    #if DEBUG
+    @Environment(\.conversationRowEvaluation) private var evaluation
+    #endif
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        #if DEBUG
+        let _ = evaluation?("system", -1)
+        #endif
         let firstLine = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
         let canExpand = firstLine != text || text.count > 90
         VStack(alignment: .leading, spacing: DockSpacing.micro) {
@@ -598,14 +614,13 @@ struct SystemEventCard: View {
                 .padding(.horizontal, 8)
                 .frame(height: 26)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.dockPrimaryText.opacity(isHovering || isExpanded ? 0.05 : 0))
+                    ConversationRowHoverBackground(hover: hoverPresentation, isExpanded: isExpanded)
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
             .disabled(!canExpand)
-            .onHover { isHovering = $0 }
+            .onHover { hoverPresentation.isHovering = $0 }
             .help(canExpand ? (isExpanded ? "Collapse" : "Show full text") : "")
 
             if isExpanded {
@@ -642,14 +657,20 @@ struct FeedEventRow: View {
     let timeLabel: String
     let botsByID: [String: BotSummary]
     let avatarImages: [String: Data]
-    @State private var isExpanded = false
-    @State private var isHovering = false
+    @State var isExpanded = false
+    @State var hoverPresentation = ConversationRowHoverPresentation()
+    #if DEBUG
+    @Environment(\.conversationRowEvaluation) private var evaluation
+    #endif
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Detail lines, or a headline too long for one line, can expand.
     private var canExpand: Bool { line.detail != nil || line.headline.count > 90 }
 
     var body: some View {
+        #if DEBUG
+        let _ = evaluation?("feed", -1)
+        #endif
         VStack(alignment: .leading, spacing: DockSpacing.micro) {
             Button {
                 guard canExpand else { return }
@@ -683,13 +704,12 @@ struct FeedEventRow: View {
                 .frame(height: isExpanded ? nil : 28)
                 .clipped()
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.dockPrimaryText.opacity(isHovering || isExpanded ? 0.05 : 0))
+                    ConversationRowHoverBackground(hover: hoverPresentation, isExpanded: isExpanded)
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
-            .onHover { isHovering = $0 }
+            .onHover { hoverPresentation.isHovering = $0 }
             .help(canExpand ? (isExpanded ? "Hide details" : "Show details") : "")
 
             if isExpanded, let detail = line.detail {
