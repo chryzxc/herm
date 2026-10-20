@@ -250,6 +250,11 @@ final class BotService {
         if (result["confirm_required"] as? Bool) == true, let message = result["confirm_message"] as? String {
             return .needsConfirmation(message)
         }
+        // Sections are independent: Hermes answers `ok: false` with the failed ones in `applied`.
+        if (result["ok"] as? Bool) == false {
+            let failed = ((result["applied"] as? [String: Bool]) ?? [:]).filter { !$0.value }.keys.sorted()
+            throw ParseError.sectionsFailed(failed)
+        }
         try? await setRosterMeta(profileID: profileID, title: title, hidden: nil)
         return .applied
     }
@@ -480,7 +485,16 @@ final class BotService {
     }
     private static func safeID(_ value: String) -> Bool { !value.isEmpty && value.count <= 128 && value.allSatisfy { $0.isLetter || $0.isNumber || ".:_-".contains($0) } }
     private static let blockedFieldKeys: Set<String> = ["credentials", "memory", "path", "cwd", "token", "secret"]
-    private enum ParseError: Error { case invalid }
+    private enum ParseError: LocalizedError {
+        case invalid
+        case sectionsFailed([String])
+        var errorDescription: String? {
+            switch self {
+            case .invalid: "Hermes returned data Herm cannot read."
+            case .sectionsFailed(let names): "Hermes did not save: \(names.isEmpty ? "unknown section" : names.joined(separator: ", "))."
+            }
+        }
+    }
 }
 
 private extension BotDetails {

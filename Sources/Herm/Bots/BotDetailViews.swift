@@ -428,6 +428,10 @@ struct BotProfileEditorSheet: View {
             current.provider = nil
             current.model = nil
         } else {
+            guard !selectedProvider.isEmpty, !selectedModel.isEmpty else {
+                editError = "Choose both a provider and a model, or tap Keep."
+                return
+            }
             current.provider = selectedProvider.isEmpty ? nil : selectedProvider
             current.model = selectedModel.isEmpty ? nil : selectedModel
         }

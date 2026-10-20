@@ -7,6 +7,7 @@ struct BotRosterPage: View {
     @ObservedObject var model: BotModeModel
     @ObservedObject var dockModel: DockModel
     let onSelectBot: (BotSummary) -> Void
+    let onOpenChat: (BotSummary) -> Void
     let onOpenRecentSession: (BotSummary, BotChatReference) -> Void
     @State private var isShowingCreateSheet = false
     @State private var isPopulatingAvatars = false
@@ -355,7 +356,9 @@ struct BotRosterPage: View {
         MissionControlBotRow(
             bot: bot,
             avatarData: model.avatarImages[bot.id],
+            isSelected: model.selectedProfileID == bot.id,
             onSelect: { onSelectBot(bot) },
+            onOpenChat: { onOpenChat(bot) },
             onOpenRecentSession: { if let session = bot.liveWorkerChat ?? bot.recentSession { onOpenRecentSession(bot, session) } },
             onEdit: { editingBot = bot },
             onShowActivity: { activityBot = bot },
@@ -537,7 +540,7 @@ struct BotCreationSheet: View {
     }
 
     var body: some View {
-        DockModal(icon: .robot, title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.", width: 420) {
+        DockModal(icon: .ghost, title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.", width: 420) {
             modalSection("IDENTITY") {
                 labeledField("Name", hint: "Lowercase letters, numbers, dashes, or underscores") {
                     DockTextField("e.g. researcher", text: $name)
@@ -817,7 +820,9 @@ private struct BotRoutineRow: View, Equatable {
 struct MissionControlBotRow: View, Equatable {
     let bot: BotSummary
     let avatarData: Data?
+    var isSelected = false
     let onSelect: () -> Void
+    var onOpenChat: (() -> Void)?
     var onOpenRecentSession: (() -> Void)?
     var onEdit: (() -> Void)?
     var onShowActivity: (() -> Void)?
@@ -826,10 +831,12 @@ struct MissionControlBotRow: View, Equatable {
     @FocusState private var isFocused: Bool
     @State private var isHovering = false
 
-    init(bot: BotSummary, avatarData: Data? = nil, onSelect: @escaping () -> Void, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil) {
+    init(bot: BotSummary, avatarData: Data? = nil, isSelected: Bool = false, onSelect: @escaping () -> Void, onOpenChat: (() -> Void)? = nil, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil) {
         self.bot = bot
         self.avatarData = avatarData
+        self.isSelected = isSelected
         self.onSelect = onSelect
+        self.onOpenChat = onOpenChat
         self.onOpenRecentSession = onOpenRecentSession
         self.onEdit = onEdit
         self.onShowActivity = onShowActivity
@@ -838,13 +845,13 @@ struct MissionControlBotRow: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData
+        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.isSelected == rhs.isSelected
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 10) {
-                BotAvatarView(bot: bot, imageData: avatarData, size: 36)
+                BotAvatarView(bot: bot, imageData: avatarData, size: 44)
                 identity
                     .frame(maxWidth: .infinity, alignment: .leading)
                 actions
@@ -868,9 +875,10 @@ struct MissionControlBotRow: View, Equatable {
         .focusable()
         .focused($isFocused)
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Opens the canonical Bot chat")
+        .accessibilityHint(bot.isHidden ? "Hidden Bots cannot be selected" : "Switches the active Bot")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .dockContextMenu {
-            Button("Open Chat") { onSelect() }
+            Button("Open Chat") { onOpenChat?() }
             if let onOpenRecentSession {
                 Button("Open Recent Session", action: onOpenRecentSession)
             }
@@ -891,6 +899,7 @@ struct MissionControlBotRow: View, Equatable {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(bot.isHidden ? Color.dockSecondaryText : Color.dockPrimaryText)
                     .lineLimit(1)
+                if isSelected { chip("Active", color: Color.dockSuccess) }
                 if bot.isDefault { chip("Default", color: Color.dockAccent) }
                 if bot.isHidden { chip("Hidden", color: Color.dockMetadataText) }
             }
@@ -955,7 +964,7 @@ struct MissionControlBotRow: View, Equatable {
 
     private var actions: some View {
         DockMenu {
-            Button("Open Chat", icon: .chatText) { onSelect() }
+            Button("Open Chat", icon: .chatText) { onOpenChat?() }
             if let onOpenRecentSession {
                 Button("Open Recent Session", icon: .clock, action: onOpenRecentSession)
             }
@@ -980,10 +989,10 @@ struct MissionControlBotRow: View, Equatable {
 
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-            .fill(isHovering || isFocused ? Color.dockSurface4 : Color.dockSurface2)
+            .fill(isHovering || isFocused ? Color.dockSurface4 : isSelected ? Color.dockAccentMuted : Color.dockSurface2)
             .overlay {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .stroke(isFocused ? Color.dockAccent : Color.dockBorderLight, lineWidth: isFocused ? 1.5 : DockLayout.hairline)
+                    .stroke(isFocused || isSelected ? Color.dockAccent : Color.dockBorderLight, lineWidth: isFocused || isSelected ? 1.5 : DockLayout.hairline)
             }
     }
 }

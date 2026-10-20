@@ -160,7 +160,7 @@ struct MissionControlRail: View {
                 if showsOffice { globalDestination(.officePreview, style: style) }
             }
             VStack(spacing: 4) {
-                destination("Bots", icon: .robot, isSelected: navigationState.selection.selection == .bots, style: style, action: onOpenBots)
+                destination("Bots", icon: .ghost, isSelected: navigationState.selection.selection == .bots, style: style, action: onOpenBots)
                 globalDestination(.messaging, style: style)
                 globalDestination(.usage, style: style)
             }

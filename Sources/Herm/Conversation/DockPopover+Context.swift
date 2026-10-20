@@ -155,7 +155,12 @@ extension DockPopover {
                 BotRosterPage(
                     model: botMode,
                     dockModel: model,
-                    onSelectBot: openBotChat,
+                    onSelectBot: { bot in
+                        botMode.selectProfile(bot.id)
+                        missionControlNavigation.clearSelection()
+                        fullscreenSurface = .conversation
+                    },
+                    onOpenChat: openBotChat,
                     onOpenRecentSession: openRecentBotSession
                 )
                     .id("fullscreen-bots")
