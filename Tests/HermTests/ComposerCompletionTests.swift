@@ -1,8 +1,19 @@
+import Combine
 import Foundation
 import Testing
 @testable import Herm
 
 struct ComposerCompletionTests {
+    @MainActor @Test func closingClosedPickerDoesNotPublish() {
+        let controller = ComposerCompletionController()
+        var publications = 0
+        let observation = controller.objectWillChange.sink { publications += 1 }
+        controller.close()
+        controller.close()
+        #expect(publications == 0)
+        withExtendedLifetime(observation) {}
+    }
+
     @Test func detectsSlashAndMentionTriggers() {
         #expect(ComposerCompletionTrigger.detect(in: "/he") == .slash("/he"))
         #expect(ComposerCompletionTrigger.detect(in: "/personality al") == .slash("/personality al"))
