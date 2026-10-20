@@ -430,6 +430,44 @@ struct DockNotificationTests {
         #expect(model.status == .idle)
     }
 
+    @Test func reasoningDeltasWithoutStartBecomeAThoughtStep() {
+        let model = DockModel(initialSessionID: "session-think")
+        let send = { (type: String, payload: [String: Any]) in
+            model.receiveGatewayEvent(type, params: ["session_id": "session-think", "payload": payload])
+        }
+        send("message.start", [:])
+        send("thinking.delta", ["text": "waiting for provider"])
+        send("reasoning.delta", ["text": "Assessing "])
+        send("reasoning.delta", ["text": "CI setup"])
+        send("reasoning.available", ["text": "Assessing CI setup"])
+        send("tool.start", ["tool_id": "c1", "name": "terminal", "context": "ls"])
+        send("reasoning.available", ["text": "Next plan"])
+
+        let thoughts = model.streamingTurnActivity.filter { $0.name == ActiveToolCall.thinkingName }
+        // The open thought's text reaches the row on the next coalesced flush.
+        #expect(thoughts.map(\.result) == ["Assessing CI setup", ""])
+        #expect(model.streamingReasoningBuffer == "Next plan")
+        #expect(thoughts.first?.isComplete == true)
+        #expect(thoughts.first?.completedAt != nil)
+    }
+
+    @Test func stepDurationsReadLikeTheDesktop() {
+        #expect(TurnActivityView.stepDuration(0.065) == "65ms")
+        #expect(TurnActivityView.stepDuration(3.34) == "3.3s")
+        #expect(TurnActivityView.stepDuration(77) == "1m 17s")
+    }
+
+    @Test func reopeningLiveRowDoesNotLatchStreamingFlushOff() {
+        let model = DockModel()
+        model.beginStreamingMessage()
+        model.scheduleStreamingMessageFlush()
+        model.beginStreamingMessage()
+
+        #expect(model.streamingMessageFlushTask == nil)
+        model.scheduleStreamingMessageFlush()
+        #expect(model.streamingMessageFlushTask != nil)
+    }
+
     @Test func completionNotificationsAreOptIn() {
         let model = DockModel()
         model.setCompletionNotificationsEnabled(true)

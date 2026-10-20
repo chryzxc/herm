@@ -139,6 +139,52 @@ struct TranscriptHistoryPagingTests {
         #expect(messages[6].text == "hi")
     }
 
+    @Test func midTurnMessageKeepsEarlierSteps() {
+        let call = #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}]"#
+        let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
+            ["id": 1, "role": "user", "content": "fix it", "timestamp": 100.0],
+            ["id": 2, "role": "assistant", "content": "", "tool_calls": call, "timestamp": 110.0],
+            ["id": 3, "role": "tool", "content": "{}", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
+            ["id": 4, "role": "user", "content": "also add tests", "display_kind": "steer", "timestamp": 125.0],
+            ["id": 5, "role": "assistant", "content": "Done.", "timestamp": 160.0],
+        ])
+        let messages = DockModel.parseMessages(rows).messages
+        #expect(messages.map(\.role) == [.user, .hermes, .user, .hermes])
+        #expect(messages[1].activity.map(\.id) == ["c1"])
+        #expect(messages[2].text == "also add tests")
+    }
+
+    @MainActor @Test func unconfirmedMessagesSurviveUntilHermesStoresThem() {
+        let stored = ChatMessage(role: .user, text: "fix it")
+        let steer = ChatMessage(role: .user, text: "also add tests")
+        let pending = DockModel.unconfirmedUserMessages(
+            [stored, ChatMessage(role: .hermes, text: "On it"), steer], storedIDs: [stored.id]
+        )
+        #expect(pending.map(\.id) == [steer.id])
+        #expect(DockModel.missingUserMessages(pending, from: [stored]).map(\.id) == [steer.id])
+        let saved = ChatMessage(role: .user, text: "[OUT-OF-BAND USER MESSAGE]\nalso add tests")
+        #expect(DockModel.missingUserMessages(pending, from: [stored, saved]).isEmpty)
+    }
+
+    @Test func codexCommentaryRestoresAsMidTurnReplies() {
+        let call = { (id: String) in #"[{"id": "\#(id)", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}]"# }
+        let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
+            ["id": 1, "role": "user", "content": "fix it", "timestamp": 100.0],
+            ["id": 2, "role": "assistant", "content": "", "tool_calls": call("c1"), "timestamp": 110.0],
+            ["id": 3, "role": "tool", "content": "{}", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
+            ["id": 4, "role": "assistant", "content": "", "tool_calls": call("c2"), "reasoning": "Plan\n\nTracing it.",
+             "display_reasoning": "Plan", "display_commentary": ["Tracing it."], "timestamp": 155.0],
+            ["id": 5, "role": "tool", "content": "{}", "tool_call_id": "c2", "tool_name": "terminal", "timestamp": 160.0],
+        ])
+        let restored = DockModel.parseMessages(rows)
+        #expect(restored.messages.map(\.text) == ["fix it", "Tracing it."])
+        // Steps before the commentary sit above it; its own call stays with the running tail.
+        #expect(restored.messages[1].activity.map(\.id).filter { !$0.hasPrefix("thinking:") } == ["c1"])
+        #expect(restored.messages[1].activity.compactMap(\.result).contains("Plan"))
+        #expect(restored.messages[1].responseDuration == 55)
+        #expect(restored.trailingActivity.map(\.id) == ["c2"])
+    }
+
     @Test func storedToolRowsBecomeTheReplyActivity() {
         let calls = #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{\"command\": \"gh pr view\"}"}}]"#
         let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [

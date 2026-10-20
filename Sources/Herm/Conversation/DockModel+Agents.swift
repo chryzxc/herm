@@ -422,9 +422,12 @@ extension DockModel {
     }
 
     static func truncatedForPersistence(_ value: String) -> String {
-        guard value.count > toolPayloadPersistenceLimit else { return value }
+        // O(1) exit for the common short payload: a String never has more characters than UTF-8 bytes.
+        guard value.utf8.count > toolPayloadPersistenceLimit else { return value }
         let prefix = value.prefix(toolPayloadPersistenceLimit)
-        return "\(prefix)\n… [truncated \(value.count - toolPayloadPersistenceLimit) chars]"
+        guard prefix.endIndex < value.endIndex else { return value }
+        // Counting the dropped tail's Characters walked megabytes of tool output per re-read.
+        return "\(prefix)\n… [truncated \(value.utf8.count - prefix.utf8.count) bytes]"
     }
 
     static func eventText(_ value: Any?) -> String {

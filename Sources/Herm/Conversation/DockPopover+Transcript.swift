@@ -69,16 +69,22 @@ extension DockPopover {
                             }
                             // ponytail: 15s check while any Bot shows as working; Hermes has no
                             // reliable process-exit event for Bot DMs. A blocked card is not
-                            // re-checked until the session's Bot work changes.
+                            // re-checked until the session's Bot work changes. Each Bot's
+                            // latest step is read every 5s in between.
                             .task(id: [model.sessionID ?? ""] + model.workingBotDispatches.map(\.id)) {
+                                var tick = 0
                                 repeat {
-                                    await model.reconcileBotDispatches()
-                                    await model.reconcileKanbanAssignments { cardID in
-                                        await controlCenter.sessionKanbanTaskDetail(
-                                            KanbanTaskSummary(id: cardID, title: cardID, status: "", detail: nil, priority: nil, assignee: nil)
-                                        ).map { ($0.status, $0.latestSummary ?? $0.result) }
+                                    if tick % 3 == 0 {
+                                        await model.reconcileBotDispatches()
+                                        await model.reconcileKanbanAssignments { cardID in
+                                            await controlCenter.sessionKanbanTaskDetail(
+                                                KanbanTaskSummary(id: cardID, title: cardID, status: "", detail: nil, priority: nil, assignee: nil)
+                                            ).map { ($0.status, $0.latestSummary ?? $0.result) }
+                                        }
                                     }
-                                    try? await Task.sleep(for: .seconds(15))
+                                    await model.refreshBotLiveSteps()
+                                    tick += 1
+                                    try? await Task.sleep(for: .seconds(5))
                                 } while !Task.isCancelled && !model.workingBotDispatches.isEmpty
                             }
                             .padding(.vertical, 12)
@@ -675,10 +681,13 @@ extension DockPopover {
                 bot: isStreaming ? workingBot : nil,
                 botAvatar: workingBot.flatMap { botMode.avatarImages[$0.id] },
                 dispatches: model.botDispatchesByToolCallID,
+                botLiveSteps: model.botLiveSteps,
                 crew: isStreaming ? workingCrew : [],
                 botsByID: botMode.botsByID,
-                avatars: botMode.avatarImages
+                avatars: botMode.avatarImages,
+                rosterRevision: botMode.rosterRevision
             )
+            .equatable()
             .padding(.horizontal, conversationMetrics.contentInset + 4)
             .padding(.top, 8)
         }

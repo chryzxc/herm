@@ -161,7 +161,9 @@ enum TranscriptHistoryPaging {
                 var toolCalls = row["tool_calls"]
                 if let encoded = toolCalls as? String { toolCalls = try? JSONSerialization.jsonObject(with: Data(encoded.utf8)) }
                 activity["tool_calls"] = toolCalls as? [[String: Any]]
-                activity["reasoning"] = (row["reasoning"] ?? row["reasoning_content"]) as? String
+                // Codex commentary rides beside empty `content`; live it arrives as `message.interim`.
+                activity["display_commentary"] = row["display_commentary"] as? [String]
+                activity["reasoning"] = (row["display_reasoning"] ?? row["reasoning"] ?? row["reasoning_content"]) as? String
             }
             var text = storedText(row["display_content"] as? String ?? row["content"])
             if role == "user" {

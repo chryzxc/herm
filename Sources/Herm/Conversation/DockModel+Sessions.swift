@@ -502,6 +502,9 @@ extension DockModel {
         let isRefreshingActiveSession = session.id == sessionID || session.id == sessionStorageID
         if let sessionStorageID, streamingMessageID != nil {
             inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
+            unconfirmedUserMessagesBySessionID[sessionStorageID] = Self.unconfirmedUserMessages(
+                messages, storedIDs: Set(transcriptMessageIDsByRowID.values)
+            )
         }
         commitStreamingMessage()
         if let sessionStorageID {
@@ -654,12 +657,21 @@ extension DockModel {
             storedMessageReferences = StoredMessageReference.references(rows: transcriptRows, rowIDs: restored.rowIDs)
             // A turn that went live while the transcript loaded keeps its row.
             let liveRow = streamingMessageID.flatMap { id in messages.first { $0.id == id } }
+            // Mid-turn messages Hermes has not stored yet stay until it does.
+            let pendingUserMessages = sessionStorageID
+                .flatMap { unconfirmedUserMessagesBySessionID.removeValue(forKey: $0) }
+                .map { Self.missingUserMessages($0, from: restored.messages) } ?? []
             messages = restored.messages + [liveRow].compactMap { $0 }
             let stashedTurnActivity = sessionStorageID.flatMap { inFlightTurnActivityBySessionID.removeValue(forKey: $0) }
             if liveRow == nil, (result["running"] as? Bool) == true {
                 adoptRunningTurn(inflight: result["inflight"] as? [String: Any], activity: stashedTurnActivity ?? restored.trailingActivity)
             } else if liveRow == nil, !restored.trailingActivity.isEmpty {
                 showExternalTurn(restored.trailingActivity, generation: resumeGeneration)
+            }
+            // Only a turn still running can apply them; otherwise Hermes dropped them.
+            if streamingMessageID != nil, !pendingUserMessages.isEmpty {
+                let index = messages.firstIndex { $0.id == streamingMessageID } ?? messages.endIndex
+                messages.insert(contentsOf: Self.missingUserMessages(pendingUserMessages, from: messages), at: index)
             }
             rehydratePendingTranscriptImages(
                 restored.pendingImages,
@@ -682,6 +694,10 @@ extension DockModel {
             projectBotMessagesIntoActivity()
             restoreBotDispatches(calls: restored.messages.flatMap(\.activity) + restored.trailingActivity,
                                  rows: transcriptRows as? [[String: Any]] ?? [])
+            // Hermes' authoritative plan; todo events missed while detached never replay.
+            if let todos = (result["todo_state"] as? [String: Any])?["todos"] as? [[String: Any]] {
+                applyTodos(todos, sessionID: resolvedSessionID)
+            }
             scrollToLatestMessageRequest &+= 1
             cacheCurrentAgentState()
             refreshDelegationStatus()
@@ -872,5 +888,22 @@ extension DockModel {
     func markUnreadUpdate() {
         guard !isPopoverVisible else { return }
         hasUnreadResponse = true
+    }
+
+    /// User messages after the last row Hermes returned: sent live, not yet
+    /// confirmed by a reload.
+    static func unconfirmedUserMessages(_ messages: [ChatMessage], storedIDs: Set<UUID>) -> [ChatMessage] {
+        let start = (messages.lastIndex { storedIDs.contains($0.id) }).map { $0 + 1 } ?? 0
+        return messages[start...].filter { $0.role == .user }
+    }
+
+    /// `pending` minus what Hermes now stores; a stored row may carry extra
+    /// context after the typed text, or several steers joined into one.
+    static func missingUserMessages(_ pending: [ChatMessage], from restored: [ChatMessage]) -> [ChatMessage] {
+        let stored = restored.filter { $0.role == .user }.map(\.text)
+        return pending.filter { message in
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !text.isEmpty && !stored.contains { $0.contains(text) }
+        }
     }
 }

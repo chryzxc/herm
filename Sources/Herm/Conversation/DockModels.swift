@@ -400,7 +400,8 @@ struct HermesRuntimeModelSwitchRequest: Equatable {
 }
 
 struct ChatMessage: Identifiable, Equatable {
-    let id: UUID
+    /// Mutable only so a re-read transcript can keep its rows' IDs.
+    var id: UUID
     let role: Role
     let text: String
     let images: [NSImage]

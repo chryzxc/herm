@@ -1,5 +1,36 @@
 import SwiftUI
 
+/// Whether the user is engaged with Herm: the app is active, or one of its
+/// non-activating panels is key. Decorative Bot motion pauses otherwise, since
+/// every animated frame re-renders and re-lays out the whole hosting window.
+/// Spinners and the notch indicator keep running; they carry real status.
+@MainActor
+final class HermFocus: ObservableObject {
+    static let shared = HermFocus()
+    @Published private(set) var engaged = true
+    private var observers: [NSObjectProtocol] = []
+
+    private init() {
+        let names: [Notification.Name] = [
+            NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+            NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
+        ]
+        observers = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // Key changes hand off through a nil key window; read the settled state next turn.
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.refresh() } }
+            }
+        }
+        refresh()
+    }
+
+    private func refresh() {
+        // NSApp is nil in unit tests that render a Bot before any app exists.
+        let next = NSApp?.isActive == true || NSApp?.keyWindow != nil
+        if engaged != next { engaged = next }
+    }
+}
+
 /// Deterministic visual identity for built-in Bot roles. Stored Hermes assets
 /// still take precedence; this only improves the local fallback avatar.
 enum BotAvatarPresentation {
@@ -179,10 +210,11 @@ struct BotWorkingAvatarView: View {
     @State private var reactionAt: Date?
     @State private var reactionStart = BotWorkingPose.rest
     @State private var variation = 0
+    @ObservedObject private var focus = HermFocus.shared
 
     var body: some View {
-        let moves = !reduceMotion && DockThemeStyle.current.animates
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !moves)) { context in
+        let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
+        TimelineView(.dockMotion(paused: !moves)) { context in
             let age = reactionAt.map { context.date.timeIntervalSince($0) } ?? BotWorkingPose.reactionDuration
             let reacting = moves && age < BotWorkingPose.reactionDuration
             let pose = moves ? currentPose(at: context.date) : .rest
@@ -195,7 +227,8 @@ struct BotWorkingAvatarView: View {
                 // Echo the real activity glyph as the Bot reaches toward the rows above.
                 DockIcon(activityIcon, size: 12, color: .dockAccent)
                     .padding(3)
-                    .background(Circle().fill(Color.dockCanvas))
+                    .background(Circle().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5))
+                    .overlay(Circle().stroke(Color.dockBorderStrong, lineWidth: 0.75))
                     .scaleEffect(reacting ? 0.7 + pose.lift * 0.3 : 0.7)
                     .offset(x: size * 0.3 - pose.reach * size, y: -size * 0.3 - pose.lift * size * 0.24)
                     .opacity(reacting && !activitySignature.isEmpty ? Double(pose.lift) : 0)
@@ -265,19 +298,22 @@ struct BotFacePose {
     }
 }
 
-/// Drives a pose from the clock. Paused under Reduce Motion.
+/// Drives a pose from the clock while the Bot is busy. Idle faces stay still:
+/// one 15fps timeline per visible avatar made every list scroll heavy.
+/// Paused under Reduce Motion.
 private struct BotMotion<Content: View>: View {
     let id: String
     let animated: Bool
     let busy: Bool
     @ViewBuilder let content: (BotFacePose) -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var focus = HermFocus.shared
 
     var body: some View {
-        if animated && !reduceMotion && DockThemeStyle.current.animates {
+        if animated && busy && !reduceMotion && DockThemeStyle.current.animates && focus.engaged {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
-            TimelineView(.animation(minimumInterval: busy ? 1.0 / 30 : 1.0 / 15)) { context in
-                content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: busy))
+            TimelineView(.dockMotion()) { context in
+                content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: true))
             }
         } else {
             content(.rest)
@@ -309,19 +345,21 @@ private struct BotLiveImage: View {
 /// A star orbiting a working Bot, drawn outside the avatar's clip. Only
 /// for Hermes default faces; uploaded art is left alone.
 struct BotSwirlRing: View {
-    private static let gold = Color(hue: 0.13, saturation: 0.55, brightness: 1)
+    private static let gold = Color(hue: 0.12, saturation: 0.72, brightness: 0.97)
     let id: String
     var size: CGFloat
     /// The orbit passes behind and in front of the Bot: put one ring under the
     /// avatar and a `front` one over it, and each draws only its half.
     var front = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var focus = HermFocus.shared
 
     var body: some View {
         if !reduceMotion && DockThemeStyle.current.animates {
             let seed = BotAvatarPresentation.seed(for: id)
             let phase = Double(seed % 1000) / 100
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+            // Paused, the star holds its last spot rather than vanishing.
+            TimelineView(.dockMotion(paused: !focus.engaged)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate + phase
                 let alpha = BotFacePose.swirl(at: t, seed: seed).1
                 // A star on a tilted orbit: dips low and grows in front, rides
@@ -342,7 +380,7 @@ struct BotSwirlRing: View {
                         var dot = ctx
                         dot.opacity *= (front ? 1 : 0.7) * (1 - Double(i) * 0.25)
                         dot.fill(shape, with: .color(Self.gold))
-                        dot.stroke(shape, with: .color(.black.opacity(0.3)), lineWidth: i == 0 ? 0.75 : 0.5)
+                        dot.stroke(shape, with: .color(.black.opacity(0.45)), lineWidth: i == 0 ? 0.75 : 0.5)
                     }
                 }
                 .frame(width: size * 1.4, height: size * 1.4)
@@ -356,7 +394,7 @@ struct BotSwirlRing: View {
 /// turn it is bobs with a typing bubble, and a star arcs to the next. A
 /// finished lead stays in the row, dimmed and out of the rotation.
 struct BotHuddle: View {
-    private static let gold = Color(hue: 0.13, saturation: 0.55, brightness: 1)
+    private static let gold = Color(hue: 0.12, saturation: 0.72, brightness: 0.97)
     /// One member's turn, in seconds.
     private static let turn = 0.8
     let lead: BotSummary
@@ -372,6 +410,7 @@ struct BotHuddle: View {
     var leadSignature: [String]? = nil
     var leadIcon: Ph = .brain
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var focus = HermFocus.shared
 
     private static let gap: CGFloat = 8
     /// Centers the lead in the same 56pt slot `SignalTrace` uses.
@@ -385,10 +424,10 @@ struct BotHuddle: View {
     }
 
     var body: some View {
-        let moves = !reduceMotion && DockThemeStyle.current.animates
+        let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
         // Members that take turns; a finished lead only watches.
         let rotation = leadDone ? Array(1...max(1, partners.count)) : Array(0...partners.count)
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !moves)) { context in
+        TimelineView(.dockMotion(paused: !moves)) { context in
             let clock = context.date.timeIntervalSinceReferenceDate / Self.turn
             let step = Int(clock)
             let phase = clock - Double(step)
@@ -433,7 +472,7 @@ struct BotHuddle: View {
         // Faint dotted arcs between neighbours in the rotation.
         for (a, b) in zip(rotation, rotation.dropFirst()) {
             let path = arc(from: CGPoint(x: xs[a], y: top(a)), to: CGPoint(x: xs[b], y: top(b))).path
-            ctx.stroke(path, with: .color(Color.dockBorderLight), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+            ctx.stroke(path, with: .color(Color.dockSecondaryText.opacity(0.55)), style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [2, 3]))
         }
         guard moves, rotation.count > 1, phase < 0.6 else { return }
         let flight = arc(from: CGPoint(x: xs[active], y: top(active)), to: CGPoint(x: xs[next], y: top(next)))
@@ -444,7 +483,7 @@ struct BotHuddle: View {
         var dot = ctx
         dot.opacity = phase < 0.08 ? phase / 0.08 : phase > 0.5 ? (0.6 - phase) / 0.1 : 1
         dot.fill(star, with: .color(Self.gold))
-        dot.stroke(star, with: .color(.black.opacity(0.3)), lineWidth: 0.6)
+        dot.stroke(star, with: .color(.black.opacity(0.45)), lineWidth: 0.7)
     }
 
     private func member(_ bot: BotSummary, index: Int, size: CGFloat, active: Int, phase: Double) -> some View {
@@ -468,12 +507,13 @@ struct BotHuddle: View {
                 if talking && phase < 0.75 {
                     Text("•••")
                         .font(.system(size: 6, weight: .heavy))
-                        .foregroundStyle(Color.dockSecondaryText)
+                        .foregroundStyle(Color.dockPrimaryText.opacity(0.75))
                         .padding(.horizontal, 3).padding(.vertical, 2)
                         .background(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 1, bottomTrailingRadius: 5, topTrailingRadius: 5)
-                            .fill(Color.dockCanvas))
+                            .fill(Color.dockSurface)
+                            .shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5))
                         .overlay(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 1, bottomTrailingRadius: 5, topTrailingRadius: 5)
-                            .stroke(Color.dockBorderLight, lineWidth: 0.5))
+                            .stroke(Color.dockBorderStrong, lineWidth: 0.75))
                         .offset(x: 9, y: -8)
                         .transition(.opacity)
                 }
@@ -495,7 +535,7 @@ struct BotHuddle: View {
 
 /// Herm's own blob face: a soft seeded body with eyes, cheeks and a mouth.
 /// Everything is derived from the profile ID, so a Bot always gets the same
-/// blob. `animated` wobbles the body, blinks and glances; leave it off for
+/// blob. `animated` wobbles the body, blinks and glances while `busy`; leave it off for
 /// still renders (`ImageRenderer` uploads).
 struct BotFaceMark: View {
     let id: String

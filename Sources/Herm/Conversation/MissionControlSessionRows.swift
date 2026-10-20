@@ -62,7 +62,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 SessionActivityGlyph(isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate)
-                if let attentionDot {
+                if let attentionDot, !(attentionDot == .failure && session.isWorking) {
                     if let state = attentionDot.activityState {
                         DockActivityIndicator(state: state, size: 10, unreadDot: true)
                     } else {

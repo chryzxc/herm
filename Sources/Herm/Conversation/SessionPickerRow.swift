@@ -134,7 +134,7 @@ struct WorkingTitleShimmer: ViewModifier {
     func body(content: Content) -> some View {
         if isActive && !reduceMotion {
             content.overlay {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                TimelineView(.dockMotion()) { context in
                     GeometryReader { geo in
                         let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
                         let band = max(geo.size.width * 0.4, 40)

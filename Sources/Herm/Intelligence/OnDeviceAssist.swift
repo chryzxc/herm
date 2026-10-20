@@ -1,4 +1,5 @@
 import Foundation
+import os
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -15,7 +16,17 @@ enum OnDeviceAssist {
     static let attribution = "Apple Intelligence"
     static let summarizeRepliesKey = "herm.summarizeRepliesOnDevice.v1"
 
+    /// The composer reads this on every keystroke; the system query is not cheap.
+    private static let availability = OSAllocatedUnfairLock<(value: Bool, checkedAt: Date)?>(initialState: nil)
+
     static var isAvailable: Bool {
+        if let cached = availability.withLock({ $0 }), Date().timeIntervalSince(cached.checkedAt) < 30 { return cached.value }
+        let value = checkAvailability()
+        availability.withLock { $0 = (value, Date()) }
+        return value
+    }
+
+    private static func checkAvailability() -> Bool {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
             if case .available = SystemLanguageModel.default.availability { return true }

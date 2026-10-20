@@ -480,7 +480,6 @@ struct SignalTrace: View {
     var bot: BotSummary? = nil
     var botAvatar: Data? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathe = false
 
     static let size: CGFloat = 56
 
@@ -495,10 +494,13 @@ struct SignalTrace: View {
                                      activitySignature: activity.map { "\($0.id):\($0.isComplete)" },
                                      activityIcon: Self.glyph(for: activity.last))
             } else {
-                Circle()
-                    .fill(color.opacity(breathe ? 0.18 : 0.08))
-                    .frame(width: 28, height: 28)
-                    .scaleEffect(breathe ? 1 : 0.88)
+                TimelineView(.dockMotion(paused: reduceMotion)) { context in
+                    let breathe = reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 2.4)
+                    Circle()
+                        .fill(color.opacity(0.08 + 0.1 * breathe))
+                        .frame(width: 28, height: 28)
+                        .scaleEffect(0.88 + 0.12 * breathe)
+                }
                 // Keyed by glyph so each new step starts its own trace loop.
                 TracingGlyph(icon: liveGlyph, color: color)
                     .id(liveGlyph)
@@ -509,10 +511,6 @@ struct SignalTrace: View {
         .frame(width: bot == nil ? 32 : Self.size, height: bot == nil ? 32 : Self.size)
         .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: liveGlyph)
         .animation(.easeInOut(duration: 0.3), value: phase)
-        .onAppear {
-            guard bot == nil, !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { breathe = true }
-        }
         .accessibilityHidden(true)
     }
 
@@ -530,32 +528,28 @@ private struct TracingGlyph: View {
     let icon: Ph
     let color: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var trace: CGFloat = 0
-    @State private var breathe = false
 
     var body: some View {
-        ZStack {
-            PhosphorShape(icon: icon).fill(color.opacity(reduceMotion ? 1 : 0.35))
-            // Phosphor glyphs are filled outlines, so a stroke draws both edges; keep it hairline.
-            PhosphorShape(icon: icon)
-                .trim(from: 0, to: reduceMotion ? 0 : trace)
-                .stroke(color.opacity(0.7), style: StrokeStyle(lineWidth: 0.35, lineCap: .round, lineJoin: .round))
-        }
-        .frame(width: 13, height: 13)
-        .scaleEffect(breathe ? 1.06 : 0.94)
-        .opacity(breathe ? 1 : 0.7)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: false)) { trace = 1 }
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { breathe = true }
+        TimelineView(.dockMotion(paused: reduceMotion)) { context in
+            let trace = reduceMotion ? 0 : DockMotionSchedule.loop(context.date, period: 1.6)
+            let breathe = reduceMotion ? 1 : DockMotionSchedule.breath(context.date, period: 2.4)
+            ZStack {
+                PhosphorShape(icon: icon).fill(color.opacity(reduceMotion ? 1 : 0.35))
+                // Phosphor glyphs are filled outlines, so a stroke draws both edges; keep it hairline.
+                PhosphorShape(icon: icon)
+                    .trim(from: 0, to: trace)
+                    .stroke(color.opacity(0.7), style: StrokeStyle(lineWidth: 0.35, lineCap: .round, lineJoin: .round))
+            }
+            .frame(width: 13, height: 13)
+            .scaleEffect(0.94 + 0.12 * breathe)
+            .opacity(0.7 + 0.3 * breathe)
         }
     }
 }
 
-/// One soft highlight sweeping across text; a single masked offset animation.
+/// One soft highlight sweeping across text, on the shared motion clock.
 private struct RunningShimmer: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sweep = false
 
     func body(content: Content) -> some View {
         if reduceMotion {
@@ -563,17 +557,17 @@ private struct RunningShimmer: ViewModifier {
         } else {
             content
                 .overlay {
-                    GeometryReader { proxy in
-                        LinearGradient(colors: [.clear, Color.dockPrimaryText.opacity(0.55), .clear],
-                                       startPoint: .leading, endPoint: .trailing)
-                            .frame(width: proxy.size.width * 0.45)
-                            .offset(x: sweep ? proxy.size.width : -proxy.size.width * 0.45)
+                    TimelineView(.dockMotion()) { context in
+                        GeometryReader { proxy in
+                            let sweep = DockMotionSchedule.loop(context.date, period: 1.8)
+                            LinearGradient(colors: [.clear, Color.dockPrimaryText.opacity(0.55), .clear],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: proxy.size.width * 0.45)
+                                .offset(x: proxy.size.width * (1.45 * sweep - 0.45))
+                        }
                     }
                     .mask(content)
                     .allowsHitTesting(false)
-                }
-                .onAppear {
-                    withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) { sweep = true }
                 }
         }
     }
@@ -620,6 +614,7 @@ struct BotDispatchCard: View {
   var assignedIDs: Set<String> = []
   var botsByID: [String: BotSummary] = [:]
   var avatars: [String: Data] = [:]
+  var liveSteps: [String: String] = [:]
   @State private var openIDs: Set<String> = []
 
   var body: some View {
@@ -666,6 +661,18 @@ struct BotDispatchCard: View {
       .buttonStyle(.dockHover)
       .help(record.state == .failed ? (reply ?? "Failed") : record.linkedCardID.map { "Kanban \($0)" } ?? "")
       .accessibilityLabel(canOpen ? (isOpen ? "Hide reply" : "Show reply") : "Messaged \(bot?.name ?? record.botName)")
+      if record.isLive, let step = liveSteps[record.id] {
+        // The Bot's newest step, read from its own session.
+        Text(step)
+          .font(.system(size: 11))
+          .foregroundStyle(Color.dockMetadataText)
+          .lineLimit(1).truncationMode(.tail)
+          .modifier(RunningShimmer())
+          .padding(.leading, 24)
+          .contentTransition(.opacity)
+          .animation(.easeOut(duration: 0.18), value: step)
+          .help(step)
+      }
       if isOpen, let reply {
         Text(DockModel.botReply(from: reply).reply)
           .font(.system(size: 12))
@@ -740,7 +747,7 @@ extension BotActivityRecord {
 /// The tool calls behind one response, shown above its bubble. While the
 /// response streams the list stays open and grows per call; once complete it
 /// collapses to a "Worked for …" summary the reader can expand.
-struct TurnActivityView: View {
+struct TurnActivityView: View, Equatable {
   let activity: [ActiveToolCall]
   /// Turn start while streaming; nil once the response is complete.
   let runningSince: Date?
@@ -749,14 +756,27 @@ struct TurnActivityView: View {
   var botAvatar: Data? = nil
   /// Bot DMs keyed by the tool call that sent them; those calls render as a card.
   var dispatches: [String: BotActivityRecord] = [:]
+  /// What each working DM's Bot is doing, keyed by record id.
+  var botLiveSteps: [String: String] = [:]
   /// Bots this session messaged that are still working, shown in the huddle.
   var crew: [BotSummary] = []
   var botsByID: [String: BotSummary] = [:]
   var avatars: [String: Data] = [:]
+  /// Stands in for `botsByID`, `avatars` and `botAvatar` in `==`.
+  var rosterRevision = 0
   @State private var isExpanded = false
   @State private var expandedThoughtIDs: Set<String> = []
   @State private var expandedDiffIDs: Set<String> = []
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  /// The transcript re-renders on every DockModel publication; unchanged
+  /// turns skip their body instead of re-laying out each tool row.
+  nonisolated static func == (lhs: TurnActivityView, rhs: TurnActivityView) -> Bool {
+    lhs.activity == rhs.activity && lhs.runningSince == rhs.runningSince
+      && lhs.duration == rhs.duration && lhs.bot == rhs.bot && lhs.crew == rhs.crew
+      && lhs.dispatches == rhs.dispatches && lhs.botLiveSteps == rhs.botLiveSteps
+      && lhs.rosterRevision == rhs.rosterRevision
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
@@ -833,6 +853,14 @@ struct TurnActivityView: View {
     return "\(value) \(unit)\(value == 1 ? "" : "s")"
   }
 
+  /// Precise step time: "65ms", "3.3s", "1m 17s".
+  static func stepDuration(_ seconds: TimeInterval) -> String {
+    let s = max(0, seconds)
+    if s < 1 { return "\(Int(s * 1000))ms" }
+    if s < 60 { return String(format: "%.1fs", s) }
+    return BotDispatchCard.clock(s)
+  }
+
   private var summary: String {
     let count = "\(activity.count) step\(activity.count == 1 ? "" : "s")"
     return duration.map { "Worked for \(Self.roughDuration($0)) · \(count)" } ?? "Worked · \(count)"
@@ -868,7 +896,7 @@ struct TurnActivityView: View {
 
   private func card(_ segment: Segment) -> some View {
     let assigned = zip(segment.calls, segment.records).filter { $0.0.name == "kanban_create" }.map(\.1.id)
-    return BotDispatchCard(records: segment.records, assignedIDs: Set(assigned), botsByID: botsByID, avatars: avatars)
+    return BotDispatchCard(records: segment.records, assignedIDs: Set(assigned), botsByID: botsByID, avatars: avatars, liveSteps: botLiveSteps)
   }
 
   private var steps: some View {
@@ -975,11 +1003,29 @@ struct TurnActivityView: View {
       } else {
         stepIcon(Self.icon(for: call.name))
       }
-      Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
+      let title = Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
         .font(.system(size: 12))
-        .foregroundStyle(Color.dockSecondaryText)
+        .foregroundStyle(call.isComplete ? Color.dockSecondaryText : Color.dockPrimaryText)
         .lineLimit(1).truncationMode(.tail)
-      if !call.isComplete { ProgressView().controlSize(.mini) }
+      if call.isComplete {
+        title
+        if let completedAt = call.completedAt {
+          Text(Self.stepDuration(completedAt.timeIntervalSince(call.startedAt)))
+            .font(.system(size: 11).monospacedDigit())
+            .foregroundStyle(Color.dockMetadataText)
+        }
+      } else {
+        // The live step reads like a working Bot card: shimmer plus a running clock.
+        title.modifier(RunningShimmer())
+        Spacer(minLength: 8)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+          Text("running · \(BotDispatchCard.clock(context.date.timeIntervalSince(call.startedAt)))")
+            .contentTransition(.numericText())
+            .modifier(RunningShimmer())
+        }
+        .font(.system(size: 11).monospacedDigit())
+        .foregroundStyle(Color.dockMetadataText)
+      }
     }
     .help(Self.tooltip(for: call))
   }
@@ -1046,8 +1092,6 @@ extension ActiveToolCall {
 private struct CompactionStepRow: View {
   let call: ActiveToolCall
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var isSqueezed = false
-  @State private var shimmer: CGFloat = -1
 
   var body: some View {
     HStack(spacing: 8) {
@@ -1056,22 +1100,21 @@ private struct CompactionStepRow: View {
           .transition(.scale.combined(with: .opacity))
         Text(title).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
       } else {
-        squeezeGlyph.frame(width: 16, height: 16)
-        Text("Compacting context")
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(Color.dockAccent)
-          .overlay { if !reduceMotion { shimmerOverlay } }
+        TimelineView(.dockMotion(paused: reduceMotion)) { context in
+          HStack(spacing: 8) {
+            squeezeGlyph(reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 1.4)).frame(width: 16, height: 16)
+            Text("Compacting context")
+              .font(.system(size: 12, weight: .medium))
+              .foregroundStyle(Color.dockAccent)
+              .overlay { if !reduceMotion { shimmerOverlay(-1 + 2 * DockMotionSchedule.loop(context.date, period: 1.4)) } }
+          }
+        }
       }
     }
     .animation(.dockEase(duration: 0.25), value: call.isComplete)
     .help("Hermes summarizes older turns to free context")
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(call.isComplete ? title : "Compacting context")
-    .onAppear {
-      guard !reduceMotion, !call.isComplete else { return }
-      withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { isSqueezed = true }
-      withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { shimmer = 1 }
-    }
   }
 
   private var title: String {
@@ -1080,18 +1123,18 @@ private struct CompactionStepRow: View {
   }
 
   /// Three transcript lines that fold toward the middle one and back.
-  private var squeezeGlyph: some View {
+  private func squeezeGlyph(_ squeeze: Double) -> some View {
     ZStack {
       ForEach(Array([(-4.5, 10.0), (0, 14.0), (4.5, 8.0)].enumerated()), id: \.offset) { index, line in
         Capsule()
-          .fill(Color.dockAccent.opacity(index == 1 ? 1 : isSqueezed ? 0.25 : 0.7))
-          .frame(width: isSqueezed ? 14 : line.1, height: 2)
-          .offset(y: isSqueezed ? 0 : line.0)
+          .fill(Color.dockAccent.opacity(index == 1 ? 1 : 0.7 - 0.45 * squeeze))
+          .frame(width: line.1 + (14 - line.1) * squeeze, height: 2)
+          .offset(y: line.0 * (1 - squeeze))
       }
     }
   }
 
-  private var shimmerOverlay: some View {
+  private func shimmerOverlay(_ shimmer: Double) -> some View {
     GeometryReader { proxy in
       LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
         .frame(width: proxy.size.width * 0.5)

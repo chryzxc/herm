@@ -547,6 +547,7 @@ extension DockModel {
                                     tone: level == "warning" || level == "error" ? .attention : .inactive)
             appendSystemEvent(event, text: payload["text"] as? String ?? "", key: payload["key"] as? String)
         case "message.interim":
+            completeLiveReasoning()
             // Already-streamed commentary is in the live row; the rest would
             // otherwise only appear after a reload.
             if (payload["already_streamed"] as? Bool) != true,
@@ -644,6 +645,7 @@ extension DockModel {
         case "message.delta":
             guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String), streamingMessageID != nil else { return }
             isAwaitingClarificationResume = false
+            completeLiveReasoning()
             if streamingMessageIsVisionNotice { return }
             if voiceState.isNativeConversationActive {
                 voiceTelemetry.receivedResponse()
@@ -728,9 +730,10 @@ extension DockModel {
             streamingMessageID = nil
             streamingTurnActivity = []
             streamingResponseStartedAt = nil
+            turnStartedAtBySession[eventSessionID ?? sessionID ?? ""] = nil
             syncStoredSystemRows()
             if completionNotificationsEnabled {
-                let response = messages.last(where: { $0.role == .hermes })?.text ?? "Hermes completed the active request."
+                let response = messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? "Hermes completed the active request."
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
             }
             if voiceState.isNativeConversationActive, skipNextVoicePlaybackDrain || !voiceRepliesEnabled {
@@ -855,10 +858,20 @@ extension DockModel {
             closeTurnThinking()
             reasoningState = ReasoningState(text: "", isComplete: false)
             isShowingReasoning = false
-        case "reasoning.delta", "thinking.delta":
-            guard reasoningState != nil else { return }
+        case "reasoning.delta", "reasoning.available":
+            // Hermes never sends `reasoning.start`: the first delta opens the
+            // block and the next tool call or reply text closes it.
+            // `thinking.delta` is Hermes' wait/spinner notice, not reasoning.
             let delta = (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
             guard !delta.isEmpty else { return }
+            if reasoningState?.isComplete != false {
+                closeTurnThinking()
+                streamingReasoningBuffer = ""
+                reasoningState = ReasoningState(text: "", isComplete: false)
+            } else if type == "reasoning.available", !streamingReasoningBuffer.isEmpty {
+                // The end-of-call preview repeats reasoning already streamed.
+                return
+            }
             // Reasoning deltas arrive faster than any UI needs: publishing
             // reasoningState per delta re-rendered the whole popover at the
             // delta rate. Coalesce at the same cadence as message streaming.
@@ -866,16 +879,10 @@ extension DockModel {
             scheduleReasoningFlush()
             conversationActivityPhase = .thinking
         case "reasoning.complete", "thinking.stop", "thinking.complete":
-            guard var state = reasoningState else { return }
-            reasoningFlushTask?.cancel()
-            reasoningFlushTask = nil
-            state.text = streamingReasoningBuffer
-            streamingReasoningBuffer = ""
-            state.isComplete = true
-            reasoningState = state
-            conversationActivityPhase = .responding
+            completeLiveReasoning()
 
         case "tool.call", "tool.start", "tool.use", "tool_use":
+            completeLiveReasoning()
             let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "unknown"
             let childSessionID = (payload["child_session_id"] as? String)
                 ?? (params["child_session_id"] as? String)
@@ -1025,8 +1032,13 @@ extension DockModel {
 
     func beginStreamingMessage() {
         didAppendTerminalErrorForCurrentTurn = false
-        let responseStartedAt = Date()
-        messages.append(ChatMessage(role: .hermes, text: "", timestamp: responseStartedAt, modelName: currentModelName))
+        let now = Date()
+        var responseStartedAt = now
+        if let sessionID {
+            responseStartedAt = turnStartedAtBySession[sessionID] ?? now
+            turnStartedAtBySession[sessionID] = responseStartedAt
+        }
+        messages.append(ChatMessage(role: .hermes, text: "", timestamp: now, modelName: currentModelName))
         streamingMessageID = messages.last?.id
         streamingMessageSessionID = sessionID
         streamingResponseStartedAt = responseStartedAt
@@ -1037,6 +1049,10 @@ extension DockModel {
         splitOffCallIDs = []
         turnCommittedText = ""
         streamingText.clearPresentation()
+        // A pending flush of the previous row would exit on the generation
+        // check without clearing itself, latching every later flush off.
+        streamingMessageFlushTask?.cancel()
+        streamingMessageFlushTask = nil
         streamingMessageGeneration &+= 1
     }
 
@@ -1204,6 +1220,18 @@ extension DockModel {
         }
     }
 
+    /// Settles the open reasoning block so the step reads "Thought for …".
+    func completeLiveReasoning() {
+        guard var state = reasoningState, !state.isComplete else { return }
+        reasoningFlushTask?.cancel()
+        reasoningFlushTask = nil
+        state.text = streamingReasoningBuffer
+        streamingReasoningBuffer = ""
+        state.isComplete = true
+        reasoningState = state
+        conversationActivityPhase = .responding
+    }
+
     func closeTurnThinking() {
         for index in streamingTurnActivity.indices
         where streamingTurnActivity[index].name == ActiveToolCall.thinkingName && !streamingTurnActivity[index].isComplete {
@@ -1328,7 +1356,7 @@ extension DockModel {
     static func isMidTurnEvent(_ type: String) -> Bool {
         switch type {
         case "tool.call", "tool.start", "tool.use", "tool_use",
-             "reasoning.start", "reasoning.delta", "thinking", "thinking.delta":
+             "reasoning.start", "reasoning.delta", "reasoning.available", "thinking", "thinking.delta":
             true
         default:
             false

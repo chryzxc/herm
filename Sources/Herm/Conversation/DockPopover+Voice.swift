@@ -26,13 +26,9 @@ extension DockPopover {
                 .padding(.horizontal, 16)
             Spacer(minLength: 12)
             Button(action: handleVoiceOrbTap) {
-                VoiceOrbView(mode: voiceOrbMode, audioLevel: max(speechInput.audioLevel, micLevelMeter.level))
-                    .frame(width: 320, height: 320)
-                    .overlay {
-                        if voiceOrbMode == .listening, !speechInput.isRecording {
-                            VoiceListeningRing(progress: micLevelMeter.turnProgress).padding(36)
-                        }
-                    }
+                VoiceMeteredOrb(
+                    mode: voiceOrbMode, speech: speechInput.reading, mic: micLevelMeter.reading,
+                    showsRing: voiceOrbMode == .listening && !speechInput.isRecording)
                     .scaleEffect(orbScale)
                     .frame(width: 320 * orbScale, height: 320 * orbScale)
                     .contentShape(Circle())
@@ -373,5 +369,22 @@ extension DockPopover {
             return "RUNNING \(tool.name.uppercased())"
         }
         return "HERMES IS THINKING"
+    }
+}
+
+/// Observes only the meter readings, so per-buffer level changes redraw the
+/// orb and not the whole popover.
+private struct VoiceMeteredOrb: View {
+    let mode: VoiceOrbMode
+    @ObservedObject var speech: VoiceMeterReading
+    @ObservedObject var mic: VoiceMeterReading
+    let showsRing: Bool
+
+    var body: some View {
+        VoiceOrbView(mode: mode, audioLevel: max(speech.level, mic.level))
+            .frame(width: 320, height: 320)
+            .overlay {
+                if showsRing { VoiceListeningRing(progress: mic.turnProgress).padding(36) }
+            }
     }
 }

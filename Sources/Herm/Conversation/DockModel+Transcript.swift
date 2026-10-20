@@ -93,6 +93,7 @@ extension DockModel {
         externalTurnWatchTask = Task { @MainActor [weak self] in
             var lastChange = Date()
             var signature = ""
+            var rowsSignature = ""
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 guard let self, generation == self.sessionResumeGeneration,
@@ -107,6 +108,15 @@ extension DockModel {
                     limit: limit,
                     minimumDisplayRows: ConversationMessageWindow.initialLimit
                 ), generation == self.sessionResumeGeneration, self.streamingMessageID != nil else { continue }
+                // Stored rows only append, so an unchanged tail means nothing to re-parse on the main actor.
+                let tail = loaded.rows.last
+                let tailID = tail.flatMap { TranscriptHistoryPaging.rowID($0, key: "row_id") } ?? -1
+                let nextRows = "\(loaded.rows.count)|\(tailID)|\(Self.messageText(tail?["content"]).utf8.count)"
+                guard nextRows != rowsSignature else {
+                    if Date().timeIntervalSince(lastChange) > idleLimit { self.endExternalTurn(commit: true); return }
+                    continue
+                }
+                rowsSignature = nextRows
                 let restored = Self.parseMessages(loaded.rows, defaultBotProfileID: self.activeBotProfileID, defaultBotDisplayName: self.activeBotDisplayName)
                 let next = Self.externalTurnSignature(restored.trailingActivity) + "|\(restored.messages.count)"
                 guard next != signature else {
@@ -116,10 +126,11 @@ extension DockModel {
                 signature = next
                 lastChange = Date()
                 let liveRow = self.messages.first { $0.id == self.streamingMessageID }
+                let stable = Self.keepingMessageIDs(restored, previous: self.transcriptMessageIDsByRowID)
                 self.transcriptHistoryCursor = loaded.cursor
-                self.transcriptMessageIDsByRowID = restored.rowIDs
-                self.storedMessageReferences = StoredMessageReference.references(rows: loaded.rows, rowIDs: restored.rowIDs)
-                self.messages = restored.messages + [liveRow].compactMap { $0 }
+                self.transcriptMessageIDsByRowID = stable.rowIDs
+                self.storedMessageReferences = StoredMessageReference.references(rows: loaded.rows, rowIDs: stable.rowIDs)
+                self.messages = stable.messages + [liveRow].compactMap { $0 }
                 if restored.trailingActivity.isEmpty {
                     self.endExternalTurn(commit: false)
                     self.scrollToLatestMessageRequest &+= 1
@@ -128,6 +139,24 @@ extension DockModel {
                 self.streamingTurnActivity = restored.trailingActivity
             }
         }
+    }
+
+    /// A re-read transcript keeps the IDs its stored rows already had, so
+    /// SwiftUI updates rows in place instead of rebuilding and re-measuring
+    /// every message on each 3s poll of a running Bot turn.
+    static func keepingMessageIDs(_ restored: RestoredTranscript, previous: [Int: UUID]) -> (messages: [ChatMessage], rowIDs: [Int: UUID]) {
+        var renamed: [UUID: UUID] = [:]
+        var taken = Set<UUID>()
+        for (rowID, id) in restored.rowIDs.sorted(by: { $0.key < $1.key }) where renamed[id] == nil {
+            guard let old = previous[rowID], taken.insert(old).inserted else { continue }
+            renamed[id] = old
+        }
+        let messages = restored.messages.map { message in
+            var message = message
+            message.id = renamed[message.id] ?? message.id
+            return message
+        }
+        return (messages, restored.rowIDs.mapValues { renamed[$0] ?? $0 })
     }
 
     private static func externalTurnSignature(_ activity: [ActiveToolCall]) -> String {

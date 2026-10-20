@@ -2,6 +2,15 @@ import AVFoundation
 import Speech
 import SwiftUI
 
+/// Audio-buffer-rate values, kept apart so only the orb re-renders per buffer
+/// instead of everything observing the recorder.
+@MainActor
+final class VoiceMeterReading: ObservableObject {
+    @Published var level: CGFloat = 0
+    /// How far the pause after the last word is toward ending the turn, 0...1.
+    @Published var turnProgress: Double = 0
+}
+
 @MainActor
 final class SpeechInput: ObservableObject {
     @Published var isRecording = false
@@ -15,7 +24,11 @@ final class SpeechInput: ObservableObject {
 
     init(isDictation: Bool = false) { self.isDictation = isDictation }
     /// Smoothed microphone loudness in the 0...1 range for the voice orb.
-    @Published private(set) var audioLevel: CGFloat = 0
+    let reading = VoiceMeterReading()
+    private(set) var audioLevel: CGFloat {
+        get { reading.level }
+        set { reading.level = newValue }
+    }
 
     private let recognizer = SFSpeechRecognizer(locale: Locale.current)
     private let audioEngine = AVAudioEngine()
@@ -260,11 +273,17 @@ final class SpeechInput: ObservableObject {
 /// talking instead of waiting on Hermes' whisper pass.
 @MainActor
 final class MicLevelMeter: ObservableObject {
-    @Published private(set) var level: CGFloat = 0
+    let reading = VoiceMeterReading()
+    private(set) var level: CGFloat {
+        get { reading.level }
+        set { reading.level = newValue }
+    }
     /// Live on-device transcript of the current utterance.
     @Published private(set) var transcript = ""
-    /// How far the pause after the last word is toward ending the turn, 0...1.
-    @Published private(set) var turnProgress: Double = 0
+    private(set) var turnProgress: Double {
+        get { reading.turnProgress }
+        set { reading.turnProgress = newValue }
+    }
     /// Called once per utterance when `isEndpointing` and the speaker stops,
     /// with the transcript, or nil once on-device recognition has failed.
     var onUtteranceEnd: ((String?) -> Void)?

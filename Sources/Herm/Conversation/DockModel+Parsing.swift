@@ -40,9 +40,11 @@ extension DockModel {
                 messageCount: session.messageCount,
                 source: session.source,
                 isHidden: session.isHidden,
-                // Rows other than the open one have no live stream here, so the
-                // index (also covering turns started elsewhere) is the truth.
-                isWorking: session.id != openSessionID ? (working?.contains(session.id) ?? observed.isWorking) : observed.isWorking,
+                // The index covers turns started elsewhere, but its freshness
+                // window drops a long silent tool call mid-turn. A gateway
+                // `message.start` we observed stays authoritative until the
+                // matching complete event clears it.
+                isWorking: observed.isWorking || (session.id != openSessionID && working?.contains(session.id) == true),
                 hasUnreadUpdate: observed.hasUnreadUpdate
             )
         }
@@ -217,11 +219,27 @@ extension DockModel {
         for row in rows {
             guard let role = row["role"] as? String else { continue }
             let rowTimestamp = (row["timestamp"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
-            if let reasoning = ((row["reasoning"] ?? row["reasoning_content"]) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !reasoning.isEmpty {
+            // `display_reasoning` is `reasoning` minus the commentary shown below.
+            if let reasoning = ((row["display_reasoning"] ?? row["reasoning"] ?? row["reasoning_content"]) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !reasoning.isEmpty {
                 pendingActivity.append(ActiveToolCall(
                     id: "thinking:\(UUID().uuidString)", name: ActiveToolCall.thinkingName, input: "", context: "",
                     startedAt: rowTimestamp ?? Date(), result: reasoning, isComplete: true
                 ))
+            }
+            // Mid-turn Codex commentary splits the turn like live `message.interim`:
+            // earlier steps above it, this row's own tool calls below.
+            let commentary = ((row["display_commentary"] as? [String]) ?? [])
+                .joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if role == "assistant", !commentary.isEmpty {
+                let activity = pendingActivity
+                pendingActivity = []
+                let message = ChatMessage(
+                    role: .hermes, text: commentary, timestamp: rowTimestamp ?? Date(),
+                    responseDuration: activity.isEmpty ? nil : turnStartedAt.flatMap { start in rowTimestamp.map { $0.timeIntervalSince(start) } },
+                    botProfileID: defaultBotProfileID, botDisplayName: defaultBotDisplayName, activity: activity
+                )
+                messages.append(message)
+                if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") { rowIDs[rowID] = message.id }
             }
             pendingActivity.append(contentsOf: historyToolCalls(in: row, timestamp: rowTimestamp ?? Date()))
             // session.resume projects each tool call as its own compact
@@ -265,7 +283,17 @@ extension DockModel {
             }
             let attribution = role == "user" ? nil : botAttribution(from: text)
             var activity: [ActiveToolCall] = []
-            if role == "user" {
+            if role == "user", row["display_kind"] as? String == "steer" {
+                // A mid-turn message keeps the turn going: steps before it
+                // stay above it instead of being dropped.
+                if !pendingActivity.isEmpty {
+                    messages.append(ChatMessage(
+                        role: .hermes, text: "", timestamp: timestamp,
+                        botProfileID: defaultBotProfileID, botDisplayName: defaultBotDisplayName, activity: pendingActivity
+                    ))
+                    pendingActivity = []
+                }
+            } else if role == "user" {
                 pendingActivity = []
                 turnStartedAt = rowTimestamp
             } else {

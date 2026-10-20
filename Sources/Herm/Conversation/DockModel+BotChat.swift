@@ -351,7 +351,9 @@ extension DockModel {
     /// Kanban cards this session assigned to a Bot, followed on the board
     /// until the Bot finishes, hands it back for review, or gets blocked.
     func reconcileKanbanAssignments(status: (String) async -> (status: String, summary: String?)?) async {
-        let pending = botActivityBySessionID.values.joined().filter { $0.linkedCardID != nil && $0.isLive }
+        // Hidden card references stay `.queued` forever and are not Bot work;
+        // polling them spawned a `kanban show` per reference every pass.
+        let pending = botActivityBySessionID.values.joined().filter { $0.linkedCardID != nil && $0.isLive && !$0.isKanbanReference }
         for record in pending {
             guard let card = await status(record.linkedCardID!) else { continue }
             let state: BotActivityState = switch card.status.lowercased() {
@@ -364,6 +366,51 @@ extension DockModel {
                 updateBotActivity(id: record.id, state: state, result: card.summary)
             }
         }
+    }
+
+    /// Reads what each working Bot DM is doing from the Bot's own session.
+    /// Hermes does not link a DM to that session until it finishes, so the
+    /// session is matched by profile and start time; an ambiguous match
+    /// shows nothing rather than another conversation's step.
+    func refreshBotLiveSteps() async {
+        var steps: [String: String] = [:]
+        for records in Dictionary(grouping: workingBotDispatches, by: \.botID).values {
+            // Two DMs to one Bot at once cannot be told apart.
+            guard records.count == 1, let record = records.first,
+                  let profile = record.botID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { continue }
+            var sessionID = record.botChatSessionID
+            if sessionID == nil,
+               let rows = try? await sessionRPCClient.fetchHTTP("/api/sessions?limit=20&order=recent&profile=\(profile)")["sessions"] as? [[String: Any]] {
+                sessionID = Self.liveBotSessionID(in: rows, dispatchedAt: record.createdAt)
+            }
+            guard let sessionID,
+                  let path = TranscriptHistoryPaging.pagePath(sessionID: sessionID, profileID: record.botID, limit: 6, offset: 0),
+                  let rows = try? await sessionRPCClient.fetchHTTP(path)["messages"] as? [[String: Any]],
+                  let step = Self.latestBotStep(in: rows) else { continue }
+            steps[record.id] = step
+        }
+        if steps != botLiveSteps { botLiveSteps = steps }
+    }
+
+    /// The one open session a Bot started after the DM was sent, if exactly one.
+    static func liveBotSessionID(in rows: [[String: Any]], dispatchedAt: Date) -> String? {
+        let open = rows.filter { row in
+            guard row["ended_at"] == nil || row["ended_at"] is NSNull,
+                  let started = (row["started_at"] as? NSNumber)?.doubleValue else { return false }
+            // A few seconds of slack for the Bot process starting before Herm records the DM.
+            return started >= dispatchedAt.timeIntervalSince1970 - 5
+        }
+        return open.count == 1 ? open[0]["id"] as? String : nil
+    }
+
+    /// Title of the newest tool call in a page of stored session rows.
+    static func latestBotStep(in rows: [[String: Any]]) -> String? {
+        for row in TranscriptHistoryPaging.displayRows(fromStoredRows: rows).reversed() where row["role"] as? String == "assistant" {
+            if let call = historyToolCalls(in: row, timestamp: Date()).last {
+                return AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context)
+            }
+        }
+        return nil
     }
 
     /// Bot DMs this session sent that have not finished.

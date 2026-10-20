@@ -99,7 +99,7 @@ struct EdgeNotchStatusIndicator: View {
     }
 
     var body: some View {
-        TimelineView(.animation(paused: !animates)) { timeline in
+        TimelineView(.dockMotion(paused: !animates)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
             layout {

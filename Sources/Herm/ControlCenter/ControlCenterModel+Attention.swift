@@ -273,12 +273,15 @@ extension ControlCenterModel {
         next = knownAttention.values.filter { saved in
             saved.state != .resolved && saved.state != .dismissed && saved.state != .snoozed && !next.contains(where: { $0.id == saved.id })
         }
-        attention = next.sorted { lhs, rhs in
+        let sorted = next.sorted { lhs, rhs in
             let lhsRank = Self.attentionRank(lhs)
             let rhsRank = Self.attentionRank(rhs)
             if lhsRank != rhsRank { return lhsRank < rhsRank }
             return lhs.createdAt > rhs.createdAt
         }
+        // Runs on every gateway event; an unchanged list must not republish
+        // and re-render every view observing the control center.
+        if sorted != attention { attention = sorted }
     }
 
     static func attentionRank(_ item: AttentionItem) -> Int {

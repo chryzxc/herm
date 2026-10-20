@@ -3,6 +3,30 @@ import Testing
 @testable import Herm
 
 struct SessionBotActivityTests {
+    @MainActor @Test func botLiveSessionNeedsOneOpenSessionStartedAfterTheDM() {
+        let sent = Date(timeIntervalSince1970: 1_000)
+        let older: [String: Any] = ["id": "old", "started_at": 900.0, "ended_at": NSNull()]
+        let ended: [String: Any] = ["id": "done", "started_at": 1_010.0, "ended_at": 1_020.0]
+        let live: [String: Any] = ["id": "live", "started_at": 1_002.0, "ended_at": NSNull()]
+        #expect(DockModel.liveBotSessionID(in: [older, ended, live], dispatchedAt: sent) == "live")
+        #expect(DockModel.liveBotSessionID(in: [live, ["id": "twin", "started_at": 1_003.0]], dispatchedAt: sent) == nil)
+        #expect(DockModel.liveBotSessionID(in: [older], dispatchedAt: sent) == nil)
+    }
+
+    @MainActor @Test func botLiveStepIsTheNewestToolCall() {
+        let call = { (name: String, args: String) in
+            #"[{"id": "x", "type": "function", "function": {"name": "\#(name)", "arguments": "\#(args)"}}]"#
+        }
+        let rows: [[String: Any]] = [
+            ["id": 1, "role": "assistant", "content": "", "tool_calls": call("read_file", #"{\"path\": \"a.txt\"}"#)],
+            ["id": 2, "role": "tool", "content": "{}", "tool_call_id": "x", "tool_name": "read_file"],
+            ["id": 3, "role": "assistant", "content": "", "tool_calls": call("terminal", #"{\"command\": \"git diff\"}"#)],
+            ["id": 4, "role": "tool", "content": "{}", "tool_call_id": "x", "tool_name": "terminal"],
+        ]
+        #expect(DockModel.latestBotStep(in: rows) == AgentActivityPresentation.toolActivityTitle(name: "terminal", context: "git diff"))
+        #expect(DockModel.latestBotStep(in: [["id": 1, "role": "user", "content": "go"]]) == nil)
+    }
+
     @Test func activityIsSessionScopedAndNewestUpdateFirst() {
         let records = [
             BotActivityRecord(id: "old", originSessionID: "s1", botID: "forge", botName: "Forge", summary: "Old", state: .completed, createdAt: Date(timeIntervalSince1970: 10), updatedAt: Date(timeIntervalSince1970: 20)),

@@ -110,19 +110,24 @@ struct AgentBoardView: View {
     }
 
     private var ambientLight: some View {
+        // Radial gradients approximate an 80pt blur of the circles without an
+        // offscreen blur pass on every resize and scroll frame.
         ZStack {
-            Circle()
-                .fill(Color.dockAccent.opacity(embedded ? 0.045 : 0.12))
-                .frame(width: 260, height: 260)
-                .blur(radius: 80)
+            glow(opacity: embedded ? 0.045 : 0.12, radius: 130)
                 .offset(x: -230, y: -220)
-            Circle()
-                .fill(Color.dockAccent.opacity(embedded ? 0.04 : 0.10))
-                .frame(width: 300, height: 300)
-                .blur(radius: 80)
+            glow(opacity: embedded ? 0.04 : 0.10, radius: 150)
                 .offset(x: 250, y: 180)
         }
         .allowsHitTesting(false)
+    }
+
+    private func glow(opacity: Double, radius: CGFloat) -> some View {
+        let reach = radius + 80
+        return Circle()
+            .fill(RadialGradient(
+                colors: [Color.dockAccent.opacity(opacity), Color.dockAccent.opacity(opacity * 0.5), .clear],
+                center: .center, startRadius: 0, endRadius: reach))
+            .frame(width: reach * 2, height: reach * 2)
     }
 
     @ViewBuilder

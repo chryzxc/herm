@@ -577,7 +577,7 @@ struct VoiceStatusStrip: View {
                          tint: elapsed >= 120 ? .dockWarning : .dockAccent)
                 }
             }
-            if let plan = model.todoPlan, plan.sessionID == model.sessionID, plan.done < plan.items.count || model.status == .working {
+            if let plan = model.todoPlan, plan.sessionID == model.sessionID, plan.done < plan.items.count, model.status == .working {
                 HStack(spacing: 6) {
                     ZStack {
                         Circle().stroke(Color.dockAccent.opacity(0.2), lineWidth: 2.5)

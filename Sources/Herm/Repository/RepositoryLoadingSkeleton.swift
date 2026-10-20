@@ -35,7 +35,7 @@ struct RepositoryShimmerBlock: View {
             .frame(height: height)
             .overlay {
                 if !reduceMotion {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    TimelineView(.dockMotion()) { context in
                         GeometryReader { geometry in
                             let renderedWidth = geometry.size.width
                             LinearGradient(

@@ -38,7 +38,9 @@ enum SidebarSessionStatusResolver {
     ) -> SidebarSessionStatus {
         if attention == .warning { return .needsApproval }
         if attention == .clarification { return .needsClarification }
-        if attention == .failure { return .failed }
+        // A failure from an earlier turn is stale once a new turn is running.
+        let isLive = session.isWorking || (session.id == activeSessionID && activeStatus == .working)
+        if attention == .failure, !isLive { return .failed }
 
         if session.id == activeSessionID {
             if activeStatus == .needsApproval { return .needsApproval }

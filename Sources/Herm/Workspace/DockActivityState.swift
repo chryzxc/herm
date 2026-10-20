@@ -84,7 +84,10 @@ struct DockActivityIndicator: View {
             spinnerArc(color, turn: 0)
         } else {
             // Keep ticking when SwiftUI suspends animation timelines in task disclosures.
-            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { timeline in
+            // The shared motion clock keeps every spinner on one schedule: `.now` gave each row
+            // (and each body re-evaluation) its own phase, so N spinners forced N
+            // window renders per tick instead of one.
+            TimelineView(.dockMotion()) { timeline in
                 let turn = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
                 spinnerArc(color, turn: turn)
                     .transaction { $0.animation = nil }

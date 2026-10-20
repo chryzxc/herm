@@ -95,7 +95,6 @@ struct DockStatusDot: View {
     /// Theme ink without the glow, for chrome that should read as plain UI.
     var muted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dimmed = false
 
     private var fill: Color {
         guard muted else { return tone.color }
@@ -103,23 +102,16 @@ struct DockStatusDot: View {
     }
 
     var body: some View {
-        Circle()
-            .fill(fill)
-            .frame(width: size, height: size)
-            .shadow(color: muted ? .clear : tone.color.opacity(0.6), radius: 3)
-            .opacity(dimmed ? 0.3 : 1)
-            .onAppear(perform: updatePulse)
-            .onChange(of: tone) { updatePulse() }
-            .onChange(of: reduceMotion) { updatePulse() }
-            .accessibilityHidden(true)
-    }
-
-    private func updatePulse() {
-        var reset = Transaction()
-        reset.disablesAnimations = true
-        withTransaction(reset) { dimmed = false }
-        guard pulses, !reduceMotion, let duration = tone.pulseDuration else { return }
-        withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) { dimmed = true }
+        let duration = pulses && !reduceMotion ? tone.pulseDuration : nil
+        TimelineView(.dockMotion(paused: duration == nil)) { context in
+            let dim = duration.map { DockMotionSchedule.breath(context.date, period: $0 * 2) } ?? 0
+            Circle()
+                .fill(fill)
+                .frame(width: size, height: size)
+                .shadow(color: muted ? .clear : tone.color.opacity(0.6), radius: 3)
+                .opacity(1 - 0.7 * dim)
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -176,31 +168,29 @@ struct DockShimmerTrack: View {
     /// A plain theme-ink segment instead of the glowing tone gradient.
     var muted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sweeping = false
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            Capsule().fill(Color.dockPrimaryText.opacity(0.08))
-                .overlay(alignment: .leading) {
-                    Group {
-                        if muted {
-                            Capsule().fill(Color.dockSecondaryText.opacity(0.55))
-                        } else {
-                            LinearGradient(colors: [tone.color.opacity(0), tone.color, tone.color.opacity(0)],
-                                           startPoint: .leading, endPoint: .trailing)
+        TimelineView(.dockMotion(paused: reduceMotion)) { context in
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                let sweep = DockMotionSchedule.loop(context.date, period: 1.6)
+                Capsule().fill(Color.dockPrimaryText.opacity(0.08))
+                    .overlay(alignment: .leading) {
+                        Group {
+                            if muted {
+                                Capsule().fill(Color.dockSecondaryText.opacity(0.55))
+                            } else {
+                                LinearGradient(colors: [tone.color.opacity(0), tone.color, tone.color.opacity(0)],
+                                               startPoint: .leading, endPoint: .trailing)
+                            }
                         }
+                        .frame(width: min(80, width * 0.4))
+                        .offset(x: reduceMotion ? width * 0.3 : -80 + (width + 80) * sweep)
                     }
-                    .frame(width: min(80, width * 0.4))
-                        .offset(x: reduceMotion ? width * 0.3 : sweeping ? width : -80)
-                }
-                .clipShape(Capsule())
+                    .clipShape(Capsule())
+            }
         }
         .frame(height: 2)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { sweeping = true }
-        }
         .accessibilityHidden(true)
     }
 }
@@ -545,4 +535,39 @@ extension DockSectionHeader where Actions == EmptyView {
     init(title: String, count: Int? = nil, isExpanded: Binding<Bool>? = nil, style: DockThemePalette) {
         self.init(title: title, count: count, isExpanded: isExpanded, style: style) { EmptyView() }
     }
+}
+
+/// The one clock behind every decorative animation. Ticks land on shared
+/// 30fps instants, so any number of animated views cost one window render per
+/// tick: separate `.animation` timelines each kept their own phase, and
+/// `repeatForever` ran at the display's full 120Hz, so a working turn rendered
+/// the whole window several times per frame. Occluded windows drop to 1Hz.
+struct DockMotionSchedule: TimelineSchedule {
+    static let step = 1.0 / 30
+    var paused = false
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+        if paused { return AnyIterator([startDate].makeIterator()) }
+        let step = mode == .lowFrequency ? 1 : Self.step
+        // Count whole ticks so every view computes bit-identical instants.
+        var tick = (startDate.timeIntervalSinceReferenceDate / step).rounded(.down)
+        return AnyIterator {
+            defer { tick += 1 }
+            return Date(timeIntervalSinceReferenceDate: tick * step)
+        }
+    }
+
+    /// 0...1 progress through a loop of `period` seconds.
+    static func loop(_ date: Date, period: Double) -> Double {
+        date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
+    }
+
+    /// 0...1...0, eased, over `period` seconds: an autoreversing easeInOut.
+    static func breath(_ date: Date, period: Double) -> Double {
+        (1 - cos(2 * .pi * loop(date, period: period))) / 2
+    }
+}
+
+extension TimelineSchedule where Self == DockMotionSchedule {
+    static func dockMotion(paused: Bool = false) -> DockMotionSchedule { DockMotionSchedule(paused: paused) }
 }

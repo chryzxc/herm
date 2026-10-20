@@ -77,6 +77,7 @@ final class DockModel: ObservableObject {
     /// A queued prompt open for editing is never auto-sent; when its turn
     /// comes it moves into the composer instead.
     @Published var editingQueuedPromptID: UUID?
+    @Published var editingQueuedPromptText = ""
     @Published var approvalTitle: String?
     @Published var approvalText: String?
     /// Full request (reason, offered choices, request id) behind `approvalTitle`/`approvalText`.
@@ -168,6 +169,10 @@ final class DockModel: ObservableObject {
     /// The turn log of a session left while its turn was still running,
     /// keyed by stored session ID, so returning to it restores its steps.
     var inFlightTurnActivityBySessionID: [String: [ActiveToolCall]] = [:]
+    /// User messages sent into a running turn that Hermes may not have stored
+    /// yet (a steer waits in memory for the current tool batch), keyed like
+    /// `inFlightTurnActivityBySessionID`, so a reload cannot drop them.
+    var unconfirmedUserMessagesBySessionID: [String: [ChatMessage]] = [:]
     @Published var hasUnreadResponse = false
     @Published var completionNotificationsEnabled: Bool
     var recentEvents: [AgentEvent] = [] { didSet { if oldValue != recentEvents { scheduleActivityPresentation() } } }
@@ -246,6 +251,8 @@ final class DockModel: ObservableObject {
     /// presentation state, not a second transcript or task database.
     @Published var botActivityBySessionID: [String: [BotActivityRecord]] = [:]
     @Published var botActivityRevision = 0
+    /// The latest step each working Bot DM is on, keyed by record id.
+    @Published var botLiveSteps: [String: String] = [:]
     var inFlightBotActivities: [String: InFlightBotActivity] = [:]
     let botActivityStore: BotActivityStore
     let botActivityWriter: BotActivityWriter
@@ -263,6 +270,8 @@ final class DockModel: ObservableObject {
     var observedKanbanTaskIDsBySessionID: [String: Set<String>] = [:]
     var streamingMessageID: UUID?
     var streamingResponseStartedAt: Date?
+    /// When the AI began the current turn, per session. Survives session switches and live-row rebuilds; cleared when the turn completes.
+    var turnStartedAtBySession: [String: Date] = [:]
     var streamingMessageSessionID: String?
     /// A clarification resumes an already-running Hermes turn. Some Hermes
     /// versions continue with deltas only, without another `message.start`.
