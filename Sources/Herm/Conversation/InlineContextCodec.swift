@@ -94,7 +94,8 @@ extension DockModel {
         if draft != text { draft = text }
     }
     func removeDeletedInlineContexts() {
-        attachedContexts.removeAll { context in context.inlineToken.map { !draft.contains($0) } ?? false }
+        let contexts = attachedContexts.filter { context in context.inlineToken.map { draft.contains($0) } ?? true }
+        if contexts != attachedContexts { attachedContexts = contexts }
     }
     func restoreCapturedText(_ text: String, contexts: [ChatContext]) {
         var used = draft
