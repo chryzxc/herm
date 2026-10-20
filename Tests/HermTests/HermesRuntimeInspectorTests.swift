@@ -2,6 +2,96 @@ import Testing
 @testable import Herm
 
 struct HermesRuntimeInspectorTests {
+    @Test func inspectionReadsPathOnceAndPublishesIdentityBeforeSettings() {
+        var calls: [[String]] = []
+        var identityPublished = false
+        var metadataCaptured = false
+        let outcome = HermesRuntimeInspector.inspect(
+            runner: { arguments in
+                calls.append(arguments)
+                if arguments == ["config", "path"] { return "/fixture/config.yaml" }
+                #expect(identityPublished)
+                if arguments == ["skills", "list", "--enabled-only"] { return "[]" }
+                if arguments == ["mcp", "list"] { return "No MCP servers configured" }
+                if arguments == ["plugins", "list", "--enabled", "--json"] { return "[]" }
+                return "value"
+            },
+            identityReader: { _ in
+                #expect(metadataCaptured)
+                return "Fixture"
+            },
+            signatureReader: { path in
+                #expect(calls == [["config", "path"]])
+                #expect(path == "/fixture/config.yaml")
+                metadataCaptured = true
+                return "before"
+            },
+            onIdentity: { name in
+                #expect(name == "Fixture")
+                identityPublished = true
+            }
+        )
+        #expect(calls.filter { $0 == ["config", "path"] }.count == 1)
+        #expect(calls.count == 8)
+        #expect(calls == [
+            ["config", "path"], ["config", "get", "model.default"],
+            ["config", "get", "model.provider"], ["config", "get", "agent.max_turns"],
+            ["config", "get", "terminal.timeout"], ["skills", "list", "--enabled-only"],
+            ["mcp", "list"], ["plugins", "list", "--enabled", "--json"]
+        ])
+        #expect(outcome.isComplete)
+        #expect(outcome.configuration.agentName == "Fixture")
+        #expect(outcome.initialSignature == "before")
+    }
+
+    @Test func partialAndMalformedInspectionCannotCertifyFreshness() {
+        for failure in ["missing", "malformed"] {
+            let outcome = HermesRuntimeInspector.inspect(runner: { arguments in
+                if arguments == ["config", "path"] { return "/fixture/config.yaml" }
+                if arguments == ["skills", "list", "--enabled-only"] { return "[]" }
+                if arguments == ["mcp", "list"] { return "No MCP servers configured" }
+                if arguments == ["plugins", "list", "--enabled", "--json"] {
+                    return failure == "missing" ? nil : "not json"
+                }
+                return "value"
+            }, identityReader: { _ in "Fixture" })
+            #expect(!outcome.isComplete)
+            #expect(outcome.configuration.agentName == "Fixture")
+        }
+    }
+
+    @Test func everyMissingCommandOutputIsIncomplete() {
+        for missing in 0..<8 {
+            var index = 0
+            let outcome = HermesRuntimeInspector.inspect(runner: { arguments in
+                defer { index += 1 }
+                if index == missing { return nil }
+                if arguments == ["config", "path"] { return "/fixture/config.yaml" }
+                if arguments == ["skills", "list", "--enabled-only"] { return "[]" }
+                if arguments == ["mcp", "list"] { return "No MCP servers configured" }
+                if arguments == ["plugins", "list", "--enabled", "--json"] { return "[]" }
+                return "value"
+            }, identityReader: { _ in "Fixture" })
+            #expect(!outcome.isComplete)
+        }
+    }
+
+    @Test func preservesInventoryParsingWithInjectedCommands() {
+        let outcome = HermesRuntimeInspector.inspect(runner: { arguments in
+            if arguments == ["config", "path"] { return "/fixture/config.yaml" }
+            if arguments == ["skills", "list", "--enabled-only"] { return "│ fixture-skill │ enabled │" }
+            if arguments == ["mcp", "list"] { return "fixture-server stdio all connected" }
+            if arguments == ["plugins", "list", "--enabled", "--json"] {
+                return #"[{"name":"fixture-plugin","status":"enabled"}]"#
+            }
+            return "value"
+        }, identityReader: { _ in nil })
+        #expect(outcome.isComplete)
+        #expect(outcome.configuration.skills == ["fixture-skill"])
+        #expect(outcome.configuration.mcpServers == ["fixture-server"])
+        #expect(outcome.configuration.plugins == ["fixture-plugin"])
+    }
+
     @Test func ignoresTruncatedRowsButKeepsCompleteHumanTableSkillNames() {
         let output = "│ my-dev-team-orchest… │ enabled │"
 

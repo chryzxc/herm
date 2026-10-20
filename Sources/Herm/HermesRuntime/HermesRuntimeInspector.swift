@@ -14,6 +14,18 @@ struct HermesRuntimeConfiguration: Sendable, Equatable {
     let plugins: [String]
 }
 
+struct HermesRuntimeInspection: Sendable {
+    let configuration: HermesRuntimeConfiguration
+    let isComplete: Bool
+    let initialSignature: String?
+
+    init(configuration: HermesRuntimeConfiguration, isComplete: Bool, initialSignature: String? = nil) {
+        self.configuration = configuration
+        self.isComplete = isComplete
+        self.initialSignature = initialSignature
+    }
+}
+
 enum HermesRuntimeInspector {
     private static let commandTimeout: TimeInterval = 15
 
@@ -24,17 +36,46 @@ enum HermesRuntimeInspector {
     }
 
     static func read() -> HermesRuntimeConfiguration {
-        let model = output(arguments: ["config", "get", "model.default"])
-        let provider = output(arguments: ["config", "get", "model.provider"])
-        let configPath = output(arguments: ["config", "path"])
-        let maxTurns = output(arguments: ["config", "get", "agent.max_turns"])
-        let terminalTimeout = output(arguments: ["config", "get", "terminal.timeout"])
+        inspect().configuration
+    }
+
+    static func inspect(
+        runner: ([String]) -> String? = { output(arguments: $0) },
+        identityReader: (String) -> String? = { agentName(configPath: $0) },
+        signatureReader: (String) -> String? = { HermesRuntimeConfigurationRefresh.fileSignatureNow($0) },
+        onIdentity: (String?) -> Void = { _ in }
+    ) -> HermesRuntimeInspection {
+        let configPath = nonEmpty(runner(["config", "path"]))
+        // Capture metadata before SOUL or any configuration values are read.
+        let initialSignature = configPath.flatMap(signatureReader)
+        let name = configPath.flatMap(identityReader)
+        onIdentity(name)
+        let model = nonEmpty(runner(["config", "get", "model.default"]))
+        let provider = nonEmpty(runner(["config", "get", "model.provider"]))
+        let maxTurns = nonEmpty(runner(["config", "get", "agent.max_turns"]))
+        let terminalTimeout = nonEmpty(runner(["config", "get", "terminal.timeout"]))
         // `runData` prepends `hermes`; the shared contract command already includes it.
-        let skills = parseEnabledSkills(output(arguments: Array(HermesFeatureContract.enabledSkillsCommand.words.dropFirst())) ?? "")
-        let mcpServers = parseMCPServers(output(arguments: ["mcp", "list"]) ?? "")
-        let plugins = parsePlugins(output(arguments: ["plugins", "list", "--enabled", "--json"]) ?? "")
-        return HermesRuntimeConfiguration(
-            agentName: configPath.flatMap { Self.agentName(configPath: $0) },
+        let skillsOutput = runner(Array(HermesFeatureContract.enabledSkillsCommand.words.dropFirst()))
+        let mcpOutput = runner(["mcp", "list"])
+        let pluginsOutput = runner(["plugins", "list", "--enabled", "--json"])
+        let skills = parseEnabledSkills(skillsOutput ?? "")
+        let mcpServers = parseMCPServers(mcpOutput ?? "")
+        let plugins = parsePlugins(pluginsOutput ?? "")
+        let validSkills: Bool
+        if case .supported = skills { validSkills = true } else { validSkills = false }
+        let validMCP = mcpOutput.map {
+            $0.localizedCaseInsensitiveContains("No MCP servers configured") || !parseMCPServers($0).isEmpty
+        } ?? false
+        let validPlugins = pluginsOutput.flatMap { $0.data(using: .utf8) }.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]]
+        }.map { rows in
+            rows.allSatisfy {
+                ($0["name"] as? String)?.isEmpty == false
+                    && ($0["status"] as? String)?.lowercased() == "enabled"
+            }
+        } ?? false
+        let configuration = HermesRuntimeConfiguration(
+            agentName: name,
             model: nonEmpty(model),
             provider: nonEmpty(provider),
             configPath: nonEmpty(configPath),
@@ -45,6 +86,10 @@ enum HermesRuntimeInspector {
             mcpServers: mcpServers,
             plugins: plugins
         )
+        return HermesRuntimeInspection(configuration: configuration,
+            isComplete: [model, provider, configPath, maxTurns, terminalTimeout].allSatisfy { $0 != nil }
+                && validSkills && validMCP && validPlugins,
+            initialSignature: initialSignature)
     }
 
     /// Hermes stores the primary agent identity in SOUL.md beside config.yaml.
