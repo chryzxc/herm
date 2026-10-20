@@ -2,6 +2,37 @@ import Testing
 @testable import Herm
 
 struct AgentUpdateVisibilityTests {
+    @MainActor @Test func ambientPhaseNeverBecomesSessionActivity() {
+        let state = EdgeNotchState()
+        let session = state.activity
+        for phase: HermesUpdatePhase in [.updating, .updateFailed("exit 1"), .checking, .upToDate, .updateSucceeded] {
+            state.agentUpdatePhase = phase
+            #expect(state.activity == session)
+            #expect(!state.activity.shouldAnnounce(after: session))
+            #expect(state.tasks.isEmpty)
+            #expect(state.railActivity.agentUpdatePhase == phase)
+            #expect(state.railActivity.working == (phase == .updating))
+            #expect(state.railActivity.attention == (phase.ambientStatus?.isRunning == false))
+        }
+    }
+
+    @MainActor @Test func railPreservesDecisionsAndConcurrentSessionWork() {
+        let state = EdgeNotchState()
+        state.tasks = [EdgeNotchTask(id: "other", title: "Other session", phase: .working,
+            statusLabel: "Working", detail: nil, updatedAt: nil, isCurrent: false,
+            isStatusCurrent: true, session: nil)]
+        for phase: HermesUpdatePhase in [.updating, .updateFailed("exit 1"), .checking] {
+            state.agentUpdatePhase = phase
+            for status: HermesStatus in [.needsApproval, .needsClarification] {
+                state.activity = EdgeNotchActivity(status: status)
+                #expect(state.railActivity.title == status.title)
+                #expect(state.railActivity.attention)
+                #expect(state.railActivity.working)
+                #expect(state.railActivity.workingCount == 1)
+            }
+        }
+    }
+
     @Test func ambientStatusOnlySpinsDuringInstallation() {
         #expect(HermesUpdatePhase.updating.ambientStatus?.title == "Updating Hermes Agent…")
         #expect(HermesUpdatePhase.updating.ambientStatus?.isRunning == true)
@@ -39,5 +70,26 @@ struct AgentUpdateVisibilityTests {
         #expect(activity.title == "Hermes Agent update failed")
         activity.status = .needsApproval
         #expect(activity.title == HermesStatus.needsApproval.title)
+    }
+
+    @Test func updateStatusPreservesSessionAttentionAndActivityInputs() {
+        for phase: HermesUpdatePhase in [.updating, .updateFailed("exit 1")] {
+            for status: HermesStatus in [.needsApproval, .needsClarification] {
+                let activity = EdgeNotchActivity(status: status, agentUpdatePhase: phase)
+                #expect(activity.title == status.title)
+                #expect(activity.attention)
+                #expect(activity.symbol == status.icon)
+            }
+        }
+        var activity = EdgeNotchActivity(status: .working, agentUpdatePhase: .updateFailed("exit 1"))
+        #expect(activity.working)
+        #expect(activity.attention)
+        activity.status = .idle
+        #expect(!activity.working)
+        #expect(!activity.quiet)
+        #expect(activity.symbol == .warningCircle)
+        activity.agentUpdatePhase = .checking
+        #expect(!activity.attention)
+        #expect(activity.quiet)
     }
 }
