@@ -49,9 +49,21 @@ enum HermesUpdatePhase: Equatable {
     case updating
     case updateSucceeded
     case updateFailed(String)
+
+    var ambientStatus: (title: String, isRunning: Bool)? {
+        switch self {
+        case .updating: ("Updating Hermes Agent…", true)
+        case .updateFailed: ("Hermes Agent update failed", false)
+        default: nil
+        }
+    }
 }
 
-private enum HermesUpdateFetchError: Error {
+extension Notification.Name {
+    static let hermAgentUpdatePhase = Notification.Name("hermAgentUpdatePhase")
+}
+
+enum HermesUpdateFetchError: Error {
     case message(String)
 }
 
@@ -226,7 +238,13 @@ private final class HermesUpdateOutputCollector: @unchecked Sendable {
 /// ever starts from an explicit, confirmed user action.
 @MainActor
 final class HermesUpdateService: ObservableObject {
-    @Published private(set) var phase: HermesUpdatePhase = .idle
+    static let shared = HermesUpdateService()
+
+    @Published private(set) var phase: HermesUpdatePhase = .idle {
+        didSet {
+            NotificationCenter.default.post(name: .hermAgentUpdatePhase, object: self, userInfo: ["phase": phase])
+        }
+    }
     @Published private(set) var installed: HermesInstalledVersion?
     @Published private(set) var installMethod: String?
     @Published private(set) var latest: HermesLatestRelease?
@@ -243,6 +261,24 @@ final class HermesUpdateService: ObservableObject {
     private var updateProcess: Process?
     private var relaunchScheduled = false
 
+    private let readVersion: @Sendable () async -> (succeeded: Bool, text: String)
+    private let readRelease: @Sendable () async -> Result<HermesLatestRelease, HermesUpdateFetchError>
+    private let launchUpdate: (Process) throws -> Void
+
+    init(
+        readVersion: @escaping @Sendable () async -> (succeeded: Bool, text: String) = {
+            await HermesUpdateService.runHermes(arguments: ["--version"], timeout: 10)
+        },
+        readRelease: @escaping @Sendable () async -> Result<HermesLatestRelease, HermesUpdateFetchError> = {
+            await HermesUpdateService.fetchLatestRelease()
+        },
+        launchUpdate: @escaping (Process) throws -> Void = { try $0.run() }
+    ) {
+        self.readVersion = readVersion
+        self.readRelease = readRelease
+        self.launchUpdate = launchUpdate
+    }
+
     var isBusy: Bool { phase == .checking || phase == .updating }
     var canCheck: Bool { !isBusy }
     var canStartUpdate: Bool { !isBusy && phase == .updateAvailable }
@@ -251,12 +287,12 @@ final class HermesUpdateService: ObservableObject {
         guard !isBusy else { return }
         phase = .checking
         Task { [weak self] in
-            async let versionOutput = Self.runHermes(arguments: ["--version"], timeout: Self.versionReadTimeout)
-            async let releaseResult = Self.fetchLatestRelease()
+            guard let self else { return }
+            async let versionOutput = self.readVersion()
+            async let releaseResult = self.readRelease()
             let output = await versionOutput
             let release = await releaseResult
 
-            guard let self else { return }
             guard output.succeeded,
                   let installed = HermesUpdateParsing.installedVersion(from: output.text) else {
                 self.phase = .checkFailed("The installed Hermes version could not be read. Make sure the `hermes` CLI is installed and on your PATH.")
@@ -326,9 +362,10 @@ final class HermesUpdateService: ObservableObject {
         }
 
         do {
-            try process.run()
+            try launchUpdate(process)
             updateProcess = process
         } catch {
+            pipe.fileHandleForReading.readabilityHandler = nil
             phase = .updateFailed("The Hermes CLI could not be launched: \(error.localizedDescription)")
         }
     }

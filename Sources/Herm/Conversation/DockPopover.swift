@@ -122,7 +122,7 @@ struct DockPopover: View {
     @StateObject var micLevelMeter = MicLevelMeter()
     @StateObject var messageActionState = ConversationMessageActionState()
     @StateObject var workspaceStore = WorkspaceStore()
-    @StateObject var agentUpdateService = HermesUpdateService()
+    @StateObject var agentUpdateService = HermesUpdateService.shared
     @StateObject var developerWorkflow = DeveloperWorkflowModel.shared
     @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
     @StateObject var issueCenter = IssueCenterModel()

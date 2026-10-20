@@ -223,6 +223,10 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.announceBots($0) }
             .store(in: &subscriptions)
+        state.observeAgentUpdates(from: .shared) { [weak self] in
+            self?.rebuildTasks()
+            self?.position(animated: false)
+        }.store(in: &subscriptions)
         controlCenter.$providerQuotas
             .receive(on: RunLoop.main)
             .sink { [weak self] quotas in self?.quotaChanged(quotas) }
@@ -796,11 +800,11 @@ final class EdgeDockController: NSObject {
     }
 
     private func announce(quota: Bool = false, notice: HermNotice? = nil) {
-        let reference = notice ?? model.interruptionNotice(state.railActivity.attention ? .failure : .information)
+        let reference = notice ?? model.interruptionNotice(state.sessionRailActivity.attention ? .failure : .information)
         guard state.interruptions.admit(reference, channel: .notch) else { return }
         guard !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail, state.previewInteraction.mode == .passive else { return }
         // Every notch announcement, including future sources, reaches the pet here.
-        controlCenter.pet.react(.announcement(activity: state.railActivity, quota: quota))
+        controlCenter.pet.react(.announcement(activity: state.sessionRailActivity, quota: quota))
         DebugLog.write("workflow: notch announcement presented")
         if !hovering {
             // Updates landing while one is showing join it rather than replace it.
@@ -1031,6 +1035,7 @@ struct EdgeNotchActivity: Equatable {
     var sessionNeedsAttention = false
     var kanbanNeedsAttention = false
     var kanbanHasUpdate = false
+    var agentUpdatePhase: HermesUpdatePhase = .idle
     /// Marks the status indicator stacks: the primary plus finished/blocked extras.
     var markCount: Int {
         working ? 1 + (hasUpdate ? 1 : 0) + (attention ? 1 : 0) : hasUpdate && attention ? 2 : 1
@@ -1043,12 +1048,13 @@ struct EdgeNotchActivity: Equatable {
             || (unread && !previous.unread) || (attention && status != previous.status)
     }
 
-    var working: Bool { status == .working || runningCount > 0 || kanbanRunningCount > 0 }
-    var attention: Bool { status == .needsApproval || status == .needsClarification || kanbanNeedsAttention || sessionNeedsAttention }
+    var working: Bool { status == .working || runningCount > 0 || workingCount > 0 || kanbanRunningCount > 0 || agentUpdatePhase.ambientStatus?.isRunning == true }
+    var attention: Bool { status == .needsApproval || status == .needsClarification || kanbanNeedsAttention || sessionNeedsAttention || agentUpdatePhase.ambientStatus?.isRunning == false }
     var title: String {
         if status == .needsApproval || status == .needsClarification { return status.title }
         if sessionNeedsAttention { return "Needs your attention" }
         if kanbanNeedsAttention { return "Kanban card blocked" }
+        if let update = agentUpdatePhase.ambientStatus { return update.title }
         if unread { return "New response" }
         if backgroundCompleted { return "Background task completed" }
         if responseCompleted { return "Response completed" }
@@ -1061,6 +1067,7 @@ struct EdgeNotchActivity: Equatable {
     var symbol: Ph {
         if kanbanNeedsAttention || sessionNeedsAttention { return .warningCircle }
         if status == .needsClarification { return DockActivityState.clarification.icon! }
+        if status != .needsApproval && agentUpdatePhase.ambientStatus?.isRunning == false { return .warningCircle }
         if attention { return status.icon }
         if unread { return .chat }
         if backgroundCompleted { return .checkCircle }
@@ -1401,6 +1408,7 @@ final class EdgeNotchState: ObservableObject {
     var externalPet = false
     @Published var side: EdgeDockSide = .right
     @Published var activity = EdgeNotchActivity()
+    @Published var agentUpdatePhase: HermesUpdatePhase = .idle
     @Published var name = "Hermes"
     @Published var sessionTitle = "Herm"
     @Published var updateTitle = "No activity yet"
@@ -1441,7 +1449,7 @@ final class EdgeNotchState: ObservableObject {
     static let expandedSize = CGSize(width: 368, height: 360)
     /// The island opens landscape: wide and short, like an expanded Dynamic Island.
     static let islandSize = CGSize(width: 560, height: 300)
-    var railActivity: EdgeNotchActivity {
+    var sessionRailActivity: EdgeNotchActivity {
         var result = activity
         result.sessionNeedsAttention = tasks.contains { $0.kanbanTask == nil && $0.phase == .attention && $0.isStatusCurrent }
         let cards = tasks.filter { $0.kanbanTask != nil && $0.isStatusCurrent }
