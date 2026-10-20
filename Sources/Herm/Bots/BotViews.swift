@@ -52,6 +52,7 @@ struct BotRosterPage: View {
                 Task {
                     await model.refreshNow(force: true)
                     await model.loadAvatars()
+                    await model.loadRuntimeConfigs(force: true)
                 }
             }
         }
@@ -104,6 +105,7 @@ struct BotRosterPage: View {
             // profiles contract directly, like Hermes' own Bot Mode.
             if model.inventory.availability != .ready { await model.refreshNow(force: true) }
             await model.loadAvatars()
+            await model.loadRuntimeConfigs()
             await model.loadRoutines()
         }
         .task {
@@ -254,7 +256,7 @@ struct BotRosterPage: View {
             }
             .padding(.horizontal, DockLayout.compactInset)
             .frame(maxWidth: .infinity, minHeight: DockLayout.controlHeight)
-            .background(Color.dockControlSurface)
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -279,7 +281,7 @@ struct BotRosterPage: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
                     .padding(.horizontal, 10)
-                    .background(Color.dockControlSurface)
+                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -307,7 +309,7 @@ struct BotRosterPage: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
                     .padding(.horizontal, 10)
-                    .background(Color.dockControlSurface)
+                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -356,6 +358,8 @@ struct BotRosterPage: View {
         MissionControlBotRow(
             bot: bot,
             avatarData: model.avatarImages[bot.id],
+            runtime: model.runtimeConfigs[bot.id],
+            counts: model.capabilityCounts[bot.id],
             isSelected: model.selectedProfileID == bot.id,
             onSelect: { onSelectBot(bot) },
             onOpenChat: { onOpenChat(bot) },
@@ -820,6 +824,8 @@ private struct BotRoutineRow: View, Equatable {
 struct MissionControlBotRow: View, Equatable {
     let bot: BotSummary
     let avatarData: Data?
+    var runtime: BotRuntimeConfig?
+    var counts: BotCapabilityCounts?
     var isSelected = false
     let onSelect: () -> Void
     var onOpenChat: (() -> Void)?
@@ -831,9 +837,11 @@ struct MissionControlBotRow: View, Equatable {
     @FocusState private var isFocused: Bool
     @State private var isHovering = false
 
-    init(bot: BotSummary, avatarData: Data? = nil, isSelected: Bool = false, onSelect: @escaping () -> Void, onOpenChat: (() -> Void)? = nil, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil) {
+    init(bot: BotSummary, avatarData: Data? = nil, runtime: BotRuntimeConfig? = nil, counts: BotCapabilityCounts? = nil, isSelected: Bool = false, onSelect: @escaping () -> Void, onOpenChat: (() -> Void)? = nil, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil) {
         self.bot = bot
         self.avatarData = avatarData
+        self.runtime = runtime
+        self.counts = counts
         self.isSelected = isSelected
         self.onSelect = onSelect
         self.onOpenChat = onOpenChat
@@ -845,7 +853,7 @@ struct MissionControlBotRow: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.isSelected == rhs.isSelected
+        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.runtime == rhs.runtime && lhs.counts == rhs.counts && lhs.isSelected == rhs.isSelected
     }
 
     var body: some View {
@@ -861,6 +869,7 @@ struct MissionControlBotRow: View, Equatable {
             }
             activity
                 .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
+            runtimeDetails
             Divider().overlay(Color.dockBorderLight)
             footer
         }
@@ -910,6 +919,26 @@ struct MissionControlBotRow: View, Equatable {
         }
     }
 
+    /// Fixed-height slot so cards don't resize when the config arrives.
+    private var runtimeDetails: some View {
+        let fallbacks = runtime?.fallbacks ?? []
+        return HStack(spacing: 6) {
+            if let modelLabel {
+                chip(modelLabel, color: Color.dockSecondaryText, monospaced: true)
+                    .help(bot.provider.map { "\($0) / \(modelLabel)" } ?? modelLabel)
+            }
+            if let effort = runtime?.reasoningEffort {
+                chip("Thinking \(effort.capitalized)", color: Color.dockAccent)
+            }
+            if let first = fallbacks.first {
+                chip("Fallback \(first.model)\(fallbacks.count > 1 ? " +\(fallbacks.count - 1)" : "")", color: Color.dockSecondaryText, monospaced: true)
+                    .help(fallbacks.map { "\($0.provider) / \($0.model)" }.joined(separator: "\n"))
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: 18)
+    }
+
     private var isActive: Bool { bot.isWorkingNow || bot.isRecentlyActive }
 
     private var activity: some View {
@@ -939,9 +968,11 @@ struct MissionControlBotRow: View, Equatable {
             .foregroundStyle(isActive ? Color.dockAccent : Color.dockMetadataText)
             .lineLimit(1)
             Spacer(minLength: 8)
-            if let modelLabel {
-                chip(modelLabel, color: Color.dockSecondaryText, monospaced: true)
-                    .help(bot.provider.map { "\($0) / \(modelLabel)" } ?? modelLabel)
+            if let counts {
+                Text(counts.label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
             }
         }
     }

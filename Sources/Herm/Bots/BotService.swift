@@ -729,6 +729,22 @@ final class BotModeModel: ObservableObject {
         inventory.bots.filter { $0.isRecentlyActive || $0.isWorkingNow }
     }
 
+    /// Reasoning effort and fallback chain per bot for the roster cards;
+    /// cached, `force` re-reads (after a profile edit).
+    @Published private(set) var runtimeConfigs: [String: BotRuntimeConfig] = [:]
+
+    @Published private(set) var capabilityCounts: [String: BotCapabilityCounts] = [:]
+
+    func loadRuntimeConfigs(force: Bool = false) async {
+        guard inventory.availability == .ready, let service else { return }
+        for bot in inventory.bots where force || runtimeConfigs[bot.id] == nil {
+            if let config = await service.runtimeConfig(profileID: bot.id) { runtimeConfigs[bot.id] = config }
+            if let detail = try? await service.profileDetail(profileID: bot.id) {
+                capabilityCounts[bot.id] = BotCapabilityCounts(detail)
+            }
+        }
+    }
+
     func loadAvatars() async {
         guard inventory.availability == .ready, let service else { return }
         for bot in inventory.bots where bot.hasAvatar && avatarImages[bot.id] == nil {

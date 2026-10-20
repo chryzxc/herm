@@ -185,6 +185,24 @@ struct BotProfileDetail: Equatable, Sendable {
     var mcpServers: [BotToggleItem]
 }
 
+/// Enabled skill, toolset and MCP totals shown on a roster card.
+struct BotCapabilityCounts: Equatable, Sendable {
+    let skills: Int
+    let toolsets: Int
+    let mcpServers: Int
+
+    init(_ detail: BotProfileDetail) {
+        skills = detail.skills.filter(\.enabled).count
+        toolsets = detail.toolsets.filter(\.enabled).count
+        mcpServers = detail.mcpServers.filter(\.enabled).count
+    }
+
+    var label: String {
+        ["\(skills) skills", "\(toolsets) toolsets", mcpServers > 0 ? "\(mcpServers) MCP" : nil]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
 /// `profiles.configure` answers `confirm_required` when a guarded model pin
 /// needs explicit user confirmation before Hermes writes anything.
 enum BotProfileEditOutcome: Equatable, Sendable {
