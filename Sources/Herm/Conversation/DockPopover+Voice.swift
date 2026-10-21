@@ -28,7 +28,8 @@ extension DockPopover {
             Button(action: handleVoiceOrbTap) {
                 VoiceMeteredOrb(
                     mode: voiceOrbMode, speech: speechInput.reading, mic: micLevelMeter.reading,
-                    showsRing: voiceOrbMode == .listening && !speechInput.isRecording)
+                    showsRing: voiceOrbMode == .listening && !speechInput.isRecording,
+                    hermFaceID: voiceHermFaceID)
                     .scaleEffect(orbScale)
                     .frame(width: 320 * orbScale, height: 320 * orbScale)
                     .contentShape(Circle())
@@ -127,6 +128,16 @@ extension DockPopover {
             voiceHUD = VoiceHUDState(calls: model.activeToolCalls)
             beginVoiceConversation()
         }
+    }
+
+    /// The talking Bot's ID when it wears a Herm face, so the orb core shows
+    /// that live face. Uploaded or generated art returns nil and keeps the
+    /// plain orb. Resolves the Bot like the transcript's reply attribution.
+    var voiceHermFaceID: String? {
+        let id = model.activeBotProfileID ?? model.sessionProfileID ?? botMode.selectedProfileID
+        guard let bot = id.flatMap({ botMode.botsByID[$0] }) ?? botMode.visibleBots.first(where: \.isDefault),
+              BotAvatarView.showsHermFace(botMode.avatarImages[bot.id], id: bot.id) else { return nil }
+        return bot.id
     }
 
     var voiceOrbMode: VoiceOrbMode {
@@ -379,9 +390,10 @@ private struct VoiceMeteredOrb: View {
     @ObservedObject var speech: VoiceMeterReading
     @ObservedObject var mic: VoiceMeterReading
     let showsRing: Bool
+    let hermFaceID: String?
 
     var body: some View {
-        VoiceOrbView(mode: mode, audioLevel: max(speech.level, mic.level))
+        VoiceOrbView(mode: mode, audioLevel: max(speech.level, mic.level), hermFaceID: hermFaceID)
             .frame(width: 320, height: 320)
             .overlay {
                 if showsRing { VoiceListeningRing(progress: mic.turnProgress).padding(36) }

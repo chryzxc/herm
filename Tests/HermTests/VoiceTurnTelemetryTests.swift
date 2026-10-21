@@ -136,4 +136,11 @@ struct VoiceConversationStateTests {
         for step in 2...120 { settled = motion.advance(to: Double(step) * 0.016, mode: .transcribing, level: 0) }
         #expect(abs(settled.scan - 1) < 0.01)
     }
+
+    @Test func hermFaceMoodFollowsVoiceState() {
+        #expect(VoiceOrbView.faceMood(for: .idle) == nil)
+        #expect(VoiceOrbView.faceMood(for: .listening) == .surprised)
+        #expect(VoiceOrbView.faceMood(for: .thinking) == .work)
+        #expect(VoiceOrbView.faceMood(for: .speaking) == .happy)
+    }
 }

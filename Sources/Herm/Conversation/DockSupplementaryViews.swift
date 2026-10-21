@@ -152,6 +152,10 @@ struct VoiceOrbView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let mode: VoiceOrbMode
     let audioLevel: CGFloat
+    /// The talking Bot's ID when its avatar is a Herm face (see
+    /// `BotAvatarView.showsHermFace`). The live face then replaces the core
+    /// sphere; uploaded or generated art keeps the plain orb.
+    var hermFaceID: String?
     @State private var motion = VoiceOrbMotion()
     @State private var isHovering = false
 
@@ -200,6 +204,23 @@ struct VoiceOrbView: View {
                 Self.drawField(in: &context, size: size, frame: frame, time: time)
             }
 
+            core(frame, time: time)
+                .scaleEffect(1 + frame.energy * 0.1 + 0.015 * sin(time * 1.6))
+                // The core drifts toward the pointer like it is paying attention.
+                .offset(x: frame.leanX * 9 * frame.hover, y: frame.leanY * 9 * frame.hover)
+        }
+        .animation(.dockEase(duration: 0.3), value: mode)
+    }
+
+    @ViewBuilder
+    private func core(_ frame: VoiceOrbMotion.Frame, time: TimeInterval) -> some View {
+        if let hermFaceID {
+            // The energy-driven scale above carries the syllable envelope, so
+            // the face visibly "talks" without its own audio input.
+            BotFaceMark(id: hermFaceID, size: 104, animated: !reduceMotion,
+                        busy: mode != .idle, mood: Self.faceMood(for: mode))
+                .shadow(color: Color.dockAccent.opacity(0.15 + frame.glow * 0.35), radius: 14 + frame.glow * 24)
+        } else {
             Circle()
                 .fill(RadialGradient(
                     colors: [Color.white.opacity(0.10 + frame.glow * 0.12), Color.dockAccent.opacity(0.28), Color.dockAccent.opacity(0.06)],
@@ -208,15 +229,21 @@ struct VoiceOrbView: View {
                 .overlay(Circle().stroke(Color.dockAccent.opacity(0.2 + frame.glow * 0.3), lineWidth: 0.7))
                 .frame(width: 92, height: 92)
                 .shadow(color: Color.dockAccent.opacity(0.15 + frame.glow * 0.35), radius: 14 + frame.glow * 24)
-                .scaleEffect(1 + frame.energy * 0.1 + 0.015 * sin(time * 1.6))
-                // The core drifts toward the pointer like it is paying attention.
-                .offset(x: frame.leanX * 9 * frame.hover, y: frame.leanY * 9 * frame.hover)
                 .overlay {
                     VoiceCoreBars(heights: VoiceCoreBars.heights(mode: mode, level: Double(audioLevel), time: time))
                         .foregroundStyle(Color.dockAccent.opacity(0.7 + frame.glow * 0.3))
                 }
         }
-        .animation(.dockEase(duration: 0.3), value: mode)
+    }
+
+    /// The Herm face's expression for each voice state; idle keeps its own.
+    static func faceMood(for mode: VoiceOrbMode) -> BotMood? {
+        switch mode {
+        case .idle: nil
+        case .listening: .surprised
+        case .transcribing, .thinking: .work
+        case .speaking: .happy
+        }
     }
 
     /// Rings, ticks, scanner arcs, and the voice membrane. Every angular term
