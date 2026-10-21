@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Herm
 
@@ -20,6 +21,11 @@ struct ScrollPerformanceFixtureTests {
         #expect(fixture.streamingDeltas(chunkBytes: 37).allSatisfy { $0.utf8.count <= 37 })
         #expect(fixture.messages.last?.role == .hermes)
         #expect(fixture.messages.last?.text == fixture.idleLongMarkdown)
+        #expect(fixture.sessions.map(\.id) == (0..<500).map { "scroll-fixture-session-\($0)" })
+        #expect(fixture.sessions.map(\.updatedAt) == (0..<500).map { Date(timeIntervalSince1970: Double($0)) })
+        #expect(ScrollPerformanceCaptureSupport.visits == Array(0..<20) + Array((0..<20).reversed()))
+        #expect(ScrollPerformanceCaptureSupport.pipeline.count == 1008)
+        #expect(ScrollPerformanceCaptureSupport.pipeline.filter { $0.status == "Running" }.count == 8)
     }
 
     @Test

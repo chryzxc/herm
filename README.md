@@ -545,6 +545,7 @@ for every chunk.
 | [STANDARDS.md](STANDARDS.md) | Coding standards |
 | [AGENTS.md](AGENTS.md) | Guidance for AI-assisted contributions |
 | [Interactive controls](docs/interactive-controls.md) | Clickable-text audit, shared treatments, and verification scope |
+| [Scroll baselines](docs/performance/scroll-baselines.md) | Opt-in synthetic Release captures, reproducible workloads, and measurement limitations |
 
 ## Contributing
 
