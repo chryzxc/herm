@@ -469,6 +469,7 @@ extension WorkspaceActivitySidebar {
                 control.refreshGlobalKanban()
             }
         }
+        .onChange(of: initialMode) { _, mode in selectedMode = mode }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
         .onChange(of: model.sessionID) { _, sessionID in
