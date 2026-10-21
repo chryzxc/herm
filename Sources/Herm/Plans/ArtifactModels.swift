@@ -18,8 +18,11 @@ struct ArtifactRecord: Identifiable, Equatable {
     let sessionTitle: String
     let timestamp: Date
     var origin: ArtifactOrigin = .shared
+    var profileID: String? = nil
 
-    var id: String { "\(sessionID):\(value)" }
+    var scopedSessionID: ProfileScopedID { ProfileScopedID(profileID: profileID, resourceID: sessionID) }
+
+    var id: String { "\(profileID.map { "\($0):" } ?? "")\(sessionID):\(value)" }
     var kind: ArtifactKind {
         ArtifactService.kind(for: value)
     }

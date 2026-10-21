@@ -347,3 +347,31 @@ struct HermesServerRequestTests {
         #expect(answer == ["identifier": "me", "password": "pw"])
     }
 }
+
+extension HermesControlTransportTests {
+    @Test func artifactSessionIndexPagesPastSidebarLimitAcrossProfiles() async throws {
+        let first = (0..<100).map { ["id": "s\($0)", "profile": "work"] }
+        let client = HTTPEnvelopeRPCClient(responses: [
+            ["sessions": first, "total": 101],
+            ["sessions": [["id": "older", "profile": "personal"]], "total": 101]
+        ])
+        let rows = try await HermesControlRPC(client: client).artifactSessions()
+        #expect(rows.count == 101)
+        #expect(rows.last?["profile"] as? String == "personal")
+        #expect(client.requestedPaths == [0, 100].map { "/api/profiles/sessions?limit=100&offset=\($0)&min_messages=1&archived=exclude&order=recent&profile=all" })
+    }
+
+    @Test func artifactTranscriptsIncludeCompactedMessagesAndExplicitOffsets() async throws {
+        let client = HTTPEnvelopeRPCClient(responses: [["messages": [], "pagination": ["limit": 100]]])
+        _ = try await HermesControlRPC(client: client).sessionMessages(sessionID: "s", profileID: "work", limit: 100, offset: 500, includeCompacted: true)
+        #expect(client.requestedPaths == ["/api/sessions/s/messages?limit=100&profile=work&offset=500&order=oldest&include_compacted=true"])
+    }
+
+    @Test func incompleteProfileIndexFailsInsteadOfReportingCompleteResults() async {
+        let client = HTTPEnvelopeRPCClient(responses: [["sessions": [], "total": 0, "errors": [["profile": "work"]]]])
+        do {
+            _ = try await HermesControlRPC(client: client).artifactSessions()
+            Issue.record("Expected incomplete profile index to fail")
+        } catch {}
+    }
+}

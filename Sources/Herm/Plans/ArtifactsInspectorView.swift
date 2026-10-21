@@ -57,6 +57,8 @@ struct ArtifactsInspectorView: View {
     }
 
     @State private var records: [ArtifactRecord] = []
+    @State private var indexedSessions: [HermesSession] = []
+    @State private var artifactCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
     @State private var query = ""
     @State private var filter: ArtifactFilter = .all
     @State private var imagePage = 1
@@ -131,7 +133,7 @@ struct ArtifactsInspectorView: View {
     }
 
     private var sessionRefreshKey: String {
-        model.sessions.map(\.id).joined(separator: ",")
+        model.sessions.map { "\($0.profileID ?? ""):\($0.id):\($0.messageCount)" }.joined(separator: ",")
     }
 
     var body: some View {
@@ -209,9 +211,6 @@ struct ArtifactsInspectorView: View {
                 isRefreshing: isLoading
             )
             pageToolbar
-            if failedSessionCount > 0 && !records.isEmpty {
-                partialFailureBanner
-            }
             pageContent
         }
         .background(Color.dockCanvas)
@@ -257,25 +256,6 @@ struct ArtifactsInspectorView: View {
         .background(shape.dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.outline))
     }
 
-    private var partialFailureBanner: some View {
-        HStack(spacing: 8) {
-            DockIcon(.warning)
-                .foregroundStyle(Color.dockWarning)
-            Text("\(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s") couldn't be read. Showing what loaded.")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockSecondaryText)
-            Spacer(minLength: 8)
-            Button("Retry") { refreshID += 1 }
-                .buttonStyle(.dockCompact)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
-                .disabled(isLoading)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.dockWarning.opacity(0.08))
-    }
-
     @ViewBuilder
     private var pageContent: some View {
         if let errorMessage, records.isEmpty {
@@ -283,7 +263,7 @@ struct ArtifactsInspectorView: View {
                 refreshID += 1
             }
         } else if records.isEmpty && isLoading {
-            pageState(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: .hourglass, actionTitle: nil, action: nil)
+            pageState(title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…", icon: .hourglass, actionTitle: nil, action: nil)
         } else if visibleRecords.isEmpty {
             let filtered = !query.isEmpty || filter != .all
             pageState(
@@ -650,7 +630,7 @@ struct ArtifactsInspectorView: View {
     }
 
     private func sourceSession(for record: ArtifactRecord) -> HermesSession? {
-        model.sessions.first { $0.id == record.sessionID }
+        indexedSessions.first { $0.id == record.sessionID && $0.profileID == record.profileID }
     }
 
     private func openSession(_ session: HermesSession) {
@@ -697,9 +677,11 @@ struct ArtifactsInspectorView: View {
     }
 
     private var pageSummaryText: String {
-        if isLoading && records.isEmpty { return "Indexing recent Hermes sessions…" }
+        if let errorMessage { return errorMessage }
+        if failedSessionCount > 0 { return "\(failedSessionCount) sessions could not be read. Refresh to retry." }
+        if isLoading && records.isEmpty { return "Indexing Hermes sessions…" }
         let count = records.count
-        let sessions = Set(records.map(\.sessionID)).count
+        let sessions = Set(records.map(\.scopedSessionID)).count
         return "\(count) \(count == 1 ? "output" : "outputs") across \(sessions) session\(sessions == 1 ? "" : "s")"
     }
 
@@ -710,9 +692,11 @@ struct ArtifactsInspectorView: View {
     }
 
     private var summaryText: String {
-        if isLoading && records.isEmpty { return "Indexing recent Hermes sessions…" }
+        if let errorMessage { return errorMessage }
+        if failedSessionCount > 0 { return "\(failedSessionCount) sessions could not be read. Refresh to retry." }
+        if isLoading && records.isEmpty { return "Indexing Hermes sessions…" }
         let count = visibleRecords.count
-        return "\(count) \(count == 1 ? "output" : "outputs") from recent sessions"
+        return "\(count) \(count == 1 ? "output" : "outputs") from Hermes sessions"
     }
 
     private var content: some View {
@@ -720,7 +704,7 @@ struct ArtifactsInspectorView: View {
             if let errorMessage, records.isEmpty {
                 state(title: "Artifacts unavailable", detail: errorMessage, icon: .warning)
             } else if records.isEmpty && isLoading {
-                state(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: .hourglass)
+                state(title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…", icon: .hourglass)
             } else if visibleRecords.isEmpty {
                 state(
                     title: query.isEmpty ? "No artifacts found" : "No matching artifacts",
@@ -1013,7 +997,7 @@ struct ArtifactsInspectorView: View {
     private func isLocalFile(_ record: ArtifactRecord) -> Bool {
         ArtifactActionPresentation.make(
             record: record,
-            hasSourceSession: model.sessions.contains { $0.id == record.sessionID }
+            hasSourceSession: sourceSession(for: record) != nil
         ).canRevealInFinder && artifactURL(record.value)?.isFileURL == true
     }
 
@@ -1041,26 +1025,41 @@ struct ArtifactsInspectorView: View {
         defer { if refreshGeneration == generation { isLoading = false } }
         errorMessage = nil
         let previous = records
-        let sessions = Array(model.sessions.prefix(50))
-        let results = await ArtifactIndexLoader.load(sessions: sessions) { session in
-            try await model.artifactMessages(for: session)
+        let sessions: [HermesSession]
+        do {
+            sessions = try await model.artifactSessions()
+        } catch {
+            guard !Task.isCancelled, refreshGeneration == generation else { return }
+            errorMessage = "Could not refresh the artifact index. " + HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            return
+        }
+        let results = await ArtifactIndexLoader.load(sessions: sessions, cache: artifactCache) { session, offset in
+            try await model.artifactMessages(for: session, offset: offset)
         }
         guard !Task.isCancelled, refreshGeneration == generation else { return }
         var next: [ArtifactRecord] = []
-        var failedSessionIDs = Set<String>()
+        var failedSessionIDs = Set<ProfileScopedID>()
+        indexedSessions = sessions
         var lastFailure: String?
+        let sessionsByID = Dictionary(sessions.map { ($0.scopedID, $0) }, uniquingKeysWith: { first, _ in first })
+        var nextCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
         for result in results {
             if let error = result.error {
-                failedSessionIDs.insert(result.sessionID)
+                failedSessionIDs.insert(ProfileScopedID(profileID: result.profileID, resourceID: result.sessionID))
                 lastFailure = error
             } else {
                 next.append(contentsOf: result.records)
+                let key = ProfileScopedID(profileID: result.profileID, resourceID: result.sessionID)
+                if let session = sessionsByID[key] {
+                    nextCache[key] = ArtifactIndexLoader.CachedSession(session: session, records: result.records)
+                }
             }
         }
+        artifactCache = nextCache
         // Keep the prior artifacts for sessions that could not be read this
         // cycle, while allowing successful sessions and removed sessions to
         // converge to the latest authoritative index.
-        next.append(contentsOf: previous.filter { failedSessionIDs.contains($0.sessionID) })
+        next.append(contentsOf: previous.filter { failedSessionIDs.contains($0.scopedSessionID) })
         failedSessionCount = failedSessionIDs.count
         records = Dictionary(grouping: next, by: \.id)
             .compactMap(\.value.first)

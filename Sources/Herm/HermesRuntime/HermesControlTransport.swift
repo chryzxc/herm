@@ -103,14 +103,20 @@ final class HermesControlRPC {
         canonical["has_more"] = offset + sessions.count < total
         return canonical
     }
-    func sessionMessages(sessionID: String, profileID: String? = nil, latest: Bool = false) async throws -> [String: Any] {
+    func sessionMessages(sessionID: String, profileID: String? = nil, latest: Bool = false, limit: Int = 500, offset: Int = 0, includeCompacted: Bool = false) async throws -> [String: Any] {
         let disallowed = CharacterSet(charactersIn: "/")
         let allowed = CharacterSet.urlPathAllowed.subtracting(disallowed)
         guard let encoded = sessionID.addingPercentEncoding(withAllowedCharacters: allowed) else {
             throw NSError(domain: "HermesControl", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid session ID."])
         }
         let profile = profileID?.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).map { "&profile=\($0)" } ?? ""
-        let result = try await client.fetchHTTP("/api/sessions/\(encoded)/messages?limit=500\(latest ? "&order=latest" : "")\(profile)")
+        var path = "/api/sessions/\(encoded)/messages?limit=\(limit)\(latest ? "&order=latest" : "")\(profile)"
+        if offset > 0 || includeCompacted { path += "&offset=\(offset)" }
+        if includeCompacted {
+            if !latest { path += "&order=oldest" }
+            path += "&include_compacted=true"
+        }
+        let result = try await client.fetchHTTP(path)
         // The REST endpoint returns `messages`; normalize it to the envelope
         // consumed by the activity projection without relaxing its validation.
         guard result["data"] == nil, let messages = result["messages"] as? [[String: Any]] else {
@@ -121,6 +127,26 @@ final class HermesControlRPC {
         canonical["data"] = messages
         return canonical
     }
+    /// Artifacts use the archive, independently of the sidebar's recent-session window.
+    func artifactSessions() async throws -> [[String: Any]] {
+        var rows: [[String: Any]] = []
+        var offset = 0
+        while true {
+            try Task.checkCancellation()
+            let page = try await client.fetchHTTP("/api/profiles/sessions?limit=100&offset=\(offset)&min_messages=1&archived=exclude&order=recent&profile=all")
+            guard let sessions = page["sessions"] as? [[String: Any]],
+                  let total = page["total"] as? Int,
+                  (page["errors"] as? [[String: Any]] ?? []).isEmpty,
+                  (page["storage"] as? [String: String] ?? [:]).isEmpty else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            rows.append(contentsOf: sessions)
+            offset += min(100, sessions.count) // Hermes may back-fill pinned rows beyond the page window.
+            if offset >= total { return rows }
+            guard !sessions.isEmpty else { throw HermesGateway.GatewayError.malformedResponse }
+        }
+    }
+
     /// Sessions whose ID or message text matches `query` (Hermes FTS).
     func searchSessions(query: String, limit: Int = 20, profileID: String? = nil) async throws -> [[String: Any]] {
         var components = URLComponents()

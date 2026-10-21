@@ -10,17 +10,39 @@ struct ArtifactService {
     }
     private static let mediaPattern = regex(#"[`"']?MEDIA:\s*(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)"#)
     private static let markdownImagePattern = regex(#"!\[[^\]]*\]\(([^)\s]+)\)"#)
+    private static let markdownLinkPattern = regex(#"\[[^\]]+\]\(([^)\s]+)\)"#)
+    private static let urlPattern = regex(#"(https?://[^\s<>"')`]+)"#)
+    private static let windowsPathPattern = regex(#"(?:^|[\s("'`])((?:[A-Za-z]:[\\/]|\\\\)[^\s"'`<>]+)"#)
     private static let pathPattern = regex(#"(?:^|[\s("'`])((?:/|~[\\/]|\.\.?[\\/])[^\s"'`<>]+)"#)
     private static let screenshotPattern = regex(#"Screenshot path:\s*([^\r\n<>]+)"#)
     private static let imageExtension = regex(#"\.(?:png|jpe?g|gif|webp|svg|bmp)(?:\?.*)?$"#)
     private static let fileExtension = regex(#"\.(?:png|jpe?g|gif|webp|svg|bmp|pdf|txt|json|md|csv|xlsx?|docx?|pptx?|html|zip|tar|gz|avi|flac|m4a|mkv|mp3|ogg|opus|wav|webm|mp4|mov)(?:\?.*)?$"#)
-    private static let filePathPrefix = regex(#"^(?:file:|/|[~.][\\/]|\.\.[\\/])"#)
+    private static let filePathPrefix = regex(#"^(?:file:|/|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\)"#)
     private static let producerTool = regex(#"(?:^|_)(?:creat(?:e|ion)|download|export|generat(?:e|ion)|render|save|speech|tts|write)(?:_|$)"#)
     private static let strongKey = regex(#"^(?:artifact_(?:file|image|path|url)|files?_(?:created|modified|written)|generated_(?:file|image|path|url)|media_tag|output_(?:file|path|url)|result_(?:file|path|url)|saved_to|screenshot_path)$"#)
     private static let producerKey = regex(#"^(?:artifact(?:s|_(?:file|image|path|url))?|attachment(?:s|_(?:file|image|path|url))?|download(?:s|_(?:file|path|url))?|(?:audio|image|video)(?:_(?:file|path|url))?|file_path|local_path|media(?:_(?:file|path|url))?|path)$"#)
 
-    nonisolated static func extractInBackground(session: HermesSession, messages: sending [[String: Any]]) async -> [ArtifactRecord] {
-        extract(session: session, messages: messages)
+    struct PageResult: Sendable {
+        let records: [ArtifactRecord]
+        let messageCount: Int
+        let hasMore: Bool
+    }
+
+    // Consume the entire response off the main actor; retain only compact artifact records.
+    nonisolated static func extractPageInBackground(session: HermesSession, page: sending [String: Any]) async throws -> PageResult {
+        try Task.checkCancellation()
+        guard let messages = page["data"] as? [[String: Any]] ?? page["messages"] as? [[String: Any]] else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        let pagination = page["pagination"] as? [String: Any]
+        let limit = pagination?["limit"] as? Int
+        if pagination != nil && (limit ?? 0) <= 0 {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        let records = extract(session: session, messages: messages)
+        try Task.checkCancellation()
+        return PageResult(records: records, messageCount: messages.count,
+                          hasMore: limit.map { messages.count >= $0 } ?? false)
     }
 
     static func extract(session: HermesSession, messages: [[String: Any]]) -> [ArtifactRecord] {
@@ -36,7 +58,7 @@ struct ArtifactService {
                 let value = normalize(raw)
                 guard !value.isEmpty, found[value] == nil, looksLikeArtifact(value, explicit: explicit) else { return }
                 found[value] = ArtifactRecord(value: value, sessionID: session.id, sessionTitle: session.displayTitle,
-                                              timestamp: date, origin: role == "tool" ? .generated : .shared)
+                                              timestamp: date, origin: role == "tool" ? .generated : .shared, profileID: session.profileID)
             }
             let text = messageText(message)
 
@@ -46,9 +68,9 @@ struct ArtifactService {
             }
             guard role == "tool" else { continue }
 
-            let name = ((message["tool_name"] as? String) ?? (message["name"] as? String) ?? "").lowercased()
+            let name = ((message["tool_name"] as? String) ?? (message["name"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let producer = test(producerTool, name) || name.hasPrefix("bfl_flux3_")
-            if producer { mediaValues(text).forEach { push($0, explicit: true) } }
+            if producer || name == "terminal" { collectText(text, push) }
             if name == "browser_vision" { matches(screenshotPattern, in: text).forEach { push($0) } }
 
             var payloads = [text, untrustedPayload(text)].compactMap { $0 }.compactMap(parseJSON)
@@ -58,6 +80,8 @@ struct ArtifactService {
             }
             for payload in payloads {
                 collectStrings(payload, keyPath: "tool_result") { value, keyPath in
+                    let shellOutput = name == "terminal" && keyPath.split(separator: ".").contains { ["output", "stdout", "path"].contains(String($0)) }
+                    if shellOutput { collectText(value, push); return }
                     guard explicitKey(keyPath, producer: producer) else { return }
                     mediaValues(value).forEach { push($0, explicit: true) }
                     push(value)
@@ -108,6 +132,13 @@ struct ArtifactService {
     // MARK: - Desktop rules
 
     private static func looksLikeArtifact(_ value: String, explicit: Bool) -> Bool {
+        if !explicit {
+            let path = (URL(string: value)?.path.removingPercentEncoding ?? value).replacingOccurrences(of: "\\", with: "/").lowercased()
+            if path.contains("/.cache/pip/") || path.contains("/library/caches/pip/") || path.contains("/appdata/local/pip/cache/") ||
+                path.hasSuffix(".whl") || path.hasSuffix(".whl.metadata") { return false }
+            if value.lowercased().hasPrefix("http"), path.contains("/packages/"),
+               [".tar.gz", ".tar.bz2", ".zip", ".egg", ".zip.metadata", ".egg.metadata", ".tar.gz.metadata", ".tar.bz2.metadata"].contains(where: path.hasSuffix) { return false }
+        }
         if value.hasPrefix("http://") || value.hasPrefix("https://") || value.hasPrefix("data:image/") { return true }
         guard isFilePath(value) else { return false }
         // An explicit MEDIA: delivery counts even without a known extension.
@@ -121,9 +152,10 @@ struct ArtifactService {
     private static func collectText(_ text: String, _ push: (String, Bool) -> Void) {
         mediaValues(text).forEach { push($0, true) }
         matches(markdownImagePattern, in: text).forEach { push($0, false) }
-        // Web links in prose (PRs, localhost previews, citations) are references, not
-        // deliverables; only images and document paths count from assistant text.
+        matches(markdownLinkPattern, in: text).forEach { push($0, false) }
+        matches(urlPattern, in: text).forEach { push($0, false) }
         matches(pathPattern, in: text).forEach { push($0, false) }
+        matches(windowsPathPattern, in: text).forEach { push($0, false) }
     }
 
     static func mediaValues(_ text: String) -> [String] {
@@ -181,7 +213,16 @@ struct ArtifactService {
     }
 
     private static func normalize(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = value
+        if trimmed.hasPrefix("#media:") {
+            trimmed = String(trimmed.dropFirst(7)).removingPercentEncoding ?? trimmed
+        }
+        trimmed = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+        for _ in 0..<3 {
+            guard let quote = trimmed.first, "\"'`".contains(quote), trimmed.count > 1, trimmed.last == quote else { break }
+            trimmed = String(trimmed.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        trimmed = trimmed.replacingOccurrences(of: #"[`*]+$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"[),.;]+$"#, with: "", options: .regularExpression)
         if trimmed.hasPrefix("file://"), let url = URL(string: trimmed) { return url.path }
         return trimmed

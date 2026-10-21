@@ -37,14 +37,23 @@ extension DockModel {
         loadSessions()
     }
 
-    func artifactMessages(for session: HermesSession) async throws -> [[String: Any]] {
-        // Hermes has no `session.messages` RPC; the REST transcript carries raw
-        // tool calls, which is where written files are recorded.
+    func artifactSessions() async throws -> [HermesSession] {
+        let rows = try await interruptRPC.artifactSessions()
+        var seen = Set<ProfileScopedID>()
+        return rows.compactMap { row in
+            guard let session = Self.parseSession(row, profileID: row["profile"] as? String),
+                  seen.insert(session.scopedID).inserted else { return nil }
+            return session
+        }
+    }
+
+    func artifactMessages(for session: HermesSession, offset: Int) async throws -> [String: Any] {
+        // Include pre-compaction output and page through the entire transcript.
         do {
-            let result = try await interruptRPC.sessionMessages(sessionID: session.id, profileID: session.profileID)
-            return result["data"] as? [[String: Any]] ?? result["messages"] as? [[String: Any]] ?? []
+            return try await interruptRPC.sessionMessages(sessionID: session.id, profileID: session.profileID,
+                                                       limit: 100, offset: offset, includeCompacted: true)
         } catch HermesGateway.GatewayError.httpError(404) {
-            return [] // pruned since the session list was read
+            return ["data": []] // pruned since the session list was read
         }
     }
 

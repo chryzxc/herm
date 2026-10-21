@@ -154,13 +154,13 @@ private final class ArtifactLoadProbe {
     var active = 0
     var peak = 0
     var pauses = true
-    func messages(_ session: HermesSession) async throws -> [[String: Any]] {
+    func messages(_ session: HermesSession, offset: Int) async throws -> [String: Any] {
         calls += 1
         active += 1
         peak = max(peak, active)
         defer { active -= 1 }
         if pauses { try await Task.sleep(for: .seconds(60)) }
-        return [["role": "assistant", "content": "MEDIA: /tmp/\(session.id).png"]]
+        return ["data": [["role": "assistant", "content": "MEDIA: /tmp/\(session.id).png"]]]
     }
 }
 
