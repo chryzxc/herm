@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Herm
 
@@ -105,4 +106,86 @@ struct ConversationMessageRowTests {
         #expect(message.durationLabel == ResponseDurationFormatting.string(seconds: 95))
         #expect(ChatMessage(role: .hermes, text: "body").durationLabel == nil)
     }
+
+    @Test func hoverUpdatesProductionTimestampWithoutReevaluatingMessage() async throws {
+        for message in [
+            ChatMessage(role: .user, text: "hello"),
+            ChatMessage(role: .hermes, text: "**answer**", responseDuration: 2, tokenCount: 42),
+            ChatMessage(role: .hermes, text: "failure", isError: true)
+        ] {
+            let hover = ConversationRowHoverPresentation()
+            let row = ConversationMessageRow(
+                message: message, isStreamingMessage: false, streamingText: nil,
+                activeBotProfileID: nil, botsByID: [:], avatarImages: [:],
+                botRosterRevision: 0, onImagePreview: { _ in }, hoverPresentation: hover
+            )
+            try await checkHover(row.equatable(), hover: hover, parent: "message", leaf: "timestamp",
+                                 resting: message.isError ? 1 : 0, hovering: 1)
+        }
+    }
+
+    @Test func hoverUpdatesSystemAndFeedBackgroundWithoutReevaluatingContent() async throws {
+        for expanded in [false, true] {
+            let systemHover = ConversationRowHoverPresentation()
+            let system = SystemEventCard(
+                event: SystemEvent(label: "System"), text: "**Headline**\nFull detail",
+                timeLabel: "12:00", isExpanded: expanded, hoverPresentation: systemHover
+            )
+            try await checkHover(system, hover: systemHover, parent: "system", leaf: "background",
+                                 resting: expanded ? 0.05 : 0, hovering: 0.05)
+            let feedHover = ConversationRowHoverPresentation()
+            let feed = FeedEventRow(
+                event: SystemEvent(label: "Feed", isFeed: true), line: FeedLine("**Headline**\nFull detail"),
+                timeLabel: "12:00", botsByID: [:], avatarImages: [:],
+                isExpanded: expanded, hoverPresentation: feedHover
+            )
+            try await checkHover(feed, hover: feedHover, parent: "feed", leaf: "background",
+                                 resting: expanded ? 0.05 : 0, hovering: 0.05)
+        }
+    }
+
+    private func checkHover<Content: View>(
+        _ content: Content, hover: ConversationRowHoverPresentation,
+        parent: String, leaf: String, resting: Double, hovering: Double
+    ) async throws {
+        let recorder = RowEvaluationRecorder()
+        let host = NSHostingView(rootView: content.environment(\.conversationRowEvaluation, { name, value in
+            recorder.values[name, default: []].append(value)
+        }))
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        try await settle(host)
+        let parentCount = recorder.values[parent, default: []].count
+        #expect(parentCount > 0)
+        #expect(recorder.values[leaf]?.last == resting)
+        let size = host.fittingSize
+        let identities = nativeViewIdentities(host)
+        for entered in [true, false, true, false] {
+            hover.isHovering = entered
+            try await settle(host)
+            #expect(recorder.values[leaf]?.last == (entered ? hovering : resting))
+            #expect(recorder.values[parent, default: []].count == parentCount)
+            #expect(host.fittingSize == size)
+            #expect(nativeViewIdentities(host) == identities)
+        }
+        print("Hover evaluations \(parent): \(recorder.values.mapValues { $0.count }); \(leaf): \(recorder.values[leaf] ?? [])")
+    }
+
+    private func settle(_ host: NSView) async throws {
+        for _ in 0..<3 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func nativeViewIdentities(_ view: NSView) -> [ObjectIdentifier] {
+        [ObjectIdentifier(view)] + view.subviews.flatMap(nativeViewIdentities)
+    }
+}
+
+@MainActor
+private final class RowEvaluationRecorder {
+    var values: [String: [Double]] = [:]
 }
