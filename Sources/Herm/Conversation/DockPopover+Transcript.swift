@@ -157,8 +157,7 @@ extension DockPopover {
                     .id(model.sessionID)
                     .defaultScrollAnchor(.bottom)
                     .onAppear {
-                        isConversationAtBottom = true
-                        unseenMessageCount = 0
+                        scrollPresentation.reset()
                         mountedMessageRange = ConversationMessageWindow.rangeForSessionReplacement(
                             totalCount: model.messages.count
                         )
@@ -169,8 +168,7 @@ extension DockPopover {
                         // parent presentation state is not. Reset explicitly
                         // so a session opened after an expanded history page
                         // mounts only its bounded recent window.
-                        isConversationAtBottom = true
-                        unseenMessageCount = 0
+                        scrollPresentation.reset()
                         mountedMessageRange = ConversationMessageWindow.rangeForSessionReplacement(
                             totalCount: model.messages.count
                         )
@@ -284,36 +282,22 @@ extension DockPopover {
                         scheduleStreamingTailScroll(proxy)
                     }
 
-                    if unseenMessageCount > 0 {
-                        Button {
-                            unseenMessageCount = 0
-                            isConversationAtBottom = true
-                            mountedMessageRange = ConversationMessageWindow.rangeForSessionReplacement(
-                                totalCount: model.messages.count
-                            )
-                            conversationScrollRequest &+= 1
-                        } label: {
-                            HStack(spacing: 7) {
-                                DockIcon(.arrowDown, size: 11, color: Color.dockPrimaryText)
-                                Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .padding(.horizontal, 14)
-                            .frame(height: 34)
-                            .background(Capsule().fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
-                        }
-                        .buttonStyle(.dockHover)
-                        .padding(.bottom, 12)
+                    ConversationLatestMessageControl(presentation: scrollPresentation) {
+                        unseenMessageCount = 0
+                        isConversationAtBottom = true
+                        mountedMessageRange = ConversationMessageWindow.rangeForSessionReplacement(
+                            totalCount: model.messages.count
+                        )
+                        conversationScrollRequest &+= 1
                     }
 
                     let showsNavigatorMap = model.messageNavigatorItems.count >= MessageNavigator.minimumMessagesToShowNavigator
                         && viewport.size.width >= navigatorMinimumConversationWidth
                     if showsNavigatorMap || isShowingMessageSearch {
-                        MessageNavigatorView(
+                        ConversationScrollNavigator(
+                            presentation: scrollPresentation,
                             items: model.messageNavigatorItems,
                             sessionID: model.sessionID ?? "",
-                            visibleTargets: visibleNavigatorTargets,
                             isSearchPresented: $isShowingMessageSearch,
                             showsMap: showsNavigatorMap,
                             isLoadingHistory: model.isLoadingTranscriptHistory,

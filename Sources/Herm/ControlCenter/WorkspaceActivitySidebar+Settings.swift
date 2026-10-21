@@ -353,7 +353,7 @@ extension WorkspaceActivitySidebar {
             }
         }
         .task {
-            control.configEditor.onSaved = { model.refreshRuntimeConfiguration() }
+            control.configEditor.onSaved = { model.refreshRuntimeConfiguration(force: true) }
             model.refreshRuntimeConfiguration()
             model.refreshRuntimeModelOptions()
         }
@@ -377,7 +377,7 @@ extension WorkspaceActivitySidebar {
             HStack {
                 settingsSubheading("Default model")
                 Spacer()
-                Button(action: { model.refreshRuntimeConfiguration() }) {
+                Button(action: { model.refreshRuntimeConfiguration(force: true) }) {
                     if model.isLoadingRuntimeConfiguration {
                         ProgressView().controlSize(.small).tint(Color.dockAccent)
                     } else {

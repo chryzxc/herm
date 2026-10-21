@@ -494,8 +494,8 @@ struct SignalTrace: View {
                                      activitySignature: activity.map { "\($0.id):\($0.isComplete)" },
                                      activityIcon: Self.glyph(for: activity.last))
             } else {
-                TimelineView(.dockMotion(paused: reduceMotion)) { context in
-                    let breathe = reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 2.4)
+                DockBotFrameClock { frame in
+                    let breathe = frame.moves ? DockMotionSchedule.breath(frame.date, period: 2.4) : 0
                     Circle()
                         .fill(color.opacity(0.08 + 0.1 * breathe))
                         .frame(width: 28, height: 28)
@@ -530,11 +530,11 @@ private struct TracingGlyph: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.dockMotion(paused: reduceMotion)) { context in
-            let trace = reduceMotion ? 0 : DockMotionSchedule.loop(context.date, period: 1.6)
-            let breathe = reduceMotion ? 1 : DockMotionSchedule.breath(context.date, period: 2.4)
+        DockBotFrameClock { frame in
+            let trace = frame.moves ? DockMotionSchedule.loop(frame.date, period: 1.6) : 0
+            let breathe = frame.moves ? DockMotionSchedule.breath(frame.date, period: 2.4) : 1
             ZStack {
-                PhosphorShape(icon: icon).fill(color.opacity(reduceMotion ? 1 : 0.35))
+                PhosphorShape(icon: icon).fill(color.opacity(frame.moves ? 0.35 : 1))
                 // Phosphor glyphs are filled outlines, so a stroke draws both edges; keep it hairline.
                 PhosphorShape(icon: icon)
                     .trim(from: 0, to: trace)
@@ -547,31 +547,6 @@ private struct TracingGlyph: View {
     }
 }
 
-/// One soft highlight sweeping across text, on the shared motion clock.
-private struct RunningShimmer: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-        } else {
-            content
-                .overlay {
-                    TimelineView(.dockMotion()) { context in
-                        GeometryReader { proxy in
-                            let sweep = DockMotionSchedule.loop(context.date, period: 1.8)
-                            LinearGradient(colors: [.clear, Color.dockPrimaryText.opacity(0.55), .clear],
-                                           startPoint: .leading, endPoint: .trailing)
-                                .frame(width: proxy.size.width * 0.45)
-                                .offset(x: proxy.size.width * (1.45 * sweep - 0.45))
-                        }
-                    }
-                    .mask(content)
-                    .allowsHitTesting(false)
-                }
-        }
-    }
-}
 
 /// Bots this session messaged that are still working after the turn that
 /// sent them ended: the huddle with the finished lead dimmed.
@@ -584,6 +559,7 @@ struct BotCrewRow: View {
   var repliesToUser = false
 
   var body: some View {
+    DockLiveActivityDecoration {
     HStack(spacing: 12) {
       BotHuddle(lead: from, partners: partners, avatars: avatars, leadDone: !repliesToUser,
                 leadSignature: repliesToUser ? [] : nil, leadIcon: .chatCircleDots)
@@ -597,12 +573,12 @@ struct BotCrewRow: View {
           Text("Working for about \(TurnActivityView.roughDuration(context.date.timeIntervalSince(since)))")
             .font(.system(size: 11))
             .foregroundStyle(Color.dockMetadataText)
-            .modifier(RunningShimmer())
         }
       }
     }
     .padding(.vertical, 6)
     .frame(maxWidth: .infinity, alignment: .leading)
+    }
   }
 }
 
@@ -629,6 +605,7 @@ struct BotDispatchCard: View {
     let reply = record.result.flatMap { $0.isEmpty ? nil : $0 }
     let canOpen = reply != nil && !record.isLive
     let isOpen = canOpen && openIDs.contains(record.id)
+    DockLiveActivityDecoration(active: record.isLive) {
     VStack(alignment: .leading, spacing: 4) {
       Button {
         guard canOpen else { return }
@@ -667,7 +644,6 @@ struct BotDispatchCard: View {
           .font(.system(size: 11))
           .foregroundStyle(Color.dockMetadataText)
           .lineLimit(1).truncationMode(.tail)
-          .modifier(RunningShimmer())
           .padding(.leading, 24)
           .contentTransition(.opacity)
           .animation(.easeOut(duration: 0.18), value: step)
@@ -690,6 +666,7 @@ struct BotDispatchCard: View {
           .transition(.opacity)
       }
     }
+    }
   }
 
   @ViewBuilder
@@ -700,7 +677,6 @@ struct BotDispatchCard: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
           Text("\(record.state == .queued && record.linkedCardID != nil ? "queued" : "working") · \(Self.clock(context.date.timeIntervalSince(record.createdAt)))")
             .contentTransition(.numericText())
-            .modifier(RunningShimmer())
         }
         .transition(.opacity)
       case .waiting:
@@ -785,6 +761,7 @@ struct TurnActivityView: View, Equatable {
         steps
         let phase = SignalTrace.Phase(activity: activity)
         let crew = bot.map { lead in self.crew.filter { $0.id != lead.id } } ?? []
+        DockLiveActivityDecoration {
         HStack(spacing: 10) {
           // One view for the lead with or without a crew, so Bots join and
           // leave beside it without the lead jumping or resizing.
@@ -810,11 +787,11 @@ struct TurnActivityView: View, Equatable {
                    + (crew.isEmpty ? "" : " · \(crew.count) Bot\(crew.count == 1 ? "" : "s") working"))
                 .font(.system(size: bot == nil && phase != .compacting ? 12 : 11))
                 .foregroundStyle(Color.dockMetadataText)
-                .modifier(RunningShimmer())
             }
           }
         }
         .padding(.vertical, 6)
+        }
         .transition(.opacity)
       } else {
         Button {
@@ -997,6 +974,7 @@ struct TurnActivityView: View, Equatable {
   }
 
   private func toolLabel(_ call: ActiveToolCall) -> some View {
+    DockLiveActivityDecoration(active: !call.isComplete) {
     HStack(spacing: 8) {
       if Self.isFileTool(call.name), let image = ArtifactFileIcon.inlineImage(forPath: call.context, size: 14) {
         Image(nsImage: image).frame(width: 16, height: 16)
@@ -1015,19 +993,19 @@ struct TurnActivityView: View, Equatable {
             .foregroundStyle(Color.dockMetadataText)
         }
       } else {
-        // The live step reads like a working Bot card: shimmer plus a running clock.
-        title.modifier(RunningShimmer())
+        // Real elapsed time is independent of the decorative block clock.
+        title
         Spacer(minLength: 8)
         TimelineView(.periodic(from: .now, by: 1)) { context in
           Text("running · \(BotDispatchCard.clock(context.date.timeIntervalSince(call.startedAt)))")
             .contentTransition(.numericText())
-            .modifier(RunningShimmer())
         }
         .font(.system(size: 11).monospacedDigit())
         .foregroundStyle(Color.dockMetadataText)
       }
     }
     .help(Self.tooltip(for: call))
+    }
   }
 
   /// Readable hover text: the tool's context, then its unwrapped output, capped so it stays a tooltip.

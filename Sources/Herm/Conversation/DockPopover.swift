@@ -89,11 +89,18 @@ struct DockPopover: View {
     var onOpenWindow: (() -> Void)?
     /// The native window supplies its own frame, so drop the rounded surface.
     var usesWindowChrome = false
-    @State var isConversationAtBottom = true
+    @State var scrollPresentation = ConversationScrollPresentationState()
+    var isConversationAtBottom: Bool {
+        get { scrollPresentation.isAtBottom }
+        nonmutating set { scrollPresentation.isAtBottom = newValue }
+    }
     @State var clarificationSelection: [String] = []
     @State var valuePromptText = ""
     @State var valuePromptIdentifier = ""
-    @State var unseenMessageCount = 0
+    var unseenMessageCount: Int {
+        get { scrollPresentation.unseenMessageCount }
+        nonmutating set { scrollPresentation.unseenMessageCount = newValue }
+    }
     @State var isShowingMessageSearch = false
     @State var isShowingMessagePins = false
     @State var pinnedMessageJumpID: UUID?
@@ -104,7 +111,10 @@ struct DockPopover: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State var conversationScrollRequest = 0
     @State var mountedMessageRange: Range<Int> = 0..<0
-    @State var visibleNavigatorTargets: Set<MessageNavigatorTarget> = []
+    var visibleNavigatorTargets: Set<MessageNavigatorTarget> {
+        get { scrollPresentation.visibleTargets }
+        nonmutating set { scrollPresentation.visibleTargets = newValue }
+    }
     @State var scrollController = ConversationScrollController()
     /// Scroll bookkeeping that never drives rendering. Kept out of `@State`
     /// values so settle, preference and layout callbacks do not invalidate
@@ -122,7 +132,7 @@ struct DockPopover: View {
     @StateObject var micLevelMeter = MicLevelMeter()
     @StateObject var messageActionState = ConversationMessageActionState()
     @StateObject var workspaceStore = WorkspaceStore()
-    @StateObject var agentUpdateService = HermesUpdateService()
+    @StateObject var agentUpdateService = HermesUpdateService.shared
     @StateObject var developerWorkflow = DeveloperWorkflowModel.shared
     @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
     @StateObject var issueCenter = IssueCenterModel()

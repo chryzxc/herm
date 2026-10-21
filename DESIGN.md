@@ -1178,6 +1178,8 @@ opens at the top when the category changes.
   Notifications contains completion and repository alerts. Updates contains
   both app and agent updates, plus Hermes update behavior. Files & terminal
   keeps the working directory, execution backend, shell, and file access together.
+  Panel and window share one agent updater. Its owner-scoped phase affects only
+  ambient rail and companion activity, never session tasks or announcements.
   Checkpoint limits live beside the checkpoint switch in Privacy & safety.
   Preference rows keep the 52pt minimum with a small switch trailing.
 - **Gateway service.** General shows the default-profile messaging gateway's
@@ -1335,7 +1337,7 @@ state appears when there is no activity; refresh errors remain actionable.
 
 
 Chat retains the established `TurnActivityView`: live tool steps, `SignalTrace`,
-running-duration shimmer, and a compact expandable completed summary. Generated
+stable duration text with separate animated live-work decoration, and a compact expandable completed summary. Generated
 reply content must not replace or restyle this activity presentation.
 
 ### Generated replies

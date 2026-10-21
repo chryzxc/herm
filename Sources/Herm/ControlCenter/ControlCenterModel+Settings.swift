@@ -203,7 +203,7 @@ extension ControlCenterModel {
             defer { finishAction(reloadMCPActionID) }
             do {
                 _ = try await rpc.reloadMCP(sessionID: sessionID)
-                dockModel?.refreshRuntimeConfiguration()
+                dockModel?.refreshRuntimeConfiguration(force: true)
             } catch {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }

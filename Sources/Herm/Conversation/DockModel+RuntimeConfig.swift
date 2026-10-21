@@ -11,46 +11,34 @@ extension DockModel {
         return Date(timeIntervalSince1970: number.doubleValue)
     }
 
-    func refreshRuntimeConfiguration() {
-        guard !isLoadingRuntimeConfiguration else { return }
-        isLoadingRuntimeConfiguration = true
-        runtimeConfigurationError = nil
-        let previousProjectionState = runtimeConfigurationProjectionState
-        runtimeConfigurationProjectionState = .loading
-        Task.detached { [weak self] in
-            // Resolve the compact status-item label independently. Full
-            // runtime inspection invokes several CLI commands and should not
-            // leave the menu bar on its generic fallback while those finish.
-            let configurationTask = Task.detached { HermesRuntimeInspector.read() }
-            let agentName = HermesRuntimeInspector.readAgentName()
-            if let agentName {
-                await MainActor.run {
-                    self?.runtimeConfiguration = HermesRuntimeConfiguration(
-                        agentName: agentName,
-                        model: nil,
-                        provider: nil,
-                        configPath: nil,
-                        maxTurns: nil,
-                        terminalTimeout: nil,
-                        skills: [],
-                        skillsInventory: .unavailable(.emptyOutput),
-                        mcpServers: [],
-                        plugins: []
-                    )
-                }
+    func refreshRuntimeConfiguration(force: Bool = false) {
+        Task { [weak self] in await self?.loadRuntimeConfiguration(force: force) }
+    }
+
+    func loadRuntimeConfiguration(force: Bool) async {
+        let refresh = runtimeConfigurationRefresh
+        refresh.onChange = { [weak self, weak refresh] in
+            guard let self, let refresh else { return }
+            self.isLoadingRuntimeConfiguration = self.isRuntimeModelMutationPending || refresh.isLoading
+            self.runtimeConfigurationError = self.runtimeModelMutationError ?? refresh.error
+            if refresh.configuration == nil {
+                self.runtimeConfiguration = nil
+                self.runtimeConfigurationProjectionState = .empty
             }
-            let configuration = await configurationTask.value
-            await MainActor.run {
-                guard let self else { return }
-                if Self.hasRuntimeConfigurationData(configuration) {
-                    self.runtimeConfiguration = configuration
+            if let configuration = refresh.configuration, Self.hasRuntimeConfigurationData(configuration) {
+                self.runtimeConfiguration = configuration
+                if let error = refresh.error {
+                    self.runtimeConfigurationProjectionState = .stale(configuration, safeMessage: error)
+                } else if !refresh.isLoading {
                     self.runtimeConfigurationProjectionState = .ready(configuration)
-                } else {
-                    self.runtimeConfigurationProjectionState = Self.failedOrStale(previousProjectionState, safeMessage: "Hermes runtime inspection is unavailable. Try refreshing.")
                 }
-                self.isLoadingRuntimeConfiguration = false
+            } else if let error = refresh.error {
+                self.runtimeConfigurationProjectionState = Self.failedOrStale(self.runtimeConfigurationProjectionState, safeMessage: error)
+            } else if refresh.isLoading, self.runtimeConfiguration == nil {
+                self.runtimeConfigurationProjectionState = .loading
             }
         }
+        await refresh.refresh(force: force)
     }
 
     static func hasRuntimeConfigurationData(_ configuration: HermesRuntimeConfiguration) -> Bool {
@@ -171,7 +159,9 @@ extension DockModel {
     }
 
     func updateRuntimeModel(_ option: HermesModelOption) {
-        guard !isLoadingRuntimeConfiguration else { return }
+        guard !isRuntimeModelMutationPending, !isLoadingRuntimeConfiguration else { return }
+        isRuntimeModelMutationPending = true
+        runtimeModelMutationError = nil
         isLoadingRuntimeConfiguration = true
         runtimeConfigurationError = nil
 
@@ -203,12 +193,11 @@ extension DockModel {
 
             // The gateway is the sole writer. Re-read the persisted projection
             // afterward so settings reflect only what Hermes actually accepted.
-            let configuration = await Task.detached {
-                HermesRuntimeInspector.read()
-            }.value
-            runtimeConfiguration = configuration
-            runtimeConfigurationError = updateError
-            isLoadingRuntimeConfiguration = false
+            runtimeModelMutationError = updateError
+            await loadRuntimeConfiguration(force: updateError == nil)
+            runtimeConfigurationError = updateError ?? runtimeConfigurationRefresh.error
+            isRuntimeModelMutationPending = false
+            isLoadingRuntimeConfiguration = runtimeConfigurationRefresh.isLoading
         }
     }
 

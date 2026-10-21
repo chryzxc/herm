@@ -251,13 +251,6 @@ struct ChatComposerView: View {
                         contextCaret = caret
                         model.removeDeletedInlineContexts()
                         completions.update(for: text, caret: caret)
-                        // A large paste can change NSTextView's content size
-                        // without updating its internal scroll origin. Defer
-                        // until AppKit lays out the new text, then keep the
-                        // insertion point visible inside the fixed editor.
-                        DispatchQueue.main.async {
-                            keepEditorCaretVisible()
-                        }
                     },
                     onContentHeightChanged: { contentHeight in
                         composerHeight = ComposerLayout.height(for: contentHeight)
@@ -774,14 +767,6 @@ struct ChatComposerView: View {
         isComposerFocused = true
     }
 
-    private func keepEditorCaretVisible() {
-        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
-              textView.isEditable else { return }
-
-        let caret = textView.selectedRange().location
-        textView.scrollRangeToVisible(NSRange(location: caret, length: 0))
-    }
-
     private var placeholderText: String {
         if model.isRestoringSession { return DockSkinPresentation.current.restoringPlaceholder }
         if model.status == .needsClarification { return DockSkinPresentation.current.answerPlaceholder }
@@ -1145,7 +1130,6 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
         textView.contexts = contexts; textView.onInspectContext = onInspectContext
-        textView.textStorage?.setAttributedString(InlineContextCodec.render(text.displayBullets, contexts: contexts))
         textView.font = DockSkinPresentation.nativeFont(size: 14)
         textView.textColor = NSColor(Color.dockPrimaryText)
         textView.insertionPointColor = NSColor(Color.dockAccent)
@@ -1169,6 +1153,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
         scrollView.documentView = textView
+        context.coordinator.synchronize(textView)
         context.coordinator.reportContentHeight(for: textView)
         return scrollView
     }
@@ -1180,22 +1165,17 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
         textView.contexts = contexts; textView.onInspectContext = onInspectContext
-        textView.font = DockSkinPresentation.nativeFont(size: 14)
-        textView.textColor = NSColor(Color.dockPrimaryText)
-        textView.insertionPointColor = NSColor(Color.dockAccent)
-        if InlineContextCodec.serialize(textView.attributedString()).markdownBullets != text {
-            context.coordinator.isSynchronizingText = true
-            textView.textStorage?.setAttributedString(InlineContextCodec.render(text.displayBullets, contexts: contexts))
-            context.coordinator.isSynchronizingText = false
-        }
+        context.coordinator.synchronize(textView)
         if let caret = takePendingCaret() {
             textView.setSelectedRange(NSRange(location: min(caret, (textView.string as NSString).length), length: 0))
         }
-        context.coordinator.highlightCommands(in: textView)
         context.coordinator.reportContentHeight(for: textView)
 
         guard isFocused, scrollView.window?.firstResponder !== textView else { return }
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView, weak scrollView] in
+            guard let coordinator, let textView, let scrollView,
+                  coordinator.parent.isFocused, textView.isEditable,
+                  scrollView.documentView === textView else { return }
             scrollView.window?.makeFirstResponder(textView)
         }
     }
@@ -1203,6 +1183,13 @@ struct ComposerInputEditor: NSViewRepresentable {
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerInputEditor
         var isSynchronizingText = false
+        let synchronization = ComposerEditorSynchronization()
+
+        func synchronize(_ textView: NSTextView) {
+            isSynchronizingText = true
+            synchronization.synchronize(textView, markdown: parent.text, contexts: parent.contexts, inset: parent.inset)
+            isSynchronizingText = false
+        }
 
         init(_ parent: ComposerInputEditor) {
             self.parent = parent
@@ -1218,34 +1205,20 @@ struct ComposerInputEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            if !isSynchronizingText { bulletizeCurrentLine(textView) }
-            let markdown = InlineContextCodec.serialize(textView.attributedString()).markdownBullets
+            guard !isSynchronizingText else { return }
+            if !textView.hasMarkedText() { bulletizeCurrentLine(textView) }
+            let markdown = synchronization.markdown(in: textView)
             if !isSynchronizingText, parent.text != markdown {
                 parent.text = markdown
                 parent.onTextChanged(markdown, textView.selectedRange().location)
             }
-            highlightCommands(in: textView)
             reportContentHeight(for: textView)
-        }
-
-        /// Tints `/command` tokens without making the plain-text editor rich.
-        func highlightCommands(in textView: NSTextView) {
-            guard let layoutManager = textView.layoutManager else { return }
-            let full = NSRange(location: 0, length: (textView.string as NSString).length)
-            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: full)
-            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
-            let accent = NSColor(Color.dockAccent)
-            for range in SlashCommandTokens.ranges(in: textView.string) {
-                layoutManager.addTemporaryAttributes(
-                    [.foregroundColor: accent, .backgroundColor: accent.withAlphaComponent(0.16)],
-                    forCharacterRange: range
-                )
-            }
+            synchronization.revealCaret(in: textView) { [weak self] in self?.parent.isFocused == true }
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isSynchronizingText, let textView = notification.object as? NSTextView else { return }
-            parent.onCaretMoved(InlineContextCodec.serialize(textView.attributedString()).markdownBullets, textView.selectedRange().location)
+            parent.onCaretMoved(synchronization.markdown(in: textView), textView.selectedRange().location)
         }
 
         /// Typing "- " at a line start shows a "•" bullet; the binding keeps markdown "- ".
@@ -1262,12 +1235,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         }
 
         func reportContentHeight(for textView: NSTextView) {
-            guard let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else { return }
-            layoutManager.ensureLayout(for: textContainer)
-            let height = layoutManager.usedRect(for: textContainer).height
-                + (textView.textContainerInset.height * 2)
-            parent.onContentHeightChanged(max(ComposerLayout.minHeight, height))
+            synchronization.updatePresentation(textView, publishHeight: parent.onContentHeightChanged)
         }
     }
 }
@@ -1354,7 +1322,7 @@ private final class ComposerInputTextView: NSTextView {
     }
 }
 
-private extension String {
+extension String {
     var markdownBullets: String { replacingOccurrences(of: "(?m)^• ", with: "- ", options: .regularExpression) }
     var displayBullets: String { replacingOccurrences(of: "(?m)^- ", with: "• ", options: .regularExpression) }
 }

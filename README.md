@@ -210,6 +210,7 @@ Discord sessions show a compact tinted pill with the Discord icon beside the pre
 - **Streaming chat** with Markdown (including tables with optional outer pipes), images, tool output, and inline clarification requests. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
 - **Working bot**: a larger, borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
+- **Running activity** keeps duration text free of shimmer while elapsed time continues updating, with a separate live-work sweep that pauses when Herm loses focus and stays still under Reduce Motion or motion-free themes.
 - **Transcript scrolling** yields immediately when you scroll upward during a reply and resumes following at the bottom. Jump to latest respects Reduce Motion.
 - **Steering during a turn**: guidance you type while Hermes is working is added to the running turn at the next tool boundary.
 - **Queued messages**: new submissions wait behind earlier messages, including a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
@@ -376,6 +377,7 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 Settings groups navigation into **App**, **Agent**, **Tools & access**, and **Activity & maintenance**. Find startup and keyboard shortcuts in **General**; backend connections in **Gateway**; themes, sidebar visibility, notch display, and the companion in **Appearance**; alerts in **Notifications**; and app/agent updates in **Updates**. **Files & terminal** brings the working directory, execution backend, and shell settings together. Each page includes a short description, and compact windows use the same grouped category menu.
 
 Settings shows each configured MCP server once, with its connection details and status when Hermes provides them. Dropdown settings align with the right edge of their preference rows.
+Agent updates share one service across the panel and window. Installation progress and failure appear in the notch and companion without creating session tasks or session completion announcements; recovery remains in Settings → Updates.
 
 **Settings → General → Hermes gateway** shows whether the default-profile messaging gateway is running. Status refreshes every 15 seconds while visible, with a manual refresh button. **Restart gateway** runs Hermes' restart command after confirmation and checks status again. This requires a Hermes launchd service; manually launched gateways remain managed in Terminal. Restarting may briefly interrupt messaging channels and scheduled work.
 
