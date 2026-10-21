@@ -648,11 +648,12 @@ extension DockModel {
                 transcriptRows = tail.rows
                 transcriptHistoryCursor = tail.cursor
             }
-            let restored = Self.parseMessages(
+            let restored = await Self.parseMessagesOffMain(
                 transcriptRows,
                 defaultBotProfileID: profileID,
                 defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
             )
+            guard resumeGeneration == sessionResumeGeneration else { return false }
             transcriptMessageIDsByRowID = restored.rowIDs
             storedMessageReferences = StoredMessageReference.references(rows: transcriptRows, rowIDs: restored.rowIDs)
             // A turn that went live while the transcript loaded keeps its row.

@@ -421,7 +421,7 @@ extension DockModel {
         return status == "dispatched" || mode == "background"
     }
 
-    static func truncatedForPersistence(_ value: String) -> String {
+    nonisolated static func truncatedForPersistence(_ value: String) -> String {
         // O(1) exit for the common short payload: a String never has more characters than UTF-8 bytes.
         guard value.utf8.count > toolPayloadPersistenceLimit else { return value }
         let prefix = value.prefix(toolPayloadPersistenceLimit)

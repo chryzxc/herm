@@ -465,7 +465,7 @@ final class DockModel: ObservableObject {
     /// grow into the multi-MB range for long sessions, which was observed to
     /// make session restoration fail with "connection to Hermes was lost".
     /// Cap what we keep to a size that comfortably covers the UI preview.
-    static let toolPayloadPersistenceLimit = 4000
+    nonisolated static let toolPayloadPersistenceLimit = 4000
 
     static let visionUnsupportedNotice = "This model can't read images. Use a vision-capable model in Hermes to analyze images."
     static let sessionDateFormatter = ISO8601DateFormatter()

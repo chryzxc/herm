@@ -146,7 +146,7 @@ extension DockModel {
     }
 
     /// Tool arguments as short strings: text as-is, anything else as JSON.
-    static func textArgs(_ args: [String: Any]?) -> [String: String]? {
+    nonisolated static func textArgs(_ args: [String: Any]?) -> [String: String]? {
         guard let args, !args.isEmpty else { return nil }
         return args.mapValues { value in
             let text = (value as? String) ?? (try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
@@ -155,7 +155,7 @@ extension DockModel {
         }
     }
 
-    static func parseArgsDict(_ value: Any?) -> [String: Any]? {
+    nonisolated static func parseArgsDict(_ value: Any?) -> [String: Any]? {
         if let dict = value as? [String: Any] { return dict }
         if let str = value as? String,
            let data = str.data(using: .utf8),
@@ -186,18 +186,41 @@ extension DockModel {
                 }
             }.value
             guard generation == sessionResumeGeneration, sessionID == requestedSessionID else { return }
+            // One `messages` publication for the whole batch, not one per image.
+            var updated = messages
+            var changed = false
             for entry in loaded where !entry.1.isEmpty {
                 let images = entry.1.compactMap { NSImage(data: $0) }
                 guard !images.isEmpty,
-                      let index = messages.firstIndex(where: { $0.id == entry.0 }) else { continue }
-                messages[index] = messages[index].attachingImages(images)
+                      let index = updated.firstIndex(where: { $0.id == entry.0 }) else { continue }
+                updated[index] = updated[index].attachingImages(images)
+                changed = true
             }
+            if changed { messages = updated }
         }
+    }
+
+    /// Long transcripts stalled the main actor on resume. The rows are plain
+    /// JSON values and the result carries no images yet, so neither is shared
+    /// mutable state across the hop.
+    static func parseMessagesOffMain(
+        _ value: Any?,
+        defaultBotProfileID: String?,
+        defaultBotDisplayName: String?
+    ) async -> RestoredTranscript {
+        let rows = UncheckedTranscriptValue(value: value)
+        return await Task.detached(priority: .userInitiated) {
+            UncheckedTranscriptValue(value: parseMessages(
+                rows.value,
+                defaultBotProfileID: defaultBotProfileID,
+                defaultBotDisplayName: defaultBotDisplayName
+            ))
+        }.value.value
     }
 
     /// The cpipe plugin queues slash commands as an expanded prompt, and that
     /// expansion is what Hermes stores. Restore what the user typed.
-    static func unwrappedSlashCommand(_ text: String) -> String {
+    nonisolated static func unwrappedSlashCommand(_ text: String) -> String {
         let intro = "The user explicitly invoked /"
         let marker = "User message (preserved verbatim):\n"
         guard text.hasPrefix(intro), let end = text.range(of: marker) else { return text }
@@ -205,7 +228,7 @@ extension DockModel {
         return "/\(name) " + text[end.upperBound...]
     }
 
-    static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> RestoredTranscript {
+    nonisolated static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> RestoredTranscript {
         guard let rows = value as? [[String: Any]] else {
             return RestoredTranscript(messages: [], pendingImages: [])
         }
@@ -326,7 +349,7 @@ extension DockModel {
 
     /// Tool calls an assistant history row requested, in either the OpenAI
     /// `tool_calls` shape or Anthropic-style `tool_use` content parts.
-    static func historyToolCalls(in row: [String: Any], timestamp: Date) -> [ActiveToolCall] {
+    nonisolated static func historyToolCalls(in row: [String: Any], timestamp: Date) -> [ActiveToolCall] {
         let parts = ((row["tool_calls"] as? [[String: Any]]) ?? [])
             + ((row["content"] as? [[String: Any]]) ?? []).filter {
                 (($0["type"] as? String)?.lowercased() ?? "").contains("tool_use")
@@ -354,7 +377,7 @@ extension DockModel {
     /// exposing the storage path as user-visible message text. Only file
     /// references are collected here; decoding happens off the main actor in
     /// `rehydratePendingTranscriptImages`.
-    static func persistedImageContent(from rawText: String) -> (text: String, imageFileURLs: [URL]) {
+    nonisolated static func persistedImageContent(from rawText: String) -> (text: String, imageFileURLs: [URL]) {
         let lines = rawText.components(separatedBy: .newlines)
         var imageFileURLs: [URL] = []
         var removedImageReference = false
@@ -398,7 +421,7 @@ extension DockModel {
     /// Hermes Bot Mode's documented delivery envelope is:
     /// `Message from 🤖 <sender> (@<profile>): <body>`.
     /// Parse only that exact shape; ordinary assistant prose is untouched.
-    static func botAttribution(from text: String) -> (displayName: String, profileID: String, body: String)? {
+    nonisolated static func botAttribution(from text: String) -> (displayName: String, profileID: String, body: String)? {
         let prefix = "Message from 🤖 "
         guard text.hasPrefix(prefix),
               let handleStart = text.firstIndex(of: "("),
@@ -424,7 +447,7 @@ extension DockModel {
     /// them may change. One notice per head line; following lines belong to it.
     /// Stored as `user` rows and streamed live as `status.update` `process`
     /// text; both render as a bubble from the card's bot (first `@name`).
-    static func kanbanNotices(from text: String) -> [(profileID: String, displayName: String?, body: String)]? {
+    nonisolated static func kanbanNotices(from text: String) -> [(profileID: String, displayName: String?, body: String)]? {
         var notices: [(profileID: String, displayName: String?, body: String)] = []
         for line in text.components(separatedBy: .newlines) {
             if line.hasPrefix("[INTERNAL NOTIFICATION") { continue }
@@ -441,7 +464,7 @@ extension DockModel {
         return notices.isEmpty ? nil : notices.map { ($0.profileID, $0.displayName, $0.body.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
-    static func messageText(_ value: Any?) -> String {
+    nonisolated static func messageText(_ value: Any?) -> String {
         if let text = value as? String { return text }
         if let parts = value as? [[String: Any]] {
             return parts.compactMap { part in
@@ -452,4 +475,8 @@ extension DockModel {
         }
         return ""
     }
+}
+
+private struct UncheckedTranscriptValue<Value>: @unchecked Sendable {
+    let value: Value
 }
