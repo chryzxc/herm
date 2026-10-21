@@ -581,7 +581,7 @@ struct ChatQuotaBanner: View {
                     .padding(.vertical, 8)
                     .frame(maxWidth: metrics.readingWidth)
                     .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), tint: .dockSurface2, stroke: .dockBorderLight)
-                    .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+                    .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.12), radius: 8, y: 2)
                     .padding(.horizontal, metrics.contentInset)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))

@@ -197,7 +197,7 @@ struct DockModalButtonStyle: ButtonStyle {
             .frame(minWidth: 92, minHeight: DockLayout.controlHeight)
             .background {
                 if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true)
+                    Color.clear.dockLiquidGlass(shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true, elevated: true)
                 } else {
                     shape.fill(isPrimary ? Color.dockAccent : Color.dockControlSurface)
                         .overlay(shape.stroke(isPrimary ? Color.clear : Color.dockBorder, lineWidth: DockLayout.outline))

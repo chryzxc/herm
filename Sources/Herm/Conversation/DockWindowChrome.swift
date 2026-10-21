@@ -69,7 +69,7 @@ struct BotActivityBanner: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .dockFloatingSurface(Capsule(), tint: .dockSurface2, stroke: .dockBorderLight)
-                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.12), radius: 6, y: 2)
             }
         }
         .accessibilityElement(children: .combine)

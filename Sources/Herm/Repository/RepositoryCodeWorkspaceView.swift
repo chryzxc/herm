@@ -245,7 +245,7 @@ struct RepositoryCodeWorkspaceView: View {
         .padding(12)
         .frame(width: 280, alignment: .leading)
         .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous), stroke: .dockBorderStrong)
-        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+        .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.25), radius: 12, y: 4)
     }
 
     // MARK: Status bar

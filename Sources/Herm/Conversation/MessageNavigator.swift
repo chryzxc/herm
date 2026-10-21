@@ -427,7 +427,7 @@ struct MessageNavigatorView: View {
             }
         }
         .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous), lineWidth: 0.5)
-        .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
+        .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.22), radius: 14, y: 6)
         .onAppear { isSearchFocused = true }
     }
 
@@ -526,7 +526,7 @@ struct MessageNavigatorView: View {
                 .padding(.vertical, 7)
                 .frame(width: 160, alignment: .leading)
                 .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), lineWidth: 0.5)
-                .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.18), radius: 8, y: 3)
                 .position(x: size.width - 107, y: min(max(previewY, 52), max(52, size.height - 40)))
                 .transition(.opacity)
                 .allowsHitTesting(false)

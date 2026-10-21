@@ -202,7 +202,7 @@ extension View {
     func dockHUDPanel() -> some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.paneRadius + 2, role: .pane)
         if DockThemeStyle.current.material == .glass {
-            dockLiquidGlass(shape)
+            dockLiquidGlass(shape, elevated: true)
         } else {
             self
             .background(Color.dockOpaqueCanvas)  // dockCanvas is translucent in native themes

@@ -234,7 +234,7 @@ private struct DockMenuPanel<Content: View>: View {
         .frame(height: contentHeight > 0 ? min(contentHeight, 440) : nil)
         .background {
             if DockThemeStyle.current.material == .glass {
-                Color.clear.dockLiquidGlass(Rectangle())
+                Color.clear.dockLiquidGlass(Rectangle(), elevated: true)
             } else {
                 Color.dockOpaqueCanvas; Color.dockSurface
             }

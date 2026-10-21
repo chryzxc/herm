@@ -474,7 +474,8 @@ struct DockPressButtonStyle: ButtonStyle {
             .padding(3)
             .background {
                 if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, interactive: true)
+                    Color.clear.dockLiquidGlass(shape)
+                        .overlay(shape.fill(Color.dockPrimaryText.opacity(isHovering && isEnabled ? 0.07 : 0)))
                 } else {
                     shape.fill(Color.dockControlSurface.opacity(isHovering && isEnabled ? 0.9 : 0.55))
                         .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.hairline))
@@ -565,7 +566,7 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
             .background {
                 if isGlass {
-                    Color.clear.dockLiquidGlass(shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true)
+                    Color.clear.dockLiquidGlass(shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true, elevated: true)
                 } else {
                     shape.fill(tint.opacity(configuration.isPressed ? 0.30 : highlighted ? 0.24 : 0.14))
                         .background(shape.fill(Color.dockCanvas))
@@ -604,7 +605,7 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .background {
                 // Glass matches macOS `.glass`: interactive glass supplies hover/press and rim, so no outline.
                 if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, interactive: true)
+                    Color.clear.dockLiquidGlass(shape, interactive: true, elevated: true)
                 } else {
                     shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6))
                         .overlay(shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, DockLayout.outline)))
@@ -1208,11 +1209,13 @@ extension View {
 }
 
 extension View {
-    /// Liquid Glass surface: native `glassEffect` on macOS 26, otherwise a
-    /// blurred body with a specular rim and a soft top sheen approximating it.
+    /// Liquid Glass surface. `elevated` (floating panels, buttons) uses native
+    /// `glassEffect` on macOS 26, which casts a drop shadow; inline surfaces and
+    /// older systems get a blurred body with a specular rim and top sheen, so
+    /// rows of chips and cards never smear their shadows together.
     @ViewBuilder
-    func dockLiquidGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
-        if #available(macOS 26.0, *) {
+    func dockLiquidGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = false, elevated: Bool = false) -> some View {
+        if elevated, #available(macOS 26.0, *) {
             self.glassEffect({ var g = Glass.regular; if let tint { g = g.tint(tint) }; return interactive ? g.interactive() : g }(), in: shape)
         } else {
             self
@@ -1231,7 +1234,7 @@ extension View {
     @ViewBuilder
     func dockFloatingSurface<S: Shape>(_ shape: S, tint: Color = .clear, stroke: Color = .dockBorder, lineWidth: CGFloat = DockLayout.hairline) -> some View {
         if DockThemeStyle.current.material == .glass {
-            dockLiquidGlass(shape)
+            dockLiquidGlass(shape, elevated: true)
         } else {
             background(shape.fill(tint)).background(shape.fill(Color.dockOpaqueCanvas)).overlay(shape.stroke(stroke, lineWidth: lineWidth))
         }
@@ -1276,7 +1279,6 @@ extension View {
             self
                 .padding(padding)
                 .dockLiquidGlass(shape)
-                .dockCardDepth()
         } else {
             self
                 .padding(padding)

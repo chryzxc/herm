@@ -183,7 +183,9 @@ use `shape.dockSurfaceFill(fallback)` (glass on Glass, `fallback` elsewhere),
 `shape.dockSelectionFill(isSelected, fallback:)` for selected rows,
 `.dockPaneTint(color)` for full-width header/column tints (clear on Glass), and
 `dockFloatingSurface` for menus and popovers. Skeletons, avatars and status
-pills keep plain tints. E-Ink inverts selected tabs and disables all animation. Swiss drops
+pills keep plain tints. Only floating panels and buttons use elevated (native,
+shadow-casting) glass; inline glass is shadowless, and no `.shadow` is stacked on
+glass. E-Ink inverts selected tabs and disables all animation. Swiss drops
 card fills and strokes (`chrome: .open`), marks selection with a 2pt accent
 underline, and uses a single-rule composer (`DockSkinPresentation.Composer.line`).
 

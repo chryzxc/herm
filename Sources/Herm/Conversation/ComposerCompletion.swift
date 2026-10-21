@@ -198,7 +198,7 @@ struct ComposerCompletionPopover: View {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
         }
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
+        .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.18), radius: 12, y: 5)
         .accessibilityElement(children: .contain)
         .accessibilityLabel({ if case .mention = trigger { return "Mentions and references" }; return "Slash commands" }())
     }
