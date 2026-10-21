@@ -209,9 +209,7 @@ extension DockModel {
 
     @discardableResult
     func stop() -> Task<Void, Never>? {
-        // Re-sendable while `.requesting`: if Hermes never ends the turn (a stuck
-        // request or a redirect race), a later click must still interrupt.
-        guard let sessionID else { return nil }
+        guard let sessionID, interruptState != .requesting else { return nil }
         interruptGeneration &+= 1
         let requestGeneration = interruptGeneration
         interruptState = .requesting
@@ -222,11 +220,15 @@ extension DockModel {
                     sessionID: sessionID,
                     profileID: sessionProfileID ?? profileScopeID
                 )
-                // Hermes' response only acknowledges the request. The local
-                // turn remains authoritative until a terminal lifecycle event.
+                // `session.interrupt` stops synchronously (queue purged, no agent
+                // wait), so settle now like Hermes Desktop instead of waiting on
+                // the unwinding turn's terminal frame, which can lag or never come.
+                guard self.interruptGeneration == requestGeneration, self.sessionID == sessionID,
+                      self.interruptState == .requesting else { return }
+                settleStoppedTurn()
             } catch {
-                guard self.interruptGeneration == requestGeneration,
-                      self.sessionID == sessionID else { return }
+                guard self.interruptGeneration == requestGeneration, self.sessionID == sessionID,
+                      self.interruptState == .requesting else { return }
                 interruptState = .failed("Hermes could not be interrupted. Try again.")
                 DebugLog.write("model: interrupt failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }

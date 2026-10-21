@@ -311,17 +311,9 @@ struct DockNotificationTests {
         let task = model.stop()
         await task?.value
 
-        #expect(model.interruptState == .requesting)
-        #expect(model.clarificationQuestion == "Which task list?")
-        #expect(model.clarificationChoices.isEmpty)
-
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-clarify",
-            "payload": [:]
-        ])
-
         #expect(model.interruptState == .idle)
         #expect(model.status == .idle)
+        #expect(model.clarificationQuestion == nil)
     }
 
     @Test func rejectedInterruptPreservesActiveConversationState() async {
@@ -348,30 +340,53 @@ struct DockNotificationTests {
         #expect(model.streamingMessageIDForPresentation != nil)
     }
 
-    @Test func acceptedInterruptWaitsForAuthoritativeTerminalEvent() async {
-        let client = InterruptTestRPCClient(result: .success(["accepted": true]))
+    @Test func acceptedInterruptSettlesAtOnceAndDropsTheStoppedTurnTail() async {
+        let client = InterruptTestRPCClient(result: .success(["status": "interrupted"]))
         let model = DockModel(initialSessionID: "session-interrupt", rpcClient: client)
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "session-interrupt",
-            "payload": [:]
-        ])
-        model.status = .working
+        let event = { (type: String, payload: [String: Any]) in
+            model.receiveGatewayEvent(type, params: ["session_id": "session-interrupt", "payload": payload])
+        }
+        event("message.start", [:])
+        event("message.delta", ["delta": "Partial"])
 
-        let task = model.stop()
-        await task?.value
-
-        #expect(model.interruptState == .requesting)
-        #expect(model.streamingMessageIDForPresentation != nil)
-        #expect(model.status == .working)
-
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-interrupt",
-            "payload": [:]
-        ])
+        await model.stop()?.value
 
         #expect(model.interruptState == .idle)
         #expect(model.status == .idle)
+        #expect(!model.isSending)
         #expect(model.streamingMessageIDForPresentation == nil)
+        let settled = model.messages.count
+
+        // The unwinding turn's tail must not reopen the settled turn.
+        event("tool.start", ["tool_id": "late", "name": "shell"])
+        event("message.delta", ["delta": " more"])
+        event("message.complete", ["text": "Partial more", "status": "interrupted"])
+        #expect(model.status == .idle)
+        #expect(model.messages.count == settled)
+
+        event("message.start", [:])
+        #expect(model.status == .working)
+        #expect(model.streamingMessageIDForPresentation != nil)
+    }
+
+    @Test func stopEndedByCancelledBeforeReadyErrorIsNotAFailure() async {
+        let client = ControllableInterruptRPCClient()
+        let model = DockModel(initialSessionID: "session-interrupt", rpcClient: client)
+        model.status = .working
+        model.isSending = true
+        let task = model.stop()
+        await client.waitUntilInterruptStarts()
+
+        model.receiveGatewayEvent("error", params: [
+            "session_id": "session-interrupt",
+            "payload": ["message": "Turn cancelled before the agent was ready"]
+        ])
+        client.releaseInterrupt()
+        await task?.value
+
+        #expect(model.interruptState == .idle)
+        #expect(model.status == .idle)
+        #expect(!model.messages.contains { $0.isError })
     }
 
     @Test func duplicateStopTapsDoNotIssueAnotherInterrupt() async {
@@ -385,7 +400,7 @@ struct DockNotificationTests {
         await second?.value
 
         #expect(client.interruptCallCount == 1)
-        #expect(model.interruptState == .requesting)
+        #expect(model.interruptState == .idle)
     }
 
     @Test func inFlightInterruptCannotFailAfterSessionSwitch() async {

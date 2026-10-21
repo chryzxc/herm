@@ -466,6 +466,14 @@ extension DockModel {
             if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: ignoring event \(type) without current-session ownership") }
             return
         }
+        // Hermes orders a stopped turn's terminal frame before the next turn's
+        // `message.start`, so everything turn-shaped in between is its tail.
+        if type == "message.start" {
+            isDiscardingStoppedTurn = false
+        } else if isDiscardingStoppedTurn, Self.isStoppedTurnTailEvent(type) {
+            if type == "message.complete" || type == "error" { isDiscardingStoppedTurn = false }
+            return
+        }
         let activityProjection = Self.isHighFrequencyEvent(type) ? nil : Self.agentActivityProjection(
             type: type,
             params: params,
@@ -687,22 +695,7 @@ extension DockModel {
             refreshSessionTokenUsage()
             let wasInterrupting = interruptState == .requesting
             interruptState = .idle
-            if wasInterrupting {
-                let activeSessionIDs = Set([sessionID, sessionStorageID, kanbanAttributionSessionID].compactMap { $0 })
-                if let clarificationRequestID {
-                    markClarificationResolved(clarificationRequestID)
-                }
-                for activeSessionID in activeSessionIDs {
-                    _ = removePendingApproval(for: activeSessionID)
-                    _ = removePendingClarification(for: activeSessionID)
-                }
-                approvalTitle = nil
-                approvalText = nil
-                approvalDetails = nil
-                showClarification(nil)
-                clarificationResponseError = nil
-                steeringError = nil
-            }
+            if wasInterrupting { releaseStoppedTurnPrompts() }
             if let error = Self.messageCompletionError(from: payload) {
                 discardStreamingMessage()
                 let text = Self.safeUserDiagnostic(error)
@@ -719,21 +712,7 @@ extension DockModel {
             if wasInterrupting {
                 updateInFlightBotActivity(for: eventSessionID, state: .canceled)
             }
-            // A few Hermes adapters omit the final tool-result identifier. The
-            // response boundary is authoritative, so do not leave those calls
-            // displayed as running after the assistant has completed.
-            for index in activeToolCalls.indices where !activeToolCalls[index].isComplete {
-                activeToolCalls[index].isComplete = true
-                activeToolCalls[index].completedAt = Date()
-            }
-            status = .idle
-            conversationActivityPhase = .idle
-            isSending = false
-            streamingMessageID = nil
-            streamingTurnActivity = []
-            streamingResponseStartedAt = nil
-            turnStartedAtBySession[eventSessionID ?? sessionID ?? ""] = nil
-            syncStoredSystemRows()
+            endLocalTurn(eventSessionID: eventSessionID)
             if completionNotificationsEnabled {
                 let response = messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? "Hermes completed the active request."
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
@@ -760,7 +739,7 @@ extension DockModel {
             if let sessionStorageID { cacheAgentState(for: sessionStorageID); Task { await agentStateWriter.flush() } }
             // A stopped turn keeps its queue; Enter on an empty composer sends it.
             if !wasInterrupting || sendQueuedPromptAfterInterrupt {
-                sendQueuedPromptAfterInterrupt = false
+                if !isRedirectInFlight { sendQueuedPromptAfterInterrupt = false }
                 drainQueuedPromptIfIdle()
             }
         case "approval.request":
@@ -835,11 +814,16 @@ extension DockModel {
             drainQueuedPromptIfIdle()
         case "error":
             commitStreamingMessage()
+            // A turn stopped before its agent was ready ends with `error`, not
+            // `message.complete`; that is the user's Stop, not a failure.
+            let wasInterrupting = interruptState == .requesting
+            interruptState = .idle
+            if wasInterrupting { releaseStoppedTurnPrompts() }
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
             let text = Self.isVisionUnsupportedError(raw)
                 ? Self.visionUnsupportedNotice
                 : Self.safeUserDiagnostic(raw)
-            appendTerminalErrorMessage(text)
+            if !wasInterrupting { appendTerminalErrorMessage(text) }
             status = .idle
             conversationActivityPhase = .idle
             streamingMessageID = nil
@@ -850,9 +834,17 @@ extension DockModel {
                 nativeVoiceCapture.reset()
                 voiceState = .listening
             }
-            notify(title: "Hermes encountered an error", body: text, identifier: "failure:\(sessionID ?? "hermes")")
-            updateInFlightBotActivity(for: eventSessionID, state: .failed, result: text)
-            drainQueuedPromptIfIdle()
+            if wasInterrupting {
+                updateInFlightBotActivity(for: eventSessionID, state: .canceled)
+            } else {
+                notify(title: "Hermes encountered an error", body: text, identifier: "failure:\(sessionID ?? "hermes")")
+                updateInFlightBotActivity(for: eventSessionID, state: .failed, result: text)
+            }
+            // A stopped turn keeps its queue unless Send now asked for it.
+            if !wasInterrupting || sendQueuedPromptAfterInterrupt {
+                sendQueuedPromptAfterInterrupt = false
+                drainQueuedPromptIfIdle()
+            }
             if voiceState.isNativeConversationActive { armNativeVoiceCapture() }
 
         case "reasoning.start", "thinking":
@@ -1355,6 +1347,77 @@ extension DockModel {
     }
 
     /// Events only a running turn emits, so seeing one proves a turn is live.
+    static func isStoppedTurnTailEvent(_ type: String) -> Bool {
+        type == "error" || type.hasPrefix("message.") || type.hasPrefix("tool.") || type.hasPrefix("tool_")
+            || type.hasPrefix("reasoning.") || type.hasPrefix("thinking")
+    }
+
+    /// Ends the turn Hermes acknowledged as stopped; streamed output stays.
+    func settleStoppedTurn() {
+        interruptState = .idle
+        isDiscardingStoppedTurn = true
+        // Hermes purged its server queue, so a redirect it queued will not run.
+        if let owner = sessionID {
+            for (key, pending) in redirectingPrompts where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
+                var redirect = pending
+                redirect.wasInterrupted = true
+                redirectingPrompts[key] = redirect.isQueuedByHermes ? nil : redirect
+            }
+        }
+        releaseStoppedTurnPrompts()
+        compactingSessionID = nil
+        commitStreamingMessage()
+        updateInFlightBotActivity(for: sessionID, state: .canceled)
+        endLocalTurn(eventSessionID: sessionID)
+        if voiceState.isNativeConversationActive {
+            skipNextVoicePlaybackDrain = false
+            speakReplyAfterVoicePrompt = false
+            resumeVoiceListening(force: true)
+        }
+        if let sessionStorageID { cacheAgentState(for: sessionStorageID) }
+        // A stopped turn keeps its queue; Send now (or Enter on an empty composer) sends it.
+        // An in-flight redirect blocks the drain; its reply sends it instead.
+        if sendQueuedPromptAfterInterrupt, !isRedirectInFlight {
+            sendQueuedPromptAfterInterrupt = false
+            drainQueuedPromptIfIdle()
+        }
+    }
+
+    func releaseStoppedTurnPrompts() {
+        let activeSessionIDs = Set([sessionID, sessionStorageID, kanbanAttributionSessionID].compactMap { $0 })
+        if let clarificationRequestID {
+            markClarificationResolved(clarificationRequestID)
+        }
+        for activeSessionID in activeSessionIDs {
+            _ = removePendingApproval(for: activeSessionID)
+            _ = removePendingClarification(for: activeSessionID)
+        }
+        approvalTitle = nil
+        approvalText = nil
+        approvalDetails = nil
+        showClarification(nil)
+        clarificationResponseError = nil
+        steeringError = nil
+    }
+
+    func endLocalTurn(eventSessionID: String?) {
+        // A few Hermes adapters omit the final tool-result identifier. The
+        // response boundary is authoritative, so do not leave those calls
+        // displayed as running after the assistant has completed.
+        for index in activeToolCalls.indices where !activeToolCalls[index].isComplete {
+            activeToolCalls[index].isComplete = true
+            activeToolCalls[index].completedAt = Date()
+        }
+        status = .idle
+        conversationActivityPhase = .idle
+        isSending = false
+        streamingMessageID = nil
+        streamingTurnActivity = []
+        streamingResponseStartedAt = nil
+        turnStartedAtBySession[eventSessionID ?? sessionID ?? ""] = nil
+        syncStoredSystemRows()
+    }
+
     static func isMidTurnEvent(_ type: String) -> Bool {
         switch type {
         case "tool.call", "tool.start", "tool.use", "tool_use",

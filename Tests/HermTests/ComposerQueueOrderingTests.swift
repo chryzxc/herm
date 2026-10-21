@@ -163,6 +163,59 @@ struct ComposerQueueOrderingTests {
     #expect(client.submitted.first?.contains("With a quote") == true)
   }
 
+  // Desktop parity: Hermes acks Stop synchronously, so Send now must not wait
+  // for the stopped turn's terminal frame (which can lag or never arrive).
+  @Test func sendNowSendsOnInterruptAckAndIgnoresTheStoppedTurnTail() async throws {
+    let client = ComposerQueueRPCClient()
+    let model = model(client)
+    parkFirstMessage(model)
+    model.draft = "With a quote"
+    model.replyQuote = ReplyQuote(author: "Hermes", text: "Earlier reply")
+    model.queueDraft()
+    let attached = try #require(model.currentSessionQueuedPrompts.last)
+
+    model.sendQueuedPromptNow(attached.id)
+    try await waitForSubmissions(1, client: client)
+
+    #expect(client.submitted.first?.contains("With a quote") == true)
+    #expect(client.requests.last { $0.method == "prompt.submit" }?.params["queued"] as? Bool == true)
+    #expect(model.isSending)
+    complete(model)
+    #expect(model.isSending)
+    #expect(client.submitted.count == 1)
+    #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Earlier message"])
+  }
+
+  @Test func sendNowHeldByAnInFlightRedirectSendsWhenTheRedirectReplies() async throws {
+    let client = ComposerQueueRPCClient()
+    client.holdRedirect = true
+    defer { client.finishRedirect(status: "redirected") }
+    let model = model(client)
+    model.status = .working
+    model.isSending = true
+    model.draft = "Steer this"
+    model.submitComposerInput()
+    let deadline = Date().addingTimeInterval(2)
+    while client.pendingRedirect == nil, Date() < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    model.draft = "With a quote"
+    model.replyQuote = ReplyQuote(author: "Hermes", text: "Earlier reply")
+    model.queueDraft()
+    let attached = try #require(model.currentSessionQueuedPrompts.last)
+
+    model.sendQueuedPromptNow(attached.id)
+    while !client.requests.contains(where: { $0.method == "session.interrupt" }), Date() < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(client.submitted.isEmpty)
+
+    client.finishRedirect(status: "redirected")
+    try await waitForSubmissions(1, client: client)
+    #expect(client.submitted.first?.contains("With a quote") == true)
+  }
+
   @Test func acceptedBackendQueueAlreadyCompletedBeforeRedirectReplyStillReleasesTheTail()
     async throws
   {

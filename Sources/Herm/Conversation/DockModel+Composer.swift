@@ -292,7 +292,7 @@ extension DockModel {
             switch redirectStatus {
             case "redirected":
                 DebugLog.write("model: turn redirected")
-                if !redirect.wasInterrupted { drainQueuedPromptIfIdle() }
+                drainQueuedPromptAfterRedirect(redirect)
             case "queued":
                 // Build window or compaction: Hermes runs it as the next turn.
                 // The row stays where it was typed so the transcript keeps time order.
@@ -300,7 +300,7 @@ extension DockModel {
                     status = .working
                     isSending = true
                 }
-                if !redirect.wasInterrupted { drainQueuedPromptIfIdle() }
+                drainQueuedPromptAfterRedirect(redirect)
                 break
             default:
                 // Refused (turn ended first) or failed: keep the words as the next turn.
@@ -310,9 +310,16 @@ extension DockModel {
                 }
                 let index = queuedPrompts.firstIndex { $0.sessionID == queueSessionID } ?? queuedPrompts.endIndex
                 queuedPrompts.insert(QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil), at: index)
-                if !redirect.wasInterrupted { drainQueuedPromptIfIdle() }
+                drainQueuedPromptAfterRedirect(redirect)
             }
         }
+    }
+
+    /// A stopped turn keeps its queue, except a Send now held back by this redirect.
+    private func drainQueuedPromptAfterRedirect(_ redirect: RedirectingPrompt) {
+        guard !redirect.wasInterrupted || sendQueuedPromptAfterInterrupt, interruptState != .requesting else { return }
+        sendQueuedPromptAfterInterrupt = false
+        drainQueuedPromptIfIdle()
     }
 
     var isRedirectInFlight: Bool {

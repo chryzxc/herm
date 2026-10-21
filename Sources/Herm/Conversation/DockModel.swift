@@ -429,6 +429,10 @@ final class DockModel: ObservableObject {
     }
 
     var sendQueuedPromptAfterInterrupt = false
+    /// Set once Hermes acknowledges Stop: the stopped turn still unwinds and
+    /// emits its tail (deltas, tools, terminal frame), which is dropped until
+    /// the next `message.start`.
+    var isDiscardingStoppedTurn = false
 
     var composerMentionProfiles: [String] = []
 

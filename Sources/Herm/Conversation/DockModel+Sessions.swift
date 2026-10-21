@@ -568,6 +568,8 @@ extension DockModel {
         isSending = false
         status = .working
         interruptState = .idle
+        isDiscardingStoppedTurn = false
+        sendQueuedPromptAfterInterrupt = false
         reasoningState = nil
         reasoningFlushTask?.cancel()
         reasoningFlushTask = nil
@@ -789,6 +791,8 @@ extension DockModel {
         isSending = false
         status = .idle
         interruptState = .idle
+        isDiscardingStoppedTurn = false
+        sendQueuedPromptAfterInterrupt = false
         isShowingSessions = false
         activeSubagents = []
         sessionAgents = []
