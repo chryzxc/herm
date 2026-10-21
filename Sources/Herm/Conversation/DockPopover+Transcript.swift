@@ -284,6 +284,12 @@ extension DockPopover {
 
                     ConversationLatestMessageControl(presentation: scrollPresentation) {
                         unseenMessageCount = 0
+                    // Steps grow the live turn before any text streams; follow
+                    // them so the working indicator doesn't drift below the fold.
+                    .onChange(of: model.streamingTurnActivity.count) { _, _ in
+                        guard isConversationAtBottom else { return }
+                        scheduleStreamingTailScroll(proxy)
+                    }
                         isConversationAtBottom = true
                         mountedMessageRange = ConversationMessageWindow.rangeForSessionReplacement(
                             totalCount: model.messages.count
@@ -669,7 +675,8 @@ extension DockPopover {
                 crew: isStreaming ? workingCrew : [],
                 botsByID: botMode.botsByID,
                 avatars: botMode.avatarImages,
-                rosterRevision: botMode.rosterRevision
+                rosterRevision: botMode.rosterRevision,
+                liveReasoning: isStreaming ? model.liveReasoning : nil
             )
             .equatable()
             .padding(.horizontal, conversationMetrics.contentInset + 4)

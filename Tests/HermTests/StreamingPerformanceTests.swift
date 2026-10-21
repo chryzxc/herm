@@ -344,6 +344,33 @@ struct StreamingPerformanceTests {
         #expect(model.reasoningState?.text == "plan step")
     }
 
+    @Test func reasoningFlushesLeaveTheThinkingStepUnchangedUntilItCompletes() async {
+        let sessionID = "thinking-step"
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("thinking-\(UUID().uuidString).json"),
+            initialSessionID: sessionID
+        )
+        model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
+        model.receiveGatewayEvent("reasoning.delta", params: ["session_id": sessionID, "payload": ["delta": "plan"]])
+        for _ in 0..<50 where model.liveReasoning.text != "plan" {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        let opened = model.streamingTurnActivity
+        #expect(opened.count == 1)
+
+        model.receiveGatewayEvent("reasoning.delta", params: ["session_id": sessionID, "payload": ["delta": " step"]])
+        for _ in 0..<50 where model.liveReasoning.text != "plan step" {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        // TurnActivityView's equality holds across flushes; only the live leaf sees the text.
+        #expect(model.liveReasoning.text == "plan step")
+        #expect(model.streamingTurnActivity == opened)
+
+        model.receiveGatewayEvent("reasoning.complete", params: ["session_id": sessionID, "payload": [:]])
+        #expect(model.streamingTurnActivity.first?.isComplete == true)
+        #expect(model.streamingTurnActivity.first?.result == "plan step")
+    }
+
     @Test func agentPresentationSnapshotIsSharedAndStableAcrossConsumers() {
         let model = DockModel(sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("agents-\(UUID().uuidString).json"))
         model.activeSubagents = (0..<8).map { index in

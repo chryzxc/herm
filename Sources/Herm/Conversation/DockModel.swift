@@ -39,6 +39,8 @@ final class DockModel: ObservableObject {
 
     let composer = ComposerText()
     let streamingText = StreamingText()
+    /// Unflushed-to-step reasoning, observed only by an open live thought row.
+    let liveReasoning = LiveReasoningText()
 
     /// Message the next prompt replies to; sent as a leading quote line (see ReplyQuote).
     @Published var replyQuote: ReplyQuote?

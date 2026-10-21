@@ -740,6 +740,8 @@ struct TurnActivityView: View, Equatable {
   var avatars: [String: Data] = [:]
   /// Stands in for `botsByID`, `avatars` and `botAvatar` in `==`.
   var rosterRevision = 0
+  /// Live reasoning for an open, unfinished thought row; excluded from `==`.
+  var liveReasoning: LiveReasoningText? = nil
   @State private var isExpanded = false
   @State private var expandedThoughtIDs: Set<String> = []
   @State private var expandedDiffIDs: Set<String> = []
@@ -918,7 +920,13 @@ struct TurnActivityView: View, Equatable {
       .buttonStyle(.dockHover)
       .accessibilityLabel(isOpen ? "Hide thinking" : "Show thinking")
       if isOpen {
-        Text((call.result ?? "").isEmpty ? "…" : call.result ?? "")
+        Group {
+          if !call.isComplete, let liveReasoning {
+            LiveThoughtText(source: liveReasoning)
+          } else {
+            Text((call.result ?? "").isEmpty ? "…" : call.result ?? "")
+          }
+        }
           .font(.system(size: 12))
           .foregroundStyle(Color.dockMetadataText)
           .textSelection(.enabled)
@@ -1049,6 +1057,20 @@ struct TurnActivityView: View, Equatable {
       if name.contains("memory") || name.contains("skill") { return .brain }
       return .wrench
     }
+  }
+}
+
+/// Observes reasoning flushes so only an expanded thought row re-renders.
+@MainActor
+final class LiveReasoningText: ObservableObject {
+  @Published var text = ""
+}
+
+private struct LiveThoughtText: View {
+  @ObservedObject var source: LiveReasoningText
+
+  var body: some View {
+    Text(source.text.isEmpty ? "…" : source.text)
   }
 }
 
