@@ -12,10 +12,17 @@ private final class WorkflowFixture: HermesRPCClientProtocol {
   var replies: [String: [String: Any]] = [:]
   var failures = Set<String>()
   var searchDelay = false
+  var blockCatalog = false
+  var catalogContinuation: CheckedContinuation<Void, Never>?
+  var blockedMethods = Set<String>()
+  var pendingRequests: [String: CheckedContinuation<Void, Never>] = [:]
   func connect() async throws {}
   func close() {}
   func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
     calls.append((method, params))
+    if blockedMethods.contains(method) {
+      await withCheckedContinuation { pendingRequests[method] = $0 }
+    }
     if failures.contains(method) {
       throw NSError(
         domain: "fixture", code: 1,
@@ -33,6 +40,9 @@ private final class WorkflowFixture: HermesRPCClientProtocol {
   }
   func fetchHTTP(_ path: String) async throws -> [String: Any] {
     calls.append(("GET " + path, [:]))
+    if path == "/api/dashboard/plugins/catalog", blockCatalog {
+      await withCheckedContinuation { catalogContinuation = $0 }
+    }
     if path.hasPrefix("/api/sessions/search") {
       if searchDelay && path.contains("q=older") { try? await Task.sleep(for: .milliseconds(150)) }
       return replies["search"] ?? [
@@ -154,6 +164,298 @@ struct WorkflowRoadmapTests {
     #expect(client.calls.last?.0 == "PUT /api/tools/toolsets/web?profile=coding")
     client.replies["PUT"] = ["ok": true, "name": "web", "enabled": true]
     await refusing { try await rpc.setToolset("web", enabled: false) }
+  }
+
+  @Test func popularityStopsAfterRateLimitAndKeepsCompletedBatches() async throws {
+    var requests = 0
+    let slugs = (0..<250).map { "acme/repo\($0)" }
+    let result = await HermesWorkflowRPC.githubStars(slugs, token: "fixture") { request in
+      requests += 1
+      let status = requests == 1 ? 200 : 429
+      let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+      return (Data("{\"data\":{\"r0\":{\"stargazerCount\":42}}}".utf8), response)
+    }
+    #expect(requests == 2)
+    #expect(result.count == 1)
+    #expect(result[slugs.sorted()[0]] == 42)
+  }
+
+  @Test func popularityStopsAfterTransportFailure() async {
+    var requests = 0
+    let result = await HermesWorkflowRPC.githubStars((0..<250).map { "acme/repo\($0)" }, token: "fixture") { _ in
+      requests += 1
+      throw URLError(.timedOut)
+    }
+    #expect(requests == 1)
+    #expect(result.isEmpty)
+  }
+
+  @Test func pluginPageLoadsOnlyItsInventoryAndReusesItUntilRefresh() async {
+    let client = WorkflowFixture()
+    client.replies["plugins.manage"] = ["plugins": []]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    await model.load(.plugins)
+    await model.load(.plugins)
+    #expect(client.calls.count == 1)
+    #expect(client.calls.first?.0 == "plugins.manage")
+    #expect(model.loadedSections == [.plugins])
+    await model.refresh(section: .plugins)
+    #expect(client.calls.count == 2)
+  }
+
+  @Test func cachedPluginTabDoesNotWaitForCancelledReadsInAnotherTab() async {
+    let client = WorkflowFixture()
+    client.replies["plugins.manage"] = ["plugins": []]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    await model.load(.plugins)
+    client.blockedMethods = ["profiles.describe"]
+    let skills = Task { await model.load(.skills) }
+    for _ in 0..<200 {
+      if client.pendingRequests["profiles.describe"] != nil { break }
+      await Task.yield()
+    }
+    #expect(model.busy)
+    skills.cancel()
+    await model.load(.plugins)
+    #expect(!model.busy)
+    client.blockedMethods = []
+    for continuation in client.pendingRequests.values { continuation.resume() }
+    await skills.value
+    #expect(model.loadedSections == [.plugins])
+    #expect(!model.busy)
+  }
+
+  @Test func supersededManualReadCannotPublishAfterReturningToCacheAndChangingProfile() async {
+    let client = WorkflowFixture()
+    client.replies["plugins.manage"] = ["plugins": []]
+    client.replies["profiles.describe"] = ["name": "research", "skills": [["name": "old", "enabled": true]]]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    await model.load(.plugins)
+    client.blockedMethods = ["profiles.describe"]
+    let manualRefresh = Task { await model.refresh(section: .skills) }
+    for _ in 0..<200 {
+      if client.pendingRequests["profiles.describe"] != nil { break }
+      await Task.yield()
+    }
+    await model.load(.plugins)
+    await model.useProfile("coding", section: .plugins)
+    client.blockedMethods = []
+    for continuation in client.pendingRequests.values { continuation.resume() }
+    await manualRefresh.value
+    #expect(model.service.profileID == "coding")
+    #expect(model.skills.isEmpty)
+    #expect(model.loadedSections == [.plugins])
+  }
+
+  @Test func profilePickerDoesNotFetchPluginOrSessionInventories() async {
+    let client = WorkflowFixture()
+    client.replies["profiles.list"] = ["profiles": []]
+    let inventory = await BotService(client: client).rosterList()
+    #expect(inventory.availability == .ready)
+    #expect(client.calls.map(\.0) == ["profiles.list"])
+  }
+
+  @Test(arguments: ["Enable plugin", "Disable plugin", "Install plugin", "Remove plugin"])
+  func pluginMutationsRefreshOnlyPlugins(_ action: String) async {
+    let client = WorkflowFixture()
+    client.replies["plugins.manage"] = ["ok": true, "plugins": []]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    await model.perform(action, item: WorkflowIntegrationItem(id: "memory", detail: "memory"))
+    #expect(client.calls.count == 2)
+    #expect(client.calls.allSatisfy { $0.0 == "plugins.manage" })
+    #expect(client.calls.last?.1["action"] as? String == "list")
+    #expect(!model.busy)
+  }
+
+  @Test func pluginChangesInvalidateOtherTabsWithoutReloadingThemImmediately() async {
+    let client = WorkflowFixture()
+    client.replies["GET"] = ["items": []]
+    client.replies["plugins.manage"] = ["ok": true, "plugins": []]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    await model.load(.tools)
+    #expect(model.loadedSections == [.tools])
+    let priorCalls = client.calls.count
+    await model.perform("Enable plugin", item: WorkflowIntegrationItem(id: "memory", detail: "memory"))
+    #expect(client.calls.count == priorCalls + 2)
+    #expect(model.loadedSections == [.plugins])
+    await model.load(.tools)
+    #expect(client.calls.count == priorCalls + 3)
+    #expect(model.loadedSections == [.plugins, .tools])
+  }
+
+  @Test func pluginSettingsSaveRefreshesOnlyItsInventory() async {
+    let client = WorkflowFixture()
+    client.replies["plugins.manage"] = ["ok": true, "plugins": []]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    let plugin = WorkflowPlugin(id: "memory", name: "memory", detail: "", enabled: true,
+      removable: true, desktopHalf: false, settings: [
+        WorkflowPluginSetting(id: "label", label: "Label", detail: "", kind: "string", value: "old",
+          choices: [], env: nil, hasValue: false)
+      ])
+    await model.saveSettings(plugin, drafts: ["label": "new"])
+    #expect(client.calls.count == 2)
+    #expect(client.calls.allSatisfy { $0.0 == "plugins.manage" })
+    #expect(client.calls.first?.1["action"] as? String == "settings")
+    #expect(client.calls.last?.1["action"] as? String == "list")
+  }
+
+  @Test func pluginPageProfileChangeInvalidatesItsInventoryCache() async {
+    let client = WorkflowFixture()
+    client.replies["plugins.manage"] = ["plugins": []]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    await model.load(.plugins)
+    await model.useProfile("coding", section: .plugins)
+    #expect(client.calls.count == 2)
+    #expect(client.calls.last?.1["profile"] as? String == "coding")
+    #expect(model.loadedSections == [.plugins])
+  }
+
+  @Test func emptyCatalogDoesNotRepeatOrRequestStarsUntilExplicitRefresh() async {
+    let client = WorkflowFixture()
+    client.replies["GET"] = ["entries": []]
+    var starReads = 0
+    let model = WorkflowIntegrationModel(client: client, profileID: nil) { _ in
+      starReads += 1
+      return [:]
+    }
+    await model.loadCatalog()
+    await model.loadCatalog()
+    #expect(client.calls.count == 1)
+    #expect(starReads == 0)
+    await model.loadCatalog(force: true)
+    #expect(client.calls.count == 2)
+    #expect(starReads == 0)
+  }
+
+  @Test func failedCatalogCanRetryAndClearsItsOwnError() async {
+    let client = WorkflowFixture()
+    let model = WorkflowIntegrationModel(client: client, profileID: nil) { _ in [:] }
+    await model.loadCatalog()
+    #expect(model.status.contains("Plugin catalog:"))
+    client.replies["GET"] = ["entries": [["name": "memory"]]]
+    await model.loadCatalog()
+    #expect(model.catalog.map(\.id) == ["memory"])
+    #expect(!model.status.contains("Plugin catalog:"))
+    #expect(!model.catalogLoading)
+  }
+
+  @Test func catalogCoalescesConcurrentReadsAndDiscardsCancelledResponses() async {
+    let client = WorkflowFixture()
+    client.blockCatalog = true
+    client.replies["GET"] = ["entries": [["name": "memory"]]]
+    let model = WorkflowIntegrationModel(client: client, profileID: nil) { _ in [:] }
+    let first = Task { await model.loadCatalog() }
+    for _ in 0..<200 {
+      if client.catalogContinuation != nil { break }
+      await Task.yield()
+    }
+    await model.loadCatalog()
+    #expect(client.calls.count == 1)
+    first.cancel()
+    client.catalogContinuation?.resume()
+    await first.value
+    #expect(model.catalog.isEmpty)
+    #expect(!model.catalogLoading)
+    client.blockCatalog = false
+    await model.loadCatalog()
+    #expect(client.calls.count == 2)
+    #expect(model.catalog.map(\.id) == ["memory"])
+  }
+
+  @Test func catalogIndexExcludesInstalledDuplicatesAndPreservesSearchAndRanking() {
+    let catalog = [
+      WorkflowPluginCatalogEntry(id: "official", title: "Official", detail: "Recall", installed: false,
+        category: "memory", official: true, repo: URL(string: "https://github.com/acme/official")),
+      WorkflowPluginCatalogEntry(id: "popular", title: "Popular", detail: "Search", installed: false,
+        category: "memory", repo: URL(string: "https://github.com/acme/popular")),
+      WorkflowPluginCatalogEntry(id: "local", title: "Local", detail: "", installed: false, category: "local"),
+      WorkflowPluginCatalogEntry(id: "installed", title: "Installed", detail: "", installed: true),
+    ]
+    let index = WorkflowPluginCatalogIndex(catalog: catalog + [catalog[0]], installed: ["local"],
+      stars: ["acme/official": 2, "acme/popular": 100])
+    #expect(index.categories == ["memory"])
+    #expect(index.matches("").map(\.id) == ["official", "popular"])
+    #expect(index.matches("", byStars: true).map(\.id) == ["popular", "official"])
+    #expect(index.matches("RECALL", category: "memory").map(\.id) == ["official"])
+    #expect(index.matches("", category: "other").isEmpty)
+    #expect(index.matches("", limit: 1).count == 1)
+  }
+
+  @Test func catalogIndexTracksAuthoritativePluginChanges() {
+    let model = WorkflowIntegrationModel(client: WorkflowFixture(), profileID: nil)
+    model.catalog = [WorkflowPluginCatalogEntry(id: "memory", title: "Memory", detail: "", installed: false)]
+    #expect(model.catalogIndex.matches("").count == 1)
+    model.plugins = [WorkflowPlugin(id: "memory", name: "memory", detail: "", enabled: true,
+      removable: true, desktopHalf: false)]
+    #expect(model.catalogIndex.matches("").isEmpty)
+    model.plugins = []
+    #expect(model.catalogIndex.matches("").count == 1)
+  }
+
+  @Test func skillQuickViewLoadsWhileOtherInventoriesAreBusy() async {
+    let client = WorkflowFixture()
+    client.replies["skills.manage"] = ["info": ["skill_md_preview": "# Example skill"]]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    model.busy = true
+    await model.perform("Inspect", item: WorkflowIntegrationItem(id: "example", detail: ""))
+    #expect(model.preview == "# Example skill")
+    #expect(model.busy)
+  }
+
+  @Test func pluginsLoadWhileSkillsAndMCPArePending() async {
+    let client = WorkflowFixture()
+    client.blockedMethods = ["profiles.describe", "mcp.catalog"]
+    client.replies["plugins.manage"] = ["plugins": [[
+      "name": "memory", "key": "memory", "status": "enabled", "version": "1.2.3",
+      "source": "user", "catalog_version": "1.3.0", "pinned_sha": "abcdef",
+    ]]]
+    let model = WorkflowIntegrationModel(client: client, profileID: "research")
+    let refresh = Task { await model.refresh() }
+    for _ in 0..<200 {
+      if model.plugins.count == 1 && client.pendingRequests.count == 2 { break }
+      await Task.yield()
+    }
+    #expect(model.plugins.first?.version == "1.2.3")
+    #expect(model.plugins.first?.source == "user")
+    #expect(model.plugins.first?.catalogVersion == "1.3.0")
+    #expect(model.plugins.first?.pinnedRevision == "abcdef")
+    #expect(model.busy)
+    client.blockedMethods = []
+    for continuation in client.pendingRequests.values { continuation.resume() }
+    await refresh.value
+    #expect(!model.busy)
+    #expect(model.status.contains("Skills:") && model.status.contains("MCP:"))
+  }
+
+  @Test func catalogFinishesLoadingBeforeOptionalStars() async {
+    let client = WorkflowFixture()
+    client.replies["GET"] = ["entries": [["name": "memory", "repo": "https://github.com/acme/memory"]]]
+    var starsContinuation: CheckedContinuation<Void, Never>?
+    let model = WorkflowIntegrationModel(client: client, profileID: nil) { _ in
+      await withCheckedContinuation { starsContinuation = $0 }
+      return [:]
+    }
+    let load = Task { await model.loadCatalog() }
+    for _ in 0..<200 {
+      if starsContinuation != nil { break }
+      await Task.yield()
+    }
+    #expect(model.catalog.map(\.id) == ["memory"])
+    #expect(!model.catalogLoading)
+    starsContinuation?.resume()
+    await load.value
+  }
+
+  @Test func mcpCatalogPreservesTransportAndRequiredKeyNames() async throws {
+    let client = WorkflowFixture()
+    client.replies["mcp.catalog"] = ["servers": [[
+      "name": "docs", "installed": true, "enabled": false,
+      "transport": "stdio", "requires": ["DOCS_API_KEY"],
+    ]]]
+    let servers = try await HermesWorkflowRPC(client: client, profileID: "research").mcpCatalog()
+    #expect(servers.first?.transport == "stdio")
+    #expect(servers.first?.requiredKeys == ["DOCS_API_KEY"])
+    #expect(servers.first?.enabled == false)
   }
 
   @Test func pluginCatalogKeepsCategoryTierAndGitHubSlug() async throws {

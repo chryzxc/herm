@@ -4,19 +4,29 @@ import SwiftUI
 final class WorkflowIntegrationModel: ObservableObject {
   @Published private(set) var service: HermesWorkflowRPC
   let client: HermesRPCClientProtocol
+  private let starReader: @MainActor ([String]) async -> [String: Int]
   @Published var skills: [WorkflowIntegrationItem] = []
   @Published var servers: [WorkflowIntegrationItem] = []
-  @Published var plugins: [WorkflowPlugin] = []
+  @Published var plugins: [WorkflowPlugin] = [] { didSet { rebuildCatalogIndex() } }
+  @Published private(set) var pluginsLoading = true
   @Published var connectors: [WorkflowConnector] = []
-  @Published var catalog: [WorkflowPluginCatalogEntry] = []
+  @Published var catalog: [WorkflowPluginCatalogEntry] = [] { didSet { rebuildCatalogIndex() } }
+  private var catalogLoaded = false
+  private var starsLoaded = false
+  private var starsLoading = false
+  @Published private(set) var catalogIndex = WorkflowPluginCatalogIndex()
   @Published private(set) var catalogLoading = false
   /// `owner/name` → GitHub stars; empty without a launch GitHub token.
-  @Published private(set) var stars: [String: Int] = [:]
+  @Published private(set) var stars: [String: Int] = [:] { didSet { rebuildCatalogIndex() } }
   @Published var toolsets: [WorkflowToolset] = []
   @Published var hub: [WorkflowIntegrationItem] = []
   private var connectTask: Task<Void, Never>?
-  @Published var status = "Loading integrations…"
+  @Published var status = ""
   @Published var busy = false
+  @Published private(set) var loadedSections = Set<WorkflowIntegrationSection>()
+  private var refreshGeneration = UUID()
+  private var refreshOwnsBusy = false
+  private var pluginReadGeneration = UUID()
   @Published var preview: String?
   @Published var oauth: WorkflowOAuthFlow?
   private var removalTasks: [String: Task<Void, Never>] = [:]
@@ -25,17 +35,22 @@ final class WorkflowIntegrationModel: ObservableObject {
   private var oauthName: String?
   private var oauthTask: Task<Void, Never>?
   @Published var unsupported = Set<String>()
-  init(client: HermesRPCClientProtocol, profileID: String?) {
+  init(
+    client: HermesRPCClientProtocol, profileID: String?,
+    starReader: @escaping @MainActor ([String]) async -> [String: Int] = HermesWorkflowRPC.githubStars
+  ) {
     self.client = client
+    self.starReader = starReader
     service = HermesWorkflowRPC(client: client, profileID: profileID)
   }
   /// Capabilities' "Configuring:" picker: drop the old profile's inventory, then reload.
-  func useProfile(_ profileID: String?) async {
+  func useProfile(_ profileID: String?, section: WorkflowIntegrationSection? = nil) async {
     guard profileID != service.profileID, !busy else { return }
     cancelActiveReads()
     service = HermesWorkflowRPC(client: client, profileID: profileID)
     (skills, servers, plugins, connectors, toolsets, hub, preview) = ([], [], [], [], [], [], nil)
-    await refresh()
+    loadedSections = []
+    await refresh(section: section)
   }
   func searchHub(_ query: String) async {
     guard !busy, !query.isEmpty else { return }
@@ -45,43 +60,129 @@ final class WorkflowIntegrationModel: ObservableObject {
       status = "Skills Hub: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
     }
   }
-  func refresh(query: String? = nil) async {
+  func load(_ section: WorkflowIntegrationSection?) async {
+    if let section, loadedSections.contains(section) {
+      // Cached tabs must not wait for a cancelled read in another tab.
+      if refreshOwnsBusy {
+        refreshGeneration = UUID()
+        refreshOwnsBusy = false
+        busy = false
+      }
+      return
+    }
+    await refresh(section: section)
+  }
+  func refresh(query: String? = nil, section: WorkflowIntegrationSection? = nil) async {
+    let generation = UUID()
+    refreshGeneration = generation
+    refreshOwnsBusy = refreshOwnsBusy || !busy
     busy = true
-    defer { busy = false }
+    defer {
+      if generation == refreshGeneration {
+        if refreshOwnsBusy { busy = false }
+        refreshOwnsBusy = false
+      }
+    }
+    if let section {
+      status = status.split(separator: "\n").filter { !$0.hasPrefix(section.rawValue + ":") }.joined(separator: "\n")
+      switch section {
+      case .skills: await refreshSkills(query: query)
+      case .tools: await refreshToolsets()
+      case .connectors: await refreshConnectors()
+      case .plugins: await refreshPlugins()
+      case .mcp: await refreshServers()
+      }
+      return
+    }
+    status = ""
+    async let skillsRead: Void = refreshSkills(query: query)
+    async let serversRead: Void = refreshServers()
+    if query == nil {
+      async let pluginsRead: Void = refreshPlugins()
+      async let connectorsRead: Void = refreshConnectors()
+      async let toolsRead: Void = refreshToolsets()
+      _ = await (pluginsRead, connectorsRead, toolsRead)
+    }
+    _ = await (skillsRead, serversRead)
+  }
+  private func refreshSkills(query: String?) async {
+    let requestGeneration = refreshGeneration
     do {
-      skills = try await service.skills(query: query)
-      status = ""
+      let result = try await service.skills(query: query)
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+      skills = result
+      if query == nil { loadedSections.insert(.skills) }
       if query == nil {
         for (id, process) in removalProcesses {
           if let outcome = try? await service.skillRemovalOutcome(process) {
             pendingRemovals.remove(id)
             removalProcesses.removeValue(forKey: id)
-            status =
-              outcome == 0
-              ? "Removal acknowledged. Inventory refreshed."
-              : "Hermes refused or failed the removal."
+            status += outcome == 0
+              ? "\nSkills: Removal acknowledged. Inventory refreshed."
+              : "\nSkills: Hermes refused or failed the removal."
           }
         }
         if !pendingRemovals.isEmpty {
-          status =
-            "Removal outcomes remain uncertain. Inspect Hermes activity or refresh again before retrying."
+          status +=
+            "\nSkills: Removal outcomes remain uncertain. Inspect Hermes activity or refresh again before retrying."
         }
       }
     } catch {
-      status = "Skills: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+      status += "\nSkills: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
     }
-    do { servers = try await service.mcpCatalog() } catch {
+  }
+  private func refreshServers() async {
+    let requestGeneration = refreshGeneration
+    do {
+      let result = try await service.mcpCatalog()
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+      servers = result
+      loadedSections.insert(.mcp)
+    } catch {
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
       status += "\nMCP: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
     }
-    guard query == nil else { return }
-    do { plugins = try await service.plugins() } catch {
+  }
+  private func refreshPlugins() async {
+    let requestGeneration = refreshGeneration
+    let generation = UUID()
+    pluginReadGeneration = generation
+    pluginsLoading = true
+    defer { if pluginReadGeneration == generation { pluginsLoading = false } }
+    do {
+      let result = try await service.plugins()
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+      if result != plugins { loadedSections = [] }
+      plugins = result
+      loadedSections.insert(.plugins)
+    } catch {
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
       status += "\nPlugins: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
     }
-    do { connectors = try await service.connectors() } catch {
+  }
+  private func refreshConnectors() async {
+    let requestGeneration = refreshGeneration
+    do {
+      let result = try await service.connectors()
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+      connectors = result
+      loadedSections.insert(.connectors)
+    } catch {
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
       connectors = []
       status += "\nConnectors: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
     }
-    do { toolsets = try await service.toolsets() } catch {
+  }
+  private func refreshToolsets() async {
+    let requestGeneration = refreshGeneration
+    do {
+      let result = try await service.toolsets()
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+      toolsets = result
+      loadedSections.insert(.tools)
+    } catch {
+      guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
       toolsets = []
       status += "\nTools: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
     }
@@ -90,14 +191,25 @@ final class WorkflowIntegrationModel: ObservableObject {
     _ action: String, item: WorkflowIntegrationItem, credentialKey: String = "",
     credential: String = ""
   ) async {
+    if action == "Inspect" {
+      guard !unsupported.contains(action) else { return }
+      let scope = service
+      do {
+        let result = try await scope.inspectSkill(item.id)
+        guard !Task.isCancelled, scope === service else { return }
+        preview = result
+      } catch {
+        guard !Task.isCancelled, scope === service else { return }
+        if BotService.isUnsupportedMethod(error) { unsupported.insert(action) }
+        status += "\nSkills: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+      }
+      return
+    }
     guard !busy, !unsupported.contains(action) else { return }
     busy = true
     defer { busy = false }
     do {
       switch action {
-      case "Inspect":
-        preview = try await service.inspectSkill(item.id)
-        return
       case "Install skill": try await service.installSkill(item.id)
       case "Enable skill", "Disable skill":
         try await service.toggleSkill(item.id, enabled: action == "Enable skill")
@@ -135,7 +247,10 @@ final class WorkflowIntegrationModel: ObservableObject {
         return
       case "Enable plugin", "Disable plugin":
         let restart = try await service.togglePlugin(item.id, enabled: action == "Enable plugin")
-        await refresh()
+        status = ""
+        loadedSections = []
+        await refreshPlugins()
+        guard status.isEmpty else { return }
         status =
           restart
           ? "Change saved. Restart the Hermes gateway to apply it."
@@ -146,10 +261,16 @@ final class WorkflowIntegrationModel: ObservableObject {
         await refresh()
         status = "\(item.detail) \(action == "Enable toolset" ? "enabled" : "disabled"). Changes apply to new sessions."
         return
-      case "Remove plugin": try await service.removePlugin(item.detail)
-      case "Install plugin":
-        try await service.installPlugin(catalogName: item.id)
-        catalog = (try? await service.pluginCatalog()) ?? catalog
+      case "Remove plugin", "Install plugin":
+        if action == "Remove plugin" { try await service.removePlugin(item.detail) }
+        else { try await service.installPlugin(catalogName: item.id) }
+        status = ""
+        loadedSections = []
+        await refreshPlugins()
+        guard status.isEmpty else { return }
+        if catalogLoaded { await loadCatalog(force: true) }
+        if status.isEmpty { status = "Change acknowledged. New sessions use the updated plugin set." }
+        return
       case "Enable connector", "Disable connector":
         try await service.setConnectorAllowed(item.id, enabled: action == "Enable connector")
       case "Rename account": try await service.renameConnectorAccount(item.id, alias: item.detail)
@@ -243,16 +364,37 @@ final class WorkflowIntegrationModel: ObservableObject {
         : HermesDiagnosticsService.safeSummary(error.localizedDescription)
     }
   }
-  func loadCatalog() async {
-    guard catalog.isEmpty, !catalogLoading else { return }
-    catalogLoading = true
-    defer { catalogLoading = false }
-    do { catalog = try await service.pluginCatalog() } catch {
-      status = "Plugin catalog: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
-      return
+  private func rebuildCatalogIndex() {
+    catalogIndex = WorkflowPluginCatalogIndex(catalog: catalog, installed: Set(plugins.map(\.name)), stars: stars)
+  }
+  func loadCatalog(force: Bool = false) async {
+    guard !catalogLoading else { return }
+    if !catalogLoaded || force {
+      catalogLoading = true
+      status = status.split(separator: "\n").filter { !$0.hasPrefix("Plugin catalog:") }.joined(separator: "\n")
+      do {
+        let result = try await service.pluginCatalog()
+        try Task.checkCancellation()
+        catalog = result
+        catalogLoaded = true
+      } catch {
+        catalogLoading = false
+        if !Task.isCancelled {
+          status += "\nPlugin catalog: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+        }
+        return
+      }
+      catalogLoading = false
     }
-    // ponytail: in-memory only, refetched per page open; persist with a TTL if GitHub rate limits bite.
-    if stars.isEmpty { stars = await HermesWorkflowRPC.githubStars(catalog.compactMap(\.githubSlug)) }
+    guard !starsLoaded, !starsLoading, !Task.isCancelled else { return }
+    let slugs = catalog.compactMap(\.githubSlug)
+    guard !slugs.isEmpty else { starsLoaded = true; return }
+    starsLoading = true
+    defer { starsLoading = false }
+    let result = await starReader(slugs)
+    guard !Task.isCancelled else { return }
+    stars = result
+    starsLoaded = true
   }
   /// Plain fields go through `plugins.manage settings`; secrets through Hermes' env store.
   func saveSettings(_ plugin: WorkflowPlugin, drafts: [String: String]) async {
@@ -266,7 +408,10 @@ final class WorkflowIntegrationModel: ObservableObject {
         guard let env = setting.env, let secret = drafts[setting.id], !secret.isEmpty else { continue }
         try await service.setPluginSecret(env: env, value: secret)
       }
-      await refresh()
+      status = ""
+      loadedSections = []
+      await refreshPlugins()
+      guard status.isEmpty else { return }
       status = "\(plugin.name) settings saved. Restart the Hermes gateway if the plugin reads them at startup."
     } catch {
       status = HermesDiagnosticsService.safeSummary(error.localizedDescription)
@@ -293,10 +438,7 @@ final class WorkflowIntegrationModel: ObservableObject {
 
 struct WorkflowIntegrationView: View {
   /// Mirrors Hermes Desktop's Capabilities tabs, plus MCP servers which Desktop keeps elsewhere.
-  enum Section: String, CaseIterable, Identifiable {
-    case skills = "Skills", tools = "Tools", connectors = "Connectors", plugins = "Plugins", mcp = "MCP"
-    var id: String { rawValue }
-  }
+  typealias Section = WorkflowIntegrationSection
   /// One master-list row on the Capabilities page.
   private struct Entry: Identifiable {
     let id: String
@@ -362,7 +504,7 @@ struct WorkflowIntegrationView: View {
         }
       }
     }
-    .task { await model.refresh() }
+    .task(id: pageSection?.wrappedValue) { await model.load(pageSection?.wrappedValue) }
     .onDisappear {
       credential = ""
       pluginDrafts = [:]
@@ -524,7 +666,9 @@ struct WorkflowIntegrationView: View {
     let current = list.first { $0.id == selection } ?? list.first
     return VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 10) {
-        DockTabBar(options: Section.allCases, selection: tab) { "\($0.rawValue)  \(entries($0).count)" }
+        DockTabBar(options: Section.allCases, selection: tab) { section in
+          model.loadedSections.contains(section) ? "\(section.rawValue)  \(entryCount(section))" : section.rawValue
+        }
         Spacer(minLength: 8)
         if model.busy { ProgressView().controlSize(.small) }
         DockMenu {
@@ -541,7 +685,11 @@ struct WorkflowIntegrationView: View {
           }.padding(.horizontal, 10).frame(height: 30)
             .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill())
         }.buttonStyle(.dockHover).disabled(model.busy).help("Which Hermes profile these changes apply to")
-        Button { Task { await model.refresh() } } label: {
+        Button { Task {
+          async let inventory: Void = model.refresh(section: section)
+          if discover && section == .plugins { await model.loadCatalog(force: true) }
+          await inventory
+        } } label: {
           DockIcon(.arrowClockwise, size: 13, color: .dockSecondaryText).frame(width: 28, height: 28)
         }.buttonStyle(.dockHover).disabled(model.busy).help("Refresh")
       }.padding(.horizontal, 20).padding(.vertical, 10)
@@ -581,8 +729,9 @@ struct WorkflowIntegrationView: View {
                 ForEach(rows) { entry in listRow(entry, selected: entry.id == current?.id) }
               }
             }
-            if list.isEmpty || (discover && section == .plugins && model.catalogLoading) {
-              emptyList(section, loading: model.busy || (discover && section == .plugins && model.catalogLoading))
+            if list.isEmpty {
+              emptyList(section, loading: section == .plugins
+                ? (discover ? model.catalogLoading : model.pluginsLoading) : model.busy)
             }
             if section == .mcp && discover { customServerCard.padding(.top, 12) }
           }
@@ -597,7 +746,7 @@ struct WorkflowIntegrationView: View {
             }
           }.padding(20).frame(maxWidth: 760, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task(id: section == .skills && !discover ? current?.id : nil) {
+        .task(id: section == .skills && !discover ? [model.service.profileID, current?.id] : nil) {
           model.preview = nil
           guard section == .skills, !discover, let current else { return }
           await model.perform("Inspect", item: WorkflowIntegrationItem(id: current.id, detail: current.subtitle))
@@ -613,10 +762,10 @@ struct WorkflowIntegrationView: View {
     .onChange(of: discover) { selection = nil }
     .onChange(of: category) { selection = nil }
     .task(id: discover && section == .plugins) { if discover && section == .plugins { await model.loadCatalog() } }
-    .task { profiles = await BotService(client: model.client).list().bots }
+    .task { profiles = await BotService(client: model.client).rosterList().bots }
   }
   private func profileOption(_ title: String, _ id: String?) -> some View {
-    Button { Task { await model.useProfile(id) } } label: {
+    Button { Task { await model.useProfile(id, section: pageSection?.wrappedValue) } } label: {
       HStack {
         Text(title)
         if model.service.profileID == id { DockIcon(.check) }
@@ -630,9 +779,6 @@ struct WorkflowIntegrationView: View {
   private func summary(_ section: Section, list: [Entry]) -> String {
     if discover && section == .plugins && model.catalogLoading { return "Fetching the catalog from Hermes…" }
     if discover && section == .skills && model.hub.isEmpty { return "Search to find skills to install." }
-    if discover && section == .plugins && model.stars.isEmpty && !model.catalog.isEmpty {
-      return "\(list.count) available · set GH_TOKEN to rank by stars"
-    }
     if discover { return "\(list.count) available" }
     let switches = list.compactMap(\.on)
     let attention = list.filter { $0.badge?.0 == .attention }.count
@@ -664,18 +810,11 @@ struct WorkflowIntegrationView: View {
         }
         return unique(rows)
       case .plugins:
-        let rows = catalogMatches(filter).filter { category.isEmpty || $0.category == category }.map {
+        return model.catalogIndex.matches(filter, category: category, byStars: byStars).map {
           Entry(
             id: $0.id, title: $0.title, subtitle: $0.detail, group: category.isEmpty ? $0.category : "",
             stars: $0.githubSlug.flatMap { model.stars[$0] }, official: $0.official)
         }
-        // Category sections, each ranked by stars (or A–Z); official entries break star ties.
-        return unique(rows.sorted {
-          if $0.group != $1.group { return $0.group < $1.group }
-          if byStars, ($0.stars ?? -1) != ($1.stars ?? -1) { return ($0.stars ?? -1) > ($1.stars ?? -1) }
-          if $0.official != $1.official { return $0.official }
-          return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-        })
       default:
         rows = model.servers.filter { !$0.installed }.map { Entry(id: $0.id, title: $0.id, subtitle: $0.detail) }
       }
@@ -694,7 +833,7 @@ struct WorkflowIntegrationView: View {
     }
     return out
   }
-  private var catalogCategories: [String] { Array(Set(catalogMatches("").map(\.category))).sorted() }
+  private var catalogCategories: [String] { model.catalogIndex.categories }
   /// Load errors are tagged by kind ("Connectors: …"); show a tab only its own, plus untagged results.
   private func statusLines(_ section: Section) -> String {
     let tags = ["Skills", "Skills Hub", "Tools", "Connectors", "Plugins", "Plugin catalog", "MCP"]
@@ -712,6 +851,15 @@ struct WorkflowIntegrationView: View {
   private func unique(_ rows: [Entry]) -> [Entry] {
     var seen = Set<String>()
     return rows.filter { seen.insert($0.id).inserted }
+  }
+  private func entryCount(_ section: Section) -> Int {
+    switch section {
+    case .skills: model.skills.count
+    case .tools: model.toolsets.count
+    case .connectors: model.connectors.count
+    case .plugins: model.plugins.count
+    case .mcp: model.servers.count(where: \.installed)
+    }
   }
   private func entries(_ section: Section) -> [Entry] {
     switch section {
@@ -847,6 +995,7 @@ struct WorkflowIntegrationView: View {
       case .skills:
         if let skill = model.skills.first(where: { $0.id == entry.id }) {
           inspectorHeader(entry, pills: [enabledPill(skill.enabled)], skill.detail)
+          quickDetails([("Skill", skill.id), ("Profile", profileName(model.service.profileID))])
           HStack {
             action(skill.enabled ? "Disable skill" : "Enable skill", skill, confirm: false)
             destructive("Remove…", ("Remove skill", skill))
@@ -867,6 +1016,8 @@ struct WorkflowIntegrationView: View {
           inspectorHeader(
             entry, pills: [enabledPill(toolset.enabled)] + (toolset.configured ? [] : [(.attention, "Needs setup")]),
             toolset.detail)
+          quickDetails([("Toolset", toolset.id), ("Configuration", toolset.configured ? "Configured" : "Needs setup"),
+            ("Tools", String(toolset.tools.count))])
           action(toolset.enabled ? "Disable toolset" : "Enable toolset",
             WorkflowIntegrationItem(id: toolset.id, detail: toolset.label), confirm: false)
           if !toolset.configured {
@@ -885,12 +1036,17 @@ struct WorkflowIntegrationView: View {
       case .connectors:
         if let connector = model.connectors.first(where: { $0.id == entry.id }) {
           inspectorHeader(entry, pills: [connectorBadge(connector)], connector.detail)
+          quickDetails([("Connector", connector.id), ("Policy", connector.allowed ? "Allowed" : "Blocked"),
+            ("Connection", connector.status ?? (connector.connected ? "Connected" : "Not connected")),
+            ("Accounts", String(connector.accounts.count))])
           panel(connector.accounts.isEmpty ? "CONNECTION" : "ACCOUNTS") { connectorRow(connector) }
         }
       case .plugins:
         if let plugin = model.plugins.first(where: { $0.id == entry.id }) {
           let item = WorkflowIntegrationItem(id: plugin.id, detail: plugin.name)
           inspectorHeader(entry, pills: [enabledPill(plugin.enabled)], plugin.detail)
+          quickDetails([("Package", plugin.id), ("Version", plugin.version), ("Source", plugin.source),
+            ("Status", plugin.status), ("Catalog version", plugin.catalogVersion), ("Pinned revision", plugin.pinnedRevision)])
           HStack {
             action(plugin.enabled ? "Disable plugin" : "Enable plugin", item, confirm: false)
             if plugin.removable { destructive("Remove…", ("Remove plugin", item)) }
@@ -904,6 +1060,8 @@ struct WorkflowIntegrationView: View {
       case .mcp:
         if let server = model.servers.first(where: { $0.id == entry.id }) {
           inspectorHeader(entry, pills: [(.complete, "Added")], server.detail)
+          quickDetails([("Server", server.id), ("State", server.enabled ? "Enabled" : "Disabled"),
+            ("Transport", server.transport), ("Required keys", server.requiredKeys.joined(separator: ", "))])
           HStack {
             action("Test", server, confirm: false)
             action("Authorize", server)
@@ -944,6 +1102,10 @@ struct WorkflowIntegrationView: View {
       ("Maintainer", plugin.maintainer), ("Version", plugin.version), ("Package", plugin.id),
       ("GitHub stars", stars.map { $0.formatted() } ?? ""),
     ].filter { !$0.1.isEmpty }
+    return quickDetails(rows)
+  }
+  private func quickDetails(_ values: [(String, String)]) -> some View {
+    let rows = values.filter { !$0.1.isEmpty }
     return panel("DETAILS") {
       Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
         ForEach(rows, id: \.0) { label, value in
@@ -1101,14 +1263,7 @@ struct WorkflowIntegrationView: View {
       .disabled(model.busy).help("More actions")
   }
   private func catalogMatches(_ query: String, limit: Int = .max) -> [WorkflowPluginCatalogEntry] {
-    let installed = Set(model.plugins.map(\.name))
-    let needle = query.lowercased()
-    // ponytail: the modal shows the first 20 matches; ~570 entries, so search narrows rather than paging.
-    return Array(
-      model.catalog.lazy.filter {
-        !$0.installed && !installed.contains($0.id)
-          && (needle.isEmpty || "\($0.id) \($0.title) \($0.detail)".lowercased().contains(needle))
-      }.prefix(limit))
+    model.catalogIndex.matches(query, limit: limit)
   }
   private func settingsForm(_ plugin: WorkflowPlugin) -> some View {
     VStack(alignment: .leading, spacing: 8) {

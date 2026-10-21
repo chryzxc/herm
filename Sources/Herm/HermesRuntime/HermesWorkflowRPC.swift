@@ -6,6 +6,7 @@ struct WorkflowIntegrationItem: Identifiable, Equatable {
   var installed = false
   var enabled = false
   var requiredKeys: [String] = []
+  var transport = ""
 }
 struct WorkflowPlugin: Identifiable, Equatable {
   /// Canonical registry key; toggles address this, removal addresses `name`.
@@ -17,6 +18,11 @@ struct WorkflowPlugin: Identifiable, Equatable {
   /// The package also ships a Hermes Desktop UI half, which Herm cannot host.
   let desktopHalf: Bool
   var settings: [WorkflowPluginSetting] = []
+  var version = ""
+  var source = ""
+  var status = ""
+  var catalogVersion = ""
+  var pinnedRevision = ""
 }
 struct WorkflowPluginSetting: Identifiable, Equatable {
   let id: String
@@ -219,7 +225,7 @@ final class HermesWorkflowRPC {
       else { throw HermesGateway.GatewayError.malformedResponse }
       return WorkflowIntegrationItem(
         id: name, detail: String(($0["description"] as? String ?? "").prefix(300)),
-        installed: installed, enabled: enabled, requiredKeys: $0["requires"] as? [String] ?? [])
+        installed: installed, enabled: enabled, requiredKeys: $0["requires"] as? [String] ?? [], transport: $0["transport"] as? String ?? "")
     }
     if let configured = try? await request(.mcpServersList, [:]),
       let servers = configured["servers"] as? [[String: Any]]
@@ -232,7 +238,7 @@ final class HermesWorkflowRPC {
           WorkflowIntegrationItem(
             id: name, detail: "Configured \(row["transport"] as? String ?? "MCP") server",
             installed: true, enabled: row["enabled"] as? Bool ?? false,
-            requiredKeys: row["env"] as? [String] ?? []))
+            requiredKeys: row["env"] as? [String] ?? [], transport: row["transport"] as? String ?? ""))
       }
     }
     return items
@@ -300,7 +306,10 @@ final class HermesWorkflowRPC {
         id: key, name: name, detail: String(($0["description"] as? String ?? "").prefix(300)),
         enabled: status == "enabled", removable: $0["source"] as? String != "bundled",
         desktopHalf: $0["has_desktop_half"] as? Bool == true,
-        settings: ($0["settings_schema"] as? [[String: Any]] ?? []).compactMap(Self.pluginSetting))
+        settings: ($0["settings_schema"] as? [[String: Any]] ?? []).compactMap(Self.pluginSetting),
+        version: $0["version"] as? String ?? "", source: $0["source"] as? String ?? "",
+        status: status, catalogVersion: $0["catalog_version"] as? String ?? "",
+        pinnedRevision: $0["pinned_sha"] as? String ?? "")
     }
   }
   static func pluginSetting(_ row: [String: Any]) -> WorkflowPluginSetting? {
@@ -370,10 +379,18 @@ final class HermesWorkflowRPC {
   /// GitHub stars for catalog repos, batched 100 aliases per GraphQL query. Hermes' catalog has no
   /// popularity data, so this reads GitHub directly with the launch token; no token, no stars.
   static func githubStars(_ slugs: [String]) async -> [String: Int] {
+    guard !slugs.isEmpty, !Task.isCancelled else { return [:] }
     guard let token = await GitHubCodeHostService.localGitHubToken(), !token.isEmpty else { return [:] }
+    return await githubStars(slugs, token: token) { try await URLSession.shared.data(for: $0) }
+  }
+  static func githubStars(
+    _ slugs: [String], token: String,
+    fetch: @MainActor (URLRequest) async throws -> (Data, URLResponse)
+  ) async -> [String: Int] {
     var stars: [String: Int] = [:]
     let unique = Array(Set(slugs)).sorted()
     for start in stride(from: 0, to: unique.count, by: 100) {
+      guard !Task.isCancelled else { break }
       let chunk = Array(unique[start..<min(start + 100, unique.count)])
       let fields = chunk.enumerated().compactMap { index, slug -> String? in
         let parts = slug.split(separator: "/")
@@ -387,8 +404,10 @@ final class HermesWorkflowRPC {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
       request.httpBody = try? JSONSerialization.data(withJSONObject: ["query": "{ \(fields.joined(separator: " ")) }"])
       // Missing repos come back as null aliases plus an `errors` list; keep whatever resolved.
-      guard let (data, _) = try? await URLSession.shared.data(for: request),
-        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      guard let (data, response) = try? await fetch(request),
+        (response as? HTTPURLResponse)?.statusCode == 200
+      else { break }
+      guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
         let rows = json["data"] as? [String: Any]
       else { continue }
       for (index, slug) in chunk.enumerated() {
