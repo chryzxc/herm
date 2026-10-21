@@ -31,8 +31,11 @@ extension DockPopover {
 
                                 let mountedRange = effectiveMountedRange
                                 let messages = model.messages[mountedRange]
+                                // Built once per pass, not once per mounted row.
+                                let dispatches = model.botDispatchesByToolCallID
+                                let defaultBot = botMode.visibleBots.first(where: \.isDefault)
                                 ForEach(Array(messages.enumerated()), id: \.element.id) { rowOffset, message in
-                                    messageRow(message)
+                                    messageRow(message, dispatches: dispatches, defaultBot: defaultBot)
                                         .background {
                                             GeometryReader { geometry in
                                                 Color.clear.preference(
@@ -278,6 +281,12 @@ extension DockPopover {
                     .onDisappear { streamingTailScroll.cancel() }
                     .onReceive(model.streamingText.$chunks) { _ in
                         conversationPerformance.recordStreamingUpdate()
+                        guard isConversationAtBottom else { return }
+                        scheduleStreamingTailScroll(proxy)
+                    }
+                    // Steps grow the live turn before any text streams; follow
+                    // them so the working indicator doesn't drift below the fold.
+                    .onChange(of: model.streamingTurnActivity.count) { _, _ in
                         guard isConversationAtBottom else { return }
                         scheduleStreamingTailScroll(proxy)
                     }
@@ -651,12 +660,12 @@ extension DockPopover {
     var workingCrewIDs: [String] { mentionedBots.map { "@" + $0.id } + workingCrew.map(\.id) }
 
     @ViewBuilder
-    func messageRow(_ message: ChatMessage) -> some View {
+    func messageRow(_ message: ChatMessage, dispatches: [String: BotActivityRecord], defaultBot: BotSummary?) -> some View {
         let isStreaming = message.id == model.streamingMessageIDForPresentation
         let activity = isStreaming ? model.streamingTurnActivity : message.activity
         let workingBotID = message.botProfileID ?? model.activeBotProfileID ?? model.sessionProfileID ?? botMode.selectedProfileID
         // An unknown or unset profile falls back to the default Bot, as the handoff row does.
-        let workingBot = workingBotID.flatMap { botMode.botsByID[$0] } ?? botMode.visibleBots.first(where: \.isDefault)
+        let workingBot = workingBotID.flatMap { botMode.botsByID[$0] } ?? defaultBot
         if message.role == .hermes, isStreaming || !activity.isEmpty {
             TurnActivityView(
                 activity: activity,
@@ -664,12 +673,13 @@ extension DockPopover {
                 duration: message.responseDuration,
                 bot: isStreaming ? workingBot : nil,
                 botAvatar: workingBot.flatMap { botMode.avatarImages[$0.id] },
-                dispatches: model.botDispatchesByToolCallID,
+                dispatches: dispatches,
                 botLiveSteps: model.botLiveSteps,
                 crew: isStreaming ? workingCrew : [],
                 botsByID: botMode.botsByID,
                 avatars: botMode.avatarImages,
-                rosterRevision: botMode.rosterRevision
+                rosterRevision: botMode.rosterRevision,
+                liveReasoning: isStreaming ? model.liveReasoning : nil
             )
             .equatable()
             .padding(.horizontal, conversationMetrics.contentInset + 4)

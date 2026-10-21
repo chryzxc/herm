@@ -31,12 +31,12 @@ enum ConversationMessageWindow {
     // default mounted page small. History is revealed in the same bounded
     // increment from either edge of the window.
     static let initialLimit = 12
-    static let pageSize = 12
+    static let pageSize = 4
     /// Context mounted above and below a jump target.
-    static let jumpContextAbove = pageSize
-    static let jumpContextBelow = pageSize
+    static let jumpContextAbove = 12
+    static let jumpContextBelow = 12
     /// Hard backstop for the mounted row count under any reveal sequence.
-    static let maxMountedRowCount = 3 * pageSize
+    static let maxMountedRowCount = 36
 
     /// Builds navigation metadata from the same canonical messages and
     /// session identity used by the mounted transcript window. Keeping this
@@ -129,7 +129,7 @@ enum ConversationMessageWindow {
         }
         newLower = max(newLower, newUpper - maxMountedRowCount)
         if let visibleCeiling {
-            newLower = min(newLower, max(visibleCeiling, newUpper - 1))
+            newLower = min(newLower, visibleCeiling)
         }
         return max(newLower, 0)..<newUpper
     }

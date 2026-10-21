@@ -35,7 +35,7 @@ final class ConversationScrollMetricsTests: XCTestCase {
         XCTAssertEqual(firstReveal.count, ConversationMessageWindow.initialLimit + ConversationMessageWindow.pageSize)
 
         var range = firstReveal
-        for _ in 0..<40 {
+        for _ in 0..<(500 / ConversationMessageWindow.pageSize + 1) {
             range = ConversationMessageWindow.revealEarlier(range, totalCount: 500, visibleSpan: nil)
             XCTAssertLessThanOrEqual(range.count, ConversationMessageWindow.maxMountedRowCount)
         }

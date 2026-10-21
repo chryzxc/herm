@@ -130,7 +130,6 @@ extension DockPopover {
             initialMode: fullscreenGlobalTab,
             agentUpdateService: agentUpdateService
         )
-        .id("fullscreen-global-\(fullscreenGlobalTab.id)")
     }
 
     var fullscreenGlobalSurface: some View {
@@ -315,7 +314,6 @@ extension DockPopover {
                             initialMode: fullscreenGlobalTab,
                             agentUpdateService: agentUpdateService
                         )
-                        .id("context-global-\(fullscreenGlobalTab.id)")
                      case .session:
                          SessionInspector(
                              model: model,

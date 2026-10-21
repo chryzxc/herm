@@ -12,6 +12,7 @@ final class HermesPetWindow {
     private let defaults: UserDefaults
     private let motion = PetRoamPresentation()
     private var timer: AnyCancellable?
+    private var tickInterval: TimeInterval = 0
     private var home = NSPoint.zero
     private var homeAnchor = NSPoint.zero
     private var side: EdgeDockSide = .right
@@ -50,7 +51,16 @@ final class HermesPetWindow {
         panel.onDragEnd = { [weak self] in self?.endDrag() }
         panel.onHold = { [weak self] in self?.holding = $0; self?.motion.held = $0 }
         panel.onClick = { [weak self] in self?.pet.pet() }
-        timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+        scheduleTicks()
+    }
+
+    /// 20Hz only while walking somewhere; parked, attached or hidden pets
+    /// still notice profile, visibility and trip changes once a second.
+    private func scheduleTicks() {
+        let interval: TimeInterval = allowed && destination != nil ? 0.05 : 1
+        guard interval != tickInterval else { return }
+        tickInterval = interval
+        timer = Timer.publish(every: interval, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.tick() }
     }
 
@@ -149,6 +159,11 @@ final class HermesPetWindow {
     }
 
     private func tick() {
+        step()
+        scheduleTicks()
+    }
+
+    private func step() {
         defer { if !allowed, motion.direction != 0 { motion.direction = 0 } }
         guard allowed, pet.visible, screen.width > 0 else { panel.orderOut(nil); return }
         updateSize()

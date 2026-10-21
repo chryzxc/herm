@@ -179,7 +179,6 @@ enum StreamingChunkPolicy {
 final class StreamingText: ObservableObject {
     private(set) var text = ""
     @Published private(set) var chunks: [StreamingPresentationChunk] = []
-    @Published var reasoning = ""
 
     private var stableChunks: [StreamingPresentationChunk] = []
     private var mutableTail = ""

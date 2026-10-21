@@ -183,8 +183,13 @@ struct WorkspaceActivitySidebar: View {
         self.showsHeader = showsHeader
         self.showsModePicker = showsModePicker
         self.agentUpdateService = agentUpdateService
+        self.initialMode = initialMode
         _selectedMode = State(initialValue: initialMode)
     }
+
+    /// The host's sidenav tab. Followed in place rather than by rebuilding the
+    /// sidebar, which reset its state and re-ran its refresh task per switch.
+    let initialMode: ControlTab
 
     enum ProjectMutation: String, Identifiable {
         case activate, archive, delete

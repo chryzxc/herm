@@ -926,7 +926,7 @@ extension DockModel {
             // Text streamed so far belongs above this call: close the row so
             // the call (and later text) renders below it, in timeline order.
             if streamingMessageID != nil, streamingMessageSessionID == sessionID,
-               !streamingMessageBuffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+               streamingMessageBuffer.contains(where: { !$0.isWhitespace }) {
                 splitLiveTurn()
             }
             activeToolCalls.append(ActiveToolCall(
@@ -1178,8 +1178,12 @@ extension DockModel {
         guard streamingMessageID != nil else { return }
         if let index = streamingTurnActivity.lastIndex(where: { $0.name == ActiveToolCall.thinkingName }),
            !streamingTurnActivity[index].isComplete {
-            streamingTurnActivity[index].result = state.text
-            if state.isComplete { closeTurnThinking() }
+            // Live text goes to the open thought row only; writing it into the
+            // step broke TurnActivityView's equality on every reasoning flush.
+            if state.isComplete {
+                streamingTurnActivity[index].result = state.text
+                closeTurnThinking()
+            }
         } else if !state.isComplete || !state.text.isEmpty {
             streamingTurnActivity.append(ActiveToolCall(
                 id: "thinking:\(UUID().uuidString)",
@@ -1191,6 +1195,7 @@ extension DockModel {
                 isComplete: state.isComplete
             ))
         }
+        liveReasoning.text = state.text
     }
 
     /// Compaction rides in the turn log like thinking, so the transcript shows
@@ -1229,7 +1234,8 @@ extension DockModel {
     func closeTurnThinking() {
         for index in streamingTurnActivity.indices
         where streamingTurnActivity[index].name == ActiveToolCall.thinkingName && !streamingTurnActivity[index].isComplete {
-            if !streamingReasoningBuffer.isEmpty { streamingTurnActivity[index].result = streamingReasoningBuffer }
+            let text = streamingReasoningBuffer.isEmpty ? liveReasoning.text : streamingReasoningBuffer
+            if !text.isEmpty { streamingTurnActivity[index].result = text }
             streamingTurnActivity[index].isComplete = true
             streamingTurnActivity[index].completedAt = Date()
         }

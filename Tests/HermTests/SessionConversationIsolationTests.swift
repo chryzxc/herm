@@ -750,7 +750,7 @@ struct SessionConversationIsolationTests {
         model.resumeSession(HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { model.sessionID == Fixtures.sessionB && model.status == .idle }
         model.resumeSession(sessionA)
-        try await waitUntil { rpc.requests.filter { $0.method == "session.resume" }.count == 3 && model.sessionID == Fixtures.sessionA && model.status == .working }
+        try await waitUntil { rpc.requests.filter { $0.method == "session.resume" }.count == 3 && model.sessionID == Fixtures.sessionA && model.status == .working && model.messages.contains { $0.text == "fix the build" } }
 
         #expect(model.messages.map(\.text).suffix(2).first == "fix the build")
         #expect(model.streamingTurnActivity.map(\.id) == ["t1"])
