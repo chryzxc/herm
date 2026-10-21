@@ -49,7 +49,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
                              color: selection == option ? .dockAccent : .dockSecondaryText)
                         .frame(width: 26, height: 22)
                         .background(DockThemeShape(cornerRadius: 5)
-                            .fill(selection == option ? Color.dockAccentMuted : .clear))
+                            .dockSelectionFill(selection == option, fallback: selection == option ? Color.dockAccentMuted : .clear))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)

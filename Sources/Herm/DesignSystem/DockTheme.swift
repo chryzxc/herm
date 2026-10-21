@@ -279,11 +279,11 @@ private struct Tokens {
                 })
             }
         }
-        // Glass is composited over the system material. The neutral tint is
-        // light so the wallpaper reads through like native Liquid Glass; the
+        // Glass is composited over the system material. Its neutral tint is a
+        // whisper so the wallpaper reads through like native Liquid Glass; the
         // blur underneath keeps text from windows behind Herm unreadable.
         // Branded themes stay opaque so their authored colors render exactly as specified.
-        windowBackground = color({ $0.bg }, nativeAlpha: 0.40)
+        windowBackground = color({ $0.bg }, nativeAlpha: theme == .glass ? 0.12 : 0.40)
         // Clear so nested page canvases never stack into darker panes; the
         // window tint above is the only layer over the glass.
         background = color({ $0.bg }, nativeAlpha: 0)

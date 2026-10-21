@@ -471,7 +471,7 @@ struct EdgeTaskPreview: View {
                     }
                     .overlay(alignment: .bottomTrailing) {
                         statusMark(task, size: 11)
-                            .background(Circle().fill(Color.dockCanvas).padding(-1))
+                            .background(Circle().fill(Color.dockOpaqueCanvas).padding(-1))
                             .offset(x: 3, y: 3)
                     }
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -484,7 +484,7 @@ struct EdgeTaskPreview: View {
                         .overlay(alignment: .bottomTrailing) {
                             if !working || !BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) {
                                 statusMark(task, size: 11)
-                                    .background(Circle().fill(Color.dockCanvas).padding(-1))
+                                    .background(Circle().fill(Color.dockOpaqueCanvas).padding(-1))
                                     .offset(x: 3, y: 3)
                             }
                         }

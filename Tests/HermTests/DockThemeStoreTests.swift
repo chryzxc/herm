@@ -185,7 +185,7 @@ struct DockThemeStoreTests {
         }
 
         // The window tint is the only layer; page canvases and the sidebar stay clear.
-        #expect(abs((darkWindow?.alphaComponent ?? 0) - 0.40) < 0.01)
+        #expect(abs((darkWindow?.alphaComponent ?? 0) - 0.12) < 0.01)
         #expect((darkWindow?.brightnessComponent ?? 1) < 0.15)
         #expect(darkBackground?.alphaComponent == 0)
         #expect(palette.sidebarBackground == palette.background)

@@ -430,9 +430,9 @@ struct DockWindowBackground: View {
     /// (macOS 26+); older systems and System skin use the blur material.
     @ViewBuilder private var glassOrPopover: some View {
         if DockThemeRuntime.current == .glass, #available(macOS 26.0, *) {
-            // glassEffect alone barely blurs; blur the backdrop first so text
-            // from windows behind Herm cannot be read through it.
-            NativePopoverBackground(material: .hudWindow)
+            // The sidebar material frosts the wallpaper (keeping text behind Herm
+            // unreadable) without the HUD's gray cast; glass adds rim and refraction.
+            NativePopoverBackground(material: .sidebar)
                 .overlay(Color.clear.glassEffect(.regular, in: shape))
         } else {
             NativePopoverBackground(material: DockThemeRuntime.current == .glass ? .underWindowBackground : .popover)
@@ -1218,9 +1218,11 @@ extension View {
         if elevated, #available(macOS 26.0, *) {
             self.glassEffect({ var g = Glass.regular; if let tint { g = g.tint(tint) }; return interactive ? g.interactive() : g }(), in: shape)
         } else {
+            // Translucent surface body: materials alone vanish over the clear glass window.
             self
                 .background(shape.fill(.ultraThinMaterial))
                 .background(shape.fill((tint ?? .clear).opacity(0.55)))
+                .background(shape.fill(Color.dockSurface))
                 .background(shape.fill(LinearGradient(colors: [.white.opacity(0.14), .clear], startPoint: .top, endPoint: .center)))
                 .overlay(shape.stroke(
                     LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing),
