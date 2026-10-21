@@ -85,6 +85,7 @@ separator, or window colors, or ad hoc literals.
 | `dockBorderLight`, `dockBorder`, `dockBorderStrong` | Dividers, panel hairlines, and contours |
 | `dockDiscord` | Appearance-aware Discord identity tint for the source pill and logo |
 | `dockAccent`, `dockAccentMuted` | Interactive emphasis, the selected tab, and selected fills |
+| `dockInfo`, `dockMerged` | Blue informational context and violet merged PR outcomes; appearance-aware, neutral in Monochrome/E-Ink |
 | `dockSuccess`, `dockWarning`, `dockDestructive` | Health and outcome of non-task state, such as quota, verification, and mutation results |
 | `dockOnAccentText` | Text on a filled accent control |
 
@@ -228,7 +229,13 @@ and must not introduce a second black window inside it.
   reserved area and its vertical padding.
 - Under Reduce Motion, every loop stops, disclosures are immediate, and
   geometry changes snap.
-- Decorative Bot motion (working poses, busy faces, orbit stars, huddle turns)
+- In a Bot huddle each working Bot takes a 2.6s turn: a thought bubble pops
+  above it, types the headline of its latest step (or shows thinking dots
+  when none is known), then bursts into sparks that drift to the next Bot.
+  Bubbles float at one height above the lead's head, so the row never shifts.
+  While a crew is working, the row's names, timer and steps sit under the
+  huddle, lined up with the lead, so the bubbles never cover them.
+- Decorative Bot motion (working poses, busy faces, tool rings, huddle turns)
   pauses while Herm is neither the active app nor holding a key panel; every
   animated frame re-renders the whole window. Spinners and the notch work
   marker keep running because they carry status.
@@ -683,7 +690,10 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   stays frozen; Update explicitly requests new content.
 - Rows are quiet: no border or surface at rest, a `dockSurface4` fill on hover
   and a fainter one for the current session. A one-line 12pt semibold title
-  sits beside the status dot and trailing metadata. The next line is the 11pt
+  uses the full row width until Reply slides left into view on hover. Its slot
+  collapses when hidden; composing, keyboard navigation, and VoiceOver keep it visible.
+  The reveal takes 0.18s and snaps under Reduce Motion or motion-free themes.
+  The title sits beside the status dot and trailing metadata. The next line is the 11pt
   status label, colored only for attention, then " · detail" in metadata text.
   Current sessions carry a quiet "Current" chip.
   The status label is "Needs your approval", "Needs your answer", "Working", or "Finished", or a more specific label such
@@ -794,7 +804,7 @@ tokens are used, so every skin restyles it. Tools reads `GET /api/tools/toolsets
 Discover groups the whole catalog by its `category` (chips narrow to one) and ranks each group
 by GitHub stars or A–Z; Hermes has no popularity data, so stars come from one batched GitHub
 GraphQL read using the launch `GH_TOKEN`/`GITHUB_TOKEN` and are simply absent without one. Load
-errors show only on their own tab.
+errors show only on their own tab. Capabilities loads inventories on first visiting each tab; successful inventories are reused until explicit Refresh or a profile change. Counts remain absent until their inventory has loaded. Page Refresh reads only its selected tab, and plugin mutations refresh only the plugin inventory (and an already-open catalog after install/remove). Plugin changes invalidate the other tab inventories so the next visit reloads their authoritative state. The profile picker uses the profile-only roster without plugin or live-session probes. Catalog sorting and normalized search text are indexed only when catalog, installed plugins or star counts change. Empty catalogs are valid loaded results, concurrent catalog reads coalesce, and cancellation discards responses. Optional GitHub stars do not keep the catalog loading and are attempted once per page; catalogs without GitHub repositories skip that work. Quick-view details show installed plugin version, source, runtime status, catalog version and pinned revision when supplied; toolset configuration and counts; connector policy, connection and account count; MCP enabled state, transport and required key names; and skill identity and profile alongside its preview. Missing version fields are omitted.
 The same Integrations modal lists Hermes plugins (`plugins.manage`: enable, disable, remove
 user installs) and hosted connectors (`connectors.*`, account owner: connect via the browser
 link Hermes mints, disconnect per account). Plugins that ship a Hermes Desktop UI half say so;
@@ -1210,7 +1220,9 @@ opens at the top when the category changes.
   specimen, the Herm skin name, a short material signature, and one line for
   the mode plus "Active in Hermes" when it applies. Specimens use the target
   palette and geometry independently of the active skin; they contain no
-  invented activity or metrics. The selected tile gets an accent stroke and
+  invented activity or metrics. Each specimen also shows four sample Herm
+  Faces (idle, tool, needs approval, done) drawn in that skin, so tone,
+  outline and badge colors are previewed before switching. The selected tile gets an accent stroke and
   checkmark in a fixed slot; the description is a tooltip. Selecting a
   tile changes Herm presentation only and never invokes Hermes skin commands.
   Unmapped skins and installed companions are quiet lists below the grid.
@@ -1330,13 +1342,25 @@ page label. Secondary tree actions live in its options menu. Changes prioritizes
 branch and staged/unstaged files; GitHub account and PR management remain in the
 full repository workspace. Missing projects use a compact top-aligned message.
 
-Activity starts with a fixed refresh toolbar, followed by actual current work,
-agents when present, and recent events. It has no summary dashboard or empty
-agent/work sections. Agent scope and map selection live in a secondary menu.
-The canonical session-attributed work and newest-first timeline retain their
-stable IDs, disclosures, durations, results, and bounded pagination. One empty
-state appears when there is no activity; refresh errors remain actionable.
+Activity uses a fixed Overview / History toolbar with refresh in its trailing
+slot. Overview groups current work by Needs attention, Running, and Up next,
+then shows delegates and completed Bot / Kanban / background results. It does
+not repeat the session's completed tool feed. Delegates disclose their goal,
+reported summary, model, files written, and exact-ID activity; related sessions
+open through existing session navigation when present in the session inventory.
+History searches titles, owners, details, and related session IDs, with source
+(Session, Agent, Bot, Kanban, Background) and status filters. Unknown statuses
+remain visible in All statuses. Expanded rows show full titles, available
+input/output, diffs, timestamps, and measured durations. There are no inferred
+outcomes or cross-session activity fallbacks.
 
+The projection coalesces updates at 250ms and ignores ordinary reply-text
+changes. Transcript Bot rows use stable message IDs; live tool updates replace
+restored copies by call ID. Lists use lazy, ten-row pagination, search waits
+150ms after typing, and only expanded running durations have timers. Switching
+sessions resets disclosures and filters. Work refresh failures occupy the fixed
+header slot; retained data is explicitly marked not current. All states share
+the same content container.
 
 Chat retains the established `TurnActivityView`: live tool steps, `SignalTrace`,
 stable duration text with separate animated live-work decoration, and a compact expandable completed summary. Generated
@@ -1485,14 +1509,37 @@ latest-activity preview second, and relative activity time plus provider/model
 metadata at the footer. Tabs, search, activity, and visibility filters share a
 responsive toolbar that wraps at narrower widths. The full card opens the
 canonical Bot Chat; profile editing, duplication, activity history, and
-hide/unhide remain in More and the native context menu. Focus and hover use one
+hide/unhide remain in More and the native context menu. Delete Bot… is a
+destructive, capability-gated action in both menus, with explicit confirmation
+listing the profile data and active sessions affected. The default profile is
+protected. Pending deletion uses the existing More slot; failures show a safe
+diagnostic and the roster refreshes from Hermes. Focus and hover use one
 quiet surface treatment, and the 44pt More target does not change card layout.
 Routines retain their own focused list with assigned Bot names, schedules,
 disabled state, and confirmed removal. This page uses the global Herm tokens and
 is independent of the sidebar brand-concept preference. Groups, sections,
-profile deletion, cross-machine routing, and richer routine actions require
+cross-machine routing and richer routine actions require
 additional Hermes gateway contracts and are not presented as available Herm
 controls yet.
+
+**Herm Faces.** Bots without uploaded art draw a seeded face (`HermFace.swift`)
+in a 100-unit box: one of five bodies, ten hue palettes, four eye styles and a
+±7° lean, all from the profile ID. Each `BotMood` maps to something Hermes or
+Herm actually knows: tool (busy or `working`), clarify (`waiting`), queued,
+done, failed, stopped (canceled), voice listening/thinking/replying, sleepy
+(hidden) and happy (hover). Live session asks override the busy face through
+`BotMood(ask:compacting:)`: approval, then clarify (sidebar Bot rows, notch
+rows, the streaming reply), then compressing while Hermes compacts the open
+session. Effects use theme tokens only: accent rings, dots
+and waves for activity; warning, destructive, success and metadata badges for
+outcomes. Badge glyphs drop below 24pt. Skins set the tone (hue; gray on E-Ink
+and Monochrome; accent on Terminal and HUD) and ink outlines (Cartoon,
+Brutalist, E-Ink). Gloss (sheen, rim light, highlight, sparkle) is drawn
+only on Glass and Clay; every other skin, and the saved PNG, is matte. Only moving states run a clock, gated by Reduce Motion,
+`animates`, and app focus. The PNG saved to Hermes is the still, skin-neutral
+idle face; Regenerate All re-renders it for every Bot. The legacy blob
+renderer stays only to recognize older saves. Group chat stacks place faces
+side by side with no cut-out border.
 
 ### Conversation workspace
 
@@ -1513,7 +1560,17 @@ The transcript mounts a bounded window of messages and pages earlier or later
 history automatically as the reader scrolls within one viewport of either edge;
 there are no show-more buttons, and the reader's position is held while a page
 mounts. Scrolling upward immediately suspends streaming follow until the reader
-returns to the bottom. Jump to latest animates only when Reduce Motion is off.
+returns to the bottom or chooses Jump to latest. Streamed output, new blocking
+prompts, and same-session transcript refreshes preserve the reader's position
+above the bottom. While following, content-height changes target the measured
+footer after layout without a second streaming timer. Jump to latest animates
+only when Reduce Motion is off.
+
+Long native Markdown documents retain their full measured height while mounting
+only visible sections and one viewport of buffer. Scrolling remounts the same
+section views without reparsing their content. Focused text remains mounted so
+selection and Copy survive scrolling; VoiceOver, Switch Control, and full
+keyboard access retain the complete section hierarchy.
 
 Website links in native Markdown keep their underlined accent labels and a
 fixed-size inline site icon. GitHub uses the bundled theme-aware mark; other
@@ -1539,6 +1596,16 @@ errors. Attach is icon-only; model and reasoning context remain available at
 normal widths, while the send/steer action retains the strongest emphasis.
 Streaming, approvals, clarifications, voice state, and errors may use semantic
 surfaces when they represent an active decision or recovery path.
+Voice submissions use the active session's profile. Pending replies and playback
+retain ownership of the voice state until completion or interruption; late
+recorder transcripts cannot reopen capture. A failed request pauses voice
+with a transcript error and the existing tap-to-resume action.
+The welcome and voice orbs share the responding profile's live Herm face,
+falling back to the selected or default Bot. Faces require an explicit enabled
+`hermes-bots` status from `plugins.manage` and a ready roster. Disabled or
+unconfirmed plugin status, uploaded art, and generated art keep the plain orb.
+The welcome orb retains the same footprint and pointer reactions as voice,
+including Reduce Motion support.
 The running indicator uses the responding Bot's stored avatar or generated
 face, falling back to the session profile and selected Bot for ordinary chats.
 Its gentle hop and activity-driven gestures stop under Reduce Motion and motion-free themes.
@@ -1580,7 +1647,13 @@ lazy newest-first results list drives a selected detail pane. Images use an
 aspect-fit preview; files and links use semantic previews with selectable
 paths or URLs. Open, Copy, optional Reveal in Finder, and source-session
 navigation are the only artifact actions. The compact conversation inspector
-retains its existing grid/list and pagination presentation.
+retains its existing grid/list and pagination presentation. Both read a paginated,
+profile-aware index of unarchived sessions independently of the sidebar window, including
+pre-compaction messages, assistant links, and producer/terminal outputs. Transcript
+extraction runs off the main actor in bounded pages, with at most four concurrent
+session reads. An in-memory cache reuses artifacts only while Hermes session
+recency, message count, and display title agree; raw transcripts are not cached. Refresh
+failures stay in the fixed header subtitle and preserve the last loaded output.
 
 ### Agent Board and activity disclosure
 
@@ -1801,6 +1874,25 @@ Before considering a UI change complete, verify:
 
 
 ### Pull requests and Issues metadata
+
+PR summaries begin with one themed overview: repository/number, status action,
+title, author/freshness, base ← head branch direction, change totals, and reviewers.
+Description, readiness, changes, metadata, checks, activity, and the comment
+composer reuse `.dockCard`; tabs use shared `DockTabButton`. Readiness and the
+change breakdown sit side by side when space permits and stack in narrow panes.
+Activity events share one divided group rather than individual pill surfaces.
+The comment editor and submit action occupy separate rows so text remains visible.
+
+The Changes group classifies current loaded file paths, with mocks/fixtures
+preceding tests, then docs/configuration/code/other. Each row shows file count,
+additions, and deletions. Binary files count even with zero line changes; renames
+count once at the destination path. The footer reports loaded totals and explicitly
+labels incomplete/unknown coverage. Unverified revisions show unavailable or
+loading text instead of presenting stale totals. Review files opens the Code tab.
+Blue denotes informational context, violet merged outcomes, amber pending or
+blocked work; green/red remain line additions/deletions and success/failure.
+Color always accompanies text. All skins resolve the shared semantic colors;
+Monochrome and E-Ink preserve neutral tones.
 
 Both modules use the existing Dock canvas, cards, disclosures, modal editor,
 button styles, color tokens, and 12pt body typography. Metadata uses the same

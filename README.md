@@ -124,7 +124,7 @@ The Activity preview separates **Needs your attention**, **In progress**, and **
 
 Conversation approvals, clarification choices, and secret/login requests share a compact neutral card with explicit status, labeled inputs, and grouped actions that stack in narrow panes. Multi-select answers show their selected state; submitting keeps an in-place progress indicator and disables duplicate responses.
 
-Choose **Quick message** in either Tasks view to start a new session without opening the workspace. Choose **Reply** on a session row to compose directly beneath it. Replies stay tied to that session, and neither action changes the workspace’s selected chat. The compact composer keeps its own draft, preserves workspace attachments, and stays open while typing; **Back** or Escape leaves it. Failed sends keep the text for retry. Kanban rows show the assigned bot’s stored avatar or its existing fallback identity.
+Choose **Quick message** in either Tasks view to start a new session without opening the workspace. Hover a session row to slide **Reply** into view and compose directly beneath it; hidden buttons leave no empty slot. Reply stays visible while composing or navigating with the keyboard, and the reveal respects Reduce Motion. Replies stay tied to that session, and neither action changes the workspace’s selected chat. The compact composer keeps its own draft, preserves workspace attachments, and stays open while typing; **Back** or Escape leaves it. Failed sends keep the text for retry. Kanban rows show the assigned bot’s stored avatar or its existing fallback identity.
 
 Choose a finished session row to peek at its **Latest completed reply** inside the notch. Copy an excerpt, open or reveal generated files, reply to that session, or open it in the workspace. Reading leaves the selected workspace chat alone. A deliberate selection marks the matching completion reviewed after its content loads; hovering does not. New results offer **Update** while the displayed excerpt remains stable.
 
@@ -211,7 +211,7 @@ Discord sessions show a compact tinted pill with the Discord icon beside the pre
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
 - **Working bot**: a larger, borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
 - **Running activity** keeps duration text free of shimmer while elapsed time continues updating, with a separate live-work sweep that pauses when Herm loses focus and stays still under Reduce Motion or motion-free themes.
-- **Transcript scrolling** yields immediately when you scroll upward during a reply and resumes following at the bottom. Jump to latest respects Reduce Motion.
+- **Transcript scrolling** follows new output only while you are at the bottom. Scrolling up keeps your reading position through streamed replies, new questions, and transcript refreshes; return to the bottom or choose Jump to latest to resume following. Long Markdown replies keep offscreen text sections out of scrolling work while preserving their full height and selected text. Jump to latest respects Reduce Motion.
 - **Steering during a turn**: guidance you type while Hermes is working is added to the running turn at the next tool boundary.
 - **Queued messages**: new submissions wait behind earlier messages, including a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
 - **Attachments**: files, pasted images, URLs, prompt snippets, several images at once, or a single PDF up to 25 MB.
@@ -227,8 +227,9 @@ Discord sessions show a compact tinted pill with the Discord icon beside the pre
 Voice mode is more than a microphone button for dictating a prompt. Speak with your agent, hear its replies, and continue the conversation without typing each turn.
 
 - **Continuous conversation** using Hermes' voice loop, speech recognition, voice activity detection, and streaming text-to-speech. It returns to listening after a reply while Voice mode remains active.
+- Spoken requests stay with the active conversation's Bot profile. Recorder updates cannot restart listening during a pending reply or its audio playback; a failed request pauses Voice mode and shows the error in chat.
 - **Spoken interruption and steering**: speak over a reply to interrupt it, or give additional guidance while Hermes is working. The orb also lets you send an utterance immediately, interrupt, or resume listening.
-- **A native voice stage** with an audio-reactive orb (Bots wearing a Herm face appear live at its core; uploaded or generated avatars keep the plain orb), listening/thinking/speaking states, Markdown-rendered reply captions, tool activity cards, and subagent indicators. Immersive mode gives the conversation the workspace while keeping live work visible. Activity chips stay in separate, spaced columns and make room for tool cards.
+- **A native voice stage** with an audio-reactive orb (Bots wearing a Herm face appear live at its core only when Hermes reports the `hermes-bots` plugin enabled; uploaded or generated avatars keep the plain orb), listening/thinking/speaking states, Markdown-rendered reply captions, tool activity cards, and subagent indicators. Immersive mode gives the conversation the workspace while keeping live work visible. Activity chips stay in separate, spaced columns and make room for tool cards.
 - **Spoken approvals and clarifications** when on-device recognition is available. Requests remain visible, and spoken answers go to the pending request rather than becoming a new prompt. Permanent **Always allow** approvals still require the on-screen control.
 - **Follow-up and wake behavior**: with on-device recognition, a quiet follow-up window can pause into wake-phrase listening. Say `Hey <agent name>` to resume; this applies while Voice mode is active, not as a system-wide wake listener.
 - **Separate microphone and spoken-reply controls**, so you can mute input or turn off spoken replies.
@@ -254,6 +255,9 @@ Quick message uses a shared composer surface, a destination picker beside its ti
 and a compact quota advisory above the fixed send footer.
 
 ### Pull requests
+
+- The summary groups identity, branch direction, and change totals in a shared themed overview. Changes breaks down loaded files into code, tests, mocks/fixtures, documentation, configuration, and other files, with additions/deletions and explicit partial-coverage notices.
+- Shared blue information and violet merged accents adapt to every skin and appearance; Monochrome and E-Ink retain neutral ink.
 
 - Open pull requests for the session's repository, with check status, review state, blockers, and deep links.
 - The session header shows Pull Requests only when the session is connected to a project or repository.
@@ -336,8 +340,10 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 Leading bot mentions render an avatar-and-name pill inline with the text inside your message bubble. Mentions follow Hermes’ chat flow: the current agent receives the resolved profile identity and uses `message_agent` to contact its Bot Chat. If that tool is unavailable in the session, Hermes reports it.
 
 - A **Bots page** showing each Hermes profile's model, avatar, latest message, and live presence.
-- Create, clone, edit, duplicate, and hide bots. Editable fields include avatar, title, model, `SOUL.md`, skills, toolsets, and MCP servers.
+- Create, clone, edit, duplicate, hide, and permanently delete bots. **Delete Bot…** in More or the context menu confirms removal of the profile and its data; the default bot is protected. Deletion requires Hermes CLI support. Editable fields include avatar, title, model, `SOUL.md`, skills, toolsets, and MCP servers.
 - **Routines** for each bot, backed by Hermes cron jobs.
+- The welcome screen shares the voice orb’s animated Herm face and pointer reactions for the selected Bot, only when Hermes reports the `hermes-bots` plugin enabled. Disabled or unconfirmed plugin status keeps the plain orb.
+- **Herm Faces**: Bots without uploaded art get a client-side face seeded from their profile ID (body shape, colors, eyes, lean). The face shows what Hermes reports: thinking, running a tool, replying, done, failed, stopped, waiting on you, needs your approval, needs your answer, compressing context, queued, and voice listening. It follows your skin: hued on most skins, gray on E-Ink and Monochrome, accent-tinted on Terminal and HUD, with ink outlines on Cartoon, Brutalist and E-Ink. Faces saved to Hermes before Herm Faces are still recognized and drawn live; Regenerate All re-saves every Bot's face.
 - Choosing a bot in the navigation header limits conversations, projects, and new chats to that bot.
 
 ### Kanban
@@ -371,8 +377,17 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 - **Today**: your current focus, approvals, failures, due Apple Reminders, active work, and scheduled jobs.
 - **Inbox**: approvals, clarifications, failures, and completed work. You can dismiss or snooze items.
 - **Activity**: delegated agents that are running, an animated map of handoffs between agents, and background tasks. Session Kanban activity spans all active boards and refreshes every five seconds while visible, with immediate refresh requests when session tools reference a card.
-- **Artifacts**: images, files, and links produced in recent sessions.
+- **Artifacts**: images, files, and links across Hermes profiles and saved, unarchived sessions, including terminal outputs and pre-compaction history. The index pages through complete transcripts rather than stopping at the sidebar or message limit. Parsing runs off the UI thread; refresh reuses unchanged sessions and caches only artifact records.
 - **Core**: token usage, context breakdown, rollback checkpoints, skills, MCP servers, plugins, and Hermes health.
+
+The session inspector’s **Activity** tab separates **Overview** (current work,
+delegates, and Bot / Kanban / background results) from **History** (searchable
+execution details with source and status filters). Expand entries for full
+inputs, results, diffs, timing, and related conversations where available.
+Updates are coalesced, ordinary reply text does not rebuild execution history,
+and lists load ten rows at a time. Activity stays scoped to the selected session.
+
+Capabilities loads each tab on first use and keeps its inventory in memory until Refresh or a profile change. Plugins entry and Refresh read only the plugin inventory; its profile picker reads only profile names, and plugin changes refresh only Plugins while invalidating other tabs for their next visit. Plugin catalogs become browsable before optional GitHub star counts finish. Catalog sorting and search text are prepared when source data changes; selection and filtering reuse that index. Empty catalogs are remembered, overlapping catalog reads are coalesced, and Refresh explicitly retries the catalog. Quick-view inspectors show runtime-provided plugin versions, source and pinned revision, toolset setup and tool counts, connector policy and account state, and MCP transport and required key names. Skills show their profile and SKILL.md preview; versions are shown only where Hermes supplies them.
 
 Settings groups navigation into **App**, **Agent**, **Tools & access**, and **Activity & maintenance**. Find startup and keyboard shortcuts in **General**; backend connections in **Gateway**; themes, sidebar visibility, notch display, and the companion in **Appearance**; alerts in **Notifications**; and app/agent updates in **Updates**. **Files & terminal** brings the working directory, execution backend, and shell settings together. Each page includes a short description, and compact windows use the same grouped category menu.
 
@@ -490,7 +505,7 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 - Structured cron report contracts and more detailed diagnostics (recorded chat-backed run output can already be read)
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
 - Email and iMessage integrations, and writing to Calendar or Reminders (the Calendar page is read-only)
-- Deleting bot profiles and connecting to Hermes on another machine (group chats are already available when supported by Hermes)
+- Connecting to Hermes on another machine (group chats are already available when supported by Hermes)
 - Force-pushing and dispatching GitHub workflows; native conflict editing and arbitrary Projects custom-field editing
 
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
