@@ -203,6 +203,11 @@ final class EdgeDockController: NSObject {
                 self?.rebuildTasks()
             }
             .store(in: &subscriptions)
+        model.$botActivityRevision.map { _ in () }
+            .merge(with: model.$botLiveSteps.map { _ in () })
+            .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] in self?.rebuildTasks() }
+            .store(in: &subscriptions)
         model.$activityPresentationRevision
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in self?.refreshProgress() }
@@ -417,6 +422,9 @@ final class EdgeDockController: NSObject {
                                         activity: latestActivityLabels,
                                         currentSessionIDs: model.currentSessionIDs,
                                         isOnline: activity.status != .offline, attention: latestAttention)
+            + EdgeNotchTask.botRows(records: model.botActivityBySessionID[model.sessionStorageID ?? model.sessionID ?? "", default: []],
+                                    steps: model.botLiveSteps, isOnline: activity.status != .offline,
+                                    listedSessionIDs: Set(latestSessions.filter { $0.isWorking || $0.hasUnreadUpdate }.map(\.id)))
             + kanbanActivity.rows(isCurrent: kanbanStatusCurrent && activity.status != .offline)
             + deliveryQuestions.map(\.row)
             + controlCenter.routineReferences.filter { $0.needsAttention || state.preferences.routinePins.contains($0.id) }.map { reference in

@@ -28,7 +28,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
     var answerState: AttentionAnswerState? = nil
     var isFailure = false
     var routine: RoutineReference? = nil
-    /// The open session's Bot profile; the current row has no `session`.
+    /// The working Bot's profile for rows without a `session`: the open
+    /// session's row and Bot DMs whose own session is not known yet.
     var profileID: String? = nil
 
     static func choiceLabel(_ choice: String) -> String {
@@ -149,6 +150,42 @@ struct EdgeNotchTask: Identifiable, Equatable {
     }
 }
 
+extension EdgeNotchTask {
+    /// Bots the open session messaged or @mentioned, as their own rows.
+    /// Kanban assignments are left to the board's rows. A finished DM stays
+    /// for 15 minutes so its result can be seen without opening the Dock.
+    /// `listedSessionIDs` are sessions that already have a row of their own.
+    static func botRows(records: [BotActivityRecord], steps: [String: String], isOnline: Bool,
+                        listedSessionIDs: Set<String> = [], now: Date = Date()) -> [EdgeNotchTask] {
+        records.compactMap { record in
+            guard record.linkedCardID == nil,
+                  !listedSessionIDs.contains(record.botChatSessionID ?? "") else { return nil }
+            // ponytail: a live DM whose completion Herm missed would stay forever;
+            // past 3h it is stale, matching `workingBotDispatches`.
+            if record.isLive ? record.createdAt < now.addingTimeInterval(-3 * 3600)
+                : record.updatedAt < now.addingTimeInterval(-15 * 60) { return nil }
+            let (phase, label): (Phase, String) = switch record.state {
+            case .working: (.working, "Working")
+            case .queued: (.working, "Queued")
+            case .waiting: (.attention, "Waiting on you")
+            case .completed: (.finished, "Finished")
+            case .failed: (.finished, "Failed")
+            case .canceled: (.finished, "Canceled")
+            }
+            let detail = record.isLive ? steps[record.id] : record.result?.split(whereSeparator: \.isNewline).first.map(String.init)
+            let session = record.botChatSessionID.map {
+                HermesSession(id: $0, profileID: record.botID, title: record.summary, preview: "",
+                              startedAt: record.createdAt, messageCount: 0, source: "herm")
+            }
+            return EdgeNotchTask(
+                id: "bot:\(record.id)", title: record.summary, phase: phase, statusLabel: label,
+                detail: [record.botName, detail].compactMap { $0 }.joined(separator: " · "),
+                updatedAt: record.updatedAt, isCurrent: false, isStatusCurrent: isOnline,
+                session: session, isFailure: record.state == .failed, profileID: record.botID)
+        }
+    }
+}
+
 /// The notch’s Tasks tab: one list of session and Kanban rows, pre-sorted by `merged`.
 struct EdgeTaskPreview: View {
     let tasks: [EdgeNotchTask]
@@ -177,6 +214,8 @@ struct EdgeTaskPreview: View {
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     let openTask: (EdgeNotchTask) -> Void
     @FocusState private var focusedTask: EdgePreviewItemID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     private var keyboardItems: [EdgePreviewItemID] {
         tasks.map { $0.previewIdentity(currentProfileID: quickModel?.sessionProfileID) }
     }
@@ -285,15 +324,20 @@ struct EdgeTaskPreview: View {
     private func card(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
         let isReplying = quickState?.composing == true && quickState?.quickReplyTask?.presentationID == task.presentationID
         return EdgeTaskHoverContent { isHovered in
+            let showsReply = isHovered || isReplying || voiceOverEnabled || quickState?.previewInteraction.mode == .keyboard
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 0) {
                     taskButton(task, bots: bots, now: now)
                     if task.routine == nil, task.kanbanTask == nil, task.phase != .attention, let reply, task.session != nil || task.isCurrent {
-                        replyToggle(task, isReplying: isReplying, visible: isHovered || isReplying || task.isCurrent || quickState?.previewInteraction.mode == .keyboard, reply: reply)
+                        replyToggle(task, isReplying: isReplying, visible: showsReply, reply: reply)
                             .padding(.top, 5)
                             .padding(.trailing, 4)
+                            .offset(x: showsReply ? 0 : 12)
+                            .frame(width: showsReply ? 34 : 0, alignment: .trailing)
+                            .clipped()
                     }
                 }
+                .animation(reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.18), value: showsReply)
                 if task.phase == .attention, !task.choices.isEmpty, let answer {
                     choiceButtons(task, answer: answer)
                 }
@@ -428,6 +472,8 @@ struct EdgeTaskPreview: View {
         }
         .buttonStyle(.dockPress)
         .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+        .accessibilityHidden(!visible)
         .disabled(quickState?.quickSending == true)
         .dockHoverTip(isReplying ? "Close reply" : "Reply in the notch", edge: .trailing, gap: 30)
         .accessibilityLabel(isReplying ? "Close reply" : "Reply to \(task.title)")
@@ -480,7 +526,7 @@ struct EdgeTaskPreview: View {
                     // The session's Bot (or the default one) stands in for the
                     // spinner: a working Herm face already orbits.
                     let working = task.tone == .working
-                    BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 26, orbits: working)
+                    BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 26, mood: BotMood(ask: task.activityState), orbits: working)
                         .overlay(alignment: .bottomTrailing) {
                             if !working || !BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) {
                                 statusMark(task, size: 11)
@@ -532,7 +578,7 @@ struct EdgeTaskPreview: View {
     /// The Bot running a session row: its profile's Bot, else the default
     /// Bot. Empty when the Bots plugin is off, which keeps the spinner.
     private func sessionBot(_ task: EdgeNotchTask) -> BotSummary? {
-        guard task.session != nil || task.isCurrent else { return nil }
+        guard task.session != nil || task.profileID != nil || task.isCurrent else { return nil }
         let profileID = task.session?.profileID ?? task.profileID
         return bots.first { $0.id == profileID } ?? bots.first(where: \.isDefault)
     }

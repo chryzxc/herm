@@ -367,4 +367,24 @@ struct EdgeNotchTests {
         #expect(OfficeAgentStatus.idle.tone == .complete)
         #expect(OfficeAgentStatus.working.nsColor == DockStatusTone.working.signageColor)
     }
+
+    @Test func messagedBotsGetTheirOwnRows() {
+        let now = Date()
+        func record(_ id: String, _ state: BotActivityState, age: TimeInterval = 60, card: String? = nil, session: String? = nil) -> BotActivityRecord {
+            BotActivityRecord(id: id, originSessionID: "s", botID: "forge", botName: "Forge", summary: "Brief \(id)", state: state,
+                              createdAt: now.addingTimeInterval(-age), updatedAt: now.addingTimeInterval(-age),
+                              result: "Build green\nmore", linkedCardID: card, botChatSessionID: session)
+        }
+        let rows = EdgeNotchTask.botRows(records: [
+            record("live", .working, session: "forge-1"),
+            record("done", .completed),
+            record("old", .completed, age: 3600),
+            record("card", .working, card: "t_1"),
+            record("listed", .working, session: "forge-2"),
+        ], steps: ["live": "Running swift build"], isOnline: true, listedSessionIDs: ["forge-2"], now: now)
+        #expect(rows.map(\.id) == ["bot:live", "bot:done"])
+        #expect(rows[0].phase == .working && rows[0].detail == "Forge · Running swift build")
+        #expect(rows[0].session?.profileID == "forge" && rows[0].profileID == "forge")
+        #expect(rows[1].phase == .finished && rows[1].detail == "Forge · Build green")
+    }
 }
