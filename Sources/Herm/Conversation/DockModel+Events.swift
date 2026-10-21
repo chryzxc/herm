@@ -578,11 +578,14 @@ extension DockModel {
         case "voice.transcript":
             guard voiceState.isNativeConversationActive, !isVoiceMicMuted else { return }
             let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            nativeVoiceCapture.receivedTranscript(hasText: !transcript.isEmpty)
             if (payload["stop_phrase"] as? Bool) == true {
                 stopVoiceConversation()
                 return
             }
+            // A recorder tail cannot release a turn or cut off its speech.
+            // A real barge-in first transfers ownership via voice.interrupted.
+            guard !isSending, !nativeVoiceCapture.isAwaitingPlaybackDrain, voiceState != .paused else { return }
+            nativeVoiceCapture.receivedTranscript(hasText: !transcript.isEmpty)
             if (payload["no_speech_limit"] as? Bool) == true {
                 // Hermes gave up after consecutive silent captures. Re-arming
                 // here looped forever (beeping) with a deaf or idle microphone.
@@ -618,7 +621,7 @@ extension DockModel {
                 voiceState = .thinking
             }
         case "voice.interrupted":
-            guard voiceState.isNativeConversationActive else { return }
+            guard voiceState == .thinking || voiceState == .speaking else { return }
             status = .idle
             isSending = false
             voiceTelemetry.markInterrupted()
@@ -696,7 +699,8 @@ extension DockModel {
             let wasInterrupting = interruptState == .requesting
             interruptState = .idle
             if wasInterrupting { releaseStoppedTurnPrompts() }
-            if let error = Self.messageCompletionError(from: payload) {
+            let completionError = Self.messageCompletionError(from: payload)
+            if let error = completionError {
                 discardStreamingMessage()
                 let text = Self.safeUserDiagnostic(error)
                 appendTerminalErrorMessage(text)
@@ -717,7 +721,12 @@ extension DockModel {
                 let response = messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? "Hermes completed the active request."
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
             }
-            if voiceState.isNativeConversationActive, skipNextVoicePlaybackDrain || !voiceRepliesEnabled {
+            if voiceState.isNativeConversationActive, completionError != nil, !wasInterrupting {
+                skipNextVoicePlaybackDrain = false
+                speakReplyAfterVoicePrompt = false
+                nativeVoiceCapture.reset()
+                voiceState = .paused
+            } else if voiceState.isNativeConversationActive, skipNextVoicePlaybackDrain || !voiceRepliesEnabled {
                 skipNextVoicePlaybackDrain = false
                 speakReplyAfterVoicePrompt = false
                 voiceTelemetry.completedResponse()
@@ -831,8 +840,9 @@ extension DockModel {
             isSending = false
             if voiceState.isNativeConversationActive {
                 skipNextVoicePlaybackDrain = false
+                speakReplyAfterVoicePrompt = false
                 nativeVoiceCapture.reset()
-                voiceState = .listening
+                voiceState = wasInterrupting ? .listening : .paused
             }
             if wasInterrupting {
                 updateInFlightBotActivity(for: eventSessionID, state: .canceled)
@@ -845,7 +855,7 @@ extension DockModel {
                 sendQueuedPromptAfterInterrupt = false
                 drainQueuedPromptIfIdle()
             }
-            if voiceState.isNativeConversationActive { armNativeVoiceCapture() }
+            if voiceState == .listening { armNativeVoiceCapture() }
 
         case "reasoning.start", "thinking":
             conversationActivityPhase = .thinking

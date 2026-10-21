@@ -33,7 +33,7 @@ extension DockModel {
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
                 guard voiceConversationGeneration == generation else { return }
 
-                let requirements = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "status"])
+                let requirements = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: scopedSessionParams(["action": "status"]))
                 guard voiceConversationGeneration == generation else { return }
                 guard (requirements["available"] as? Bool) != false,
                       (requirements["stt_available"] as? Bool) != false else {
@@ -44,10 +44,10 @@ extension DockModel {
                     return
                 }
 
-                let enabled = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "on"])
+                let enabled = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: scopedSessionParams(["action": "on"]))
                 guard voiceConversationGeneration == generation else { return }
                 if (enabled["tts"] as? Bool) != true {
-                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
+                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: scopedSessionParams(["action": "tts"]))
                 }
                 // Before the first capture picks its path: without an answer
                 // yet, turn one fell to Hermes' recorder and never ended.
@@ -153,11 +153,13 @@ extension DockModel {
         nativeVoiceCapture.reset()
         voiceState = .inactive
         guard wasNative else { return }
+        let recordParams = sessionID.map { scopedSessionParams(["action": "stop", "session_id": $0]) }
+        let toggleParams = scopedSessionParams(["action": "off"])
         Task {
-            if let sessionID {
-                _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+            if let recordParams {
+                _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: recordParams)
             }
-            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "off"])
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: toggleParams)
         }
     }
 
@@ -221,8 +223,9 @@ extension DockModel {
             return
         }
         voiceState = .transcribing
+        let params = scopedSessionParams(["action": "stop", "session_id": sessionID])
         Task {
-            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: params)
         }
     }
 
@@ -282,8 +285,9 @@ extension DockModel {
         guard voiceState == .listening, let sessionID else { return }
         nativeVoiceCapture.reset()
         voiceState = .paused
+        let params = scopedSessionParams(["action": "stop", "session_id": sessionID])
         Task {
-            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: params)
         }
     }
 
@@ -291,8 +295,9 @@ extension DockModel {
         guard voiceState.isNativeConversationActive else { return }
         let generation = voiceConversationGeneration
         voiceRepliesEnabled.toggle()
+        let params = scopedSessionParams(["action": "tts"])
         Task {
-            let result = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
+            let result = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: params)
             guard voiceConversationGeneration == generation else { return }
             if let tts = result?["tts"] as? Bool { voiceRepliesEnabled = tts }
         }
@@ -392,7 +397,7 @@ extension DockModel {
 
     func enqueueVoiceRequest(_ method: String, _ params: [String: Any]) {
         let previous = voiceRequestChain
-        nonisolated(unsafe) let params = params
+        nonisolated(unsafe) let params = scopedSessionParams(params)
         voiceRequestChain = Task {
             await previous?.value
             _ = try? await sessionRPCClient.request(method, params: params)
@@ -421,9 +426,10 @@ extension DockModel {
             return
         }
 
+        let params = scopedSessionParams(["action": "start", "session_id": sessionID])
         Task {
             do {
-                let recording = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "start", "session_id": sessionID])
+                let recording = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: params)
                 guard nativeVoiceCapture.isCurrent(generation: captureGeneration),
                       voiceState.isNativeConversationActive else { return }
                 if (recording["status"] as? String) == "busy" {
@@ -494,6 +500,7 @@ extension DockModel {
     func submitNativeVoiceTranscript(_ text: String) {
         guard let sessionID, !isSending else { return }
         let requestGeneration = sessionResumeGeneration
+        let params = scopedSessionParams(["session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text)])
         messages.append(ChatMessage(role: .user, text: text))
         status = .working
         isSending = true
@@ -502,9 +509,11 @@ extension DockModel {
         voiceTelemetry.submittedRequest()
         Task {
             do {
+                guard self.sessionResumeGeneration == requestGeneration,
+                      self.sessionID == sessionID else { return }
                 let acknowledgment = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
-                    params: ["session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text)]
+                    params: params
                 )
                 guard self.sessionResumeGeneration == requestGeneration,
                       self.sessionID == sessionID else { return }
@@ -512,12 +521,11 @@ extension DockModel {
             } catch {
                 guard self.sessionResumeGeneration == requestGeneration,
                       self.sessionID == sessionID else { return }
-                messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(Self.safeUserDiagnostic(error.localizedDescription))", modelName: currentModelName))
+                messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(Self.safeUserDiagnostic(error.localizedDescription))", modelName: currentModelName, isError: true))
                 status = .offline
                 isSending = false
                 nativeVoiceCapture.reset()
-                voiceState = .listening
-                armNativeVoiceCapture()
+                if voiceState.isNativeConversationActive { voiceState = .paused }
             }
         }
     }
