@@ -61,8 +61,9 @@ final class HermesGateway: NSObject {
     private var port: Int?
     private var token = ""
     private var nextID = 0
-    private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
-    private var timeoutTasks: [Int: Task<Void, Never>] = [:]
+    // Internal for response-path tests without opening a socket or launching Hermes.
+    var pending: [Int: CheckedContinuation<HermesGatewayResponse, Error>] = [:]
+    var timeoutTasks: [Int: Task<Void, Never>] = [:]
     private var reconnectTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     /// The socket whose last ping got a pong; only then is Hermes "connected".
@@ -197,11 +198,8 @@ final class HermesGateway: NSObject {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         DebugLog.write("request: \(method)")
         if socket == nil { try await connect() }
-        let data = try await send(method: method, params: params)
-        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw GatewayError.malformedResponse
-        }
-        return result
+        let response = try await send(method: method, params: params)
+        return response.object
     }
 
     func close() {
@@ -301,7 +299,7 @@ final class HermesGateway: NSObject {
         method == HermesFeatureIDs.ID.botRelayDeliver.rawValue ? 1500 : 15
     }
 
-    private func send(method: String, params: [String: Any]) async throws -> Data {
+    private func send(method: String, params: [String: Any]) async throws -> HermesGatewayResponse {
         guard let socket else { throw GatewayError.disconnected }
         nextID += 1
         let id = nextID
@@ -348,26 +346,28 @@ final class HermesGateway: NSObject {
                     self.handleReceiveFailure()
                 }
             case .success(let message):
-                // Streaming turns deliver many WebSocket frames; decoding off
-                // the main actor keeps JSON parsing from contending with UI work.
-                let object = Self.decodeWebSocketMessage(message)
-                Task { @MainActor in
-                    guard let self else { return }
-                    if let object {
-                        self.handle(object)
-                    } else {
-                        DebugLog.write("receive: non-JSON or binary message")
-                    }
-                    if self.socket === current { self.receiveNext() }
+                Task { [weak self] in
+                    await self?.receive(message, from: current)
                 }
             }
         }
     }
 
-    nonisolated private static func decodeWebSocketMessage(_ message: URLSessionWebSocketTask.Message) -> [String: Any]? {
-        guard case .string(let text) = message,
-              let data = text.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    /// Keep decoding off-main; tests use this same incoming delivery path without a socket.
+    nonisolated func receive(
+        _ message: URLSessionWebSocketTask.Message,
+        from current: URLSessionWebSocketTask? = nil,
+        jsonSerialization: JSONSerialization.Type = JSONSerialization.self
+    ) async {
+        let object = HermesGatewayResponse.decode(message, jsonSerialization: jsonSerialization)
+        await MainActor.run {
+            if let object {
+                self.handle(object)
+            } else {
+                DebugLog.write("receive: non-JSON or binary message")
+            }
+            if let current, self.socket === current { self.receiveNext() }
+        }
     }
 
     /// A resumed task is not an open socket, and a half-open one (sleep, dead
@@ -433,7 +433,8 @@ final class HermesGateway: NSObject {
         }
     }
 
-    private func handle(_ object: [String: Any]) {
+    func handle(_ response: HermesGatewayResponse) {
+        let object = response.object
         let responseID = (object["id"] as? Int) ?? (object["id"] as? NSNumber)?.intValue
         if let id = responseID, let continuation = pending.removeValue(forKey: id) {
             DebugLog.write("receive: response id=\(id)")
@@ -441,9 +442,7 @@ final class HermesGateway: NSObject {
             if let error = object["error"] as? [String: Any], let message = error["message"] as? String {
                 continuation.resume(throwing: NSError(domain: "Hermes", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))
             } else {
-                let result = object["result"] as? [String: Any] ?? [:]
-                let data = (try? JSONSerialization.data(withJSONObject: result)) ?? Data("{}".utf8)
-                continuation.resume(returning: data)
+                continuation.resume(returning: response.result)
             }
             return
         }
