@@ -21,7 +21,7 @@ struct PullRequestReadinessView: View {
                 }
                 DockIconButton(icon: .arrowsClockwise, label: "Refresh readiness", isBusy: center.isLoadingDetail(for: record.id), size: 24, style: style) { Task { await center.refreshSelectedDetail() } }
             }
-            fact("State", record.mergedAt != nil ? "Merged" : (record.state == "closed" ? "Closed" : (record.isDraft ? "Draft · not ready for review" : "Open")))
+            fact("State", record.mergedAt != nil ? "Merged" : (record.state == "closed" ? "Closed" : (record.isDraft ? "Draft · not ready for review" : "Open")), color: record.presentationColor)
             fact("Checks", record.checksSummary)
             fact("Review", reviewLabel)
             fact("Merge", mergeLabel, warning: record.isOpenForWork && record.mergeability == .conflicting)
@@ -69,14 +69,14 @@ struct PullRequestReadinessView: View {
         .onChange(of: record.id) { _, _ in analysisTask?.cancel(); analysis = nil; error = nil }
         .onDisappear { analysisTask?.cancel() }
     }
-    private func fact(_ title: String, _ value: String, warning: Bool = false) -> some View {
+    private func fact(_ title: String, _ value: String, warning: Bool = false, color: Color = .dockPrimaryText) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title).foregroundStyle(Color.dockMetadataText).frame(width: 104, alignment: .leading)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if warning { DockIcon(.warningCircle, size: 13, color: Color.dockWarning).accessibilityHidden(true) }
                 Text(value).fontWeight(.regular).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(warning ? Color.dockWarning : Color.dockPrimaryText)
+                    .foregroundStyle(warning ? Color.dockWarning : color)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 2)
     }

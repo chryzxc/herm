@@ -102,8 +102,9 @@ final class GitHubConversationModel: ObservableObject {
 struct GitHubTimelineView: View {
     let reference: GitHubItemReference
     let items: [GitHubConversationItem]
+    var grouped = false
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: grouped ? 0 : 12) {
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
@@ -131,7 +132,9 @@ struct GitHubTimelineView: View {
                         MarkdownMessageView(markdown: item.body).frame(maxWidth: .infinity, alignment: .leading)
                         AttachToChatMenu { ChatContext(id: reference.id + ":" + item.id, title: reference.title + " · " + item.author, body: "\(reference.title)\n\(item.url?.absoluteString ?? reference.webURL.absoluteString)\n\n" + String(item.body.prefix(12_000))) }
                     }
-                }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent).dockCard(padding: 12)
+                }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
+                    .modifier(GitHubTimelineRowSurface(grouped: grouped))
+                if grouped, item.id != items.last?.id { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             }
         }
     }
@@ -168,5 +171,13 @@ struct GitHubConversationView: View {
             Button("Post comment") { Task { _ = await model.post() } }
             Button("Cancel", role: .cancel) {}
         } message: { Text(model.draft) }
+    }
+}
+
+private struct GitHubTimelineRowSurface: ViewModifier {
+    let grouped: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if grouped { content.padding(.vertical, 12) }
+        else { content.dockCard(padding: 12) }
     }
 }

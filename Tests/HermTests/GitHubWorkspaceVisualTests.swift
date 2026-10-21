@@ -10,7 +10,7 @@ private struct WorkspaceVisualTransport: GitHubIssueTransport {
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let path = request.url!.path
         let sha = String(repeating: "a", count: 40)
-        var item: [String: Any] = ["number": 1, "node_id": "PR_fixture", "title": "Improve workspace navigation", "body": "## Description\n\nReuse the **shared Markdown renderer**.\n\n- Preserve drafts\n- Show accurate readiness\n\n```swift\nlet state = WorkspaceState()\n```", "state": "open", "repository_url": "https://api.github.com/repos/owner/repo", "user": ["login": "ada"], "head": ["ref": "feature/navigation", "sha": sha], "base": ["ref": "main", "sha": sha], "changed_files": 0, "mergeable": cleanReadiness, "draft": !cleanReadiness, "labels": ["type/bug", "comp/cli", "comp/cron", "P3", "sweeper:risk-automation"].enumerated().map { ["name": $0.element, "node_id": "label-\($0.offset)", "color": ["d73a4a", "0075ca", "0e8a16", "fbca04", "5319e7"][$0.offset]] }, "assignees": [["login": "ada"]], "html_url": "https://github.com/owner/repo/pull/1"]
+        var item: [String: Any] = ["number": 1, "node_id": "PR_fixture", "title": "Improve workspace navigation", "body": "## Description\n\nReuse the **shared Markdown renderer**.\n\n- Preserve drafts\n- Show accurate readiness\n\n```swift\nlet state = WorkspaceState()\n```", "state": "open", "repository_url": "https://api.github.com/repos/owner/repo", "user": ["login": "ada"], "head": ["ref": "feature/navigation", "sha": sha], "base": ["ref": "main", "sha": sha], "changed_files": 5, "additions": 108, "deletions": 22, "mergeable": cleanReadiness, "draft": !cleanReadiness, "labels": ["type/bug", "comp/cli", "comp/cron", "P3", "sweeper:risk-automation"].enumerated().map { ["name": $0.element, "node_id": "label-\($0.offset)", "color": ["d73a4a", "0075ca", "0e8a16", "fbca04", "5319e7"][$0.offset]] }, "assignees": [["login": "ada"]], "html_url": "https://github.com/owner/repo/pull/1"]
         if merged { item["state"] = "closed"; item["draft"] = false; item["merged_at"] = "2026-10-18T00:01:00Z" }
         let payload: Any
         if path == "/graphql" {
@@ -27,6 +27,11 @@ private struct WorkspaceVisualTransport: GitHubIssueTransport {
             else { payload = ["data": ["node": ["id": "PR_fixture", "headRefOid": sha, "baseRefOid": sha, "viewerCanUpdate": true, "mergeable": cleanReadiness ? "MERGEABLE" : "CONFLICTING", "mergeStateStatus": cleanReadiness ? "UNSTABLE" : "DIRTY", "state": "OPEN", "isDraft": false, "reviewDecision": cleanReadiness ? "APPROVED" : "REVIEW_REQUIRED", "repository": ["viewerPermission": cleanReadiness ? "WRITE" : "READ", "squashMergeAllowed": true]]]] }
         } else if path == "/repos/owner/repo/pulls/1" || path == "/repos/owner/repo/issues/1" { payload = item }
         else if path == "/repos/owner/repo" { payload = ["permissions": ["triage": true]] }
+        else if path.hasSuffix("/files") {
+            payload = ["Sources/App.swift", "Tests/AppTests.swift", "Tests/Mocks/MockClient.swift", "docs/setup.md", ".github/workflows/ci.yml"].enumerated().map { index, path in
+                ["filename": path, "status": "modified", "additions": index == 0 ? 100 : 2, "deletions": index == 0 ? 18 : 1] as [String: Any]
+            }
+        }
         else if path.hasSuffix("check-runs") { payload = ["check_runs": cleanReadiness ? [["id": 1, "name": "Build", "status": "completed", "conclusion": "failure"]] : []] }
         else { payload = [] }
         return (try JSONSerialization.data(withJSONObject: payload), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
@@ -74,7 +79,7 @@ struct GitHubWorkspaceVisualTests {
         }
         let strip = try #require(strips(in: host).first)
         let dragFrame = host.convert(strip.bounds, from: strip)
-        #expect(dragFrame.minX > 220) // Summary, Code, and Reviews occupy the leading header.
+        #expect(dragFrame.minX >= 210) // Shared Summary, Code, and Reviews tabs occupy the leading header.
         #expect(dragFrame.maxX < 990) // Trailing actions also retain their own hit areas.
         #expect(dragFrame.height <= 52)
     }
@@ -115,7 +120,8 @@ struct GitHubWorkspaceVisualTests {
         let issues = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
         await issues.open(.init(repository: repo, number: 1, kind: .issue))
         await issues.loadSelectedDetail()
-        for theme: DockThemeID in [.notebook, .terminal, .glass, .mono] {
+        let prOnly = ProcessInfo.processInfo.environment["GITHUB_PR_ONLY"] == "1"
+        for theme: DockThemeID in (prOnly ? [.clean, .glass, .mono, .notebook, .slate, .dusk] : [.notebook, .terminal, .glass, .mono]) {
             let dark = theme != .notebook
             DockThemeRuntime.current = theme; DockThemeRuntime.revision &+= 1
             for width: CGFloat in (panels ? [380, 760] : [540, 1000]) {
@@ -132,7 +138,7 @@ struct GitHubWorkspaceVisualTests {
                     } else {
                         HStack(spacing: 1) {
                             PullRequestDetailView(center: pr, onOpenChat: { _ in })
-                            if width > 600 { IssueDetailView(center: issues, onOpenChat: { _ in }) }
+                            if width > 600 && !prOnly { IssueDetailView(center: issues, onOpenChat: { _ in }) }
                         }
                     }
                 }

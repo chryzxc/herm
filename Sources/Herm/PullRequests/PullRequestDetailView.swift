@@ -218,101 +218,92 @@ struct PullRequestDetailView: View {
         }
         .background(Color.dockCanvas)
     }
-    private func summary(_ pr: PullRequestRecord) -> some View { VStack(alignment: .leading, spacing: 0) {
-        Text(pr.title)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(Color.dockPrimaryText)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 26)
-
-        HStack(spacing: 10) {
-            authorAvatar(pr)
-            Text(pr.author).font(.system(size: 13, weight: .medium))
-            if let updatedAt = pr.updatedAt {
-                Text("•")
-                Text(pullRequestAge(updatedAt))
-            }
-        }
-        .foregroundStyle(Color.dockMetadataText)
-        .padding(.top, 12)
-        .padding(.bottom, 22)
-
-        VStack(alignment: .leading, spacing: 10) {
-            DockSectionHeader(title: "Description", isExpanded: $descriptionExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
-            if descriptionExpanded {
-                if pr.body.isEmpty { Text("No description provided.").foregroundStyle(Color.dockMetadataText) }
-                else { MarkdownMessageView(markdown: pr.body).frame(maxWidth: .infinity, alignment: .leading) }
-            }
-        }.font(DockTypography.body).dockCard(padding: 12).padding(.bottom, 12)
-
-        VStack(alignment: .leading, spacing: 12) {
-            summaryDetailRow(icon: .gitBranch, title: "Branch") {
+    private func summary(_ pr: PullRequestRecord) -> some View {
+        let activity = activityItems(pr)
+        return LazyVStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
-                    Text(pr.headBranch).lineLimit(1).truncationMode(.middle).layoutPriority(1)
-                    DockIcon(.arrowRight, size: 13, color: Color.dockMetadataText)
-                    Text(pr.baseBranch).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                    if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess).fixedSize(horizontal: true, vertical: false) }
-                    if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive).fixedSize(horizontal: true, vertical: false) }
+                    Text(pr.repository.id).lineLimit(1).truncationMode(.middle)
+                    Text("#\(pr.displayNumber)").foregroundStyle(Color.dockInfo)
+                    Spacer(minLength: 0)
+                    statusPicker(pr).foregroundStyle(pr.presentationColor)
+                }.font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                Text(pr.title)
+                    .font(DockTypography.pageTitle)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    authorAvatar(pr)
+                    Text(pr.author).foregroundStyle(Color.dockPrimaryText)
+                    if let updatedAt = pr.updatedAt { Text("· Updated \(pullRequestAge(updatedAt)) ago") }
+                }.font(DockTypography.body).foregroundStyle(Color.dockMetadataText)
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { branchRoute(pr); Spacer(minLength: 8); changeTotals(pr) }
+                    VStack(alignment: .leading, spacing: 10) { branchRoute(pr); changeTotals(pr) }
                 }
-            }
-            summaryDetailRow(icon: .users, title: "Reviewers") {
-                Text(pr.requestedReviewers.isEmpty ? "No reviewers requested" : pr.requestedReviewers.joined(separator: ", "))
-            }
-            summaryDetailRow(icon: .chats, title: "Comments") {
-                Text(pr.comments == 0 ? "No comments" : "\(pr.comments) comment\(pr.comments == 1 ? "" : "s")")
-            }
-            summaryDetailRow(icon: .gitPullRequest, title: "Status") {
-                statusPicker(pr)
-            }
-        }
-        .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(Color.dockSecondaryText)
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
-
-        PullRequestReadinessView(center: center, record: pr).padding(.top, 16)
-        if pr.isOpenForWork || pr.mergedAt != nil {
-            PullRequestLandingView(record: pr, client: center.api.client, onLanded: { center.applyLandingSnapshot($0, for: pr) }) { Task { await center.refreshSelectedDetail() } }
-                .id(pr.id).padding(.top, 12)
-        }
-        GitHubMetadataView(reference: pr.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }
-            .id(pr.id).padding(.top, 16)
-
-        summarySectionHeader("Checks", count: pr.checks.isEmpty ? nil : pr.checks.count, isExpanded: $checksExpanded)
-            .padding(.top, 20)
-        if checksExpanded { checksSection(pr).padding(.top, 12) }
-
-        summarySectionHeader("Activity", count: activityItems(pr).count, isExpanded: $activityExpanded)
-            .padding(.top, 20)
-        if activityExpanded {
-            activitySection(pr).padding(.top, 12)
-            commentComposer(pr).padding(.top, 18).padding(.bottom, 40)
-        }
-    }.frame(maxWidth: .infinity, alignment: .leading) }
-
-    private func summarySectionHeader(_ title: String, count: Int? = nil, isExpanded: Binding<Bool>) -> some View {
-        Button { isExpanded.wrappedValue.toggle() } label: {
-            HStack(spacing: 8) {
-                DockIcon(isExpanded.wrappedValue ? .caretDown : .caretRight, size: 13, color: Color.dockMetadataText)
-                Text(title).font(.system(size: 13, weight: .semibold))
-                if let count {
-                    Text("\(count)")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .padding(.horizontal, 6)
-                        .frame(height: 18)
-                        .background(Capsule().fill(Color.dockSurface4))
+                summaryDetailRow(icon: .users, title: "Reviewers", color: .dockInfo) {
+                    Text(pr.requestedReviewers.isEmpty ? "No reviewers requested" : pr.requestedReviewers.joined(separator: ", "))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
+            }.font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).dockCard(padding: 16)
+
+            VStack(alignment: .leading, spacing: 8) {
+                DockSectionHeader(title: "Description", isExpanded: $descriptionExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
+                if descriptionExpanded {
+                    if pr.body.isEmpty { Text("No description provided.").foregroundStyle(Color.dockMetadataText) }
+                    else { MarkdownMessageView(markdown: pr.body).frame(maxWidth: .infinity, alignment: .leading) }
+                }
+            }.font(DockTypography.body).dockCard(padding: 12)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
+                PullRequestReadinessView(center: center, record: pr)
+                changeBreakdown(pr)
             }
-            .foregroundStyle(Color.dockPrimaryText)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
+            if pr.isOpenForWork || pr.mergedAt != nil {
+                PullRequestLandingView(record: pr, client: center.api.client, onLanded: { center.applyLandingSnapshot($0, for: pr) }) { Task { await center.refreshSelectedDetail() } }.id(pr.id)
+            }
+            GitHubMetadataView(reference: pr.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(pr.id)
+
+            VStack(alignment: .leading, spacing: 8) {
+                DockSectionHeader(title: "Checks", count: pr.checks.isEmpty ? nil : pr.checks.count, isExpanded: $checksExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
+                if checksExpanded { checksSection(pr) }
+            }.dockCard(padding: 12)
+            VStack(alignment: .leading, spacing: 8) {
+                DockSectionHeader(title: "Activity", count: activity.count, isExpanded: $activityExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
+                if activityExpanded { GitHubTimelineView(reference: pr.reference, items: activity, grouped: true) }
+            }.dockCard(padding: 12)
+            commentComposer(pr)
         }
-        .buttonStyle(.dockHover)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-        .accessibilityLabel("\(isExpanded.wrappedValue ? "Collapse" : "Expand") \(title)")
+        .padding(.top, 20).padding(.bottom, 32)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func branchRoute(_ pr: PullRequestRecord) -> some View {
+        HStack(spacing: 8) {
+            DockIcon(.gitBranch, size: 14, color: .dockInfo)
+            Text(pr.baseBranch).foregroundStyle(Color.dockInfo)
+            DockIcon(.arrowLeft, size: 13, color: .dockMetadataText)
+            Text(pr.headBranch).foregroundStyle(Color.dockSecondaryText)
+        }.font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+            .help("Merge \(pr.headBranch) into \(pr.baseBranch)")
+    }
+
+    private func changeTotals(_ pr: PullRequestRecord) -> some View {
+        HStack(spacing: 8) {
+            Button { detailTab = 1 } label: {
+                Text(pr.changedFiles.map { "\($0) files" } ?? "Changed files")
+            }.buttonStyle(.dockLink)
+            if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
+            if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
+        }.font(DockTypography.body).monospacedDigit().fixedSize()
+    }
+
+    private func changeBreakdown(_ pr: PullRequestRecord) -> some View {
+        PullRequestChangeBreakdownView(
+            files: center.filesByID[pr.id], expectedCount: pr.changedFiles,
+            isCurrent: center.filesAreCurrent(for: pr), isLoading: center.isLoadingDetail(for: pr.id)
+        ) { detailTab = 1 }
     }
 
     @ViewBuilder
@@ -331,7 +322,6 @@ struct PullRequestDetailView: View {
             .padding(.leading, 12)
             .padding(.trailing, 8)
             .frame(minHeight: 44)
-            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
         } else {
             VStack(spacing: 0) {
                 ForEach(pr.checks) { check in
@@ -350,8 +340,6 @@ struct PullRequestDetailView: View {
                     if check.id != pr.checks.last?.id { Divider().padding(.leading, 47) }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
     }
 
@@ -359,44 +347,23 @@ struct PullRequestDetailView: View {
         pr.activityItems(comments: center.commentsByID[pr.id] ?? [], commits: center.commitsByID[pr.id] ?? [], events: center.eventsByID[pr.id] ?? [])
     }
 
-    private func activitySection(_ pr: PullRequestRecord) -> some View {
-        GitHubTimelineView(reference: pr.reference, items: activityItems(pr))
-    }
-
     private func commentComposer(_ pr: PullRequestRecord) -> some View {
-        ZStack(alignment: .topLeading) {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Leave a comment").font(.system(size: 12, weight: .semibold))
             TextEditor(text: center.commentDraft(for: pr.id))
-                .font(.system(size: 13))
-                .scrollContentBackground(.hidden)
-                .padding(12)
-                .frame(minHeight: 104)
-                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockInputFill())
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
-            if commentDraft.isEmpty {
-                Text("Leave a comment")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 18)
-                    .allowsHitTesting(false)
-            }
+                .font(DockTypography.body).scrollContentBackground(.hidden)
+                .padding(8).frame(minHeight: 104)
+                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill())
+                .accessibilityLabel("Comment body")
             HStack {
-                avatarFallback
+                Text("\(commentDraft.count)/10000").font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
                 Spacer()
-                Button {
-                    let draft = commentDraft
-                    mutationCoordinator.requestComment(draft, for: pr)
-                } label: {
-                    if center.isPostingComment { ProgressView().controlSize(.small).frame(width: 34, height: 34) }
-                    else { DockIcon(.arrowUp, size: 17, color: commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockMetadataText : Color.dockPrimaryText).frame(width: 34, height: 34).background(Circle().fill(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockSurface4 : Color.dockAccent)) }
-                }
-                .buttonStyle(.dockHover)
-                .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || commentDraft.count > 10_000 || center.isPostingComment)
-                .help("Add comment")
+                Button { mutationCoordinator.requestComment(commentDraft, for: pr) } label: {
+                    GitHubActionLabel(title: center.isPostingComment ? "Posting…" : "Post comment", isBusy: center.isPostingComment)
+                }.buttonStyle(.dockPrimary)
+                    .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || commentDraft.count > 10_000 || center.isPostingComment)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        }
+        }.dockCard(padding: 12)
     }
 
     private func checkIcon(for check: GitHubCheckSummary) -> Ph { checkColor(for: check) == Color.dockSuccess ? .check : (checkColor(for: check) == Color.dockDestructive ? .x : .clock) }
@@ -479,19 +446,7 @@ struct PullRequestDetailView: View {
         return "\(max(1, Int(seconds / 60)))m"
     }
     private func detailTabButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(.dockEase(duration: 0.18)) { action() }
-        } label: {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockMetadataText)
-                .padding(.horizontal, 10)
-                .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(selected ? Color.dockSurface4 : Color.clear))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.dockHover)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        DockTabButton(title: title, isSelected: selected, action: action)
     }
     private func code(_ pr: PullRequestRecord) -> some View {
         let projection = PullRequestFilesProjection.state(

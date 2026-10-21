@@ -53,6 +53,8 @@ extension Color {
     // Kanban lifecycle accents shared by board and session-kanban surfaces.
     static var dockKanbanRunning: Color { dockAccent }
     static var dockKanbanReview: Color { dockSecondaryText }
+    static var dockInfo: Color { DockThemePalette(theme: DockThemeRuntime.current).info }
+    static var dockMerged: Color { DockThemePalette(theme: DockThemeRuntime.current).merged }
     static var dockSuccess: Color { DockThemePalette(theme: DockThemeRuntime.current).success }
     static var dockWarning: Color { DockThemePalette(theme: DockThemeRuntime.current).warning }
     static var dockFolder: Color { dockSecondaryText }

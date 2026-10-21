@@ -236,7 +236,7 @@ struct DockThemePalette {
         case .island: return ("#000000", "#141414", "#0A0A0A", "#262626", "#D9D9DC", "#B3B3B8", "#8A8A90", "#F5F5F7", "#2C2C2E", "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A")
         case .dusk: return ("#111019", "#1D1928", "#15121E", "#2A2436", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740", "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B")
         // Apple system grays and a graphite accent: neutral, like macOS 26 Liquid Glass.
-        case .glass: return isDark ? ("#1C1C1E", "#2C2C2E", "#232325", "#323234", "#D8D8DC", "#AEAEB2", "#8E8E93", "#AEAEB2", "#3A3A3C", "#48484A", "#30D158", "#FF9F0A", "#FF453A") : ("#F5F5F7", "#FFFFFF", "#FAFAFA", "#E8E8ED", "#1D1D1F", "#515154", "#6E6E73", "#6E6E73", "#E3E3E8", "#D2D2D7", "#248A3D", "#C93400", "#D70015")
+        case .glass: return isDark ? ("#1C1C1E", "#2C2C2E", "#232325", "#323234", "#D8D8DC", "#AEAEB2", "#99999E", "#AEAEB2", "#3A3A3C", "#48484A", "#30D158", "#FF9F0A", "#FF453A") : ("#F5F5F7", "#FFFFFF", "#FAFAFA", "#E8E8ED", "#1D1D1F", "#515154", "#6E6E73", "#6E6E73", "#E3E3E8", "#D2D2D7", "#248A3D", "#C93400", "#D70015")
         case .clean: return isDark ? ("#141414", "#1E1E1E", "#191919", "#2A2A2A", "#D6D6D6", "#B0B0B0", "#8C8C8C", "#C7C7CC", "#2C2C2C", "#303030", "#4CC27A", "#E5A640", "#FF6B6B") : ("#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#3A3A3C", "#EBEBEB", "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A")
         case .eInk: return ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#EDEDED", "#000000", "#2B2B2B", "#555555", "#000000", "#D9D9D9", "#000000", "#1A1A1A", "#333333", "#000000")
         case .swiss: return isDark ? ("#0A0A0A", "#0A0A0A", "#0A0A0A", "#1C1C1C", "#D4D4D4", "#B0B0B0", "#7A7A7A", "#FF3B30", "#2A1412", "#2E2E2E", "#9A9A9A", "#B0B0B0", "#FF3B30") : ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#F0F0F0", "#0A0A0A", "#4A4A4A", "#747474", "#E30613", "#FBE4E5", "#D9D9D9", "#555555", "#777777", "#E30613")
@@ -252,6 +252,8 @@ struct DockThemePalette {
     var background: Color { resolvedTokens.background }; var surface: Color { resolvedTokens.surface }; var surface2: Color { resolvedTokens.surface2 }; var surface4: Color { resolvedTokens.surface4 }
     var surface6: Color { surface4.opacity(0.86) }; var surface8: Color { surface4.opacity(0.72) }
     var onAccent: Color { resolvedTokens.onAccent }
+    var info: Color { resolvedTokens.info }
+    var merged: Color { resolvedTokens.merged }
     var primaryText: Color { resolvedTokens.primaryText }; var secondaryText: Color { resolvedTokens.secondaryText }; var metadataText: Color { resolvedTokens.metadataText }; var accent: Color { resolvedTokens.accent }; var selectedFill: Color { resolvedTokens.selectedFill }; var divider: Color { resolvedTokens.divider }; var success: Color { resolvedTokens.success }; var warning: Color { resolvedTokens.warning }; var destructive: Color { resolvedTokens.destructive }
     /// Rail and session list; tinted skins set them apart from the chat page.
     var sidebarBackground: Color { theme.style.tintedSidebar ? surface2 : background }
@@ -259,7 +261,7 @@ struct DockThemePalette {
 }
 
 private struct Tokens {
-    let windowBackground, background, surface, surface2, surface4, primaryText, secondaryText, metadataText, accent, onAccent, selectedFill, divider, success, warning, destructive: Color
+    let windowBackground, background, surface, surface2, surface4, primaryText, secondaryText, metadataText, accent, onAccent, selectedFill, divider, success, warning, destructive, info, merged: Color
 
     init(theme: DockThemeID) {
         let light = DockThemePalette.roles(theme, dark: false)
@@ -279,6 +281,16 @@ private struct Tokens {
                 })
             }
         }
+        // Supplemental semantic hues follow the actual canvas brightness, including
+        // fixed-appearance skins. Monochrome skins keep their ink vocabulary.
+        func semantic(light: String, dark: String) -> Color {
+            color { roles in
+                if theme == .mono || theme == .eInk { return roles.secondary }
+                return DockThemePalette.onAccentHex(forAccent: roles.bg) == "#111111" ? light : dark
+            }
+        }
+        info = semantic(light: "#174780", dark: "#8ABEFF")
+        merged = semantic(light: "#5B2C8A", dark: "#C5A3FF")
         // Glass is composited over the system material. Its neutral tint is a
         // whisper so the wallpaper reads through like native Liquid Glass; the
         // blur underneath keeps text from windows behind Herm unreadable.

@@ -45,6 +45,8 @@ struct DockThemeContrastTests {
                 check("secondary", p.secondaryText, [surfaces[4]], min: 4.5)
                 check("metadata", p.metadataText, Array(surfaces.prefix(3)), min: 4.5)
                 check("accent", p.accent, Array(surfaces.prefix(2)), min: 3.0)
+                check("info", p.info, Array(surfaces.prefix(3)), min: 4.5)
+                check("merged", p.merged, Array(surfaces.prefix(3)), min: 4.5)
                 check("success", p.success, Array(surfaces.prefix(2)), min: 3.0)
                 check("warning", p.warning, Array(surfaces.prefix(2)), min: 3.0)
                 check("destructive", p.destructive, Array(surfaces.prefix(2)), min: 3.0)

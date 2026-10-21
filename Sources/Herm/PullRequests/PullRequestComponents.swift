@@ -22,10 +22,10 @@ struct PullRequestRowView: View {
             HStack {
                 Text(pullRequest.readinessLabel)
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(pullRequest.isDraft ? Color.dockMetadataText : Color.dockAccent)
+                    .foregroundStyle(pullRequest.presentationColor)
                     .padding(.horizontal, 6)
                     .frame(height: 16)
-                    .background(Capsule().fill((pullRequest.isDraft ? Color.dockSurface4 : Color.dockAccent.opacity(0.16))))
+                    .background(Capsule().fill((pullRequest.presentationColor.opacity(0.12))))
                 Spacer()
                 if let adds = pullRequest.additions, let dels = pullRequest.deletions {
                     HStack(spacing: 8) {
