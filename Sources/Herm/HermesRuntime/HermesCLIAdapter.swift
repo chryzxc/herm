@@ -311,6 +311,17 @@ final class HermesCLIAdapter {
         try await run(["hermes", "auth", "remove", provider, credentialID])
     }
 
+    func profileDeleteHelp() async throws -> HermesCLIResult {
+        try await run(["hermes", "profile", "delete", "--help"])
+    }
+
+    func deleteProfile(profileID: String) async throws -> HermesCLIResult {
+        guard !profileID.isEmpty, profileID.lowercased() != "default" else {
+            throw HermesCLIError.failed("The default Bot cannot be deleted.")
+        }
+        return try await run(["hermes", "profile", "delete", "--yes", "--", profileID])
+    }
+
     func cronRun(jobID: String) async throws -> HermesCLIResult { try await run(["hermes", "cron", "run", jobID]) }
     func cronRuns(limit: Int = 20, jobID: String? = nil, profileID: String? = nil) async throws -> HermesCLIResult {
         try await run(["hermes"] + (profileID.map { ["--profile", $0] } ?? []) + ["cron", "runs", "--limit", String(limit)] + (jobID.map { [$0] } ?? []))

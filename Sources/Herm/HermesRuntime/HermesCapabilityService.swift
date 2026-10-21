@@ -689,6 +689,16 @@ final class HermesCapabilityService {
         }
     }
 
+    func probeProfileDeletion(client: HermesRPCClientProtocol) async -> Bool {
+        let result = try? await HermesCLIAdapter(rpc: HermesControlRPC(client: client)).profileDeleteHelp()
+        return cliCapability(
+            id: "profiles.delete", title: "Delete Bot",
+            commandResult: result.map { ["stdout": $0.stdout, "code": $0.succeeded ? 0 : 1] },
+            recovery: "Bot deletion requires Hermes profile delete support.",
+            access: .confirmedMutation, requiredHelpTerms: ["profile_name", "--yes", "delete"]
+        ).isAvailable
+    }
+
     private func cliCapability(
         id: String,
         title: String,

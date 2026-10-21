@@ -5,6 +5,44 @@ import Testing
 
 @MainActor
 struct BotServiceTests {
+    @Test func orbFacesRequireExplicitlyEnabledPlugin() async {
+        let client = BotFixtureClient(result: ["profiles": [["name": "research"], ["name": "writer"]]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        #expect(model.orbHermFaceID(profileID: "research") == nil)
+        await model.refreshNow(force: true)
+        // A working roster alone is not confirmation that the plugin is on.
+        #expect(model.inventory.availability == .ready)
+        #expect(model.orbHermFaceID(profileID: "research") == nil)
+        for status in ["enabled", "disabled", "enabled", "error"] {
+            client.stubNextResult = ["plugins": [["key": "hermes-bots", "status": status]]]
+            await model.refreshNow(force: true)
+            #expect(model.orbHermFaceID(profileID: "research") == (status == "enabled" ? "research" : nil))
+            #expect(model.orbHermFaceID(profileID: "writer") == (status == "enabled" ? "writer" : nil))
+            if status == "enabled" {
+                #expect(model.orbHermFaceID(profileID: nil) == model.selectedProfileID)
+            }
+        }
+        // Unknown plugin state must hide the face again, even after enabling.
+        client.stubNextResult = ["plugins": [["key": "hermes-bots", "status": "enabled"]]]
+        await model.refreshNow(force: true)
+        await model.refreshNow(force: true)
+        #expect(model.orbHermFaceID(profileID: "research") == nil)
+    }
+
+    @Test func unavailableRosterRetainsBotsButClearsUnconfirmedOrbFace() async {
+        let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        client.stubNextResult = ["plugins": [["key": "hermes-bots", "status": "enabled"]]]
+        await model.refreshNow(force: true)
+        #expect(model.orbHermFaceID(profileID: "research") == "research")
+        client.failingMethod = "profiles.list"
+        await model.refreshNow(force: true)
+        #expect(model.bots.count == 1)
+        #expect(model.orbHermFaceID(profileID: "research") == nil)
+    }
+
     @Test func disabledPluginClearsRosterAndBlocksCreation() async {
         let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
         let model = BotModeModel()
@@ -42,7 +80,7 @@ struct BotServiceTests {
         #expect(!client.methods.contains("profiles.set_asset"))
     }
 
-    @Test func regenerateAllReplacesEveryNonHermFaceIncludingUploads() async {
+    @Test func regenerateAllRerendersEveryAvatarIncludingUploads() async {
         let client = BotFixtureClient(result: ["profiles": [
             ["name": "uploaded", "has_avatar": true],
             ["name": "custom", "has_avatar": true, "ui_meta": ["hermes-bots": ["custom": true]]]
@@ -544,6 +582,7 @@ private final class BotFixtureClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     let result: [String: Any]
     var stubNextResult: [String: Any]?
+    var failingMethod: String?
     private(set) var lastMethod: String?
     private(set) var lastParams: [String: Any]?
     private(set) var methods: [String] = []
@@ -556,6 +595,7 @@ private final class BotFixtureClient: HermesRPCClientProtocol {
         lastMethod = method
         lastParams = params
         defer { stubNextResult = nil }
+        if method == failingMethod { throw URLError(.timedOut) }
         return stubNextResult ?? result
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }

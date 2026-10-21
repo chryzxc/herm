@@ -122,6 +122,7 @@ struct BotInventory: Equatable, Sendable {
     let availability: BotAvailability
     let bots: [BotSummary]
     let diagnostic: String
+    var isPluginEnabled = false
 }
 
 /// Compact, truthful strings for the Bot roster. The page may show canonical

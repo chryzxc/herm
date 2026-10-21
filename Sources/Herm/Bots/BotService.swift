@@ -27,13 +27,14 @@ final class BotService {
     func list() async -> BotInventory {
         // Some runtimes expose Bots as a managed plugin; desktop-only toggles
         // are not included in this gateway contract.
-        if let result = try? await client.request(HermesFeatureIDs.ID.pluginsManage.rawValue, params: ["action": "list"]),
-           let rows = result["plugins"] as? [[String: Any]],
-           let botPlugin = rows.first(where: { ($0["key"] as? String) == "hermes-bots" }),
-           botPlugin["status"] as? String != "enabled" {
+        let pluginResult = try? await client.request(HermesFeatureIDs.ID.pluginsManage.rawValue, params: ["action": "list"])
+        let botPlugin = (pluginResult?["plugins"] as? [[String: Any]])?
+            .first { ($0["key"] as? String) == "hermes-bots" }
+        if let botPlugin, botPlugin["status"] as? String != "enabled" {
             return BotInventory(availability: .unsupported, bots: [], diagnostic: "The Hermes Bots plugin is not enabled.")
         }
-        let roster = await rosterList()
+        var roster = await rosterList()
+        roster.isPluginEnabled = botPlugin?["status"] as? String == "enabled"
         guard roster.availability == .ready else { return roster }
         let live = await liveBusy()
         guard !live.isEmpty else { return roster }
@@ -43,10 +44,11 @@ final class BotService {
             var bot = bot
             bot.liveBusy = states.contains(true)
             return bot
-        }, diagnostic: roster.diagnostic)
+        }, diagnostic: roster.diagnostic, isPluginEnabled: roster.isPluginEnabled)
     }
 
-    private func rosterList() async -> BotInventory {
+    /// Profile-only inventory for pickers that do not need plugin or live-session state.
+    func rosterList() async -> BotInventory {
         do {
             let result = try await client.request(HermesFeatureIDs.ID.profilesList.rawValue, params: [:])
             return try Self.parseInventory(result)
@@ -92,6 +94,13 @@ final class BotService {
             )
         }
         return title.flatMap { details.withTitle($0) } ?? details
+    }
+
+    func delete(profileID: String) async throws {
+        let result = try await HermesCLIAdapter(rpc: HermesControlRPC(client: client)).deleteProfile(profileID: profileID)
+        guard result.succeeded else {
+            throw HermesCLIError.failed(result.stderr.isEmpty ? "Hermes rejected profile deletion. Refresh the roster before retrying." : result.stderr)
+        }
     }
 
     func configure(profileID: String, fields: [String: Any]) async throws -> BotDetails {
@@ -520,6 +529,9 @@ final class BotModeModel: ObservableObject {
     @Published private(set) var isCreatingBot = false
     @Published var searchText = ""
     @Published var botCreationError: String?
+    @Published private(set) var supportsBotDeletion = false
+    @Published private(set) var deletingBotID: String?
+    @Published var botDeletionError: String?
     @Published private(set) var selectedProfileID: String?
     @Published private(set) var avatarImages: [String: Data] = [:] {
         didSet { rosterRevision &+= 1; BotMentions.update(bots: inventory.bots, avatars: avatarImages) }
@@ -595,9 +607,18 @@ final class BotModeModel: ObservableObject {
         }
     }
 
+    /// Welcome and voice share the same identity and confirmed plugin gate.
+    func orbHermFaceID(profileID: String?) -> String? {
+        guard inventory.availability == .ready, inventory.isPluginEnabled,
+              let bot = (profileID ?? selectedProfileID).flatMap({ botsByID[$0] }) ?? visibleBots.first(where: \.isDefault),
+              BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) else { return nil }
+        return bot.id
+    }
+
     var canCreateBots: Bool { capabilityAvailable && inventory.availability == .ready }
 
     func bind(to client: HermesRPCClientProtocol, capabilityAvailable: Bool) {
+        supportsBotDeletion = false
         service = BotService(client: client)
         self.capabilityAvailable = capabilityAvailable
         groupChats.bind(to: client)
@@ -632,6 +653,11 @@ final class BotModeModel: ObservableObject {
         // roster Hermes already served: the selector, avatars and working
         // Bots would vanish until restart. Keep it; the next poll retries.
         if refreshed.availability == .unavailable, inventory.availability == .ready {
+            if inventory.isPluginEnabled != refreshed.isPluginEnabled {
+                var retained = inventory
+                retained.isPluginEnabled = refreshed.isPluginEnabled
+                inventory = retained
+            }
             if force { isRefreshing = false } else { isPolling = false }
             return
         }
@@ -755,18 +781,13 @@ final class BotModeModel: ObservableObject {
         }
     }
 
-    /// Fills missing avatars, or with `all` replaces every avatar that isn't
-    /// already a Herm face (uploads included) so the whole roster animates.
+    /// Fills missing avatars, or with `all` re-renders every Bot's Herm face
+    /// (uploads included). Faces derive from the profile ID, so rerunning is
+    /// safe and refreshes saved faces to the current design.
     func populateAvatars(all: Bool = false) async -> String {
         guard capabilityAvailable, let service else { return "Bot Mode is unavailable." }
-        for bot in inventory.bots where bot.hasAvatar && avatarImages[bot.id] == nil {
-            if let data = await service.avatarImageData(profileID: bot.id) { avatarImages[bot.id] = data }
-        }
-        let targets = inventory.bots.filter { bot in
-            guard bot.hasAvatar else { return all || !bot.hasCustomAvatar }
-            return all && !(avatarImages[bot.id].map { BotAvatarView.matchesHermFace($0, id: bot.id) } ?? false)
-        }
-        if targets.isEmpty { return all ? "Every Bot already uses its Herm face." : "Every Bot already has an avatar." }
+        let targets = all ? inventory.bots : inventory.bots.filter { !$0.hasAvatar && !$0.hasCustomAvatar }
+        if targets.isEmpty { return all ? "There are no Bots to update." : "Every Bot already has an avatar." }
         var saved = 0
         var failure: String?
         for bot in targets {
@@ -818,6 +839,50 @@ final class BotModeModel: ObservableObject {
         let refreshed = await service.listRoutines()
         if capabilityAvailable { routines = refreshed }
         isLoadingRoutines = false
+    }
+
+    func loadBotDeletionCapability() async {
+        guard let service else { return }
+        let supported = await HermesCapabilityService().probeProfileDeletion(client: service.integrationClient)
+        guard self.service === service else { return }
+        supportsBotDeletion = supported
+    }
+
+    func canDeleteBot(_ bot: BotSummary) -> Bool {
+        supportsBotDeletion && capabilityAvailable && inventory.availability == .ready
+            && deletingBotID == nil && !bot.isDefault && bot.id.lowercased() != "default"
+            && botsByID[bot.id] != nil
+    }
+
+    @discardableResult
+    func deleteBot(_ bot: BotSummary) async -> Bool {
+        guard deletingBotID == nil else { return false }
+        guard canDeleteBot(bot), let service else {
+            botDeletionError = "This Bot cannot be deleted. The default Bot is protected; other Bots require Hermes profile delete support."
+            return false
+        }
+        deletingBotID = bot.id
+        botDeletionError = nil
+        defer { deletingBotID = nil }
+        var succeeded = false
+        do {
+            try await service.delete(profileID: bot.id)
+            succeeded = true
+        } catch {
+            botDeletionError = HermesDiagnosticsService.safeSummary(Self.mutationDiagnostic(for: error, noun: "delete the Bot"))
+        }
+        // Reconcile even a failed command: Hermes may have deleted the profile
+        // but reported pending routing cleanup. Never remove it optimistically.
+        while isRefreshing || isPolling { try? await Task.sleep(for: .milliseconds(20)) }
+        await refreshNow(force: true)
+        if succeeded, botsByID[bot.id] != nil {
+            inventory = BotInventory(availability: .stale, bots: inventory.bots, diagnostic: "Bot deletion completed. Refresh the roster to verify the remaining Bots.", isPluginEnabled: inventory.isPluginEnabled)
+        }
+        if !succeeded, inventory.availability == .ready, botsByID[bot.id] == nil {
+            botDeletionError = "The Bot is no longer in the Hermes roster, but Hermes reported a problem during deletion. \(botDeletionError ?? "Refresh the roster before retrying.")"
+        }
+        await loadRoutines()
+        return succeeded
     }
 
     func setHidden(_ hidden: Bool, for bot: BotSummary) async {

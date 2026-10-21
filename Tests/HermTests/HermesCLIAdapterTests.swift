@@ -4,6 +4,20 @@ import Testing
 
 @MainActor
 struct HermesCLIAdapterTests {
+    @Test func profileDeletionUsesConfirmedQuotedCommand() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        _ = try await adapter.profileDeleteHelp()
+        #expect(client.commands.last == "'hermes' 'profile' 'delete' '--help'")
+        _ = try await adapter.deleteProfile(profileID: "worker's $(noop)")
+        #expect(client.commands.last == "'hermes' 'profile' 'delete' '--yes' '--' 'worker'\\''s $(noop)'")
+        let count = client.commands.count
+        for name in ["default", "DEFAULT", ""] {
+            await #expect(throws: HermesCLIError.self) { _ = try await adapter.deleteProfile(profileID: name) }
+        }
+        #expect(client.commands.count == count)
+    }
+
     @Test func quotesEveryArgumentWithoutBreakingApostrophes() throws {
         let rendered = try HermesCLICommand(["hermes", "kanban", "comment", "task 1", "it's safe; $(nope)"]).rendered()
 

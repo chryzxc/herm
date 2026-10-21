@@ -22,6 +22,7 @@ struct BotRosterPage: View {
     @State private var selectedSection: BotRosterSection = .bots
     @State private var activityFilter: BotRosterActivityFilter = .all
     @State private var pendingRoutineRemoval: BotRoutine?
+    @State private var pendingBotDeletion: BotSummary?
 
     private func generateAvatars(all: Bool) {
         showsAvatarTip = false
@@ -99,6 +100,28 @@ struct BotRosterPage: View {
         } message: {
             Text(model.routineRemovalError ?? "The routine could not be removed.")
         }
+        .confirmationDialog(
+            "Delete Bot?",
+            isPresented: Binding(get: { pendingBotDeletion != nil }, set: { if !$0 { pendingBotDeletion = nil } }),
+            presenting: pendingBotDeletion
+        ) { bot in
+            Button("Delete \(bot.name)", role: .destructive) {
+                pendingBotDeletion = nil
+                Task { await model.deleteBot(bot) }
+            }
+            Button("Cancel", role: .cancel) { pendingBotDeletion = nil }
+        } message: { bot in
+            Text("Permanently delete \(bot.name) (@\(bot.id)) and all its settings, credentials, memories, sessions, skills, and routines? This also stops its running gateway and affects any active sessions for this Bot. This cannot be undone.")
+        }
+        .alert("Bot Deletion Needs Attention", isPresented: Binding(
+            get: { model.botDeletionError != nil },
+            set: { if !$0 { model.botDeletionError = nil } }
+        )) {
+            Button("OK", role: .cancel) { model.botDeletionError = nil }
+        } message: {
+            Text(model.botDeletionError ?? "The Bot could not be deleted.")
+        }
+        .task { await model.loadBotDeletionCapability() }
         .task {
             // A failed roster from a transient launch race or a starved
             // capability probe self-heals here: the page verifies the
@@ -125,7 +148,7 @@ struct BotRosterPage: View {
         DockPageHeader(
             title: "Bots",
             subtitle: "\(model.visibleBots.count) Bots · \(model.activeNowBots.count) active",
-            onRefresh: { Task { await model.refreshNow(force: true) } },
+            onRefresh: { Task { await model.refreshNow(force: true); await model.loadBotDeletionCapability() } },
             isRefreshing: model.isRefreshing
         ) {
             HStack(spacing: 10) {
@@ -369,7 +392,10 @@ struct BotRosterPage: View {
             onDuplicate: { duplicatingBot = bot },
             onToggleHidden: {
                 Task { await model.setHidden(!bot.isHidden, for: bot) }
-            }
+            },
+            onDelete: { pendingBotDeletion = bot },
+            canDelete: model.canDeleteBot(bot),
+            isDeleting: model.deletingBotID == bot.id
         )
         .equatable()
     }
@@ -834,10 +860,13 @@ struct MissionControlBotRow: View, Equatable {
     var onShowActivity: (() -> Void)?
     var onDuplicate: (() -> Void)?
     var onToggleHidden: (() -> Void)?
+    var onDelete: (() -> Void)?
+    var canDelete = false
+    var isDeleting = false
     @FocusState private var isFocused: Bool
     @State private var isHovering = false
 
-    init(bot: BotSummary, avatarData: Data? = nil, runtime: BotRuntimeConfig? = nil, counts: BotCapabilityCounts? = nil, isSelected: Bool = false, onSelect: @escaping () -> Void, onOpenChat: (() -> Void)? = nil, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil) {
+    init(bot: BotSummary, avatarData: Data? = nil, runtime: BotRuntimeConfig? = nil, counts: BotCapabilityCounts? = nil, isSelected: Bool = false, onSelect: @escaping () -> Void, onOpenChat: (() -> Void)? = nil, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil, onDelete: (() -> Void)? = nil, canDelete: Bool = false, isDeleting: Bool = false) {
         self.bot = bot
         self.avatarData = avatarData
         self.runtime = runtime
@@ -850,10 +879,13 @@ struct MissionControlBotRow: View, Equatable {
         self.onShowActivity = onShowActivity
         self.onDuplicate = onDuplicate
         self.onToggleHidden = onToggleHidden
+        self.onDelete = onDelete
+        self.canDelete = canDelete
+        self.isDeleting = isDeleting
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.runtime == rhs.runtime && lhs.counts == rhs.counts && lhs.isSelected == rhs.isSelected
+        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.runtime == rhs.runtime && lhs.counts == rhs.counts && lhs.isSelected == rhs.isSelected && lhs.canDelete == rhs.canDelete && lhs.isDeleting == rhs.isDeleting
     }
 
     var body: some View {
@@ -863,9 +895,9 @@ struct MissionControlBotRow: View, Equatable {
                 identity
                     .frame(maxWidth: .infinity, alignment: .leading)
                 actions
-                    .opacity(isHovering || isFocused ? 1 : 0)
+                    .opacity(isHovering || isFocused || isDeleting ? 1 : 0)
                     .allowsHitTesting(isHovering || isFocused)
-                    .accessibilityHidden(!(isHovering || isFocused))
+                    .accessibilityHidden(!(isHovering || isFocused || isDeleting))
             }
             activity
                 .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
@@ -876,6 +908,7 @@ struct MissionControlBotRow: View, Equatable {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(rowBackground)
+        .disabled(isDeleting)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .dockHoverable().onTapGesture(perform: onSelect)
@@ -896,6 +929,7 @@ struct MissionControlBotRow: View, Equatable {
             Button("Duplicate…") { onDuplicate?() }
             Divider()
             Button(bot.isHidden ? "Unhide Bot" : "Hide Bot") { onToggleHidden?() }
+            deleteAction
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(bot.name) Bot")
@@ -993,6 +1027,15 @@ struct MissionControlBotRow: View, Equatable {
         return model.isEmpty ? nil : model
     }
 
+    @ViewBuilder
+    private var deleteAction: some View {
+        if let onDelete {
+            Button(isDeleting ? "Deleting…" : "Delete Bot…", role: .destructive, action: onDelete)
+                .disabled(!canDelete)
+                .help(bot.isDefault || bot.id.lowercased() == "default" ? "The default Bot cannot be deleted" : "Permanently delete this Hermes profile and its data")
+        }
+    }
+
     private var actions: some View {
         DockMenu {
             Button("Open Chat", icon: .chatText) { onOpenChat?() }
@@ -1004,9 +1047,13 @@ struct MissionControlBotRow: View, Equatable {
             Button("Duplicate…", icon: .copy) { onDuplicate?() }
             Divider()
             Button(bot.isHidden ? "Unhide Bot" : "Hide Bot", icon: bot.isHidden ? .eye : .eyeSlash) { onToggleHidden?() }
+            deleteAction
         }
         label: {
-            DockIcon(.dotsThree)
+            Group {
+                if isDeleting { ProgressView().controlSize(.small) }
+                else { DockIcon(.dotsThree) }
+            }
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 44, height: 44)
