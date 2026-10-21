@@ -90,9 +90,13 @@ struct DockBotHuddleLayout {
         rotation = leadDone ? Array(1..<(partnerCount + 1)) : Array(0..<(partnerCount + 1))
     }
 
+    /// Seconds each Bot holds the thought bubble.
+    static let turnLength = 2.6
+
     func turn(at frame: DockBotIndicatorFrame) -> (active: Int, next: Int, phase: Double) {
-        guard frame.moves, rotation.count > 1 else { return (-1, -1, 0) }
-        let clock = max(0, frame.date.timeIntervalSinceReferenceDate) / 0.8
+        // A lone working partner still thinks; a lead alone shows its own activity instead.
+        guard frame.moves, !rotation.isEmpty, centers.count > 1 else { return (-1, -1, 0) }
+        let clock = max(0, frame.date.timeIntervalSinceReferenceDate) / Self.turnLength
         let step = Int(clock)
         return (rotation[step % rotation.count], rotation[(step + 1) % rotation.count], clock - Double(step))
     }

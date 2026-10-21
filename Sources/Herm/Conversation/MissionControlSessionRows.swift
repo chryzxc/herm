@@ -436,17 +436,19 @@ struct MissionControlBotSessionRow: View, Equatable {
     let bot: BotSummary
     let imageData: Data?
     let isSelected: Bool
+    /// Approval or clarify from the sidebar status; nil keeps the busy face.
+    var mood: BotMood? = nil
     let style: DockThemePalette
     let onOpen: () -> Void
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.session == rhs.session && lhs.bot == rhs.bot && lhs.imageData == rhs.imageData
-            && lhs.isSelected == rhs.isSelected && lhs.style.theme == rhs.style.theme
+            && lhs.mood == rhs.mood && lhs.isSelected == rhs.isSelected && lhs.style.theme == rhs.style.theme
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            BotAvatarView(bot: bot, imageData: imageData, size: 30, orbits: session.isWorking)
+            BotAvatarView(bot: bot, imageData: imageData, size: 30, mood: mood, orbits: session.isWorking)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(bot.name)

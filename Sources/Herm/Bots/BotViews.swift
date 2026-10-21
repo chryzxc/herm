@@ -1095,9 +1095,7 @@ private struct BotAvatarGeneratorTip: View {
             HStack(spacing: 12) {
                 ForEach(faces, id: \.0) { id, name in
                     VStack(spacing: 4) {
-                        BotFaceMark(id: id, size: 48, animated: true, busy: hovered == id)
-                            .background { if hovered == id { BotSwirlRing(id: id, size: 40) } }
-                            .overlay { if hovered == id { BotSwirlRing(id: id, size: 40, front: true) } }
+                        BotFaceMark(id: id, size: 48, mood: hovered == id ? .happy : .idle)
                             .scaleEffect(hovered == id ? 1.12 : 1)
                             .animation(.spring(response: 0.3, dampingFraction: 0.55), value: hovered)
                             .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }

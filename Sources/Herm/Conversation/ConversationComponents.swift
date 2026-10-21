@@ -557,12 +557,16 @@ struct BotCrewRow: View {
   var avatars: [String: Data] = [:]
   /// The lead is answering the user's @mention rather than watching others.
   var repliesToUser = false
+  /// Each Bot's newest step, read from its own session, keyed by Bot id.
+  var steps: [String: String] = [:]
 
   var body: some View {
+    let stepped = partners.compactMap { bot in steps[bot.id].map { (bot: bot, step: $0) } }
     DockLiveActivityDecoration {
-    HStack(spacing: 12) {
+    // Activity sits under the huddle so the thought bubbles never cover it.
+    VStack(alignment: .leading, spacing: 4) {
       BotHuddle(lead: from, partners: partners, avatars: avatars, leadDone: !repliesToUser,
-                leadSignature: repliesToUser ? [] : nil, leadIcon: .chatCircleDots)
+                leadSignature: repliesToUser ? [] : nil, leadIcon: .chatCircleDots, lines: steps)
       VStack(alignment: .leading, spacing: 2) {
         let names = (repliesToUser ? [from] + partners : partners).map(\.name).formatted(.list(type: .and))
         (Text(names).foregroundStyle(Color.dockPrimaryText)
@@ -574,7 +578,18 @@ struct BotCrewRow: View {
             .font(.system(size: 11))
             .foregroundStyle(Color.dockMetadataText)
         }
+        ForEach(stepped, id: \.bot.id) { item in
+          (Text(stepped.count > 1 ? "\(item.bot.name): " : "").fontWeight(.medium) + Text(item.step))
+            .font(.system(size: 11))
+            .foregroundStyle(Color.dockSecondaryText)
+            .lineLimit(1).truncationMode(.tail)
+            .modifier(WorkingTitleShimmer(isActive: true, color: Color.dockAccent))
+            .id(item.step)
+            .transition(.asymmetric(insertion: .offset(y: 6).combined(with: .opacity), removal: .opacity))
+        }
       }
+      .padding(.leading, BotHuddle.leadInset)
+      .animation(.easeOut(duration: 0.25), value: stepped.map(\.step))
     }
     .padding(.vertical, 6)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -764,7 +779,11 @@ struct TurnActivityView: View, Equatable {
         let phase = SignalTrace.Phase(activity: activity)
         let crew = bot.map { lead in self.crew.filter { $0.id != lead.id } } ?? []
         DockLiveActivityDecoration {
-        HStack(spacing: 10) {
+        // With a crew the text drops under the huddle, clear of the thought
+        // bubbles; AnyLayout keeps the lead's identity across the switch.
+        let layout = crew.isEmpty ? AnyLayout(HStackLayout(spacing: 10))
+          : AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+        layout {
           // One view for the lead with or without a crew, so Bots join and
           // leave beside it without the lead jumping or resizing.
           if let bot {
@@ -791,6 +810,7 @@ struct TurnActivityView: View, Equatable {
                 .foregroundStyle(Color.dockMetadataText)
             }
           }
+          .padding(.leading, crew.isEmpty ? 0 : BotHuddle.leadInset)
         }
         .padding(.vertical, 6)
         }

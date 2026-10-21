@@ -43,9 +43,9 @@ struct DockBotIndicatorFrameTests {
             #expect(active.rotation == Array(0...count))
             #expect(done.rotation == Array(0..<count).map { $0 + 1 })
             for tick in 0..<20 {
-                let frame = DockBotIndicatorFrame(date: Date(timeIntervalSinceReferenceDate: Double(tick) * 0.8), moves: true)
+                let frame = DockBotIndicatorFrame(date: Date(timeIntervalSinceReferenceDate: Double(tick) * DockBotHuddleLayout.turnLength), moves: true)
                 let turn = done.turn(at: frame)
-                if count <= 1 { #expect(turn.active == -1) }
+                if count == 0 { #expect(turn.active == -1) }
                 else {
                     #expect((1...count).contains(turn.active))
                     #expect((1...count).contains(turn.next))
@@ -81,5 +81,15 @@ struct DockBotIndicatorFrameTests {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    @Test func thoughtBubblePopsTypesAndBursts() {
+        #expect(ThoughtBubbleTiming.scale(0.02) == 0)
+        #expect(ThoughtBubbleTiming.scale(0.5) == 1)
+        #expect(ThoughtBubbleTiming.scale(0.95) == 0)
+        #expect(ThoughtBubbleTiming.typed("Running swift build", phase: 0.1) == "R")
+        #expect(ThoughtBubbleTiming.typed("Running swift build", phase: 0.8) == "Running swift build")
+        #expect(ThoughtBubbleTiming.typed(nil, phase: 0.5).count == 3)
+        #expect(ThoughtBubbleTiming.short("Running a command · git status") == "Running a command")
     }
 }

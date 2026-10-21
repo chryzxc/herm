@@ -3,6 +3,7 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 struct StartupAssistantView: View {
+    var hermFaceID: String?
     var onSuggestion: (String) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
@@ -17,7 +18,7 @@ struct StartupAssistantView: View {
         VStack(spacing: 6) {
             Spacer(minLength: 0)
             // The voice orb at rest, scaled down: chat and voice share one visual language.
-            VoiceOrbView(mode: .idle, audioLevel: 0)
+            VoiceOrbView(mode: .idle, audioLevel: 0, hermFaceID: hermFaceID)
                 .frame(width: 300, height: 300)
                 .scaleEffect(0.5)
                 .frame(width: 150, height: 150)
@@ -240,9 +241,9 @@ struct VoiceOrbView: View {
     static func faceMood(for mode: VoiceOrbMode) -> BotMood? {
         switch mode {
         case .idle: nil
-        case .listening: .surprised
-        case .transcribing, .thinking: .work
-        case .speaking: .happy
+        case .listening: .listening
+        case .transcribing, .thinking: .thinking
+        case .speaking: .replying
         }
     }
 

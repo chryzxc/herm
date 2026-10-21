@@ -72,13 +72,4 @@ struct BotWorkingAnimationTests {
         #expect(abs(BotWorkingPose.at(1.5).lift) < 0.0001)
         #expect(BotWorkingPose.at(-1).lift == 0)
     }
-
-    @Test func faceSwirlVariesPerSegmentAndFadesBetweenMoves() {
-        let moves = Set((0..<40).map { segment in
-            Int(BotFacePose.swirl(at: (Double(segment) + 0.25) * BotFacePose.swirlSegment, seed: 42).0.rounded())
-        })
-        #expect(moves.count > 3)
-        let edge = BotFacePose.swirl(at: BotFacePose.swirlSegment * 7, seed: 42)
-        #expect(edge.1 < 0.001)
-    }
 }

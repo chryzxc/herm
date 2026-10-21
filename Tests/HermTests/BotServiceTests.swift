@@ -567,12 +567,14 @@ struct BotServiceTests {
 
     /// Saved Herm faces are drawn live; another Bot's face or other art stays an image.
     @MainActor @Test func savedHermFaceIsRecognizedOnlyForItsOwnBot() throws {
-        let renderer = ImageRenderer(content: BotFaceMark(id: "nexus", size: 160))
-        renderer.scale = 1
-        let tiff = try #require(renderer.nsImage?.tiffRepresentation)
-        let png = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+        let png = try #require(BotFaceMark.png(id: "nexus"))
         #expect(BotAvatarView.matchesHermFace(png, id: "nexus"))
         #expect(!BotAvatarView.matchesHermFace(png, id: "cypher"))
+        // Blob faces saved before Herm Faces still count as Herm faces.
+        let tiff = try #require(BotFaceMark.still(id: "nexus", legacy: true).nsImage?.tiffRepresentation)
+        let legacy = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+        #expect(BotAvatarView.matchesHermFace(legacy, id: "nexus"))
+        #expect(!BotAvatarView.matchesHermFace(legacy, id: "cypher"))
         #expect(!BotAvatarView.matchesHermFace(Data("not an image".utf8), id: "nexus"))
     }
 }

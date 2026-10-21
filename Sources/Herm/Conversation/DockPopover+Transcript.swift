@@ -21,7 +21,7 @@ extension DockPopover {
                             // before it corrects those estimates.
                             VStack(spacing: 0) {
                                 if model.messages.isEmpty && model.status != .working {
-                                    StartupAssistantView { model.draft = $0 }
+                                    StartupAssistantView(hermFaceID: conversationHermFaceID) { model.draft = $0 }
                                         .frame(maxWidth: .infinity)
                                         .frame(minHeight: max(300, viewport.size.height - 16))
                                 } else if model.messages.isEmpty {
@@ -639,7 +639,10 @@ extension DockPopover {
                 if let from, !partners.isEmpty {
                     BotCrewRow(from: from, partners: partners,
                                since: model.workingBotDispatches.map(\.createdAt).min() ?? .now,
-                               avatars: botMode.avatarImages)
+                               avatars: botMode.avatarImages,
+                               steps: Dictionary(model.workingBotDispatches.compactMap { record in
+                                   model.botLiveSteps[record.id].map { (record.botID, $0) }
+                               }, uniquingKeysWith: { first, _ in first }))
                         .transition(.opacity.combined(with: .offset(y: 6)))
                 }
             }
@@ -691,6 +694,9 @@ extension DockPopover {
             ConversationMessageRow(
                 message: message,
                 isStreamingMessage: message.id == model.streamingMessageIDForPresentation,
+                streamingMood: message.id == model.streamingMessageIDForPresentation
+                    ? BotMood(status: model.status, compacting: model.compactingSessionID != nil && model.compactingSessionID == model.sessionID)
+                    : nil,
                 streamingText: model.streamingText,
                 activeBotProfileID: model.activeBotProfileID,
                 botsByID: botMode.botsByID,

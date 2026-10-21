@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// A material and typography specimen, never a projection of session activity.
-/// Explicit theme inputs let every tile render without changing the global theme.
+/// A material, typography and Herm Faces specimen, never a projection of
+/// session activity. Explicit theme inputs let every tile render without
+/// changing the global theme.
 struct DockSkinSpecimen: View {
     let theme: DockThemeID
+    /// Sample Bots in states that show each skin's face tone, ring and badges.
+    static let faces: [(id: String, mood: BotMood)] = [("nexus", .idle), ("forge", .tool), ("comms", .approval), ("atlas", .done)]
     @Environment(\.colorScheme) private var colorScheme
 
     private var palette: DockThemePalette { DockThemePalette(theme: theme) }
@@ -41,11 +44,17 @@ struct DockSkinSpecimen: View {
                 }
                 .padding(10)
                 .background { surface }
+                HStack(spacing: 10) {
+                    ForEach(Self.faces, id: \.id) { face in
+                        BotFaceMark(id: face.id, size: 24, mood: face.mood, theme: theme)
+                    }
+                }
+                .padding(.leading, 2)
             }
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(height: 112)
+        .frame(height: 148)
         // Native-material tokens are translucent; the specimen needs a solid base.
         .background(palette.windowBackground.overlay(DockBackdrop(style: style, accent: palette.accent)))
         .background(theme.appearance == .dark || (theme.appearance == .system && colorScheme == .dark) ? Color.black : Color.white)

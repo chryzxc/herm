@@ -133,9 +133,9 @@ private struct BotActivityRow: View {
             Button(action: onToggle) {
                 HStack(spacing: 10) {
                     if let bot {
-                        BotAvatarView(bot: bot, imageData: avatar, size: 34, orbits: working)
+                        BotAvatarView(bot: bot, imageData: avatar, size: 34, mood: BotMood(activity: record.state))
                     } else {
-                        BotFaceMark(id: record.botID, size: 34, animated: true, busy: working)
+                        BotFaceMark(id: record.botID, size: 34, animated: true, mood: BotMood(activity: record.state))
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(record.botName)

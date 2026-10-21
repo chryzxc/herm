@@ -65,7 +65,7 @@ struct BotAvatarView: View {
     var size: CGFloat = 28
     var animated = true
     var mood: BotMood?
-    /// Show the working star orbit; defaults to the Bot's live busy state.
+    /// Overrides the Bot's live busy state; a busy Herm face shows the tool ring.
     var orbits: Bool?
     @Environment(\.dockBotIndicatorFrame) private var indicatorFrame
     @Environment(\.dockBotIndicatorLive) private var indicatorLive
@@ -73,16 +73,15 @@ struct BotAvatarView: View {
 
     var body: some View {
         let herm = Self.showsHermFace(imageData, id: bot.id)
-        let busy = orbits ?? bot.isWorkingNow
-        let orbit = animated && herm && busy && size >= 16
         let greets = animated && hovering
+        let face = mood ?? (greets ? .happy : bot.isHidden ? .sleepy : (orbits ?? bot.isWorkingNow) ? .tool : .idle)
         Group {
             if let indicatorFrame {
-                canvas(herm: herm, busy: busy, orbit: orbit, greets: greets, frame: indicatorFrame)
+                canvas(herm: herm, mood: face, frame: indicatorFrame)
             } else if indicatorLive {
-                DockBotFrameClock { canvas(herm: herm, busy: busy, orbit: orbit, greets: greets, frame: $0) }
+                DockBotFrameClock { canvas(herm: herm, mood: face, frame: $0) }
             } else {
-                standalone(herm: herm, busy: busy, orbit: orbit, greets: greets)
+                standalone(herm: herm, mood: face)
             }
         }
         .scaleEffect(greets ? 1.08 : 1)
@@ -91,26 +90,19 @@ struct BotAvatarView: View {
         .opacity(bot.isHidden ? 0.45 : 1)
     }
 
-    private func canvas(herm: Bool, busy: Bool, orbit: Bool, greets: Bool, frame: DockBotIndicatorFrame) -> some View {
-        DockBotOrbitCanvas(id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded),
-                           size: size, busy: busy, mood: mood ?? (greets ? .happy : bot.isHidden ? .sleepy : nil),
-                           pose: frame.face(id: bot.id, busy: busy, animated: animated),
-                           frame: frame, orbits: orbit)
+    private func canvas(herm: Bool, mood: BotMood, frame: DockBotIndicatorFrame) -> some View {
+        DockBotOrbitCanvas(id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded), size: size, mood: mood,
+                           pose: frame.face(id: bot.id, busy: mood.moves, animated: animated))
     }
 
-    private func standalone(herm: Bool, busy: Bool, orbit: Bool, greets: Bool) -> some View {
-        ZStack {
-            if !herm, let imageData, let image = Self.decoded(imageData) {
-                BotLiveImage(image: image, id: bot.id, size: size, busy: busy, animated: animated)
-            } else {
-                BotFaceMark(id: bot.id, size: size, animated: animated, busy: busy,
-                            mood: mood ?? (greets ? .happy : bot.isHidden ? .sleepy : nil))
-            }
+    @ViewBuilder private func standalone(herm: Bool, mood: BotMood) -> some View {
+        if !herm, let imageData, let image = Self.decoded(imageData) {
+            BotLiveImage(image: image, id: bot.id, size: size, busy: mood.moves, animated: animated)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        } else {
+            BotFaceMark(id: bot.id, size: size, animated: animated, mood: mood)
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-        .background { if orbit { BotSwirlRing(id: bot.id, size: size) } }
-        .overlay { if orbit { BotSwirlRing(id: bot.id, size: size, front: true) } }
     }
 
     /// Rows re-render on every scroll frame; decode each avatar once.
@@ -143,12 +135,15 @@ struct BotAvatarView: View {
         return match
     }
 
+    /// Matches the current face or the pre-Herm Faces blob saved by older builds.
     @MainActor static func matchesHermFace(_ data: Data, id: String) -> Bool {
         guard let stored = NSBitmapImageRep(data: data), stored.pixelsWide == 160, stored.pixelsHigh == 160 else { return false }
-        let renderer = ImageRenderer(content: BotFaceMark(id: id, size: 160))
-        renderer.scale = 1
-        guard let cg = renderer.cgImage else { return false }
-        let fresh = NSBitmapImageRep(cgImage: cg)
+        return [false, true].contains { legacy in
+            BotFaceMark.still(id: id, legacy: legacy).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) } ?? false
+        }
+    }
+
+    private static func matches(_ stored: NSBitmapImageRep, _ fresh: NSBitmapImageRep) -> Bool {
         // Sparse grid with an edge-pixel allowance: antialiasing and color
         // management differ slightly between the saved PNG and a fresh render.
         var misses = 0
@@ -241,7 +236,7 @@ struct BotWorkingAvatarView: View {
             let pose = frame.moves ? currentPose(at: frame.date) : .rest
             ZStack {
                 BotAvatarView(bot: bot, imageData: imageData, size: size, animated: frame.moves,
-                              mood: reacting ? .surprised : nil, orbits: true)
+                              orbits: true)
                     .scaleEffect(x: pose.scaleX, y: pose.scaleY)
                     .rotationEffect(.degrees(pose.rotation))
                     .offset(x: size * pose.reach, y: -size * 0.2 * pose.lift)
@@ -289,7 +284,6 @@ struct BotFacePose {
     var t: Double = 0
 
     static let rest = BotFacePose()
-    static let swirlSegment = 3.2
 
     static func at(_ t: Double, busy: Bool) -> BotFacePose {
         let blinkPeriod = busy ? 2.7 : 4.3
@@ -300,26 +294,6 @@ struct BotFacePose {
             ? CGSize(width: sin(t * 2.4) >= 0 ? 0.028 : -0.028, height: -0.012)
             : CGSize(width: CGFloat(sin(t * 0.6)) * 0.025, height: CGFloat(sin(t * 0.43)) * 0.012)
         return BotFacePose(bob: bob, blink: blink, look: look, t: t)
-    }
-
-    /// Each segment picks a fresh move from the Bot's seed, so a Bot never
-    /// loops one gesture and two Bots rarely move alike. Some segments rest.
-    static func swirl(at t: Double, seed: UInt64) -> (Double, CGFloat) {
-        let segment = Int(max(0, t) / swirlSegment)
-        let u = max(0, t).truncatingRemainder(dividingBy: swirlSegment) / swirlSegment
-        var x = seed &+ UInt64(segment) &* 0x9E3779B97F4A7C15
-        x = (x ^ (x >> 30)) &* 0xBF58476D1CE4E5B9
-        x ^= x >> 27
-        let dir: Double = x & 1 == 0 ? 1 : -1
-        let ease = u * u * (3 - 2 * u)
-        let alpha = CGFloat(min(1, sin(u * .pi) * 3))
-        switch (x >> 1) % 5 {
-        case 0: return (dir * ease * 360, alpha)                  // full spin
-        case 1: return (dir * ease * 720, alpha)                  // double spin
-        case 2: return (sin(u * .pi * 4) * 35, alpha)             // rock side to side
-        case 3: return (dir * sin(u * .pi) * 200, alpha)          // spin out and back
-        default: return (0, 0)                                    // breather
-        }
     }
 }
 
@@ -367,60 +341,10 @@ private struct BotLiveImage: View {
     }
 }
 
-/// A star orbiting a working Bot, drawn outside the avatar's clip. Only
-/// for Hermes default faces; uploaded art is left alone.
-struct BotSwirlRing: View {
-    private static let gold = Color(hue: 0.12, saturation: 0.72, brightness: 0.97)
-    let id: String
-    var size: CGFloat
-    /// The orbit passes behind and in front of the Bot: put one ring under the
-    /// avatar and a `front` one over it, and each draws only its half.
-    var front = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject private var focus = HermFocus.shared
-
-    var body: some View {
-        if !reduceMotion && DockThemeStyle.current.animates {
-            let seed = BotAvatarPresentation.seed(for: id)
-            let phase = Double(seed % 1000) / 100
-            // Paused, the star holds its last spot rather than vanishing.
-            TimelineView(.dockMotion(paused: !focus.engaged)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate + phase
-                let alpha = BotFacePose.swirl(at: t, seed: seed).1
-                // A star on a tilted orbit: dips low and grows in front, rides
-                // high and shrinks behind.
-                Canvas { ctx, box in
-                    guard alpha > 0 else { return }
-                    ctx.opacity = alpha
-                    ctx.translateBy(x: box.width / 2, y: box.height / 2)
-                    ctx.rotate(by: .degrees(-12))
-                    for i in (0..<4).reversed() {
-                        // Trail dots sit where the star was a moment ago, so they bunch up as it slows.
-                        let theta = BotFacePose.swirl(at: t - Double(i) * 0.05, seed: seed).0 * .pi / 180
-                        let depth = sin(theta)
-                        guard (depth > 0) == front else { continue }
-                        let d = (i == 0 ? size * 0.26 : size * 0.07) * (0.8 + 0.3 * depth)
-                        let rect = CGRect(x: size * 0.62 * cos(theta) - d / 2, y: size * 0.18 * depth - d / 2, width: d, height: d)
-                        let shape = i == 0 ? BotOrbitStar().path(in: rect) : Path(ellipseIn: rect)
-                        var dot = ctx
-                        dot.opacity *= (front ? 1 : 0.7) * (1 - Double(i) * 0.25)
-                        dot.fill(shape, with: .color(Self.gold))
-                        dot.stroke(shape, with: .color(.black.opacity(0.45)), lineWidth: i == 0 ? 0.75 : 0.5)
-                    }
-                }
-                .frame(width: size * 1.4, height: size * 1.4)
-            }
-            .allowsHitTesting(false)
-        }
-    }
-}
-
 /// The Bots working together in one row: they take turns, the one whose
 /// turn it is bobs with a typing bubble, and a star arcs to the next. A
 /// finished lead stays in the row, dimmed and out of the rotation.
 struct BotHuddle: View {
-    private static let gold = Color(hue: 0.12, saturation: 0.72, brightness: 0.97)
-
     let lead: BotSummary
     let partners: [BotSummary]
     var avatars: [String: Data] = [:]
@@ -436,10 +360,19 @@ struct BotHuddle: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var focus = HermFocus.shared
 
+    /// What each Bot is doing, keyed by Bot id, shown in its thought bubble.
+    var lines: [String: String] = [:]
+
     private static let gap: CGFloat = 8
+    /// Room above the avatars for the thought bubble.
+    private static let headroom: CGFloat = 18
     /// Centers the lead in the same 56pt slot `SignalTrace` uses.
     private var inset: CGFloat { (SignalTrace.size - leadSize) / 2 }
     private var height: CGFloat { SignalTrace.size }
+    private var headroom: CGFloat { partners.isEmpty ? 0 : Self.headroom }
+
+    /// Space left of the lead, so text stacked under the huddle lines up with it.
+    static let leadInset: CGFloat = (SignalTrace.size - 40) / 2
 
     var body: some View {
         let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
@@ -451,10 +384,9 @@ struct BotHuddle: View {
                 .environment(\.dockBotIndicatorFrame, frame)
                 .overlay(alignment: .topLeading) {
                     Canvas { ctx, _ in
-                        trail(ctx, active: turn.active, next: turn.next, phase: turn.phase,
-                              rotation: layout.rotation, moves: frame.moves, centers: layout.centers)
+                        sparks(ctx, active: turn.active, next: turn.next, phase: turn.phase, centers: layout.centers)
                     }
-                    .frame(height: height)
+                    .frame(height: height + headroom)
                     .allowsHitTesting(false)
                 }
         }
@@ -483,67 +415,68 @@ struct BotHuddle: View {
         .padding(.trailing, inset)
         .padding(.bottom, inset)
         .frame(height: height, alignment: .bottom)
-
+        .padding(.top, headroom)
     }
 
+    /// Top of a member's avatar, in the huddle's coordinates.
     private func top(_ index: Int) -> CGFloat {
-        height - inset - (index == 0 ? leadSize : size) + 3
+        headroom + height - inset - (index == 0 ? leadSize : size) + 3
     }
 
-    private func trail(_ ctx: GraphicsContext, active: Int, next: Int, phase: Double, rotation: [Int], moves: Bool, centers xs: [CGFloat]) {
-        // Faint dotted arcs between neighbours in the rotation.
-        for (a, b) in zip(rotation, rotation.dropFirst()) {
-            let path = arc(from: CGPoint(x: xs[a], y: top(a)), to: CGPoint(x: xs[b], y: top(b))).path
-            ctx.stroke(path, with: .color(Color.dockSecondaryText.opacity(0.55)), style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [2, 3]))
+    /// The bubble bursts into three sparks that drift to the next speaker.
+    private func sparks(_ ctx: GraphicsContext, active: Int, next: Int, phase: Double, centers xs: [CGFloat]) {
+        guard active >= 0, active != next, phase > ThoughtBubbleTiming.burst else { return }
+        let t = (phase - ThoughtBubbleTiming.burst) / (1 - ThoughtBubbleTiming.burst)
+        let hue = BotAvatarPresentation.hue(for: (next == 0 ? lead : partners[next - 1]).id)
+        for k in 0..<3 {
+            let e = 1 - pow(1 - max(0, min(1, t * 1.25 - Double(k) * 0.12)), 2)
+            let flight = arc(from: CGPoint(x: xs[active], y: top(active)), to: CGPoint(x: xs[next], y: top(next)), lift: 6 + CGFloat(k) * 5)
+            let p = flight.point(e)
+            let d: CGFloat = 4.5 - CGFloat(k) * 0.8
+            var dot = ctx
+            dot.opacity = e < 1 ? 1 - e * 0.4 : 0
+            dot.fill(Path(ellipseIn: CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)),
+                     with: .color(Color(hue: hue, saturation: 0.7, brightness: 0.97)))
         }
-        guard moves, rotation.count > 1, phase < 0.6 else { return }
-        let flight = arc(from: CGPoint(x: xs[active], y: top(active)), to: CGPoint(x: xs[next], y: top(next)))
-        let e = 1 - pow(1 - phase / 0.6, 2)
-        let p = flight.point(e)
-        let d: CGFloat = 9
-        let star = BotOrbitStar().path(in: CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d))
-        var dot = ctx
-        dot.opacity = phase < 0.08 ? phase / 0.08 : phase > 0.5 ? (0.6 - phase) / 0.1 : 1
-        dot.fill(star, with: .color(Self.gold))
-        dot.stroke(star, with: .color(.black.opacity(0.45)), lineWidth: 0.7)
     }
 
     private func member(_ bot: BotSummary, index: Int, size: CGFloat, active: Int, phase: Double) -> some View {
         let talking = index == active
         let dimmed = index == 0 && leadDone
-        // A quick hop at the start of the turn.
+        // A quick hop as the bubble appears.
         let bob = talking && phase < 0.3 ? -3 * sin(.pi * phase / 0.3) : 0
+        let scale = talking ? ThoughtBubbleTiming.scale(phase) : 0
         return Group {
             if index == 0, !leadDone, let leadSignature {
                 BotWorkingAvatarView(bot: bot, imageData: avatars[bot.id], size: size,
                                      activitySignature: leadSignature, activityIcon: leadIcon)
             } else {
                 BotAvatarView(bot: bot, imageData: avatars[bot.id], size: size, animated: !dimmed,
-                              mood: dimmed ? .idle : talking ? .happy : .work, orbits: false)
+                              mood: dimmed ? .idle : talking ? .replying : .tool, orbits: false)
             }
         }
             .opacity(dimmed ? 0.45 : 1)
             .saturation(dimmed ? 0.5 : 1)
             .offset(y: bob)
-            .overlay(alignment: .topTrailing) {
-                if talking && phase < 0.75 {
-                    Text("•••")
-                        .font(.system(size: 6, weight: .heavy))
-                        .foregroundStyle(Color.dockPrimaryText.opacity(0.75))
-                        .padding(.horizontal, 3).padding(.vertical, 2)
-                        .background(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 1, bottomTrailingRadius: 5, topTrailingRadius: 5)
-                            .fill(Color.dockSurface)
-                            .shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5))
-                        .overlay(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 1, bottomTrailingRadius: 5, topTrailingRadius: 5)
-                            .stroke(Color.dockBorderStrong, lineWidth: 0.75))
-                        .offset(x: 9, y: -8)
-                        .transition(.opacity)
+            .overlay(alignment: .top) {
+                if scale > 0 {
+                    // Every bubble floats at the same height, above the lead's head;
+                    // a shorter Bot gets a longer tail.
+                    ThoughtBubble(text: ThoughtBubbleTiming.typed(lines[bot.id].map(ThoughtBubbleTiming.short), phase: phase),
+                                  tail: (index == 0 ? 0 : leadSize - size) + 4)
+                        .fixedSize()
+                        .scaleEffect(scale, anchor: .bottomLeading)
+                        .opacity(min(1, scale * 1.5))
+                        .frame(width: 0, height: 0, alignment: .bottomLeading)
+                        .offset(x: -9, y: -2)
+                        .frame(width: 0, height: 0)
                 }
             }
+            .zIndex(talking ? 1 : 0)
     }
 
-    private func arc(from a: CGPoint, to b: CGPoint) -> (path: Path, point: (Double) -> CGPoint) {
-        let control = CGPoint(x: (a.x + b.x) / 2, y: min(a.y, b.y) - 10 - abs(b.x - a.x) * 0.15)
+    private func arc(from a: CGPoint, to b: CGPoint, lift: CGFloat = 10) -> (path: Path, point: (Double) -> CGPoint) {
+        let control = CGPoint(x: (a.x + b.x) / 2, y: min(a.y, b.y) - lift - abs(b.x - a.x) * 0.15)
         var path = Path()
         path.move(to: a)
         path.addQuadCurve(to: b, control: control)
@@ -555,47 +488,105 @@ struct BotHuddle: View {
     }
 }
 
-/// Herm's own blob face: a soft seeded body with eyes, cheeks and a mouth.
-/// Everything is derived from the profile ID, so a Bot always gets the same
-/// blob. `animated` wobbles the body, blinks and glances while `busy`; leave it off for
-/// still renders (`ImageRenderer` uploads).
+/// A Bot's thought: a small bubble trailing two dots down to its head.
+private struct ThoughtBubble: View {
+    let text: String
+    let tail: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Capsule().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 2, y: 1))
+                .overlay(Capsule().stroke(Color.dockBorderStrong, lineWidth: 0.75))
+            // The tail's dots shrink toward the Bot it belongs to.
+            ForEach([3.5, 2.2].prefix(tail > 10 ? 2 : 1), id: \.self) { d in
+                Circle().fill(Color.dockSurface)
+                    .overlay(Circle().stroke(Color.dockBorderStrong, lineWidth: 0.6))
+                    .frame(width: d, height: d)
+                    .padding(.leading, d == 3.5 ? 5 : 8)
+                    .padding(.top, tail > 10 ? 2.5 : 1)
+            }
+        }
+        .frame(height: 16 + tail, alignment: .top)
+    }
+}
+
+/// Timing of one 2.6s huddle turn: the bubble pops in, types, holds, then
+/// bursts into sparks bound for the next speaker.
+enum ThoughtBubbleTiming {
+    static let burst = 0.86
+
+    static func scale(_ phase: Double) -> Double {
+        if phase < 0.06 || phase > 0.9 { return 0 }
+        if phase > 0.82 { return (0.9 - phase) / 0.08 }
+        let t = min(1, (phase - 0.06) / 0.12)
+        // Ease out with a small overshoot, like a spring.
+        return 1 + 2.7 * pow(t - 1, 3) + 1.7 * pow(t - 1, 2)
+    }
+
+    /// `text` typed out over the turn; a Bot with no known step shows
+    /// "thinking" dots instead.
+    static func typed(_ text: String?, phase: Double) -> String {
+        guard let text, !text.isEmpty else {
+            return String(repeating: "•", count: 1 + Int(phase * 9) % 3).padding(toLength: 3, withPad: " ", startingAt: 0)
+        }
+        let shown = Int(max(0, phase - 0.1) * DockBotHuddleLayout.turnLength / 0.03)
+        return String(text.prefix(max(1, shown)))
+    }
+
+    /// The step's headline: "Running a command · git status" thinks "Running a command".
+    static func short(_ step: String) -> String {
+        let head = step.components(separatedBy: " · ").first ?? step
+        return head.count > 30 ? head.prefix(29) + "…" : head
+    }
+}
+
+/// A Herm face: a seeded body, eyes and expression for every state Hermes
+/// reports (see `HermFace.swift`). `animated` runs the clock while the state
+/// moves; leave it off for still renders.
 struct BotFaceMark: View {
     let id: String
     var size: CGFloat = 160
     var animated = false
     var busy = false
-    /// Overrides the busy/idle expression.
+    /// Overrides the busy/idle state.
     var mood: BotMood?
+    /// Live faces follow the app skin; previews pass the skin they show.
+    var theme: DockThemeID? = DockThemeRuntime.current
 
     var body: some View {
-        BotMotion(id: id, animated: animated, busy: busy) { face($0) }
-            .frame(width: size, height: size)
-    }
-
-    /// The still 160px PNG saved to Hermes; `matchesHermFace` recognizes it.
-    @MainActor static func png(id: String) -> Data? {
-        let renderer = ImageRenderer(content: BotFaceMark(id: id, size: 160))
-        renderer.scale = 1
-        guard let tiff = renderer.nsImage?.tiffRepresentation else { return nil }
-        return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
-    }
-
-    private func face(_ pose: BotFacePose) -> some View {
-        return Canvas { ctx, _ in
-            Self.draw(in: &ctx, id: id, size: size, busy: busy, mood: mood, pose: pose)
+        let mood = self.mood ?? (busy ? .tool : .idle)
+        BotMotion(id: id, animated: animated, busy: mood.moves) { pose in
+            Canvas { ctx, _ in
+                ctx.translateBy(x: size * 0.2, y: size * 0.2)
+                Self.draw(in: &ctx, id: id, size: size, mood: mood, pose: pose, theme: theme)
+            }
+            .frame(width: size * 1.4, height: size * 1.4)
         }
         .frame(width: size, height: size)
     }
+
+    /// The still, skin-neutral 160px PNG saved to Hermes; `matchesHermFace` recognizes it.
+    @MainActor static func png(id: String) -> Data? {
+        guard let tiff = still(id: id).nsImage?.tiffRepresentation else { return nil }
+        return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+    }
+
+    @MainActor static func still(id: String, legacy: Bool = false) -> ImageRenderer<some View> {
+        let renderer = ImageRenderer(content: Canvas { ctx, _ in
+            if legacy { drawLegacyBlob(in: &ctx, id: id, size: 160) }
+            else { draw(in: &ctx, id: id, size: 160, mood: .idle, pose: .rest, theme: nil) }
+        }.frame(width: 160, height: 160))
+        renderer.scale = 1
+        return renderer
+    }
 }
 
-/// Expressions a Herm face can wear. Idle and work follow the Bot's activity;
-/// the rest are set by the view showing the face.
-enum BotMood {
-    case idle, work, happy, sleepy, surprised
-}
-
-/// The seeded traits of a blob. Ranges are tuned so the body always stays
-/// inside its frame and the eyes inside the body.
+/// The seeded traits of the legacy blob, kept to recognize its saved PNGs.
 struct BotBlobGenes {
     struct Lobe { var amp: Double; var phase: Double; var speed: Double }
 
@@ -609,14 +600,8 @@ struct BotBlobGenes {
     var mouth: Int
 
     init(id: String) {
-        var state = BotAvatarPresentation.seed(for: id)
-        func next() -> Double {
-            state &+= 0x9E3779B97F4A7C15
-            var z = state
-            z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
-            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
-            return Double((z ^ (z >> 31)) >> 11) / Double(1 << 53)
-        }
+        var random = BotSeededRandom(id: id)
+        func next() -> Double { random.next() }
         lobes = (2...4).map { k in
             Lobe(amp: (0.025 + next() * 0.035) / Double(k - 1).squareRoot(),
                  phase: next() * 2 * .pi,
@@ -632,22 +617,18 @@ struct BotBlobGenes {
     }
 }
 
-/// The body outline: a circle bent by three seeded lobes that drift over time,
-/// smoothed with quad curves through the sample midpoints.
+/// The legacy body outline: a circle bent by three seeded lobes, smoothed
+/// with quad curves through the sample midpoints.
 struct BotBlobShape: Shape {
     let genes: BotBlobGenes
-    let t: Double
-    let busy: Bool
 
     func path(in rect: CGRect) -> Path {
         let n = 72
-        let rate = busy ? 2.2 : 1
-        let breath = 1 + 0.2 * sin(t * (busy ? 2.6 : 1.1))
         let points = (0..<n).map { i -> CGPoint in
             let a = Double(i) / Double(n) * 2 * .pi
             var r = 1.0
             for (k, lobe) in genes.lobes.enumerated() {
-                r += lobe.amp * breath * cos(Double(k + 2) * a + lobe.phase + t * lobe.speed * rate)
+                r += lobe.amp * cos(Double(k + 2) * a + lobe.phase)
             }
             let ry = 0.4 * r * (sin(a) > 0 ? 0.94 : 1) / genes.squash
             return CGPoint(x: rect.midX + rect.width * 0.4 * r * genes.squash * cos(a),
@@ -677,17 +658,7 @@ struct BotBlobMouth: Shape {
     }
 }
 
-/// An upward arch: a happy squint, or flipped, a closed sleeping eye.
-struct BotBlobArch: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX, y: r.maxY))
-        p.addQuadCurve(to: CGPoint(x: r.maxX, y: r.maxY), control: CGPoint(x: r.midX, y: r.minY - r.height * 0.6))
-        return p
-    }
-}
-
-/// A four-point sparkle for the working orbit.
+/// A four-point sparkle on a Herm face.
 struct BotOrbitStar: Shape {
     func path(in r: CGRect) -> Path {
         var p = Path()

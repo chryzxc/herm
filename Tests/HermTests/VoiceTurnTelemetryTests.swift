@@ -139,8 +139,8 @@ struct VoiceConversationStateTests {
 
     @Test func hermFaceMoodFollowsVoiceState() {
         #expect(VoiceOrbView.faceMood(for: .idle) == nil)
-        #expect(VoiceOrbView.faceMood(for: .listening) == .surprised)
-        #expect(VoiceOrbView.faceMood(for: .thinking) == .work)
-        #expect(VoiceOrbView.faceMood(for: .speaking) == .happy)
+        #expect(VoiceOrbView.faceMood(for: .listening) == .listening)
+        #expect(VoiceOrbView.faceMood(for: .thinking) == .thinking)
+        #expect(VoiceOrbView.faceMood(for: .speaking) == .replying)
     }
 }

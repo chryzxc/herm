@@ -670,6 +670,7 @@ struct MissionControlQueue: View {
                 bot: bot,
                 imageData: botMode.avatarImages[bot.id],
                 isSelected: isSessionSelected(session),
+                mood: BotMood(ask: statuses[session.id]?.activityState),
                 style: style
             ) {
                 markSessionSeen(session)

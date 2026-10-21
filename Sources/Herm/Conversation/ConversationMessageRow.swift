@@ -40,6 +40,8 @@ enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
 struct ConversationMessageRow: View, Equatable {
     let message: ChatMessage
     let isStreamingMessage: Bool
+    /// The live turn's ask (approval, clarify, compressing); nil keeps the busy face.
+    let streamingMood: BotMood?
     let streamingText: StreamingText?
     let activeBotProfileID: String?
     let botsByID: [String: BotSummary]
@@ -71,6 +73,7 @@ struct ConversationMessageRow: View, Equatable {
     init(
         message: ChatMessage,
         isStreamingMessage: Bool,
+        streamingMood: BotMood? = nil,
         streamingText: StreamingText?,
         activeBotProfileID: String?,
         botsByID: [String: BotSummary],
@@ -97,6 +100,7 @@ struct ConversationMessageRow: View, Equatable {
     ) {
         self.message = message
         self.isStreamingMessage = isStreamingMessage
+        self.streamingMood = streamingMood
         self.streamingText = streamingText
         self.activeBotProfileID = activeBotProfileID
         self.botsByID = botsByID
@@ -135,6 +139,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.message.responseDuration == rhs.message.responseDuration
             && lhs.message.tokenCount == rhs.message.tokenCount
             && lhs.isStreamingMessage == rhs.isStreamingMessage
+            && lhs.streamingMood == rhs.streamingMood
             && lhs.activeBotProfileID == rhs.activeBotProfileID
             && lhs.botRosterRevision == rhs.botRosterRevision
             && lhs.themeRevision == rhs.themeRevision
@@ -262,6 +267,7 @@ struct ConversationMessageRow: View, Equatable {
                                     bot: bot,
                                     imageData: avatarImages[bot.id],
                                     size: 24,
+                                    mood: isStreamingMessage ? streamingMood : nil,
                                     orbits: isStreamingMessage
                                 )
                             } else {

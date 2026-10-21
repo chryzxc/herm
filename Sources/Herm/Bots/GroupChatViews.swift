@@ -156,7 +156,8 @@ private struct GroupChatSidebarRow: View {
     private var avatars: some View {
         let shown = room.members.prefix(3)
         let tile = RoundedRectangle(cornerRadius: 20 * 0.28, style: .continuous)
-        return HStack(spacing: -4) {
+        // Faces sit side by side: an overlap would need a cut-out border.
+        return HStack(spacing: 2) {
             ForEach(Array(shown), id: \.memberID) { member in
                 Group {
                     if let bot = botMode.botsByID[member.profile] {
@@ -169,7 +170,6 @@ private struct GroupChatSidebarRow: View {
                             .background(tile.fill(Color.dockSurface2))
                     }
                 }
-                .background(tile.stroke(Color.dockCanvas, lineWidth: 2))
                 .help("\(member.displayName) · @\(member.handle)")
             }
             if room.members.count > shown.count {
@@ -178,7 +178,6 @@ private struct GroupChatSidebarRow: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 20, height: 20)
                     .background(tile.fill(Color.dockSurface2))
-                    .background(tile.stroke(Color.dockCanvas, lineWidth: 2))
                     .help(room.members.dropFirst(3).map(\.displayName).joined(separator: ", "))
             }
         }
