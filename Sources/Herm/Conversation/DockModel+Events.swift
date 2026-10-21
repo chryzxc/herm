@@ -934,7 +934,7 @@ extension DockModel {
             // Text streamed so far belongs above this call: close the row so
             // the call (and later text) renders below it, in timeline order.
             if streamingMessageID != nil, streamingMessageSessionID == sessionID,
-               !streamingMessageBuffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+               streamingMessageBuffer.contains(where: { !$0.isWhitespace }) {
                 splitLiveTurn()
             }
             activeToolCalls.append(ActiveToolCall(
