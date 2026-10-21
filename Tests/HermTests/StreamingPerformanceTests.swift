@@ -446,26 +446,6 @@ struct StreamingPerformanceTests {
         #expect(streaming.text.hasSuffix("**partial bold**"))
     }
 
-    @Test func scrollRequestsCoalesceAndCancellationDoesNotCancelReplacement() async throws {
-        let scheduler = ConversationTailScrollScheduler()
-        var actions: [Int] = []
-        scheduler.schedule { actions.append(1) }
-        scheduler.schedule { actions.append(2) }
-        let firstDeadline = Date().addingTimeInterval(2)
-        while actions.isEmpty && Date() < firstDeadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(actions == [1])
-        scheduler.schedule { actions.append(3) }
-        scheduler.cancel()
-        scheduler.schedule { actions.append(4) }
-        let secondDeadline = Date().addingTimeInterval(2)
-        while actions.count < 2 && Date() < secondDeadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(actions == [1, 4])
-    }
-
     @Test func smallPresentationAppendRemainsOneMutableTail() {
         let streaming = StreamingText()
         streaming.appendPresentation("short response")

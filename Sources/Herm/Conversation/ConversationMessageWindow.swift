@@ -269,9 +269,4 @@ enum ConversationStreamingPresentationPolicy {
         default: 250
         }
     }
-
-    /// Native/SwiftUI scrolling is substantially more expensive than changing
-    /// the live text. A bounded cadence lets several flushes share one footer
-    /// movement without visibly falling behind a streaming response.
-    static let tailAdjustmentIntervalMilliseconds = 120
 }

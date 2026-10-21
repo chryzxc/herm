@@ -32,6 +32,18 @@ final class ConversationScrollPresentationState: ObservableObject {
         }
     }
 
+    func updatePosition(_ geometry: ConversationScrollGeometry, isLiveTail: Bool) {
+        // Content growth must not disable follow before the next layout scroll.
+        // The native scroll observer clears it as soon as the reader scrolls up.
+        isAtBottom = isLiveTail && (isAtBottom || ConversationScrollMetrics.isAtBottom(
+            topMinY: -geometry.visibleTop,
+            bottomMaxY: geometry.documentHeight - geometry.visibleTop,
+            viewportHeight: geometry.visibleHeight,
+            tolerance: ConversationScrollMetrics.pastEndTolerance
+        ))
+        if isAtBottom { unseenMessageCount = 0 }
+    }
+
     func reset() {
         isAtBottom = true
         unseenMessageCount = 0

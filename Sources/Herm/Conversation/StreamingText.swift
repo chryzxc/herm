@@ -389,6 +389,8 @@ struct StreamingMessageText: View {
 /// appended once; only the final mutable chunk is replaced on each flush.
 @MainActor
 struct NativeStreamingMarkdownView: NSViewRepresentable {
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
     @ObservedObject var streaming: StreamingText
     let themeRevision: Int
 
@@ -396,11 +398,13 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
+        view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         context.coordinator.update(view, chunks: streaming.chunks, themeRevision: themeRevision)
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         context.coordinator.update(nsView, chunks: streaming.chunks, themeRevision: themeRevision)
     }
 
@@ -478,32 +482,4 @@ struct StreamingResponseMetadata: View {
             .padding(.horizontal, 4)
         }
     }
-}
-
-/// Scheduling is bookkeeping, not presentation state. Publishing pending/idle
-/// transitions here would invalidate the entire Dock twice per scroll request.
-@MainActor
-final class ConversationTailScrollScheduler {
-    private var task: Task<Void, Never>?
-
-    func schedule(_ action: @escaping @MainActor () -> Void) {
-        guard task == nil else { return }
-        task = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(
-                    ConversationStreamingPresentationPolicy.tailAdjustmentIntervalMilliseconds
-                ))
-            } catch { return }
-            guard let self, !Task.isCancelled else { return }
-            self.task = nil
-            action()
-        }
-    }
-
-    func cancel() {
-        task?.cancel()
-        task = nil
-    }
-
-    deinit { task?.cancel() }
 }

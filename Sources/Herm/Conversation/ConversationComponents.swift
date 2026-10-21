@@ -287,6 +287,11 @@ final class ConversationScrollController {
         )
     }
 
+    func scrollToBottom() {
+        guard let geometry else { return }
+        shiftVisibleTop(by: max(0, geometry.documentHeight - geometry.visibleHeight) - geometry.visibleTop)
+    }
+
     /// Moves the viewport by a document-space delta relative to wherever it
     /// is now, so in-flight momentum keeps its progress. If the hosting
     /// document has not adopted its new height yet, the clamped remainder is
@@ -322,10 +327,12 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
     var onScroll: (ConversationScrollGeometry, _ deltaTop: CGFloat) -> Void
     var onScrollSettled: (ConversationScrollGeometry) -> Void
     var onScrollAwayFromBottom: () -> Void = {}
+    /// Called after AppKit applies a document or viewport size change.
+    var onContentResize: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator(controller: controller, onScroll: onScroll, onScrollSettled: onScrollSettled,
-                    onScrollAwayFromBottom: onScrollAwayFromBottom)
+                    onScrollAwayFromBottom: onScrollAwayFromBottom, onContentResize: onContentResize)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -339,6 +346,7 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         coordinator.onScroll = onScroll
         coordinator.onScrollSettled = onScrollSettled
         coordinator.onScrollAwayFromBottom = onScrollAwayFromBottom
+        coordinator.onContentResize = onContentResize
         guard coordinator.clipView == nil else { return }
         DispatchQueue.main.async {
             coordinator.attachIfNeeded(from: nsView)
@@ -357,8 +365,9 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         var onScroll: (ConversationScrollGeometry, CGFloat) -> Void
         var onScrollSettled: (ConversationScrollGeometry) -> Void
         var onScrollAwayFromBottom: () -> Void
+        var onContentResize: () -> Void
         weak var clipView: NSClipView?
-        nonisolated(unsafe) private var observer: NSObjectProtocol?
+        nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
         private var lastBoundsChange: UInt64 = 0
         private var lastVisibleTop: CGFloat?
         private var settleTask: Task<Void, Never>?
@@ -367,12 +376,14 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
             controller: ConversationScrollController,
             onScroll: @escaping (ConversationScrollGeometry, CGFloat) -> Void,
             onScrollSettled: @escaping (ConversationScrollGeometry) -> Void,
-            onScrollAwayFromBottom: @escaping () -> Void = {}
+            onScrollAwayFromBottom: @escaping () -> Void = {},
+            onContentResize: @escaping () -> Void = {}
         ) {
             self.controller = controller
             self.onScroll = onScroll
             self.onScrollSettled = onScrollSettled
             self.onScrollAwayFromBottom = onScrollAwayFromBottom
+            self.onContentResize = onContentResize
         }
 
         func attachIfNeeded(from view: NSView) {
@@ -390,23 +401,33 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         func detach() {
             settleTask?.cancel()
             settleTask = nil
-            if let observer { NotificationCenter.default.removeObserver(observer) }
-            observer = nil
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+            observers.removeAll()
             clipView = nil
         }
 
         private func attach(to clipView: NSClipView) {
             self.clipView = clipView
             controller.clipView = clipView
-            observer = NotificationCenter.default.addObserver(
+            observers.append(NotificationCenter.default.addObserver(
                 forName: NSView.boundsDidChangeNotification,
                 object: clipView,
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.boundsDidChange() }
-            }
+            })
             clipView.postsBoundsChangedNotifications = true
+            let sizedViews: [NSView?] = [clipView, clipView.documentView]
+            for view in sizedViews.compactMap({ $0 }) {
+                view.postsFrameChangedNotifications = true
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification, object: view, queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.onContentResize() }
+                })
+            }
             reportSettled()
+            onContentResize()
         }
 
         private func boundsDidChange() {
@@ -452,7 +473,7 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         }
 
         deinit {
-            if let observer { NotificationCenter.default.removeObserver(observer) }
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
         }
     }
 }

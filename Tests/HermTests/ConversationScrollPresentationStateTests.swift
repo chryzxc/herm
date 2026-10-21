@@ -5,6 +5,52 @@ import Foundation
 
 @MainActor
 struct ConversationScrollPresentationStateTests {
+    @Test func contentGrowthKeepsFollowingUntilTheReaderScrollsAway() {
+        let state = ConversationScrollPresentationState()
+        state.updatePosition(
+            ConversationScrollGeometry(visibleTop: 600, visibleHeight: 400, documentHeight: 3_000),
+            isLiveTail: true
+        )
+        #expect(state.isAtBottom, "A large streamed block must not disable bottom follow before layout catches up")
+
+        state.isAtBottom = false
+        state.unseenMessageCount = 2
+        state.updatePosition(
+            ConversationScrollGeometry(visibleTop: 600, visibleHeight: 400, documentHeight: 3_400),
+            isLiveTail: true
+        )
+        #expect(!state.isAtBottom)
+        #expect(state.unseenMessageCount == 2)
+    }
+
+    @Test func followingResumesOnlyAtTheActualBottom() {
+        let state = ConversationScrollPresentationState()
+        state.isAtBottom = false
+        state.unseenMessageCount = 3
+        state.updatePosition(
+            ConversationScrollGeometry(visibleTop: 588, visibleHeight: 400, documentHeight: 1_000),
+            isLiveTail: true
+        )
+        #expect(!state.isAtBottom)
+        #expect(state.unseenMessageCount == 3)
+
+        state.updatePosition(
+            ConversationScrollGeometry(visibleTop: 600, visibleHeight: 400, documentHeight: 1_000),
+            isLiveTail: true
+        )
+        #expect(state.isAtBottom)
+        #expect(state.unseenMessageCount == 0)
+    }
+
+    @Test func theBottomOfAnOlderWindowDoesNotResumeFollowing() {
+        let state = ConversationScrollPresentationState()
+        state.updatePosition(
+            ConversationScrollGeometry(visibleTop: 600, visibleHeight: 400, documentHeight: 1_000),
+            isLiveTail: false
+        )
+        #expect(!state.isAtBottom)
+    }
+
     @Test func equalSettleResultsDoNotPublish() {
         let state = ConversationScrollPresentationState()
         let target = MessageNavigatorTarget(sessionID: "session", messageID: UUID())

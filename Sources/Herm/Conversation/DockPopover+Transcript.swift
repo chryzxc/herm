@@ -120,6 +120,10 @@ extension DockPopover {
                                 onScroll: { geometry, deltaTop in
                                     // Runs for every bounds change: keep it to a
                                     // few comparisons unless an edge is reached.
+                                    if deltaTop > 0, !isConversationAtBottom,
+                                       geometry.distanceToBottom <= ConversationScrollMetrics.pastEndTolerance {
+                                        updateConversationPosition(geometry, proxy: proxy)
+                                    }
                                     if deltaTop < 0 {
                                         loadEarlierMessagesIfNeeded(geometry)
                                     } else if deltaTop > 0 {
@@ -130,16 +134,7 @@ extension DockPopover {
                                     conversationPerformance.recordScrollSettled()
                                     let top = geometry.visibleTop
                                     scrollBookkeeping.isPaging = false
-                                    // Content bounds are expressed relative to the
-                                    // viewport: the document top sits at -top.
-                                    updateConversationPosition(
-                                        ConversationContentBounds(
-                                            topMinY: -top,
-                                            bottomMaxY: geometry.documentHeight - top
-                                        ),
-                                        viewportHeight: viewport.size.height,
-                                        proxy: proxy
-                                    )
+                                    updateConversationPosition(geometry, proxy: proxy)
                                     updateNavigatorVisibility(
                                         top: top,
                                         bottom: top + geometry.visibleHeight
@@ -151,20 +146,22 @@ extension DockPopover {
                                 onScrollAwayFromBottom: {
                                     guard isConversationAtBottom else { return }
                                     isConversationAtBottom = false
-                                    streamingTailScroll.cancel()
+                                },
+                                onContentResize: {
+                                    if isConversationAtBottom { scrollController.scrollToBottom() }
                                 }
                             )
                         }
                         .coordinateSpace(name: "conversation-document")
                     }
                     .id(model.sessionID)
-                    .defaultScrollAnchor(.bottom)
                     .onAppear {
                         scrollPresentation.reset()
                         mountedMessageRange = ConversationMessageWindow.rangeForSessionReplacement(
                             totalCount: model.messages.count
                         )
                         scrollBookkeeping.lastRenderedMessageBubbleCount = renderedMessageBubbleCount
+                        scrollConversationToBottom(proxy)
                     }
                     .onChange(of: model.sessionID) { _, _ in
                         // The ScrollView identity is session-specific, but its
@@ -178,7 +175,6 @@ extension DockPopover {
                         scrollBookkeeping.pendingAnchor = nil
                         scrollBookkeeping.isPaging = false
                         scrollBookkeeping.lastRenderedMessageBubbleCount = renderedMessageBubbleCount
-                        streamingTailScroll.cancel()
                         scrollBookkeeping.isPastEndRepairScheduled = false
                         scrollBookkeeping.isHistoryCompactionScheduled = false
                         scrollConversationToBottom(proxy)
@@ -205,8 +201,8 @@ extension DockPopover {
                         scrollController.shiftVisibleTop(by: currentOffset - anchor.offset)
                     }
                     .onChange(of: model.scrollToLatestMessageRequest) { _, _ in
+                        guard isConversationAtBottom else { return }
                         unseenMessageCount = 0
-                        isConversationAtBottom = true
                         mountedMessageRange = ConversationMessageWindow.rangeForSessionReplacement(
                             totalCount: model.messages.count
                         )
@@ -263,32 +259,15 @@ extension DockPopover {
                             unseenMessageCount += newBubbleCount
                         }
                     }
-                    // Hermes parks the turn on these prompts with a deadline
-                    // (approvals: 60s). A card mounted below the viewport
-                    // times out unseen, so a new prompt always scrolls in.
-                    .onChange(of: model.approvalText) { _, text in
-                        if text != nil { revealBlockingPrompt() }
-                    }
-                    .onChange(of: model.valuePrompt?.requestID) { _, requestID in
+                    .onChange(of: model.valuePrompt?.requestID) { _, _ in
                         valuePromptText = ""
                         valuePromptIdentifier = ""
-                        if requestID != nil { revealBlockingPrompt() }
                     }
-                    .onChange(of: model.clarificationQuestion) { _, question in
+                    .onChange(of: model.clarificationQuestion) { _, _ in
                         clarificationSelection = []
-                        if question != nil { revealBlockingPrompt() }
                     }
-                    .onDisappear { streamingTailScroll.cancel() }
                     .onReceive(model.streamingText.$chunks) { _ in
                         conversationPerformance.recordStreamingUpdate()
-                        guard isConversationAtBottom else { return }
-                        scheduleStreamingTailScroll(proxy)
-                    }
-                    // Steps grow the live turn before any text streams; follow
-                    // them so the working indicator doesn't drift below the fold.
-                    .onChange(of: model.streamingTurnActivity.count) { _, _ in
-                        guard isConversationAtBottom else { return }
-                        scheduleStreamingTailScroll(proxy)
                     }
 
                     ConversationLatestMessageControl(presentation: scrollPresentation) {
@@ -482,27 +461,21 @@ extension DockPopover {
     }
 
     func updateConversationPosition(
-        _ bounds: ConversationContentBounds,
-        viewportHeight: CGFloat,
+        _ geometry: ConversationScrollGeometry,
         proxy: ScrollViewProxy
     ) {
         let wasAtBottom = isConversationAtBottom
-        let atBottom = ConversationMessageWindow.isLiveTail(
-            mountedMessageRange,
-            totalCount: model.messages.count
-        )
-            && ConversationScrollMetrics.isAtBottom(
-                topMinY: bounds.topMinY,
-                bottomMaxY: bounds.bottomMaxY,
-                viewportHeight: viewportHeight,
-                tolerance: wasAtBottom ? ConversationScrollMetrics.atBottomTolerance : ConversationScrollMetrics.pastEndTolerance
+        scrollPresentation.updatePosition(
+            geometry,
+            isLiveTail: ConversationMessageWindow.isLiveTail(
+                mountedMessageRange,
+                totalCount: model.messages.count
             )
-        if atBottom != isConversationAtBottom {
-            isConversationAtBottom = atBottom
-            if atBottom { unseenMessageCount = 0 }
+        )
+        if wasAtBottom != isConversationAtBottom {
             if ConversationMessageWindow.shouldCompactAfterRepinning(
                 wasAtBottom: wasAtBottom,
-                isAtBottom: atBottom,
+                isAtBottom: isConversationAtBottom,
                 range: mountedMessageRange,
                 totalCount: model.messages.count
             ) {
@@ -516,9 +489,9 @@ extension DockPopover {
         // the derived pinned state. The stable footer is the one canonical
         // clamp target for that invalid geometry.
         if ConversationScrollMetrics.isPastEnd(
-            topMinY: bounds.topMinY,
-            bottomMaxY: bounds.bottomMaxY,
-            viewportHeight: viewportHeight
+            topMinY: -geometry.visibleTop,
+            bottomMaxY: geometry.documentHeight - geometry.visibleTop,
+            viewportHeight: geometry.visibleHeight
         ) {
             schedulePastEndRepair(proxy)
         }
@@ -584,22 +557,10 @@ extension DockPopover {
         }
     }
 
-    func scheduleStreamingTailScroll(_ proxy: ScrollViewProxy) {
-        let owningSessionID = model.sessionID
-        streamingTailScroll.schedule {
-            guard owningSessionID == model.sessionID, isConversationAtBottom else { return }
-            proxy.scrollTo("conversation-bottom", anchor: .bottom)
-        }
-    }
-
-    func revealBlockingPrompt() {
-        isConversationAtBottom = true
-        conversationScrollRequest &+= 1
-    }
-
     func schedulePastEndRepair(_ proxy: ScrollViewProxy) {
         guard !scrollBookkeeping.isPastEndRepairScheduled else { return }
         scrollBookkeeping.isPastEndRepairScheduled = true
+        let owningSessionID = model.sessionID
         Task { @MainActor in
             // A negative content top together with a trailing edge above the
             // viewport is an invalid offset, never a legitimate browsing
@@ -607,6 +568,13 @@ extension DockPopover {
             await Task.yield()
             await Task.yield()
             scrollBookkeeping.isPastEndRepairScheduled = false
+            guard owningSessionID == model.sessionID,
+                  let geometry = scrollController.geometry,
+                  ConversationScrollMetrics.isPastEnd(
+                    topMinY: -geometry.visibleTop,
+                    bottomMaxY: geometry.documentHeight - geometry.visibleTop,
+                    viewportHeight: geometry.visibleHeight
+                  ) else { return }
             proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
     }

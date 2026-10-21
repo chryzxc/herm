@@ -91,6 +91,8 @@ enum MarkdownRenderDocumentCache {
 /// the source revision changes (including the streaming-to-completed handoff).
 @MainActor
 struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
     let source: String
     let key: MarkdownRenderKey
     let streamingSections: [MarkdownRenderSection]?
@@ -112,12 +114,14 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
+        view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         view.setBodyStyle(size: bodySize, weight: bodyWeight)
         context.coordinator.update(view, source: source, key: key, sections: streamingSections)
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         nsView.setBodyStyle(size: bodySize, weight: bodyWeight)
         context.coordinator.update(nsView, source: source, key: key, sections: streamingSections)
     }
@@ -534,6 +538,13 @@ final class NativeMarkdownDocumentContainerView: NSView {
     private(set) var cachedIntrinsicHeight: CGFloat?
     private(set) var cachedSolveWidth: CGFloat = -1
     private var cachedFrames: [CGRect] = []
+    private weak var observedClipView: NSClipView?
+    nonisolated(unsafe) private var viewportObservers: [NSObjectProtocol] = []
+    var keepsAccessibilitySectionsMounted = false {
+        didSet {
+            if oldValue != keepsAccessibilitySectionsMounted { needsLayout = true }
+        }
+    }
 
     override var isFlipped: Bool { true }
 
@@ -542,6 +553,45 @@ final class NativeMarkdownDocumentContainerView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observeViewport()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        observeViewport()
+    }
+
+    private func observeViewport() {
+        let clip = window == nil ? nil : enclosingScrollView?.contentView
+        for observer in viewportObservers { NotificationCenter.default.removeObserver(observer) }
+        viewportObservers.removeAll()
+        observedClipView = clip
+        if let clip {
+            // A preceding row can move this message into view without scrolling.
+            var ancestor: NSView? = self
+            while let view = ancestor {
+                view.postsBoundsChangedNotifications = true
+                view.postsFrameChangedNotifications = true
+                for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
+                    viewportObservers.append(NotificationCenter.default.addObserver(
+                        forName: name, object: view, queue: .main
+                    ) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.updateMountedSections() }
+                    })
+                }
+                if view === clip { break }
+                ancestor = view.superview
+            }
+        }
+        needsLayout = true
+    }
+
+    deinit {
+        for observer in viewportObservers { NotificationCenter.default.removeObserver(observer) }
+    }
 
     override var intrinsicContentSize: NSSize {
         let width = bounds.width
@@ -593,7 +643,32 @@ final class NativeMarkdownDocumentContainerView: NSView {
         super.layout()
         guard bounds.width > 1 else { return }
         _ = measuredHeight(forWidth: bounds.width)
-        for (entry, frame) in zip(entries, cachedFrames) {
+        updateMountedSections()
+    }
+
+    private func updateMountedSections() {
+        guard entries.count == cachedFrames.count else { return }
+        let visible = visibleRect
+        // Keep a viewport of buffer without making offscreen text views take
+        // part in every AppKit layout, hit-test, and cursor-rect update.
+        let viewport: NSRect? = observedClipView.map { clip in
+            visible.isEmpty ? .zero : visible.insetBy(dx: 0, dy: -clip.bounds.height)
+        }
+        let keepAll = keepsAccessibilitySectionsMounted || NSApp?.isFullKeyboardAccessEnabled == true
+        let focused = window?.firstResponder as? NSView
+        var nextMounted: NSView?
+        for (entry, frame) in zip(entries, cachedFrames).reversed() {
+            let containsFocus = focused.map { $0 === entry.view || $0.isDescendant(of: entry.view) } ?? false
+            let shouldMount = keepAll || containsFocus || (viewport.map { frame.intersects($0) } ?? true)
+            guard shouldMount else {
+                if entry.view.superview != nil { entry.view.removeFromSuperview() }
+                continue
+            }
+            if entry.view.superview !== self {
+                if let nextMounted { addSubview(entry.view, positioned: .below, relativeTo: nextMounted) }
+                else { addSubview(entry.view) }
+            }
+            nextMounted = entry.view
             let isEmpty = frame.height <= 0
             if entry.view.isHidden != isEmpty { entry.view.isHidden = isEmpty }
             if entry.view.frame != frame { entry.view.frame = frame }

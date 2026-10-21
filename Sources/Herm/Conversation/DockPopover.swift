@@ -120,7 +120,6 @@ struct DockPopover: View {
     /// values so settle, preference and layout callbacks do not invalidate
     /// this entire view on every scroll.
     @State var scrollBookkeeping = ConversationTranscriptBookkeeping()
-    @State var streamingTailScroll = ConversationTailScrollScheduler()
     @State var conversationPerformance = ConversationPerformanceMonitor()
     @State var isWorkspaceManuallyExpanded = false
     @State var isNarrowLayout = false
