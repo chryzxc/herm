@@ -8,10 +8,13 @@ struct DockLiveActivityDecoration<Content: View>: View {
 
     var body: some View {
         if active {
-            DockBotFrameClock { frame in
-                content
-                    .environment(\.dockBotIndicatorFrame, frame)
-                    .overlay(alignment: .bottom) {
+            // Content stays outside the clock: re-injecting a per-tick frame over
+            // whole rows dirtied every Text and platform view 30 times a second.
+            // Avatars inside run their own leaf clock on the same aligned schedule.
+            content
+                .environment(\.dockBotIndicatorLive, true)
+                .overlay(alignment: .bottom) {
+                    DockBotFrameClock { frame in
                         if frame.moves {
                             GeometryReader { proxy in
                                 LinearGradient(colors: [.clear, Color.dockPrimaryText.opacity(0.3), .clear],
@@ -20,11 +23,11 @@ struct DockLiveActivityDecoration<Content: View>: View {
                                     .offset(x: proxy.size.width * (1.45 * frame.sweep - 0.45), y: proxy.size.height - 1)
                             }
                             .clipped()
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
                         }
                     }
-            }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
         } else {
             content
         }

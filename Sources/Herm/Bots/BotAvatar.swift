@@ -68,6 +68,7 @@ struct BotAvatarView: View {
     /// Show the working star orbit; defaults to the Bot's live busy state.
     var orbits: Bool?
     @Environment(\.dockBotIndicatorFrame) private var indicatorFrame
+    @Environment(\.dockBotIndicatorLive) private var indicatorLive
     @State private var hovering = false
 
     var body: some View {
@@ -77,10 +78,9 @@ struct BotAvatarView: View {
         let greets = animated && hovering
         Group {
             if let indicatorFrame {
-                DockBotOrbitCanvas(id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded),
-                                   size: size, busy: busy, mood: mood ?? (greets ? .happy : bot.isHidden ? .sleepy : nil),
-                                   pose: indicatorFrame.face(id: bot.id, busy: busy, animated: animated),
-                                   frame: indicatorFrame, orbits: orbit)
+                canvas(herm: herm, busy: busy, orbit: orbit, greets: greets, frame: indicatorFrame)
+            } else if indicatorLive {
+                DockBotFrameClock { canvas(herm: herm, busy: busy, orbit: orbit, greets: greets, frame: $0) }
             } else {
                 standalone(herm: herm, busy: busy, orbit: orbit, greets: greets)
             }
@@ -89,6 +89,13 @@ struct BotAvatarView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.55), value: greets)
         .onHover { hovering = $0 }
         .opacity(bot.isHidden ? 0.45 : 1)
+    }
+
+    private func canvas(herm: Bool, busy: Bool, orbit: Bool, greets: Bool, frame: DockBotIndicatorFrame) -> some View {
+        DockBotOrbitCanvas(id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded),
+                           size: size, busy: busy, mood: mood ?? (greets ? .happy : bot.isHidden ? .sleepy : nil),
+                           pose: frame.face(id: bot.id, busy: busy, animated: animated),
+                           frame: frame, orbits: orbit)
     }
 
     private func standalone(herm: Bool, busy: Bool, orbit: Bool, greets: Bool) -> some View {

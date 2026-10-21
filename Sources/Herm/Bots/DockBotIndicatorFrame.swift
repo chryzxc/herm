@@ -23,10 +23,20 @@ private struct DockBotIndicatorFrameKey: EnvironmentKey {
     static let defaultValue: DockBotIndicatorFrame? = nil
 }
 
+private struct DockBotIndicatorLiveKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     var dockBotIndicatorFrame: DockBotIndicatorFrame? {
         get { self[DockBotIndicatorFrameKey.self] }
         set { self[DockBotIndicatorFrameKey.self] = newValue }
+    }
+
+    /// Set once by a live activity block; its avatars tick their own leaf clock.
+    var dockBotIndicatorLive: Bool {
+        get { self[DockBotIndicatorLiveKey.self] }
+        set { self[DockBotIndicatorLiveKey.self] = newValue }
     }
 }
 
