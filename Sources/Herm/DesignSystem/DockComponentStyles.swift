@@ -417,6 +417,19 @@ struct NativePopoverBackground: NSViewRepresentable {
     }
 }
 
+/// AppKit's own Liquid Glass (macOS 26): frosts what is behind the window the
+/// way system panels do, without an extra blur material graying it out.
+@available(macOS 26.0, *)
+struct NativeLiquidGlassBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSGlassEffectView {
+        let view = NSGlassEffectView()
+        view.style = .regular
+        return view
+    }
+
+    func updateNSView(_ nsView: NSGlassEffectView, context: Context) {}
+}
+
 /// The workspace's base layer. Native macOS uses the real system popover
 /// material under the shared palette; authored Herm themes keep their solid
 /// canvas so selecting a theme never changes its intended color treatment.
@@ -430,9 +443,7 @@ struct DockWindowBackground: View {
     /// (macOS 26+); older systems and System skin use the blur material.
     @ViewBuilder private var glassOrPopover: some View {
         if DockThemeRuntime.current == .glass, #available(macOS 26.0, *) {
-            // The sidebar material frosts the wallpaper (keeping text behind Herm
-            // unreadable) without the HUD's gray cast; glass adds rim and refraction.
-            NativePopoverBackground(material: .sidebar)
+            NativeLiquidGlassBackground()
                 .overlay(Color.clear.glassEffect(.regular, in: shape))
         } else {
             NativePopoverBackground(material: DockThemeRuntime.current == .glass ? .underWindowBackground : .popover)

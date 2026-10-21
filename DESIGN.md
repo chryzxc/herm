@@ -172,8 +172,8 @@ larger surfaces. Status pills and other semantic capsules remain capsules so
 their meaning stays consistent across themes.
 
 Themes also set `DockThemeStyle.material`, `selection`, `chrome`, and
-`animates`. Glass matches macOS Liquid Glass: a 12% window tint over the sidebar
-material plus system glass (page canvases and the sidebar stay clear), frosted
+`animates`. Glass matches macOS Liquid Glass: a 12% window tint over AppKit
+`NSGlassEffectView` (macOS 26) (page canvases and the sidebar stay clear), frosted
 cards, chips and inputs, native `glassEffect` buttons and floating panels (`dockFloatingSurface`), no outlines, and
 `DockPaneBackground` under sheets and overlays.
 
