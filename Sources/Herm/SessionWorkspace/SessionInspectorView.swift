@@ -529,6 +529,7 @@ struct SessionInspector: View {
                 botMode: botMode,
                 sessionID: model.kanbanSessionID
             )
+            .id(model.navigationSessionID)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         case .files:
             SessionFilesView(
