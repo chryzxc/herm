@@ -302,7 +302,7 @@ private struct VoicePillCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(pill.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     if pill.isRunning { ThinkingDots() }
@@ -312,7 +312,7 @@ private struct VoicePillCard: View {
                 }
                 if let detail = pill.detail {
                     Text(detail)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(pill.target == nil ? Color.dockSecondaryText : tint)
                         .lineLimit(2)
                 }
@@ -345,7 +345,7 @@ struct VoiceRecentTranscript: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if recent.isEmpty {
                         Text("Nothing said yet.")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     ForEach(recent) { message in
@@ -353,7 +353,7 @@ struct VoiceRecentTranscript: View {
                         Group {
                             if isUser {
                                 Text(message.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                                    .font(.system(size: 12, weight: .medium))
+                                    .dockFont(size: 12, weight: .medium)
                                     .foregroundStyle(Color.dockSecondaryText)
                             } else {
                                 MarkdownMessageView(

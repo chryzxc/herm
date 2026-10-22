@@ -91,16 +91,19 @@ struct BotProfileEditorSheet: View {
                         } label: {
                             capabilityLabel("Skills", enabled: detail?.skills.filter(\.enabled).count ?? 0, total: detail?.skills.count ?? 0)
                         }
+                        .disclosureGroupStyle(DockDisclosureGroupStyle())
                         DisclosureGroup(isExpanded: $showsToolsets) {
                             toolsetSection
                         } label: {
                             capabilityLabel("Toolsets", enabled: detail?.toolsets.filter(\.enabled).count ?? 0, total: detail?.toolsets.count ?? 0)
                         }
+                        .disclosureGroupStyle(DockDisclosureGroupStyle())
                         DisclosureGroup(isExpanded: $showsMCPServers) {
                             toggleSection(items: mcpBinding)
                         } label: {
                             capabilityLabel("MCP Servers", enabled: detail?.mcpServers.filter(\.enabled).count ?? 0, total: detail?.mcpServers.count ?? 0)
                         }
+                        .disclosureGroupStyle(DockDisclosureGroupStyle())
                     }
                     .padding(12)
                     .background(cardBackground)
@@ -121,9 +124,9 @@ struct BotProfileEditorSheet: View {
 
     private func capabilityLabel(_ title: String, enabled: Int, total: Int) -> some View {
         HStack {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+            Text(title).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
             Spacer()
-            Text("\(enabled) of \(total) on").font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+            Text("\(enabled) of \(total) on").dockFont(size: 11, design: .monospaced).foregroundStyle(Color.dockMetadataText)
         }
     }
 
@@ -133,7 +136,7 @@ struct BotProfileEditorSheet: View {
             if !clearsAvatar, !BotAvatarView.showsHermFace(avatarPreview ?? model.avatarImages[bot.id], id: bot.id) {
                 HStack(spacing: 8) {
                     Label("This image won't animate. Blinking, spinning and reactions only work on Herm faces.", icon: .info)
-                        .font(.system(size: 10))
+                        .dockFont(size: 10)
                         .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("Use Herm Face") { BotFaceMark.png(id: bot.id).map(applyPendingAvatar) }
@@ -168,7 +171,7 @@ struct BotProfileEditorSheet: View {
                 .buttonStyle(.dockSecondary)
                 .controlSize(.small)
             }
-            if clearsAvatar { Text("avatar will be removed").font(.system(size: 10)).foregroundStyle(Color.dockMetadataText) }
+            if clearsAvatar { Text("avatar will be removed").dockFont(size: 10).foregroundStyle(Color.dockMetadataText) }
             Spacer()
         }
     }
@@ -229,7 +232,7 @@ struct BotProfileEditorSheet: View {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(fallbacks.enumerated()), id: \.offset) { index, ref in
                                 HStack(spacing: 6) {
-                                    Text("\(index + 1).").font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                    Text("\(index + 1).").dockFont(size: 10, design: .monospaced).foregroundStyle(Color.dockMetadataText)
                                     modelText(ref.model, provider: ref.provider)
                                     Spacer()
                                     if fallbackDraft != nil {
@@ -276,8 +279,8 @@ struct BotProfileEditorSheet: View {
 
     private func factRow<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.system(size: 10, weight: .medium)).foregroundStyle(Color.dockMetadataText)
-            value().font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText)
+            Text(label).dockFont(size: 10, weight: .medium).foregroundStyle(Color.dockMetadataText)
+            value().dockFont(size: 12).foregroundStyle(Color.dockPrimaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 9)
@@ -285,9 +288,9 @@ struct BotProfileEditorSheet: View {
 
     private func modelText(_ model: String, provider: String?) -> some View {
         HStack(spacing: 6) {
-            Text(model).font(.system(size: 12, weight: .semibold, design: .monospaced))
+            Text(model).dockFont(size: 12, weight: .semibold, design: .monospaced)
             if let provider, !provider.isEmpty {
-                Text(provider).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText).lineLimit(1).truncationMode(.middle)
+                Text(provider).dockFont(size: 10).foregroundStyle(Color.dockMetadataText).lineLimit(1).truncationMode(.middle)
             }
         }
     }
@@ -300,8 +303,8 @@ struct BotProfileEditorSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("SOUL.md").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
-                    Text(soulSummary).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText)
+                    Text("SOUL.md").dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                    Text(soulSummary).dockFont(size: 10).foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer()
                 Button(showsSoul ? "Hide" : "Edit") { withAnimation { showsSoul.toggle() } }
@@ -310,7 +313,7 @@ struct BotProfileEditorSheet: View {
             }
             if showsSoul {
                 TextEditor(text: Binding(get: { detail?.soul ?? "" }, set: { detail?.soul = $0 }))
-                    .font(.system(size: 11, design: .monospaced))
+                    .dockFont(size: 11, design: .monospaced)
                     .frame(height: 180)
                     .scrollContentBackground(.hidden)
                     .background(Color.dockCanvas)
@@ -345,7 +348,7 @@ struct BotProfileEditorSheet: View {
     private func toggleSection(items: Binding<[BotToggleItem]>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if items.wrappedValue.isEmpty {
-                Text("None reported by Hermes").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                Text("None reported by Hermes").dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
             } else {
                 ForEach(Array(items.wrappedValue.enumerated()), id: \.element.id) { index, item in
                     Toggle(item.label, isOn: Binding(
@@ -362,7 +365,7 @@ struct BotProfileEditorSheet: View {
     private var toolsetSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             if toolsetBinding.wrappedValue.isEmpty {
-                Text("None reported by Hermes").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                Text("None reported by Hermes").dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
             } else {
                 ForEach(Array(toolsetBinding.wrappedValue.enumerated()), id: \.element.id) { index, item in
                     let isOn = Binding(
@@ -372,9 +375,9 @@ struct BotProfileEditorSheet: View {
                     HStack(alignment: .firstTextBaseline) {
                         Toggle(isOn: isOn) {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text("\(item.label) (\(item.toolCount))").font(.system(size: 12))
+                                Text("\(item.label) (\(item.toolCount))").dockFont(size: 12)
                                 if !item.detail.isEmpty {
-                                    Text(item.detail).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText)
+                                    Text(item.detail).dockFont(size: 10).foregroundStyle(Color.dockMetadataText)
                                 }
                             }
                         }
@@ -483,7 +486,7 @@ private struct BotEditorLoadingState: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Loading profile configuration…")
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             .padding(.bottom, 4)

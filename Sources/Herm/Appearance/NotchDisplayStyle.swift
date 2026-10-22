@@ -50,7 +50,7 @@ struct NotchDisplaySettings: View {
                             EdgeNotchStatusIndicator(activity: option.previewActivity, style: option)
                                 .frame(width: 28, height: 44)
                             Text(option.title)
-                                .font(.system(size: 12, weight: .medium))
+                                .dockFont(size: 12, weight: .medium)
                         }
                         .foregroundStyle(style == option ? Color.dockAccent : Color.dockSecondaryText)
                         .frame(maxWidth: .infinity, minHeight: 44)
@@ -203,7 +203,7 @@ struct EdgeNotchStatusIndicator: View {
             Circle().strokeBorder(c.opacity(0.35 * level), lineWidth: 1)
             if m == .working, number > 0 {
                 Text(number > 9 ? "9+" : "\(number)")
-                    .font(.system(size: 9, weight: .bold).monospacedDigit()).foregroundStyle(c)
+                    .dockFont(size: 9, weight: .bold).monospacedDigit().foregroundStyle(c)
             } else if m == .working {
                 Circle().trim(from: 0, to: 0.3)
                     .stroke(c, style: StrokeStyle(lineWidth: 2, lineCap: .round))
@@ -213,7 +213,7 @@ struct EdgeNotchStatusIndicator: View {
             } else if m == .done, !activity.backgroundCompleted {
                 Circle().fill(c.opacity(level)).frame(width: 6, height: 6)
             } else if let symbol {
-                Image(systemName: symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(c.opacity(level))
+                Image(systemName: symbol).dockFont(size: 9, weight: .bold).foregroundStyle(c.opacity(level))
             }
         }
     }

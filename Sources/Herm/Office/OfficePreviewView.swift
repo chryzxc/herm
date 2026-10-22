@@ -253,10 +253,10 @@ private struct OfficeCrewStatusBar: View {
                         HStack(spacing: 6) {
                             OfficeStatusDot(status: status)
                             Text(status.label)
-                                .font(DockTypography.control)
+                                .dockFont(.control)
                                 .foregroundStyle(count > 0 ? Color.dockPrimaryText : Color.dockMetadataText)
                             Text("\(count)")
-                                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                                .dockFont(size: 11, weight: .semibold).monospacedDigit()
                                 .foregroundStyle(count > 0 ? Color.dockSecondaryText : Color.dockMetadataText)
                         }
                         .padding(.horizontal, 9)
@@ -286,11 +286,11 @@ private struct OfficeRosterPanel: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("Crew")
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Spacer()
                     Text("\(agents.count)")
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .dockFont(size: 11, weight: .semibold).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 12)
@@ -299,9 +299,9 @@ private struct OfficeRosterPanel: View {
                 if agents.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("No bots in the office")
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                         Text("Bots appear here when Hermes reports them.")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                     .padding(12)
@@ -325,17 +325,17 @@ private struct OfficeRosterPanel: View {
                 OfficeStatusDot(status: status, size: 8)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.name)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     Text(agent.monitorTitle)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 Text(status.label)
-                    .font(.system(size: 11, weight: .medium))
+                    .dockFont(size: 11, weight: .medium)
                     .foregroundStyle(Color.dockMetadataText)
             }
             .padding(.horizontal, 8)
@@ -384,7 +384,7 @@ private struct OfficeToolbar: View {
     private func iconButton(_ symbol: Ph, help: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             DockIcon(symbol)
-                .font(.system(size: 13, weight: .medium))
+                .dockFont(size: 13, weight: .medium)
                 .foregroundStyle(isOn ? Color.dockAccent : Color.dockSecondaryText)
                 .frame(width: 44, height: 44)
                 .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isOn ? Color.dockAccentMuted : .clear))
@@ -409,17 +409,17 @@ private struct OfficeInspectorHeader<Leading: View>: View {
             leading()
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                 Text(subtitle)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             Spacer()
             Button(action: onClose) {
                 DockIcon(.x)
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
                     .background(Circle().fill(Color.dockControlSurface))
@@ -454,7 +454,7 @@ private struct OfficeAgentInspector: View {
                         BotAvatarView(bot: bot, imageData: avatarData, size: 34)
                     } else {
                         DockIcon(.cpu)
-                            .font(.system(size: 15))
+                            .dockFont(size: 15)
                             .foregroundStyle(Color.dockAccent)
                             .frame(width: 34, height: 34)
                             .background(Circle().fill(Color.dockControlSurface))
@@ -489,27 +489,27 @@ private struct OfficeAgentInspector: View {
         .tint(Color.dockAccent)
         OfficeCard(title: "Current work") {
             Text(session.title)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .textSelection(.enabled)
             Text(session.isCurrent ? "Current conversation" : "Background conversation")
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockSecondaryText)
         }
         OfficeCard(title: "Recent activity") {
             if session.activities.isEmpty {
                 Text("No recent activity available.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             ForEach(session.activities) { activity in
                 HStack(alignment: .firstTextBaseline) {
                     Text(activity.name)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockPrimaryText)
                     Spacer(minLength: 8)
                     Text(activity.timestamp, style: .time)
-                        .font(.system(size: 11).monospacedDigit())
+                        .dockFont(size: 11).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
             }
@@ -521,18 +521,18 @@ private struct OfficeAgentInspector: View {
         if let task = agent.taskData {
             OfficeCard(title: "Current task") {
                 Text(task.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if let step = task.currentStepKey ?? task.latestEventNote {
                     Label(step.replacingOccurrences(of: "_", with: " "), icon: .arrowBendUpRight)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 if task.lane == .running, let started = task.startedAt {
                     Label { Text("Running for ") + Text(started, style: .relative) } icon: { DockIcon(.clock) }
-                        .font(.system(size: 11).monospacedDigit())
+                        .dockFont(size: 11).monospacedDigit()
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             }
@@ -540,7 +540,7 @@ private struct OfficeAgentInspector: View {
         } else {
             OfficeCard(title: "Current task") {
                 Text("No assigned Kanban task.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }
@@ -557,7 +557,7 @@ private struct OfficeAgentInspector: View {
             if let work = agent.work { OfficeField(label: "Work", value: "\(work.kind.title) · \(work.evidence)") }
             OfficeField(label: "Bot ID", value: agent.id)
             Text("Ownership and task fields come from Kanban. Office poses and travel illustrate that state.")
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -568,10 +568,11 @@ private struct OfficeAgentInspector: View {
                         OfficeTaskFields(task: task).padding(.top, 6)
                     } label: {
                         Text(task.title)
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(2)
                     }
+                    .disclosureGroupStyle(DockDisclosureGroupStyle())
                 }
             }
         }
@@ -588,7 +589,7 @@ private struct OfficeBoardInspector: View {
         VStack(alignment: .leading, spacing: 0) {
             OfficeInspectorHeader(title: "Kanban task board", subtitle: "Live tasks · Read only", onClose: onClose) {
                 DockIcon(.kanban)
-                    .font(.system(size: 14))
+                    .dockFont(size: 14)
                     .foregroundStyle(Color.dockAccent)
                     .frame(width: 34, height: 34)
                     .background(Circle().fill(Color.dockControlSurface))
@@ -612,17 +613,17 @@ private struct OfficeBoardInspector: View {
                 HStack(spacing: 8) {
                     OfficeStatusDot(status: Self.status(for: lane.lane))
                     Text(lane.lane.rawValue.capitalized)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Spacer()
                     Text("\(lane.tasks.count)")
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .dockFont(size: 11, weight: .semibold).monospacedDigit()
                         .foregroundStyle(Color.dockSecondaryText)
                         .padding(.horizontal, 7)
                         .frame(height: 18)
                         .background(Capsule().fill(Color.dockControlSurface))
                     DockIcon(.caretRight)
-                        .font(.system(size: 10, weight: .semibold))
+                        .dockFont(size: 10, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
@@ -634,17 +635,17 @@ private struct OfficeBoardInspector: View {
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
                     if lane.tasks.isEmpty {
-                        Text("No tasks").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                        Text("No tasks").dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
                     }
                     ForEach(lane.tasks) { task in
                         Button { selectedTaskID = selectedTaskID == task.id ? nil : task.id } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(task.title)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .dockFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(2)
                                 Text(task.assignee ?? "Unassigned")
-                                    .font(.system(size: 11))
+                                    .dockFont(size: 11)
                                     .foregroundStyle(Color.dockMetadataText)
                             }
                             .padding(8)
@@ -688,7 +689,7 @@ private struct OfficeCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .tracking(0.4)
                 .foregroundStyle(Color.dockMetadataText)
             content()
@@ -715,7 +716,7 @@ private struct OfficeTaskFields: View {
             if let value = task.latestEventNote { OfficeField(label: "Event detail", value: value) }
             if let value = task.detail {
                 Text(value)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -732,11 +733,11 @@ private struct OfficeField: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(label)
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockMetadataText)
                 .frame(width: 88, alignment: .leading)
             Text(value)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)

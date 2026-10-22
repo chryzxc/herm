@@ -28,7 +28,7 @@ struct GroupChatSidebarSection: View {
                 if isExpanded {
                     if store.rooms.isEmpty {
                         Text("No group chats")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(style.metadataText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 7)
@@ -164,7 +164,7 @@ private struct GroupChatSidebarRow: View {
                         BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 20, orbits: isWorking)
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
-                            .font(.system(size: 9, weight: .semibold))
+                            .dockFont(size: 9, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 20, height: 20)
                             .background(tile.fill(Color.dockSurface2))
@@ -174,7 +174,7 @@ private struct GroupChatSidebarRow: View {
             }
             if room.members.count > shown.count {
                 Text("+\(room.members.count - shown.count)")
-                    .font(.system(size: 9, weight: .semibold))
+                    .dockFont(size: 9, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 20, height: 20)
                     .background(tile.fill(Color.dockSurface2))
@@ -256,7 +256,7 @@ struct NewGroupChatSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             labeledField("Name") { DockTextField("Group name", text: $name).textFieldStyle(.dockGlass) }
             Text("Members (\(GroupChatStore.memberLimits.lowerBound)–\(GroupChatStore.memberLimits.upperBound))")
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
@@ -476,13 +476,13 @@ struct GroupChatView: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(room?.name ?? "Group Chat")
-                    .font(DockTypography.pageTitle)
+                    .dockFont(.pageTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 HStack(spacing: 8) {
                     memberAvatars
                     Text(headerSubtitle)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                     if isWorking { ThinkingDots() }
@@ -494,7 +494,7 @@ struct GroupChatView: View {
             }
             Button { Task { await store.poll(roomID) } } label: {
                 DockIcon(.arrowsClockwise)
-                    .font(.system(size: 14, weight: .medium))
+                    .dockFont(size: 14, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
             }
@@ -506,7 +506,7 @@ struct GroupChatView: View {
                 Button("Disband…", role: .destructive) { isConfirmingDisband = true }
             } label: {
                 DockIcon(.dotsThree)
-                    .font(.system(size: 16, weight: .bold))
+                    .dockFont(size: 16, weight: .bold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
             }
@@ -536,7 +536,7 @@ struct GroupChatView: View {
                         BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 22, orbits: thinking.contains(member.memberID))
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
@@ -554,7 +554,7 @@ struct GroupChatView: View {
                 ForEach(threads, id: \.id) { item in
                     Button { thread = item.id } label: {
                         Text(item.title)
-                            .font(.system(size: 12, weight: item.id == thread ? .semibold : .regular))
+                            .dockFont(size: 12, weight: item.id == thread ? .semibold : .regular)
                             .lineLimit(1)
                             .padding(.horizontal, 10)
                             .frame(height: 24)
@@ -605,7 +605,7 @@ struct GroupChatView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 8) {
                                     Text(member.displayName)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .dockFont(size: 12, weight: .semibold)
                                         .foregroundStyle(Color.dockSecondaryText)
                                     ThinkingDots()
                                 }
@@ -650,7 +650,7 @@ struct GroupChatView: View {
                 avatar(for: member)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(member?.displayName ?? memberID)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                     let tools = store.tools(for: event, in: roomID)
                     if !tools.isEmpty {
@@ -709,7 +709,7 @@ struct GroupChatView: View {
             .help("Reply to this message")
             Rectangle().fill(Color.dockBorderLight).frame(width: 1, height: 12).padding(.horizontal, 6)
             Text(event.createdAt.formatted(date: .abbreviated, time: .shortened))
-                .font(DockTypography.machineMetadata)
+                .dockFont(.machineMetadata)
                 .foregroundStyle(Color.dockMetadataText)
         }
     }
@@ -841,7 +841,7 @@ struct GroupChatView: View {
                     .frame(height: max(1, editorHeight - 4))
                     if draft.isEmpty {
                         Text("Message the group — @ to mention a member")
-                            .font(.system(size: 14, design: DockThemeStyle.current.fontDesign))
+                            .dockFont(size: 14, design: DockThemeStyle.current.fontDesign)
                             .foregroundStyle(Color.dockSecondaryText)
                             .padding(.leading, 16)
                             .allowsHitTesting(false)
@@ -889,11 +889,11 @@ struct GroupChatView: View {
                                 .frame(width: 32, height: 32)
                             if isWorking && !canSend {
                                 DockIcon(.stop, weight: .fill)
-                                    .font(.system(size: 10, weight: .bold))
+                                    .dockFont(size: 10, weight: .bold)
                                     .foregroundStyle(Color.dockDestructive)
                             } else {
                                 DockIcon(.arrowUp)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .dockFont(size: 12, weight: .semibold)
                                     .foregroundStyle(canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
                             }
                         }
@@ -953,7 +953,7 @@ struct GroupChatView: View {
                     }
                 )
             }
-            .font(DockTypography.control)
+            .dockFont(.control)
             .foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, 8)
             .frame(height: 28)

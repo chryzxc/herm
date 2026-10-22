@@ -1,13 +1,21 @@
 import AppKit
 import Combine
+import SwiftUI
 
 /// Mirrors agent state onto the Dock tile: a badge for requests waiting on you and a ring while work runs.
 /// The tile is only visible while the workspace window keeps Herm a regular app.
 @MainActor
 final class DockTileStatus {
     private var cancellable: AnyCancellable?
+    private var themeCancellable: AnyCancellable?
 
     init(model: DockModel) {
+        themeCancellable = DockThemeStore.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { _ in
+                NSApp.dockTile.contentView?.needsDisplay = true
+                NSApp.dockTile.display()
+            }
         cancellable = Publishers.CombineLatest3(model.$sessionAttention, model.$status, model.$isSending)
             .map { attention, status, sending in (attention.count, status == .working || sending) }
             .removeDuplicates { $0 == $1 }
@@ -30,7 +38,7 @@ private final class DockRingView: NSView {
         let body = bounds.insetBy(dx: bounds.width * 0.085, dy: bounds.height * 0.085)
         let ring = NSBezierPath(roundedRect: body, xRadius: body.width * 0.225, yRadius: body.width * 0.225)
         ring.lineWidth = 3
-        NSColor.controlAccentColor.setStroke()
+        NSColor(Color.dockAccent).setStroke()
         ring.stroke()
     }
 }

@@ -7,8 +7,8 @@ import SwiftUI
 /// the local clock (`OfficeDaylight`). Robots stay
 /// white in every theme so they remain the visual focus.
 struct OfficeScenePalette: Equatable {
-    /// Warm amber for "you can interact with this" markers; it stands out against every theme's cool plaster.
-    static let interactionBeacon = NSColor(srgbRed: 1, green: 0.74, blue: 0.2, alpha: 1)
+    /// Interaction markers share the workspace blue, resolved for dark scene signage.
+    static var interactionBeacon: NSColor { DockAccentColor.blue.signageColor }
 
     let theme: DockThemeID
     let isDark: Bool

@@ -565,7 +565,27 @@ struct BotServiceTests {
         #expect(BotRosterMetadata(model: "openai / gpt-5", lastActive: "2 min ago").values.count == 2)
     }
 
+    @Test func savedGlossyHermFacesAreRecognized() throws {
+        let renderer = ImageRenderer(content: Canvas { context, _ in
+            BotFaceMark.draw(in: &context, id: "nexus", size: 160, mood: .idle, pose: .rest, theme: .glass)
+        }.frame(width: 160, height: 160))
+        renderer.scale = 1
+        let tiff = try #require(renderer.nsImage?.tiffRepresentation)
+        let png = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+        #expect(BotAvatarView.showsHermFace(png, id: "nexus"))
+        #expect(!BotAvatarView.showsHermFace(png, id: "cypher"))
+    }
+
     /// Saved Herm faces are drawn live; another Bot's face or other art stays an image.
+    @MainActor @Test func previousGlossyPaletteStillRecognizesSavedFaces() throws {
+        let image = try #require(BotFaceMark.still(id: "nexus", theme: .glass, originalColors: true).nsImage)
+        let tiff = try #require(image.tiffRepresentation)
+        let bitmap = try #require(NSBitmapImageRep(data: tiff))
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        #expect(BotAvatarView.matchesHermFace(png, id: "nexus"))
+        #expect(!BotAvatarView.matchesHermFace(png, id: "cypher"))
+    }
+
     @MainActor @Test func savedHermFaceIsRecognizedOnlyForItsOwnBot() throws {
         let png = try #require(BotFaceMark.png(id: "nexus"))
         #expect(BotAvatarView.matchesHermFace(png, id: "nexus"))

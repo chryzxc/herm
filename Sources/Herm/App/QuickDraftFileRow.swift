@@ -25,7 +25,7 @@ struct QuickDraftFileRow: View {
           .accessibilityLabel("Remove \(file.name)")
       }
     }
-    .font(.system(size: 11))
+    .dockFont(size: 11)
     .task(id: file.digest) {
       diagnostic = await file.referenceDiagnostic()
     }

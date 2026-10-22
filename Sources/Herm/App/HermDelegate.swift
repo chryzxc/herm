@@ -362,6 +362,16 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
 
 private final class UnreadBadgeView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(Color.dockDestructive).setFill()
+        NSBezierPath(ovalIn: bounds).fill()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
 }
 
 @MainActor
@@ -422,6 +432,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         configurePanel()
         installOutsideClickMonitors()
         observeModel()
+        DockThemeStore.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.unreadBadge.needsDisplay = true }
+            .store(in: &cancellables)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -456,7 +470,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
         unreadBadge.translatesAutoresizingMaskIntoConstraints = false
         unreadBadge.wantsLayer = true
-        unreadBadge.layer?.backgroundColor = NSColor.systemRed.cgColor
         unreadBadge.layer?.cornerRadius = 3.5
         unreadBadge.isHidden = true
         unreadBadge.setAccessibilityElement(false)

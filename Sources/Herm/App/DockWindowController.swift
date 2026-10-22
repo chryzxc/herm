@@ -73,9 +73,10 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.minSize = NSSize(width: 900, height: 600)
+        window.minSize = NSSize(width: 900 * DockWorkspaceScale.window,
+                                height: 600 * DockWorkspaceScale.window)
         window.delegate = self
-        let host = NSHostingView(rootView: DockPopover(
+        let workspace = NSHostingView(rootView: DockWindowWorkspace { DockPopover(
             model: model, panelPresentation: presentation, controlCenter: controlCenter,
             onClose: { [weak window] in window?.performClose(nil) },
             onFullscreenToggle: { [weak window] in window?.toggleFullScreen(nil) },
@@ -84,12 +85,12 @@ final class DockWindowController: NSObject, NSWindowDelegate {
                 self?.onReturnToFloating?()
             },
             usesWindowChrome: true
-        ))
-        host.sizingOptions = []
+        ) })
+        workspace.sizingOptions = []
+        workspace.safeAreaRegions = []
         // Herm lays out its own 52pt title row. A titlebar safe area would let
         // split and scroll views stretch up behind it and cover page headers.
-        host.safeAreaRegions = []
-        window.contentView = host
+        window.contentView = workspace
         if !window.setFrameUsingName("HermDockWindow") {
             // First launch: prefer a secondary display, since that is the point.
             let screen = NSScreen.screens.first { $0 != NSScreen.main } ?? NSScreen.main

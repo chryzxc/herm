@@ -61,7 +61,7 @@ enum OfficeAgentStatus: Int, CaseIterable, Identifiable {
     /// signage hues.
     var nsColor: NSColor { tone.signageColor }
 
-    var color: Color { Color(nsColor: nsColor) }
+    var color: Color { tone.color }
 }
 
 /// Scene materials are deliberately lighter than the app chrome. Identity and

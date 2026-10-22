@@ -112,15 +112,15 @@ struct OfficeMusicControl: View {
     var body: some View {
         HStack(spacing: 10) {
             DockIcon(music.state.isPlaying ? .waveform : .musicNote)
-                .font(.system(size: 15, weight: .semibold))
+                .dockFont(size: 15, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
                 .frame(width: 30, height: 30)
                 .background(Circle().fill(Color.dockAccent.opacity(0.15)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(music.state.track ?? "Spotify")
-                    .font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                    .dockFont(size: 12, weight: .semibold).lineLimit(1)
                 Text(music.state.track == nil ? (music.state.message ?? "Loading…") : (music.state.artist ?? ""))
-                    .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
+                    .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(width: 200, alignment: .leading)

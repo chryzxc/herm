@@ -190,11 +190,14 @@ extension BotFaceMark {
     /// hints reach 20% past the square, so give the canvas that margin.
     /// `theme` nil is the neutral face saved to Hermes as a PNG.
     static func draw(in ctx: inout GraphicsContext, id: String, size: CGFloat, mood: BotMood,
-                     pose: BotFacePose, theme: DockThemeID?) {
+                     pose: BotFacePose, theme: DockThemeID?, originalColors: Bool = false) {
         let genes = HermFaceGenes(id: id)
         let colors = DockThemePalette(theme: theme ?? .glass)
         let tone = HermFaceTone(theme: theme)
-        let (lite, deep) = bodyColors(genes, tone: tone, colors: colors)
+        // Unskinned exports retain their original colors so previously saved faces remain recognizable.
+        let (lite, deep) = theme != nil && tone == .hue && !originalColors
+            ? (colors.fill(DockAccentColor.identity(for: id)), colors.fill(DockAccentColor.identity(for: id)).opacity(0.78))
+            : bodyColors(genes, tone: tone, colors: colors)
         let t = pose.t, moves = pose.t != 0
         ctx.scaleBy(x: size / 100, y: size / 100)
         if mood == .offline { ctx.addFilter(.grayscale(1)); ctx.opacity = 0.5 }

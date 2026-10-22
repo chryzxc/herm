@@ -66,6 +66,35 @@ struct SkinRenderSnapshotTests {
         }
     }
 
+    @Test func renderResponsiveGallery() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["SKIN_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        for width: CGFloat in [320, 680, 1100] {
+            for dark in [false, true] {
+                let gallery = LazyVGrid(columns: [GridItem(.adaptive(minimum: 224), spacing: 8)], spacing: 8) {
+                    ForEach(DockThemeID.allCases) { theme in
+                        VStack(alignment: .leading, spacing: 8) {
+                            DockSkinSpecimen(theme: theme)
+                            Text(theme.title).dockFont(size: 12, weight: .semibold)
+                            Text(theme.signature).dockFont(size: 12)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay(Rectangle().stroke(.gray, lineWidth: 1))
+                    }
+                }
+                .padding(14)
+                .frame(width: width)
+                .foregroundStyle(dark ? Color.white : Color.black)
+                .background(dark ? Color.black : Color.white)
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .environment(\.dockWorkspaceScale, DockWorkspaceScale.window)
+                try await render(gallery, dark: dark, to: URL(fileURLWithPath: dir)
+                    .appendingPathComponent("responsive-\(Int(width))-\(dark ? "dark" : "light").png"))
+            }
+        }
+    }
+
     private func render<V: View>(_ view: V, dark: Bool, to url: URL) async throws {
         let host = NSHostingView(rootView: view)
         host.frame = CGRect(origin: .zero, size: host.fittingSize)

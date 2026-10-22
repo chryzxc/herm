@@ -584,11 +584,7 @@ final class OfficeDesignSceneBuilder {
     /// camera. Unlit so it stays legible from the whole-office view.
     /// A hanging sign: a numbered badge, the room name, and what bots do there.
     private func roomLabel(_ root: Entity, number: Int, title: String, subtitle: String, at p: SIMD2<Float>) {
-        let accents: [NSColor] = [
-            NSColor(srgbRed: 0.62, green: 0.76, blue: 0.95, alpha: 1), NSColor(srgbRed: 0.80, green: 0.72, blue: 0.96, alpha: 1),
-            NSColor(srgbRed: 0.62, green: 0.88, blue: 0.78, alpha: 1), NSColor(srgbRed: 0.97, green: 0.83, blue: 0.49, alpha: 1),
-            NSColor(srgbRed: 0.96, green: 0.67, blue: 0.77, alpha: 1)
-        ]
+        let accents = DockAccentColor.allCases.map(\.signageColor)
         func font(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
             let rounded = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(.rounded)
             return rounded.flatMap { NSFont(descriptor: $0, size: size) } ?? .systemFont(ofSize: size, weight: weight)

@@ -79,10 +79,17 @@ final class ConversationPerformanceMonitor {
     private var scrollBoundsUpdates = 0
     private var streamingUpdates = 0
     private var scrollSettledEvents = 0
+    private(set) var transcriptEvaluations = 0
+    private(set) var pageTransactions = 0
+    private(set) var anchorCorrections = 0
 
     init(instanceID: String = UUID().uuidString.prefix(8).description) {
         self.instanceID = instanceID
     }
+
+    func recordTranscriptEvaluation() { transcriptEvaluations += 1 }
+    func recordPageTransaction() { pageTransactions += 1 }
+    func recordAnchorCorrection() { anchorCorrections += 1 }
 
     func recordModelPublication() { modelPublications += 1; flushIfNeeded() }
     func recordScrollBoundsUpdate() { scrollBoundsUpdates += 1; flushIfNeeded() }
@@ -92,7 +99,7 @@ final class ConversationPerformanceMonitor {
     private func flushIfNeeded() {
         guard Date().timeIntervalSince(startedAt) >= 1 else { return }
         DebugLog.writePerformance(
-            "conversation instance=\(instanceID) model_publications=\(modelPublications) scroll_bounds=\(scrollBoundsUpdates) scroll_settled=\(scrollSettledEvents) streaming=\(streamingUpdates)"
+            "conversation instance=\(instanceID) model_publications=\(modelPublications) scroll_bounds=\(scrollBoundsUpdates) scroll_settled=\(scrollSettledEvents) streaming=\(streamingUpdates) transcript_evaluations=\(transcriptEvaluations) pages=\(pageTransactions) anchor_corrections=\(anchorCorrections) markdown_sync_parses=\(MarkdownRenderDocumentCache.parseCount) markdown_prefetched=\(MarkdownRenderDocumentCache.prefetchedDocuments) measurement_hits=\(NativeMarkdownCompletedHeightCache.hits) measurement_misses=\(NativeMarkdownCompletedHeightCache.misses)"
         )
         startedAt = Date()
         modelPublications = 0

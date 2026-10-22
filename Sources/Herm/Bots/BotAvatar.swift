@@ -48,11 +48,8 @@ enum BotAvatarPresentation {
     }
 
     static func palette(for profileID: String) -> [Color] {
-        let hue = hue(for: profileID)
-        return [
-            Color(hue: hue, saturation: 0.58, brightness: 0.82),
-            Color(hue: hue, saturation: 0.72, brightness: 0.42)
-        ]
+        let color = DockAccentColor.identity(for: profileID).fill
+        return [color, color.opacity(0.75)]
     }
 }
 
@@ -135,12 +132,15 @@ struct BotAvatarView: View {
         return match
     }
 
-    /// Matches the current face or the pre-Herm Faces blob saved by older builds.
+    /// Recognize matte and older glossy saves before falling back to the legacy blob.
     @MainActor static func matchesHermFace(_ data: Data, id: String) -> Bool {
         guard let stored = NSBitmapImageRep(data: data), stored.pixelsWide == 160, stored.pixelsHigh == 160 else { return false }
-        return [false, true].contains { legacy in
-            BotFaceMark.still(id: id, legacy: legacy).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) } ?? false
-        }
+        if [DockThemeID?.none, .glass].contains(where: { theme in
+            BotFaceMark.still(id: id, theme: theme).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) } ?? false
+        }) { return true }
+        if let previous = BotFaceMark.still(id: id, theme: .glass, originalColors: true).cgImage,
+           matches(stored, NSBitmapImageRep(cgImage: previous)) { return true }
+        return BotFaceMark.still(id: id, legacy: true).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) } ?? false
     }
 
     private static func matches(_ stored: NSBitmapImageRep, _ fresh: NSBitmapImageRep) -> Bool {
@@ -427,7 +427,7 @@ struct BotHuddle: View {
     private func sparks(_ ctx: GraphicsContext, active: Int, next: Int, phase: Double, centers xs: [CGFloat]) {
         guard active >= 0, active != next, phase > ThoughtBubbleTiming.burst else { return }
         let t = (phase - ThoughtBubbleTiming.burst) / (1 - ThoughtBubbleTiming.burst)
-        let hue = BotAvatarPresentation.hue(for: (next == 0 ? lead : partners[next - 1]).id)
+        let accent = DockAccentColor.identity(for: (next == 0 ? lead : partners[next - 1]).id).fill
         for k in 0..<3 {
             let e = 1 - pow(1 - max(0, min(1, t * 1.25 - Double(k) * 0.12)), 2)
             let flight = arc(from: CGPoint(x: xs[active], y: top(active)), to: CGPoint(x: xs[next], y: top(next)), lift: 6 + CGFloat(k) * 5)
@@ -436,7 +436,7 @@ struct BotHuddle: View {
             var dot = ctx
             dot.opacity = e < 1 ? 1 - e * 0.4 : 0
             dot.fill(Path(ellipseIn: CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)),
-                     with: .color(Color(hue: hue, saturation: 0.7, brightness: 0.97)))
+                     with: .color(accent))
         }
     }
 
@@ -496,7 +496,7 @@ private struct ThoughtBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(text)
-                .font(.system(size: 10, weight: .medium))
+                .dockFont(size: 10, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .padding(.horizontal, 7).padding(.vertical, 3)
@@ -556,9 +556,11 @@ struct BotFaceMark: View {
     /// Overrides the busy/idle state.
     var mood: BotMood?
     /// Live faces follow the app skin; previews pass the skin they show.
-    var theme: DockThemeID? = DockThemeRuntime.current
+    var theme: DockThemeID?
+    @ObservedObject private var themeStore = DockThemeStore.shared
 
     var body: some View {
+        let theme = theme ?? themeStore.selectedThemeID
         let mood = self.mood ?? (busy ? .tool : .idle)
         BotMotion(id: id, animated: animated, busy: mood.moves) { pose in
             Canvas { ctx, _ in
@@ -576,10 +578,10 @@ struct BotFaceMark: View {
         return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
     }
 
-    @MainActor static func still(id: String, legacy: Bool = false) -> ImageRenderer<some View> {
+    @MainActor static func still(id: String, legacy: Bool = false, theme: DockThemeID? = nil, originalColors: Bool = false) -> ImageRenderer<some View> {
         let renderer = ImageRenderer(content: Canvas { ctx, _ in
             if legacy { drawLegacyBlob(in: &ctx, id: id, size: 160) }
-            else { draw(in: &ctx, id: id, size: 160, mood: .idle, pose: .rest, theme: nil) }
+            else { draw(in: &ctx, id: id, size: 160, mood: .idle, pose: .rest, theme: theme, originalColors: originalColors) }
         }.frame(width: 160, height: 160))
         renderer.scale = 1
         return renderer

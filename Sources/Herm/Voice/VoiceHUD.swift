@@ -345,12 +345,12 @@ private struct HUDHeader: View {
                 .background(Circle().fill(tint.opacity(0.14)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if let detail {
                     Text(detail)
-                        .font(.system(size: 10.5))
+                        .dockFont(size: 10.5)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }
@@ -413,7 +413,7 @@ private struct BrowserCard: View {
                     ForEach(Array(browser.hosts.enumerated()), id: \.offset) { index, host in
                         let isCurrent = index == browser.hosts.count - 1
                         Text(host)
-                            .font(.system(size: 10, weight: isCurrent ? .semibold : .regular))
+                            .dockFont(size: 10, weight: isCurrent ? .semibold : .regular)
                             .lineLimit(1)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
@@ -430,7 +430,7 @@ private struct BrowserCard: View {
                             .fill(isLast ? Color.dockAccent : Color.dockMetadataText.opacity(0.5))
                             .frame(width: 5, height: 5)
                         Text(step)
-                            .font(.system(size: 11, weight: isLast ? .medium : .regular))
+                            .dockFont(size: 11, weight: isLast ? .medium : .regular)
                             .foregroundStyle(isLast ? Color.dockPrimaryText : Color.dockSecondaryText)
                             .lineLimit(1)
                     }
@@ -459,11 +459,11 @@ private struct SearchCard: View {
                 Button { ArtifactOpener.open(hit.url) } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(hit.title)
-                            .font(.system(size: 11.5, weight: .medium))
+                            .dockFont(size: 11.5, weight: .medium)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
                         Text(ToolStep.host(hit.url) ?? hit.url)
-                            .font(.system(size: 10))
+                            .dockFont(size: 10)
                             .foregroundStyle(Color.dockAccent)
                             .lineLimit(1)
                     }
@@ -506,12 +506,12 @@ private struct TerminalCard: View {
             HUDHeader(icon: .terminalWindow, title: terminal.isBusy ? "Running" : "Command finished",
                       detail: status, isBusy: terminal.isBusy, tint: tint)
             Text("$ " + terminal.command)
-                .font(.system(size: 11, design: .monospaced))
+                .dockFont(size: 11, design: .monospaced)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(2)
             if let line = terminal.lastLine {
                 Text(line)
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .dockFont(size: 10.5, design: .monospaced)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
@@ -524,7 +524,7 @@ private struct TerminalCard: View {
                             .foregroundStyle(Color.dockDestructive)
                     }
                 }
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
             }
         }
         .hudCard(tint: tint)
@@ -623,7 +623,7 @@ private struct ChipStyle: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 11, weight: .medium))
+            .dockFont(size: 11, weight: .medium)
             .foregroundStyle(tint)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
@@ -648,7 +648,7 @@ struct VoiceSubagentOrbs: View {
                         .shadow(color: tint.opacity(0.6), radius: running ? 8 : 3)
                         .phaseAnimator(running ? [false, true] : [false]) { orb, pulse in orb.scaleEffect(pulse ? 1.15 : 0.9) }
                     Text(agent.name ?? "Agent")
-                        .font(.system(size: 9.5, weight: .medium))
+                        .dockFont(size: 9.5, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                         .frame(maxWidth: 70)

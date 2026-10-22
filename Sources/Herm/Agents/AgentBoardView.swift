@@ -143,11 +143,11 @@ struct AgentBoardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Active Agents")
-                    .font(.system(size: 13, weight: .medium))
+                    .dockFont(size: 13, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                 Spacer(minLength: 0)
                 Text(agentSummary)
-                    .font(.system(size: 10, weight: .medium))
+                    .dockFont(size: 10, weight: .medium)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
             }
@@ -159,7 +159,7 @@ struct AgentBoardView: View {
                         }
                     } label: {
                         Text(scope.rawValue.uppercased())
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(agentScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
                             .frame(width: 50, height: 30)
                             .background(agentScope == scope ? Color.dockAccentMuted : Color.clear)
@@ -223,18 +223,18 @@ struct AgentBoardView: View {
                 .overlay {
                     Circle().stroke(agent?.agentColor ?? agentColor(for: subagent.id), lineWidth: 1.2)
                     Text(String(name.prefix(1)).uppercased())
-                        .font(.system(size: 12, weight: .bold))
+                        .dockFont(size: 12, weight: .bold)
                         .foregroundStyle(Color.dockPrimaryText)
                 }
                 .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(name)
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Text(detail)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
@@ -242,14 +242,14 @@ struct AgentBoardView: View {
             Spacer(minLength: 8)
 
             Text("\(eventCount) \(eventCount == 1 ? "EVENT" : "EVENTS")")
-                .font(.system(size: 10, weight: .medium))
+                .dockFont(size: 10, weight: .medium)
                 .foregroundStyle(color(for: subagent.status))
             Text(subagent.status.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .dockFont(size: 10, weight: .semibold)
                 .foregroundStyle(color(for: subagent.status))
                 .frame(minWidth: 62, alignment: .trailing)
             DockIcon(isSelected ? .caretUp : .caretDown)
-                .font(.system(size: 10, weight: .semibold))
+                .dockFont(size: 10, weight: .semibold)
                 .foregroundStyle(Color.dockMetadataText)
         }
         .padding(.horizontal, 12)
@@ -278,14 +278,14 @@ struct AgentBoardView: View {
 
             Spacer()
             Text("HERMES AGENT BOARD")
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .tracking(1.15)
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer()
 
             Button(action: onClose) {
                 DockIcon(.caretLeft)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 36, height: 36)
                     .background(Color.dockSurface4)
@@ -313,11 +313,11 @@ struct AgentBoardView: View {
     private func sectionHeading(_ title: String, detail: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title.lowercased().capitalized)
-                .font(.system(size: 13, weight: .medium))
+                .dockFont(size: 13, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer()
             Text(detail)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
         }
     }
@@ -325,13 +325,13 @@ struct AgentBoardView: View {
     private func emptyState(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             DockIcon(.users)
-                .font(.system(size: 13))
+                .dockFont(size: 13)
                 .foregroundStyle(Color.dockMetadataText)
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -352,16 +352,16 @@ struct AgentBoardView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Activity History")
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(agent.agentColor)
                 Spacer()
                 Text("\(activities.count) EVENTS")
-                    .font(.system(size: 10))
+                    .dockFont(size: 10)
                     .foregroundStyle(Color.dockMetadataText)
             }
             if activities.isEmpty {
                 Text("No Hermes activity has been received for this agent yet.")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 activityGroup("PENDING", items: pending, color: Color.dockSecondaryText, agentColor: agent.agentColor)
@@ -377,7 +377,7 @@ struct AgentBoardView: View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(title)  ·  \(items.count)")
-                    .font(.system(size: 10, weight: .semibold))
+                    .dockFont(size: 10, weight: .semibold)
                     .foregroundStyle(color)
                 ForEach(items) { activity in
                     Button {
@@ -391,29 +391,29 @@ struct AgentBoardView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
                                         Text(activity.status.uppercased())
-                                            .font(.system(size: 10, weight: .semibold))
+                                            .dockFont(size: 10, weight: .semibold)
                                             .foregroundStyle(agentColor)
                                         if !activity.agent.isEmpty {
                                             Text("·")
                                                 .foregroundStyle(Color.dockMetadataText)
                                             Text(activity.agent)
-                                                .font(.system(size: 10, weight: .semibold))
+                                                .dockFont(size: 10, weight: .semibold)
                                                 .foregroundStyle(agentColor)
                                                 .lineLimit(1)
                                         }
                                         Text(HumanDateFormatting.timeOnly(activity.timestamp))
-                                            .font(.system(size: 10))
+                                            .dockFont(size: 10)
                                             .foregroundStyle(Color.dockMetadataText)
                                     }
                                     Text(activity.task)
-                                        .font(.system(size: 11))
+                                        .dockFont(size: 11)
                                         .foregroundStyle(Color.dockSecondaryText)
                                         .lineLimit(2)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
                                 DockIcon(expandedActivityID == activity.id ? .caretUp : .caretDown)
-                                    .font(.system(size: 9, weight: .semibold))
+                                    .dockFont(size: 9, weight: .semibold)
                                     .foregroundStyle(Color.dockMetadataText)
                             }
                             if expandedActivityID == activity.id {
@@ -461,7 +461,7 @@ struct AgentBoardView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading).lineLimit(1)
                             DockIcon(expandedPipelineItemID == item.id ? .caretUp : .caretDown)
-                                .font(.system(size: 9, weight: .semibold))
+                                .dockFont(size: 9, weight: .semibold)
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                     }
@@ -471,7 +471,7 @@ struct AgentBoardView: View {
                         pipelineContent(item)
                     }
                 }
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 10)
@@ -486,7 +486,7 @@ struct AgentBoardView: View {
             Text("·")
             pipelineDuration(item)
         }
-        .font(.system(size: 11))
+        .dockFont(size: 11)
         .foregroundStyle(Color.dockMetadataText)
         .monospacedDigit()
         .lineLimit(1)
@@ -569,11 +569,11 @@ struct AgentBoardView: View {
     private func contentField(_ label: String, _ value: String, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 9, weight: .semibold))
+                .dockFont(size: 9, weight: .semibold)
                 .tracking(0.7)
                 .foregroundStyle(accent)
             Text(value)
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockSecondaryText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -586,12 +586,12 @@ struct AgentBoardView: View {
 
         return VStack(alignment: .leading, spacing: 2) {
             Text(allLines.count > lines.count ? "DIFF PREVIEW · \(lines.count)/\(allLines.count) LINES" : "DIFF PREVIEW")
-                .font(.system(size: 10, weight: .semibold))
+                .dockFont(size: 10, weight: .semibold)
                 .tracking(0.7)
                 .foregroundStyle(Color.dockMetadataText)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line.isEmpty ? " " : line)
-                    .font(.system(size: 10))
+                    .dockFont(size: 10)
                     .foregroundStyle(diffLineColor(line))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -621,7 +621,7 @@ struct AgentBoardView: View {
         alignment: Alignment = .leading
     ) -> some View {
         let label = Text(title)
-            .font(.system(size: 12, weight: .semibold))
+            .dockFont(size: 12, weight: .semibold)
             .tracking(1.1)
             .foregroundStyle(Color.dockSecondaryText)
 
@@ -775,19 +775,8 @@ struct AgentBoardView: View {
     }
 
     private func agentColor(for id: String) -> Color {
-        let palette: [Color] = [
-            .dockAccent,
-            Color(red: 0.78, green: 0.38, blue: 1.0),
-            Color(red: 1.0, green: 0.48, blue: 0.36),
-            Color(red: 0.25, green: 0.86, blue: 0.72),
-            Color(red: 1.0, green: 0.72, blue: 0.28),
-            Color(red: 0.42, green: 0.62, blue: 1.0)
-        ]
-        return palette[stableHash(for: id) % palette.count]
+        DockAccentColor.identity(for: id).fill
     }
 
-    private func stableHash(for id: String) -> Int {
-        let hash = id.utf8.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1) }
-        return Int(hash % UInt64(Int.max))
-    }
+
 }
