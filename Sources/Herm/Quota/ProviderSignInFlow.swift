@@ -100,9 +100,10 @@ struct ProviderSignInFlow: View {
                 if !login.outputLines.isEmpty || !login.partialLine.isEmpty {
                     DisclosureGroup(isExpanded: $showsDetails) { details } label: {
                         Text("Sign-in details")
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
+                    .disclosureGroupStyle(DockDisclosureGroupStyle())
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,11 +116,11 @@ struct ProviderSignInFlow: View {
             ProviderMarkBadge(mark: mark, size: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(providerName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 if !accountLabel.isEmpty {
                     Text(accountLabel)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }
@@ -143,7 +144,7 @@ struct ProviderSignInFlow: View {
                         .help(url.absoluteString)
                     } else {
                         Text("Waiting for Hermes to create the sign-in link…")
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                 }
@@ -151,7 +152,7 @@ struct ProviderSignInFlow: View {
                     step(2, "Enter this code when asked", done: false) {
                         HStack(spacing: 10) {
                             Text(code)
-                                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                                .dockFont(size: 20, weight: .semibold, design: .monospaced)
                                 .tracking(2)
                                 .foregroundStyle(Color.dockPrimaryText)
                                 .textSelection(.enabled)
@@ -170,7 +171,7 @@ struct ProviderSignInFlow: View {
             if prompt.needsInput || showsReply {
                 step(usesBrowser ? (prompt.code == nil ? 2 : 3) : 1, prompt.asksForCode || !prompt.needsInput ? "Paste the authorization code" : "Hermes is asking a question", done: false) {
                     if prompt.needsInput, !prompt.asksForCode {
-                        Text(login.partialLine).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockSecondaryText)
+                        Text(login.partialLine).dockFont(size: 11, design: .monospaced).foregroundStyle(Color.dockSecondaryText)
                     }
                     HStack(spacing: 8) {
                         DockTextField(prompt.asksForCode ? "Paste the code from the browser" : "Type a reply", text: $reply)
@@ -185,13 +186,13 @@ struct ProviderSignInFlow: View {
             HStack(spacing: 7) {
                 ProgressView().controlSize(.small)
                 Text(usesBrowser ? "Waiting for you to finish signing in…" : "Adding the account…")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
                 Spacer()
                 if usesBrowser && !prompt.needsInput && !showsReply {
                     Button("Have a code to paste?") { showsReply = true }
                         .buttonStyle(.dockLink)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockAccent)
                 }
             }
@@ -201,13 +202,13 @@ struct ProviderSignInFlow: View {
     private func step<Content: View>(_ number: Int, _ title: String, done: Bool, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Text("\(number)")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .dockFont(size: 11, weight: .bold, design: .rounded)
                 .foregroundStyle(Color.dockOnAccentText)
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(Color.dockAccent))
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 content()
             }
@@ -224,15 +225,15 @@ struct ProviderSignInFlow: View {
             }
             .padding(.top, 12)
             Text("\(providerName) account added")
-                .font(.system(size: 15, weight: .semibold))
+                .dockFont(size: 15, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if let label = prompt.accountLabel ?? (accountLabel.isEmpty ? nil : accountLabel) {
                 Text("“\(label)”")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             Text(successDetail)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockMetadataText)
                 .multilineTextAlignment(.center)
         }
@@ -256,7 +257,7 @@ struct ProviderSignInFlow: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array((login.outputLines + (login.partialLine.isEmpty ? [] : [login.partialLine])).enumerated()), id: \.offset) { _, line in
                     Text(ProviderSignInPrompt.linked(line))
-                        .font(.system(size: 11, design: .monospaced))
+                        .dockFont(size: 11, design: .monospaced)
                         .foregroundStyle(Color.dockSecondaryText)
                         .tint(Color.dockAccent)
                         .frame(maxWidth: .infinity, alignment: .leading)

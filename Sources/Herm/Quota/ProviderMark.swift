@@ -157,7 +157,7 @@ struct ProviderMarkBadge: View {
 
     private func monogram(_ letter: String) -> some View {
         Text(letter)
-            .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
+            .dockFont(size: size * 0.5, weight: .bold, design: .rounded)
             .foregroundStyle(Color.dockSecondaryText)
     }
 }

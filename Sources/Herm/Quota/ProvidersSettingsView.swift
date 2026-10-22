@@ -111,7 +111,7 @@ struct ProvidersSettingsView: View {
             }
             if visible.isEmpty && !isLoading && loadError == nil {
                 Text(rows.isEmpty ? "Hermes hasn't reported any providers yet." : "No providers match.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -168,12 +168,12 @@ struct ProvidersSettingsView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
                             Text(row.name)
-                                .font(.system(size: 12.5, weight: .semibold))
+                                .dockFont(size: 12.5, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
                             if row.isCurrent { tag("Current", color: .dockAccent) }
                         }
                         Text(subtitle(row))
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockMetadataText)
                             .lineLimit(1)
                     }
@@ -217,7 +217,7 @@ struct ProvidersSettingsView: View {
 
     private func tag(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold))
+            .dockFont(size: 10, weight: .semibold)
             .foregroundStyle(color)
             .padding(.horizontal, 6)
             .frame(height: 18)
@@ -248,7 +248,7 @@ struct ProvidersSettingsView: View {
                 ModalNote(text: row.warning ?? "Configure this provider with Hermes' setup wizard.", icon: .info)
                 HStack(spacing: 6) {
                     Text("hermes model")
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .dockFont(size: 11.5, design: .monospaced)
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
                     DockCopyButton("hermes model", accessibilityLabel: "Copy command", presentation: .icon)

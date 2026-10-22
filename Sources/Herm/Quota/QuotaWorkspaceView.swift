@@ -71,7 +71,7 @@ struct QuotaWorkspaceView: View {
 
             if let state = refreshState, let error = state.error {
                 Text(state.isStale ? "Showing last successful data. \(error)" : error)
-                    .font(DockTypography.metadata)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -147,7 +147,7 @@ struct QuotaWorkspaceView: View {
                     connectedCount: control.providerQuotas.count,
                     attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
                 ))
-                .font(DockTypography.control)
+                .dockFont(.control)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -157,7 +157,7 @@ struct QuotaWorkspaceView: View {
                 Text(refreshState?.lastSuccess.map {
                     "Updated \($0.formatted(.dateTime.hour().minute()))"
                 } ?? "Not updated yet")
-                .font(DockTypography.machineMetadata)
+                .dockFont(.machineMetadata)
                 .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
                 .fixedSize()
                 .help(refreshState?.isStale == true ? "The last refresh failed; figures are from this time." : "Last successful provider read")
@@ -217,7 +217,7 @@ struct QuotaWorkspaceView: View {
                             DockIconLabel("Sync peak hours", icon: .arrowsClockwise)
                         }
                     }
-                    .font(DockTypography.control)
+                    .dockFont(.control)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             .buttonStyle(.dockPress)
@@ -249,7 +249,7 @@ struct QuotaWorkspaceView: View {
             HStack(spacing: DockSpacing.tight) {
                 DockIcon(.clock, size: 13, color: Color.dockMetadataText)
                 Text(autoRefreshMinutes == 0 ? "Auto-refresh off" : "Every \(autoRefreshMinutes)m")
-                    .font(DockTypography.control)
+                    .dockFont(.control)
                     .foregroundStyle(Color.dockSecondaryText)
                 DockIcon(.caretDown, size: 12, color: Color.dockMetadataText)
             }
@@ -351,11 +351,11 @@ struct QuotaWorkspaceView: View {
         VStack(alignment: .leading, spacing: 6) {
             DockSectionLabel(title: title)
             Text(value)
-                .font(DockTypography.metric)
+                .dockFont(.metric)
                 .foregroundStyle(valueColor)
                 .lineLimit(1)
             Text(detail)
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -400,7 +400,7 @@ struct QuotaWorkspaceView: View {
                 Text(snapshot.hermesCredential != nil && snapshot.provider.hasPrefix("hermes-pool-")
                      ? "Hermes rotates through this account. Its provider reports no usage windows."
                      : "No quota windows were reported.")
-                    .font(DockTypography.body)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
             } else {
                 LazyVGrid(
@@ -439,7 +439,7 @@ struct QuotaWorkspaceView: View {
                     renameField(snapshot)
                 } else {
                     Text(snapshot.displayName)
-                        .font(.system(size: 13, weight: .semibold))
+                        .dockFont(size: 13, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .onTapGesture(count: 2) { beginRename(snapshot) }
@@ -447,14 +447,14 @@ struct QuotaWorkspaceView: View {
                 }
                 if let error = control.providerQuotaActionErrors[snapshot.provider] {
                     Text(error)
-                        .font(DockTypography.metadata)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockWarning)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .help(error)
                 } else if let metadata = metadataLine(snapshot) {
                     Text(metadata)
-                        .font(DockTypography.metadata)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -519,7 +519,7 @@ struct QuotaWorkspaceView: View {
 
     private func dragHandle(_ snapshot: ProviderQuotaSnapshot) -> some View {
         DockIcon(.list)
-            .font(.system(size: 11, weight: .semibold))
+            .dockFont(size: 11, weight: .semibold)
             .foregroundStyle(Color.dockMetadataText)
             .frame(width: 16, height: DockControlMetrics.compactHeight)
             .contentShape(Rectangle())
@@ -533,7 +533,7 @@ struct QuotaWorkspaceView: View {
                 HStack(spacing: 8) {
                     ProviderMarkBadge(mark: Self.mark(for: snapshot), size: 20)
                     Text(snapshot.displayName)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                 }
                 .padding(.horizontal, 12)
@@ -601,7 +601,7 @@ struct QuotaWorkspaceView: View {
     private func renameField(_ snapshot: ProviderQuotaSnapshot) -> some View {
         TextField(control.reportedProviderName(for: snapshot.provider) ?? snapshot.displayName, text: $renameDraft)
             .textFieldStyle(.plain)
-            .font(.system(size: 12, weight: .semibold))
+            .dockFont(size: 12, weight: .semibold)
             .foregroundStyle(Color.dockPrimaryText)
             .focused($renameFieldFocused)
             .onSubmit { commitRename(snapshot.provider) }
@@ -649,19 +649,19 @@ struct QuotaWorkspaceView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(window.label)
-                    .font(DockTypography.control)
+                    .dockFont(.control)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if let reset = window.resetsAt, reset > now {
                     Text("Resets in \(QuotaWorkspacePresentation.compactDuration(from: now, to: reset))")
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .help(reset.formatted(date: .complete, time: .shortened))
                 } else if let reset = window.resetsDisplay {
                     Text(reset)
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
@@ -670,15 +670,15 @@ struct QuotaWorkspaceView: View {
             if let remaining = window.remainingPercent {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(Int(remaining.rounded()))%")
-                        .font(DockTypography.metric)
+                        .dockFont(.metric)
                         .foregroundStyle(Self.figureColor(for: window.threshold))
                     Text("left")
-                        .font(DockTypography.metadata)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                     Spacer(minLength: 8)
                     if let limit = window.limitDisplay {
                         Text(limit)
-                            .font(DockTypography.machineMetadata)
+                            .dockFont(.machineMetadata)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                     }
@@ -691,11 +691,11 @@ struct QuotaWorkspaceView: View {
                 .accessibilityLabel("\(window.label), \(Int(remaining.rounded())) percent remaining")
             } else {
                 Text(window.remainingDisplay ?? "No percentage reported")
-                    .font(DockTypography.body)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                 if let limit = window.limitDisplay {
                     Text(limit)
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             }
@@ -744,7 +744,7 @@ struct QuotaWorkspaceView: View {
         HStack(spacing: 4) {
             if let icon { DockIcon(icon, size: 11, color: color == .dockSecondaryText ? .dockMetadataText : color) }
             Text(text)
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(color)
                 .lineLimit(1)
         }
@@ -784,18 +784,18 @@ struct QuotaWorkspaceView: View {
                 .opacity(0.7)
             VStack(alignment: .leading, spacing: 3) {
                 Text(descriptor.displayName)
-                    .font(DockTypography.rowTitle)
+                    .dockFont(.rowTitle)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                 Text(diagnostic ?? descriptor.summary)
-                    .font(DockTypography.metadata)
+                    .dockFont(.metadata)
                     .foregroundStyle(diagnostic == nil ? Color.dockMetadataText : Color.dockWarning)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
             Button { connect(descriptor) } label: {
                 Text(signedIn ? "Update…" : "Connect…")
-                    .font(DockTypography.control)
+                    .dockFont(.control)
                     .frame(minWidth: 76, minHeight: DockControlMetrics.compactHeight)
             }
             .buttonStyle(.dockSecondary)
@@ -819,10 +819,10 @@ struct QuotaWorkspaceView: View {
     private func compactMessage(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
         }
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
@@ -888,7 +888,7 @@ private struct QuotaHealthPill: View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(text)
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
         }

@@ -42,9 +42,11 @@ extension KanbanLane {
 
     var color: Color {
         switch self {
-        case .triage: Color.dockWarning
-        case .todo, .review: Color.dockSecondaryText
-        case .ready, .running, .scheduled: Color.dockAccent
+        case .triage: Color.dockSecondaryText
+        case .todo: Color.dockSecondaryText
+        case .review: DockStatusTone.review.color
+        case .ready, .scheduled: DockStatusTone.queued.color
+        case .running: DockStatusTone.working.color
         case .blocked: Color.dockWarning
         case .done: Color.dockSuccess
         }

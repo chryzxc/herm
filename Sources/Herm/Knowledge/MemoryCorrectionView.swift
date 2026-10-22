@@ -18,8 +18,8 @@ struct MemoryCorrectionView: View {
             pending)
         }
         if let selected {
-          Text(selected.label).font(.system(size: 12, weight: .semibold))
-          TextEditor(text: $content).font(.system(size: 12)).frame(height: 120).disabled(pending)
+          Text(selected.label).dockFont(size: 12, weight: .semibold)
+          TextEditor(text: $content).dockFont(size: 12).frame(height: 120).disabled(pending)
           HStack {
             Button("Save correction…") { confirmation = "Save" }.buttonStyle(.dockCompact)
             Button("Delete entry…", role: .destructive) { confirmation = "Delete" }.buttonStyle(
@@ -28,7 +28,8 @@ struct MemoryCorrectionView: View {
         }
         if let status { Text(status).foregroundStyle(Color.dockSecondaryText) }
       }.padding(.top, 8)
-    }.font(.system(size: 12))
+    }.dockFont(size: 12)
+      .disclosureGroupStyle(DockDisclosureGroupStyle())
       .onDisappear {
         content = ""
         selected = nil

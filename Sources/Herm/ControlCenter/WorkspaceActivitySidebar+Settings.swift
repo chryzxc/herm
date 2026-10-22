@@ -129,7 +129,7 @@ extension WorkspaceActivitySidebar {
                     diagnosticRow(label: "Context pressure", value: pressure.rawValue.uppercased(), color: color)
                     if pressure == .warning || pressure == .critical {
                         Text("Create a handoff or branch before context pressure grows. Compression remains an explicit confirmed action.")
-                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                            .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 8) {
                             DockTextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.dockGlass)
                             Button("Handoff") { isShowingHandoffConfirmation = true }
@@ -140,36 +140,36 @@ extension WorkspaceActivitySidebar {
                 }
                     if control.isLoadingCheckpoints {
                         Text("Loading session checkpoints…")
-                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                            .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                     } else if !control.restoreCheckpoints.isEmpty {
                         Text("CHECKPOINTS")
-                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+                            .dockFont(size: 10, weight: .semibold).foregroundStyle(Color.dockSecondaryText)
                         ForEach(control.restoreCheckpoints) { checkpoint in
                             HStack(spacing: 8) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(checkpoint.message.isEmpty ? checkpoint.hash : checkpoint.message)
-                                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                                        .dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                                     Text(checkpoint.timestamp.isEmpty ? checkpoint.hash : checkpoint.timestamp)
-                                        .font(.system(size: 10)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                                        .dockFont(size: 10).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                                 }
                                 Spacer()
                                 Button("Diff") { control.loadCheckpointDiff(checkpoint) }
-                                    .buttonStyle(.dockCompact).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                                    .buttonStyle(.dockCompact).dockFont(size: 10, weight: .semibold).foregroundStyle(Color.dockAccent)
                                 Button("Restore", role: .destructive) { checkpointForRestore = checkpoint }
-                                    .buttonStyle(.dockCompact).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
+                                    .buttonStyle(.dockCompact).dockFont(size: 10, weight: .semibold).foregroundStyle(Color.dockDestructive)
                                     .disabled(model.status == .working || control.restoreCheckpointState.isPending)
                             }
                         }
                         if let checkpointDiff = control.checkpointDiff, !checkpointDiff.isEmpty {
                             Text(checkpointDiff)
-                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                .dockFont(size: 10, design: .monospaced).foregroundStyle(Color.dockMetadataText)
                                 .lineLimit(12)
                                 .textSelection(.enabled)
                         }
                     }
                     if canSteerSession, let sessionID = model.sessionID {
                     Text("Hermes will apply this guidance after the next tool-result boundary without restarting the turn.")
-                        .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                        .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                     HStack(spacing: 8) {
                     DockTextField("Steer the active turn…", text: $sessionSteerText)
                         .textFieldStyle(.dockGlass)
@@ -192,7 +192,7 @@ extension WorkspaceActivitySidebar {
                     }
                     if let sessionSteerFeedback {
                         Text(sessionSteerFeedback)
-                            .font(.system(size: 10, weight: .semibold))
+                            .dockFont(size: 10, weight: .semibold)
                             .foregroundStyle(sessionSteerFeedback.contains("REJECTED") ? Color.dockWarning : Color.dockSecondaryText)
                     }
                     }
@@ -256,7 +256,7 @@ extension WorkspaceActivitySidebar {
                             .foregroundStyle(Color.dockWarning)
                     }
                 }
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             }
             }
@@ -276,7 +276,7 @@ extension WorkspaceActivitySidebar {
                                 .foregroundStyle(Color.dockWarning)
                         }
                     }
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                 }
                 ForEach(control.processes) { process in
                     HStack {
@@ -287,7 +287,7 @@ extension WorkspaceActivitySidebar {
                             .buttonStyle(.dockCompact)
                             .foregroundStyle(Color.dockWarning)
                     }
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                 }
                 }
             }
@@ -296,15 +296,15 @@ extension WorkspaceActivitySidebar {
                     ForEach(control.diagnostics) { diagnostic in
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
-                            .fill(diagnostic.isAvailable ? Color.dockSecondaryText : Color.dockWarning)
+                            .fill(diagnostic.isAvailable ? Color.dockSecondaryText : Color.dockWarningFill)
                             .frame(width: 6, height: 6)
                             .padding(.top, 4)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(diagnostic.title)
-                                .font(.system(size: 12, weight: .medium))
+                                .dockFont(size: 12, weight: .medium)
                                 .foregroundStyle(Color.dockPrimaryText)
                             Text(diagnostic.detail)
-                                .font(.system(size: 12))
+                                .dockFont(size: 12)
                                 .foregroundStyle(Color.dockMetadataText)
                                 .lineLimit(3)
                         }
@@ -320,15 +320,15 @@ extension WorkspaceActivitySidebar {
                 }
                 if !control.journeyNodes.isEmpty {
                     Text("JOURNEY  ·  \(control.journeyNodes.count) NODES")
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
                     ForEach(control.journeyNodes.prefix(8)) { node in
                         HStack(spacing: 7) {
                             Circle().fill(node.state == "active" ? Color.dockSecondaryText : Color.dockSecondaryText).frame(width: 5, height: 5)
-                            Text(node.label).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                            Text(node.label).dockFont(size: 12).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                             Spacer()
                             Text([node.kind, node.useCount.map { "\($0)x" }].compactMap { $0 }.joined(separator: " · "))
-                                .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                                .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                         }
                     }
                     }
@@ -382,7 +382,7 @@ extension WorkspaceActivitySidebar {
                         ProgressView().controlSize(.small).tint(Color.dockAccent)
                     } else {
                         DockIcon(.arrowsClockwise)
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
@@ -393,7 +393,7 @@ extension WorkspaceActivitySidebar {
             if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
-                    Text("READING HERMES RUNTIME…").font(.system(size: 12)).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
+                    Text("READING HERMES RUNTIME…").dockFont(size: 12).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
                 }
             } else if let configuration = model.runtimeConfiguration {
                 diagnosticRow(label: "Model", value: configuration.model ?? "Not configured", color: configuration.model == nil ? Color.dockWarning : Color.dockSecondaryText)
@@ -401,7 +401,7 @@ extension WorkspaceActivitySidebar {
                 if model.runtimeModelOptions.isEmpty {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
-                        Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 12)).tracking(0.5).foregroundStyle(Color.dockSecondaryText)
+                        Text("LOADING HERMES MODEL CATALOG…").dockFont(size: 12).tracking(0.5).foregroundStyle(Color.dockSecondaryText)
                     }
                 } else {
                     DockMenu {
@@ -420,13 +420,13 @@ extension WorkspaceActivitySidebar {
                     } label: {
                         HStack(spacing: 8) {
                             Text(selectedModelDisplayName)
-                                .font(.system(size: 12, weight: .medium))
+                                .dockFont(size: 12, weight: .medium)
                                 .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer(minLength: 4)
                             DockIcon(.caretUpDown)
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.dockSecondaryText)
                         }
                         .padding(.horizontal, 10)
@@ -446,16 +446,16 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 Text("Selection updates the saved default for new sessions. Use the session model picker in the chat header to override one conversation. During a running turn, Hermes applies changes to the next turn.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
                 if let error = model.runtimeConfigurationError {
                     Text(error)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockWarning)
                 }
                 if let path = configuration.configPath {
                     Text(path)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -484,7 +484,7 @@ extension WorkspaceActivitySidebar {
                 if control.mcpInventoryAvailable {
                     if control.mcpServers.isEmpty {
                         Text("No MCP servers configured in Hermes.")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockMetadataText)
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
@@ -492,17 +492,17 @@ extension WorkspaceActivitySidebar {
                                 HStack(alignment: .top, spacing: 8) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(server.name)
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .dockFont(size: 12, weight: .semibold)
                                             .foregroundStyle(Color.dockPrimaryText)
                                         Text(server.tools == "all" ? server.transport : "\(server.transport)  ·  \(server.tools)")
-                                            .font(.system(size: 12))
+                                            .dockFont(size: 12)
                                             .foregroundStyle(Color.dockMetadataText)
                                             .lineLimit(2)
                                     }
                                     Spacer(minLength: 0)
                                     VStack(alignment: .trailing, spacing: 4) {
                                         Text(server.isEnabled ? "Enabled" : "Disabled")
-                                            .font(.system(size: 12))
+                                            .dockFont(size: 12)
                                             .foregroundStyle(Color.dockSecondaryText)
                                         if control.capabilityAvailable("mcp.test") {
                                             Button { control.testMCP(server) } label: {
@@ -513,7 +513,7 @@ extension WorkspaceActivitySidebar {
                                                 )
                                             }
                                                 .buttonStyle(.dockCompact)
-                                                .font(.system(size: 12, weight: .semibold))
+                                                .dockFont(size: 12, weight: .semibold)
                                                 .foregroundStyle(Color.dockAccent)
                                                 .disabled(control.isActionPending(control.mcpTestActionID(server)))
                                         }
@@ -521,7 +521,7 @@ extension WorkspaceActivitySidebar {
                                 }
                                 if let result = control.mcpTestResults[server.id] {
                                     Text(result)
-                                        .font(.system(size: 12))
+                                        .dockFont(size: 12)
                                         .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(2)
                                 }
@@ -540,7 +540,7 @@ extension WorkspaceActivitySidebar {
                         )
                     }
                         .buttonStyle(.dockCompact)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(control.isActionPending(control.reloadMCPActionID))
                 }
@@ -550,25 +550,25 @@ extension WorkspaceActivitySidebar {
                 if let entries = control.commandAllowlistEntries {
                     if entries.isEmpty {
                         Text("No always-allowed commands.")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockMetadataText)
                     } else {
                         VStack(alignment: .leading, spacing: 5) {
                             ForEach(entries, id: \.self) { pattern in
                                 Text(pattern)
-                                    .font(.system(size: 11, design: .monospaced))
+                                    .dockFont(size: 11, design: .monospaced)
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .textSelection(.enabled)
                             }
                         }
                     }
                     Text("Edit in Safety → Command Allowlist.")
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                         .textSelection(.enabled)
                 } else {
                     Text("Command allowlist is temporarily unavailable.")
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockMetadataText)
                 }
 
@@ -593,20 +593,20 @@ extension WorkspaceActivitySidebar {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Circle().fill(Color.dockSuccess).frame(width: 7, height: 7).accessibilityHidden(true)
+                            Circle().fill(Color.dockSuccessFill).frame(width: 7, height: 7).accessibilityHidden(true)
                             Text("Herm")
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
                             Spacer(minLength: 0)
                             Button { isShowingDockRestartConfirmation = true } label: {
                                 Text("Restart Herm").frame(width: 140)
                             }
                             .buttonStyle(.dockPress)
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .disabled(agentUpdateService.isBusy)
                         }
                         Text("Relaunches the app and reloads the selected Codex account.")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                     Divider().overlay(Color.dockBorderLight)
@@ -786,7 +786,7 @@ extension WorkspaceActivitySidebar {
             if notchSide == .top {
                 DockCallout(tone: .info, icon: .info, title: "The top island notch and floating panel use the Island skin. Switch the notch position to Side to choose another skin.") { EmptyView() }
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 224), spacing: 8)], spacing: 8) {
                 let skins = control.appearanceProjection?.skins ?? []
                 let hermOptions = DockThemeID.hermOnly.map { DockAppearanceOption(themeID: $0, hermesSkin: nil) }
                 ForEach(hermOptions + DockAppearanceCatalog.installedOptions(installedSkins: skins)) { option in
@@ -805,10 +805,10 @@ extension WorkspaceActivitySidebar {
                         ForEach(unknownSkins, id: \.id) { skin in
                             HStack(spacing: 8) {
                                 Circle().fill(skin.isActive ? Color.dockAccent : Color.dockMetadataText).frame(width: 6, height: 6)
-                                Text(skin.name).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                                Text(skin.name).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                                 Spacer()
                                 Text("No Herm palette")
-                                    .font(.system(size: 11))
+                                    .dockFont(size: 11)
                                     .foregroundStyle(Color.dockMetadataText)
                             }
                             .frame(minHeight: 36)
@@ -831,17 +831,17 @@ extension WorkspaceActivitySidebar {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(theme.title)
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         DockIcon(.check)
-                            .font(.system(size: 12, weight: .bold))
+                            .dockFont(size: 12, weight: .bold)
                             .foregroundStyle(Color.dockAccent)
                             .opacity(selected ? 1 : 0)
                     }
                     Text(theme.signature)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                     HStack(spacing: 4) {
@@ -851,7 +851,7 @@ extension WorkspaceActivitySidebar {
                             Text("Active in Hermes").foregroundStyle(Color.dockSecondaryText)
                         }
                     }
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
                 }
@@ -881,10 +881,10 @@ extension WorkspaceActivitySidebar {
                     .foregroundStyle(control.emergencyStopActive == true ? Color.dockWarning : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(control.emergencyStopActive == true ? "New work paused" : control.emergencyStopActive == false ? "Dispatch resumed" : "Dispatch status unknown")
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(control.emergencyStopMessage ?? "Pause or resume records this Herm action; Hermes does not expose a stable ESTOP status contract.")
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(2)
                 }
@@ -904,7 +904,7 @@ extension WorkspaceActivitySidebar {
                     )
                 }
                 .buttonStyle(.dockCompact)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .foregroundStyle(control.emergencyStopActive == true ? Color.dockSecondaryText : Color.dockWarning)
                 .disabled(control.isActionPending(control.emergencyStopActionID))
             }
@@ -936,7 +936,7 @@ extension WorkspaceActivitySidebar {
     var settingsCommandBar: some View {
         HStack(spacing: 12) {
             Text("Control surface")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .dockFont(size: 10, weight: .bold, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
                 .tracking(0.7)
             Spacer()
@@ -952,7 +952,7 @@ extension WorkspaceActivitySidebar {
             .tint(Color.dockAccent)
             Button { control.refresh(); Task { await control.configEditor.load() } } label: {
                 DockIcon(.arrowsClockwise)
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
             }
             .buttonStyle(.dockHover)
             .foregroundStyle(Color.dockAccent)
@@ -964,11 +964,11 @@ extension WorkspaceActivitySidebar {
     func coreSummaryMetric(title: String, value: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .dockFont(size: 9, weight: .bold, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
                 .tracking(0.6)
             Text(value)
-                .font(.system(size: 16, weight: .semibold))
+                .dockFont(size: 16, weight: .semibold)
                 .foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1003,16 +1003,16 @@ extension WorkspaceActivitySidebar {
             } label: {
                 HStack(spacing: 8) {
                     Text(title)
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                     Text("\(count)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .dockFont(size: 10, weight: .medium, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                     Spacer()
                     Text("\(readyCount) ready")
-                        .font(.system(size: 10, weight: .medium))
+                        .dockFont(size: 10, weight: .medium)
                         .foregroundStyle(readyCount == count ? Color.dockMetadataText : Color.dockWarning)
                     DockIcon(isExpanded.wrappedValue ? .caretUp : .caretDown)
-                        .font(.system(size: 9, weight: .bold))
+                        .dockFont(size: 9, weight: .bold)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 18, height: 26)
                 }
@@ -1047,7 +1047,7 @@ extension WorkspaceActivitySidebar {
 
     func sectionLabel(_ title: String) -> some View {
         Text(title == title.uppercased() ? title.lowercased().capitalized : title)
-            .font(.system(size: 14, weight: .medium))
+            .dockFont(size: 14, weight: .medium)
             .foregroundStyle(Color.dockSectionText)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 16)
@@ -1061,7 +1061,7 @@ extension WorkspaceActivitySidebar {
     /// divider above; the label itself stays quiet.
     func settingsSubheading(_ title: String) -> some View {
         Text(title == title.uppercased() ? title.lowercased().capitalized : title)
-            .font(.system(size: 11, weight: .semibold))
+            .dockFont(size: 11, weight: .semibold)
             .foregroundStyle(Color.dockSecondaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
@@ -1075,11 +1075,11 @@ extension WorkspaceActivitySidebar {
                     ProgressView().controlSize(.mini)
                     Text(state.isStale ? "Refreshing — showing last successful data" : "Refreshing…")
                 }
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockMetadataText)
             } else if let error = state.error {
                 Text(state.isStale ? "Showing last successful data. \(error)" : error)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1094,22 +1094,22 @@ extension WorkspaceActivitySidebar {
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 Text(agent.goal)
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(expanded ? 4 : 2)
                 if let role = agent.role {
                     Text("ROLE  \(role.uppercased())\(agent.sourceSkill.map { "  ·  \($0)" } ?? "")")
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .tracking(0.35)
                         .foregroundStyle(Color.dockAccent)
                 }
                 Text("\(agent.status.uppercased())  ·  \(agent.toolCount) TOOLS\(agent.model.map { "  ·  \($0.uppercased())" } ?? "")")
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .tracking(0.4)
                     .foregroundStyle(nativeAgentColor(agent.status))
                 if expanded, let latest = agent.latestActivity {
                     Text(latest)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(2)
                 }
@@ -1123,12 +1123,12 @@ extension WorkspaceActivitySidebar {
     func eventRow(_ event: AgentEvent) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("•")
-                .font(.system(size: 12, weight: .bold))
+                .dockFont(size: 12, weight: .bold)
                 .foregroundStyle(Color.dockAccent.opacity(0.75))
                 .frame(width: 13)
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.type.uppercased()).font(.system(size: 12, weight: .semibold)).tracking(0.35).foregroundStyle(Color.dockSecondaryText)
-                Text(event.detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
+                Text(event.type.uppercased()).dockFont(size: 12, weight: .semibold).tracking(0.35).foregroundStyle(Color.dockSecondaryText)
+                Text(event.detail).dockFont(size: 12).foregroundStyle(Color.dockMetadataText).lineLimit(2)
             }
         }
     }
@@ -1136,11 +1136,11 @@ extension WorkspaceActivitySidebar {
     func diagnosticRow(label: String, value: String, color: Color) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label == label.uppercased() ? label.prefix(1) + label.dropFirst().lowercased() : label)
-                .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 12)
             HStack(spacing: 6) {
                 Circle().fill(color).frame(width: 5, height: 5)
-                Text(value).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.middle)
+                Text(value).dockFont(size: 12, weight: .medium).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.middle)
             }
         }
     }
@@ -1162,7 +1162,7 @@ extension WorkspaceActivitySidebar {
         return VStack(alignment: .leading, spacing: 6) {
             if values.isEmpty {
                 Text(empty)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 LazyVGrid(
@@ -1177,7 +1177,7 @@ extension WorkspaceActivitySidebar {
                         HStack(spacing: 7) {
                             Circle().fill(Color.dockAccent.opacity(0.65)).frame(width: 4, height: 4)
                             Text(value)
-                                .font(.system(size: 12, weight: .medium))
+                                .dockFont(size: 12, weight: .medium)
                                 .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -1191,17 +1191,17 @@ extension WorkspaceActivitySidebar {
                         Button(action: onToggle) {
                             HStack(spacing: 4) {
                                 DockIcon(isExpanded ? .caretUp : .caretDown)
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .dockFont(size: 10, weight: .semibold)
                                 Text(isExpanded ? "SHOW FEWER" : "SHOW ALL \(values.count) SKILLS")
                             }
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.dockAccent)
                         }
                         .buttonStyle(.dockLink)
                         .accessibilityLabel(isExpanded ? "Show fewer skills" : "Show all \(values.count) skills")
                     } else {
                         Text("+ \(values.count - 8) MORE")
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .tracking(0.65)
                             .foregroundStyle(Color.dockMetadataText)
                     }
@@ -1212,13 +1212,13 @@ extension WorkspaceActivitySidebar {
 
     func capabilityRow(icon: Ph, title: String, detail: String, state: String, color: Color) -> some View {
         HStack(spacing: 8) {
-            DockIcon(icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
+            DockIcon(icon).dockFont(size: 12).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
-                Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                Text(title).dockFont(size: 12, weight: .medium).foregroundStyle(Color.dockPrimaryText)
+                Text(detail).dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
             }
             Spacer(minLength: 3)
-            Text(state).font(.system(size: 12, weight: .semibold)).tracking(0.45).foregroundStyle(color)
+            Text(state).dockFont(size: 12, weight: .semibold).tracking(0.45).foregroundStyle(color)
         }
     }
 
@@ -1229,8 +1229,8 @@ extension WorkspaceActivitySidebar {
     func emptyState(icon: Ph, title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             DockIcon(icon).foregroundStyle(Color.dockMetadataText)
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
-            Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
+            Text(title).dockFont(size: 12, weight: .medium).foregroundStyle(Color.dockPrimaryText)
+            Text(detail).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
         }
     }
 

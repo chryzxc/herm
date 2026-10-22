@@ -547,7 +547,7 @@ struct WorkflowIntegrationView: View {
           VStack(alignment: .leading, spacing: 8) {
             DockTextField("Search plugins", text: $pluginQuery).textFieldStyle(.dockGlass)
             Text("Plugins that only extend Hermes Desktop, or don't run on macOS, are hidden.")
-              .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+              .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
             card {
               ForEach(catalogMatches(pluginQuery, limit: 20)) { entry in
                 row(entry.title, entry.detail) {
@@ -556,7 +556,8 @@ struct WorkflowIntegrationView: View {
               }
             }
           }.padding(.top, 8)
-        }.font(.system(size: 12)).task { await model.loadCatalog() }
+        }.dockFont(size: 12).task { await model.loadCatalog() }
+        .disclosureGroupStyle(DockDisclosureGroupStyle())
       }
       Group {
         HStack {
@@ -590,7 +591,7 @@ struct WorkflowIntegrationView: View {
           }
         }
         if let preview = model.preview {
-          Text(preview).font(.system(size: 12)).textSelection(.enabled)
+          Text(preview).dockFont(size: 12).textSelection(.enabled)
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
         }
@@ -620,7 +621,7 @@ struct WorkflowIntegrationView: View {
         }
         if let item = selectedServer {
           VStack(alignment: .leading, spacing: 8) {
-            Text("Credential for \(item.id)").font(.system(size: 12, weight: .semibold))
+            Text("Credential for \(item.id)").dockFont(size: 12, weight: .semibold)
             Picker("Required key", selection: $credentialKey) {
               ForEach(item.requiredKeys, id: \.self) { Text($0).tag($0) }
             }
@@ -638,7 +639,8 @@ struct WorkflowIntegrationView: View {
             }.buttonStyle(.dockSecondary).controlSize(.small).disabled(
               model.busy || customName.isEmpty || customURL.isEmpty)
           }.padding(.top, 8)
-        }.font(.system(size: 12))
+        }.dockFont(size: 12)
+        .disclosureGroupStyle(DockDisclosureGroupStyle())
         HStack {
           Button("Reload live sessions…") {
             request = ("Reload live sessions", WorkflowIntegrationItem(id: "Live runtime sessions", detail: ""))
@@ -651,7 +653,7 @@ struct WorkflowIntegrationView: View {
         }
       }
       if !model.status.isEmpty {
-        Text(model.status).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+        Text(model.status).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
       }
     }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -679,7 +681,7 @@ struct WorkflowIntegrationView: View {
         } label: {
           HStack(spacing: 6) {
             DockIcon(.user, size: 12, color: .dockSecondaryText)
-            Text(profileName(model.service.profileID)).font(.system(size: 12, weight: .medium))
+            Text(profileName(model.service.profileID)).dockFont(size: 12, weight: .medium)
               .foregroundStyle(Color.dockPrimaryText)
             DockIcon(.caretDown, size: 9, color: .dockMetadataText)
           }.padding(.horizontal, 10).frame(height: 30)
@@ -712,7 +714,7 @@ struct WorkflowIntegrationView: View {
             }
           }
           HStack {
-            Text(summary(section, list: list)).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+            Text(summary(section, list: list)).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
             Spacer(minLength: 6)
             if discover && section == .plugins && !model.stars.isEmpty {
               DockSegmentedPicker(selection: $byStars, options: [(true, "Stars"), (false, "A–Z")])
@@ -794,7 +796,7 @@ struct WorkflowIntegrationView: View {
         title: discover && section == .plugins ? "Loading plugin catalog…" : "Loading \(section.rawValue.lowercased())…",
         minHeight: 160)
     } else {
-      Text(filter.isEmpty ? "Nothing here yet." : "No matches for “\(filter)”.").font(.system(size: 12))
+      Text(filter.isEmpty ? "Nothing here yet." : "No matches for “\(filter)”.").dockFont(size: 12)
         .foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity).padding(.top, 24)
     }
   }
@@ -897,14 +899,14 @@ struct WorkflowIntegrationView: View {
     HStack(spacing: 10) {
       Circle().fill(dotColor(entry)).frame(width: 7, height: 7)
       VStack(alignment: .leading, spacing: 2) {
-        Text(entry.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+        Text(entry.title).dockFont(size: 13, weight: .medium).foregroundStyle(Color.dockPrimaryText)
           .lineLimit(1)
         if !entry.subtitle.isEmpty, entry.subtitle != entry.title {
-          Text(entry.subtitle).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+          Text(entry.subtitle).dockFont(size: 11).foregroundStyle(Color.dockMetadataText).lineLimit(1)
         }
       }
       Spacer(minLength: 6)
-      if entry.official { DockIcon(.sealCheck, size: 12, color: .dockAccent).help("Official Hermes plugin") }
+      if entry.official { DockIcon(.sealCheck, size: 12, color: DockCategoryTone.integration.color).help("Official Hermes plugin") }
       if let stars = entry.stars { starCount(stars) }
       if let badge = entry.badge, badge.0 == .attention { DockStatusPill(tone: badge.0, text: badge.1) }
       if let on = entry.on {
@@ -918,7 +920,7 @@ struct WorkflowIntegrationView: View {
   private func starCount(_ stars: Int) -> some View {
     HStack(spacing: 3) {
       DockIcon(.star, size: 10, color: .dockMetadataText)
-      Text(stars.formatted(.number.notation(.compactName))).font(.system(size: 11).monospacedDigit())
+      Text(stars.formatted(.number.notation(.compactName))).dockFont(size: 11).monospacedDigit()
         .foregroundStyle(Color.dockMetadataText)
     }.help("\(stars) GitHub stars")
   }
@@ -931,31 +933,31 @@ struct WorkflowIntegrationView: View {
       default: return .dockBorderStrong
       }
     }
-    guard let on = entry.on else { return .dockAccent.opacity(0.6) }
+    guard let on = entry.on else { return DockCategoryTone.integration.fill }
     return on ? .dockSuccess : .dockBorderStrong
   }
   private func inspectorHeader(_ entry: Entry, pills: [(DockStatusTone, String)], _ text: String) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(entry.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+        Text(entry.title).dockFont(size: 20, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
           .textSelection(.enabled)
         ForEach(pills.indices, id: \.self) { DockStatusPill(tone: pills[$0].0, text: pills[$0].1) }
       }
       if !text.isEmpty {
-        Text(text).font(.system(size: 13)).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+        Text(text).dockFont(size: 13).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
           .fixedSize(horizontal: false, vertical: true)
       }
     }
   }
   private func panel<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockSectionText)
+      Text(title).dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockSectionText)
       content()
     }.frame(maxWidth: .infinity, alignment: .leading).dockCard()
   }
   private func enabledPill(_ on: Bool) -> (DockStatusTone, String) { on ? (.complete, "On") : (.inactive, "Off") }
   private var appliesNote: some View {
-    Label("Changes apply to new sessions.", systemImage: "info.circle").font(.system(size: 11))
+    Label("Changes apply to new sessions.", systemImage: "info.circle").dockFont(size: 11)
       .foregroundStyle(Color.dockMetadataText)
   }
   private func destructive(_ title: String, _ request: (String, WorkflowIntegrationItem)) -> some View {
@@ -1003,7 +1005,7 @@ struct WorkflowIntegrationView: View {
           }
           panel("SKILL.md") {
             if let preview = model.preview {
-              Text(preview).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.dockPrimaryText)
+              Text(preview).dockFont(size: 12, design: .monospaced).foregroundStyle(Color.dockPrimaryText)
                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             } else {
               ProgressView().controlSize(.small)
@@ -1026,7 +1028,7 @@ struct WorkflowIntegrationView: View {
           }
           if !toolset.tools.isEmpty {
             panel("\(toolset.tools.count) TOOLS") {
-              Text(toolset.tools.joined(separator: "  ·  ")).font(.system(size: 12, design: .monospaced))
+              Text(toolset.tools.joined(separator: "  ·  ")).dockFont(size: 12, design: .monospaced)
                 .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -1082,7 +1084,7 @@ struct WorkflowIntegrationView: View {
               SecureField("Credential", text: $credential).textFieldStyle(.dockGlass)
               Button("Save credential…") { request = ("Save credential", item) }
                 .buttonStyle(.dockSecondary).controlSize(.small).disabled(credential.isEmpty)
-            }.font(.system(size: 12))
+            }.dockFont(size: 12)
           }
           HStack {
             Button("Reload live sessions…") {
@@ -1114,7 +1116,7 @@ struct WorkflowIntegrationView: View {
             Text(value).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
           }
         }
-      }.font(.system(size: 12))
+      }.dockFont(size: 12)
     }
   }
   private var customServerCard: some View {
@@ -1160,8 +1162,8 @@ struct WorkflowIntegrationView: View {
               .disabled(model.busy || !HermesWorkflowRPC.validConnectorAlias(alias))
             Button("Cancel") { renaming = nil }.buttonStyle(.dockCompact)
           } else {
-            Text(account.label).font(.system(size: 12))
-            Text(account.status).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+            Text(account.label).dockFont(size: 12)
+            Text(account.status).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
             Spacer()
             moreMenu {
               Button("Rename…") {
@@ -1211,7 +1213,7 @@ struct WorkflowIntegrationView: View {
     VStack(alignment: .leading, spacing: 8) {
       DockSectionLabel(title: title, count: count)
       if count == 0 {
-        Text(model.busy ? "Loading…" : "Nothing here yet.").font(.system(size: 12))
+        Text(model.busy ? "Loading…" : "Nothing here yet.").dockFont(size: 12)
           .foregroundStyle(Color.dockMetadataText)
       } else {
         card(content)
@@ -1230,13 +1232,13 @@ struct WorkflowIntegrationView: View {
   ) -> some View {
     HStack(spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+        Text(title).dockFont(size: 13, weight: .medium).foregroundStyle(Color.dockPrimaryText)
           .lineLimit(1)
         if !detail.isEmpty, detail != title {
-          Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+          Text(detail).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
         }
         if let note {
-          Text(note).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+          Text(note).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
         }
       }
       Spacer(minLength: 8)
@@ -1280,15 +1282,15 @@ struct WorkflowIntegrationView: View {
               ForEach(setting.choices, id: \.self) { Text($0).tag($0) }
             }
           case "secret":
-            Text(setting.label).font(.system(size: 12))
+            Text(setting.label).dockFont(size: 12)
             SecureField(setting.hasValue ? "Saved — leave blank to keep" : "Not set", text: draft)
               .textFieldStyle(.dockGlass)
           default:
-            Text(setting.label).font(.system(size: 12))
+            Text(setting.label).dockFont(size: 12)
             DockTextField(setting.label, text: draft).textFieldStyle(.dockGlass)
           }
           if !setting.detail.isEmpty {
-            Text(setting.detail).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+            Text(setting.detail).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
           }
         }
       }
@@ -1298,7 +1300,7 @@ struct WorkflowIntegrationView: View {
         editingPlugin = nil
         Task { await model.saveSettings(plugin, drafts: drafts) }
       }.buttonStyle(.dockSecondary).controlSize(.small).disabled(model.busy || pluginDrafts.isEmpty)
-    }.font(.system(size: 12)).padding(10)
+    }.dockFont(size: 12).padding(10)
   }
   private func action(_ action: String, _ item: WorkflowIntegrationItem, confirm: Bool = true)
     -> some View

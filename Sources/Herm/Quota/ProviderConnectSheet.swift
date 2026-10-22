@@ -349,7 +349,7 @@ struct ProviderConnectSheet: View {
                 labeledField("Command") {
                     HStack(spacing: 8) {
                         Text(command)
-                            .font(.system(size: 12, design: .monospaced))
+                            .dockFont(size: 12, design: .monospaced)
                             .foregroundStyle(Color.dockPrimaryText)
                             .textSelection(.enabled)
                         Spacer(minLength: 8)
@@ -380,7 +380,7 @@ struct ProviderConnectSheet: View {
 
     private func instructionText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13))
+            .dockFont(size: 13)
             .foregroundStyle(Color.dockPrimaryText)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -391,7 +391,7 @@ struct ProviderConnectSheet: View {
             let isAPIKey = if case .apiKey = descriptor.connect { true } else { false }
             Link(destination: website) {
                 DockIconLabel(isAPIKey ? "Get an API Key" : "Open Website", icon: .arrowSquareOut)
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.dockAccent)
             }
             .buttonStyle(.dockLink)

@@ -7,7 +7,7 @@ struct HermesGatewaySettingsView: View {
 
     private var statusColor: Color {
         if service.isRestarting || !service.hasChecked { return .dockSecondaryText }
-        return service.status.state == .running ? .dockSecondaryText : .dockWarning
+        return service.status.state == .running ? .dockSuccess : .dockWarning
     }
 
     var body: some View {
@@ -15,7 +15,7 @@ struct HermesGatewaySettingsView: View {
             HStack(spacing: 8) {
                 Circle().fill(statusColor).frame(width: 7, height: 7).accessibilityHidden(true)
                 Text(service.label)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .accessibilityLabel("Hermes gateway: \(service.label)")
                 Spacer(minLength: 0)
@@ -28,11 +28,11 @@ struct HermesGatewaySettingsView: View {
                         .frame(width: 140)
                 }
                 .buttonStyle(.dockPress)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .disabled(!service.canRestart)
             }
             Text(service.detail)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(service.error == nil ? Color.dockSecondaryText : Color.dockWarning)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)

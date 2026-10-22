@@ -17,7 +17,7 @@ extension WorkspaceActivitySidebar {
                         DockIconLabel("PROJECTS", icon: .caretLeft)
                     }
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                     Spacer()
                     if let path = selectedProjectFolderPath {
@@ -25,7 +25,7 @@ extension WorkspaceActivitySidebar {
                             startNewChat(in: path)
                         } label: {
                             DockIconLabel("NEW CHAT", icon: .notePencil)
-                                .font(.system(size: 10, weight: .semibold))
+                                .dockFont(size: 10, weight: .semibold)
                         }
                         .buttonStyle(.dockCompact)
                         .foregroundStyle(Color.dockAccent)
@@ -48,7 +48,7 @@ extension WorkspaceActivitySidebar {
                         sectionLabel("SESSIONS")
                         Spacer()
                         Text("\(control.projectSessions.count)")
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     }
                     ForEach(control.projectSessions) { session in
@@ -61,20 +61,20 @@ extension WorkspaceActivitySidebar {
                                 HStack {
                                     Circle().fill(sessionLifecycleColor(lifecycle)).frame(width: 6, height: 6)
                                     Text(session.title)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .dockFont(size: 12, weight: .semibold)
                                         .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(2)
                                     Spacer()
                                     Text(lifecycle.label.uppercased())
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .dockFont(size: 12, weight: .semibold)
                                         .foregroundStyle(sessionLifecycleColor(lifecycle))
                                     DockIcon(.caretRight)
-                                        .font(.system(size: 10, weight: .bold))
+                                        .dockFont(size: 10, weight: .bold)
                                         .foregroundStyle(Color.dockAccent)
                                 }
                                 if let preview = session.displayPreview {
                                     Text(preview)
-                                        .font(.system(size: 12))
+                                        .dockFont(size: 12)
                                         .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(2)
                                 }
@@ -109,28 +109,28 @@ extension WorkspaceActivitySidebar {
                     } label: {
                         HStack(spacing: 10) {
                             DockIcon(project.isActive ? .folder : .folder)
-                                .font(.system(size: 12, weight: .medium))
+                                .dockFont(size: 12, weight: .medium)
                                 .foregroundStyle(project.isActive ? Color.dockAccent : Color.dockSecondaryText)
                                 .frame(width: 16)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(projectDisplayName(project))
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .dockFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                 Text(projectMetadata(project))
-                                    .font(.system(size: 12))
+                                    .dockFont(size: 12)
                                     .foregroundStyle(Color.dockMetadataText)
                                     .lineLimit(1)
                             }
                             Spacer()
                             if project.isActive {
                                 Text("ACTIVE")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .dockFont(size: 12, weight: .semibold)
                                     .tracking(0.5)
                                     .foregroundStyle(Color.dockSuccess)
                             }
                             DockIcon(.caretRight)
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.dockAccent)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -145,7 +145,7 @@ extension WorkspaceActivitySidebar {
                         projectsDisplayLimit += Self.projectsPageSize
                     } label: {
                         DockIconLabel("SHOW MORE (\(control.projects.count - projectsDisplayLimit) REMAINING)", icon: .caretDown)
-                            .font(.system(size: 10, weight: .semibold))
+                            .dockFont(size: 10, weight: .semibold)
                             .tracking(0.4)
                     }
                     .buttonStyle(.dockCompact)
@@ -165,7 +165,7 @@ extension WorkspaceActivitySidebar {
             chooseProjectDirectory()
         } label: {
             DockIconLabel("ADD DIRECTORY", icon: .folderPlus)
-                .font(.system(size: 10, weight: .semibold))
+                .dockFont(size: 10, weight: .semibold)
                 .tracking(0.4)
         }
         .buttonStyle(.dockCompact)
@@ -179,7 +179,7 @@ extension WorkspaceActivitySidebar {
             if control.projectMutationsAvailable {
                 Button("CREATE PROJECT") { chooseProjectForCreation() }
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockAccent)
                     .help("Create a Hermes project from a folder")
             }
@@ -237,16 +237,16 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 DockIcon(project.isActive ? .folder : .folder)
-                    .font(.system(size: 13, weight: .medium))
+                    .dockFont(size: 13, weight: .medium)
                     .foregroundStyle(project.isActive ? Color.dockAccent : Color.dockSecondaryText)
                 Text(projectDisplayName(project))
-                    .font(.system(size: 15, weight: .semibold))
+                    .dockFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
             }
             if project.name != "__no_project__" {
                 Text(project.name)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -266,7 +266,7 @@ extension WorkspaceActivitySidebar {
                 }
             }
             .buttonStyle(.dockCompact)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .dockFont(size: 10, weight: .semibold, design: .monospaced)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -330,13 +330,13 @@ extension WorkspaceActivitySidebar {
             if workflow.repository.isGitRepository {
                 HStack(spacing: 8) {
                     todayMetric("STAGED", value: workflow.changes?.stagedCount ?? 0, color: .dockAccent)
-                    todayMetric("UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: .dockWarning)
+                    todayMetric("UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: DockCategoryTone.modified.color)
                     todayMetric("UNTRACKED", value: workflow.changes?.untrackedCount ?? 0, color: .dockSecondaryText)
                     todayMetric("CONFLICTS", value: workflow.changes?.conflictedCount ?? 0, color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .dockDestructive : .dockSuccess)
                 }
                 Text(workflow.repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S") · \(workflow.repository.branch)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : Color.dockWarning)
+                    .dockFont(size: 11, weight: .semibold)
+                    .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
                 HStack(spacing: 10) {
                     Button("OPEN SOURCE CONTROL") { select(.changes) }
                     Button(commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID) ? "STOP WATCHING" : "WATCH REPOSITORY") {
@@ -345,17 +345,17 @@ extension WorkspaceActivitySidebar {
                     Button("REFRESH") { Task { await refreshRepository() } }
                 }
                 .buttonStyle(.dockCompact)
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             } else {
                 Text("No local project folder is attached to the active session.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
                 .buttonStyle(.dockCompact)
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             }
         }

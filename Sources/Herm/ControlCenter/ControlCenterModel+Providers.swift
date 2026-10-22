@@ -27,7 +27,7 @@ extension ControlCenterModel {
         }
         if !quiet { beginProjectionRefresh("provider.quota") }
         // Balance cards derive spend and runway from usage analytics.
-        if !quiet, tokenUsage == nil { refreshTokenUsage(days: UsageWorkspaceView.storedDays) }
+        if !quiet, tokenUsage == nil { refreshTokenUsage(days: UsageWorkspaceView.reportDays) }
         let readers = Self.quotaReaders.filter { readerIDs?.contains($0.id) ?? true }
         providerQuotaReadsInFlight += 1
         Task { @MainActor in

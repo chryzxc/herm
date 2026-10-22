@@ -141,11 +141,11 @@ struct SettingsSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(tint == .dockWarning ? Color.dockWarning : Color.dockPrimaryText)
                 if !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
@@ -177,11 +177,11 @@ struct SettingsPreferenceRow<Control: View>: View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .dockFont(size: 13, weight: .medium)
                     .foregroundStyle(Color.dockPrimaryText)
                 if !detail.isEmpty {
                     Text(detail)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(2)
                 }
@@ -202,9 +202,9 @@ struct SettingsStatusRow: View {
         HStack(alignment: .top, spacing: 8) {
             Circle().fill(color).frame(width: 7, height: 7).padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+                Text(title).dockFont(size: 12, weight: .medium).foregroundStyle(Color.dockPrimaryText)
                 if !detail.isEmpty {
-                    Text(detail).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(3)
+                    Text(detail).dockFont(size: 11).foregroundStyle(Color.dockMetadataText).lineLimit(3)
                 }
             }
             Spacer(minLength: 0)
@@ -221,8 +221,8 @@ struct SettingsActionRow<Content: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
-                if !detail.isEmpty { Text(detail).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(2) }
+                Text(title).dockFont(size: 13, weight: .medium).foregroundStyle(Color.dockPrimaryText)
+                if !detail.isEmpty { Text(detail).dockFont(size: 11).foregroundStyle(Color.dockMetadataText).lineLimit(2) }
             }
             Spacer(minLength: 12)
             actions()
@@ -238,7 +238,7 @@ struct SettingsInlineNotice: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Circle().fill(tint).frame(width: 7, height: 7).padding(.top, 4)
-            Text(text).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
+            Text(text).dockFont(size: 11).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.vertical, 8)
@@ -252,7 +252,7 @@ struct SettingsInventoryList<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let emptyMessage, !emptyMessage.isEmpty {
-                Text(emptyMessage).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                Text(emptyMessage).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
             } else {
                 content()
             }

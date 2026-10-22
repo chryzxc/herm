@@ -111,12 +111,12 @@ struct KanbanBoardView: View, Equatable {
                 DockIcon(lane.icon, size: 13, color: Color.dockMetadataText)
                     .foregroundStyle(lane.color)
                 Text(lane.rawValue.uppercased())
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
                     .tracking(0.8)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                 Text("\(laneTasks.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
                     .foregroundStyle(lane.color)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -127,7 +127,7 @@ struct KanbanBoardView: View, Equatable {
                     expansion.collapse(lane, hasTasks: !laneTasks.isEmpty)
                 } label: {
                     DockIcon(.sidebarSimple, weight: .fill)
-                        .font(.system(size: 10, weight: .bold))
+                        .dockFont(size: 10, weight: .bold)
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
@@ -144,10 +144,10 @@ struct KanbanBoardView: View, Equatable {
             if laneTasks.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(lane.emptyTitle)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                     Text(lane.emptyDetail)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -270,18 +270,18 @@ private struct KanbanLaneRail: View {
                     .foregroundStyle(lane.color)
                     .frame(height: 20)
                 Text("\(count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
                     .foregroundStyle(count > 0 ? lane.color : Color.dockMetadataText)
                 VStack(spacing: 1) {
                     ForEach(Array(lane.rawValue.uppercased().enumerated()), id: \.offset) { _, letter in
                         Text(String(letter))
-                            .font(.system(size: 11, weight: .semibold))
+                            .dockFont(size: 11, weight: .semibold)
                             .foregroundStyle(isHovered ? Color.dockPrimaryText : Color.dockSecondaryText)
                             .frame(height: 13)
                     }
                 }
                 DockIcon(.sidebarSimple)
-                    .font(.system(size: 9, weight: .bold))
+                    .dockFont(size: 9, weight: .bold)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 0)
             }
@@ -335,7 +335,7 @@ private struct KanbanTaskCard: View {
         let isDraggable = !actions.destinations(for: task.status).isEmpty && !isMutationPending
         VStack(alignment: .leading, spacing: 6) {
             Text(task.title)
-                .font(.system(size: 13, weight: .medium))
+                .dockFont(size: 13, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
@@ -344,7 +344,7 @@ private struct KanbanTaskCard: View {
 
             if let summary = summary ?? nonEmpty(task.detail) {
                 Text(summary)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
@@ -370,7 +370,7 @@ private struct KanbanTaskCard: View {
                     .truncationMode(.middle)
                     .layoutPriority(1)
             }
-            .font(.system(size: 10, weight: .medium))
+            .dockFont(size: 10, weight: .medium)
             .lineLimit(1)
         }
         .padding(.horizontal, 10)
@@ -436,7 +436,7 @@ private struct KanbanTaskCard: View {
 
     private var dragPreview: some View {
         Text(task.title)
-            .font(.system(size: 12, weight: .medium))
+            .dockFont(size: 12, weight: .medium)
             .foregroundStyle(Color.dockPrimaryText)
             .lineLimit(2)
             .frame(width: KanbanBoardView.laneWidth - 40, alignment: .leading)
@@ -460,7 +460,7 @@ private struct KanbanTaskCard: View {
     private func priorityTag(_ priority: String) -> some View {
         let tint = (Int(priority) ?? 0) >= 80 ? Color.dockWarning : Color.dockSecondaryText
         return Text("P\(priority)")
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .dockFont(size: 10, weight: .semibold, design: .monospaced)
             .foregroundStyle(tint)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
@@ -605,13 +605,13 @@ struct KanbanAssigneeInitialAvatar: View {
     var size: CGFloat = 30
 
     var body: some View {
-        let hue = Double(assignee.utf8.reduce(0) { ($0 + Int($1)) % 360 }) / 360
+        let color = DockAccentColor.identity(for: assignee).color
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                .fill(Color(hue: hue, saturation: 0.62, brightness: 0.82))
+                .fill(color.opacity(0.14))
             Text(String(assignee.prefix(1)).uppercased())
-                .font(.system(size: size * 0.4, weight: .bold))
-                .foregroundStyle(.white.opacity(0.95))
+                .dockFont(size: size * 0.4, weight: .bold)
+                .foregroundStyle(color)
         }
         .frame(width: size, height: size)
     }

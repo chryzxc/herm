@@ -365,14 +365,14 @@ struct HermesConfigCategoryView: View {
                 case .idle, .loading:
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
-                        Text("READING HERMES CONFIG…").font(.system(size: 12)).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
+                        Text("READING HERMES CONFIG…").dockFont(size: 12).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
                     }
                 case .failed(let message):
                     SettingsSection(title: "Hermes config unavailable", subtitle: "", tint: .dockWarning) {
-                        Text(message).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+                        Text(message).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
                         Button("Retry") { Task { await editor.load() } }
                             .buttonStyle(.dockCompact)
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     }
                 case .ready:
@@ -420,14 +420,14 @@ private struct HermesConfigFieldRow: View {
                     if listDraft != listText {
                         Button("Save") { editor.set(key, listItems(listDraft)) }
                             .buttonStyle(.dockCompact)
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     } else if editor.savingKeys.contains(key) {
                         ProgressView().controlSize(.small)
                     }
                 }
                 TextEditor(text: $listDraft)
-                    .font(.system(size: 12, design: .monospaced))
+                    .dockFont(size: 12, design: .monospaced)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 54, maxHeight: 120)
                     .padding(6)
