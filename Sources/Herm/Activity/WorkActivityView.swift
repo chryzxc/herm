@@ -42,12 +42,6 @@ struct WorkActivityView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             toolbar
-            if let state = refreshState, let error = state.error {
-                Text(state.isStale ? "Showing last successful data. \(error)" : error)
-                    .font(DockTypography.metadata)
-                    .foregroundStyle(Color.dockWarning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             if let index {
                 // Wide windows split into calendar | detail; narrow ones stack them.
                 GeometryReader { proxy in
@@ -66,7 +60,14 @@ struct WorkActivityView: View {
                         }
                     }
                 }
-            } else if refreshState?.error == nil {
+            } else if let error = refreshState?.error {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Activity unavailable").dockFont(size: 12, weight: .semibold)
+                    Text(error).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                }
+                .frame(maxWidth: .infinity, minHeight: 320, alignment: .center)
+                .dockCard(padding: 14)
+            } else {
                 // Also covers the beat before the first fetch is even marked refreshing.
                 DockLoadingState(
                     title: "Loading \(month.formatted(.dateTime.month(.wide).year()))…",
@@ -122,7 +123,7 @@ struct WorkActivityView: View {
                             date: selected,
                             day: index.day(selected) ?? WorkDay(),
                             usualActivity: index.usualActivity(excluding: selected...selected),
-                            stacked: wide,
+                            stacked: true,
                             jobNames: jobNames,
                             botsByID: botsByID,
                             avatarImages: avatarImages,
@@ -166,10 +167,10 @@ struct WorkActivityView: View {
             DockIconButton(icon: .caretRight, label: "Next \(scope.rawValue)", style: style) { shift(1) }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(month.formatted(.dateTime.month(.wide)))
-                    .font(.system(size: 20, weight: .semibold))
+                    .dockFont(size: 20, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text(month.formatted(.dateTime.year()))
-                    .font(.system(size: 20, weight: .regular))
+                    .dockFont(size: 20, weight: .regular)
                     .foregroundStyle(Color.dockMetadataText)
             }
             .padding(.leading, 4)
@@ -181,9 +182,14 @@ struct WorkActivityView: View {
 
             Spacer(minLength: 8)
             DockTabBar(options: CalendarScope.allCases, selection: scopeBinding, title: \.title)
-            if let lastSuccess = refreshState?.lastSuccess {
+            if let error = refreshState?.error {
+                Text(refreshState?.isStale == true ? "Showing last successful activity" : "Activity unavailable")
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockWarning)
+                    .help(error)
+            } else if let lastSuccess = refreshState?.lastSuccess {
                 Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
-                    .font(DockTypography.machineMetadata)
+                    .dockFont(.machineMetadata)
                     .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
                     .lineLimit(1)
             }
@@ -236,13 +242,17 @@ struct WorkActivityView: View {
     }
 }
 
-/// Neutral ink for the activity mix: shipped reads strongest, automation
-/// quietest, and only a failed run takes the warning hue.
+/// Category colors remain consistent across the calendar, charts, and rows.
 private enum CalendarInk {
-    static let shipped = Color.dockPrimaryText.opacity(0.78)
-    static let sessions = Color.dockPrimaryText.opacity(0.42)
-    static let automation = Color.dockPrimaryText.opacity(0.2)
-    static let failed = Color.dockWarning
+    private static var neutral: Bool { DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk }
+    static var shipped: Color { neutral ? .dockPrimaryText.opacity(0.78) : .dockReview }
+    static var sessions: Color { neutral ? .dockPrimaryText.opacity(0.42) : .dockInfo }
+    static var automation: Color { neutral ? .dockPrimaryText.opacity(0.2) : .dockMerged }
+    static var failed: Color { .dockWarning }
+    static var shippedFill: Color { neutral ? shipped : .dockReviewFill }
+    static var sessionsFill: Color { neutral ? sessions : .dockInfoFill }
+    static var automationFill: Color { neutral ? automation : .dockMergedFill }
+    static var failedFill: Color { .dockWarningFill }
 }
 
 /// Hairline-divided rows inside one card, so lists read as one unit of content.
@@ -312,14 +322,22 @@ private struct CalendarGridCard: View, Equatable {
         let total: ([Date?]) -> Int = { $0.compactMap { $0.flatMap(index.day)?.shippedCount }.reduce(0, +) }
         let weekTotals = rows.map(total)
         let maxWeek = max(1, all.map(total).max() ?? 1)
-        return VStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: 10) {
+            DockSectionLabel(title: "\(month.formatted(.dateTime.month(.wide))) overview")
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                monthStat("Shipped", index.shippedCount, CalendarInk.shipped)
+                monthStat("Sessions", index.sessionCount, CalendarInk.sessions)
+                monthStat("Active days", index.activeDays, Color.dockSecondaryText)
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 6)
             HStack(spacing: 6) {
                 ForEach(Array(ordered.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol.uppercased()).frame(maxWidth: .infinity)
                 }
                 Text("WEEK").frame(width: 44)
             }
-            .font(DockTypography.sectionLabel)
+            .dockFont(.sectionLabel)
             .tracking(0.6)
             .foregroundStyle(Color.dockMetadataText)
 
@@ -354,16 +372,24 @@ private struct CalendarGridCard: View, Equatable {
         .dockCard(padding: 0)
     }
 
+    private func monthStat(_ title: String, _ count: Int, _ tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(count.formatted()).dockFont(.metric).foregroundStyle(tint)
+            Text(title).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     private func weekTotal(_ total: Int, max: Int) -> some View {
         VStack(spacing: 4) {
             Text(total > 0 ? "\(total)" : "·")
-                .font(DockTypography.machineMetadata.weight(.semibold))
+                .dockFont(.machineMetadata, weight: .semibold)
                 .foregroundStyle(total > 0 ? Color.dockPrimaryText : Color.dockMetadataText)
             Capsule().fill(Color.dockPrimaryText.opacity(0.06))
                 .frame(height: 4)
                 .overlay(alignment: .leading) {
                     GeometryReader { proxy in
-                        Capsule().fill(CalendarInk.shipped).frame(width: proxy.size.width * CGFloat(total) / CGFloat(max))
+                        Capsule().fill(CalendarInk.shippedFill).frame(width: proxy.size.width * CGFloat(total) / CGFloat(max))
                     }
                 }
                 .padding(.horizontal, 6)
@@ -378,16 +404,16 @@ private struct CalendarGridCard: View, Equatable {
         HStack(spacing: 12) {
             // Only the kinds of work this month actually has.
             let days = index.days.values
-            if days.contains(where: { $0.shippedCount > 0 }) { legendSwatch(CalendarInk.shipped, "Shipped") }
-            if index.sessionCount > 0 { legendSwatch(CalendarInk.sessions, "Sessions") }
-            if index.runCount > 0 { legendSwatch(CalendarInk.automation, "Automation") }
-            if days.contains(where: \.hasFailedRun) { legendSwatch(CalendarInk.failed, "Failed run") }
+            if days.contains(where: { $0.shippedCount > 0 }) { legendSwatch(CalendarInk.shippedFill, "Shipped") }
+            if index.sessionCount > 0 { legendSwatch(CalendarInk.sessionsFill, "Sessions") }
+            if index.runCount > 0 { legendSwatch(CalendarInk.automationFill, "Automation") }
+            if days.contains(where: \.hasFailedRun) { legendSwatch(CalendarInk.failedFill, "Failed run") }
             Spacer(minLength: 8)
             if !showsMonth {
                 HStack(spacing: 2) {
                     stepButton(.caretLeft, "Previous week") { onMove(-7) }
                     Text(weekRange)
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockPrimaryText)
                         .frame(minWidth: 96)
                     stepButton(.caretRight, "Next week") { onMove(7) }
@@ -397,7 +423,7 @@ private struct CalendarGridCard: View, Equatable {
                 .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
             }
         }
-        .font(DockTypography.metadata)
+        .dockFont(.metadata)
         .foregroundStyle(Color.dockMetadataText)
     }
 
@@ -452,8 +478,8 @@ private struct CalendarRangePane: View, Equatable {
             }
             if range.isEmpty {
                 HStack(spacing: 8) {
-                    DockIcon(.calendarBlank).font(.system(size: 14)).foregroundStyle(Color.dockMetadataText)
-                    Text("Nothing was recorded in this range.").font(DockTypography.body).foregroundStyle(Color.dockMetadataText)
+                    DockIcon(.calendarBlank).dockFont(size: 14).foregroundStyle(Color.dockMetadataText)
+                    Text("Nothing was recorded in this range.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 80)
                 .dockCard(padding: 0)
@@ -497,11 +523,11 @@ private struct CalendarRangePane: View, Equatable {
                     let ratio = means[weekday] / peak
                     VStack(spacing: 5) {
                         UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3, style: .continuous)
-                            .fill(Color.dockPrimaryText.opacity(ratio == 1 ? 0.85 : 0.3 + 0.4 * ratio))
+                            .fill(CalendarInk.sessionsFill.opacity(ratio == 1 ? 1 : 0.35 + 0.5 * ratio))
                             .frame(height: means[weekday] > 0 ? max(4, 40 * ratio) : 2)
                             .frame(maxHeight: 40, alignment: .bottom)
                         Text(calendar.shortWeekdaySymbols[weekday])
-                            .font(DockTypography.compactStatus)
+                            .dockFont(.compactStatus)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     .frame(maxWidth: .infinity)
@@ -514,19 +540,19 @@ private struct CalendarRangePane: View, Equatable {
         .dockCard(padding: 0)
     }
 
-    /// Runs per automation; failures are the only coloured thing.
+    /// Runs per automation, with failures called out in amber.
     private var automationHealth: some View {
         VStack(alignment: .leading, spacing: 8) {
             DockSectionLabel(title: "Automations", count: range.jobs.count)
             ForEach(range.jobs.prefix(8)) { job in
                 HStack(spacing: 10) {
-                    DockIcon(.clock).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-                    Text(jobNames[job.id] ?? job.id).font(DockTypography.rowTitle).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                    DockIcon(.clock).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+                    Text(jobNames[job.id] ?? job.id).dockFont(.rowTitle).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                     Spacer(minLength: 8)
                     if job.failed > 0 {
-                        Text("\(job.failed) failed").font(DockTypography.machineMetadata).foregroundStyle(Color.dockWarning)
+                        Text("\(job.failed) failed").dockFont(.machineMetadata).foregroundStyle(Color.dockWarning)
                     }
-                    Text("\(job.runs) runs").font(DockTypography.machineMetadata).foregroundStyle(Color.dockMetadataText)
+                    Text("\(job.runs) runs").dockFont(.machineMetadata).foregroundStyle(Color.dockMetadataText)
                 }
             }
         }
@@ -563,8 +589,8 @@ private struct CalendarRangePane: View, Equatable {
     private func metric(_ title: String, _ value: String, detail: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             DockSectionLabel(title: title)
-            Text(value).font(DockTypography.metric).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-            Text(detail ?? " ").font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+            Text(value).dockFont(.metric).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+            Text(detail ?? " ").dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -588,16 +614,16 @@ private struct CalendarDayBars: View {
                     let day = calendar.component(.day, from: point.date)
                     VStack(spacing: 5) {
                         VStack(spacing: 1) {
-                            segment(point.runs, peak: peak, color: point.hasFailure ? CalendarInk.failed : CalendarInk.automation)
-                            segment(point.sessions, peak: peak, color: CalendarInk.sessions)
-                            segment(point.shipped, peak: peak, color: CalendarInk.shipped)
+                            segment(point.runs, peak: peak, color: point.hasFailure ? CalendarInk.failedFill : CalendarInk.automationFill)
+                            segment(point.sessions, peak: peak, color: CalendarInk.sessionsFill)
+                            segment(point.shipped, peak: peak, color: CalendarInk.shippedFill)
                             if point.total == 0 { Capsule().fill(Color.dockPrimaryText.opacity(0.06)).frame(height: 2) }
                         }
                         .frame(height: 64, alignment: .bottom)
                         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3, style: .continuous))
                         Text(dense ? (day == 1 || day % 5 == 0 ? "\(day)" : " ")
                              : "\(point.date.formatted(.dateTime.weekday(.narrow))) \(day)")
-                            .font(DockTypography.compactStatus)
+                            .dockFont(.compactStatus)
                             .foregroundStyle(Color.dockMetadataText)
                             .fixedSize()
                             .frame(maxWidth: .infinity)
@@ -624,13 +650,13 @@ private struct CalendarRepoLabel: View {
     let id: String
     var body: some View {
         HStack(spacing: 4) {
-            DockIcon(.gitBranch).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-            Text(id).font(DockTypography.machineMetadata.weight(.medium)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+            DockIcon(.gitBranch).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+            Text(id).dockFont(.machineMetadata, weight: .medium).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
         }
     }
 }
 
-/// Ranked rows with a neutral meter. Carded when it stands alone, bare inside another card.
+/// Ranked rows with a shipped-work meter. Carded when it stands alone, bare inside another card.
 private struct CalendarLeaderboard<Label: View>: View {
     let title: String?
     let rows: [WorkCount]
@@ -649,11 +675,11 @@ private struct CalendarLeaderboard<Label: View>: View {
                         .frame(height: 6)
                         .overlay(alignment: .leading) {
                             GeometryReader { proxy in
-                                Capsule().fill(Color.dockSecondaryText).frame(width: proxy.size.width * CGFloat(row.count) / CGFloat(top))
+                                Capsule().fill(CalendarInk.shippedFill).frame(width: proxy.size.width * CGFloat(row.count) / CGFloat(top))
                             }
                         }
                     Text("\(row.count)")
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockPrimaryText)
                         .frame(width: 36, alignment: .trailing)
                 }
@@ -717,10 +743,10 @@ private struct CalendarDayPane: View, Equatable {
                 dateBadge
                 VStack(alignment: .leading, spacing: 3) {
                     Text(date.formatted(.dateTime.weekday(.wide)))
-                        .font(DockTypography.pageTitle)
+                        .dockFont(.pageTitle)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(subtitle)
-                        .font(DockTypography.metadata)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
@@ -739,9 +765,9 @@ private struct CalendarDayPane: View, Equatable {
             }
             if day.isEmpty {
                 HStack(spacing: 8) {
-                    DockIcon(.calendarBlank).font(.system(size: 14)).foregroundStyle(Color.dockMetadataText)
+                    DockIcon(.calendarBlank).dockFont(size: 14).foregroundStyle(Color.dockMetadataText)
                     Text(date > calendar.startOfDay(for: Date()) ? "Nothing yet. This day is still ahead." : "A quiet day. Nothing was recorded.")
-                        .font(DockTypography.body)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 56)
@@ -754,7 +780,7 @@ private struct CalendarDayPane: View, Equatable {
                             ForEach(day.assignees) { count in
                                 HStack(spacing: 3) {
                                     BotChip(id: count.id, botsByID: botsByID, avatarImages: avatarImages)
-                                    Text("×\(count.count)").font(DockTypography.machineMetadata).foregroundStyle(Color.dockMetadataText)
+                                    Text("×\(count.count)").dockFont(.machineMetadata).foregroundStyle(Color.dockMetadataText)
                                 }
                             }
                         }
@@ -771,11 +797,11 @@ private struct CalendarDayPane: View, Equatable {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius, role: .control)
         return VStack(spacing: 1) {
             Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
-                .font(DockTypography.compactStatus)
+                .dockFont(.compactStatus)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockAccent)
             Text("\(calendar.component(.day, from: date))")
-                .font(DockTypography.metric)
+                .dockFont(.metric)
                 .foregroundStyle(Color.dockPrimaryText)
         }
         .frame(width: 48, height: 52)
@@ -809,7 +835,7 @@ private struct CalendarDayPane: View, Equatable {
                 Spacer(minLength: 8)
                 if day.hours[peakHour] > 0 {
                     Text("Peak \(Self.hourLabel(peakHour)) · \(peak) events")
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockMetadataText)
                 }
             }
@@ -820,12 +846,12 @@ private struct CalendarDayPane: View, Equatable {
                     VStack(spacing: 5) {
                         UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3, style: .continuous)
                             .fill(count == 0 ? Color.dockPrimaryText.opacity(0.06)
-                                  : Color.dockPrimaryText.opacity(hour == peakHour ? 0.85 : 0.3 + 0.4 * ratio))
+                                  : CalendarInk.sessionsFill.opacity(hour == peakHour ? 1 : 0.35 + 0.5 * ratio))
                             .frame(height: count > 0 ? max(5, 44 * CGFloat(ratio)) : 2)
                             .frame(maxHeight: 44, alignment: .bottom)
                         // Ticks overflow their column so "12p" stays one line without widening the bar.
                         Text(ticks[hour] != nil ? Self.hourLabel(hour) : " ")
-                            .font(DockTypography.compactStatus)
+                            .dockFont(.compactStatus)
                             .foregroundStyle(Color.dockMetadataText)
                             .fixedSize()
                             .frame(maxWidth: .infinity, alignment: ticks[hour] ?? .leading)
@@ -870,7 +896,7 @@ private struct CalendarDayPane: View, Equatable {
                 section("Pull requests merged", count: day.pullRequests.count) {
                     capped("prs", day.pullRequests.sorted { $0.mergedAt > $1.mergedAt }) { pr in
                         Button { if let url = pr.url { NSWorkspace.shared.open(url) } } label: {
-                            row(icon: .gitPullRequest, tint: .dockSecondaryText, title: pr.title,
+                            row(icon: .gitPullRequest, tint: .dockMerged, title: pr.title,
                                 meta: "\(pr.repo) #\(pr.number) · \(pr.mergedAt.formatted(.dateTime.hour().minute()))", trailingIcon: .arrowUpRight)
                         }
                         .buttonStyle(CalendarRowButtonStyle())
@@ -888,7 +914,7 @@ private struct CalendarDayPane: View, Equatable {
                     CalendarLeaderboard(title: nil, rows: repoCounts, unit: "commits", carded: false) { CalendarRepoLabel(id: $0) }
                         .padding(.vertical, 4)
                     capped("commits", day.commits) { commit in
-                        row(icon: .gitCommit, tint: .dockSecondaryText, title: commit.subject,
+                        row(icon: .gitCommit, tint: CalendarInk.shipped, title: commit.subject,
                             meta: "\(commit.repo) · \(commit.hash) · \(commit.date.formatted(.dateTime.hour().minute()))")
                     }
                 }
@@ -906,7 +932,7 @@ private struct CalendarDayPane: View, Equatable {
                 section("Sessions", count: day.sessions.count) {
                     capped("sessions", day.sessions.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }) { session in
                         Button { onOpenSession(session) } label: {
-                            row(icon: .chats, tint: .dockSecondaryText, title: session.title,
+                            row(icon: .chats, tint: CalendarInk.sessions, title: session.title,
                                 meta: session.updatedAt?.formatted(.dateTime.hour().minute()), trailingIcon: .arrowUpRight)
                         }
                         .buttonStyle(CalendarRowButtonStyle())
@@ -918,7 +944,7 @@ private struct CalendarDayPane: View, Equatable {
                 section("Automations", count: day.cronRuns.count) {
                     capped("jobs", automationJobs(day.cronRuns)) { job in
                         row(icon: job.failed > 0 ? .warningCircle : .clockCounterClockwise,
-                            tint: job.failed > 0 ? .dockWarning : .dockSecondaryText,
+                            tint: job.failed > 0 ? CalendarInk.failed : CalendarInk.automation,
                             title: jobNames[job.id] ?? job.id,
                             meta: ["\(job.runs) runs", job.failed > 0 ? "\(job.failed) failed" : nil,
                                    job.last.map { "last \($0.formatted(.dateTime.hour().minute()))" }]
@@ -981,8 +1007,8 @@ private struct CalendarDayPane: View, Equatable {
             Button(open ? "Show less" : "Show \(items.count - rowCap) more") {
                 if open { expanded.remove(key) } else { expanded.insert(key) }
             }
-            .buttonStyle(.dockPress)
-            .font(DockTypography.control)
+            .buttonStyle(.dockCompact)
+            .dockFont(.control)
             .foregroundStyle(Color.dockAccent)
             .padding(.top, 6)
         }
@@ -995,7 +1021,7 @@ private struct CalendarDayPane: View, Equatable {
             HStack(spacing: 8) {
                 DockIcon(.checkCircle, size: 13, weight: .fill, color: DockStatusTone.complete.color)
                 Text(task.title)
-                    .font(DockTypography.rowTitle)
+                    .dockFont(.rowTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -1005,7 +1031,7 @@ private struct CalendarDayPane: View, Equatable {
                 }
                 if let finished = task.completedAt {
                     Text(finished.formatted(.dateTime.hour().minute()))
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockMetadataText)
                 }
             }
@@ -1025,14 +1051,14 @@ private struct CalendarDayPane: View, Equatable {
 
     private func row(icon: Ph, tint: Color, title: String, meta: String?, metaTint: Color = .dockMetadataText, trailingIcon: Ph? = nil) -> some View {
         HStack(spacing: 8) {
-            DockIcon(icon).font(.system(size: 12)).foregroundStyle(tint).frame(width: 14)
-            Text(title).font(DockTypography.rowTitle).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.tail)
+            DockIcon(icon).dockFont(size: 12).foregroundStyle(tint).frame(width: 14)
+            Text(title).dockFont(.rowTitle).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 8)
             if let meta {
-                Text(meta).font(DockTypography.machineMetadata).foregroundStyle(metaTint).lineLimit(1)
+                Text(meta).dockFont(.machineMetadata).foregroundStyle(metaTint).lineLimit(1)
             }
             if let trailingIcon {
-                DockIcon(trailingIcon).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText)
+                DockIcon(trailingIcon).dockFont(size: 10).foregroundStyle(Color.dockMetadataText)
             }
         }
         .padding(.vertical, 5)
@@ -1041,8 +1067,8 @@ private struct CalendarDayPane: View, Equatable {
 
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(DockTypography.machineMetadata.weight(.semibold)).foregroundStyle(Color.dockPrimaryText)
-            Text(label).font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
+            Text(value).dockFont(.machineMetadata, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+            Text(label).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
         }
     }
 }
@@ -1086,12 +1112,12 @@ private struct CalendarDayCell: View, Equatable {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 0) {
                 Text("\(dayNumber)")
-                    .font(DockTypography.machineMetadata.weight(isToday ? .bold : .medium))
+                    .dockFont(.machineMetadata, weight: isToday ? .bold : .medium)
                     .foregroundStyle(isToday ? Color.dockOnAccentText : isFuture ? Color.dockMetadataText : Color.dockPrimaryText)
                     .padding(.horizontal, isToday ? 6 : 0)
                     .background { if isToday { Capsule().fill(Color.dockAccent) } }
                 if day?.hasFailedRun == true {
-                    Circle().fill(CalendarInk.failed).frame(width: 5, height: 5).padding(.leading, 4)
+                    Circle().fill(CalendarInk.failedFill).frame(width: 5, height: 5).padding(.leading, 4)
                 }
                 Spacer(minLength: 2)
             }
@@ -1100,7 +1126,7 @@ private struct CalendarDayCell: View, Equatable {
         }
         .padding(7)
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
-        .background(shape.fill(Color.dockPrimaryText.opacity(0.015 + heat * 0.02)))
+        .background(shape.fill(CalendarInk.shippedFill.opacity(heat > 0 ? 0.035 + heat * 0.035 : 0)))
         .background(shape.fill(Color.dockAccent.opacity(isInScope ? 0.1 : 0)))
         .overlay(shape.stroke(isSelected ? Color.dockAccent : isInScope ? Color.dockAccent.opacity(0.4) : Color.dockBorderLight, lineWidth: isSelected ? 1.5 : 1))
         .opacity(isFuture ? 0.55 : 1)
@@ -1123,9 +1149,9 @@ private struct CalendarDayCell: View, Equatable {
     /// Proportions of shipped / sessions / automation for the day.
     private func mixBar(_ day: WorkDay) -> some View {
         let parts: [(Int, Color)] = [
-            (day.doneTasks.count + day.commits.count, CalendarInk.shipped),
-            (day.sessions.count, CalendarInk.sessions),
-            (day.cronRuns.count, day.hasFailedRun ? CalendarInk.failed : CalendarInk.automation)
+            (day.doneTasks.count + day.commits.count, CalendarInk.shippedFill),
+            (day.sessions.count, CalendarInk.sessionsFill),
+            (day.cronRuns.count, day.hasFailedRun ? CalendarInk.failedFill : CalendarInk.automationFill)
         ].filter { $0.0 > 0 }
         let total = CGFloat(parts.reduce(0) { $0 + $1.0 })
         return GeometryReader { proxy in
@@ -1136,7 +1162,7 @@ private struct CalendarDayCell: View, Equatable {
             }
             .clipShape(Capsule())
         }
-        .frame(height: 3)
+        .frame(height: 4)
     }
 }
 
@@ -1156,33 +1182,33 @@ private struct CalendarDayPreview: View {
         ].filter { $0.2 > 0 }
         VStack(alignment: .leading, spacing: 8) {
             Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                .font(DockTypography.rowTitle)
+                .dockFont(.rowTitle)
                 .foregroundStyle(Color.dockPrimaryText)
             VStack(spacing: 5) {
                 ForEach(rows, id: \.1) { icon, label, value in
                     HStack(spacing: 8) {
-                        DockIcon(icon).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).frame(width: 14)
-                        Text(label).font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText)
+                        DockIcon(icon).dockFont(size: 11).foregroundStyle(Color.dockMetadataText).frame(width: 14)
+                        Text(label).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                         Spacer(minLength: 12)
-                        Text("\(value)").font(DockTypography.machineMetadata.weight(.semibold)).foregroundStyle(Color.dockPrimaryText)
+                        Text("\(value)").dockFont(.machineMetadata, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                     }
                 }
                 if failed > 0 {
                     HStack {
-                        Text("\(failed) failed").font(DockTypography.metadata).foregroundStyle(Color.dockWarning)
+                        Text("\(failed) failed").dockFont(.metadata).foregroundStyle(Color.dockWarning)
                         Spacer()
                     }
                 }
             }
             if let first = day.firstAt, let last = day.lastAt, last > first {
                 Text("\(first.formatted(.dateTime.hour().minute()))–\(last.formatted(.dateTime.hour().minute()))")
-                    .font(DockTypography.machineMetadata)
+                    .dockFont(.machineMetadata)
                     .foregroundStyle(Color.dockMetadataText)
             }
             if let usage = day.usage, usage.inputTokens + usage.outputTokens > 0 {
                 Text("\(UsageWorkspaceView.tokens(usage.inputTokens + usage.outputTokens)) tokens"
                      + (usage.estimatedCost > 0 ? " · \(UsageWorkspaceView.cost(usage.estimatedCost))" : ""))
-                    .font(DockTypography.machineMetadata)
+                    .dockFont(.machineMetadata)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -1196,6 +1222,6 @@ private struct CalendarDayPreview: View {
 private func usageLink(_ action: @escaping () -> Void) -> some View {
     Button("Spend", action: action)
         .buttonStyle(.dockLink)
-        .font(DockTypography.metadata)
+        .dockFont(.metadata)
         .help("Open the Spend tab")
 }

@@ -5,29 +5,36 @@ import SwiftUI
 /// `/api/analytics/usage` report. The Dock only draws; every figure is Hermes'.
 struct UsageWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
-    @AppStorage(Self.daysKey) private var days = 30
     @State private var expandedModels: Set<String> = []
 
-    static let daysKey = "dock.usage.days"
-    static var storedDays: Int { UserDefaults.standard.object(forKey: daysKey) as? Int ?? 30 }
+    static let reportDays = 30
 
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "token.usage") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             toolbar
+            yearActivity
 
             if let report = control.tokenUsage {
                 overview(report)
                 DailyUsageChart(daily: report.daily)
                 modelsSection(report)
                 if !report.tasks.isEmpty { tasksSection(report) }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
-                    shareSection(title: "Tools", detail: "\(report.tools.reduce(0) { $0 + $1.count }.formatted()) calls", rows: report.tools)
-                    shareSection(title: "Skills", detail: "\(report.skillLoads.formatted()) loads · \(report.distinctSkills) distinct", rows: report.skills)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        shareSection(title: "Tools", detail: "\(report.tools.reduce(0) { $0 + $1.count }.formatted()) calls", rows: report.tools, tint: .dockInfo)
+                            .frame(minWidth: 300)
+                        shareSection(title: "Skills", detail: "\(report.skillLoads.formatted()) loads · \(report.distinctSkills) distinct", rows: report.skills, tint: .dockMerged)
+                            .frame(minWidth: 300)
+                    }
+                    VStack(spacing: 16) {
+                        shareSection(title: "Tools", detail: "\(report.tools.reduce(0) { $0 + $1.count }.formatted()) calls", rows: report.tools, tint: .dockInfo)
+                        shareSection(title: "Skills", detail: "\(report.skillLoads.formatted()) loads · \(report.distinctSkills) distinct", rows: report.skills, tint: .dockMerged)
+                    }
                 }
             } else if refreshState?.isRefreshing == true {
-                message(title: "Reading Hermes usage…", detail: "Hermes is totalling tokens and cost for the selected range.")
+                message(title: "Reading Hermes usage…", detail: "Hermes is totalling tokens and cost for the past 30 days.")
             } else {
                 message(title: "No usage report yet", detail: "Usage comes from the Hermes web server. Start Hermes and refresh.")
             }
@@ -36,13 +43,33 @@ struct UsageWorkspaceView: View {
 
             if let state = refreshState, let error = state.error {
                 Text(state.isStale ? "Showing last successful data. \(error)" : error)
-                    .font(DockTypography.metadata)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task { await control.refreshYearActivity() }
+    }
+
+    private var yearActivity: some View {
+        let state = control.refreshState(for: "usage.year")
+        return VStack(alignment: .leading, spacing: 8) {
+            if let daily = control.yearActivity {
+                UsageHeatmap(daily: daily)
+            } else {
+                message(
+                    title: state?.isRefreshing == true ? "Reading yearly activity…" : "Yearly activity unavailable",
+                    detail: "The heatmap reads the past year of usage from Hermes. Refresh to try again."
+                )
+            }
+            if let error = state?.error {
+                Text(state?.isStale == true ? "Showing last successful activity. \(error)" : error)
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockWarning)
+            }
+        }
     }
 
     /// Indent that lines sub-rows up under the model name, past the provider icon.
@@ -60,49 +87,68 @@ struct UsageWorkspaceView: View {
 
     private func overview(_ report: TokenUsageReport) -> some View {
         let auxTokens = report.auxInputTokens + report.auxOutputTokens
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 0, alignment: .top)], alignment: .leading, spacing: 0) {
-            tile("Total tokens", Self.tokens(report.totalTokens),
-                 detail: "\(Self.tokens(report.totalInputTokens)) in · \(Self.tokens(report.totalOutputTokens)) out",
-                 help: "Input plus output, including background work. Cache reads are counted separately.")
-            tile("Cache reads", Self.tokens(report.cacheReadTokens),
-                 detail: report.cacheHitRate.map { "\(Self.percent($0 * 100)) of prompt served from cache" } ?? "No prompt tokens",
-                 help: "Prompt tokens the provider served from its cache. Usually billed at a steep discount.")
-            tile("Reasoning", Self.tokens(report.reasoningTokens),
-                 detail: "As reported by the provider",
-                 help: "Hidden reasoning tokens reported by the provider for the main conversation.")
-            tile("Estimated cost", report.totalCost > 0 ? Self.cost(report.totalCost) : "—",
-                 detail: report.totalCost > 0 ? "\(Self.cost(report.estimatedCost)) chat · \(Self.cost(report.auxCost)) background" : "No per-token billing reported",
-                 help: "Hermes' estimate. Subscription-included and unpriced models count as $0.")
-            tile("Sessions", report.sessions.formatted(),
-                 detail: report.sessions > 0 ? "\(Self.tokens(report.totalTokens / report.sessions)) tokens each" : "None in range",
-                 help: nil)
-            tile("API calls", report.apiCalls.formatted(),
-                 detail: report.apiCalls > 0 ? "\(Self.tokens((report.inputTokens + report.outputTokens) / report.apiCalls)) tokens per call" : "None in range",
-                 help: "Main conversation model calls.")
-            tile("Background share", report.totalTokens > 0 ? Self.percent(Double(auxTokens) / Double(report.totalTokens) * 100) : "—",
-                 detail: "\(Self.tokens(auxTokens)) tokens outside the chat",
-                 help: "Review, compression, approvals, titles, and vision calls Hermes made on its own.")
-            tile("Models", "\(report.models.count)",
-                 detail: report.models.first.map { "Most used: \($0.model)" } ?? "None",
-                 help: nil)
+        return VStack(alignment: .leading, spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 0) { overviewTiles(report) }
+                    .frame(minWidth: 880)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 0) {
+                    overviewTiles(report)
+                }
+            }
+            Color.dockBorderLight.frame(height: DockLayout.hairline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), alignment: .leading)], alignment: .leading, spacing: 12) {
+                supportingMetric("API calls", report.apiCalls.formatted(), help: report.apiCalls > 0 ? "Main conversation · \(Self.tokens((report.inputTokens + report.outputTokens) / report.apiCalls)) tokens per call" : "No calls in range")
+                supportingMetric("Reasoning", Self.tokens(report.reasoningTokens), help: "Hidden reasoning tokens reported by the provider for the main conversation.")
+                supportingMetric("Background share", report.totalTokens > 0 ? Self.percent(Double(auxTokens) / Double(report.totalTokens) * 100) : "—", help: "\(Self.tokens(auxTokens)) tokens outside the chat: review, compression, approvals, titles, and vision.")
+                supportingMetric("Models", report.models.count.formatted(), help: report.models.first.map { "Most used: \($0.model)" } ?? "No models in range")
+            }
+            .padding(14)
         }
         .dockCard(padding: 0)
     }
 
-    private func tile(_ title: String, _ value: String, detail: String, help: String?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            DockSectionLabel(title: title)
+    @ViewBuilder
+    private func overviewTiles(_ report: TokenUsageReport) -> some View {
+        tile("Estimated cost", report.totalCost > 0 ? Self.cost(report.totalCost) : "—",
+             detail: report.totalCost > 0 ? "\(Self.cost(report.estimatedCost)) chat · \(Self.cost(report.auxCost)) background" : "No per-token billing reported",
+             tint: .dockReview, help: "Hermes' estimate. Subscription-included and unpriced models count as $0.")
+        tile("Total tokens", Self.tokens(report.totalTokens),
+             detail: "\(Self.tokens(report.totalInputTokens)) in · \(Self.tokens(report.totalOutputTokens)) out",
+             tint: .dockInfo, help: "Input plus output, including background work. Cache reads are counted separately.")
+        tile("Cache reads", Self.tokens(report.cacheReadTokens),
+             detail: report.cacheHitRate.map { "\(Self.percent($0 * 100)) of prompt served from cache" } ?? "No prompt tokens",
+             tint: .dockMerged, help: "Prompt tokens the provider served from its cache. Usually billed at a discount.")
+        tile("Sessions", report.sessions.formatted(),
+             detail: report.sessions > 0 ? "\(Self.tokens(report.totalTokens / report.sessions)) tokens each" : "None in range",
+             tint: .dockInfo, help: nil)
+    }
+
+    private func supportingMetric(_ title: String, _ value: String, help: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title).foregroundStyle(Color.dockSecondaryText)
+            Text(value).fontWeight(.semibold).foregroundStyle(Color.dockPrimaryText)
+        }
+        .dockFont(.metadata)
+        .accessibilityElement(children: .combine)
+        .help(help)
+    }
+
+    private func tile(_ title: String, _ value: String, detail: String, tint: Color, help: String?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Capsule().fill(tint).frame(width: 3, height: 12)
+                DockSectionLabel(title: title)
+            }
             Text(value)
-                .font(DockTypography.metric)
-                .foregroundStyle(Color.dockPrimaryText)
+                .dockFont(.metric)
+                .foregroundStyle(tint)
                 .lineLimit(1)
             Text(detail)
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(2)
-                .truncationMode(.tail)
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .help(help ?? "")
@@ -121,7 +167,7 @@ struct UsageWorkspaceView: View {
                     } label: {
                         HStack(spacing: 8) {
                             DockIcon(expandedModels.contains(model.id) ? .caretDown : .caretRight)
-                                .font(.system(size: 9, weight: .semibold))
+                                .dockFont(size: 9, weight: .semibold)
                                 .foregroundStyle(Color.dockMetadataText)
                                 .frame(width: 10)
                                 .opacity(model.tasks.isEmpty ? 0 : 1)
@@ -129,12 +175,12 @@ struct UsageWorkspaceView: View {
                                 ProviderMarkBadge(mark: ProviderMark(hermesProvider: provider), size: 18)
                             }
                             Text(model.model)
-                                .font(DockTypography.rowTitle)
+                                .dockFont(.rowTitle)
                                 .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(1)
                             ForEach(model.providers, id: \.self) { provider in
                                 Text(provider)
-                                    .font(DockTypography.metadata)
+                                    .dockFont(.metadata)
                                     .foregroundStyle(Color.dockSecondaryText)
                                     .lineLimit(1)
                                     .padding(.horizontal, 7)
@@ -145,7 +191,7 @@ struct UsageWorkspaceView: View {
                             }
                             Spacer(minLength: 8)
                             Text(Self.tokens(model.totalTokens))
-                                .font(DockTypography.machineMetadata)
+                                .dockFont(.machineMetadata)
                                 .foregroundStyle(Color.dockPrimaryText)
                         }
                         .contentShape(Rectangle())
@@ -153,11 +199,11 @@ struct UsageWorkspaceView: View {
                     .buttonStyle(.dockHover)
                     .disabled(model.tasks.isEmpty)
 
-                    meter(Double(model.totalTokens) / Double(maxTokens))
+                    meter(Double(model.totalTokens) / Double(maxTokens), tint: .dockInfoFill)
                         .padding(.leading, inset(model))
 
                     Text("\(Self.tokens(model.inputTokens)) in · \(Self.tokens(model.outputTokens)) out · \(model.sessions) sessions · \(model.apiCalls.formatted()) calls · \(model.estimatedCost > 0 ? Self.cost(model.estimatedCost) : "no per-token cost")")
-                        .font(DockTypography.metadata)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .padding(.leading, inset(model))
@@ -185,13 +231,13 @@ struct UsageWorkspaceView: View {
                 DockSectionLabel(title: "Background work", count: report.tasks.count)
                 Spacer()
                 Text("\(Self.tokens(report.auxInputTokens + report.auxOutputTokens)) tokens · \(Self.cost(report.auxCost))")
-                    .font(DockTypography.machineMetadata)
+                    .dockFont(.machineMetadata)
                     .foregroundStyle(Color.dockMetadataText)
             }
             ForEach(report.tasks) { task in
                 VStack(alignment: .leading, spacing: 4) {
                     taskLine(task)
-                    meter(Double(task.totalTokens) / Double(maxTokens))
+                    meter(Double(task.totalTokens) / Double(maxTokens), tint: .dockMergedFill)
                 }
             }
         }
@@ -201,11 +247,11 @@ struct UsageWorkspaceView: View {
     private func taskLine(_ task: TokenUsageReport.Task) -> some View {
         HStack(spacing: 8) {
             Text(Self.taskLabel(task.task))
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 8)
             Text("\(Self.tokens(task.inputTokens)) in · \(Self.tokens(task.outputTokens)) out · \(task.apiCalls.formatted()) calls\(task.estimatedCost > 0 ? " · " + Self.cost(task.estimatedCost) : "")")
-                .font(DockTypography.machineMetadata)
+                .dockFont(.machineMetadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
         }
@@ -213,7 +259,7 @@ struct UsageWorkspaceView: View {
 
     // MARK: Tools & skills
 
-    private func shareSection(title: String, detail: String, rows: [TokenUsageReport.Share]) -> some View {
+    private func shareSection(title: String, detail: String, rows: [TokenUsageReport.Share], tint: Color) -> some View {
         let top = Array(rows.prefix(10))
         let maxShare = max(0.01, top.map(\.percentage).max() ?? 1)
         return VStack(alignment: .leading, spacing: 10) {
@@ -221,27 +267,27 @@ struct UsageWorkspaceView: View {
                 DockSectionLabel(title: title, count: rows.count)
                 Spacer()
                 Text(detail)
-                    .font(DockTypography.machineMetadata)
+                    .dockFont(.machineMetadata)
                     .foregroundStyle(Color.dockMetadataText)
             }
             if top.isEmpty {
                 Text("None in this range.")
-                    .font(DockTypography.body)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             ForEach(top) { row in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(row.name)
-                            .font(DockTypography.body)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         Text("\(row.count.formatted()) · \(Self.percent(row.percentage))")
-                            .font(DockTypography.machineMetadata)
+                            .dockFont(.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
                     }
-                    meter(row.percentage / maxShare)
+                    meter(row.percentage / maxShare, tint: tint)
                 }
             }
         }
@@ -258,24 +304,24 @@ struct UsageWorkspaceView: View {
                 Spacer()
                 if let model = usage.model {
                     Text(model)
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockMetadataText)
                 }
             }
             if let percent = usage.contextPercent {
                 HStack {
                     Text("Context window")
-                        .font(DockTypography.body)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer()
                     Text([usage.contextUsed.map(Self.tokens), usage.contextMax.map(Self.tokens)].compactMap { $0 }.joined(separator: " / ") + " · " + Self.percent(percent))
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .foregroundStyle(Color.dockPrimaryText)
                 }
-                meter(percent / 100, tint: percent >= 80 ? .dockWarning : .dockAccent)
+                meter(percent / 100, tint: percent >= 80 ? .dockWarningFill : .dockAccent)
             }
             Text("\(Self.tokens(usage.totalTokens)) tokens · \(Self.tokens(usage.inputTokens)) in · \(Self.tokens(usage.outputTokens)) out · \(usage.calls) calls")
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
         }
         .dockCard(padding: 14)
@@ -297,10 +343,10 @@ struct UsageWorkspaceView: View {
     private func message(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
         }
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
@@ -354,7 +400,7 @@ private struct DailyUsageChart: View {
 
             if daily.isEmpty {
                 Text("No sessions in this range. Pick a longer range.")
-                    .font(DockTypography.metadata)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 Chart {
@@ -367,13 +413,13 @@ private struct DailyUsageChart: View {
                                 .foregroundStyle(by: .value("Kind", "Output"))
                         case .cache:
                             BarMark(x: .value("Day", day.day, unit: .day), y: .value("Cache reads", day.cacheReadTokens))
-                                .foregroundStyle(Color.dockAccent)
+                                .foregroundStyle(Color.dockMergedFill)
                         case .cost:
                             BarMark(x: .value("Day", day.day, unit: .day), y: .value("Cost", day.estimatedCost))
-                                .foregroundStyle(Color.dockAccent)
+                                .foregroundStyle(Color.dockReviewFill)
                         case .calls:
                             BarMark(x: .value("Day", day.day, unit: .day), y: .value("API calls", day.apiCalls))
-                                .foregroundStyle(Color.dockAccent)
+                                .foregroundStyle(Color.dockInfoFill)
                         }
                     }
                     if let selected {
@@ -384,7 +430,7 @@ private struct DailyUsageChart: View {
                             }
                     }
                 }
-                .chartForegroundStyleScale(["Input": Color.dockAccent, "Output": Color.dockAccent.opacity(0.4)])
+                .chartForegroundStyleScale(["Input": Color.dockInfoFill, "Output": Color.dockReviewFill.opacity(DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk ? 0.4 : 1)])
                 .chartLegend(metric == .tokens ? .visible : .hidden)
                 .chartYAxis {
                     AxisMarks { value in
@@ -392,7 +438,7 @@ private struct DailyUsageChart: View {
                         AxisValueLabel {
                             if let number = value.as(Double.self) {
                                 Text(metric == .cost ? UsageWorkspaceView.cost(number) : UsageWorkspaceView.tokens(Int(number)))
-                                    .font(DockTypography.machineMetadata)
+                                    .dockFont(.machineMetadata)
                             }
                         }
                     }
@@ -405,11 +451,11 @@ private struct DailyUsageChart: View {
                         if day != selectedDay { selectedDay = day }
                     }
                 ))
-                .frame(height: 220)
-                .padding(.top, 36)
+                .frame(height: 200)
+                .padding(.top, 28)
 
                 Text("Main conversation only · days bucketed by session start (UTC) · hover a bar for details")
-                    .font(DockTypography.metadata)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -419,14 +465,14 @@ private struct DailyUsageChart: View {
     private func dayTooltip(_ day: TokenUsageReport.Day) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(day.day, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Group {
                 Text("\(UsageWorkspaceView.tokens(day.inputTokens)) in · \(UsageWorkspaceView.tokens(day.outputTokens)) out")
                 Text("\(UsageWorkspaceView.tokens(day.cacheReadTokens)) cache · \(UsageWorkspaceView.tokens(day.reasoningTokens)) reasoning")
                 Text("\(day.sessions) sessions · \(day.apiCalls) calls · \(UsageWorkspaceView.cost(day.estimatedCost))")
             }
-            .font(DockTypography.machineMetadata)
+            .dockFont(.machineMetadata)
             .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(8)
@@ -434,28 +480,23 @@ private struct DailyUsageChart: View {
     }
 }
 
-/// Range picker, freshness and refresh for Usage; shared by the page body and the window title row.
+/// Report period, freshness and refresh for Usage.
 struct UsageToolbar: View {
     @ObservedObject var control: ControlCenterModel
-    @AppStorage(UsageWorkspaceView.daysKey) private var days = 30
-    private static let dayChoices = [7, 30, 90]
 
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "token.usage") }
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 4) {
-                ForEach(Self.dayChoices, id: \.self) { choice in
-                    DockTabButton(title: "\(choice) days", isSelected: days == choice) { days = choice }
-                }
-            }
-            .onChange(of: days) { _, days in control.refreshTokenUsage(days: days) }
+            Text("Past year · spend breakdown: past 30 days")
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockSecondaryText)
 
             Spacer(minLength: 8)
 
             if let lastSuccess = refreshState?.lastSuccess {
                 Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
-                    .font(DockTypography.machineMetadata)
+                    .dockFont(.machineMetadata)
                     .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
                     .lineLimit(1)
             }
@@ -466,7 +507,8 @@ struct UsageToolbar: View {
                 isBusy: refreshState?.isRefreshing == true,
                 style: DockThemePalette(theme: DockThemeRuntime.current)
             ) {
-                control.refreshTokenUsage(days: days)
+                control.refreshTokenUsage(days: UsageWorkspaceView.reportDays)
+                Task { await control.refreshYearActivity() }
             }
         }
     }

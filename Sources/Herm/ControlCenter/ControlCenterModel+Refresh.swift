@@ -66,6 +66,8 @@ extension ControlCenterModel {
             sessionStoreStatus = nil
             memoryHealthStatus = nil
             sessionUsage = nil
+            yearActivity = nil
+            yearActivityGeneration = UUID()
             sessionContext = nil
             sessionCockpitSessionID = nil
             providerQuotas = []

@@ -60,6 +60,30 @@ extension ControlCenterModel {
         }
     }
 
+    func refreshYearActivity() async {
+        let generation = UUID()
+        yearActivityGeneration = generation
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        guard let rpc else {
+            recordProjectionUnavailable("usage.year")
+            return
+        }
+        beginProjectionRefresh("usage.year")
+        do {
+            let result = try await rpc.usageAnalytics(days: 365)
+            guard generation == yearActivityGeneration,
+                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+            guard result["daily"] is [[String: Any]] else { throw HermesGateway.GatewayError.malformedResponse }
+            yearActivity = Self.parseTokenUsage(result).daily
+            recordProjectionSuccess("usage.year", count: yearActivity?.count ?? 0)
+        } catch {
+            guard generation == yearActivityGeneration,
+                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+            recordProjectionFailure("usage.year", error: error.localizedDescription)
+        }
+    }
+
     /// Loads one month of work for the Calendar tab. A month already fetched
     /// is rebuilt from cache unless `force` is set.
     func refreshWorkCalendar(month: Date, repoPaths: [String], force: Bool = false) {

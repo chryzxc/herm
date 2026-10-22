@@ -79,7 +79,7 @@ extension WorkspaceActivitySidebar {
                 }
             }
         }
-        .font(.system(size: 13))
+        .dockFont(size: 13)
     }
 
     var pageHeader: some View {
@@ -221,11 +221,11 @@ extension WorkspaceActivitySidebar {
         switch badge.kind {
         case .dot:
             Circle()
-                .fill(badge.isWarning ? Color.dockWarning : Color.dockAccent)
+                .fill(badge.isWarning ? Color.dockWarningFill : Color.dockAccent)
                 .frame(width: 7, height: 7)
         case .count(let count):
             Text("\(count)")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .dockFont(size: 10, weight: .semibold, design: .monospaced)
                 .foregroundStyle(badge.isWarning ? Color.dockWarning : Color.dockMetadataText)
         }
     }
@@ -255,10 +255,10 @@ extension WorkspaceActivitySidebar {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(selectedSettingsCategory.title)
-                        .font(DockTypography.pageTitle)
+                        .dockFont(.pageTitle)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(selectedSettingsCategory.subtitle)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 coreContent
@@ -302,7 +302,7 @@ extension WorkspaceActivitySidebar {
                         .padding(.bottom, 16)
                 }
                 .clipped()
-                .task { control.refreshTokenUsage(days: UsageWorkspaceView.storedDays) }
+                .task { control.refreshTokenUsage(days: UsageWorkspaceView.reportDays) }
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -423,7 +423,7 @@ extension WorkspaceActivitySidebar {
                 Spacer()
                 Button { isShowingCommandPalette = true } label: {
                     DockIcon(.command)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                         .frame(width: 32, height: 32)
                 }
@@ -432,7 +432,7 @@ extension WorkspaceActivitySidebar {
                 .keyboardShortcut("k", modifiers: [.command])
                 Button(action: onClose) {
                     DockIcon(.caretLeft)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.dockSurface4))
@@ -603,14 +603,14 @@ extension WorkspaceActivitySidebar {
     ) -> some View {
         HStack(spacing: 6) {
             DockIcon(icon)
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
             Text(detail ?? title)
                 .lineLimit(1)
             if badgeCount > 0 {
                 badgeView(count: badgeCount, isUrgent: isUrgent)
             }
         }
-        .font(.system(size: 11, weight: .semibold))
+        .dockFont(size: 11, weight: .semibold)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(minHeight: 32)
@@ -695,7 +695,7 @@ extension WorkspaceActivitySidebar {
     ) -> some View {
         HStack(spacing: 8) {
             DockIcon(.dotsThreeCircle)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .frame(width: 22, alignment: .center)
             Text(detail ?? title)
                 .lineLimit(1)
@@ -703,7 +703,7 @@ extension WorkspaceActivitySidebar {
                 badgeView(count: badgeCount, isUrgent: isUrgent)
             }
         }
-        .font(.system(size: 12, weight: .medium))
+        .dockFont(size: 12, weight: .medium)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
@@ -730,7 +730,7 @@ extension WorkspaceActivitySidebar {
         Button { select(mode) } label: {
             HStack(spacing: 8) {
                 DockIcon(mode.icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .frame(width: 22, alignment: .center)
                 Text(mode.globalRailLabel)
                     .lineLimit(1)
@@ -738,7 +738,7 @@ extension WorkspaceActivitySidebar {
                     badgeView(count: badgeCount(for: mode), isUrgent: badgeIsUrgent(for: mode))
                 }
             }
-            .font(.system(size: 12, weight: .semibold))
+            .dockFont(size: 12, weight: .semibold)
             .foregroundStyle(selectedMode == mode ? Color.dockPrimaryText : Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
@@ -751,13 +751,13 @@ extension WorkspaceActivitySidebar {
 
     func badgeView(count: Int, isUrgent: Bool) -> some View {
         Text(count > 99 ? "99+" : "\(count)")
-            .font(.system(size: 12, weight: .bold))
+            .dockFont(size: 12, weight: .bold)
             .monospacedDigit()
             .tracking(0)
             .foregroundStyle(isUrgent ? Color.dockOnAccentText : Color.dockPrimaryText)
             .frame(minWidth: 18, minHeight: 18)
             .padding(.horizontal, 4)
-            .background(Capsule().fill(isUrgent ? Color.dockWarning : Color.dockAccent.opacity(0.85)))
+            .background(Capsule().fill(isUrgent ? Color.dockWarningFill : Color.dockAccent.opacity(0.85)))
     }
 
     func select(_ mode: ControlTab) {
