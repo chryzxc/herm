@@ -10,7 +10,7 @@ struct ConversationLatestMessageControl: View {
                 HStack(spacing: 7) {
                     DockIcon(.arrowDown, size: 11, color: Color.dockPrimaryText)
                     Text("\(presentation.unseenMessageCount) new \(presentation.unseenMessageCount == 1 ? "message" : "messages")")
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                 }
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 14)

@@ -121,7 +121,19 @@ final class DockModel: ObservableObject {
     @Published var sessions: [HermesSession] = []
     /// What each session is doing right now (its latest tool), read from the
     /// global gateway stream so sessions that are not open can show it too.
-    @Published var sessionActivityLabels: [String: String] = [:]
+    // Only the edge dock consumes these; background tools must not invalidate
+    // every workspace view observing DockModel.
+    private let sessionActivityLabelSubject = CurrentValueSubject<[String: String], Never>([:])
+    var sessionActivityLabels: [String: String] {
+        get { sessionActivityLabelSubject.value }
+        set {
+            guard newValue != sessionActivityLabelSubject.value else { return }
+            sessionActivityLabelSubject.send(newValue)
+        }
+    }
+    var sessionActivityLabelChanges: AnyPublisher<[String: String], Never> {
+        sessionActivityLabelSubject.eraseToAnyPublisher()
+    }
     @Published var todoPlan: TodoPlan?
     /// Bumped each time the wake phrase wakes voice mode.
     @Published var wakeCount = 0
@@ -273,7 +285,8 @@ final class DockModel: ObservableObject {
     /// store. Keep only exact task IDs seen in a tool command/result for the
     /// owning chat session; do not infer ownership from titles or assignees.
     var observedKanbanTaskIDsBySessionID: [String: Set<String>] = [:]
-    var streamingMessageID: UUID?
+    let transcriptPresentationChanges = PassthroughSubject<Void, Never>()
+    var streamingMessageID: UUID? { didSet { transcriptPresentationChanges.send() } }
     var streamingResponseStartedAt: Date?
     /// When the AI began the current turn, per session. Survives session switches and live-row rebuilds; cleared when the turn completes.
     var turnStartedAtBySession: [String: Date] = [:]
@@ -340,10 +353,10 @@ final class DockModel: ObservableObject {
     var transcriptPrependGeneration = 0
     /// Set in the same main-actor step that prepends older history, so the
     /// transcript view can tell a prepend from an append on the count change.
-    var lastTranscriptPrepend: TranscriptHistoryPrepend?
+    var lastTranscriptPrepend: TranscriptHistoryPrepend? { didSet { transcriptPresentationChanges.send() } }
     /// Every stored prompt of the active paged transcript, oldest first.
     var transcriptTimeline: [TranscriptTimelineEntry] = [] {
-        didSet { cachedMessageNavigatorItems = nil }
+        didSet { cachedMessageNavigatorItems = nil; transcriptPresentationChanges.send() }
     }
     var transcriptMessageIDsByRowID: [Int: UUID] = [:]
     /// True while search or a jump reads older history in one step.

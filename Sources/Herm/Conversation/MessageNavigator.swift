@@ -351,7 +351,7 @@ struct MessageNavigatorView: View {
                 DockIcon(.magnifyingGlass, size: 13, color: Color.dockMetadataText)
                 DockTextField("Find a message", text: $searchQuery)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .dockFont(size: 13)
                     .foregroundStyle(Color.dockPrimaryText)
                     .focused($isSearchFocused)
                     .onSubmit(selectFirstSearchResult)
@@ -359,7 +359,7 @@ struct MessageNavigatorView: View {
                     .accessibilityLabel("Find a message")
                 if hasSearchQuery, !searchResults.isEmpty {
                     Text("\(searchResults.count)")
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .dockFont(size: 11, weight: .medium).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Button { isSearchPresented = false } label: {
@@ -379,7 +379,7 @@ struct MessageNavigatorView: View {
                 Color.dockBorder.frame(height: DockLayout.hairline)
                 if searchResults.isEmpty {
                     Text(isLoadingHistory ? "Searching earlier messages…" : "No matching messages")
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
@@ -396,14 +396,14 @@ struct MessageNavigatorView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         HStack(spacing: 6) {
                                             Text(item.roleLabel)
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .dockFont(size: 11, weight: .semibold)
                                                 .foregroundStyle(item.roleLabel == "You" ? Color.dockAccent : Color.dockPrimaryText)
                                             Text("#\(item.ordinal)")
-                                                .font(.system(size: 10).monospacedDigit())
+                                                .dockFont(size: 10).monospacedDigit()
                                                 .foregroundStyle(Color.dockMetadataText)
                                         }
                                         Text(item.preview.isEmpty ? "(empty message)" : item.preview)
-                                            .font(.system(size: 12))
+                                            .dockFont(size: 12)
                                             .foregroundStyle(Color.dockSecondaryText)
                                             .lineLimit(2)
                                     }
@@ -515,10 +515,10 @@ struct MessageNavigatorView: View {
             if let previewItem {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(previewItem.ordinal) · \(previewItem.roleLabel)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .dockFont(size: 10, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(previewItem.preview.isEmpty ? "(empty message)" : previewItem.preview)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(2)
                 }

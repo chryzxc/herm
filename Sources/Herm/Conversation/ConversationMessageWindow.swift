@@ -223,22 +223,7 @@ enum ConversationMessageWindow {
         )
     }
 
-    static func transcriptSelectionHandler(
-        sessionID: String,
-        messages: [ChatMessage],
-        onEffect: @escaping (ConversationMessageJumpEffect) -> Void,
-        onScroll: @escaping (UUID, ConversationMessageScrollAnchor) -> Void
-    ) -> (MessageNavigatorItem) -> Void {
-        { item in
-            guard let effect = jumpEffect(
-                for: item,
-                sessionID: sessionID,
-                messages: messages
-            ) else { return }
-            onEffect(effect)
-            onScroll(effect.messageID, .center)
-        }
-    }
+
 }
 
 /// The unread badge represents message presentations the reader can actually

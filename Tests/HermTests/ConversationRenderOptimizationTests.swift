@@ -126,11 +126,11 @@ struct ConversationRenderOptimizationTests {
         #expect(!ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: false, isPickerVisible: false))
     }
 
-    @Test func longMarkdownUsesNativeRendererAtTheFixedBoundary() {
-        let below = String(repeating: "a", count: CompletedMarkdownRendererPolicy.nativeThresholdBytes - 1)
-        let at = String(repeating: "a", count: CompletedMarkdownRendererPolicy.nativeThresholdBytes)
-        #expect(!CompletedMarkdownRendererPolicy.usesNativeRenderer(for: below))
-        #expect(CompletedMarkdownRendererPolicy.usesNativeRenderer(for: at))
+    @Test func longStreamingMarkdownUsesNativeRendererAtTheFixedBoundary() {
+        let below = String(repeating: "a", count: StreamingMarkdownRendererPolicy.nativeThresholdBytes - 1)
+        let at = String(repeating: "a", count: StreamingMarkdownRendererPolicy.nativeThresholdBytes)
+        #expect(!StreamingMarkdownRendererPolicy.usesNativeRenderer(for: below))
+        #expect(StreamingMarkdownRendererPolicy.usesNativeRenderer(for: at))
     }
 
     @Test func transcriptCacheKeyUsesMessageIdentityAndContentRevision() {
@@ -409,6 +409,7 @@ struct ConversationRenderOptimizationTests {
         let document = MarkdownRenderDocumentBuilder.build(
             source: source, key: MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1))
         let container = NativeMarkdownDocumentContainerView(frame: .zero)
+        container.keepsAccessibilitySectionsMounted = true
         container.apply(document: document)
         for width: CGFloat in [620, 300, 740, 620, 619.75, 620.25, 300] {
             let height = container.measuredHeight(forWidth: width)

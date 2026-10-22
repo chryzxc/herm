@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 enum ResponseDurationFormatting {
     static func string(seconds: TimeInterval) -> String {
@@ -361,19 +362,65 @@ extension StreamingChunkPolicy {
     }
 }
 
-/// Renders the in-flight response. Observing only StreamingText keeps the
-/// per-flush re-render inside this row.
+/// Forwards presentation updates only while the reader is not scrolling.
+/// Canonical text continues accumulating in StreamingText during the gesture.
+@MainActor
+final class StreamingTextPresentation: ObservableObject {
+    nonisolated(unsafe) let objectWillChange = ObservableObjectPublisher()
+    private weak var streaming: StreamingText?
+    private weak var controller: ConversationScrollController?
+    private var sourceChanges: AnyCancellable?
+    private var settled: AnyCancellable?
+    private var hasPresentedText = false
+
+    func observe(_ streaming: StreamingText, controller: ConversationScrollController?) {
+        guard self.streaming !== streaming || self.controller !== controller else { return }
+        stopObserving()
+        self.streaming = streaming
+        self.controller = controller
+        hasPresentedText = !streaming.text.isEmpty
+        sourceChanges = streaming.objectWillChange.sink { [weak self, weak streaming] in
+            guard let self, let streaming else { return }
+            guard self.controller?.isUserScrolling != true || !self.hasPresentedText || streaming.text.isEmpty else { return }
+            self.hasPresentedText = !streaming.text.isEmpty
+            self.objectWillChange.send()
+        }
+        settled = controller?.userScrollSettled.sink { [weak self] in
+            self?.objectWillChange.send()
+        }
+        objectWillChange.send()
+    }
+
+    func stopObserving() {
+        sourceChanges = nil
+        settled = nil
+        streaming = nil
+        controller = nil
+    }
+}
+
+/// Renders the in-flight response without reflowing it during a manual scroll.
 struct StreamingMessageText: View {
-    @ObservedObject var streaming: StreamingText
+    let streaming: StreamingText
+    @Environment(\.conversationScrollController) private var scrollController
+    @StateObject private var presentation = StreamingTextPresentation()
 
     var body: some View {
         GenerativeUIIntegration.renderReply(streaming.text, streaming: true) { standardBody }
+            .onAppear { presentation.observe(streaming, controller: scrollController) }
+            .onChange(of: ObjectIdentifier(streaming)) { _, _ in
+                presentation.observe(streaming, controller: scrollController)
+            }
+            .onChange(of: scrollController.map { ObjectIdentifier($0) }) { _, _ in
+                presentation.observe(streaming, controller: scrollController)
+            }
+            .onDisappear { presentation.stopObserving() }
     }
 
     @ViewBuilder
     private var standardBody: some View {
-        if streaming.text.utf8.count >= CompletedMarkdownRendererPolicy.nativeThresholdBytes {
-            NativeStreamingMarkdownView(streaming: streaming, themeRevision: DockThemeRuntime.revision)
+        if StreamingMarkdownRendererPolicy.usesNativeRenderer(for: streaming.text) {
+            NativeStreamingMarkdownView(chunks: streaming.chunks, themeRevision: DockThemeRuntime.revision)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(streaming.chunks) { chunk in
@@ -391,21 +438,23 @@ struct StreamingMessageText: View {
 struct NativeStreamingMarkdownView: NSViewRepresentable {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
-    @ObservedObject var streaming: StreamingText
+    let chunks: [StreamingPresentationChunk]
     let themeRevision: Int
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
+        view.setBodyStyle(size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        context.coordinator.update(view, chunks: streaming.chunks, themeRevision: themeRevision)
+        context.coordinator.update(view, chunks: chunks, themeRevision: themeRevision)
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.setBodyStyle(size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        context.coordinator.update(nsView, chunks: streaming.chunks, themeRevision: themeRevision)
+        context.coordinator.update(nsView, chunks: chunks, themeRevision: themeRevision)
     }
 
     func sizeThatFits(
@@ -419,7 +468,6 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private var renderedThemeRevision: Int?
-
         func update(
             _ view: NativeMarkdownDocumentContainerView,
             chunks: [StreamingPresentationChunk],
@@ -477,7 +525,7 @@ struct StreamingResponseMetadata: View {
                 ResponseDurationLabel(startedAt: timestamp, finishedDuration: responseDuration)
                 if let modelName { Text("· \(modelName)") }
             }
-            .font(DockTypography.machineMetadata)
+            .dockFont(.machineMetadata)
             .foregroundStyle(Color.dockMetadataText)
             .padding(.horizontal, 4)
         }

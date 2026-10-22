@@ -71,7 +71,13 @@ struct ScopedRepositoryChange: Equatable {
 
 struct ConversationScrollAnchor: Equatable {
     let messageID: UUID
-    let offset: CGFloat
+    var offset: CGFloat
+
+    mutating func recordUserScroll(delta: CGFloat) { offset -= delta }
+
+    func correction(rowMinY: CGFloat, visibleTop: CGFloat) -> CGFloat {
+        rowMinY - visibleTop - offset
+    }
 }
 
 struct DockPopover: View {
@@ -89,18 +95,6 @@ struct DockPopover: View {
     var onOpenWindow: (() -> Void)?
     /// The native window supplies its own frame, so drop the rounded surface.
     var usesWindowChrome = false
-    @State var scrollPresentation = ConversationScrollPresentationState()
-    var isConversationAtBottom: Bool {
-        get { scrollPresentation.isAtBottom }
-        nonmutating set { scrollPresentation.isAtBottom = newValue }
-    }
-    @State var clarificationSelection: [String] = []
-    @State var valuePromptText = ""
-    @State var valuePromptIdentifier = ""
-    var unseenMessageCount: Int {
-        get { scrollPresentation.unseenMessageCount }
-        nonmutating set { scrollPresentation.unseenMessageCount = newValue }
-    }
     @State var isShowingMessageSearch = false
     @State var isShowingMessagePins = false
     @State var pinnedMessageJumpID: UUID?
@@ -109,17 +103,6 @@ struct DockPopover: View {
     @State var isRenamingSession = false
     @State var renameDraft = ""
     @Environment(\.accessibilityReduceMotion) var reduceMotion
-    @State var conversationScrollRequest = 0
-    @State var mountedMessageRange: Range<Int> = 0..<0
-    var visibleNavigatorTargets: Set<MessageNavigatorTarget> {
-        get { scrollPresentation.visibleTargets }
-        nonmutating set { scrollPresentation.visibleTargets = newValue }
-    }
-    @State var scrollController = ConversationScrollController()
-    /// Scroll bookkeeping that never drives rendering. Kept out of `@State`
-    /// values so settle, preference and layout callbacks do not invalidate
-    /// this entire view on every scroll.
-    @State var scrollBookkeeping = ConversationTranscriptBookkeeping()
     @State var conversationPerformance = ConversationPerformanceMonitor()
     @State var isWorkspaceManuallyExpanded = false
     @State var isNarrowLayout = false

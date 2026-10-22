@@ -98,18 +98,63 @@ struct ConversationScrollObserverTests {
         let settledCount = recorder.settledTops.count
         let clip = try #require(controller.clipView)
         let document = try #require(clip.documentView)
-        let offset: CGFloat = document.isFlipped ? -12 : 12
-        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: clip.bounds.origin.y + offset))
+        let offset: CGFloat = document.isFlipped ? -0.5 : 0.5
+        for _ in 0..<3 {
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: clip.bounds.origin.y + offset))
+        }
         #expect(recorder.scrollsAwayFromBottom == 1)
         #expect(!presentation.isAtBottom)
+        #expect(controller.isUserScrolling)
         #expect(recorder.settledTops.count == settledCount)
 
         recorder.deltas.removeAll()
         recorder.scrollsAwayFromBottom = 0
         controller.shiftVisibleTop(by: -geometry.visibleTop)
-        #expect(recorder.deltas.contains { $0 < 0 })
+        #expect(recorder.deltas.isEmpty, "Anchor corrections must not trigger edge paging")
         #expect(controller.geometry?.visibleTop ?? .infinity < 1)
         #expect(recorder.scrollsAwayFromBottom == 0, "History anchor restoration must not stop following the tail")
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(!controller.isUserScrolling)
+        controller.shiftVisibleTop(by: 40)
+        #expect(!controller.isUserScrolling, "Programmatic anchor corrections must not pause live rendering")
+    }
+
+    @Test func resizeClampingDoesNotBecomeUserScrollOrRequestAnotherPage() {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 300, height: 400))
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 4_000))
+        scroll.documentView = document
+        let controller = ConversationScrollController()
+        var deltas: [CGFloat] = []
+        let observer = ConversationScrollEventObserver.Coordinator(
+            controller: controller, onScroll: { _, delta in deltas.append(delta) },
+            onScrollSettled: { _ in }
+        )
+        observer.attachIfNeeded(from: document)
+        defer { observer.detach() }
+        document.setFrameSize(NSSize(width: 300, height: 2_000))
+        NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+        #expect(deltas.isEmpty)
+        #expect(!controller.isUserScrolling)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+        #expect(!deltas.isEmpty)
+        #expect(controller.isUserScrolling)
+    }
+
+    @Test func aSilentResizePreservesTheNextGestureButNeverInventsOne() {
+        let previous = ConversationScrollGeometry(visibleTop: 200, visibleHeight: 600, documentHeight: 3_000)
+        let grown = ConversationScrollGeometry(visibleTop: 600, visibleHeight: 600, documentHeight: 3_400)
+        #expect(grown.userScrollDelta(from: previous, isFlipped: false) == 0)
+        let preservingTop = ConversationScrollGeometry(visibleTop: 200, visibleHeight: 600, documentHeight: 3_400)
+        #expect(preservingTop.userScrollDelta(from: previous, isFlipped: false) == 0)
+        #expect(preservingTop.userScrollDelta(from: previous, isFlipped: true) == 0)
+        let atBottom = ConversationScrollGeometry(visibleTop: 2_800, visibleHeight: 600, documentHeight: 3_400)
+        #expect(atBottom.userScrollDelta(from: previous, isFlipped: false) == 2_200)
+        #expect(atBottom.userScrollDelta(from: previous, isFlipped: true) == 2_600)
+        let shrinkClamp = ConversationScrollGeometry(visibleTop: 0, visibleHeight: 600, documentHeight: 2_000)
+        #expect(shrinkClamp.userScrollDelta(from: previous, isFlipped: false) == 0)
+        let oldBottom = ConversationScrollGeometry(visibleTop: 2_400, visibleHeight: 600, documentHeight: 3_000)
+        let newBottom = ConversationScrollGeometry(visibleTop: 1_400, visibleHeight: 600, documentHeight: 2_000)
+        #expect(newBottom.userScrollDelta(from: oldBottom, isFlipped: true) == 0)
     }
 
     @Test func streamingGrowthFollowsOnlyWhileAtTheBottom() async throws {

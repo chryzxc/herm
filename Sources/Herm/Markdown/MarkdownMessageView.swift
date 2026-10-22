@@ -45,6 +45,7 @@ struct MarkdownFence {
 
 struct MarkdownMessageView: View, Equatable {
   let markdown: String
+  private let cacheResult: Bool
   private let bodySize: CGFloat
   private let bodyWeight: NSFont.Weight
   /// Every message shares one identity, so the render cache is keyed by
@@ -52,11 +53,15 @@ struct MarkdownMessageView: View, Equatable {
   private static let identity = UUID()
   typealias RenderBlock = MarkdownRenderDocumentBuilder.RenderBlock
   init(markdown: String, cacheResult: Bool = true, cacheKey: String? = nil, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
-    self.markdown = markdown; self.bodySize = bodySize; self.bodyWeight = bodyWeight
+    self.markdown = markdown; self.bodySize = bodySize; self.bodyWeight = bodyWeight; self.cacheResult = cacheResult
   }
-  nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.markdown == rhs.markdown && lhs.bodySize == rhs.bodySize && lhs.bodyWeight == rhs.bodyWeight }
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.markdown == rhs.markdown && lhs.bodySize == rhs.bodySize && lhs.bodyWeight == rhs.bodyWeight && lhs.cacheResult == rhs.cacheResult }
   var body: some View {
-    NativeMarkdownDocumentHost(source: markdown, key: MarkdownRenderKey(messageID: Self.identity, contentRevision: markdown.hashValue, themeRevision: DockThemeRuntime.revision, segment: Int(bodySize * 100 + bodyWeight.rawValue * 10)), bodySize: bodySize, bodyWeight: bodyWeight)
+    NativeMarkdownDocumentHost(source: markdown, key: Self.renderKey(for: markdown, bodySize: bodySize, bodyWeight: bodyWeight), bodySize: bodySize, bodyWeight: bodyWeight, cacheResult: cacheResult)
+  }
+  static func renderKey(for markdown: String, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) -> MarkdownRenderKey {
+    MarkdownRenderKey(messageID: identity, contentRevision: markdown.hashValue, themeRevision: DockThemeRuntime.revision,
+                      segment: Int(bodySize * 100 + bodyWeight.rawValue * 10))
   }
   static func renderBlocks(for markdown: String) -> [RenderBlock] { MarkdownRenderDocumentBuilder.renderBlocks(for: markdown) }
   static func codeBlockLanguages(in markdown: String) -> [String?] { MarkdownRenderDocumentBuilder.codeBlockLanguages(in: markdown) }

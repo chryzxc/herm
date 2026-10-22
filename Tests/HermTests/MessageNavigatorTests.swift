@@ -350,57 +350,37 @@ final class MessageNavigatorTests: XCTestCase {
 
     @MainActor
     func testNavigatorSelectionDispatchesProductionTranscriptHandoff() async {
-        let sessionID = "session-a"
-        let messages = (1...40).map { index in
-            ChatMessage(role: .user, text: "message \(index)")
-        }
-        let selected = MessageNavigator.items(messages: messages, sessionID: sessionID)[19]
-        var receivedEffect: ConversationMessageJumpEffect?
+        let model = DockModel(initialSessionID: "session-a")
+        model.messages = (1...40).map { ChatMessage(role: .user, text: "message \($0)") }
+        let selected = MessageNavigator.items(messages: model.messages, sessionID: "session-a")[19]
+        let coordinator = ConversationTranscriptCoordinator()
+        coordinator.reset(sessionID: model.sessionID, totalCount: 40, bubbleCount: 40)
         var scrolledMessageID: UUID?
-        var scrolledAnchorIsCenter = false
-        var currentSessionID: String? = sessionID
-        let scrollExpectation = expectation(description: "production transcript scroll")
-
-        let productionHandler = DockPopover.transcriptSelectionHandler(
-            sessionID: sessionID,
-            messages: messages,
-            currentSessionID: { currentSessionID },
-            onEffect: { effect in receivedEffect = effect },
-            onScroll: { messageID, anchor in
-                scrolledMessageID = messageID
-                scrolledAnchorIsCenter = anchor == .center
-                scrollExpectation.fulfill()
-            }
-        )
-
+        let productionHandler: (MessageNavigatorItem) -> Void = { item in
+            coordinator.select(item, model: model) { scrolledMessageID = $0 }
+        }
         MessageNavigatorView.dispatchSelection(selected, onSelect: productionHandler)
-        await fulfillment(of: [scrollExpectation], timeout: 1)
-
-        XCTAssertEqual(receivedEffect?.messageID, selected.messageID)
-        let window = receivedEffect?.windowRange ?? 0..<0
-        XCTAssertLessThanOrEqual(
-            window.count,
-            ConversationMessageWindow.jumpContextAbove + 1 + ConversationMessageWindow.jumpContextBelow
-        )
-        XCTAssertTrue(window.contains(19))
-        XCTAssertFalse(receivedEffect?.isAtBottom ?? true)
-        XCTAssertEqual(receivedEffect?.unseenMessageCount, 0)
-        XCTAssertEqual(scrolledMessageID, selected.messageID)
-        XCTAssertTrue(scrolledAnchorIsCenter)
-        XCTAssertTrue(
-            messages[ConversationMessageWindow.visibleRange(window, totalCount: messages.count)]
-                .contains { $0.id == receivedEffect?.messageID }
-        )
-        currentSessionID = "different-session"
-        receivedEffect = nil
-        scrolledMessageID = nil
-        scrolledAnchorIsCenter = false
-        let rejectedScrollExpectation = expectation(description: "stale transcript scroll rejected")
-        rejectedScrollExpectation.isInverted = true
-        MessageNavigatorView.dispatchSelection(selected, onSelect: productionHandler)
-        await fulfillment(of: [rejectedScrollExpectation], timeout: 0.2)
-        XCTAssertNil(receivedEffect)
+        for _ in 0..<10 { await Task.yield() }
+        let range = coordinator.mountedRange
+        XCTAssertTrue(range.contains(19))
+        XCTAssertLessThanOrEqual(range.count, ConversationMessageWindow.jumpContextAbove + 1 + ConversationMessageWindow.jumpContextBelow)
+        XCTAssertFalse(coordinator.presentation.isAtBottom)
+        XCTAssertEqual(coordinator.presentation.unseenMessageCount, 0)
         XCTAssertNil(scrolledMessageID)
-        XCTAssertFalse(scrolledAnchorIsCenter)
+        let layout = ConversationTranscriptLayout(sessionID: model.sessionID, generation: coordinator.generation, range: range,
+            rows: range.map { index in
+                MessageNavigatorViewport(target: .init(sessionID: "session-a", messageID: model.messages[index].id),
+                    index: index, minY: CGFloat(index) * 100, maxY: CGFloat(index + 1) * 100)
+            })
+        coordinator.receiveLayout(layout)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(scrolledMessageID, selected.messageID)
+        model.sessionID = "different-session"
+        scrolledMessageID = nil
+        MessageNavigatorView.dispatchSelection(selected, onSelect: productionHandler)
+        for _ in 0..<10 { await Task.yield() }
+        coordinator.receiveLayout(layout)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertNil(scrolledMessageID)
     }
 }

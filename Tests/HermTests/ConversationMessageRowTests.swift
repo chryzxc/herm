@@ -107,6 +107,7 @@ struct ConversationMessageRowTests {
         #expect(ChatMessage(role: .hermes, text: "body").durationLabel == nil)
     }
 
+    #if DEBUG
     @Test func hoverUpdatesProductionTimestampWithoutReevaluatingMessage() async throws {
         for message in [
             ChatMessage(role: .user, text: "hello"),
@@ -183,6 +184,7 @@ struct ConversationMessageRowTests {
     private func nativeViewIdentities(_ view: NSView) -> [ObjectIdentifier] {
         [ObjectIdentifier(view)] + view.subviews.flatMap(nativeViewIdentities)
     }
+    #endif
 }
 
 @MainActor

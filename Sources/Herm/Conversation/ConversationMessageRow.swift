@@ -130,7 +130,13 @@ struct ConversationMessageRow: View, Equatable {
         lhs.message.id == rhs.message.id
             && lhs.message.contentRevision == rhs.message.contentRevision
             && lhs.message.role == rhs.message.role
-            && lhs.message.images.count == rhs.message.images.count
+            && lhs.message.images.elementsEqual(rhs.message.images, by: { $0 === $1 })
+            && lhs.message.timestamp == rhs.message.timestamp
+            && lhs.message.modelName == rhs.message.modelName
+            && lhs.message.activity == rhs.message.activity
+            && lhs.message.systemEvent == rhs.message.systemEvent
+            && lhs.message.kanbanNotice == rhs.message.kanbanNotice
+            && lhs.message.isBotHandoffReply == rhs.message.isBotHandoffReply
             && lhs.message.isSteering == rhs.message.isSteering
             && lhs.message.steeringStatus == rhs.message.steeringStatus
             && lhs.message.isError == rhs.message.isError
@@ -240,11 +246,11 @@ struct ConversationMessageRow: View, Equatable {
                     HStack(spacing: 6) {
                         if message.isSteering {
                             Text(steeringLabel)
-                                .font(.system(size: 11, weight: .medium))
+                                .dockFont(size: 11, weight: .medium)
                                 .foregroundStyle(Color.dockAccent)
                         }
                         ConversationRowHoverTimestamp(text: message.timeLabel, hover: hoverPresentation)
-                            .font(DockTypography.machineMetadata)
+                            .dockFont(.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 0) {
                             actionButton(.copy, action: onCopy)
@@ -279,7 +285,7 @@ struct ConversationMessageRow: View, Equatable {
                                 + Text(requester.map { " replied to \($0.name)" } ?? "")
                                 .fontWeight(.regular)
                                 .foregroundStyle(Color.dockMetadataText))
-                                .font(.system(size: 11, weight: .medium))
+                                .dockFont(size: 11, weight: .medium)
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 4)
@@ -320,7 +326,7 @@ struct ConversationMessageRow: View, Equatable {
                                     .padding(.leading, 12)
                                     .overlay(alignment: .leading) {
                                         Capsule()
-                                            .fill(Color(hue: BotAvatarPresentation.hue(for: message.botProfileID ?? ""), saturation: 0.45, brightness: 0.8))
+                                            .fill(DockAccentColor.identity(for: message.botProfileID ?? "").fill)
                                             .frame(width: 2.5)
                                     }
                             } else {
@@ -432,14 +438,13 @@ struct ConversationMessageRow: View, Equatable {
         // Trailing blank lines would render as empty paragraphs and open a gap
         // above the action row.
         let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Short messages use the same rich renderer as streaming (code blocks,
-        // tables, headings); the flat native view is only for long ones.
-        // ponytail: selection can't span blocks in the rich view; fine under the 8KB threshold.
+        // Every assistant reply uses the section host. Routing long replies
+        // through one text view bypasses its viewport mounting and height cache.
         return Group {
-            if !hugsContent, !CompletedMarkdownRendererPolicy.usesNativeRenderer(for: trimmed) {
-                MarkdownMessageView(markdown: trimmed).equatable()
-            } else {
+            if hugsContent {
                 NativeMarkdownMessageView(markdown: trimmed, themeRevision: themeRevision, hugsContent: hugsContent)
+            } else {
+                MarkdownMessageView(markdown: trimmed).equatable()
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -509,7 +514,7 @@ struct ConversationMessageRow: View, Equatable {
                 alwaysVisible: message.isError
             )
         }
-        .font(DockTypography.machineMetadata)
+        .dockFont(.machineMetadata)
         .foregroundStyle(Color.dockMetadataText)
         .lineLimit(1)
         .padding(.leading, 4)
@@ -616,7 +621,7 @@ struct SystemEventCard: View {
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
                     }
                 }
-                .font(DockTypography.machineMetadata)
+                .dockFont(.machineMetadata)
                 .padding(.horizontal, 8)
                 .frame(height: 26)
                 .background(
@@ -631,7 +636,7 @@ struct SystemEventCard: View {
 
             if isExpanded {
                 Self.inlineMarkdown(text)
-                    .font(DockTypography.body)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -688,7 +693,7 @@ struct FeedEventRow: View {
                         BotChip(id: id, botsByID: botsByID, avatarImages: avatarImages)
                     }
                     SystemEventCard.inlineMarkdown(line.headline.isEmpty ? event.label : line.headline)
-                        .font(DockTypography.body)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(isExpanded ? nil : 1)
                         .fixedSize(horizontal: false, vertical: isExpanded)
@@ -704,7 +709,7 @@ struct FeedEventRow: View {
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
                     }
                 }
-                .font(DockTypography.machineMetadata)
+                .dockFont(.machineMetadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(.horizontal, 8)
                 .frame(height: isExpanded ? nil : 28)
@@ -720,7 +725,7 @@ struct FeedEventRow: View {
 
             if isExpanded, let detail = line.detail {
                 SystemEventCard.inlineMarkdown(detail)
-                    .font(DockTypography.body)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -771,7 +776,7 @@ struct BotChip: View {
                 Text(displayName ?? id)
             }
         }
-        .font(.system(size: 12, weight: .medium))
+        .dockFont(size: 12, weight: .medium)
         .foregroundStyle(Color.dockSecondaryText)
         .lineLimit(1)
         .padding(.leading, 2).padding(.trailing, 6).padding(.vertical, 1)
@@ -803,17 +808,17 @@ struct KanbanNoticeCard: View {
                         BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages)
                     }
                     Text(notice.label)
-                        .font(DockTypography.body.weight(.medium))
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(notice.tone.color)
                         .fixedSize()
                     Text(notice.title ?? "Kanban \(notice.taskID)")
-                        .font(DockTypography.body.weight(.semibold))
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .layoutPriority(1)
                     if !isExpanded, let detail = notice.detail {
                         Text(detail.split(separator: "\n").first.map(String.init) ?? detail)
-                            .font(DockTypography.body)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                     }
@@ -822,7 +827,7 @@ struct KanbanNoticeCard: View {
                     Text(timeLabel).fixedSize()
                     DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
                 }
-                .font(DockTypography.machineMetadata)
+                .dockFont(.machineMetadata)
                 .lineLimit(1)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(.horizontal, 8)
@@ -849,7 +854,7 @@ struct KanbanNoticeCard: View {
                                     Text(at.formatted(date: .omitted, time: .shortened)).foregroundStyle(Color.dockMetadataText)
                                 }
                             }
-                            .font(DockTypography.machineMetadata)
+                            .dockFont(.machineMetadata)
                             .help(run.error ?? run.summary ?? "")
                         }
                     }
@@ -857,7 +862,7 @@ struct KanbanNoticeCard: View {
                         let step = [card.status, card.currentStepKey, card.assignee.map { "@\($0)" }]
                             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                         Text(step)
-                            .font(DockTypography.machineMetadata)
+                            .dockFont(.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     // Created/picked-up/unblocked carry no summary; show the task body instead.

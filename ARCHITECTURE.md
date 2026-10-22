@@ -10,6 +10,17 @@ updated: 2026-10-17 · head: 938aeb6 (+ folder restructure)
 
 ## Modules
 
+The chat transcript uses `ConversationTranscriptView` over a disposable
+`ConversationTranscriptSnapshot`. `ConversationTranscriptSource` subscribes to specific
+model publishers; Hermes-owned messages remain in `DockModel`.
+`ConversationTranscriptCoordinator` owns the session-scoped mounted window, page
+transaction, navigation generation, and deferred native scroll work. Geometry does
+not publish transcript updates. Each mounted message has one geometry/identity
+container around activity and reply content, including zero-height hidden rows.
+Markdown section parsing is independent of AppKit;
+adjacent-page prefetch runs off the main actor, while styling and exact measurement
+remain on it. The shared completed-height cache retains numbers only.
+
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
 - `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), Mission Control rail/queue/session rows, transcript views, composer, session lifecycle guards.
 - `ControlCenter/` — `ControlCenterModel` (same extension split), `WorkspaceActivitySidebar` (+ extensions per panel), command-center models, control-tower presentation.

@@ -48,19 +48,3 @@ enum ConversationScrollMetrics {
             && bottomMaxY < viewportHeight - pastEndTolerance
     }
 }
-
-/// Reference-type scroll bookkeeping for the transcript. Mutating it does not
-/// publish, so high-frequency geometry callbacks stay out of SwiftUI's
-/// invalidation graph.
-@MainActor
-final class ConversationTranscriptBookkeeping {
-    var lastRenderedMessageBubbleCount = 0
-    var rowViewports: [MessageNavigatorViewport] = []
-    var documentHeight: CGFloat = 0
-    var pendingAnchor: ConversationScrollAnchor?
-    /// A history page is mounting; edge checks wait for the next settle.
-    var isPaging = false
-    var isPastEndRepairScheduled = false
-    var isHistoryCompactionScheduled = false
-    var consumedTranscriptPrependGeneration = 0
-}

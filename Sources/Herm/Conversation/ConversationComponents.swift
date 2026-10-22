@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import Combine
 
 /// Reusable conversation-only presentation primitives. They render DockModel
 /// state but deliberately do not own transport, session, or input state.
@@ -40,7 +41,7 @@ struct AgentAvatar: View {
         .fill(statusColor.opacity(0.12))
         .overlay {
           DockIcon(.user)
-            .font(.system(size: 11, weight: .medium))
+            .dockFont(size: 11, weight: .medium)
             .foregroundStyle(statusColor)
         }
         .overlay {
@@ -87,10 +88,9 @@ struct MessageBubbleShape: Shape {
   }
 }
 
-/// Long streaming messages use AppKit's text system to keep incremental
-/// rendering responsive. Completed messages use one native text view below so
-/// a selection can span every Markdown block.
-enum CompletedMarkdownRendererPolicy {
+/// Long live replies combine their chunks in one persistent section host.
+/// Completed assistant replies use that section renderer at every length.
+enum StreamingMarkdownRendererPolicy {
   static let nativeThresholdBytes = 8_192
 
   static func usesNativeRenderer(for markdown: String) -> Bool {
@@ -264,6 +264,32 @@ struct ConversationScrollGeometry: Equatable {
     var documentHeight: CGFloat
 
     var distanceToBottom: CGFloat { max(0, documentHeight - visibleTop - visibleHeight) }
+
+    /// A frame resize can occur without a bounds notification. Compare native
+    /// origins so the next gesture is not discarded merely because sizes differ.
+    func userScrollDelta(from previous: Self, isFlipped: Bool) -> CGFloat {
+        let rawDelta = visibleTop - previous.visibleTop
+        guard rawDelta != 0 else { return 0 }
+        guard documentHeight != previous.documentHeight || visibleHeight != previous.visibleHeight else { return rawDelta }
+        let previousOrigin = isFlipped
+            ? previous.visibleTop : previous.documentHeight - previous.visibleHeight - previous.visibleTop
+        let newMaximum = max(0, documentHeight - visibleHeight)
+        let clampedOrigin = min(max(0, previousOrigin), newMaximum)
+        let stationaryTop = isFlipped ? clampedOrigin : documentHeight - visibleHeight - clampedOrigin
+        let delta = visibleTop - stationaryTop
+        return abs(delta) < 0.5 ? 0 : delta
+    }
+}
+
+private struct ConversationScrollControllerKey: EnvironmentKey {
+    static let defaultValue: ConversationScrollController? = nil
+}
+
+extension EnvironmentValues {
+    var conversationScrollController: ConversationScrollController? {
+        get { self[ConversationScrollControllerKey.self] }
+        set { self[ConversationScrollControllerKey.self] = newValue }
+    }
 }
 
 /// Direct, non-publishing access to the transcript's native clip view. Used
@@ -273,7 +299,18 @@ struct ConversationScrollGeometry: Equatable {
 @MainActor
 final class ConversationScrollController {
     weak var clipView: NSClipView?
+    private var adjustmentGeneration: UInt64 = 0
     private(set) var isAdjustingScroll = false
+    private(set) var isUserScrolling = false
+    let userScrollSettled = PassthroughSubject<Void, Never>()
+
+    func userScrollDidMove() { isUserScrolling = true }
+
+    func userScrollDidSettle() {
+        guard isUserScrolling else { return }
+        isUserScrolling = false
+        userScrollSettled.send()
+    }
 
     var geometry: ConversationScrollGeometry? {
         guard let clipView, let documentView = clipView.documentView else { return nil }
@@ -296,11 +333,18 @@ final class ConversationScrollController {
     /// is now, so in-flight momentum keeps its progress. If the hosting
     /// document has not adopted its new height yet, the clamped remainder is
     /// applied once on the next run-loop turn.
-    func shiftVisibleTop(by delta: CGFloat) {
+    func cancelPendingAdjustments() { adjustmentGeneration &+= 1 }
+
+    func shiftVisibleTop(by delta: CGFloat, completion: (@MainActor () -> Void)? = nil) {
+        cancelPendingAdjustments()
+        let generation = adjustmentGeneration
+        let owningClip = clipView
         let remaining = delta - applyShift(delta)
-        guard abs(remaining) > 0.5 else { return }
+        guard abs(remaining) > 0.5 else { completion?(); return }
         DispatchQueue.main.async { [weak self] in
-            _ = self?.applyShift(remaining)
+            guard let self, self.adjustmentGeneration == generation, self.clipView === owningClip else { return }
+            _ = self.applyShift(remaining)
+            completion?()
         }
     }
 
@@ -369,7 +413,7 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         weak var clipView: NSClipView?
         nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
         private var lastBoundsChange: UInt64 = 0
-        private var lastVisibleTop: CGFloat?
+        private var lastGeometry: ConversationScrollGeometry?
         private var settleTask: Task<Void, Never>?
 
         init(
@@ -403,6 +447,11 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
             settleTask = nil
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
+            if controller.clipView === clipView {
+                controller.cancelPendingAdjustments()
+                controller.clipView = nil
+                controller.userScrollDidSettle()
+            }
             clipView = nil
         }
 
@@ -433,14 +482,20 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         private func boundsDidChange() {
             lastBoundsChange = DispatchTime.now().uptimeNanoseconds
             if let geometry = controller.geometry {
-                let delta = geometry.visibleTop - (lastVisibleTop ?? geometry.visibleTop)
-                lastVisibleTop = geometry.visibleTop
+                let delta = lastGeometry.map {
+                    geometry.userScrollDelta(from: $0, isFlipped: controller.clipView?.documentView?.isFlipped ?? true)
+                } ?? 0
+                lastGeometry = geometry
+                let userMovement = !controller.isAdjustingScroll && delta != 0
+                if delta != 0, userMovement {
+                    controller.userScrollDidMove()
+                }
                 // Yield to the reader before a queued tail scroll can fire;
                 // history-anchor corrections must keep the follow state.
-                if delta < -0.5, geometry.distanceToBottom > 1, !controller.isAdjustingScroll {
+                if delta < 0, geometry.distanceToBottom > 1, userMovement {
                     onScrollAwayFromBottom()
                 }
-                onScroll(geometry, delta)
+                if userMovement { onScroll(geometry, delta) }
             }
             scheduleSettle()
         }
@@ -467,8 +522,9 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         }
 
         private func reportSettled() {
+            controller.userScrollDidSettle()
             guard let geometry = controller.geometry else { return }
-            lastVisibleTop = geometry.visibleTop
+            lastGeometry = geometry
             onScrollSettled(geometry)
         }
 
@@ -592,16 +648,16 @@ struct BotCrewRow: View {
         let names = (repliesToUser ? [from] + partners : partners).map(\.name).formatted(.list(type: .and))
         (Text(names).foregroundStyle(Color.dockPrimaryText)
           + Text(repliesToUser ? " replying to you" : " messaged by \(from.name)").fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
-          .font(.system(size: 12, weight: .semibold))
+          .dockFont(size: 12, weight: .semibold)
           .lineLimit(1)
         TimelineView(.periodic(from: .now, by: 1)) { context in
           Text("Working for about \(TurnActivityView.roughDuration(context.date.timeIntervalSince(since)))")
-            .font(.system(size: 11))
+            .dockFont(size: 11)
             .foregroundStyle(Color.dockMetadataText)
         }
         ForEach(stepped, id: \.bot.id) { item in
           (Text(stepped.count > 1 ? "\(item.bot.name): " : "").fontWeight(.medium) + Text(item.step))
-            .font(.system(size: 11))
+            .dockFont(size: 11)
             .foregroundStyle(Color.dockSecondaryText)
             .lineLimit(1).truncationMode(.tail)
             .modifier(WorkingTitleShimmer(isActive: true, color: Color.dockAccent))
@@ -661,7 +717,7 @@ struct BotDispatchCard: View {
           (Text(assignedIDs.contains(record.id) ? "Assigned " : "Messaged ").foregroundStyle(Color.dockSecondaryText)
             + Text(bot?.name ?? record.botName).fontWeight(.semibold).foregroundStyle(Color.dockPrimaryText)
             + Text(record.summary.isEmpty ? "" : "  \(record.summary)").foregroundStyle(Color.dockMetadataText))
-            .font(.system(size: 12))
+            .dockFont(size: 12)
             .lineLimit(1).truncationMode(.tail)
           Spacer(minLength: 8)
           status(record)
@@ -677,7 +733,7 @@ struct BotDispatchCard: View {
       if record.isLive, let step = liveSteps[record.id] {
         // The Bot's newest step, read from its own session.
         Text(step)
-          .font(.system(size: 11))
+          .dockFont(size: 11)
           .foregroundStyle(Color.dockMetadataText)
           .lineLimit(1).truncationMode(.tail)
           .padding(.leading, 24)
@@ -687,7 +743,7 @@ struct BotDispatchCard: View {
       }
       if isOpen, let reply {
         Text(DockModel.botReply(from: reply).reply)
-          .font(.system(size: 12))
+          .dockFont(size: 12)
           .foregroundStyle(Color.dockSecondaryText)
           .lineLimit(8)
           .textSelection(.enabled)
@@ -695,7 +751,7 @@ struct BotDispatchCard: View {
           .padding(.leading, 10)
           .overlay(alignment: .leading) {
             Capsule()
-              .fill(Color(hue: BotAvatarPresentation.hue(for: record.botID), saturation: 0.45, brightness: 0.8))
+              .fill(DockAccentColor.identity(for: record.botID).fill)
               .frame(width: 2)
           }
           .padding(.leading, 24)
@@ -737,7 +793,7 @@ struct BotDispatchCard: View {
         .transition(.scale(scale: 0.6).combined(with: .opacity))
       }
     }
-    .font(.system(size: 11).monospacedDigit())
+    .dockFont(size: 11).monospacedDigit()
     .foregroundStyle(Color.dockMetadataText)
     // The clock settles into a check (or ×) when the Bot finishes.
     .animation(.spring(response: 0.35, dampingFraction: 0.65), value: record.state)
@@ -821,13 +877,13 @@ struct TurnActivityView: View, Equatable {
                 .foregroundStyle(Color.dockPrimaryText)
                 + Text(crew.isEmpty ? "" : " with \(crew.map(\.name).formatted(.list(type: .and)))")
                 .fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .lineLimit(1)
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
               Text("Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))"
                    + (crew.isEmpty ? "" : " · \(crew.count) Bot\(crew.count == 1 ? "" : "s") working"))
-                .font(.system(size: bot == nil && phase != .compacting ? 12 : 11))
+                .dockFont(size: bot == nil && phase != .compacting ? 12 : 11)
                 .foregroundStyle(Color.dockMetadataText)
             }
           }
@@ -841,7 +897,7 @@ struct TurnActivityView: View, Equatable {
           withAnimation(disclosureMotion) { isExpanded.toggle() }
         } label: {
           HStack(spacing: 6) {
-            Text(summary).font(.system(size: 12, weight: .medium))
+            Text(summary).dockFont(size: 12, weight: .medium)
             DockIcon(isExpanded ? .caretDown : .caretRight, size: 10)
           }
           .foregroundStyle(Color.dockSecondaryText)
@@ -952,7 +1008,7 @@ struct TurnActivityView: View, Equatable {
       } label: {
         HStack(spacing: 8) {
           stepIcon(.brain)
-          Text(title).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+          Text(title).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
           if !call.isComplete { ProgressView().controlSize(.mini) }
           DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
         }
@@ -968,7 +1024,7 @@ struct TurnActivityView: View, Equatable {
             Text((call.result ?? "").isEmpty ? "…" : call.result ?? "")
           }
         }
-          .font(.system(size: 12))
+          .dockFont(size: 12)
           .foregroundStyle(Color.dockMetadataText)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -998,7 +1054,7 @@ struct TurnActivityView: View, Equatable {
             Text("−\(stats.removed)").foregroundStyle(Color.dockDestructive)
             DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
           }
-          .font(.system(size: 11, weight: .medium, design: .monospaced))
+          .dockFont(size: 11, weight: .medium, design: .monospaced)
           .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -1031,25 +1087,24 @@ struct TurnActivityView: View, Equatable {
         stepIcon(Self.icon(for: call.name))
       }
       let title = Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
-        .font(.system(size: 12))
+        .dockFont(size: 12)
         .foregroundStyle(call.isComplete ? Color.dockSecondaryText : Color.dockPrimaryText)
         .lineLimit(1).truncationMode(.tail)
+      title
+      Spacer(minLength: 8)
       if call.isComplete {
-        title
         if let completedAt = call.completedAt {
           Text(Self.stepDuration(completedAt.timeIntervalSince(call.startedAt)))
-            .font(.system(size: 11).monospacedDigit())
+            .dockFont(size: 11).monospacedDigit()
             .foregroundStyle(Color.dockMetadataText)
         }
       } else {
         // Real elapsed time is independent of the decorative block clock.
-        title
-        Spacer(minLength: 8)
         TimelineView(.periodic(from: .now, by: 1)) { context in
           Text("running · \(BotDispatchCard.clock(context.date.timeIntervalSince(call.startedAt)))")
             .contentTransition(.numericText())
         }
-        .font(.system(size: 11).monospacedDigit())
+        .dockFont(size: 11).monospacedDigit()
         .foregroundStyle(Color.dockMetadataText)
       }
     }
@@ -1139,13 +1194,13 @@ private struct CompactionStepRow: View {
       if call.isComplete {
         DockIcon(.arrowsInLineVertical, size: 13, color: Color.dockSecondaryText).frame(width: 16, height: 16)
           .transition(.scale.combined(with: .opacity))
-        Text(title).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+        Text(title).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
       } else {
         TimelineView(.dockMotion(paused: reduceMotion)) { context in
           HStack(spacing: 8) {
             squeezeGlyph(reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 1.4)).frame(width: 16, height: 16)
             Text("Compacting context")
-              .font(.system(size: 12, weight: .medium))
+              .dockFont(size: 12, weight: .medium)
               .foregroundStyle(Color.dockAccent)
               .overlay { if !reduceMotion { shimmerOverlay(-1 + 2 * DockMotionSchedule.loop(context.date, period: 1.4)) } }
           }
@@ -1181,7 +1236,7 @@ private struct CompactionStepRow: View {
         .frame(width: proxy.size.width * 0.5)
         .offset(x: shimmer * proxy.size.width)
     }
-    .mask(Text("Compacting context").font(.system(size: 12, weight: .medium)))
+    .mask(Text("Compacting context").dockFont(size: 12, weight: .medium))
     .allowsHitTesting(false)
   }
 }
@@ -1192,7 +1247,7 @@ private struct MarkdownCodeCopyButton: View {
 
   var body: some View {
     DockCopyButton(code, accessibilityLabel: "Copy code", presentation: .text)
-      .font(DockTypography.control)
+      .dockFont(.control)
       .padding(.horizontal, 6).frame(height: 28).contentShape(Rectangle())
     .buttonStyle(.dockCompact)
   }

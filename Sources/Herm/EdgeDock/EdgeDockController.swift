@@ -196,7 +196,7 @@ final class EdgeDockController: NSObject {
                 if let notice { self?.announce(notice: notice) }
             }
             .store(in: &subscriptions)
-        model.$sessionActivityLabels
+        model.sessionActivityLabelChanges
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] labels in
                 self?.latestActivityLabels = labels
@@ -1814,7 +1814,7 @@ struct EdgeNotchView: View {
     private func tabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                .dockFont(size: 12, weight: isSelected ? .semibold : .medium)
                 .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
                 .padding(.horizontal, 8)
                 .frame(height: 24)

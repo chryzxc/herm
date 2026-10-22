@@ -22,7 +22,7 @@ indirect enum MarkdownContinuationContext: Equatable, Sendable {
     case inline(delimiter: String, base: MarkdownContinuationContext)
 }
 
-enum MarkdownRenderSectionKind: Equatable, Sendable {
+enum MarkdownRenderSectionKind: Hashable, Sendable {
     case prose
     case heading(level: Int)
     case list(marker: String)
@@ -68,17 +68,33 @@ enum MarkdownRenderDocumentCache {
         init(_ document: MarkdownRenderDocument) { self.document = document }
     }
 
-    static func document(for source: String, key: MarkdownRenderKey) -> MarkdownRenderDocument {
-        let cacheKey = "\(key.messageID.uuidString):\(key.contentRevision):\(key.themeRevision):\(key.segment)" as NSString
-        // Keys carry a content hash, not the content; confirm before reuse.
-        if let entry = cache.object(forKey: cacheKey), entry.document.source == source {
+    private(set) static var parseCount = 0
+    private(set) static var prefetchedDocuments = 0
+
+    private static func cacheKey(_ key: MarkdownRenderKey) -> NSString {
+        "\(key.messageID.uuidString):\(key.contentRevision):\(key.themeRevision):\(key.segment)" as NSString
+    }
+
+    static func cached(source: String, key: MarkdownRenderKey) -> MarkdownRenderDocument? {
+        guard let entry = cache.object(forKey: cacheKey(key)), entry.document.source == source else { return nil }
+        return entry.document
+    }
+
+    static func insert(_ document: MarkdownRenderDocument, prefetched: Bool = false) {
+        if prefetched { prefetchedDocuments += 1 }
+        cache.setObject(Entry(document), forKey: cacheKey(document.key), cost: max(document.cost, 1))
+    }
+
+    static func document(for source: String, key: MarkdownRenderKey, cacheResult: Bool = true) -> MarkdownRenderDocument {
+        if cacheResult, let document = cached(source: source, key: key) {
             DebugLog.writePerformance("markdown_document_cache_hit bytes=\(source.utf8.count)")
-            return entry.document
+            return document
         }
         DebugLog.writePerformance("markdown_document_cache_miss bytes=\(source.utf8.count)")
         let started = DispatchTime.now().uptimeNanoseconds
+        parseCount += 1
         let document = MarkdownRenderDocumentBuilder.build(source: source, key: key)
-        cache.setObject(Entry(document), forKey: cacheKey, cost: max(document.cost, 1))
+        if cacheResult { insert(document) }
         let duration = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
         DebugLog.writePerformance("markdown_document_parse bytes=\(source.utf8.count) sections=\(document.sections.count) duration_ms=\(String(format: "%.2f", duration))")
         return document
@@ -91,15 +107,18 @@ enum MarkdownRenderDocumentCache {
 /// the source revision changes (including the streaming-to-completed handoff).
 @MainActor
 struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
     let source: String
     let key: MarkdownRenderKey
     let streamingSections: [MarkdownRenderSection]?
+    let cacheResult: Bool
     var bodySize: CGFloat = 14
     var bodyWeight: NSFont.Weight = .regular
 
-    init(source: String, key: MarkdownRenderKey, streamingSections: [MarkdownRenderSection]? = nil, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
+    init(source: String, key: MarkdownRenderKey, streamingSections: [MarkdownRenderSection]? = nil, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular, cacheResult: Bool = true) {
+        self.cacheResult = cacheResult
         self.source = source
         self.key = key
         self.streamingSections = streamingSections
@@ -107,7 +126,7 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.source == rhs.source && lhs.key == rhs.key && lhs.streamingSections == rhs.streamingSections && lhs.bodySize == rhs.bodySize && lhs.bodyWeight == rhs.bodyWeight
+        lhs.source == rhs.source && lhs.key == rhs.key && lhs.streamingSections == rhs.streamingSections && lhs.bodySize == rhs.bodySize && lhs.bodyWeight == rhs.bodyWeight && lhs.cacheResult == rhs.cacheResult
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -115,15 +134,15 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        view.setBodyStyle(size: bodySize, weight: bodyWeight)
-        context.coordinator.update(view, source: source, key: key, sections: streamingSections)
+        view.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
+        context.coordinator.update(view, source: source, key: key, sections: streamingSections, cacheResult: cacheResult)
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        nsView.setBodyStyle(size: bodySize, weight: bodyWeight)
-        context.coordinator.update(nsView, source: source, key: key, sections: streamingSections)
+        nsView.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
+        context.coordinator.update(nsView, source: source, key: key, sections: streamingSections, cacheResult: cacheResult)
     }
 
     func sizeThatFits(
@@ -138,25 +157,31 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     final class Coordinator {
         private var renderedKey: MarkdownRenderKey?
         private var renderedSource: String?
+        private var renderedMentionRevision = -1
+        private var renderedCacheResult: Bool?
 
         func update(
             _ view: NativeMarkdownDocumentContainerView,
             source: String,
             key: MarkdownRenderKey,
-            sections: [MarkdownRenderSection]?
+            sections: [MarkdownRenderSection]?, cacheResult: Bool = true
         ) {
             if let sections {
                 view.applyStreaming(sections: sections, source: source)
+                renderedCacheResult = nil
                 renderedKey = key
                 renderedSource = source
                 return
             }
-            guard renderedKey != key || renderedSource != source else { return }
+            guard renderedKey != key || renderedSource != source || renderedMentionRevision != BotMentions.revision || renderedCacheResult != cacheResult else { return }
             let started = DispatchTime.now().uptimeNanoseconds
-            let document = MarkdownRenderDocumentCache.document(for: source, key: key)
-            view.apply(document: document)
+            let document = MarkdownRenderDocumentCache.document(for: source, key: key, cacheResult: cacheResult)
+            if cacheResult { view.apply(document: document) }
+            else { view.applyStreaming(sections: document.sections, source: source) }
+            renderedCacheResult = cacheResult
             renderedKey = key
             renderedSource = source
+            renderedMentionRevision = BotMentions.revision
             let duration = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             DebugLog.writePerformance("markdown_native_host_update sections=\(document.sections.count) duration_ms=\(String(format: "%.2f", duration))")
         }
@@ -183,314 +208,6 @@ enum NativeMarkdownDocumentSizing {
     }
 }
 
-enum MarkdownRenderDocumentBuilder {
-    static func sections(for chunks: [StreamingPresentationChunk]) -> [MarkdownRenderSection] {
-        var offset = 0
-        var result: [MarkdownRenderSection] = []
-        result.reserveCapacity(chunks.count)
-        func append(id: Int, text: String, kind: MarkdownRenderSectionKind, continuation: MarkdownContinuationContext) {
-            guard !text.isEmpty else { return }
-            let start = offset
-            offset += text.utf8.count
-            result.append(MarkdownRenderSection(
-                id: id,
-                sourceRange: start..<offset,
-                source: text,
-                kind: kind,
-                continuation: continuation
-            ))
-        }
-        for chunk in chunks {
-            // Every chunk owns two section identities so a chunk that splits
-            // never collides with a neighbour. The mutable tail uses Int.max,
-            // which wraps to negative identities that stable chunks never use.
-            let primaryID = chunk.id &* 2
-            let remainderID = primaryID &+ 1
-            switch chunk.context {
-            case .fencedCode(let marker, let length, let language):
-                let fence = MarkdownFence(marker: marker, length: length, language: language)
-                let continuation = MarkdownContinuationContext.fencedCode(marker: marker, length: length, language: language)
-                if let split = closingSplit(of: chunk.text, fence: fence) {
-                    // Promotion inside a fence can carry the closing fence and
-                    // the prose after it; that prose must not render as code.
-                    append(id: primaryID, text: split.code, kind: .code(language: language), continuation: continuation)
-                    let remainder = classify(split.remainder)
-                    append(id: remainderID, text: split.remainder, kind: remainder.kind, continuation: remainder.continuation)
-                } else {
-                    append(id: primaryID, text: chunk.text, kind: .code(language: language), continuation: continuation)
-                }
-            case .list(let marker, _):
-                append(id: primaryID, text: chunk.text, kind: .list(marker: marker), continuation: chunkContext(chunk.context))
-            case .quote:
-                append(id: primaryID, text: chunk.text, kind: .quote, continuation: chunkContext(chunk.context))
-            case .table:
-                append(id: primaryID, text: chunk.text, kind: .table, continuation: .table)
-            case .markdown, .paragraph, .inline:
-                let classified = classify(chunk.text)
-                append(id: primaryID, text: chunk.text, kind: classified.kind, continuation: classified.continuation)
-            }
-        }
-        return result
-    }
-
-    private static func classify(_ text: String) -> (kind: MarkdownRenderSectionKind, continuation: MarkdownContinuationContext) {
-        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if NativeMarkdownAttributedTextBuilder.isPureTable(text) { return (.table, .table) }
-        if let level = headingLevel(line) {
-            return (.heading(level: level), .markdown)
-        }
-        if let item = unorderedListItem(line) ?? orderedListItem(line) {
-            return (.list(marker: item.marker), .list(marker: item.marker, indentation: 0))
-        }
-        if line.hasPrefix(">") {
-            return (.quote, .quote(depth: line.prefix(while: { $0 == ">" }).count))
-        }
-        return (.prose, .paragraph)
-    }
-
-    /// Splits a fenced continuation at its closing fence line. The closing
-    /// line stays with the code so the section sources still join to the
-    /// original chunk text.
-    private static func closingSplit(of text: String, fence: MarkdownFence) -> (code: String, remainder: String)? {
-        var lineStart = text.startIndex
-        while lineStart < text.endIndex {
-            let newline = text[lineStart...].firstIndex(of: "\n")
-            let lineEnd = newline ?? text.endIndex
-            if fence.isClosed(by: String(text[lineStart..<lineEnd])) {
-                let splitIndex = newline.map { text.index(after: $0) } ?? text.endIndex
-                let remainder = String(text[splitIndex...])
-                guard !remainder.isEmpty else { return nil }
-                return (String(text[..<splitIndex]), remainder)
-            }
-            guard let newline else { break }
-            lineStart = text.index(after: newline)
-        }
-        return nil
-    }
-
-    static func build(source: String, key: MarkdownRenderKey) -> MarkdownRenderDocument {
-        let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var sections: [MarkdownRenderSection] = []
-        var offset = 0
-        var index = 0
-        var paragraph = ""
-        var paragraphStart = 0
-        // Consecutive list/quote lines share one section view. One NSTextView
-        // per line made AutoLayout solve cost scale with line count (252
-        // sections for one compaction message).
-        var listBuffer = ""
-        var listStart = 0
-        var listMarker: String?
-        var listIndentation = 0
-        var quoteBuffer = ""
-        var quoteStart = 0
-        var quoteDepth = 0
-
-        func appendSection(_ text: String, kind: MarkdownRenderSectionKind, context: MarkdownContinuationContext, start: Int) {
-            guard !text.isEmpty else { return }
-            sections.append(MarkdownRenderSection(
-                id: sections.count,
-                sourceRange: start..<(start + text.utf8.count),
-                source: text,
-                kind: kind,
-                continuation: context
-            ))
-        }
-
-        func flushParagraph() {
-            guard !paragraph.isEmpty else { return }
-            appendSection(paragraph, kind: .prose, context: .paragraph, start: paragraphStart)
-            paragraph = ""
-        }
-
-        func flushList() {
-            guard let marker = listMarker else { return }
-            appendSection(
-                listBuffer,
-                kind: .list(marker: marker),
-                context: .list(marker: marker, indentation: listIndentation),
-                start: listStart
-            )
-            listBuffer = ""
-            listMarker = nil
-        }
-
-        func flushQuote() {
-            guard !quoteBuffer.isEmpty else { return }
-            appendSection(quoteBuffer, kind: .quote, context: .quote(depth: quoteDepth), start: quoteStart)
-            quoteBuffer = ""
-        }
-
-        func flushBlocks() {
-            flushParagraph()
-            flushList()
-            flushQuote()
-        }
-
-        func preserveWhitespace(_ whitespace: String, start: Int) {
-            guard !whitespace.isEmpty else { return }
-            if let last = sections.last,
-               last.sourceRange.upperBound == start {
-                sections[sections.count - 1] = MarkdownRenderSection(
-                    id: last.id,
-                    sourceRange: last.sourceRange.lowerBound..<(start + whitespace.utf8.count),
-                    source: last.source + whitespace,
-                    kind: last.kind,
-                    continuation: last.continuation
-                )
-            } else {
-                appendSection(whitespace, kind: .prose, context: .markdown, start: start)
-            }
-        }
-
-        while index < lines.count {
-            let line = lines[index]
-            let rawLine = line + (index < lines.count - 1 ? "\n" : "")
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if let fence = MarkdownFence(opening: line) {
-                flushBlocks()
-                let start = offset
-                var code = rawLine
-                var cursor = index + 1
-                var closed = false
-                while cursor < lines.count {
-                    let codeLine = lines[cursor]
-                    let codeRaw = codeLine + (cursor < lines.count - 1 ? "\n" : "")
-                    code += codeRaw
-                    if fence.isClosed(by: codeLine) {
-                        closed = true
-                        cursor += 1
-                        break
-                    }
-                    cursor += 1
-                }
-                appendSection(
-                    code,
-                    kind: .code(language: fence.language),
-                    context: .fencedCode(marker: fence.marker, length: fence.length, language: fence.language),
-                    start: start
-                )
-                let consumed = code.utf8.count
-                offset += consumed
-                index = cursor
-                if !closed { break }
-                continue
-            }
-
-            if trimmed.isEmpty {
-                if !paragraph.isEmpty {
-                    paragraph += rawLine
-                    flushParagraph()
-                } else {
-                    // A blank line ends a buffered list/quote block; flushing
-                    // first keeps section order aligned with source order.
-                    flushList()
-                    flushQuote()
-                    preserveWhitespace(rawLine, start: offset)
-                    offset += rawLine.utf8.count
-                }
-                index += 1
-                continue
-            }
-
-            if NativeMarkdownAttributedTextBuilder.isTableStart(lines, at: index) {
-                flushBlocks()
-                let start = offset
-                var table = rawLine
-                var cursor = index + 1
-                while cursor < lines.count {
-                    let next = lines[cursor]
-                    let nextTrimmed = next.trimmingCharacters(in: .whitespaces)
-                    guard NativeMarkdownAttributedTextBuilder.tableCells(nextTrimmed).count > 1
-                        || (nextTrimmed.hasPrefix("|") && nextTrimmed.hasSuffix("|")) else { break }
-                    table += next + (cursor < lines.count - 1 ? "\n" : "")
-                    cursor += 1
-                }
-                appendSection(table, kind: .table, context: .table, start: start)
-                offset += table.utf8.count
-                index = cursor
-                continue
-            }
-
-            if let heading = headingLevel(trimmed) {
-                flushBlocks()
-                appendSection(rawLine, kind: .heading(level: heading), context: .markdown, start: offset)
-            } else if let item = unorderedListItem(trimmed) ?? orderedListItem(trimmed) {
-                flushParagraph()
-                flushQuote()
-                let indentation = line.prefix(while: { $0 == " " }).count
-                // Ordered markers are unique per line ("1.", "2.", …); merge
-                // by list class so numbered items share one section.
-                let markerClass = item.marker.hasSuffix(".") ? "1." : item.marker
-                if let marker = listMarker, marker == markerClass, indentation == listIndentation {
-                    listBuffer += rawLine
-                } else {
-                    flushList()
-                    listMarker = markerClass
-                    listIndentation = indentation
-                    listStart = offset
-                    listBuffer = rawLine
-                }
-            } else if trimmed.hasPrefix(">") {
-                flushParagraph()
-                flushList()
-                let depth = trimmed.prefix(while: { $0 == ">" }).count
-                if quoteBuffer.isEmpty {
-                    quoteStart = offset
-                    quoteDepth = depth
-                }
-                quoteBuffer += rawLine
-            } else {
-                flushBlocks()
-                if paragraph.isEmpty { paragraphStart = offset }
-                paragraph += rawLine
-            }
-
-            offset += rawLine.utf8.count
-            index += 1
-        }
-        flushBlocks()
-        return MarkdownRenderDocument(key: key, source: source, sections: sections)
-    }
-
-    static func headingLevel(_ line: String) -> Int? {
-        let count = line.prefix(while: { $0 == "#" }).count
-        guard count > 0, count <= 6, line.dropFirst(count).first == " " else { return nil }
-        return count
-    }
-
-    private static func chunkContext(_ context: StreamingChunkContext) -> MarkdownContinuationContext {
-        switch context {
-        case .markdown: return .markdown
-        case .paragraph: return .paragraph
-        case .list(let marker, let indentation): return .list(marker: marker, indentation: indentation)
-        case .quote(let depth): return .quote(depth: depth)
-        case .table: return .table
-        case .inline(let delimiter, let base): return .inline(delimiter: delimiter, base: chunkContext(base))
-        case .fencedCode(let marker, let length, let language): return .fencedCode(marker: marker, length: length, language: language)
-        }
-    }
-
-    static func unorderedListItem(_ line: String) -> (marker: String, content: String)? {
-        for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) {
-            return (String(marker.first!), String(line.dropFirst(2)))
-        }
-        return nil
-    }
-
-    static func orderedListItem(_ line: String) -> (marker: String, content: String)? {
-        guard let dot = line.firstIndex(of: "."), dot > line.startIndex,
-              line[..<dot].allSatisfy(\.isNumber), line.index(after: dot) < line.endIndex,
-              line[line.index(after: dot)] == " " else { return nil }
-        return (String(line[...dot]), String(line[line.index(dot, offsetBy: 2)...]))
-    }
-}
-
-/// A native section that reports its exact height for a proposed width. The
-/// document container lays sections out by frame instead of asking AutoLayout
-/// to solve a stack of text views, so a long message costs one TextKit layout
-/// per section per width rather than a constraint solve per layout query.
 @MainActor
 protocol NativeMarkdownMeasurableSection: NSView {
     func measuredHeight(forWidth width: CGFloat) -> CGFloat
@@ -521,16 +238,27 @@ final class NativeMarkdownDocumentContainerView: NSView {
     /// message crossing the native threshold keeps the same rhythm.
     static let sectionSpacing: CGFloat = 8
 
-    private struct Entry {
-        let id: Int
-        let view: any NativeMarkdownMeasurableSection
-        let spacingBefore: CGFloat
+    private final class Entry {
+        let section: MarkdownRenderSection
+        var view: (any NativeMarkdownMeasurableSection)?
+        var spacingBefore: CGFloat
+        var heights = NativeMarkdownHeightCache()
+
+        init(section: MarkdownRenderSection, view: (any NativeMarkdownMeasurableSection)?, spacingBefore: CGFloat) {
+            self.section = section
+            self.view = view
+            self.spacingBefore = spacingBefore
+        }
     }
 
-    private var sectionViews: [Int: any NativeMarkdownMeasurableSection] = [:]
+    private lazy var textMeasurer = NativeMarkdownTextSectionView()
+    private lazy var codeMeasurer = NativeMarkdownCodeView()
     private var entries: [Entry] = []
+    var instantiatedSectionCount: Int { entries.filter { $0.view != nil }.count }
     private var source = ""
     private var renderedSections: [MarkdownRenderSection] = []
+    private var isStreamingDocument = false
+    private(set) var sectionMeasurementCount = 0
     private var renderedThemeRevision = -1
     private var renderedMentionRevision = -1
     // SwiftUI consults sizing on every layout pass while the row is mounted.
@@ -613,7 +341,27 @@ final class NativeMarkdownDocumentContainerView: NSView {
         var y: CGFloat = 0
         var hasVisibleSection = false
         for entry in entries {
-            let height = entry.view.measuredHeight(forWidth: width)
+            let height: CGFloat
+            let sharedKey = NativeMarkdownCompletedHeightCache.Key(
+                source: entry.section.source, kind: entry.section.kind, width: width,
+                bodySize: bodySize, bodyWeight: bodyWeight.rawValue,
+                themeRevision: DockThemeRuntime.revision, mentionRevision: BotMentions.revision, themeID: DockThemeRuntime.current)
+            if let cached = entry.heights.height(forWidth: width) {
+                height = cached
+            } else if !isStreamingDocument, let cached = NativeMarkdownCompletedHeightCache.height(for: sharedKey) {
+                height = cached
+                entry.heights.store(height, forWidth: width)
+            } else {
+                let measuringView: any NativeMarkdownMeasurableSection
+                if let view = entry.view { measuringView = view }
+                else if case .code = entry.section.kind { measuringView = codeMeasurer }
+                else { measuringView = textMeasurer }
+                Self.update(measuringView, with: entry.section, bodySize: bodySize, bodyWeight: bodyWeight)
+                height = measuringView.measuredHeight(forWidth: width)
+                sectionMeasurementCount += 1
+                entry.heights.store(height, forWidth: width)
+                if !isStreamingDocument { NativeMarkdownCompletedHeightCache.store(height, for: sharedKey) }
+            }
             guard height > 0 else {
                 frames.append(CGRect(x: 0, y: y, width: width, height: 0))
                 continue
@@ -647,7 +395,8 @@ final class NativeMarkdownDocumentContainerView: NSView {
     }
 
     private func updateMountedSections() {
-        guard entries.count == cachedFrames.count else { return }
+        guard entries.count == cachedFrames.count,
+              window != nil || keepsAccessibilitySectionsMounted else { return }
         let visible = visibleRect
         // Keep a viewport of buffer without making offscreen text views take
         // part in every AppKit layout, hit-test, and cursor-rect update.
@@ -658,20 +407,29 @@ final class NativeMarkdownDocumentContainerView: NSView {
         let focused = window?.firstResponder as? NSView
         var nextMounted: NSView?
         for (entry, frame) in zip(entries, cachedFrames).reversed() {
-            let containsFocus = focused.map { $0 === entry.view || $0.isDescendant(of: entry.view) } ?? false
+            let containsFocus = entry.view.flatMap { view in
+                focused.map { $0 === view || $0.isDescendant(of: view) }
+            } ?? false
             let shouldMount = keepAll || containsFocus || (viewport.map { frame.intersects($0) } ?? true)
             guard shouldMount else {
-                if entry.view.superview != nil { entry.view.removeFromSuperview() }
+                entry.view?.removeFromSuperview()
                 continue
             }
-            if entry.view.superview !== self {
-                if let nextMounted { addSubview(entry.view, positioned: .below, relativeTo: nextMounted) }
-                else { addSubview(entry.view) }
+            let view: any NativeMarkdownMeasurableSection
+            if let existing = entry.view { view = existing }
+            else {
+                view = Self.makeView(for: entry.section)
+                Self.update(view, with: entry.section, bodySize: bodySize, bodyWeight: bodyWeight)
+                entry.view = view
             }
-            nextMounted = entry.view
+            if view.superview !== self {
+                if let nextMounted { addSubview(view, positioned: .below, relativeTo: nextMounted) }
+                else { addSubview(view) }
+            }
+            nextMounted = view
             let isEmpty = frame.height <= 0
-            if entry.view.isHidden != isEmpty { entry.view.isHidden = isEmpty }
-            if entry.view.frame != frame { entry.view.frame = frame }
+            if view.isHidden != isEmpty { view.isHidden = isEmpty }
+            if view.frame != frame { view.frame = frame }
         }
     }
 
@@ -679,46 +437,51 @@ final class NativeMarkdownDocumentContainerView: NSView {
     private var bodyWeight: NSFont.Weight = .regular
     func setBodyStyle(size: CGFloat, weight: NSFont.Weight) {
         guard bodySize != size || bodyWeight != weight else { return }
-        bodySize = size; bodyWeight = weight; reset()
+        bodySize = size; bodyWeight = weight
+        renderedThemeRevision = -1
+        applyProjection(MarkdownRenderDocument(
+            key: MarkdownRenderKey(messageID: UUID(), contentRevision: 0, themeRevision: DockThemeRuntime.revision),
+            source: source, sections: renderedSections))
     }
 
     func apply(document: MarkdownRenderDocument) {
+        isStreamingDocument = false
+        applyProjection(document)
+    }
+
+    private func applyProjection(_ document: MarkdownRenderDocument) {
         source = document.source
         let themeRevision = DockThemeRuntime.revision
         let mentionRevision = BotMentions.revision
         guard renderedSections != document.sections || renderedThemeRevision != themeRevision
                 || renderedMentionRevision != mentionRevision else { return }
+        let canReuseHeights = renderedThemeRevision == themeRevision && renderedMentionRevision == mentionRevision
         renderedSections = document.sections
         renderedThemeRevision = themeRevision
         renderedMentionRevision = mentionRevision
-        var retained: [Int: any NativeMarkdownMeasurableSection] = [:]
+        var previous = Dictionary(entries.map { ($0.section.id, $0) }, uniquingKeysWith: { first, _ in first })
         var next: [Entry] = []
         next.reserveCapacity(document.sections.count)
         var previousSource: String?
         for section in document.sections {
-            let view: any NativeMarkdownMeasurableSection
-            if retained[section.id] == nil,
-               let existing = sectionViews[section.id],
-               Self.isCompatible(existing, with: section) {
-                view = existing
+            let existing = previous.removeValue(forKey: section.id)
+            let spacing = previousSource.map { Self.spacing(after: $0, before: section) } ?? 0
+            let entry: Entry
+            if let existing, canReuseHeights, existing.section == section {
+                entry = existing
+                entry.spacingBefore = spacing
             } else {
-                view = Self.makeView(for: section)
-                addSubview(view)
+                let view = existing?.view.flatMap { Self.isCompatible($0, with: section) ? $0 : nil }
+                if let view { Self.update(view, with: section, bodySize: bodySize, bodyWeight: bodyWeight) }
+                entry = Entry(section: section, view: view, spacingBefore: spacing)
             }
-            Self.update(view, with: section, bodySize: bodySize, bodyWeight: bodyWeight)
-            retained[section.id] = view
-            next.append(Entry(
-                id: section.id,
-                view: view,
-                spacingBefore: previousSource.map { Self.spacing(after: $0, before: section) } ?? 0
-            ))
+            next.append(entry)
             previousSource = section.source
         }
-        let kept = Set(next.map { ObjectIdentifier($0.view) })
-        for view in sectionViews.values where !kept.contains(ObjectIdentifier(view)) {
-            view.removeFromSuperview()
+        let kept = Set(next.compactMap { $0.view.map(ObjectIdentifier.init) })
+        for entry in entries {
+            if let view = entry.view, !kept.contains(ObjectIdentifier(view)) { view.removeFromSuperview() }
         }
-        sectionViews = retained
         entries = next
         cachedIntrinsicHeight = nil
         cachedSolveWidth = -1
@@ -728,7 +491,8 @@ final class NativeMarkdownDocumentContainerView: NSView {
     }
 
     func applyStreaming(sections: [MarkdownRenderSection], source: String) {
-        apply(document: MarkdownRenderDocument(
+        isStreamingDocument = true
+        applyProjection(MarkdownRenderDocument(
             key: MarkdownRenderKey(messageID: UUID(), contentRevision: 0, themeRevision: DockThemeRuntime.revision),
             source: source,
             sections: sections
@@ -736,8 +500,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
     }
 
     func reset() {
-        for view in sectionViews.values { view.removeFromSuperview() }
-        sectionViews.removeAll(keepingCapacity: true)
+        for entry in entries { entry.view?.removeFromSuperview() }
         entries.removeAll(keepingCapacity: true)
         source = ""
         renderedSections = []
@@ -758,12 +521,14 @@ final class NativeMarkdownDocumentContainerView: NSView {
     /// extend it, so Copy yields the whole block while it streams.
     func codeBlockText(startingAt codeView: NativeMarkdownCodeView) -> String {
         guard let index = entries.firstIndex(where: { $0.view === codeView }) else { return codeView.codeBody }
-        var parts = [codeView.codeBody]
+        var code = entries[index].section.source
         for entry in entries[(index + 1)...] {
-            guard let next = entry.view as? NativeMarkdownCodeView, !next.opensBlock else { break }
-            parts.append(next.codeBody)
+            guard case .code = entry.section.kind else { break }
+            let next = NativeMarkdownCodeView.parsedCode(entry.section.source)
+            guard !next.opensBlock else { break }
+            code.append(entry.section.source)
         }
-        return parts.joined(separator: "\n")
+        return NativeMarkdownCodeView.parsedCode(code).body
     }
 
     /// Sections carry their source whitespace. A streaming section can end
@@ -964,58 +729,19 @@ enum NativeMarkdownAttributedTextBuilder {
     }
 
     nonisolated static func isTableStart(_ lines: [String], at index: Int) -> Bool {
-        let row = lines[index].trimmingCharacters(in: .whitespaces)
-        let cells = tableCells(row)
-        if row.hasPrefix("|"), row.hasSuffix("|") { return true }
-        guard cells.count > 1 else { return false }
-        guard index + 1 < lines.count else { return false }
-        let separator = tableCells(lines[index + 1])
-        return separator.count == cells.count && isSeparatorRow(separator)
+        MarkdownTableSyntax.isTableStart(lines, at: index)
     }
 
     nonisolated static func isPureTable(_ markdown: String) -> Bool {
-        let lines = markdown.split(separator: "\n").map(String.init).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        guard !lines.isEmpty, isTableStart(lines, at: 0) else { return false }
-        return lines.allSatisfy { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return tableCells(trimmed).count > 1 || (trimmed.hasPrefix("|") && trimmed.hasSuffix("|"))
-        }
+        MarkdownTableSyntax.isPureTable(markdown)
     }
 
-    /// Splits a table row on unescaped pipes, keeping empty cells so columns
-    /// stay aligned (`| a || c |` is three cells, not two).
     nonisolated static func tableCells(_ line: String) -> [String] {
-        var body = Substring(line.trimmingCharacters(in: .whitespaces))
-        if body.hasPrefix("|") { body = body.dropFirst() }
-        if body.hasSuffix("|"), !body.hasSuffix("\\|") { body = body.dropLast() }
-        var cells: [String] = []
-        var current = ""
-        var escaped = false
-        for character in body {
-            if escaped {
-                escaped = false
-                if character == "|" { current.removeLast() }
-                current.append(character)
-                continue
-            }
-            if character == "\\" {
-                escaped = true
-                current.append(character)
-            } else if character == "|" {
-                cells.append(current.trimmingCharacters(in: .whitespaces))
-                current = ""
-            } else {
-                current.append(character)
-            }
-        }
-        cells.append(current.trimmingCharacters(in: .whitespaces))
-        return cells
+        MarkdownTableSyntax.tableCells(line)
     }
 
     nonisolated static func isSeparatorRow(_ cells: [String]) -> Bool {
-        !cells.isEmpty && cells.allSatisfy { cell in
-            cell.contains("-") && cell.allSatisfy { $0 == "-" || $0 == ":" }
-        }
+        MarkdownTableSyntax.isSeparatorRow(cells)
     }
 
     static func table(_ markdown: String, palette: NativeMarkdownPalette) -> Output {
@@ -1297,6 +1023,9 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
             }
         }
         quoteRanges = output.quoteRanges
+        // A reused measurement view must not inherit the previous block's font.
+        typingAttributes = output.string.length > 0 ? output.string.attributes(at: 0, effectiveRange: nil) : [:]
+        defaultParagraphStyle = typingAttributes[.paragraphStyle] as? NSParagraphStyle
         textStorage?.setAttributedString(output.string)
         heights.removeAll()
         invalidateIntrinsicContentSize()
@@ -1577,6 +1306,19 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         headerDivider.layer?.backgroundColor = palette.border.cgColor
         languageLabel.textColor = palette.metadata
         setCopyTitle("Copy")
+        let (body, opensBlock) = Self.parsedCode(code)
+        self.opensBlock = opensBlock
+        codeBody = body
+        languageLabel.stringValue = opensBlock ? (language ?? "").lowercased() : ""
+        setHeaderHidden(!opensBlock)
+        textView.update(markdown: body, kind: .code(language: language))
+        contentSize = textView.naturalContentSize()
+        needsLayout = true
+        invalidateIntrinsicContentSize()
+    }
+
+
+    static func parsedCode(_ code: String) -> (body: String, opensBlock: Bool) {
         let lines = code.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         var start = 0
         var end = lines.count
@@ -1592,13 +1334,6 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
             end -= 1
         }
         let body = start < end ? lines[start..<end].joined(separator: "\n") : ""
-        self.opensBlock = opensBlock
-        codeBody = body
-        languageLabel.stringValue = opensBlock ? (language ?? "").lowercased() : ""
-        setHeaderHidden(!opensBlock)
-        textView.update(markdown: body, kind: .code(language: language))
-        contentSize = textView.naturalContentSize()
-        needsLayout = true
-        invalidateIntrinsicContentSize()
+        return (body, opensBlock)
     }
 }
