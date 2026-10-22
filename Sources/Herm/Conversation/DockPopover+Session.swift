@@ -9,7 +9,7 @@ extension DockPopover {
         Button(action: { model.toggleSessions() }) {
             HStack(spacing: 8) {
                 Text(model.currentSessionTitle ?? "Untitled chat")
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(style.primaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -332,22 +332,22 @@ extension DockPopover {
     ) -> some View {
         HStack(spacing: 7) {
             DockIcon(icon)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
 
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockSecondaryText)
 
             Text(value)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .lineLimit(1)
                 .truncationMode(truncatesValue ? .middle : .tail)
                 .layoutPriority(1)
 
             DockIcon(.caretDown)
-                .font(.system(size: 10, weight: .bold))
+                .dockFont(size: 10, weight: .bold)
                 .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(.horizontal, 10)
@@ -386,7 +386,7 @@ extension DockPopover {
                 DockLoadingState(title: "Loading conversations…", minHeight: 80)
             } else if model.sessions.isEmpty {
                 Text("No saved conversations")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(style.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)

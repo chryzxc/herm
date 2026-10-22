@@ -53,7 +53,7 @@ struct MessagePinsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Pinned messages").font(.system(size: 12, weight: .semibold))
+                Text("Pinned messages").dockFont(size: 12, weight: .semibold)
                 Spacer()
                 DockIconButton(icon: .arrowClockwise, label: "Refresh pinned messages", isBusy: model.isLoadingMessagePins, size: 24, style: DockThemePalette(theme: theme.selectedThemeID)) {
                     Task { await model.refreshMessagePins() }
@@ -65,10 +65,10 @@ struct MessagePinsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if model.pinnedMessages.isEmpty {
                         Text(model.messagePinError != nil ? "Pinned messages unavailable" : model.isLoadingMessagePins ? "Loading pinned messages…" : "No pinned messages")
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                         if !model.isLoadingMessagePins && model.messagePinError == nil {
                             Text("Pin a saved message using its pin action.")
-                                .font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         }
                     }
                     ForEach(model.pinnedMessages) { pin in
@@ -76,9 +76,9 @@ struct MessagePinsView: View {
                             Button { onSelect(pin) } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(pin.role == "user" ? "You" : "Hermes")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .dockFont(size: 12, weight: .semibold)
                                     Text(pin.preview.isEmpty ? "Message with an attachment" : pin.preview)
-                                        .font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
+                                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.trailing, 18)
@@ -101,7 +101,7 @@ struct MessagePinsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Text(model.messagePinError ?? "")
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)

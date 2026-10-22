@@ -16,6 +16,12 @@ struct SessionModeTabVisualTests {
             let style = DockThemePalette(theme: theme)
             let root = VStack(alignment: .leading, spacing: 12) {
                 Text("\(theme.title) — \(dark ? "dark" : "light")").font(DockTypography.pageTitle)
+                DockPageHeader(title: "Calendar", subtitle: "Your Mac calendar, reminders, and scheduled work")
+                    .environment(\.dockTitleRow, DockTitleRow(height: 52, leadingClearance: 28))
+                ForEach([false, true], id: \.self) { collapsed in
+                    DockPageHeader(title: "Pull requests", subtitle: "Review your GitHub work", sidebarCollapsed: .constant(collapsed))
+                        .environment(\.dockTitleRow, DockTitleRow(height: 52, leadingClearance: 28))
+                }
                 ForEach([DockPopover.SessionWorkspaceMode.chat, .voice, .pullRequests]) { mode in
                     header(style: style, selected: mode).frame(width: 520)
                 }
@@ -48,6 +54,7 @@ struct SessionModeTabVisualTests {
 
     private func header(style: DockThemePalette, selected: DockPopover.SessionWorkspaceMode) -> some View {
         HStack(spacing: 8) {
+            DockSidebarToggle(isCollapsed: true, edge: .leading, action: {})
             Text("Parallel compliance repo work")
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
@@ -55,6 +62,11 @@ struct SessionModeTabVisualTests {
             SessionModeTabStrip(modes: [.chat, .voice, .pullRequests], selectedMode: selected, style: style, onSelect: { _ in })
             DockIcon(.dotsThree, size: 14, color: style.secondaryText).frame(width: 28, height: 28)
             DockSidebarToggle(isCollapsed: true, edge: .trailing, action: {})
-        }.frame(height: 52)
+        }
+        .padding(.leading, DockWindowChrome.sidebarToggleLeading)
+        .padding(.trailing, 12)
+        .frame(height: DockWindowChrome.titleRowHeight)
+        .background(Color.dockSidebar)
+        .overlay(alignment: .bottom) { DockWindowChrome.titleRowSeparator }
     }
 }

@@ -17,7 +17,7 @@ struct RichDocumentView: View {
           HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text("Preparing interactive view…").foregroundStyle(Color.dockSecondaryText)
-          }.font(DockTypography.body).frame(minHeight: 44)
+          }.dockFont(.body).frame(minHeight: 44)
         }
       }
     }
@@ -34,10 +34,10 @@ struct RichSurfaceView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text(surface.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(
+      Text(surface.title).dockFont(size: 12, weight: .semibold).foregroundStyle(
         Color.dockPrimaryText)
       if surface.kind == .html {
-        Text(surface.fallback).font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+        Text(surface.fallback).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
         if htmlCoordinator.activeKey == htmlKey, let html = surface.html {
           GeneratedHTMLPreview(html: html, identity: htmlKey)
         } else {
@@ -51,7 +51,7 @@ struct RichSurfaceView: View {
       RichSourceDisclosure(source: source)
     }
     .padding(.vertical, 8)
-    .font(DockTypography.body)
+    .dockFont(.body)
     .frame(maxWidth: .infinity, alignment: .leading)
     .onDisappear { if htmlCoordinator.activeKey == htmlKey { htmlCoordinator.close() } }
   }
@@ -157,7 +157,7 @@ struct RichSourceDisclosure: View {
             source, label: "Copy source", accessibilityLabel: "Copy interactive source"
           ).buttonStyle(.dockCompact)
           ScrollView([.horizontal, .vertical]) {
-            Text(source).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+            Text(source).dockFont(size: 12, design: .monospaced).textSelection(.enabled)
               .foregroundStyle(Color.dockSecondaryText).frame(
                 maxWidth: .infinity, alignment: .leading)
           }.frame(maxHeight: 220)

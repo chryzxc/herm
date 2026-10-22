@@ -86,6 +86,7 @@ extension DockPopover {
             onSelectProfile: { botMode.selectProfile($0) },
             onOpenWindow: onOpenWindow,
             isDockedWindow: usesWindowChrome,
+            showsWindowTitleRow: !usesSharedChatTitleRow,
             isSidebarCollapsed: $isChatListCollapsed
         )
     }
@@ -280,7 +281,7 @@ extension DockPopover {
                             withAnimation(.dockEase(duration: 0.2)) { isNarrowControlVisible = false }
                         } label: {
                             Label("Back to chat", systemImage: "chevron.left")
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .padding(.horizontal, 8)
                                 .frame(height: 28)
@@ -407,7 +408,7 @@ extension DockPopover {
     var contextPanelHeader: some View {
         HStack(spacing: 12) {
             Text("INSPECTOR")
-                .font(.system(size: 11, weight: .bold))
+                .dockFont(size: 11, weight: .bold)
                 .tracking(1.05)
                 .foregroundStyle(Color.dockMetadataText)
 
@@ -507,7 +508,7 @@ extension DockPopover {
                     }
                 } label: {
                     Text(scope.rawValue)
-                        .font(.system(size: 13, weight: inspectorScope == scope ? .semibold : .regular))
+                        .dockFont(size: 13, weight: inspectorScope == scope ? .semibold : .regular)
                         .foregroundStyle(inspectorScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
                         .frame(width: 82, height: 34)
                         .background {
@@ -557,9 +558,8 @@ extension DockPopover {
             let showsInspector = geometry.size.width >= 440
             HStack(spacing: 4) {
                 // Leading like a native toolbar title; actions sit at the trailing edge.
-                if hidesChatList {
+                if usesSharedChatTitleRow {
                     DockSidebarToggle(isCollapsed: $isChatListCollapsed)
-                        .padding(.leading, DockWindowChrome.sidebarToggleLeading - 12)
                 }
                 sessionIdentity(style: style)
                 Spacer(minLength: 12)
@@ -593,8 +593,8 @@ extension DockPopover {
                     DockSidebarToggle(isCollapsed: !inspectorPanelIsVisible, edge: .trailing, action: toggleInspectorPanel)
                 }
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 8)
+            .padding(.leading, usesSharedChatTitleRow ? DockWindowChrome.sidebarToggleLeading : 12)
+            .padding(.trailing, 12)
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(height: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight)

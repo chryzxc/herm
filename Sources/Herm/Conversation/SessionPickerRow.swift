@@ -24,12 +24,12 @@ struct SessionPickerRow: View {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(session.displayTitle)
-                        .font(.system(size: 13, weight: isCurrent ? .semibold : .medium))
+                        .dockFont(size: 13, weight: isCurrent ? .semibold : .medium)
                         .foregroundStyle(session.isHidden ? style.secondaryText : style.primaryText)
                         .lineLimit(1)
                     if let preview = session.displayPreview {
                         Text(preview)
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(style.secondaryText)
                             .lineLimit(1)
                     }
@@ -96,7 +96,7 @@ struct SessionPickerRow: View {
                 Text(date, format: .relative(presentation: .named, unitsStyle: .abbreviated))
             }
         }
-        .font(.system(size: 11, weight: .medium))
+        .dockFont(size: 11, weight: .medium)
         .foregroundStyle(style.metadataText)
         .lineLimit(1)
         .padding(.top, 2)

@@ -32,10 +32,10 @@ struct ForwardToBotPopover: View {
                 )
             }
             Text("Forward to \(bot.name) in a new session")
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockSecondaryText)
             Text(messageText)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(5)
                 .padding(8)
@@ -59,10 +59,10 @@ struct ForwardToBotPopover: View {
             .frame(height: height)
             .background(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorderStrong, lineWidth: 1))
             if let error {
-                Text(error).font(.system(size: 11)).foregroundStyle(Color.red)
+                Text(error).dockFont(size: 11).foregroundStyle(Color.dockDestructive)
             }
             if let output {
-                Text(output).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+                Text(output).dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(8).textSelection(.enabled)
             }
             HStack {

@@ -23,10 +23,10 @@ struct StartupAssistantView: View {
                 .scaleEffect(0.5)
                 .frame(width: 150, height: 150)
             Text("What can I help with?")
-                .font(.system(size: 17, weight: .semibold))
+                .dockFont(size: 17, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text("Ask a question, give it a task, or attach files and folders.")
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockSecondaryText)
             HStack(spacing: 8) {
                 ForEach(Array(Self.suggestions.enumerated()), id: \.offset) { index, item in
@@ -58,11 +58,11 @@ private struct StartupSuggestionChip: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .medium))
+                    .dockFont(size: 11, weight: .medium)
                     .foregroundStyle(isHovering ? Color.dockAccent : Color.dockSecondaryText)
                     .scaleEffect(isHovering ? 1.12 : 1)
                 Text(text)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .dockFont(size: 11.5, weight: .medium)
                     .foregroundStyle(isHovering ? Color.dockPrimaryText : Color.dockSecondaryText)
             }
             .padding(.horizontal, 11)
@@ -426,7 +426,7 @@ struct KanbanMutationEditor: View {
                     }
                 } label: {
                     DockIconLabel("Choose Hermes profile", icon: .caretDown)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                 }
                 .fixedSize()
@@ -434,7 +434,7 @@ struct KanbanMutationEditor: View {
             if request.kind == .reassign {
                 Toggle("Reclaim active worker first", isOn: $reclaimFirst)
                     .toggleStyle(.dockSwitch)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
             }
         } footer: {
             modalActions(primaryTitle: request.kind.title, pendingTitle: "Saving…", isDisabled: value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending, isPending: isPending, onCancel: { dismiss() }) {
@@ -457,7 +457,7 @@ struct CronConfigurationFields: View {
     var isScriptOnly = false
 
     var body: some View {
-        DisclosureGroup("Configuration") {
+        DisclosureGroup("Delivery & execution") {
             VStack(alignment: .leading, spacing: 12) {
                 labeledField("Delivery", hint: "local or a configured Hermes delivery target") {
                     DockTextField("local", text: $draft.delivery).textFieldStyle(.dockGlass)
@@ -477,7 +477,8 @@ struct CronConfigurationFields: View {
                 }
             }.padding(.top, 8)
         }
-        .font(.system(size: 12))
+        .disclosureGroupStyle(DockDisclosureGroupStyle())
+        .dockFont(size: 12)
         .foregroundStyle(Color.dockSecondaryText)
     }
 }
@@ -501,7 +502,7 @@ struct CronEditEditor: View {
     }
 
     var body: some View {
-        DockModal(icon: .clock, title: "Edit automation", subtitle: job.name, width: 520) {
+        DockModal(icon: .clock, title: "Edit automation", subtitle: job.name, width: 560) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if isLoading {
@@ -514,10 +515,12 @@ struct CronEditEditor: View {
                         labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
                             DockTextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
                         }
+                        ModalNote(text: draft.schedule.isEmpty ? "Enter an interval or a cron expression." : CronScheduleFormatting.humanReadable(draft.schedule), icon: .clock)
+                            .frame(minHeight: 24, alignment: .leading)
                         if loadedJob?.details.noAgent != true {
                             labeledField("Request") {
                                 DockTextField("Request", text: $draft.prompt, axis: .vertical)
-                                    .lineLimit(3...6).textFieldStyle(.dockGlass)
+                                    .lineLimit(4...8).textFieldStyle(.dockGlass)
                             }
                         }
                         CronConfigurationFields(draft: $draft.configuration, isScriptOnly: loadedJob?.details.noAgent == true)
@@ -527,7 +530,7 @@ struct CronEditEditor: View {
                         Button("Retry loading details") { Task { await load() } }.buttonStyle(.dockCompact)
                     }
                 }
-            }.frame(height: 400)
+            }.frame(height: 440)
         } footer: {
             modalActions(primaryTitle: "Save changes", isDisabled: loadedJob == nil || draft.changes(comparedTo: loadedJob ?? job).isEmpty || isSaving, isPending: isSaving, onCancel: { dismiss() }) {
                 confirming = true
@@ -591,7 +594,7 @@ struct CronReportDetailSheet: View {
                     VStack(spacing: 10) {
                         ProgressView()
                         Text("Loading report…")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -604,10 +607,10 @@ struct CronReportDetailSheet: View {
                 } else {
                     VStack(spacing: 10) {
                         DockIcon(.warning)
-                            .font(.system(size: 22))
+                            .dockFont(size: 22)
                             .foregroundStyle(Color.dockWarning)
                         Text(loadError ?? "The report could not be loaded.")
-                            .font(.system(size: 12))
+                            .dockFont(size: 12)
                             .foregroundStyle(Color.dockSecondaryText)
                             .multilineTextAlignment(.center)
                         Button("Try Again") { load() }
@@ -669,25 +672,25 @@ struct RepositoryFleetRow: View {
                     .foregroundStyle(snapshot?.isGitRepository == true ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(URL(fileURLWithPath: path).lastPathComponent)
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+                        .dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                     Text(snapshot?.branch ?? "Inspecting…")
-                        .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                        .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer()
                 if isRefreshing { ProgressView().controlSize(.small) }
-                if path == activePath { Text("ACTIVE").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent) }
+                if path == activePath { Text("ACTIVE").dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockAccent) }
             }
             if let snapshot, snapshot.isGitRepository {
                 Text("\(snapshot.changedFiles) changed · \(snapshot.aheadCount.map(String.init) ?? "—") ahead · \(snapshot.behindCount.map(String.init) ?? "—") behind")
-                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-                if let operation = snapshot.operation { Text(operation.uppercased()).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockWarning) }
+                    .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+                if let operation = snapshot.operation { Text(operation.uppercased()).dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockWarning) }
             }
             HStack(spacing: 12) {
                 Button("SELECT") { select(path) }
                 Button("REFRESH") { Task { await refresh() } }
             }
             .buttonStyle(.dockCompact)
-            .font(.system(size: 11, weight: .semibold))
+            .dockFont(size: 11, weight: .semibold)
             .foregroundStyle(Color.dockAccent)
         }
         .dockListRow()
@@ -730,12 +733,12 @@ struct DockActionPalette: View {
                             HStack(spacing: 9) {
                                 DockIcon(command.icon).frame(width: 16)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(command.title).font(.system(size: 13, weight: .medium))
+                                    Text(command.title).dockFont(size: 13, weight: .medium)
                                     Text(command.isAvailable ? command.subtitle : (command.unavailableReason ?? command.subtitle))
-                                        .font(.system(size: 11)).lineLimit(1)
+                                        .dockFont(size: 11).lineLimit(1)
                                 }
                                 Spacer()
-                                Text(command.category.uppercased()).font(.system(size: 10))
+                                Text(command.category.uppercased()).dockFont(size: 10)
                             }
                             .foregroundStyle(command.isAvailable ? Color.dockPrimaryText : Color.dockMetadataText)
                             .frame(maxWidth: .infinity, alignment: .leading)

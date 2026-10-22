@@ -134,7 +134,7 @@ struct AttachmentPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ATTACH OR INSERT")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .dockFont(size: 11, weight: .semibold, design: .monospaced)
                 .tracking(0.7)
                 .foregroundStyle(Color.dockAccent)
 
@@ -171,7 +171,7 @@ struct AttachmentPopover: View {
                 Text(action.title)
                 Spacer()
             }
-            .font(.system(size: 12, weight: .medium))
+            .dockFont(size: 12, weight: .medium)
             .foregroundStyle(unavailable ? Color.dockMetadataText : Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -188,21 +188,21 @@ struct AttachmentPopover: View {
                 DockIcon(AttachmentPopoverAction.url.icon)
                     .frame(width: 16)
                 Text("URL")
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                 Spacer()
             }
             HStack(spacing: 6) {
                 DockTextField("https://…", text: $urlText)
                     .textFieldStyle(.dockGlass)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .onSubmit(insertURL)
                 Button("Insert", action: insertURL)
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
                     .disabled(AttachmentPopoverPresentation.validatedURL(from: urlText) == nil)
             }
             Text("Only http:// and https:// URLs are accepted.")
-                .font(.system(size: 10))
+                .dockFont(size: 10)
                 .foregroundStyle(Color.dockMetadataText)
         }
     }
@@ -219,9 +219,9 @@ struct AttachmentPopover: View {
                 Text(AttachmentPopoverAction.promptSnippets.title)
                 Spacer()
                 DockIcon(.caretRight)
-                    .font(.system(size: 9, weight: .semibold))
+                    .dockFont(size: 9, weight: .semibold)
             }
-            .font(.system(size: 12, weight: .medium))
+            .dockFont(size: 12, weight: .medium)
             .foregroundStyle(Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())

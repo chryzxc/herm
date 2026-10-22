@@ -18,7 +18,7 @@ struct SessionModeTabStrip: View {
                 let isSelected = mode == selectedMode
                 Button { onSelect(mode) } label: {
                     Text(mode == .pullRequests ? "PRs" : mode.label)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                        .dockFont(size: 12, weight: isSelected ? .semibold : .medium)
                         .foregroundStyle(isSelected ? selectedInk : style.secondaryText)
                         .padding(.horizontal, 10)
                         .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight)

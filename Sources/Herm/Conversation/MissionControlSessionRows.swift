@@ -75,7 +75,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
                 isProjectLinked: isProjectLinked
             ) {
                 DockIconLabel(badge.label, icon: .gitBranch)
-                    .font(.system(size: 11, weight: .medium))
+                    .dockFont(size: 11, weight: .medium)
                     .foregroundStyle(style.accent)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -88,13 +88,13 @@ struct MissionControlConversationSessionRow: View, Equatable {
             }
             if let preview = session.displayPreview {
                 Text(preview)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(style.secondaryText)
                     .lineLimit(1)
             }
             if let timestamp = session.lastUpdatedAt {
                 Text(timestamp, style: .relative)
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(style.metadataText)
                 .lineLimit(1)
             }
@@ -320,7 +320,7 @@ struct MissionControlProjectList: View {
                                  : "Show \(group.sessions.count - sessionLimit) more")
                             DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.metadataText)
                         }
-                        .font(DockTypography.control)
+                        .dockFont(.control)
                         .foregroundStyle(style.secondaryText)
                         .frame(minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
@@ -337,7 +337,7 @@ struct MissionControlProjectList: View {
 
     private func projectStatusRow(_ text: String, leading: CGFloat = 34) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .dockFont(size: 12)
             .foregroundStyle(style.metadataText)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .padding(.leading, leading)
@@ -456,7 +456,7 @@ struct MissionControlBotSessionRow: View, Equatable {
                         .foregroundStyle(style.primaryText)
                         .lineLimit(1)
                     Text("BOT")
-                        .font(.system(size: 9, weight: .bold))
+                        .dockFont(size: 9, weight: .bold)
                         .foregroundStyle(style.accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -567,7 +567,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
                             HStack(spacing: 4) {
                                 DockIcon(.discordLogo, size: 12)
                                 Text(source)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .dockFont(size: 11, weight: .medium)
                             }
                                 .foregroundStyle(Color.dockDiscord)
                                 .padding(.horizontal, 6)
@@ -679,7 +679,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
         HStack(spacing: 4) {
             DockIcon(.folder, size: 11)
             Text(name)
-                .font(.system(size: 11, weight: .medium))
+                .dockFont(size: 11, weight: .medium)
                 .lineLimit(1)
         }
         .foregroundStyle(style.accent)

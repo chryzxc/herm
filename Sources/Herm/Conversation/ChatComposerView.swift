@@ -267,7 +267,7 @@ struct ChatComposerView: View {
                 // Placeholder text shares the editor's single visual gutter.
                 if composer.text.isEmpty {
                     Text(placeholderText)
-                        .font(.system(size: 14, design: DockThemeStyle.current.fontDesign))
+                        .dockFont(size: 14, design: DockThemeStyle.current.fontDesign)
                         .foregroundStyle(Color.dockSecondaryText)
                         .padding(.leading, textContentInset)
                         .allowsHitTesting(false)
@@ -296,7 +296,7 @@ struct ChatComposerView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 Button(action: { model.removePendingImage(image) }) {
                                     DockIcon(.x)
-                                        .font(.system(size: 10, weight: .bold))
+                                        .dockFont(size: 10, weight: .bold)
                                         .foregroundStyle(Color.dockSecondaryText)
                                     .frame(width: 22, height: 22)
                                     .contentShape(Rectangle())
@@ -325,7 +325,7 @@ struct ChatComposerView: View {
                                 } label: {
                                     HStack(spacing: 7) {
                                         DockIcon(.chatCircleText).foregroundStyle(Color.dockAccent)
-                                        Text(context.title).font(DockTypography.body)
+                                        Text(context.title).dockFont(.body)
                                             .lineLimit(1).frame(maxWidth: 240, alignment: .leading)
                                     }
                                 }
@@ -333,7 +333,7 @@ struct ChatComposerView: View {
                                 .accessibilityLabel("Inspect context: " + context.title)
                                 Button { model.removeAttachedContext(context) } label: {
                                     DockIcon(.x)
-                                        .font(.system(size: 10, weight: .bold))
+                                        .dockFont(size: 10, weight: .bold)
                                         .foregroundStyle(Color.dockSecondaryText)
                                     .frame(width: 22, height: 22)
                                     .contentShape(Rectangle())
@@ -354,12 +354,12 @@ struct ChatComposerView: View {
                     DockIcon(.fileText)
                         .foregroundStyle(Color.dockAccent)
                     Text(pdfURL.lastPathComponent)
-                        .font(.system(size: 11, weight: .medium))
+                        .dockFont(size: 11, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     Button { model.removePendingPDF() } label: {
                         DockIcon(.x)
-                            .font(.system(size: 10, weight: .bold))
+                            .dockFont(size: 10, weight: .bold)
                             .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -374,12 +374,12 @@ struct ChatComposerView: View {
             ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) { error in
                 HStack(spacing: 6) {
                     Text(error)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockWarning)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button { model.clearAttachmentErrors() } label: {
                         DockIcon(.x)
-                            .font(.system(size: 10, weight: .bold))
+                            .dockFont(size: 10, weight: .bold)
                             .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 22, height: 22)
                             .contentShape(Rectangle())
@@ -458,7 +458,7 @@ struct ChatComposerView: View {
                                 .frame(width: 28, height: 28)
                                 .background(
                                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                        .fill(dictation.isRecording ? Color.dockDestructive.opacity(0.14) : DockSkinPresentation.current.composerControlFill)
+                                        .fill(dictation.isRecording ? Color.dockDestructiveFill.opacity(0.14) : DockSkinPresentation.current.composerControlFill)
                                 )
                                 .frame(width: 32, height: 32)
                                 .contentShape(Rectangle())
@@ -472,10 +472,10 @@ struct ChatComposerView: View {
                     if showsInterruptControl {
                         Button(action: { onStop() }) {
                             DockIcon(.stop, weight: .fill)
-                                .font(.system(size: 10, weight: .bold))
+                                .dockFont(size: 10, weight: .bold)
                                 .foregroundStyle(Color.dockDestructive)
                                 .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
-                                .background(Circle().fill(Color.dockDestructive.opacity(0.14)))
+                                .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
                         }
                         .buttonStyle(.dockHover)
                         .help(model.status == .needsClarification
@@ -505,16 +505,16 @@ struct ChatComposerView: View {
                             Group {
                                 if speechInput.isRecording {
                                     DockIcon(.stop, weight: .fill)
-                                        .font(.system(size: 10, weight: .bold))
+                                        .dockFont(size: 10, weight: .bold)
                                         .foregroundStyle(Color.dockPrimaryText)
                                 } else if showStop {
                                     DockIcon(.stop, weight: .fill)
-                                        .font(.system(size: 10, weight: .bold))
+                                        .dockFont(size: 10, weight: .bold)
                                         .foregroundStyle(Color.dockDestructive)
                                         .transition(.scale(scale: 0.3).combined(with: .opacity))
                                 } else {
                                     DockIcon(.arrowUp)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .dockFont(size: 12, weight: .semibold)
                                         // Use soft dockPrimaryText instead of stark white to prevent eye strain
                                         .foregroundStyle(canSubmit ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
                                         // Send: the arrow launches up and drops back in.
@@ -556,20 +556,20 @@ struct ChatComposerView: View {
             // Voice Recording & Steering Status Messages
             if let error = speechInput.errorMessage ?? dictation.errorMessage {
                 Text(error)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
             if let steeringError = model.steeringError {
                 Text(steeringError)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .padding(.top, 2)
             }
             if let clarificationResponseError = model.clarificationResponseError {
                 Text(clarificationResponseError)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
@@ -585,7 +585,7 @@ struct ChatComposerView: View {
                 if skin.composer == .line {
                     // Typographic skins replace the input box with one rule.
                     Rectangle()
-                        .fill(speechInput.isRecording ? Color.dockDestructive : isComposerFocused ? Color.dockAccent : Color.dockPrimaryText)
+                        .fill(speechInput.isRecording ? Color.dockDestructiveFill : isComposerFocused ? Color.dockAccent : Color.dockPrimaryText)
                         .frame(height: isComposerFocused ? 2 : 1)
                         .frame(maxHeight: .infinity, alignment: .bottom)
                 } else {
@@ -626,7 +626,7 @@ struct ChatComposerView: View {
                 model.updateSessionModel(option)
             }
         )
-        .font(DockTypography.control)
+        .dockFont(.control)
         .foregroundStyle(Color.dockSecondaryText)
         .padding(.horizontal, 8)
         .frame(height: 28)
@@ -654,7 +654,7 @@ struct ChatComposerView: View {
             HStack(spacing: 6) {
                 DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
                 Text(sessionReasoningDisplayName)
-                    .font(DockTypography.control)
+                    .dockFont(.control)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                 DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
@@ -852,7 +852,7 @@ private struct SessionContextRing: View {
                     .frame(width: 12, height: 12)
                     .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: fraction)
                     Text(compacting ? "Compacting" : "\(percent)%")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .dockFont(size: 11, weight: .medium, design: .monospaced)
                         .foregroundStyle(tint)
                         .contentTransition(.numericText(value: Double(percent)))
                         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: percent)
@@ -898,7 +898,7 @@ private struct SessionContextRing: View {
     private var contextDetails: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Context").font(.system(size: 12, weight: .semibold))
+                Text("Context").dockFont(size: 12, weight: .semibold)
                 Spacer()
                 if model.compactingSessionID == model.sessionID {
                     Text("Compacting").foregroundStyle(Color.dockAccent)
@@ -929,7 +929,7 @@ private struct SessionContextRing: View {
                 if details.categories.isEmpty {
                     Text("Context breakdown is unavailable.").foregroundStyle(Color.dockMetadataText)
                 } else {
-                    Text("Estimated breakdown").font(.system(size: 12, weight: .semibold))
+                    Text("Estimated breakdown").dockFont(size: 12, weight: .semibold)
                     ForEach(details.categories) { category in
                         detailRow(category.label, SessionTokenFormatting.format(category.tokens))
                     }
@@ -941,7 +941,7 @@ private struct SessionContextRing: View {
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
-        .font(.system(size: 12))
+        .dockFont(size: 12)
         .foregroundStyle(Color.dockPrimaryText)
         .padding(16)
         .frame(width: 340, alignment: .leading)
@@ -982,7 +982,7 @@ private struct QueuedPromptList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("QUEUED · SENDS WHEN HERMES FINISHES")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .dockFont(size: 10, weight: .semibold, design: .monospaced)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockMetadataText)
 
@@ -1003,13 +1003,13 @@ private struct QueuedPromptList: View {
                             set: { model.editingQueuedPromptText = $0 }
                         ), axis: .vertical)
                             .textFieldStyle(.dockGlass)
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1...4)
                             .onSubmit { model.finishQueuedPromptEdit(save: true) }
                     } else {
                         Text(label(for: prompt))
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(2)
                             .truncationMode(.tail)
@@ -1064,7 +1064,7 @@ private struct QueuedPromptList: View {
     private func rowButton(_ icon: Ph, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             DockIcon(icon)
-                .font(.system(size: 10, weight: .semibold))
+                .dockFont(size: 10, weight: .semibold)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
@@ -1345,8 +1345,8 @@ private struct PinnedWorkStrip: View {
                     HStack(spacing: 6) {
                         DockActivityIndicator(state: .running, size: 12)
                         Text(task.prompt).lineLimit(1).truncationMode(.tail)
-                            .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
-                        Text("background").font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                            .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                        Text("background").dockFont(size: 10, design: .monospaced).foregroundStyle(Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
                 }
@@ -1382,7 +1382,7 @@ private struct RunningProcessesStrip: View {
                     HStack(spacing: 6) {
                         DockIcon(.terminal, size: 12, color: Color.dockSecondaryText)
                         Text("\(control.processes.count) background process\(control.processes.count == 1 ? "" : "es") running")
-                            .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+                            .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
@@ -1393,11 +1393,11 @@ private struct RunningProcessesStrip: View {
                     ForEach(control.processes) { process in
                         HStack(spacing: 8) {
                             Text(process.name).lineLimit(1).truncationMode(.middle)
-                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockPrimaryText)
+                                .dockFont(size: 11, design: .monospaced).foregroundStyle(Color.dockPrimaryText)
                                 .help(process.detail ?? process.name)
                             Spacer(minLength: 0)
                             Button("Stop") { pending = process }
-                                .buttonStyle(.dockCompact).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
+                                .buttonStyle(.dockCompact).dockFont(size: 11).foregroundStyle(Color.dockWarning)
                         }
                         .padding(.leading, 18)
                     }

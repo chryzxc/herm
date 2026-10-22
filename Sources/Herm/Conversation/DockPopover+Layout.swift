@@ -333,18 +333,26 @@ extension DockPopover {
             // the gap above it is title row, not see-through window.
             Color.dockBorder.frame(width: DockLayout.hairline).padding(.top, titlebarInset)
                 .background(Color.dockSidebar)
-            if showsChatsPanel, !hidesChatList {
-                FullscreenPanelSplitView(
-                    leading: missionControlQueue,
-                    trailing: desktopTrailingWorkspace,
-                    leadingFraction: DesktopWorkspaceFractions.queue,
-                    minimumLeadingWidth: 300,
-                    minimumTrailingWidth: desktopTrailingMinimumWidth
-                )
-            } else {
-                desktopTrailingWorkspace
+            VStack(spacing: 0) {
+                if usesSharedChatTitleRow { header }
+                if showsChatsPanel, !hidesChatList {
+                    FullscreenPanelSplitView(
+                        leading: missionControlQueue,
+                        trailing: desktopTrailingWorkspace,
+                        leadingFraction: DesktopWorkspaceFractions.queue,
+                        minimumLeadingWidth: 300,
+                        minimumTrailingWidth: desktopTrailingMinimumWidth
+                    )
+                } else {
+                    desktopTrailingWorkspace
+                }
             }
         }
+    }
+
+    /// The windowed conversation owns one title row above all of its panes.
+    var usesSharedChatTitleRow: Bool {
+        usesWindowChrome && !isNarrowLayout && fullscreenSurface == .conversation
     }
 
     /// Only the windowed chat has a toggle to bring the list back, so only it collapses.
@@ -509,7 +517,7 @@ extension DockPopover {
 
     var conversationColumn: some View {
         VStack(spacing: 0) {
-            header
+            if !usesSharedChatTitleRow { header }
             switch sessionWorkspaceMode {
             case .chat:
                 conversation

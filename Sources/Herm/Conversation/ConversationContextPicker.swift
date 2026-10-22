@@ -18,7 +18,7 @@ struct ConversationContextPicker: View {
                 }.scrollContentBackground(.hidden).background(Color.dockCanvas).overlay {
                     if sessions.isEmpty {
                         Text(model.sessions.isEmpty ? "No conversations available." : "No matching conversations.")
-                            .font(DockTypography.body)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText).padding(12)
                     }
                 }.frame(minWidth: 180)
@@ -31,7 +31,7 @@ struct ConversationContextPicker: View {
                                     ? "Choose a conversation to select excerpts."
                                     : "No messages available in this conversation."
                             )
-                            .font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                         }
                         ForEach(excerpts.messages.indices, id: \.self) { index in
@@ -40,7 +40,7 @@ struct ConversationContextPicker: View {
                                     get: { selected.contains(index) },
                                     set: { if $0 { selected.insert(index) } else { selected.remove(index) } })
                             ) {
-                                Text(excerpts.messages[index]).font(DockTypography.body).lineLimit(8)
+                                Text(excerpts.messages[index]).dockFont(.body).lineLimit(8)
                             }.toggleStyle(.checkbox).padding(.vertical, 6)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -51,7 +51,7 @@ struct ConversationContextPicker: View {
                     DockTypography.metadata
                 ).foregroundStyle(Color.dockSecondaryText)
             }
-            if let error = excerpts.error { Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning) }
+            if let error = excerpts.error { Text(error).dockFont(.body).foregroundStyle(Color.dockWarning) }
         } footer: {
             Button("Cancel") { dismiss() }.buttonStyle(.dockSecondary)
             Spacer()
@@ -67,7 +67,7 @@ struct ConversationContextPicker: View {
                             + String(text.prefix(24_000))))
                 dismiss()
             }.buttonStyle(.dockPrimary).disabled(selected.isEmpty || excerpts.loading || !excerpts.isCurrent(model))
-        }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).frame(width: 750, height: 520)
+        }.dockFont(.body).foregroundStyle(Color.dockPrimaryText).frame(width: 750, height: 520)
     }
     private func load(_ session: HermesSession) {
         selected = []

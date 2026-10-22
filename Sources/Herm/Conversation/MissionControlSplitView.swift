@@ -31,9 +31,9 @@ struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: View>: N
     }
 
     func updateNSView(_ splitView: NSSplitView, context: Context) {
-        context.coordinator.queueHost.rootView = AnyView(queue.dockThemedRoot())
-        context.coordinator.workspaceHost.rootView = AnyView(workspace.dockThemedRoot())
-        context.coordinator.inspectorHost.rootView = AnyView(inspector.dockThemedRoot())
+        context.coordinator.queueHost.rootView = AnyView(queue.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
+        context.coordinator.workspaceHost.rootView = AnyView(workspace.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
+        context.coordinator.inspectorHost.rootView = AnyView(inspector.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
 
         guard !context.coordinator.hasSetInitialPositions else { return }
         DispatchQueue.main.async {
@@ -182,10 +182,10 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
 
     func updateNSView(_ splitView: NSSplitView, context: Context) {
         context.coordinator.leadingHost.rootView = AnyView(
-            leading.dockThemedRoot()
+            leading.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale)
         )
         context.coordinator.trailingHost.rootView = AnyView(
-            trailing.dockThemedRoot()
+            trailing.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale)
                 .overlay(alignment: .leading) {
                     Color.dockBorder.frame(width: DockLayout.hairline)
                 }

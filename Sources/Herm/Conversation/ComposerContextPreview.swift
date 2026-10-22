@@ -9,7 +9,7 @@ struct ComposerContextPreview: View {
     var body: some View {
         DockModal(title: context.title, width: nil) {
             ScrollView {
-                Text(text.isEmpty ? context.body : text).font(DockTypography.body).textSelection(.enabled).frame(
+                Text(text.isEmpty ? context.body : text).dockFont(.body).textSelection(.enabled).frame(
                     maxWidth: .infinity, alignment: .leading)
             }
         } footer: {

@@ -58,7 +58,7 @@ extension DockPopover {
             VStack(spacing: 8) {
                 if let user = captions.user {
                     Text(user)
-                        .font(.system(size: 13, weight: .medium))
+                        .dockFont(size: 13, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(2)
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -159,7 +159,7 @@ extension DockPopover {
     var voiceStatusLabel: some View {
         if let detail = model.voiceState.fallbackDetail, !speechInput.isRecording, !voiceOutput.isSpeaking {
             Text("LOCAL FALLBACK · \(detail)")
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .tracking(0.35)
                 .foregroundStyle(Color.dockWarning)
                 .lineLimit(2)
@@ -168,7 +168,7 @@ extension DockPopover {
         } else if model.voiceState.isNativeConversationActive {
             VStack(spacing: 4) {
                 Text(voiceStatusText)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .tracking(0.75)
                     .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent))
                     .contentTransition(.opacity)
@@ -178,7 +178,7 @@ extension DockPopover {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         } else if speechInput.isRecording || voiceOutput.isSpeaking {
             Text(speechInput.isRecording ? "\(model.agentDisplayName.uppercased()) IS LISTENING" : "\(model.agentDisplayName.uppercased()) IS SPEAKING")
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .tracking(0.75)
                 .foregroundStyle(speechInput.isRecording ? Color.dockSuccess : Color.dockAccent)
         }
@@ -199,17 +199,10 @@ extension DockPopover {
     /// The same prompt rows the chat shows, floated on the voice stage.
     @ViewBuilder
     var voicePromptCard: some View {
-        if let approval = model.approvalText {
-            approvalRow(model.approvalDetails ?? ApprovalPresentation(
-                title: model.approvalTitle ?? "Review requested action",
-                detail: approval,
-                detailIsCommand: model.approvalTitle == "Run command"
-            ))
-        } else if showsVoiceClarificationCard, model.status == .needsClarification, model.clarificationQuestion != nil {
-            clarificationRow
-        } else if let prompt = model.valuePrompt {
-            valuePromptRow(prompt)
-        }
+        ConversationPromptRows(
+            model: model, conversationMetrics: conversationMetrics,
+            showsClarification: showsVoiceClarificationCard, exclusive: true
+        )
     }
 
     /// What you said and what the agent is saying, so the conversation reads
@@ -355,7 +348,7 @@ extension DockPopover {
         HStack(spacing: 8) {
             ThinkingDots()
             Text(voiceActivityText)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .tracking(0.6)
                 .lineLimit(1)
         }

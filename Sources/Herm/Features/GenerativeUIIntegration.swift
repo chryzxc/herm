@@ -55,7 +55,7 @@ private struct GenerativeReply<Content: View>: View {
                 else { MarkdownMessageView(markdown: document.plainText) }
             } else if text.contains("herm-ui") {
                 if override ?? enabled {
-                    Text("Preparing visual reply…").font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).frame(minHeight: 44)
+                    Text("Preparing visual reply…").dockFont(.body).foregroundStyle(Color.dockSecondaryText).frame(minHeight: 44)
                 } else { MarkdownMessageView(markdown: GenerativeUIIntegration.plainText(text)) }
             } else { fallback }
         }

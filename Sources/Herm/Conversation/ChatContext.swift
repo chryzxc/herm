@@ -124,7 +124,7 @@ struct AttachToChatMenu: View {
                         Text("Attach to chat")
                         DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.horizontal, 10)
                     .frame(height: 28)

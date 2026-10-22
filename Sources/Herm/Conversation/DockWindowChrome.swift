@@ -12,7 +12,7 @@ enum DockWindowChrome {
     /// Full-width overlays start before the 52pt navigation rail.
     static let fullWidthTrafficLightClearance: CGFloat = 52 + trafficLightClearance
     /// Leading inset of the sidebar toggle in every title row, so it never moves as panes collapse.
-    static let sidebarToggleLeading: CGFloat = trafficLightClearance + 4
+    static let sidebarToggleLeading: CGFloat = trafficLightClearance + 16
     /// Hairline under the title row, drawn by each column so it runs the full window width.
     static var titleRowSeparator: some View { Color.dockBorderLight.frame(height: DockLayout.hairline) }
 }
@@ -62,7 +62,7 @@ struct BotActivityBanner: View {
                 HStack(spacing: 6) {
                     DockActivityIndicator(state: event.finished ? .done : .running, size: 12)
                     Text(event.text)
-                        .font(.system(size: 11, weight: .medium))
+                        .dockFont(size: 11, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                 }

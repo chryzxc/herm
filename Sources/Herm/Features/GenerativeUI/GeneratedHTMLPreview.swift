@@ -57,7 +57,7 @@ struct GeneratedHTMLPreview: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
-        Text("Interactive view").font(.system(size: 12, weight: .medium))
+        Text("Interactive view").dockFont(size: 12, weight: .medium)
         Spacer()
         if !expanded { Button("Expand") { showingExpanded = true }.buttonStyle(.dockCompact) }
         Button("Reload") {
@@ -67,7 +67,7 @@ struct GeneratedHTMLPreview: View {
         Button("Close") { GeneratedHTMLCoordinator.shared.close() }.buttonStyle(.dockCompact)
       }
       if let error = state.error {
-        Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning)
+        Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
           .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
       } else {
         Group { if !showingExpanded { GeneratedHTMLWebView(html: html, state: state) } }.id(
@@ -175,8 +175,11 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         return
           "rgba(\(Int(rgb.redComponent * 255)),\(Int(rgb.greenComponent * 255)),\(Int(rgb.blueComponent * 255)),\(rgb.alphaComponent))"
       }
+      let accents = DockAccentColor.allCases.map { family in
+        "--herm-\(family):\(css(family.fill));--herm-\(family)-ink:\(css(family.color));"
+      }.joined()
       let theme =
-        ":root{color-scheme:\(NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? "dark" : "light");--herm-background:\(css(.dockCanvas));--herm-text:\(css(.dockPrimaryText));--herm-secondary:\(css(.dockSecondaryText));--herm-accent:\(css(.dockAccent));--herm-surface:\(css(.dockSurface));--herm-border:\(css(.dockBorder));}html,body{background:var(--herm-background);color:var(--herm-text);font:12px -apple-system,BlinkMacSystemFont,sans-serif;}button,input,select,textarea{font:inherit;}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}}"
+        ":root{color-scheme:\(NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? "dark" : "light");--herm-background:\(css(.dockCanvas));--herm-text:\(css(.dockPrimaryText));--herm-secondary:\(css(.dockSecondaryText));--herm-accent:\(css(.dockAccent));--herm-surface:\(css(.dockSurface));--herm-border:\(css(.dockBorder));\(accents)}html,body{background:var(--herm-background);color:var(--herm-text);font:12px -apple-system,BlinkMacSystemFont,sans-serif;}button,input,select,textarea{font:inherit;}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}}"
       let data = Data(GeneratedHTMLPolicy.wrapper(html, theme: theme).utf8)
       urlSchemeTask.didReceive(
         URLResponse(

@@ -162,7 +162,7 @@ struct ComposerCompletionPopover: View {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             if !item.group.isEmpty, index == 0 || items[index - 1].group != item.group {
                                 Text(item.group.uppercased())
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
                                     .tracking(0.6)
                                     .foregroundStyle(Color.dockMetadataText)
                                     .padding(.horizontal, 12)
@@ -182,7 +182,7 @@ struct ComposerCompletionPopover: View {
             .frame(maxHeight: 280)
 
             Text(notice ?? "↑↓ to navigate · ↩ or ⇥ to select · esc to dismiss")
-                .font(.system(size: 10))
+                .dockFont(size: 10)
                 .foregroundStyle(notice == nil ? Color.dockMetadataText : Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -210,12 +210,12 @@ struct ComposerCompletionPopover: View {
                     BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18, orbits: false)
                 }
                 Text(item.display)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .dockFont(size: 12, weight: .medium, design: .monospaced)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if !item.meta.isEmpty {
                     Text(item.meta)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .truncationMode(.tail)

@@ -106,7 +106,7 @@ struct FilePreviewPane: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(url.lastPathComponent)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -153,7 +153,7 @@ struct FilePreviewPane: View {
                     }
                     if truncated {
                         Text("Preview truncated — open the file to see the rest.")
-                            .font(.system(size: 10))
+                            .dockFont(size: 10)
                             .foregroundStyle(Color.dockMetadataText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 16)
@@ -293,7 +293,7 @@ struct FilePreviewPane: View {
                 HStack(spacing: 6) {
                     DockIcon(.chatCircleText, size: 14, color: review.annotations.isEmpty ? Color.dockMetadataText : Color.dockAccent)
                     Text(barSummary)
-                        .font(.system(size: 11, weight: .medium))
+                        .dockFont(size: 11, weight: .medium)
                         .foregroundStyle(review.annotations.isEmpty ? Color.dockMetadataText : Color.dockSecondaryText)
                         .lineLimit(1)
                     DockIcon(.caretUp, size: 9, color: Color.dockMetadataText)
@@ -339,7 +339,7 @@ struct FilePreviewPane: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if review.annotations.isEmpty {
                         Text("Select any text in the document to leave a note on it. Notes collect here until you send them to the chat.")
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockMetadataText)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(8)
@@ -354,7 +354,7 @@ struct FilePreviewPane: View {
                             Spacer()
                             Button("Clear") { center.clearSent(path) }
                                 .buttonStyle(.dockCompact)
-                                .font(.system(size: 10))
+                                .dockFont(size: 10)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .padding(.trailing, 8)
                         }
@@ -369,7 +369,7 @@ struct FilePreviewPane: View {
             Divider()
             Button(action: startGeneralNote) {
                 Label("Add general note", systemImage: "plus")
-                    .font(DockTypography.control)
+                    .dockFont(.control)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
@@ -383,7 +383,7 @@ struct FilePreviewPane: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(DockTypography.sectionLabel)
+            .dockFont(.sectionLabel)
             .foregroundStyle(Color.dockMetadataText)
             .padding(.horizontal, 8)
             .padding(.top, 8)
@@ -395,7 +395,7 @@ struct FilePreviewPane: View {
             Group {
                 if let number = number(of: annotation) {
                     Text("\(number)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .dockFont(size: 10, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                         .frame(width: 18, height: 16)
                         .background(Color.dockAccent.opacity(0.22), in: Capsule())
@@ -411,11 +411,11 @@ struct FilePreviewPane: View {
             .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
                 Text(annotation.note)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(annotation.resolved ? Color.dockSecondaryText : Color.dockPrimaryText)
                     .lineLimit(3)
                 Text(annotation.quote.map { "“\($0)”" } ?? "General note")
-                    .font(.system(size: 10))
+                    .dockFont(size: 10)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
             }
@@ -445,7 +445,7 @@ struct FilePreviewPane: View {
                 showsChanges.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Text("CHANGES SINCE REVIEW · \(changes.count) LINES").font(DockTypography.sectionLabel)
+                    Text("CHANGES SINCE REVIEW · \(changes.count) LINES").dockFont(.sectionLabel)
                     DockIcon(showsChanges ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                 }
                 .foregroundStyle(Color.dockMetadataText)
@@ -457,8 +457,8 @@ struct FilePreviewPane: View {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(Array(changes.enumerated()), id: \.offset) { _, line in
                         Text("\(String(line.sign)) \(line.text)")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(line.sign == "+" ? Color.dockAccent : Color.dockWarning)
+                            .dockFont(size: 10, design: .monospaced)
+                            .foregroundStyle(line.sign == "+" ? Color.dockSuccess : Color.dockDestructive)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -569,7 +569,7 @@ private struct AnnotationEditor: View {
                 DockIcon(.quotes, size: 12, color: .dockAccent)
                     .padding(.top, 1)
                 Text(quote)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -577,18 +577,18 @@ private struct AnnotationEditor: View {
             .padding(10)
             .background(Color.dockAccent.opacity(0.07), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         } else {
-            Text("GENERAL NOTE").font(DockTypography.sectionLabel).foregroundStyle(Color.dockMetadataText)
+            Text("GENERAL NOTE").dockFont(.sectionLabel).foregroundStyle(Color.dockMetadataText)
         }
     }
 
     private var sentBody: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(annotation.resolved ? "Addressed" : "Sent · still in the file")
-                .font(.system(size: 10))
+                .dockFont(size: 10)
                 .foregroundStyle(Color.dockMetadataText)
             if !annotation.note.isEmpty {
                 Text(annotation.note)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockPrimaryText)
                     .textSelection(.enabled)
             }
@@ -603,7 +603,7 @@ private struct AnnotationEditor: View {
     private var noteField: some View {
         TextField(placeholder, text: $annotation.note, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.system(size: 12))
+            .dockFont(size: 12)
             .foregroundStyle(Color.dockPrimaryText)
             .lineLimit(3...8)
             .focused($isFocused)
@@ -627,7 +627,7 @@ private struct AnnotationEditor: View {
                 .accessibilityLabel("Delete note")
             } else {
                 Text("⌘↩ to save")
-                    .font(.system(size: 10))
+                    .dockFont(size: 10)
                     .foregroundStyle(Color.dockMetadataText)
             }
             Spacer()

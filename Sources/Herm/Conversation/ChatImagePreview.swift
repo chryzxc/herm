@@ -12,7 +12,7 @@ struct ChatImagePreviewModal: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Color.black.opacity(0.96)
+            Color.dockOpaqueCanvas
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
@@ -20,10 +20,10 @@ struct ChatImagePreviewModal: View {
                 .padding(28)
             Button(action: { dismiss() }) {
                 DockIcon(.x)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.white)
+                    .dockFont(size: 13, weight: .bold)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color.white.opacity(0.14)))
+                    .background(Circle().fill(Color.dockControlSurface))
             }
             .buttonStyle(.dockHover)
             .help("Close image preview")

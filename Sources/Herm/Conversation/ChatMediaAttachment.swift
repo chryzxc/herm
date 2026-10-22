@@ -138,13 +138,13 @@ struct ChatMediaAttachmentCard: View {
                 FileTypeIcon(fileName: name)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(changes?.files.first?.path ?? name)
-                        .font(.system(size: 12, weight: .medium))
+                        .dockFont(size: 12, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let subtitle = status ?? (changes.map { "\($0.files.first?.status.rawValue.capitalized ?? "Changed") · Current Git changes" } ?? (exists ? nil : "File not found")) {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                     }
@@ -197,7 +197,7 @@ struct ChatMediaAttachmentCard: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if let icon { DockIcon(icon, size: 11, color: Color.dockSecondaryText) }
-                Text(title).font(.system(size: 12, weight: .medium))
+                Text(title).dockFont(size: 12, weight: .medium)
             }
             .foregroundStyle(Color.dockSecondaryText)
         }
@@ -215,10 +215,10 @@ struct ChatAttachmentDiffPreview: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Current Git changes").font(.system(size: 12, weight: .semibold))
+                    Text("Current Git changes").dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(URL(fileURLWithPath: changes.repositoryPath).lastPathComponent)
-                        .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+                        .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1).truncationMode(.middle)
                 }
                 Spacer()
@@ -230,7 +230,7 @@ struct ChatAttachmentDiffPreview: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(changes.files) { file in
                         Text(file.isStaged ? "Staged changes" : "Working tree changes")
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
                             .padding(.horizontal, 14)
                         SessionChangeDiffPreview(file: file, diff: diffs[file.id], isLoading: isLoading)

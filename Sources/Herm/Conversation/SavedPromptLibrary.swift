@@ -27,7 +27,7 @@ struct SavedPromptLibrary: View {
                 ForEach(prompts) { record in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text(record.savedName ?? "Prompt").font(.system(size: 12, weight: .semibold))
+                            Text(record.savedName ?? "Prompt").dockFont(size: 12, weight: .semibold)
                             Spacer()
                             Button("Restore") { restore(record) }.buttonStyle(.dockCompact)
                             Button("Delete") {
@@ -41,20 +41,20 @@ struct SavedPromptLibrary: View {
                                     value.replacingOccurrences(of: $0, with: "[" + context.title + "]")
                                 } ?? value
                             }
-                        ).font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
+                        ).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                         Divider().overlay(Color.dockBorderLight)
                     }.padding(.vertical, 8)
                 }
                 if prompts.isEmpty {
-                    Text("Save a draft to reuse its text and attachments later.").font(DockTypography.body)
+                    Text("Save a draft to reuse its text and attachments later.").dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             }
-            if let error { Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning) }
+            if let error { Text(error).dockFont(.body).foregroundStyle(Color.dockWarning) }
         } footer: {
             Spacer()
             Button("Close") { dismiss() }.buttonStyle(.dockSecondary)
-        }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).frame(width: 560, height: 440)
+        }.dockFont(.body).foregroundStyle(Color.dockPrimaryText).frame(width: 560, height: 440)
             .interactiveDismissDisabled(saving).disabled(saving)
     }
     private func save() {
