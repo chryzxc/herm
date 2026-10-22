@@ -50,13 +50,17 @@ struct CalendarWorkspaceView: View {
             GeometryReader { proxy in
                 if proxy.size.width >= 1000 {
                     HStack(alignment: .top, spacing: 20) {
-                        grid(agenda)
-                        detail(agenda).frame(width: 360)
+                        ScrollView {
+                            calendarPane(agenda).frame(height: max(560, proxy.size.height))
+                        }
+                        detail(agenda).frame(width: 340)
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        grid(agenda).frame(height: scope == .month ? 460 : 320)
-                        detail(agenda)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            calendarPane(agenda).frame(height: proxy.size.width < 560 ? (scope == .month ? 440 : 240) : (scope == .month ? 600 : 420))
+                            detail(agenda).frame(height: 380)
+                        }
                     }
                 }
             }
@@ -85,25 +89,39 @@ struct CalendarWorkspaceView: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                dateNavigation
+                Spacer(minLength: 12)
+                calendarControls
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                dateNavigation
+                calendarControls
+            }
+        }
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+    }
+
+    private var dateNavigation: some View {
         let style = DockThemePalette(theme: DockThemeRuntime.current)
-        return HStack(spacing: 10) {
+        return HStack(spacing: 8) {
+            Text(selected.formatted(.dateTime.month(.wide).year()))
+                .dockFont(.pageTitle)
+                .foregroundStyle(Color.dockPrimaryText)
+                .fixedSize()
             DockIconButton(icon: .caretLeft, label: "Previous \(scope.rawValue.lowercased())", style: style) { shift(-1) }
             DockIconButton(icon: .caretRight, label: "Next \(scope.rawValue.lowercased())", style: style) { shift(1) }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(selected.formatted(.dateTime.month(.wide)))
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                Text(selected.formatted(.dateTime.year()))
-                    .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            .padding(.leading, 4)
-            if selected != today {
-                Button("Today") { selected = today }
-                    .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
-            }
-            Spacer(minLength: 8)
+            Button("Today") { selected = today }
+                .buttonStyle(.dockCompact)
+                .disabled(selected == today)
+        }
+    }
+
+    private var calendarControls: some View {
+        let style = DockThemePalette(theme: DockThemeRuntime.current)
+        return HStack(spacing: 10) {
             DockTabBar(options: CalendarViewScope.allCases, selection: scopeBinding, title: \.rawValue)
             DockMenu {
                 DockMenuSection("Mac") {
@@ -122,7 +140,7 @@ struct CalendarWorkspaceView: View {
                     Text("Calendars")
                     DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
                 }
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.horizontal, 10)
                 .frame(height: 28)
@@ -138,8 +156,37 @@ struct CalendarWorkspaceView: View {
                 control.refreshGlobalKanban()
             }
         }
-        .frame(minHeight: DockControlMetrics.hitTarget)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .fixedSize()
+    }
+
+    private var legend: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                legendLabel("Events", icon: .calendarBlank, color: DockCategoryTone.event.color)
+                legendLabel("Reminders", icon: .checkCircle, color: DockCategoryTone.reminder.color)
+                legendLabel("Agent runs", icon: .clockCounterClockwise, color: DockCategoryTone.automation.color)
+                legendLabel("Kanban", icon: .kanban, color: DockCategoryTone.task.color)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 16) {
+                    legendLabel("Events", icon: .calendarBlank, color: DockCategoryTone.event.color)
+                    legendLabel("Reminders", icon: .checkCircle, color: DockCategoryTone.reminder.color)
+                }
+                HStack(spacing: 16) {
+                    legendLabel("Agent runs", icon: .clockCounterClockwise, color: DockCategoryTone.automation.color)
+                    legendLabel("Kanban", icon: .kanban, color: DockCategoryTone.task.color)
+                }
+            }
+        }
+        .help("Mac events and reminders use their calendar or list color when available.")
+    }
+
+    private func legendLabel(_ title: String, icon: Ph, color: Color) -> some View {
+        HStack(spacing: 5) {
+            DockIcon(icon, size: 12, color: color)
+            Text(title).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+        }
+        .fixedSize()
     }
 
     private func sourceToggle(_ source: SystemCalendarService.Source) -> some View {
@@ -173,6 +220,14 @@ struct CalendarWorkspaceView: View {
 
     // MARK: Grid
 
+    private func calendarPane(_ agenda: [Date: [CalendarItem]]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            grid(agenda)
+            legend
+                .padding(.horizontal, 4)
+        }
+    }
+
     private func grid(_ agenda: [Date: [CalendarItem]]) -> some View {
         let symbols = calendar.shortStandaloneWeekdaySymbols
         let ordered = Array(symbols[(calendar.firstWeekday - 1)...] + symbols[..<(calendar.firstWeekday - 1)])
@@ -180,64 +235,87 @@ struct CalendarWorkspaceView: View {
         let count = calendar.dateComponents([.day], from: range.start, to: range.end).day ?? 0
         let days = (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: range.start) }
         let weeks = stride(from: 0, to: days.count, by: 7).map { Array(days[$0..<min($0 + 7, days.count)]) }
-        let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-        return VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(Array(ordered.enumerated()), id: \.offset) { _, symbol in
-                    Text(symbol.uppercased()).frame(maxWidth: .infinity)
-                }
-            }
-            .font(DockTypography.sectionLabel)
-            .tracking(0.6)
-            .foregroundStyle(Color.dockMetadataText)
-            .padding(.vertical, 10)
-            ForEach(weeks, id: \.first) { week in
+        let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius)
+        return GeometryReader { proxy in
+            let rowHeight = (proxy.size.height - 34) / CGFloat(max(1, weeks.count))
+            let cap = min(10, max(0, Int((rowHeight - 62) / (scope == .month ? 40 : 54))))
+            VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    ForEach(Array(week.enumerated()), id: \.element) { column, day in
-                        dayCell(day, items: agenda[day] ?? [])
-                            .overlay(alignment: .leading) {
-                                if column > 0 { Color.dockBorderLight.frame(width: DockLayout.hairline) }
-                            }
+                    ForEach(Array(ordered.enumerated()), id: \.offset) { _, symbol in
+                        Text(symbol.uppercased()).frame(maxWidth: .infinity)
                     }
                 }
-                .frame(maxHeight: .infinity)
-                .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+                .dockFont(.sectionLabel)
+                .tracking(0.6)
+                .foregroundStyle(Color.dockMetadataText)
+                .padding(.vertical, 12)
+                ForEach(weeks, id: \.first) { week in
+                    HStack(spacing: 0) {
+                        ForEach(Array(week.enumerated()), id: \.element) { column, day in
+                            dayCell(day, items: agenda[day] ?? [], cap: cap, compact: proxy.size.width < 560)
+                                .overlay(alignment: .leading) {
+                                    if column > 0 { Color.dockBorderLight.frame(width: DockLayout.hairline) }
+                                }
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+                    .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(shape.dockSurfaceFill(Color.dockSurface))
+            .clipShape(shape)
+            .overlay(shape.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(shape.fill(Color.dockPrimaryText.opacity(0.02)))
-        .clipShape(shape)
-        .overlay(shape.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
     }
 
-    private func dayCell(_ day: Date, items: [CalendarItem]) -> some View {
+    private func dayCell(_ day: Date, items: [CalendarItem], cap: Int, compact: Bool) -> some View {
         let isToday = day == today
         let isSelected = day == selected
         let outside = scope == .month && !calendar.isDate(day, equalTo: selected, toGranularity: .month)
-        // ponytail: fixed caps; size by cell height if rows get crowded.
-        let cap = scope == .month ? 3 : 10
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("\(calendar.component(.day, from: day))")
-                .font(.system(size: 12, weight: isToday ? .bold : .medium).monospacedDigit())
-                .foregroundStyle(isToday ? Color.dockOnAccentText : (outside ? Color.dockMetadataText : Color.dockPrimaryText))
-                .frame(minWidth: 22, minHeight: 22)
-                .background { if isToday { Circle().fill(Color.dockAccent) } }
-                .padding(.bottom, 1)
-            ForEach(items.prefix(cap)) { chip($0) }
-            if items.count > cap {
-                Text("\(items.count - cap) more")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .padding(.leading, 4)
+        return Button { selected = day } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("\(calendar.component(.day, from: day))")
+                        .dockFont(size: 12, weight: isToday ? .bold : .medium).monospacedDigit()
+                        .foregroundStyle(isToday ? Color.dockOnAccentText : (outside ? Color.dockMetadataText : Color.dockPrimaryText))
+                        .frame(minWidth: 22, minHeight: 22)
+                        .background { if isToday { Circle().fill(Color.dockAccent) } }
+                    Spacer(minLength: 0)
+                    if !items.isEmpty {
+                        Text("\(items.count)")
+                            .dockFont(.machineMetadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                }
+                .padding(.bottom, 3)
+                if compact {
+                    HStack(spacing: 3) {
+                        ForEach(items.prefix(3)) { item in
+                            DockIcon(icon(item), size: 8, color: tint(item))
+                        }
+                    }
+                } else {
+                    ForEach(items.prefix(cap)) { chip($0) }
+                    if items.count > cap {
+                        Text("\(items.count - cap) more")
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .padding(.leading, 4)
+                    }
+                }
             }
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(isSelected ? Color.dockAccentMuted : (calendar.isDateInWeekend(day) ? Color.dockSurface2 : Color.clear))
+            .overlay(alignment: .top) {
+                if isSelected { Color.dockAccent.frame(height: 2) }
+            }
+            .clipped()
+            .opacity(outside ? 0.5 : 1)
+            .contentShape(Rectangle())
         }
-        .padding(6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(isSelected ? Color.dockAccent.opacity(0.08) : Color.clear)
-        .clipped()
-        .opacity(outside ? 0.5 : 1)
-        .contentShape(Rectangle())
-        .onTapGesture { selected = day }
+        .buttonStyle(.dockHover)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(day.formatted(.dateTime.weekday(.wide).month().day())), \(items.count) items")
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
@@ -246,24 +324,24 @@ struct CalendarWorkspaceView: View {
     private func chip(_ item: CalendarItem) -> some View {
         let color = tint(item)
         return HStack(spacing: 5) {
-            Capsule().fill(color).frame(width: 3)
+            DockIcon(icon(item), size: 10, color: color)
             VStack(alignment: .leading, spacing: 0) {
-                if scope == .week, !item.isAllDay {
+                if !item.isAllDay {
                     Text(item.start.formatted(.dateTime.hour().minute()))
-                        .font(.system(size: 10).monospacedDigit())
+                        .dockFont(size: 11).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Text(item.title)
-                    .font(.system(size: 11, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(scope == .week ? 2 : 1)
             }
         }
-        .padding(.vertical, 2)
-        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(color.opacity(0.14)))
+        .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(color.opacity(0.08)))
     }
 
     // MARK: Detail
@@ -274,11 +352,14 @@ struct CalendarWorkspaceView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(selected.formatted(.dateTime.weekday(.wide)))
-                        .font(.system(size: 16, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
-                    Text(selected.formatted(.dateTime.month(.wide).day().year()))
-                        .font(.system(size: 12))
+                    Text(selected.formatted(.dateTime.month(.wide).day()))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockMetadataText)
+                    Text("\(dayItems.count) \(dayItems.count == 1 ? "item" : "items")")
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
                 Spacer(minLength: 8)
                 if let router {
@@ -291,28 +372,30 @@ struct CalendarWorkspaceView: View {
                 }
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    accessCard
+                VStack(alignment: .leading, spacing: 16) {
                     if dayItems.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Nothing scheduled")
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
                             Text("Events, reminders, and Hermes runs for this day appear here.")
-                                .font(.system(size: 12))
+                                .dockFont(size: 12)
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                         .padding(.top, 4)
                     } else {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 0) {
                             ForEach(dayItems) { itemRow($0) }
                         }
                     }
+                    accessCard
                 }
             }
             .scrollIndicators(.hidden)
         }
+        .padding(.leading, 20)
         .frame(maxHeight: .infinity, alignment: .top)
+        .overlay(alignment: .leading) { Color.dockBorderLight.frame(width: DockLayout.hairline) }
     }
 
     @ViewBuilder
@@ -322,18 +405,18 @@ struct CalendarWorkspaceView: View {
             // hide that Calendar is not.
             VStack(alignment: .leading, spacing: 6) {
                 Text("Connect your Mac calendar")
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text("Calendar: \(accessLabel(system.eventAccess)) · Reminders: \(accessLabel(system.reminderAccess))")
-                    .font(DockTypography.metadata)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
-                Text("Herm reads events from every account in Calendar, plus your reminders, to place them beside Hermes' scheduled runs. Nothing is stored or changed.")
-                    .font(.system(size: 12))
+                Text("See your events and reminders beside agent runs. Read-only; nothing is changed.")
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if let error = system.requestError {
                     Text(error)
-                        .font(DockTypography.metadata)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockWarning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -355,7 +438,8 @@ struct CalendarWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .dockCard()
+            .padding(.top, 16)
+            .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         }
     }
 
@@ -369,24 +453,26 @@ struct CalendarWorkspaceView: View {
 
     private func itemRow(_ item: CalendarItem) -> some View {
         let isSelected = item.id == selectedItemID
-        let shape = RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
         return VStack(alignment: .leading, spacing: 0) {
             Button { selectedItemID = isSelected ? nil : item.id } label: {
-                HStack(alignment: .top, spacing: 10) {
-                    Capsule().fill(tint(item)).frame(width: 3)
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(item.isAllDay ? "All day" : item.start.formatted(.dateTime.hour().minute()))
+                        .dockFont(size: 11)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 66, alignment: .leading)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 5) {
                         Text(item.title)
-                            .font(.system(size: 13, weight: .medium))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
-                            .lineLimit(isSelected ? 3 : 1)
+                            .lineLimit(isSelected ? nil : 2)
                             .multilineTextAlignment(.leading)
                         HStack(spacing: 5) {
-                            DockIcon(icon(item), size: 11, color: Color.dockMetadataText)
-                            Text(timeLabel(item))
-                            Text("·")
+                            DockIcon(icon(item), size: 11, color: tint(item))
                             Text(source(item)).lineLimit(1)
                         }
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                     }
                     Spacer(minLength: 0)
@@ -394,18 +480,26 @@ struct CalendarWorkspaceView: View {
                         .padding(.top, 3)
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(10)
+                .padding(.vertical, 14)
+                .padding(.horizontal, 8)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
-            if isSelected { itemPanel(item).padding(.horizontal, 10).padding(.bottom, 10) }
+            .accessibilityValue(isSelected ? "Expanded" : "Collapsed")
+            if isSelected {
+                itemPanel(item).padding(.horizontal, 8).padding(.bottom, 14)
+            }
         }
-        .background(shape.fill(Color.dockPrimaryText.opacity(isSelected ? 0.05 : 0.025)))
-        .overlay(shape.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+        .background {
+            DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccentMuted : Color.clear)
+        }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
     private func itemPanel(_ item: CalendarItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !item.isAllDay { detailLine(.clockCounterClockwise, timeLabel(item)) }
             // A Group, so an item without details adds no empty gap.
             Group {
                 if case .event(_, let location, let attendees, _) = item.kind {
@@ -413,7 +507,7 @@ struct CalendarWorkspaceView: View {
                     if !attendees.isEmpty { detailLine(.users, attendees.joined(separator: ", ")) }
                 }
                 if let notes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                    Text(notes).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(4)
+                    Text(notes).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).lineLimit(4)
                 }
             }
             // One row when it fits; the open link drops below otherwise.
@@ -430,7 +524,7 @@ struct CalendarWorkspaceView: View {
             }
             if let actionStatus {
                 Text(actionStatus)
-                    .font(DockTypography.metadata)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }
@@ -481,7 +575,7 @@ struct CalendarWorkspaceView: View {
             DockIcon(icon, size: 11, color: Color.dockMetadataText)
             Text(text).lineLimit(2)
         }
-        .font(.system(size: 12))
+        .dockFont(size: 12)
         .foregroundStyle(Color.dockSecondaryText)
     }
 
@@ -510,10 +604,12 @@ struct CalendarWorkspaceView: View {
     }
 
     private func tint(_ item: CalendarItem) -> Color {
+        if DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk { return .dockSecondaryText }
         switch item.kind {
-        case .event, .reminder: item.color ?? .dockAccent
-        case .automation: .dockAccent
-        case .task: .dockSuccess
+        case .event: return item.color ?? DockCategoryTone.event.color
+        case .reminder: return item.color ?? DockCategoryTone.reminder.color
+        case .automation: return DockCategoryTone.automation.color
+        case .task: return DockCategoryTone.task.color
         }
     }
 
@@ -555,20 +651,20 @@ private struct CalendarPrepSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Schedule prep").font(.system(size: 16, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+            Text("Schedule prep").dockFont(size: 16, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
             Text("Hermes runs this once before \(item.title). It appears under Automations.")
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             DockTabBar(options: [15, 30, 60], selection: $lead, title: { "\($0) min before" })
             TextEditor(text: $prompt)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .frame(minHeight: 160)
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
             Text(error ?? (schedule == nil ? "That time has already passed. Pick a shorter lead." : " "))
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockWarning)
             HStack {
                 Spacer()
