@@ -67,13 +67,13 @@ struct SessionBotActivityView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("BOT ACTIVITY")
-                    .font(.system(size: 13, weight: .medium))
+                    .dockFont(size: 13, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                 Spacer()
             }
             if snapshot.list.isEmpty {
                 Text(snapshot.emptyMessage)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.vertical, 8)
                     .transition(.opacity)
@@ -139,18 +139,18 @@ private struct BotActivityRow: View {
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(record.botName)
-                            .font(.system(size: 13, weight: .semibold))
+                            .dockFont(size: 13, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
                         Text(record.summary)
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
                     statePill
                     Text(HumanDateFormatting.timeOnly(record.updatedAt))
-                        .font(.system(size: 10, design: .monospaced))
+                        .dockFont(size: 10, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                     DockIcon(.caretDown, size: 10, color: hovering ? .dockSecondaryText : .dockMetadataText)
                         .rotationEffect(.degrees(expanded ? 180 : 0))
@@ -167,14 +167,14 @@ private struct BotActivityRow: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if let result = record.result, !result.isEmpty {
                         Text(result)
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockPrimaryText)
                             .textSelection(.enabled)
                     }
                     if let bot {
                         Button("OPEN IN BOT CHAT") { onOpenBotChat?(bot) }
                             .buttonStyle(.dockCompact)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .dockFont(size: 10, weight: .semibold, design: .monospaced)
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
@@ -200,7 +200,7 @@ private struct BotActivityRow: View {
                 BotActivityPulse(color: stateColor)
             }
             Text(record.state.label.uppercased())
-                .font(.system(size: 9, weight: .semibold))
+                .dockFont(size: 9, weight: .semibold)
                 .contentTransition(.interpolate)
         }
         .foregroundStyle(stateColor)

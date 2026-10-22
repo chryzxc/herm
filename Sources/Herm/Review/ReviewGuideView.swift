@@ -50,9 +50,9 @@ struct ReviewGuideView: View {
                                 : loading
                                     ? "Loading the saved guide…"
                                     : "The guide has no saved reply yet. Refresh or open its conversation."
-                        ).font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                        ).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
-                    if let error { Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning) }
+                    if let error { Text(error).dockFont(.body).foregroundStyle(Color.dockWarning) }
                 }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack {

@@ -48,9 +48,9 @@ struct LocalServersMenu: View {
 struct LocalPreviewsLabel: View {
     var body: some View {
         HStack(spacing: DockSpacing.tight) {
-            DockIcon(.globe).font(.system(size: 12))
-            Text("Previews").font(DockTypography.control)
-            DockIcon(.caretDown).font(.system(size: 10))
+            DockIcon(.globe).dockFont(size: 12)
+            Text("Previews").dockFont(.control)
+            DockIcon(.caretDown).dockFont(size: 10)
         }.foregroundStyle(Color.dockPrimaryText)
     }
 }
@@ -65,12 +65,12 @@ struct LocalPreviewsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DockSpacing.group) {
                 VStack(alignment: .leading, spacing: DockSpacing.micro) {
-                    Text("Local previews").font(.system(size: 12, weight: .semibold))
+                    Text("Local previews").dockFont(size: 12, weight: .semibold)
                     Text(
                         error != nil && !servers.isEmpty
                             ? "Previous results · refresh failed" : "From this session’s terminals"
                     )
-                    .font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText)
+                    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                 }
                 Spacer(minLength: 0)
                 DockIconButton(
@@ -85,14 +85,14 @@ struct LocalPreviewsPanel: View {
                             ? "Couldn’t find previews"
                             : isRefreshing ? "Looking for local previews…" : "No local previews"
                     )
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     Text(
                         error
                             ?? (isRefreshing
                                 ? "Checking local listeners in these terminals."
                                 : "Start a development server in a Herm terminal, then refresh.")
                     )
-                    .font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading).padding(.horizontal, DockSpacing.group)
@@ -107,9 +107,9 @@ struct LocalPreviewsPanel: View {
                                     DockIcon(.globe).foregroundStyle(Color.dockSecondaryText)
                                     VStack(alignment: .leading, spacing: DockSpacing.micro) {
                                         Text(server.processName ?? "Process \(server.pid)")
-                                            .font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(
+                                            .dockFont(size: 12, weight: .semibold).lineLimit(1).truncationMode(
                                                 .middle)
-                                        Text(server.url.absoluteString).font(.system(size: 11, design: .monospaced))
+                                        Text(server.url.absoluteString).dockFont(size: 11, design: .monospaced)
                                             .fontDesign(.monospaced)
                                             .foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                                     }
@@ -126,13 +126,13 @@ struct LocalPreviewsPanel: View {
                     }
                 }.frame(height: min(248, CGFloat(servers.count) * 64))
                 if let error {
-                    Text(error).font(DockTypography.metadata).foregroundStyle(Color.dockWarning)
+                    Text(error).dockFont(.metadata).foregroundStyle(Color.dockWarning)
                         .padding(.horizontal, DockSpacing.group).padding(.bottom, DockSpacing.control)
                 }
             }
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             Text("Opens in the session browser. Nothing starts automatically.")
-                .font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText).padding(DockSpacing.group)
+                .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).padding(DockSpacing.group)
         }
         .frame(width: 320).foregroundStyle(Color.dockPrimaryText)
         .background(Color.dockCanvas).dockThemedRoot()

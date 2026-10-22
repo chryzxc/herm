@@ -17,7 +17,6 @@
     host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647';
     const root = host.attachShadow({ mode: 'closed' });
     root.innerHTML = `<style>
-      :host{--accent:#4f8cff;--on-accent:#fff;--surface:#1d1f23;--field:#111316;--text:#eee;--muted:#9a9ea6;--border:#3a3d44}
       *{box-sizing:border-box}
       .box{position:fixed;border:1.5px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:4px;display:none;transition:all .08s ease-out}
       .tag{position:fixed;font:600 11px/16px -apple-system,system-ui,sans-serif;color:var(--on-accent);background:var(--accent);padding:1px 6px;border-radius:5px;display:none;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}
@@ -143,7 +142,7 @@
     if (enabled && e.key === 'Escape' && !inside(e)) { setEnabled(false); post({ type: 'mode', enabled: false }); }
   }
 
-  // theme: Herm's palette as CSS custom properties, e.g. { accent: '#4f8cff' }.
+  // Herm supplies every theme color as a CSS custom property on the host.
   function setEnabled(on, theme) {
     enabled = !!on;
     if (enabled) mount(); else reset();

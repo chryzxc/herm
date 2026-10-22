@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import WebKit
 
@@ -58,7 +59,7 @@ struct BrowserAnnotation: Decodable {
         func hex(_ color: Color) -> String {
             var value = "#888888"
             NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
-                guard let c = NSColor(color).usingColorSpace(.sRGB) else { return }
+                guard let c = NSColor(color).usingColorSpace(.sRGB)?.withAlphaComponent(1) else { return }
                 value = String(format: "#%02X%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255),
                                Int(c.blueComponent * 255), Int(c.alphaComponent * 255))
             }
@@ -156,10 +157,10 @@ struct SessionBrowserView: View {
             DockStatusDot(tone: .attention, size: 7)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Agent browser offline")
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text("Hermes can't browse. \(message)")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -287,7 +288,7 @@ struct SessionBrowserView: View {
             }
         } label: {
             DockIcon(.dotsThree)
-                .font(.system(size: 14, weight: .medium))
+                .dockFont(size: 14, weight: .medium)
                 .foregroundStyle(consoleErrors.isEmpty ? Color.dockSecondaryText : Color.dockWarning)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
@@ -354,6 +355,7 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     @Published var consoleErrors: [String] = []
     @Published var annotating = false { didSet { if annotating != oldValue { applyAnnotating() } } }
     weak var model: DockModel?
+    private var themeCancellable: AnyCancellable?
 
     init(key: SessionBrowserKey, dataStore: WKWebsiteDataStore) {
         self.key = key
@@ -373,6 +375,9 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
                                            forMainFrameOnly: true, in: .page))
         content.add(handler, contentWorld: .page, name: "hermConsole")
         web.navigationDelegate = self
+        themeCancellable = DockThemeStore.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.applyAnnotating() }
     }
 
     func open(_ url: URL) {

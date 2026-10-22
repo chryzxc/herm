@@ -81,7 +81,7 @@ struct SessionPullRequestsSurface: View {
             filterBar
             if let error = center.errorMessage {
                 Text(error)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .padding(.horizontal, 18)
                     .padding(.bottom, 8)
@@ -92,7 +92,7 @@ struct SessionPullRequestsSurface: View {
                         VStack(spacing: 12) {
                             ProgressView().controlSize(.small)
                             Text("Loading pull requests…")
-                                .font(.system(size: 12))
+                                .dockFont(size: 12)
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                         .frame(maxWidth: .infinity)
@@ -126,7 +126,7 @@ struct SessionPullRequestsSurface: View {
                 refreshButton
             }
         }
-        .font(DockTypography.body)
+        .dockFont(.body)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(Color.dockCanvas)
@@ -167,22 +167,22 @@ struct SessionProjectRequiredState: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 DockIcon(.folderDashed)
-                    .font(.system(size: 16, weight: .medium))
+                    .dockFont(size: 16, weight: .medium)
                     .foregroundStyle(Color.dockMetadataText)
                     .frame(width: 22, height: 22)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No project selected")
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text("Choose a project from Projects to use this session’s workspace.")
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockMetadataText)
                 }
             }
             if let onSelectProject {
                 Button("Choose project folder", action: onSelectProject)
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 12, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockAccent)
             }
         }
@@ -224,18 +224,18 @@ struct SessionChangeDiffPreview: View {
                 .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.path.split(separator: "/").last.map(String.init) ?? file.path)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Text(file.path)
-                    .font(.system(size: 10, design: .monospaced))
+                    .dockFont(size: 10, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer(minLength: 8)
             Text(statusLabel(for: file).uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .dockFont(size: 10, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.dockWarning)
         }
         .padding(.horizontal, 14)
@@ -248,7 +248,7 @@ struct SessionChangeDiffPreview: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Loading diff…")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -260,25 +260,25 @@ struct SessionChangeDiffPreview: View {
                 }
                 .fixedSize(horizontal: true, vertical: false)
             }
-            .font(.system(size: 11, design: .monospaced))
+            .dockFont(size: 11, design: .monospaced)
             .textSelection(.enabled)
             if diff.text.isEmpty {
                 Text("No textual diff is available for this file.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
                     .padding(.horizontal, 14)
                     .padding(.top, 8)
             }
             if diff.isTruncated {
                 Text("Diff truncated for safe display.")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
             }
         } else {
             Text("This file has no readable diff.")
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(14)
         }
@@ -305,13 +305,13 @@ struct SessionSurfacePreviewPlaceholder: View {
     var body: some View {
         VStack(spacing: 8) {
             DockIcon(icon)
-                .font(.system(size: 20, weight: .medium))
+                .dockFont(size: 20, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .dockFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.dockSecondaryText)
             Text(detail)
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockMetadataText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 260)
@@ -342,21 +342,21 @@ struct WorktreePicker: View {
     var body: some View {
         Button { isOpen.toggle() } label: {
             HStack(spacing: 8) {
-                DockIcon(.folder).font(.system(size: 12)).foregroundStyle(Color.dockAccent)
+                DockIcon(.folder).dockFont(size: 12).foregroundStyle(Color.dockAccent)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
                         Text("Viewing").foregroundStyle(Color.dockMetadataText)
                         Text(current?.displayName ?? "Worktree").foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1).truncationMode(.middle)
                     }
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     Text(branchLabel(current))
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockSecondaryText)
+                        .dockFont(size: 11, design: .monospaced).foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1).truncationMode(.middle)
                 }
                 Spacer(minLength: 4)
                 if worktrees.count > 1 {
-                    DockIcon(.caretUpDown).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText)
+                    DockIcon(.caretUpDown).dockFont(size: 10).foregroundStyle(Color.dockMetadataText)
                 }
             }
             .padding(.horizontal, 16)

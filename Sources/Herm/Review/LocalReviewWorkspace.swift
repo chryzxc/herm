@@ -90,27 +90,27 @@ struct LocalReviewWorkspace: View {
                 }
                 Toggle("Ignore whitespace", isOn: $ignoreWhitespace).toggleStyle(.dockSwitch)
                 TextField("Filter files or loaded changes", text: $query).textFieldStyle(.dockGlass)
-            }.font(DockTypography.body).padding(.horizontal, 16).padding(.bottom, 12)
+            }.dockFont(.body).padding(.horizontal, 16).padding(.bottom, 12)
             HStack {
                 TextField("Find in loaded comparison", text: $search).textFieldStyle(.dockGlass).focused($searchFocused)
                     .onSubmit { moveMatch(1) }
                 Text(
                     "\(matches.isEmpty ? 0 : searchIndex + 1) / \(matches.count)" + (matches.count >= 10_000 ? "+" : "")
-                ).font(DockTypography.metadata)
+                ).dockFont(.metadata)
                 Button("Previous") { moveMatch(-1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
                 Button("Next") { moveMatch(1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
             }.padding(.horizontal, 16).padding(.bottom, 10)
             Divider().overlay(Color.dockBorderLight)
             FullscreenPanelSplitView(
                 leading: List(files, id: \.self, selection: $selected) { file in
-                    Text(file).font(DockTypography.body).tag(file)
+                    Text(file).dockFont(.body).tag(file)
                 }
                 .listStyle(.sidebar).scrollContentBackground(.hidden).background(Color.dockCanvas).frame(
                     minWidth: 220, idealWidth: 280, maxWidth: 360),
                 trailing: ScrollView {
                     if let selected, let diff = review.patches[selected] {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(selected).font(.system(size: 12, weight: .semibold)).textSelection(.enabled)
+                            Text(selected).dockFont(size: 12, weight: .semibold).textSelection(.enabled)
                             SharedDiffView(
                                 patch: diff.text, path: selected,
                                 contextLoader: { lines in
@@ -134,7 +134,7 @@ struct LocalReviewWorkspace: View {
                                 ? "Loading changes…"
                                 : files.isEmpty ? "No changes in this comparison." : "Choose a changed file."
                         )
-                        .font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).padding(20)
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(20)
                     }
                 }.frame(minWidth: 400), leadingFraction: nil, initialLeadingWidth: navigatorWidth,
                 minimumLeadingWidth: 220,
@@ -147,7 +147,7 @@ struct LocalReviewWorkspace: View {
                             ? "Partial coverage · search includes loaded content only"
                             : "\(review.patches.count) files loaded")
                 )
-                .font(DockTypography.body).foregroundStyle(
+                .dockFont(.body).foregroundStyle(
                     review.error == nil ? Color.dockSecondaryText : Color.dockWarning
                 ).lineLimit(2)
                 Spacer()
@@ -164,10 +164,10 @@ struct LocalReviewWorkspace: View {
             }.padding(12)
             if let source = guide.sourceIdentity, source != review.comparison?.identity {
                 Text("Review guide source changed · generate a new guide after reviewing this comparison.")
-                    .font(DockTypography.body).foregroundStyle(Color.dockWarning).padding(.horizontal, 12)
+                    .dockFont(.body).foregroundStyle(Color.dockWarning).padding(.horizontal, 12)
             }
             if let message = guide.message {
-                Text(message).font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).padding(
+                Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(
                     .horizontal, 12
                 ).padding(.bottom, 8)
             }

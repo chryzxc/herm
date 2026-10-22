@@ -117,7 +117,7 @@ struct RepositoryChangesBrowser: View {
             if isExpanded.wrappedValue {
                 if files.isEmpty {
                     Text(staged ? "No staged changes" : "No unstaged changes")
-                        .font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                        .dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
                         .padding(.horizontal, 8).padding(.vertical, 6)
                 }
                 LazyVStack(spacing: 0) {
@@ -134,10 +134,10 @@ struct RepositoryChangesBrowser: View {
         let isEmpty = message.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: 8) {
             Text("Commit \(workflow.changes?.stagedCount ?? 0) staged to \(workflow.repository.branch)")
-                .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                .dockFont(size: 11).foregroundStyle(Color.dockMetadataText).lineLimit(1)
             TextField("Message", text: message, axis: .vertical)
                 .textFieldStyle(.dockGlass)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .lineLimit(2...6)
                 .accessibilityLabel("Commit message")
             Button {
@@ -160,14 +160,14 @@ struct RepositoryChangesBrowser: View {
             DockSectionHeader(title: "Commits", count: workflow.commits.count, isExpanded: $isCommitsExpanded, style: style)
             if isCommitsExpanded {
                 if let error = workflow.commitsError {
-                    Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning).padding(8)
+                    Text(error).dockFont(size: 12).foregroundStyle(Color.dockWarning).padding(8)
                 } else if workflow.commits.isEmpty {
                     Text(workflow.isRefreshing ? "Loading commits…" : "No commits on this branch yet")
-                        .font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).padding(8)
+                        .dockFont(size: 12).foregroundStyle(Color.dockMetadataText).padding(8)
                 }
                 if let ahead = workflow.repository.aheadCount, let behind = workflow.repository.behindCount {
                     Text(ahead == 0 && behind == 0 ? "Up to date with upstream · last fetched state" : "\(ahead) ahead · \(behind) behind upstream · last fetched state")
-                        .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).padding(8)
+                        .dockFont(size: 11).foregroundStyle(Color.dockMetadataText).padding(8)
                 }
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(workflow.commits) { commit in
@@ -178,12 +178,12 @@ struct RepositoryChangesBrowser: View {
                                 HStack(spacing: 8) {
                                     DockIcon(.gitCommit, size: 14, color: .dockMetadataText)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(commit.subject).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                                        Text(commit.subject).dockFont(size: 12).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                                         Text("\(commit.author) · \(commit.date.formatted(.relative(presentation: .named)))")
-                                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                                            .dockFont(size: 11).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
-                                    Text(String(commit.id.prefix(7))).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                    Text(String(commit.id.prefix(7))).dockFont(size: 11, design: .monospaced).foregroundStyle(Color.dockMetadataText)
                                 }
                                 .padding(.vertical, 4)
                                 .frame(minHeight: 36).contentShape(Rectangle())
@@ -192,7 +192,7 @@ struct RepositoryChangesBrowser: View {
                             .help(commit.subject)
                             .accessibilityLabel("\(commit.subject), by \(commit.author). \(expandedCommitIDs.contains(commit.id) ? "Collapse" : "Expand") commit details")
                             if expandedCommitIDs.contains(commit.id) {
-                                Text(commit.subject).font(.system(size: 12)).textSelection(.enabled)
+                                Text(commit.subject).dockFont(size: 12).textSelection(.enabled)
                                 HStack {
                                     Text(commit.author)
                                     Text(commit.date, style: .date)
@@ -200,9 +200,9 @@ struct RepositoryChangesBrowser: View {
                                     Spacer(minLength: 0)
                                     DockCopyButton(commit.id, label: "Copy commit hash", accessibilityLabel: "Copy commit hash")
                                 }
-                                .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                                .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                                 if !commit.references.isEmpty {
-                                    Text(commit.references).font(.system(size: 11)).foregroundStyle(Color.dockAccent).textSelection(.enabled)
+                                    Text(commit.references).dockFont(size: 11).foregroundStyle(Color.dockAccent).textSelection(.enabled)
                                 }
                             }
                         }
@@ -210,7 +210,7 @@ struct RepositoryChangesBrowser: View {
                     }
                 }
                 if workflow.commits.count == 50 {
-                    Text("Showing the latest 50 commits").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).padding(8)
+                    Text("Showing the latest 50 commits").dockFont(size: 11).foregroundStyle(Color.dockMetadataText).padding(8)
                 }
             }
         }
@@ -221,19 +221,19 @@ struct RepositoryChangesBrowser: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Text("PULL REQUESTS")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .dockFont(size: 10, weight: .bold, design: .monospaced)
                     .tracking(1.05)
                     .foregroundStyle(Color.dockSecondaryText)
                 Spacer(minLength: 8)
                 Text("\(workflow.githubPullRequests.count)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 11, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockAccent)
             }
             .frame(minHeight: 34)
 
             if workflow.githubPullRequests.isEmpty {
                 Text("No open pull requests")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockMetadataText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 10)
@@ -241,16 +241,16 @@ struct RepositoryChangesBrowser: View {
                 ForEach(workflow.githubPullRequests.prefix(5)) { pullRequest in
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(pullRequest.isDraft ? Color.dockMetadataText : Color.dockSuccess)
+                            .fill(pullRequest.isDraft ? Color.dockMetadataText : Color.dockSuccessFill)
                             .frame(width: 7, height: 7)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("#\(pullRequest.number)  \(pullRequest.title)")
-                                .font(.system(size: 11, weight: .medium))
+                                .dockFont(size: 11, weight: .medium)
                                 .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(1)
                             if let metadata = pullRequest.metadataLabel {
                                 Text(metadata)
-                                    .font(.system(size: 10, design: .monospaced))
+                                    .dockFont(size: 10, design: .monospaced)
                                     .foregroundStyle(Color.dockMetadataText)
                                     .lineLimit(1)
                             }
@@ -274,10 +274,10 @@ struct RepositoryChangesBrowser: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 DockIcon(.gitBranch)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 Text(changes.branch)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -290,7 +290,7 @@ struct RepositoryChangesBrowser: View {
 
             if let notice = workflow.sourceControlError ?? (changes.conflictedCount > 0 ? "Resolve conflicts, then stage the resolved files." : nil) {
                 Text(notice)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .lineLimit(2)
                     .help(notice)
@@ -308,10 +308,10 @@ struct RepositoryChangesBrowser: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     DockIcon(.checkCircle)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSuccess)
                     Text(workflow.githubAuthenticationNotice ?? "GitHub connected. Refreshing pull requests…")
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer(minLength: 8)
                     ProgressView()
@@ -320,7 +320,7 @@ struct RepositoryChangesBrowser: View {
                 }
                 if let code = workflow.githubAuthenticationCode {
                     Text(code)
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .dockFont(size: 16, weight: .bold, design: .monospaced)
                         .tracking(2.2)
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
@@ -334,7 +334,7 @@ struct RepositoryChangesBrowser: View {
                     .controlSize(.small)
                     .tint(Color.dockAccent)
                 Text(workflow.githubAuthenticationNotice ?? "Signing out of GitHub…")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             .frame(minHeight: 24)
@@ -350,29 +350,29 @@ struct RepositoryChangesBrowser: View {
             if case .unauthorized = error {
                 HStack(spacing: 7) {
                     DockIcon(.userGear)
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                         .foregroundStyle(Color.dockWarning)
                     Text("GitHub sign-in required.")
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer(minLength: 8)
                     Button("SIGN IN") {
                         workflow.authenticateGitHub()
                     }
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockAccent)
                 }
                 .frame(minHeight: 24)
                 if let notice = workflow.githubAuthenticationNotice {
                     Text(notice)
-                        .font(.system(size: 10))
+                        .dockFont(size: 10)
                         .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let code = workflow.githubAuthenticationCode {
                     Text(code)
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .dockFont(size: 16, weight: .bold, design: .monospaced)
                         .tracking(2.2)
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
@@ -392,10 +392,10 @@ struct RepositoryChangesBrowser: View {
             if let github = workflow.githubRepository {
                 HStack(spacing: 7) {
                     DockIcon(.checkCircle, weight: .fill)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSuccess)
                     Text("GitHub")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .dockFont(size: 10, weight: .semibold, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                     Link(github.id, destination: github.webURL)
                         .buttonStyle(.dockLink)
@@ -410,7 +410,7 @@ struct RepositoryChangesBrowser: View {
                         workflow.signOutGitHub()
                     }
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 9, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockSecondaryText)
                 }
             }
@@ -437,15 +437,15 @@ struct RepositoryChangesBrowser: View {
     ) -> some View {
         HStack(spacing: 7) {
             DockIcon(icon)
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.dockWarning)
             Text(message)
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 8)
             Button(workflow.isAuthenticatingGitHub ? "Connecting…" : actionTitle, action: action)
                 .buttonStyle(.dockCompact)
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
                 .disabled(workflow.isAuthenticatingGitHub)
         }
@@ -455,7 +455,7 @@ struct RepositoryChangesBrowser: View {
     private func sourceControlIcon(_ systemName: Ph, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             DockIcon(systemName)
-                .font(.system(size: 13, weight: .semibold))
+                .dockFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
@@ -487,7 +487,7 @@ struct RepositoryChangesBrowser: View {
                 .accessibilityLabel("\(file.isStaged ? "Unstage" : "Stage") \(file.path)")
                 .disabled(actionsDisabled)
                 Text(statusLetter(for: file))
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 11, weight: .semibold, design: .monospaced)
                     .foregroundStyle(statusColor(for: file)).frame(width: 18)
                     .help(fileStatusDescription(for: file))
             }
@@ -514,7 +514,7 @@ struct RepositoryChangesBrowser: View {
             } else if loadingFileIDs.contains(file.id) {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Loading diff…").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                    Text("Loading diff…").dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(10)
             } else {
@@ -531,7 +531,7 @@ struct RepositoryChangesBrowser: View {
 
     private func diffNotice(_ text: String, color: Color = .dockMetadataText) -> some View {
         Text(text)
-            .font(.system(size: 11))
+            .dockFont(size: 11)
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -557,11 +557,11 @@ struct RepositoryChangesBrowser: View {
                 DockIcon(.fileText, size: 16, color: .dockSecondaryText)
             }
             Text(fileName(for: file))
-                .font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText)
+                .dockFont(size: 12).foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1).truncationMode(.middle).layoutPriority(1)
             if !fileDirectory(for: file).isEmpty {
                 Text(fileDirectory(for: file))
-                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                    .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1).truncationMode(.head)
             }
             Spacer(minLength: 0)
@@ -621,7 +621,9 @@ struct RepositoryChangesBrowser: View {
         if file.isStaged { return .dockAccent }
         if file.status == .untracked || file.status == .added { return .dockSuccess }
         if file.status == .deleted { return .dockDestructive }
-        return .dockWarning
+        if file.status == .renamed { return DockCategoryTone.renamed.color }
+        if file.status == .modified { return DockCategoryTone.modified.color }
+        return .dockSecondaryText
     }
 
     private func toggle(_ file: RepositoryFileChange) {
@@ -645,8 +647,8 @@ struct RepositoryChangesBrowser: View {
 
     private func emptyState(icon: Ph, title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            DockIconLabel(title, icon: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
-            Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+            DockIconLabel(title, icon: icon).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+            Text(detail).dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

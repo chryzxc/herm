@@ -112,7 +112,7 @@ struct SessionInspector: View {
                     DockIcon(.warning)
                         .foregroundStyle(Color.dockWarning)
                     Text(workflowError)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockWarning)
                         .lineLimit(2)
                     Spacer(minLength: 0)
@@ -371,7 +371,7 @@ struct SessionInspector: View {
         } label: {
             HStack(spacing: 8) {
                 DockIcon(icon, size: 14, color: Color.dockSecondaryText)
-                Text(title).font(.system(size: 12, weight: .medium))
+                Text(title).dockFont(size: 12, weight: .medium)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
@@ -487,23 +487,23 @@ struct SessionInspector: View {
     private var inspectorHeader: some View {
         HStack(alignment: .center, spacing: 9) {
             DockIcon(.chats)
-                .font(.system(size: 13, weight: .semibold))
+                .dockFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.currentSessionTitle ?? "Untitled session")
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if let sessionProjectName {
                     DockIconLabel(sessionProjectName, icon: .folder)
-                        .font(.system(size: 10, weight: .medium))
+                        .dockFont(size: 10, weight: .medium)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
             Text(model.status.title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .dockFont(size: 10, weight: .semibold)
                 .foregroundStyle(model.status == .working ? Color.dockAccent : Color.dockSecondaryText)
         }
         .padding(.horizontal, 16)
@@ -567,7 +567,7 @@ struct SessionInspector: View {
 
     private func inspectorLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .dockFont(size: 11, weight: .semibold)
             .tracking(0.8)
             .foregroundStyle(Color.dockSecondaryText)
     }
@@ -610,15 +610,15 @@ struct SessionInspector: View {
                         } label: {
                             HStack(spacing: 6) {
                                 DockIcon(isSwitchingBranch ? .arrowsClockwise : branch.icon)
-                                    .font(.system(size: 11))
+                                    .dockFont(size: 11)
                                     .foregroundStyle(Color.dockAccent)
                                 Text(branch.value)
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .dockFont(size: 12, weight: .semibold, design: .monospaced)
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                 DockIcon(.caretDown)
-                                    .font(.system(size: 8, weight: .bold))
+                                    .dockFont(size: 8, weight: .bold)
                                     .foregroundStyle(Color.dockSecondaryText)
                             }
                         }
@@ -636,14 +636,14 @@ struct SessionInspector: View {
                     ForEach(items.filter { $0.id != "branch" }) { item in
                         HStack(spacing: 6) {
                             DockIcon(item.icon)
-                                .font(.system(size: 11))
+                                .dockFont(size: 11)
                                 .foregroundStyle(Color.dockAccent)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.label)
-                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                    .dockFont(size: 9, weight: .semibold, design: .monospaced)
                                     .foregroundStyle(Color.dockSecondaryText)
                                 Text(item.value)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .dockFont(size: 11, weight: .medium)
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                             }
@@ -673,25 +673,25 @@ struct SessionInspector: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 DockIcon(.shieldCheck)
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
                     .foregroundStyle(color)
                 Text("PRE-FLIGHT READINESS")
-                    .font(.system(size: 10, weight: .semibold))
+                    .dockFont(size: 10, weight: .semibold)
                     .tracking(0.75)
                     .foregroundStyle(color)
                 Spacer(minLength: 0)
                 Text(readiness.state.rawValue.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                    .dockFont(size: 10, weight: .semibold)
                     .foregroundStyle(color)
             }
 
             Text(readiness.detail)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
 
             if let scope = readiness.verificationScope {
                 Text("Scope: \(scope)")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -705,20 +705,20 @@ struct SessionInspector: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 DockIcon(.warning)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                 Text(attention.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text(attention.kind.rawValue.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                    .dockFont(size: 10, weight: .semibold)
                     .foregroundStyle(Color.dockWarning)
             }
             if !attention.detail.isEmpty {
                 Text(attention.detail)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }

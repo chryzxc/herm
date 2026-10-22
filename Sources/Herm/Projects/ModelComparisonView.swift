@@ -19,14 +19,14 @@ struct ModelComparisonView: View {
             subtitle: "Choose two or three models. Each runs in a separate local worktree and Hermes session.",
             width: nil
         ) {
-            Text(path).font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+            Text(path).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
             if coordinator.runs.isEmpty {
                 TextField("Task", text: $prompt, axis: .vertical).textFieldStyle(.dockGlass).lineLimit(3...8)
                 ScrollView {
                     VStack(alignment: .leading, spacing: DockSpacing.control) {
                         if model.runtimeModelOptions.count < 2 {
                             Text("Two available models are required. Connect to Hermes and refresh the model list.")
-                                .font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         }
                         ForEach(model.runtimeModelOptions, id: \.id) { option in
                             Toggle(
@@ -44,9 +44,9 @@ struct ModelComparisonView: View {
                 ScrollView {
                     ForEach(coordinator.runs) { run in
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(run.option.model).font(.system(size: 12, weight: .semibold))
+                            Text(run.option.model).dockFont(size: 12, weight: .semibold)
                             if let error = run.error {
-                                Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning)
+                                Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
                             }
                             if let session = run.session {
                                 HStack {
@@ -74,10 +74,10 @@ struct ModelComparisonView: View {
                             if let taskID = run.taskID,
                                 let task = model.backgroundTasks.first(where: { $0.id == taskID })
                             {
-                                Text(String(describing: task.status)).font(DockTypography.metadata).foregroundStyle(
+                                Text(String(describing: task.status)).dockFont(.metadata).foregroundStyle(
                                     Color.dockSecondaryText)
                                 if let output = task.output {
-                                    Text(GenerativeUIIntegration.plainText(output)).font(DockTypography.body).lineLimit(
+                                    Text(GenerativeUIIntegration.plainText(output)).dockFont(.body).lineLimit(
                                         6
                                     ).textSelection(.enabled)
                                 }
@@ -91,7 +91,7 @@ struct ModelComparisonView: View {
                 Text(
                     "The conversation or connection changed. Your task is kept here; copy it before closing and reopen comparison from its project."
                 )
-                .font(DockTypography.body).foregroundStyle(Color.dockWarning)
+                .dockFont(.body).foregroundStyle(Color.dockWarning)
             }
         } footer: {
             Button("Close") { dismiss() }.buttonStyle(.dockSecondary).disabled(coordinator.starting)
@@ -106,7 +106,7 @@ struct ModelComparisonView: View {
                     ownerChanged || !(2...3).contains(selectedAvailableCount)
                         || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-        }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).frame(width: 650, height: 540)
+        }.dockFont(.body).foregroundStyle(Color.dockPrimaryText).frame(width: 650, height: 540)
             .onAppear {
                 if ownerIdentity == nil {
                     ownerIdentity = WorkspaceIdentity.session(model)

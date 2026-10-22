@@ -52,10 +52,27 @@ struct SessionTerminalCanvas: NSViewRepresentable {
     private func applyTheme(_ view: TerminalView) {
         view.nativeBackgroundColor = NSColor(Color.dockCanvas)
         view.nativeForegroundColor = NSColor(Color.dockPrimaryText)
+        guard let themed = view as? ContextTerminalView,
+              themed.paletteRevision != DockThemeRuntime.revision else { return }
+        themed.paletteRevision = DockThemeRuntime.revision
+        view.caretColor = NSColor(Color.dockAccent)
+        view.caretTextColor = NSColor(Color.dockOnAccentText)
+        view.selectedTextBackgroundColor = NSColor(Color.dockAccentMuted)
+        view.selectedTextForegroundColor = NSColor(Color.dockPrimaryText)
+        // Keep ANSI meanings; explicit RGB output remains owned by the terminal program.
+        let normal: [SwiftUI.Color] = [.dockSecondaryText, .dockDestructive, .dockSuccess,
+            DockAccentColor.amber.color, .dockInfo, .dockMerged, DockAccentColor.cyan.color, .dockPrimaryText]
+        let colors = (normal + normal).map { color -> SwiftTerm.Color in
+            let rgb = NSColor(color).usingColorSpace(.sRGB) ?? .gray
+            return SwiftTerm.Color(red: UInt16(rgb.redComponent * 65535),
+                green: UInt16(rgb.greenComponent * 65535), blue: UInt16(rgb.blueComponent * 65535))
+        }
+        view.installColors(colors)
     }
 }
 
 final class ContextTerminalView: TerminalView {
+    var paletteRevision: Int?
     var onAttach: ((String, Int, Int) -> Void)?
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()

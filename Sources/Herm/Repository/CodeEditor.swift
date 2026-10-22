@@ -43,6 +43,7 @@ struct CodeEditor: NSViewRepresentable {
     }
 
     private func apply(to view: CodeEditorContainerView) {
+        view.applyThemeIfNeeded()
         view.onCursorChange = onCursorChange
         view.gutter.onHoverBlame = onHoverBlame
         view.gutter.commitURL = commitURL
@@ -61,6 +62,7 @@ final class CodeEditorContainerView: NSView {
     private var filePath: String
     private var wrapsLines: Bool?
     private var lastFindRequest = 0
+    private var themeRevision: Int?
     private var highlightTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
 
@@ -140,6 +142,23 @@ final class CodeEditorContainerView: NSView {
     private var wrapWidth: CGFloat {
         let insets = scrollView.contentView.contentInsets
         return max(0, scrollView.contentSize.width - insets.left - insets.right)
+    }
+
+    func applyThemeIfNeeded() {
+        guard themeRevision != DockThemeRuntime.revision else { return }
+        themeRevision = DockThemeRuntime.revision
+        textView.backgroundColor = .codeCanvas
+        scrollView.backgroundColor = .codeCanvas
+        textView.insertionPointColor = .codeAccent
+        textView.selectedTextAttributes = [.backgroundColor: NSColor(Color.dockAccentMuted), .foregroundColor: NSColor(Color.dockPrimaryText)]
+        scheduleHighlight()
+        gutter.needsDisplay = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        themeRevision = nil
+        applyThemeIfNeeded()
     }
 
     func setText(_ text: String, filePath: String) {
@@ -744,21 +763,13 @@ enum CodeTokenizer {
 // MARK: - Colors
 
 private extension NSColor {
-    /// Dark+/Light+ inspired pairs so code reads naturally in both appearances.
-    static func code(dark: UInt32, light: UInt32) -> NSColor {
-        NSColor(name: nil) { appearance in
-            let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-            return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-        }
-    }
-
-    static let codeKeyword = code(dark: 0x569CD6, light: 0x0000FF)
-    static let codeString = code(dark: 0xCE9178, light: 0xA31515)
-    static let codeNumber = code(dark: 0xB5CEA8, light: 0x098658)
-    static let codeComment = code(dark: 0x6A9955, light: 0x008000)
-    static let codeType = code(dark: 0x4EC9B0, light: 0x267F99)
-    static let codeFunction = code(dark: 0xDCDCAA, light: 0x795E26)
-    static let codeProperty = code(dark: 0x9CDCFE, light: 0x0451A5)
+    static var codeKeyword: NSColor { NSColor(DockAccentColor.violet.color) }
+    static var codeString: NSColor { NSColor(DockAccentColor.orange.color) }
+    static var codeNumber: NSColor { NSColor(DockAccentColor.green.color) }
+    static var codeComment: NSColor { NSColor(Color.dockSecondaryText) }
+    static var codeType: NSColor { NSColor(DockAccentColor.teal.color) }
+    static var codeFunction: NSColor { NSColor(DockAccentColor.amber.color) }
+    static var codeProperty: NSColor { NSColor(DockAccentColor.blue.color) }
 
     static var codeCanvas: NSColor { NSColor(Color.dockCanvas) }
     static var codeText: NSColor { NSColor(Color.dockMarkdownText) }

@@ -407,7 +407,7 @@ struct SessionActivityOverviewView: View {
             .pickerStyle(.segmented)
             .frame(maxWidth: 240)
             Text(refreshState?.error == nil ? "" : "Work status not current")
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockWarning)
                 .lineLimit(1)
                 .help(refreshState?.error ?? "")
@@ -420,7 +420,7 @@ struct SessionActivityOverviewView: View {
                         ProgressView().controlSize(.small)
                     } else {
                         DockIcon(.arrowsClockwise)
-                            .font(.system(size: 13, weight: .medium))
+                            .dockFont(size: 13, weight: .medium)
                     }
                 }
                 .foregroundStyle(Color.dockSecondaryText)
@@ -447,9 +447,9 @@ struct SessionActivityOverviewView: View {
                     HStack(spacing: 4) {
                         Text(agentScope.rawValue)
                         DockIcon(.caretDown)
-                            .font(.system(size: 9, weight: .semibold))
+                            .dockFont(size: 9, weight: .semibold)
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .dockFont(size: 11, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minWidth: 58, minHeight: 32)
                     .contentShape(Rectangle())
@@ -480,30 +480,30 @@ struct SessionActivityOverviewView: View {
                         .overlay {
                             Circle().stroke(agentColor(for: row.id), lineWidth: 1.2)
                             Text(String(row.displayName.prefix(1)).uppercased())
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
                         }
                         .frame(width: 34, height: 34)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(row.displayName)
-                            .font(.system(size: 13, weight: .medium))
+                            .dockFont(size: 13, weight: .medium)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
                         Text(row.detail)
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 6)
                     Text("\(row.eventCount) EVENTS")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .dockFont(size: 10, weight: .medium, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
-                    Circle().fill(row.isLive ? Color.dockSuccess : Color.dockMetadataText).frame(width: 6, height: 6)
+                    Circle().fill(row.isLive ? Color.dockSuccessFill : Color.dockMetadataText).frame(width: 6, height: 6)
                     Text(row.agent.status.capitalized)
-                        .font(.system(size: 10, weight: .medium))
+                        .dockFont(size: 10, weight: .medium)
                         .foregroundStyle(row.isLive ? Color.dockSuccess : Color.dockSecondaryText)
                     DockIcon(selected ? .caretUp : .caretDown)
-                        .font(.system(size: 10, weight: .semibold))
+                        .dockFont(size: 10, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
@@ -527,7 +527,7 @@ struct SessionActivityOverviewView: View {
     ) -> some View {
         let items = timeline.filter { $0.agentID == row.id }.prefix(5)
         return VStack(alignment: .leading, spacing: 5) {
-            Text(row.agent.goal).font(DockTypography.body).textSelection(.enabled)
+            Text(row.agent.goal).dockFont(.body).textSelection(.enabled)
             if let model = row.agent.model { Text("Model · \(model)").textSelection(.enabled) }
             if let latest = row.agent.latestActivity { Text(latest).textSelection(.enabled) }
             if !row.agent.filesWritten.isEmpty {
@@ -535,12 +535,12 @@ struct SessionActivityOverviewView: View {
                     .enabled)
             }
             if let summary = row.agent.summary {
-                Text(summary).font(DockTypography.body).textSelection(.enabled)
+                Text(summary).dockFont(.body).textSelection(.enabled)
             }
             if let childSessionID = row.agent.childSessionID { relatedSession(childSessionID) }
             if items.isEmpty {
                 Text("No recorded activity for this agent yet.")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 ForEach(Array(items)) { item in timelineText(item) }
@@ -572,7 +572,7 @@ struct SessionActivityOverviewView: View {
                 }
                 if let error = refreshState?.error {
                     Text(refreshState?.isStale == true ? "STALE · \(error)" : error)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockWarning)
                         .padding(.top, 6)
                 }
@@ -589,14 +589,14 @@ struct SessionActivityOverviewView: View {
                 HStack(spacing: 10) {
                     activityIdentity(source: row.source, actor: row.actor, status: row.status, size: 30)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(row.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                        Text(row.title).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                         Text(row.actor.map { "\(row.status) · \($0)" } ?? row.status)
-                            .font(.system(size: 11, weight: .medium))
+                            .dockFont(size: 11, weight: .medium)
                             .foregroundStyle(statusColor(row.status)).lineLimit(1)
                     }
                     Spacer(minLength: 6)
-                    if let updatedAt = row.updatedAt { Text(HumanDateFormatting.relative(updatedAt)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText) }
-                    DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
+                    if let updatedAt = row.updatedAt { Text(HumanDateFormatting.relative(updatedAt)).dockFont(size: 11, design: .monospaced).foregroundStyle(Color.dockMetadataText) }
+                    DockIcon(expanded ? .caretUp : .caretDown).dockFont(size: 9, weight: .semibold).foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
                 .frame(minHeight: 54)
@@ -609,7 +609,7 @@ struct SessionActivityOverviewView: View {
                     Text(row.title).fontWeight(.semibold).textSelection(.enabled)
                     if let result = row.result { Text(result).textSelection(.enabled) }
                 }
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.leading, 48)
                 .padding(.bottom, 9)
@@ -646,7 +646,7 @@ struct SessionActivityOverviewView: View {
                     kanbanAssigneeAvatar(assignee: task.assignee, bot: bot, status: status, size: 32)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(task.title)
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -672,17 +672,17 @@ struct SessionActivityOverviewView: View {
                             }
                         }
                         .lineLimit(1)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                         if let summary {
                             Text(summary)
-                                .font(.system(size: 11))
+                                .dockFont(size: 11)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .lineLimit(1)
                         }
                     }
                     Spacer(minLength: 4)
-                    DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold))
+                    DockIcon(expanded ? .caretUp : .caretDown).dockFont(size: 9, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
@@ -723,18 +723,18 @@ struct SessionActivityOverviewView: View {
                             event.createdAt.map(HumanDateFormatting.timeOnly),
                         ].compactMap { $0 }).joined(separator: " · ")
                     )
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .dockFont(size: 10, weight: .medium, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
                     if let note = event.note, !note.isEmpty {
                         Text(note).lineLimit(3).textSelection(.enabled)
                     }
                 }
             }
-            Text(task.id).font(.system(size: 10, design: .monospaced)).foregroundStyle(
+            Text(task.id).dockFont(size: 10, design: .monospaced).foregroundStyle(
                 Color.dockMetadataText
             ).textSelection(.enabled)
         }
-        .font(.system(size: 11))
+        .dockFont(size: 11)
         .foregroundStyle(Color.dockSecondaryText)
     }
 
@@ -746,7 +746,7 @@ struct SessionActivityOverviewView: View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Search activity, owner, or details", text: $historyFilter.query)
                 .textFieldStyle(.roundedBorder)
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .accessibilityLabel("Search execution history")
             HStack(spacing: 8) {
                 Picker("Source", selection: $historyFilter.source) {
@@ -762,7 +762,7 @@ struct SessionActivityOverviewView: View {
                 }
             }
             .labelsHidden()
-            .font(DockTypography.control)
+            .dockFont(.control)
         }
     }
 
@@ -790,7 +790,7 @@ struct SessionActivityOverviewView: View {
             Button("Open conversation") { model.resumeSession(session) }
                 .buttonStyle(.dockLink)
         } else {
-            Text("Session · \(id)").font(DockTypography.machineMetadata).textSelection(.enabled)
+            Text("Session · \(id)").dockFont(.machineMetadata).textSelection(.enabled)
         }
     }
 
@@ -808,7 +808,7 @@ struct SessionActivityOverviewView: View {
                     Text(exhausted ? "Show less" : "Show \(min(Self.pageSize, total - limit)) more")
                     DockIcon(exhausted ? .caretUp : .caretDown)
                 }
-                .font(DockTypography.control)
+                .dockFont(.control)
                 .foregroundStyle(Color.dockAccent)
                 .frame(minHeight: 44, alignment: .leading)
             }
@@ -829,7 +829,7 @@ struct SessionActivityOverviewView: View {
                 HStack(alignment: .top, spacing: 10) {
                     activityIdentity(source: row.source, actor: row.actor, status: row.status, size: 28)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(row.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(
+                        Text(row.title).dockFont(size: 12, weight: .semibold).foregroundStyle(
                             Color.dockPrimaryText
                         ).lineLimit(1)
                         Text(
@@ -839,11 +839,11 @@ struct SessionActivityOverviewView: View {
                             ].compactMap { $0 }).joined(separator: " · ")
                         )
                         .lineLimit(1)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                     }
                     Spacer(minLength: 4)
-                    DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold))
+                    DockIcon(expanded ? .caretUp : .caretDown).dockFont(size: 9, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
@@ -870,7 +870,7 @@ struct SessionActivityOverviewView: View {
                         durationLabel(row, now: .now)
                     }
                 }
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.leading, 46)
                 .padding(.bottom, 9)
@@ -884,7 +884,7 @@ struct SessionActivityOverviewView: View {
         -> some View
     {
         if let duration = duration(for: row, now: now) {
-            Text("Duration · \(formatDuration(duration))").font(DockTypography.machineMetadata)
+            Text("Duration · \(formatDuration(duration))").dockFont(.machineMetadata)
         }
     }
 
@@ -893,15 +893,15 @@ struct SessionActivityOverviewView: View {
             statusDot(row.status)
             Text(row.title).lineLimit(1)
         }
-        .font(.system(size: 10))
+        .dockFont(size: 10)
         .foregroundStyle(Color.dockSecondaryText)
     }
 
     private func sectionHeader<T: View>(_ title: String, detail: String, @ViewBuilder trailing: () -> T) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+            Text(title).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 4)
-            Text(detail).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+            Text(detail).dockFont(size: 10, weight: .medium, design: .monospaced).foregroundStyle(Color.dockMetadataText)
             trailing()
         }
     }
@@ -909,7 +909,7 @@ struct SessionActivityOverviewView: View {
     private var unifiedEmptyState: some View {
         VStack(alignment: .leading, spacing: 5) {
             DockIcon(.pulse).foregroundStyle(Color.dockMetadataText)
-            Text("No session activity yet.").font(.system(size: 12, weight: .semibold)).foregroundStyle(
+            Text("No session activity yet.").dockFont(size: 12, weight: .semibold).foregroundStyle(
                 Color.dockPrimaryText)
             Text("Hermes activity will appear here when agents or session-linked work begin.").font(
                 .system(size: 12)
@@ -919,7 +919,7 @@ struct SessionActivityOverviewView: View {
     }
 
     private func compactEmpty(_ text: String) -> some View {
-        Text(text).font(DockTypography.body).foregroundStyle(Color.dockMetadataText).frame(
+        Text(text).dockFont(.body).foregroundStyle(Color.dockMetadataText).frame(
             maxWidth: .infinity, alignment: .leading
         ).padding(.vertical, 6)
     }
@@ -1017,9 +1017,7 @@ struct SessionActivityOverviewView: View {
     }
 
     private func agentColor(for id: String) -> Color {
-        let palette: [Color] = [.dockAccent, .purple, .orange, .mint, .yellow, .blue]
-        let hash = id.utf8.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1) }
-        return palette[Int(hash % UInt64(palette.count))]
+        DockAccentColor.identity(for: id).fill
     }
 
     private func duration(for row: SessionActivityOverviewPresentation.TimelineRow, now: Date)

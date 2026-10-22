@@ -103,7 +103,7 @@ struct SessionTerminalView: View {
                 terminalTabs.add(directory: directory)
             } label: {
                 DockIcon(.plus)
-                    .font(.system(size: 16, weight: .light))
+                    .dockFont(size: 16, weight: .light)
                     .foregroundStyle(isHoveringNewShell ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .frame(width: 32, height: 32)
                     .background(isHoveringNewShell ? Color.dockSurface2 : Color.clear)
@@ -125,16 +125,16 @@ struct SessionTerminalView: View {
     private func terminalTab(_ session: LocalTerminalSession) -> some View {
         HStack(spacing: 7) {
             DockIcon(.terminal)
-                .font(.system(size: 10, weight: .semibold))
+                .dockFont(size: 10, weight: .semibold)
             Text("Shell \((terminalTabs.sessions.firstIndex(where: { $0.id == session.id }) ?? 0) + 1)")
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .lineLimit(1)
             Button {
                 terminalTabs.selectedID = session.id
                 if terminal.hasForegroundJob { confirmingClose = true } else { terminalTabs.closeSelected() }
             } label: {
                 DockIcon(.x)
-                    .font(.system(size: 9, weight: .semibold))
+                    .dockFont(size: 9, weight: .semibold)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -155,12 +155,12 @@ struct SessionTerminalView: View {
     private var terminalControls: some View {
         HStack(alignment: .center, spacing: 10) {
             Text(URL(fileURLWithPath: directory).lastPathComponent)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
                 .help(directory)
             if case .failed(let error) = terminal.state {
-                Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning)
+                Text(error).dockFont(size: 12).foregroundStyle(Color.dockWarning)
                 Button("Retry") { terminal.start(directory: directory) }.buttonStyle(.dockCompact)
             }
             if terminal.state == .closed || terminal.state == .exited {
@@ -169,7 +169,7 @@ struct SessionTerminalView: View {
             }
             if let command = terminal.projectCommand {
                 Text(command.isRunning ? "Running action…" : command.exitCode.map { "Action exited \($0)" } ?? "Action interrupted")
-                    .font(DockTypography.metadata).foregroundStyle(command.exitCode.map { $0 == 0 ? Color.dockSuccess : Color.dockWarning } ?? Color.dockSecondaryText)
+                    .dockFont(.metadata).foregroundStyle(command.exitCode.map { $0 == 0 ? Color.dockSuccess : Color.dockWarning } ?? Color.dockSecondaryText)
             }
             Spacer(minLength: 8)
 
@@ -187,7 +187,7 @@ struct SessionTerminalView: View {
                     }
                 } label: {
                     Label("Run check", icon: .sealCheck)
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                 }
                 .foregroundStyle(Color.dockAccent)
                 .help("Run verified repository check")
@@ -219,7 +219,7 @@ struct SessionTerminalView: View {
     private func verificationRunBanner(_ run: VerificationRun) -> some View {
         HStack(spacing: 8) {
             Text(run.isComplete ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")" : "Running \(run.command)…")
-                .font(.system(size: 10, design: .monospaced))
+                .dockFont(size: 10, design: .monospaced)
                 .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
                 .lineLimit(1)
             if let recipe = recipes.first(where: { $0.id == run.recipeID }), run.isComplete {

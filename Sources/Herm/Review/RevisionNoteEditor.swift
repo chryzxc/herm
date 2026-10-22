@@ -13,13 +13,13 @@ struct RevisionNoteEditor: View {
                 }
             }
             VStack(alignment: .leading, spacing: DockSpacing.control) {
-                Text("Your note").font(.system(size: 12, weight: .semibold))
+                Text("Your note").dockFont(size: 12, weight: .semibold)
                 TextField("Describe the change you want…", text: $state.note, axis: .vertical)
                     .textFieldStyle(.dockGlass).lineLimit(4...8).focused($isEditing)
                     .accessibilityLabel("Revision note")
             }
             if let error = state.noteError {
-                Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning)
+                Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
             }
         } footer: {
             Spacer()
@@ -29,7 +29,7 @@ struct RevisionNoteEditor: View {
             }.buttonStyle(.dockPrimary).disabled(
                 state.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)
+        .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         .onAppear { isEditing = true }
     }
 }

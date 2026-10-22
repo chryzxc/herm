@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Herm
 
@@ -26,6 +27,15 @@ struct CodeExplorerTests {
             RepositoryFileChange(path: "other/b.ts", status: .modified, isStaged: false, renameSource: nil),
         ]
         #expect(SessionFilesView.projectRelativeStatus(files, projectPrefix: "app/") == ["src/a.ts": .modified])
+    }
+
+    @Test func fileChangesUseCategoryColorsAndReserveErrorsForConflicts() {
+        #expect(SessionFilesView.color(for: .modified) == DockCategoryTone.modified.color)
+        #expect(SessionFilesView.color(for: .renamed) == DockCategoryTone.renamed.color)
+        #expect(SessionFilesView.color(for: .conflicted) == Color.dockDestructive)
+        #expect(SessionFilesView.color(for: .deleted) == Color.dockDestructive)
+        #expect(SessionFilesView.color(for: .added) == Color.dockSuccess)
+        #expect(SessionFilesView.color(for: .unknown) == Color.dockSecondaryText)
     }
 
     @Test func stringsWinOverCommentMarkersAndJSONKeysAreProperties() {

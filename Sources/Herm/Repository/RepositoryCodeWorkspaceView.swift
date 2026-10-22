@@ -57,7 +57,7 @@ struct RepositoryCodeWorkspaceView: View {
             editor
             if let saveError {
                 DockIconLabel(saveError, icon: .warning)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -135,11 +135,11 @@ struct RepositoryCodeWorkspaceView: View {
             ForEach(Array(components.enumerated()), id: \.offset) { index, component in
                 if index > 0 {
                     DockIcon(.caretRight)
-                        .font(.system(size: 8, weight: .semibold))
+                        .dockFont(size: 8, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Text(component)
-                    .font(.system(size: 12, weight: index == components.count - 1 ? .semibold : .regular))
+                    .dockFont(size: 12, weight: index == components.count - 1 ? .semibold : .regular)
                     .foregroundStyle(index == components.count - 1 ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -213,31 +213,31 @@ struct RepositoryCodeWorkspaceView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(commit.isUncommitted ? "?" : String(commit.author.prefix(1)).uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .dockFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.dockOnAccentText)
                     .frame(width: 24, height: 24)
-                    .background(Circle().fill(commit.isUncommitted ? Color.dockWarning : Color.dockAccent))
+                    .background(Circle().fill(commit.isUncommitted ? DockCategoryTone.modified.fill : Color.dockAccent))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(commit.isUncommitted ? "Not committed yet" : commit.author)
-                        .font(.system(size: 12, weight: .semibold))
+                        .dockFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     if let date = commit.authoredAt, !commit.isUncommitted {
                         Text("\(HumanDateFormatting.relative(date)) · \(date.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
             }
             if !commit.isUncommitted {
                 Text(commit.summary)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockPrimaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
-                    DockIcon(.gitCommit).font(.system(size: 11))
-                    Text(commit.shortHash).font(.system(size: 11, design: .monospaced))
+                    DockIcon(.gitCommit).dockFont(size: 11)
+                    Text(commit.shortHash).dockFont(size: 11, design: .monospaced)
                     Spacer(minLength: 0)
-                    Text("Right-click for actions").font(.system(size: 10))
+                    Text("Right-click for actions").dockFont(size: 10)
                 }
                 .foregroundStyle(Color.dockMetadataText)
             }
@@ -262,7 +262,7 @@ struct RepositoryCodeWorkspaceView: View {
             Text("UTF-8")
             Text(language.name)
         }
-        .font(.system(size: 11))
+        .dockFont(size: 11)
         .foregroundStyle(Color.dockMetadataText)
         .lineLimit(1)
         .padding(.horizontal, 12)
@@ -343,7 +343,7 @@ struct ExplorerFileIcon: View {
     var body: some View {
         let (icon, color) = Self.style(for: path)
         DockIcon(icon)
-            .font(.system(size: size, weight: .medium))
+            .dockFont(size: size, weight: .medium)
             .foregroundStyle(color)
     }
 
@@ -351,22 +351,22 @@ struct ExplorerFileIcon: View {
         let url = URL(fileURLWithPath: path)
         let name = url.lastPathComponent.lowercased()
         switch url.pathExtension.lowercased() {
-        case "swift": return (.fileCode, Color(red: 0.94, green: 0.45, blue: 0.27))
-        case "ts", "mts": return (.fileTs, Color(red: 0.19, green: 0.47, blue: 0.78))
-        case "tsx": return (.fileTsx, Color(red: 0.19, green: 0.47, blue: 0.78))
-        case "js", "mjs", "cjs": return (.fileJs, Color(red: 0.89, green: 0.78, blue: 0.25))
-        case "jsx": return (.fileJsx, Color(red: 0.38, green: 0.78, blue: 0.93))
-        case "py": return (.filePy, Color(red: 0.25, green: 0.53, blue: 0.80))
-        case "rs": return (.fileRs, Color(red: 0.87, green: 0.55, blue: 0.40))
-        case "c", "h": return (.fileC, Color(red: 0.36, green: 0.55, blue: 0.80))
-        case "cpp", "cc", "hpp": return (.fileCpp, Color(red: 0.36, green: 0.55, blue: 0.80))
-        case "css", "scss", "less": return (.fileCss, Color(red: 0.34, green: 0.53, blue: 0.86))
-        case "html", "htm": return (.fileHtml, Color(red: 0.89, green: 0.43, blue: 0.27))
-        case "md", "markdown", "mdx": return (.fileMd, Color(red: 0.45, green: 0.65, blue: 0.90))
-        case "sql": return (.fileSql, Color(red: 0.85, green: 0.65, blue: 0.30))
-        case "json", "jsonc": return (.bracketsCurly, Color(red: 0.89, green: 0.78, blue: 0.25))
-        case "yml", "yaml", "toml", "ini", "plist", "xcconfig": return (.gear, Color(red: 0.62, green: 0.55, blue: 0.85))
-        case "png", "jpg", "jpeg", "gif", "svg", "webp", "icns", "ico": return (.fileImage, Color(red: 0.65, green: 0.45, blue: 0.85))
+        case "swift": return (.fileCode, DockAccentColor.orange.color)
+        case "ts", "mts": return (.fileTs, DockAccentColor.blue.color)
+        case "tsx": return (.fileTsx, DockAccentColor.blue.color)
+        case "js", "mjs", "cjs": return (.fileJs, DockAccentColor.amber.color)
+        case "jsx": return (.fileJsx, DockAccentColor.cyan.color)
+        case "py": return (.filePy, DockAccentColor.blue.color)
+        case "rs": return (.fileRs, DockAccentColor.coral.color)
+        case "c", "h": return (.fileC, DockAccentColor.blue.color)
+        case "cpp", "cc", "hpp": return (.fileCpp, DockAccentColor.blue.color)
+        case "css", "scss", "less": return (.fileCss, DockAccentColor.indigo.color)
+        case "html", "htm": return (.fileHtml, DockAccentColor.orange.color)
+        case "md", "markdown", "mdx": return (.fileMd, DockAccentColor.blue.color)
+        case "sql": return (.fileSql, DockAccentColor.amber.color)
+        case "json", "jsonc": return (.bracketsCurly, DockAccentColor.amber.color)
+        case "yml", "yaml", "toml", "ini", "plist", "xcconfig": return (.gear, DockAccentColor.violet.color)
+        case "png", "jpg", "jpeg", "gif", "svg", "webp", "icns", "ico": return (.fileImage, DockAccentColor.pink.color)
         case "lock", "resolved": return (.fileLock, .dockMetadataText)
         case "go", "rb", "java", "kt", "sh", "zsh", "bash", "m", "mm", "dart", "vue": return (.fileCode, .dockSecondaryText)
         default:

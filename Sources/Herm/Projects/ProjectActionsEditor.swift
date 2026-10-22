@@ -11,7 +11,7 @@ struct ProjectActionsEditor: View {
             title: "Project actions", subtitle: "Commands run only when you choose Run. Output stays in the terminal.",
             width: nil
         ) {
-            Text(path).font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+            Text(path).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
             ScrollView {
                 ForEach($actions) { $action in
                     VStack(alignment: .leading, spacing: 8) {
@@ -33,7 +33,7 @@ struct ProjectActionsEditor: View {
                     }.padding(.vertical, 8)
                 }
             }
-            if let error { Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning) }
+            if let error { Text(error).dockFont(.body).foregroundStyle(Color.dockWarning) }
         } footer: {
             Button("Add action") { actions.append(ProjectAction(name: "", command: "")) }.buttonStyle(
                 .dockSecondary)
@@ -46,7 +46,7 @@ struct ProjectActionsEditor: View {
                     dismiss()
                 } catch { self.error = error.localizedDescription }
             }.buttonStyle(.dockPrimary)
-        }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).frame(width: 560, height: 500).onAppear {
+        }.dockFont(.body).foregroundStyle(Color.dockPrimaryText).frame(width: 560, height: 500).onAppear {
             actions = preferences.actions(path)
         }
     }

@@ -164,20 +164,20 @@ struct ArtifactsInspectorView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("ARTIFACTS")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .dockFont(size: 10, weight: .bold, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                         .tracking(0.8)
                     Text("Generated outputs")
-                        .font(.system(size: 20, weight: .semibold))
+                        .dockFont(size: 20, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(summaryText)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 Spacer(minLength: 8)
                 Button { refreshID += 1 } label: {
                     DockIcon(isLoading ? .hourglass : .arrowsClockwise)
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                 }
                 .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockAccent)
@@ -240,7 +240,7 @@ struct ArtifactsInspectorView: View {
             DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
             TextField("", text: $query, prompt: Text("Search artifacts").foregroundColor(Color.dockMetadataText))
                 .textFieldStyle(.plain)
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockPrimaryText)
                 .accessibilityLabel("Search artifacts by name, path, URL, or session")
             if !query.isEmpty {
@@ -293,7 +293,7 @@ struct ArtifactsInspectorView: View {
                         HStack {
                             Button { showsNarrowDetail = false } label: { DockIconLabel("BACK", icon: .caretLeft) }
                                 .buttonStyle(.dockCompact)
-                                .font(.system(size: 11, weight: .semibold))
+                                .dockFont(size: 11, weight: .semibold)
                                 .foregroundStyle(Color.dockAccent)
                             Spacer()
                         }
@@ -328,7 +328,7 @@ struct ArtifactsInspectorView: View {
                                     .foregroundStyle(Color.dockMetadataText)
                                 Spacer(minLength: 0)
                             }
-                            .font(DockTypography.sectionLabel)
+                            .dockFont(.sectionLabel)
                             .foregroundStyle(Color.dockSectionText)
                             .padding(.horizontal, 10)
                             .padding(.top, 12)
@@ -374,7 +374,7 @@ struct ArtifactsInspectorView: View {
                 .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.label)
-                    .font(DockTypography.rowTitle)
+                    .dockFont(.rowTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -388,7 +388,7 @@ struct ArtifactsInspectorView: View {
                         .lineLimit(1)
                         .layoutPriority(1)
                 }
-                .font(.system(size: 10))
+                .dockFont(size: 10)
                 .foregroundStyle(Color.dockMetadataText)
             }
             Spacer(minLength: 0)
@@ -414,7 +414,7 @@ struct ArtifactsInspectorView: View {
 
     private func originBadge(_ origin: ArtifactOrigin) -> some View {
         Text(origin.rawValue)
-            .font(.system(size: 9, weight: .semibold))
+            .dockFont(size: 9, weight: .semibold)
             .foregroundStyle(originColor(origin))
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
@@ -488,7 +488,7 @@ struct ArtifactsInspectorView: View {
                 .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 6) {
                 Text(record.label)
-                    .font(.system(size: 17, weight: .semibold, design: DockThemeStyle.current.fontDesign))
+                    .dockFont(size: 17, weight: .semibold, design: DockThemeStyle.current.fontDesign)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                     .textSelection(.enabled)
@@ -497,12 +497,12 @@ struct ArtifactsInspectorView: View {
                     Text(record.timestamp.formatted(date: .abbreviated, time: .shortened))
                     Text("·")
                     Text(record.location)
-                        .font(DockTypography.machineMetadata)
+                        .dockFont(.machineMetadata)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(record.value)
                 }
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 if let session = sourceSession(for: record) {
                     Button { openSession(session) } label: {
@@ -512,14 +512,14 @@ struct ArtifactsInspectorView: View {
                                 .lineLimit(1)
                             DockIcon(.arrowRight, size: 10, color: .dockAccent)
                         }
-                        .font(DockTypography.control)
+                        .dockFont(.control)
                         .foregroundStyle(Color.dockAccent)
                     }
                     .buttonStyle(.dockLink)
                     .help("Open the session that produced this artifact")
                 } else {
                     DockIconLabel(record.sessionTitle, icon: .chatCircle)
-                        .font(DockTypography.metadata)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             }
@@ -543,7 +543,7 @@ struct ArtifactsInspectorView: View {
                             MarkdownMessageView(markdown: text, cacheKey: "artifact:\(record.id)")
                         } else {
                             Text(text)
-                                .font(.system(size: 11, design: .monospaced))
+                                .dockFont(size: 11, design: .monospaced)
                                 .foregroundStyle(Color.dockPrimaryText)
                         }
                     }
@@ -553,7 +553,7 @@ struct ArtifactsInspectorView: View {
                     if truncated {
                         Divider().overlay(Color.dockBorderLight)
                         Text("Preview truncated — open the file to see the rest.")
-                            .font(.system(size: 10))
+                            .dockFont(size: 10)
                             .foregroundStyle(Color.dockMetadataText)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
@@ -582,11 +582,11 @@ struct ArtifactsInspectorView: View {
             DockIcon(icon)
                 .foregroundStyle(Color.dockSecondaryText)
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
             if let detail {
                 Text(detail)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
@@ -657,10 +657,10 @@ struct ArtifactsInspectorView: View {
     private func pageState(title: String, detail: String, icon: Ph, actionTitle: String?, action: (() -> Void)?) -> some View {
         VStack(spacing: 10) {
             DockIconLabel(title, icon: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .dockFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockSecondaryText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -759,10 +759,10 @@ struct ArtifactsInspectorView: View {
                     DockIcon(item.icon, size: 13, color: selected ? .dockAccent : .dockMetadataText)
                 }
                 Text(item.rawValue)
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                    .dockFont(size: 12, weight: selected ? .semibold : .medium)
                     .fixedSize()
                 Text("\(count(for: item))")
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .dockFont(size: 10, weight: .medium).monospacedDigit()
                     .foregroundStyle(selected ? Color.dockAccent : Color.dockMetadataText)
             }
             .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
@@ -782,11 +782,11 @@ struct ArtifactsInspectorView: View {
                 DockIcon(item.icon)
                 Text(item.rawValue)
                 Text("\(count(for: item))")
-                    .font(.system(size: 10, design: .monospaced))
+                    .dockFont(size: 10, design: .monospaced)
                     .opacity(0.75)
             }
         }
-        .font(.system(size: 11, weight: .semibold))
+        .dockFont(size: 11, weight: .semibold)
         .buttonStyle(.dockHover)
         .foregroundStyle(filter == item ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
@@ -808,11 +808,11 @@ struct ArtifactsInspectorView: View {
     private func sectionHeader(_ title: String, count: Int) -> some View {
         HStack(spacing: 6) {
             Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .dockFont(size: 10, weight: .bold, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
                 .tracking(0.8)
             Text("· \(count)")
-                .font(.system(size: 10, design: .monospaced))
+                .dockFont(size: 10, design: .monospaced)
                 .foregroundStyle(Color.dockSecondaryText)
         }
         .accessibilityAddTraits(.isHeader)
@@ -827,17 +827,17 @@ struct ArtifactsInspectorView: View {
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             Text(record.label)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(record.sessionTitle)
-                .font(.system(size: 10))
+                .dockFont(size: 10)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)
             HStack(spacing: 10) {
                 Text(record.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                    .font(.system(size: 9, design: .monospaced))
+                    .dockFont(size: 9, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 4)
                 artifactCopyAction(record.value)
@@ -872,7 +872,7 @@ struct ArtifactsInspectorView: View {
             DockIcon(.image)
             if !compact {
                 Text("Preview unavailable")
-                    .font(.system(size: 10))
+                    .dockFont(size: 10)
             }
         }
         .foregroundStyle(Color.dockSecondaryText)
@@ -886,23 +886,23 @@ struct ArtifactsInspectorView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.label)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if let session = sourceSession(for: record) {
                     Button(session.displayTitle) { openSession(session) }
-                        .font(.system(size: 10))
+                        .dockFont(size: 10)
                         .buttonStyle(.dockLink)
                         .foregroundStyle(Color.dockAccent)
                         .lineLimit(1)
                 } else {
                     Text(record.sessionTitle)
-                        .font(.system(size: 10))
+                        .dockFont(size: 10)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }
                 Text(record.value)
-                    .font(.system(size: 10, design: .monospaced))
+                    .dockFont(size: 10, design: .monospaced)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -910,7 +910,7 @@ struct ArtifactsInspectorView: View {
 
             Spacer(minLength: 6)
             Text(record.timestamp, format: .dateTime.month(.abbreviated).day())
-                .font(.system(size: 9, design: .monospaced))
+                .dockFont(size: 9, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
             artifactCopyAction(record.value)
             artifactAction("Open") { open(record.value) }
@@ -923,7 +923,7 @@ struct ArtifactsInspectorView: View {
 
     private func artifactAction(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
-            .font(.system(size: 10, weight: .semibold))
+            .dockFont(size: 10, weight: .semibold)
             .buttonStyle(.dockCompact)
             .foregroundStyle(Color.dockAccent)
     }
@@ -936,7 +936,7 @@ struct ArtifactsInspectorView: View {
             iconSize: 10,
             color: .dockAccent
         )
-        .font(.system(size: 10, weight: .semibold))
+        .dockFont(size: 10, weight: .semibold)
         .buttonStyle(.dockCompact)
     }
 
@@ -947,7 +947,7 @@ struct ArtifactsInspectorView: View {
             }
             .disabled(current <= 1)
             Text("Page \(current) of \(total)")
-                .font(.system(size: 10, design: .monospaced))
+                .dockFont(size: 10, design: .monospaced)
                 .foregroundStyle(Color.dockSecondaryText)
             Button { select(min(total, current + 1)) } label: {
                 DockIcon(.caretRight)
@@ -964,10 +964,10 @@ struct ArtifactsInspectorView: View {
     private func state(title: String, detail: String, icon: Ph) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             DockIconLabel(title, icon: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .font(.system(size: 11))
+                .dockFont(size: 11)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }

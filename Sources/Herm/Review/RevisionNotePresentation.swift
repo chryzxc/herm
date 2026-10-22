@@ -7,13 +7,13 @@ struct RevisionNoteLocation: View {
         HStack(alignment: .firstTextBaseline, spacing: DockSpacing.control) {
             DockIcon(.file).foregroundStyle(Color.dockMetadataText)
             Text((note.path as NSString).lastPathComponent)
-                .font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                .dockFont(size: 12, weight: .semibold).lineLimit(1).truncationMode(.middle)
             Text(
                 "\(note.selection.anchor.first)"
                     + (note.selection.anchor.last == note.selection.anchor.first
                         ? "" : "–\(note.selection.anchor.last)") + " · \(note.selection.anchor.side)"
             )
-            .font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText)
+            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
         }
         .help(note.locationLabel).accessibilityElement(children: .ignore).accessibilityLabel(note.locationLabel)
     }
@@ -26,7 +26,7 @@ struct RevisionNoteStaleLabel: View {
             DockIcon(.warning).foregroundStyle(Color.dockWarning)
             Text(explainsAnchor ? "Source changed. This note keeps its captured lines." : "Source changed")
                 .foregroundStyle(Color.dockSecondaryText)
-        }.font(DockTypography.metadata).fixedSize(horizontal: false, vertical: true)
+        }.dockFont(.metadata).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -42,7 +42,7 @@ struct RevisionNoteExcerpt: View {
                         .frame(minWidth: 20, alignment: .trailing)
                     Text(note.selection.excerpt).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                 }
-                .font(.system(size: 12, design: .monospaced)).fontDesign(.monospaced).lineSpacing(3)
+                .dockFont(size: 12, design: .monospaced).fontDesign(.monospaced).lineSpacing(3)
                 .padding(DockSpacing.group).frame(minWidth: geometry.size.width, alignment: .leading)
             }
         }
@@ -72,7 +72,7 @@ struct RevisionNotesTray: View {
                 }
             }.padding(DockSpacing.group)
             if let error = state.revisionNotes.error {
-                Text(error).font(DockTypography.body).foregroundStyle(Color.dockWarning)
+                Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
                     .padding(.horizontal, DockSpacing.group).padding(.bottom, DockSpacing.control)
             }
             ForEach(state.notes) { note in
@@ -88,7 +88,7 @@ struct RevisionNotesTray: View {
                             actions(note)
                         }
                     }
-                    Text(note.text).font(DockTypography.body).textSelection(.enabled)
+                    Text(note.text).dockFont(.body).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 760, alignment: .leading)
                     if state.revisionNotes.isStale(note) { RevisionNoteStaleLabel() }
@@ -101,7 +101,7 @@ struct RevisionNotesTray: View {
                 canSend
                     ? "Adds notes to your conversation draft." : "Open this review from a conversation to send notes."
             )
-            .font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText)
+            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, DockSpacing.group).padding(.bottom, DockSpacing.group)
         }
         .foregroundStyle(Color.dockPrimaryText)
@@ -109,8 +109,8 @@ struct RevisionNotesTray: View {
     }
     private var title: some View {
         HStack(spacing: DockSpacing.control) {
-            Text("Private revision notes").font(.system(size: 12, weight: .semibold))
-            Text("\(state.notes.count)").font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText)
+            Text("Private revision notes").dockFont(size: 12, weight: .semibold)
+            Text("\(state.notes.count)").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
         }
     }
     private var sendButton: some View {

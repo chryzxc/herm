@@ -17,7 +17,7 @@ struct ObservedRequestReview: View {
             }
             HSplitView {
                 List(comparison.patches, id: \.path, selection: $selected) { patch in
-                    Text(patch.path).font(DockTypography.body).lineLimit(1).truncationMode(.middle).help(patch.path)
+                    Text(patch.path).dockFont(.body).lineLimit(1).truncationMode(.middle).help(patch.path)
                         .tag(patch.path)
                 }
                 .scrollContentBackground(.hidden).background(Color.dockCanvas)
@@ -30,7 +30,7 @@ struct ObservedRequestReview: View {
                         ).padding(12)
                     }
                 } else {
-                    Text("Choose a changed file.").font(DockTypography.body).frame(maxWidth: .infinity)
+                    Text("Choose a changed file.").dockFont(.body).frame(maxWidth: .infinity)
                 }
             }
         }.background(Color.dockCanvas).frame(minWidth: 800, idealWidth: 1100, minHeight: 560, idealHeight: 740)

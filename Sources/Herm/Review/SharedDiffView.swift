@@ -71,7 +71,7 @@ struct SharedDiffView: View {
             }
             toolbar(isExpanded: expandedPresentation)
             if let notice = document.fileNotice {
-                Text(notice).font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).padding(12)
+                Text(notice).dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(12)
             }
             canvas
                 .frame(
@@ -79,16 +79,16 @@ struct SharedDiffView: View {
                     maxHeight: expandedPresentation
                         ? .infinity : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)))
             if document.isTruncated {
-                Text("Partial diff · search covers loaded content only").font(DockTypography.metadata).foregroundStyle(
+                Text("Partial diff · search covers loaded content only").dockFont(.metadata).foregroundStyle(
                     Color.dockWarning
                 ).padding(8)
             }
             if document.missingFinalNewline {
-                Text("Missing final newline").font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText)
+                Text("Missing final newline").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                     .padding(8)
             }
             if let contextError = state.contextError {
-                Text(contextError).font(DockTypography.body).foregroundStyle(Color.dockWarning).padding(8)
+                Text(contextError).dockFont(.body).foregroundStyle(Color.dockWarning).padding(8)
             }
             if !state.notes.isEmpty || state.revisionNotes.error != nil { noteTray }
         }
@@ -159,7 +159,7 @@ struct SharedDiffView: View {
                 reviewControls
                 expandControl(isExpanded: isExpanded)
             }
-        }.font(DockTypography.body)
+        }.dockFont(.body)
             .padding(.horizontal, 12).padding(.vertical, 6)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }

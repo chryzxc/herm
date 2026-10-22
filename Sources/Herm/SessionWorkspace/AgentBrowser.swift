@@ -82,9 +82,16 @@ final class AgentBrowser: ObservableObject {
     private var panelSize = CGSize(width: 1280, height: 800)
     private var backingScale: CGFloat = 2
     private var viewportTask: Task<Void, Never>?
+    private var themeCancellable: AnyCancellable?
 
     init(key: SessionBrowserKey) {
         self.key = key
+        themeCancellable = DockThemeStore.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.annotating else { return }
+                self.applyAnnotating()
+            }
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.process?.terminate() }
         }
@@ -799,7 +806,7 @@ struct AgentBrowserPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
                 VStack(spacing: 8) {
-                    Text(message).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(.center)
+                    Text(message).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(.center)
                     Button("Try Again") { browser.start() }
                 }
                 .padding(16)
@@ -843,7 +850,7 @@ struct AgentBrowserPane: View {
         HStack(spacing: 8) {
             DockIcon(.handPointing, size: 12, color: Color.dockAccent)
             Text("You're in control")
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
             Button("Hand back to Hermes") { browser.handBack() }
@@ -867,13 +874,13 @@ struct AgentBrowserPane: View {
         HStack(spacing: 8) {
             DockStatusDot(tone: .working, size: 7, pulses: true)
             Text("Hermes is browsing")
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
             HStack(spacing: 4) {
                 DockIcon(step.icon, size: 11, color: Color.dockSecondaryText)
                 Text(step.title)
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -909,12 +916,12 @@ private struct AgentDialogCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .dockFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if !dialog.message.isEmpty {
                 ScrollView {
                     Text(dialog.message)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
