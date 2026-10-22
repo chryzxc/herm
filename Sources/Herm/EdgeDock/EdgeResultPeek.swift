@@ -87,7 +87,7 @@ struct EdgeResultPeek: View {
         .buttonStyle(.dockHover)
         .accessibilityLabel(showingComparison ? "Back to current result" : "Back to tasks")
         VStack(alignment: .leading, spacing: 2) {
-          Text(target.session.displayTitle).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+          Text(target.session.displayTitle).dockFont(size: 12, weight: .semibold).lineLimit(1)
           Text(showingComparison ? "Compared with previous read" : "Latest completed reply").font(
             .system(size: 11)
           ).foregroundStyle(
@@ -107,7 +107,7 @@ struct EdgeResultPeek: View {
             Button("Translate reply") { translating = true }.disabled(content?.text.isEmpty ?? true)
           }
         }.modifier(ReplyTranslation(isPresented: $translating, text: content?.text ?? ""))
-          .font(.system(size: 11)).menuStyle(.borderlessButton).fixedSize().disabled(isLoading)
+          .dockFont(size: 11).menuStyle(.borderlessButton).fixedSize().disabled(isLoading)
           .accessibilityLabel("Result actions")
         if let content, !content.text.isEmpty {
           DockCopyButton(
@@ -131,19 +131,19 @@ struct EdgeResultPeek: View {
             }
             if let error {
               Text("Update failed. Still showing the loaded excerpt.")
-                .font(.system(size: 12, weight: .semibold))
-              Text(error).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(size: 12, weight: .semibold)
+              Text(error).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
             }
             ForEach(content.artifacts) { artifact in
               artifactRow(artifact)
             }
           } else if let error {
-            Text("Couldn’t load the reply").font(.system(size: 12, weight: .semibold))
-            Text(error).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+            Text("Couldn’t load the reply").dockFont(size: 12, weight: .semibold)
+            Text(error).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
             Button("Retry") { revision += 1 }.buttonStyle(.dockCompact)
           } else if !isLoading {
-            Text("No saved reply yet").font(.system(size: 12, weight: .semibold))
-            Text("Open the session to review its activity.").font(.system(size: 12))
+            Text("No saved reply yet").dockFont(size: 12, weight: .semibold)
+            Text("Open the session to review its activity.").dockFont(size: 12)
               .foregroundStyle(Color.dockSecondaryText)
           }
         }
@@ -164,7 +164,7 @@ struct EdgeResultPeek: View {
         Spacer()
         Button("Open session", action: openSession).buttonStyle(.dockCompact)
       }
-      .font(.system(size: 12, weight: .medium))
+      .dockFont(size: 12, weight: .medium)
       .padding(10)
     }
     .foregroundStyle(Color.dockPrimaryText)
@@ -227,7 +227,7 @@ struct EdgeResultPeek: View {
         Text("File not found").foregroundStyle(Color.dockSecondaryText)
       }
     }
-    .font(.system(size: 11))
+    .dockFont(size: 11)
     .padding(8)
     .background(
       Color.dockSurface4.opacity(0.5), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))

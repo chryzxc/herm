@@ -357,7 +357,7 @@ struct EdgeTaskPreview: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                    .dockSelectionFill(isHovered || isReplying, fallback: isHovered || isReplying ? Color.dockSurface4.opacity(0.6) : task.isCurrent ? Color.dockSurface4.opacity(0.35) : .clear)
+                    .dockSelectionFill(isHovered || isReplying, fallback: isHovered || isReplying ? Color.dockSurface4.opacity(0.6) : .clear)
             )
             .animation(.dockEase(duration: 0.16), value: isReplying)
         }
@@ -423,13 +423,13 @@ struct EdgeTaskPreview: View {
                 HStack(alignment: .top, spacing: 6) {
                     if case .sending = submission { ProgressView().controlSize(.mini) }
                     Text(submission.message)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(3)
                     if case .failed = submission {
                         Button("Retry") { answer(task, submission.choice) }
                             .buttonStyle(.dockCompact)
-                            .font(.system(size: 11, weight: .medium))
+                            .dockFont(size: 11, weight: .medium)
                             .disabled(!task.isStatusCurrent)
                             .accessibilityLabel("Retry answer to \(task.title)")
                     }
@@ -437,7 +437,7 @@ struct EdgeTaskPreview: View {
                        let request = task.attentionRequest, let quickModel {
                         Button("Check request") { quickModel.recheckAttention(request) }
                             .buttonStyle(.dockCompact)
-                            .font(.system(size: 11, weight: .medium))
+                            .dockFont(size: 11, weight: .medium)
                             .disabled(!task.isStatusCurrent)
                             .accessibilityLabel("Check whether request for \(task.title) is still pending")
                     }
@@ -498,7 +498,7 @@ struct EdgeTaskPreview: View {
             move: moveKeyboard, activate: {
                 if task.phase == .finished, task.kanbanTask == nil, let peek { peek(task) }
                 else { openTask(task) }
-            }))
+            }, isComposing: quickState?.composing == true && quickState?.quickReplyTask?.presentationID == task.presentationID))
         .help(task.kanbanTask != nil ? "Open this Kanban card" : task.phase == .finished && peek != nil ? "Preview saved reply" : "Open this session")
         .accessibilityLabel([task.title, task.isCurrent ? "current session" : nil, task.displayStatus, task.detail]
             .compactMap { $0 }.joined(separator: ". ") + (task.kanbanTask != nil ? ". Open Kanban card" : task.phase == .finished && peek != nil ? ". Preview saved reply" : ". Open session"))
@@ -543,7 +543,7 @@ struct EdgeTaskPreview: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(task.title)
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(size: 12, weight: .semibold)
                             .lineLimit(1)
                         Spacer(minLength: 6)
                         trailing(for: task, now: now)
@@ -554,12 +554,12 @@ struct EdgeTaskPreview: View {
                         let showStatus = !(task.tone == .working && task.detail?.isEmpty == false)
                         if showStatus {
                             Text(task.displayStatus)
-                                .font(.system(size: 11, weight: .medium))
+                                .dockFont(size: 11, weight: .medium)
                                 .foregroundStyle(task.tone == .attention ? task.tone.color : Color.dockSecondaryText)
                         }
                         if let detail = task.detail, !detail.isEmpty, task.choices.isEmpty {
                             (Text(showStatus ? " · " : "") + Self.detailText(detail))
-                                .font(.system(size: 11))
+                                .dockFont(size: 11)
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                     }
@@ -587,7 +587,7 @@ struct EdgeTaskPreview: View {
     private func trailing(for task: EdgeNotchTask, now: Date) -> some View {
         if task.isCurrent {
             Text("Current")
-                .font(.system(size: 11, weight: .medium))
+                .dockFont(size: 11, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.horizontal, 6)
                 .frame(height: 16)
@@ -595,7 +595,7 @@ struct EdgeTaskPreview: View {
                 .fixedSize()
         } else if let updatedAt = task.updatedAt {
             Text("\(EdgeQuotaPreview.shortDuration(now.timeIntervalSince(updatedAt))) ago")
-                .font(.system(size: 11).monospacedDigit())
+                .dockFont(size: 11).monospacedDigit()
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize()
         }
@@ -604,9 +604,9 @@ struct EdgeTaskPreview: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: DockSpacing.tight) {
             Text(emptyTitle)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
             Text(emptyDetail)
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -644,7 +644,7 @@ struct EdgeTaskPreview: View {
                 Button(action: quickMessage) {
                     HStack(spacing: 8) {
                         DockIcon(.chats, size: 13, color: .dockSecondaryText)
-                        Text("Quick message…").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                        Text("Quick message…").dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
@@ -708,12 +708,12 @@ struct EdgePreviewFooterButton: View {
             HStack(spacing: 8) {
                 DockIcon(icon, size: 13, color: isHovering ? .dockPrimaryText : .dockSecondaryText)
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(isHovering ? Color.dockPrimaryText : Color.dockSecondaryText)
                 if fillsWidth { Spacer(minLength: 8) }
                 if let shortcut {
                     Text(shortcut)
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .dockFont(size: 10, weight: .medium, design: .rounded)
                         .foregroundStyle(Color.dockMetadataText)
                         .padding(.horizontal, 5)
                         .frame(height: 16)

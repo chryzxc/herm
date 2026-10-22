@@ -104,7 +104,7 @@ struct EdgeIslandStatusStrip: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .buttonStyle(.dockHover)
-        .font(.system(size: 12, weight: .medium))
+        .dockFont(size: 12, weight: .medium)
         .foregroundStyle(Color.dockSecondaryText)
         .frame(height: height)
     }

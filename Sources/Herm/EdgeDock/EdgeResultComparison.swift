@@ -59,7 +59,7 @@ struct EdgeResultComparison: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Two observed reads").font(.system(size: 12, weight: .semibold))
+      Text("Two observed reads").dockFont(size: 12, weight: .semibold)
       readLabel("Previous", content: previous)
       readLabel("Current", content: current)
       if comparison.identical, addedOutputs.isEmpty, removedOutputs.isEmpty {
@@ -86,14 +86,14 @@ struct EdgeResultComparison: View {
       Text(
         "An unchanged path does not prove unchanged file contents. These reads may refer to different turns; supplied reply references identify them only when available."
       )
-      .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
-    }.font(.system(size: 12))
+      .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
+    }.dockFont(size: 12)
   }
   private func readLabel(_ label: String, content: EdgeResultContent) -> some View {
     Text(
       "\(label): \(content.loadedAt.formatted(date: .abbreviated, time: .standard))\(content.revisionID.map { " · reply \($0)" } ?? " · reply identity unavailable")"
     )
-    .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+    .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
   }
   private func marker(_ kind: ResultTextComparison.Line.Kind) -> String {
     switch kind {
@@ -112,7 +112,7 @@ struct EdgeResultComparison: View {
   private func color(_ kind: ResultTextComparison.Line.Kind) -> Color {
     switch kind {
     case .added: .dockSuccess
-    case .removed: .dockWarning
+    case .removed: .dockDestructive
     case .unchanged: .dockPrimaryText
     }
   }

@@ -50,49 +50,36 @@ struct EdgeQuickMessageView: View {
 
     /// Chat-style field that sits inside the task card; the card's reply toggle closes it.
     private var inlineBody: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            destination
-            attachments
-            capacityAdvisory
-            HStack(alignment: .bottom, spacing: 6) {
+        VStack(alignment: .leading, spacing: DockSpacing.control) {
+            VStack(alignment: .leading, spacing: 0) {
                 DockTextField("Reply…", text: $state.quickDraft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .lineLimit(1...4)
+                    .dockFont(.body)
+                    .lineLimit(2...4)
                     .focused($focused)
                     .disabled(state.quickSending || state.quickNeedsReview)
-                    .padding(.vertical, 6)
+                    .padding(DockSpacing.control)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel("Reply")
-                Button(action: submit) {
-                    Group {
-                        if state.quickSending {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            DockIcon(.arrowUp, size: 12, color: canSend ? .white : .dockMetadataText)
-                        }
-                    }
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(canSend ? Color.dockAccent : Color.dockSurface4))
-                }
-                .buttonStyle(.dockPress)
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!canSend)
-                .padding(.bottom, 3)
-                .help("Send reply (⌘↩)")
-                .accessibilityLabel("Send reply")
+                captureActions
+                    .padding(.horizontal, DockSpacing.tight)
+                    .padding(.bottom, DockSpacing.tight)
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 3)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockCanvas.opacity(0.6)))
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(focused ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: 0.5))
-            Text(state.quickResult ?? unavailableReason ?? "⌘↩ to send")
-                .font(.system(size: 11))
-                .foregroundStyle(unavailableReason != nil && state.quickResult == nil ? Color.dockSecondaryText : Color.dockMetadataText)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 2)
-            captureActions
+            .background { DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill() }
+            .overlay {
+                DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                    .stroke(focused ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight,
+                            lineWidth: DockLayout.hairline)
+            }
+            attachments
+            capacityAdvisory
+            if let status = state.quickPreparing > 0 ? "Preparing captured files…"
+                : state.quickResult ?? state.draftStore.error ?? unavailableReason {
+                Text(status)
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .foregroundStyle(Color.dockPrimaryText)
         .onAppear { focused = true }
@@ -106,8 +93,8 @@ struct EdgeQuickMessageView: View {
             HStack(alignment: .top, spacing: DockSpacing.control) {
                 VStack(alignment: .leading, spacing: DockSpacing.micro) {
                     Text(state.quickTarget == nil ? "Quick message" : "Reply")
-                        .font(.system(size: 12, weight: .semibold))
-                    destinationMenu(compact: false)
+                        .dockFont(size: 12, weight: .semibold)
+                    destinationMenu()
                 }
                 Spacer(minLength: DockSpacing.control)
                 Button("Back", icon: .arrowLeft, action: close).buttonStyle(.dockCompact)
@@ -115,7 +102,7 @@ struct EdgeQuickMessageView: View {
             VStack(alignment: .leading, spacing: 0) {
                 DockTextField("Write a message…", text: $state.quickDraft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(DockTypography.body)
+                    .dockFont(.body)
                     .lineLimit(3...5)
                     .focused($focused)
                     .disabled(state.quickSending || state.quickNeedsReview)
@@ -135,7 +122,7 @@ struct EdgeQuickMessageView: View {
                     attachments
                     capacityAdvisory
                     Text(state.quickPreparing > 0 ? "Preparing captured files…" : state.quickResult ?? state.draftStore.error ?? unavailableReason ?? "⌘ Return to send")
-                        .font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
+                        .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
@@ -183,9 +170,9 @@ struct EdgeQuickMessageView: View {
         return VStack(alignment: .leading, spacing: 2) {
             let profile = record.destination.profileID ?? "Launch profile"
             Text(state.quickTarget == nil ? "New session · \(profile)" : "Replying in \(record.destination.title) · \(profile)")
-                .font(.system(size: 12)).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(size: 12).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
             if let path = record.destination.projectPath {
-                Text("Project: \(URL(fileURLWithPath: path).lastPathComponent)").font(.system(size: 11)).lineLimit(1)
+                Text("Project: \(URL(fileURLWithPath: path).lastPathComponent)").dockFont(size: 11).lineLimit(1)
             }
         }
     }
@@ -198,18 +185,23 @@ struct EdgeQuickMessageView: View {
                 DockIcon(.warning, size: 14, color: QuotaWorkspaceView.color(for: reading.window.threshold))
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(reading.snapshot.displayName) · \(Int(reading.remaining.rounded()))% provider allowance left")
-                        .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)
-                    Text("Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
-                        .font(DockTypography.metadata).foregroundStyle(Color.dockSecondaryText)
+                    Text("\(reading.snapshot.displayName) · \(Int(reading.remaining.rounded()))% allowance left")
+                        .font(inline ? DockTypography.metadata : DockTypography.body)
+                        .foregroundStyle(Color.dockSecondaryText)
+                    if !inline {
+                        Text("Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
+                            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                    }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
+            .help("Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
+            .accessibilityHint("Sending is available. Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
         }
     }
 
-    private func destinationMenu(compact: Bool) -> some View {
+    private func destinationMenu() -> some View {
         DockMenu {
             Button("New session in \(model.agentDisplayName)") { state.switchQuickProfile(model.profileScopeID); state.composing = true }
             ForEach(state.bots) { bot in
@@ -220,13 +212,8 @@ struct EdgeQuickMessageView: View {
             }
         } label: {
             HStack(spacing: DockSpacing.tight) {
-                if compact {
-                    DockIcon(.arrowBendUpLeft, size: 14, color: Color.dockSecondaryText)
-                        .frame(width: 28, height: 28)
-                } else {
-                    destination
-                    DockIcon(.caretDown, size: 10, color: Color.dockSecondaryText)
-                }
+                destination
+                DockIcon(.caretDown, size: 10, color: Color.dockSecondaryText)
             }
             .contentShape(Rectangle())
         }
@@ -237,7 +224,6 @@ struct EdgeQuickMessageView: View {
 
     private var captureActions: some View {
         HStack(spacing: 8) {
-            if inline { destinationMenu(compact: true) }
             Button("Attach", icon: .paperclip) {
                 let picker = NSOpenPanel(); picker.canChooseDirectories = false; picker.allowsMultipleSelection = true
                 if picker.runModal() == .OK { state.stageQuickFiles(picker.urls) }
@@ -255,18 +241,20 @@ struct EdgeQuickMessageView: View {
                         }
                     }
                 }
-                if let session = state.captureRecord().destination.session {
-                    Button("Capacity & session actions…") { state.capacityTarget = session }
-                }
                 Button("Capture window") { state.captureWindow() }
-                Button("Search conversations…") { state.recallProfileID = state.quickProfileID; state.showingRecall = true }
-                Button("Choose project for new session…") {
-                    let picker = NSOpenPanel(); picker.canChooseFiles = false; picker.canChooseDirectories = true
-                    if picker.runModal() == .OK { state.setQuickProject(picker.url?.path) }
-                }.disabled(state.quickTarget != nil || state.quickCreatedSession != nil)
-                Button("Use profile directory") { state.setQuickProject(nil) }.disabled(state.quickTarget != nil)
-                Button("Review destination in Herm", action: review)
-                if state.quickNeedsReview { Button("I checked the session; allow retry…") { confirmingReview = true } }
+                if state.quickTarget == nil && state.quickCreatedSession == nil {
+                    Button("Choose project…") {
+                        let picker = NSOpenPanel(); picker.canChooseFiles = false; picker.canChooseDirectories = true
+                        if picker.runModal() == .OK { state.setQuickProject(picker.url?.path) }
+                    }
+                    if state.captureRecord().destination.projectPath != nil {
+                        Button("Use profile directory") { state.setQuickProject(nil) }
+                    }
+                }
+                if state.quickNeedsReview {
+                    Button("Review destination in Herm", action: review)
+                    Button("I checked the session; allow retry…") { confirmingReview = true }
+                }
                 Button("Discard draft…", role: .destructive) { confirmingDiscard = true }
             } label: {
                 DockIcon(.dotsThree, size: 14, color: Color.dockSecondaryText)
@@ -275,8 +263,26 @@ struct EdgeQuickMessageView: View {
             }
             .disabled(state.quickSending || state.quickPreparing > 0)
             .help("More message actions").accessibilityLabel("More message actions")
+            if inline {
+                Button(action: submit) {
+                    Group {
+                        if state.quickSending {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            DockIcon(.arrowUp, size: 14, color: DockThemeStyle.current.material == .glass ? .dockOnAccentText : .dockPrimaryText)
+                        }
+                    }
+                    .frame(width: 14, height: DockControlMetrics.compactHeight)
+                }
+                .buttonStyle(.dockPrimary)
+                .controlSize(.small)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!canSend)
+                .help("Send reply (⌘↩)")
+                .accessibilityLabel(state.quickSending ? "Sending reply" : "Send reply")
+            }
         }
-        .font(DockTypography.control).buttonStyle(.dockCompact).labelStyle(.titleAndIcon)
+        .dockFont(.control).buttonStyle(.dockCompact).labelStyle(.titleAndIcon)
     }
 
     private var attachments: some View {
@@ -287,7 +293,7 @@ struct EdgeQuickMessageView: View {
             ForEach(state.quickSources, id: \.self) { source in
                 Text(source).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
             }
-        }.font(.system(size: 11))
+        }.dockFont(size: 11)
     }
 
     private func review() {

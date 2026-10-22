@@ -15,7 +15,7 @@ struct EdgeSubagentSteering: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack {
-        Text("Steer a live subagent").font(.system(size: 12, weight: .semibold))
+        Text("Steer a live subagent").dockFont(size: 12, weight: .semibold)
         Spacer()
         Button("Back", action: back).buttonStyle(.dockCompact)
       }.padding(10).frame(height: 40)
@@ -42,16 +42,16 @@ struct EdgeSubagentSteering: View {
           if let status { Text(status).foregroundStyle(Color.dockSecondaryText) }
           Text(
             "Queued steering is not confirmed delivery. Review the parent session for delivered or missed steering."
-          ).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+          ).dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
           Button("Refresh live agents") { revision += 1 }.buttonStyle(.dockCompact).disabled(pending)
-        }.font(.system(size: 12)).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        }.dockFont(size: 12).padding(10).frame(maxWidth: .infinity, alignment: .leading)
       }
       Divider().overlay(Color.dockBorderLight)
       HStack {
         if pending { ProgressView().controlSize(.mini) }
         Spacer()
         Button("Open parent session", action: open).buttonStyle(.dockCompact)
-      }.font(.system(size: 12)).padding(10)
+      }.dockFont(size: 12).padding(10)
     }.foregroundStyle(Color.dockPrimaryText).task(id: revision) { await load() }
   }
   private func load() async {

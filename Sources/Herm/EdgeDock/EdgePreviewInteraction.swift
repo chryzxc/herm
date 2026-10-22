@@ -40,10 +40,11 @@ struct EdgeTaskKeyboardControl: ViewModifier {
   @FocusState.Binding var selection: EdgePreviewItemID?
   let move: (Int) -> KeyPress.Result
   let activate: () -> Void
+  var isComposing = false
 
   func body(content: Content) -> some View {
     content
-      .focusable()
+      .focusable(!isComposing)
       // The rounded overlay below is the selection cue; the system ring draws a square blue box.
       .focusEffectDisabled()
       .focused($selection, equals: identity)
@@ -64,6 +65,6 @@ struct EdgeTaskKeyboardControl: ViewModifier {
       .overlay(
         RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius)
           .stroke(Color.dockAccent, lineWidth: 1)
-          .opacity(selection == identity ? 1 : 0).allowsHitTesting(false))
+          .opacity(selection == identity && !isComposing ? 1 : 0).allowsHitTesting(false))
   }
 }

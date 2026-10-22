@@ -215,7 +215,7 @@ struct EdgeQuotaPreview: View {
                         .overlay(alignment: .leading) {
                             if let marker {
                                 RoundedRectangle(cornerRadius: 1)
-                                    .fill(Color.dockWarning)
+                                    .fill(Color.dockWarningFill)
                                     .frame(width: 2, height: 9)
                                     .offset(x: min(max(0, geometry.size.width * marker / 100), geometry.size.width - 2))
                             }
@@ -293,7 +293,7 @@ struct EdgeQuotaPreview: View {
                     // Daily budget line: a radial tick across the ring at the
                     // balance to keep after today's even-use budget.
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(Color.dockWarning)
+                        .fill(Color.dockWarningFill)
                         .frame(width: 2, height: 8)
                         .offset(y: -19)
                         .rotationEffect(.degrees(marker / 100 * 360))

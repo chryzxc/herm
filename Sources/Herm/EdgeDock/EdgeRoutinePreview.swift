@@ -15,14 +15,14 @@ struct EdgeRoutinePreview: View {
     GeometryReader { geometry in
       VStack(spacing: 0) {
         HStack {
-          Text(reference.job.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+          Text(reference.job.name).dockFont(size: 12, weight: .semibold).lineLimit(1)
           Spacer()
           Button("Back", action: back).buttonStyle(.dockCompact)
         }.padding(.horizontal, 10).frame(width: geometry.size.width, height: 40)
         Divider().overlay(Color.dockBorderLight)
         ScrollView {
           VStack(alignment: .leading, spacing: 10) {
-            Text("Profile: \(reference.profileID ?? "Launch profile")").font(.system(size: 11))
+            Text("Profile: \(reference.profileID ?? "Launch profile")").dockFont(size: 11)
               .foregroundStyle(Color.dockSecondaryText)
             Text(
               "Execution: \(reference.run?.status ?? reference.job.lastStatus ?? "No recorded run")"
@@ -82,14 +82,14 @@ struct EdgeRoutinePreview: View {
                 profileID: reference.profileID)
               openAutomation()
             }.buttonStyle(.dockCompact)
-          }.font(.system(size: 12)).padding(10).frame(
+          }.dockFont(size: 12).padding(10).frame(
             width: geometry.size.width, alignment: .leading)
         }.frame(width: geometry.size.width, height: max(0, geometry.size.height - 86))
         Divider().overlay(Color.dockBorderLight)
         HStack {
           Spacer()
           Button("Open Automation", action: openAutomation).buttonStyle(.dockCompact)
-        }.font(.system(size: 12)).padding(.horizontal, 10).frame(
+        }.dockFont(size: 12).padding(.horizontal, 10).frame(
           width: geometry.size.width, height: 44)
       }
       .frame(width: geometry.size.width, height: geometry.size.height)

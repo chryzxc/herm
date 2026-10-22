@@ -17,7 +17,7 @@ struct EdgeQuietMenu: View {
         Button("Review digest (\(coordinator.entries.count))", action: showDigest)
       }
     } label: {
-      Text(coordinator.quiet ? "Quiet on" : "Quiet").font(.system(size: 11, weight: .medium))
+      Text(coordinator.quiet ? "Quiet on" : "Quiet").dockFont(size: 11, weight: .medium)
     }
     .menuStyle(.borderlessButton).fixedSize()
     .accessibilityLabel(
@@ -34,7 +34,7 @@ struct EdgeDigestView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack {
-        Text("While quiet").font(.system(size: 12, weight: .semibold))
+        Text("While quiet").dockFont(size: 12, weight: .semibold)
         Spacer()
         Button("Back", action: back).buttonStyle(.dockCompact)
       }.padding(10).frame(height: 40)
@@ -42,8 +42,8 @@ struct EdgeDigestView: View {
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 6) {
           if coordinator.entries.isEmpty {
-            Text("No activity waiting").font(.system(size: 12, weight: .semibold))
-            Text("Completions and ordinary quota changes will appear here.").font(.system(size: 12))
+            Text("No activity waiting").dockFont(size: 12, weight: .semibold)
+            Text("Completions and ordinary quota changes will appear here.").dockFont(size: 12)
               .foregroundStyle(Color.dockSecondaryText)
           }
           ForEach(coordinator.entries.reversed()) { entry in
@@ -51,7 +51,7 @@ struct EdgeDigestView: View {
               open(entry)
             } label: {
               VStack(alignment: .leading, spacing: 3) {
-                Text(entry.kind.title).font(.system(size: 12, weight: .semibold))
+                Text(entry.kind.title).dockFont(size: 12, weight: .semibold)
                 Text(
                   entry.unavailable
                     ? (entry.canCheckCompletedSession
@@ -59,7 +59,7 @@ struct EdgeDigestView: View {
                       : "Source unavailable. Reconnect or open Herm.")
                     : "\(entry.profileID ?? "Launch profile") · \(entry.source == .repository ? URL(fileURLWithPath: entry.sourceID).lastPathComponent : entry.sourceID)"
                 )
-                .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+                .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
               }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
             }.buttonStyle(.dockHover).disabled(entry.unavailable && !entry.canCheckCompletedSession)
               .accessibilityLabel(
@@ -68,7 +68,7 @@ struct EdgeDigestView: View {
           }
           if coordinator.overflow > 0 {
             Text("\(coordinator.overflow) earlier updates. Open activity to review their sources.")
-              .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+              .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
           }
         }.padding(10)
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -77,7 +77,7 @@ struct EdgeDigestView: View {
         Button("Clear…") { confirmsClear = true }.buttonStyle(.dockCompact)
         Spacer()
         Button("Open Herm", action: openActivity).buttonStyle(.dockCompact)
-      }.font(.system(size: 12, weight: .medium)).padding(10)
+      }.dockFont(size: 12, weight: .medium).padding(10)
     }
     .foregroundStyle(Color.dockPrimaryText)
     .confirmationDialog("Clear this digest?", isPresented: $confirmsClear) {

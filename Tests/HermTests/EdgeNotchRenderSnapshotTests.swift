@@ -6,6 +6,71 @@ import Testing
 /// Opt-in native render for visual review, using the production notch view.
 @MainActor
 struct EdgeNotchRenderSnapshotTests {
+    @Test func renderQuickReplyStates() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["QUICK_REPLY_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        _ = DockThemeStore.shared
+        let previousTheme = DockThemeRuntime.current
+        let previousAppearance = NSApplication.shared.appearance
+        defer {
+            DockThemeRuntime.current = previousTheme
+            DockThemeRuntime.revision &+= 1
+            NSApplication.shared.appearance = previousAppearance
+        }
+        let model = DockModel(defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "snapshot")
+        let control = ControlCenterModel()
+        control.providerQuotas = [ProviderQuotaSnapshot(
+            provider: "codex", displayName: "Codex (Christian)", model: nil, updatedAt: .now,
+            windows: [ProviderQuotaWindow(id: "weekly", label: "Weekly", remainingPercent: 0,
+                remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)], safeDetail: nil)]
+        let session = HermesSession(id: "reply-snapshot", profileID: "default", title: "Audit tests and create draft PR",
+            preview: "", startedAt: nil, messageCount: 2, source: "herm")
+        let task = EdgeNotchTask(id: session.id, title: session.displayTitle, phase: .working,
+            statusLabel: "Working", detail: nil, updatedAt: .now.addingTimeInterval(-1920),
+            isCurrent: false, isStatusCurrent: true, session: session)
+        for theme in ["clean", "island", "glass", "mono", "eInk", "warmLight"] {
+            DockThemeRuntime.current = try #require(DockThemeID(rawValue: theme))
+            DockThemeRuntime.revision &+= 1
+            let dark = ["island", "glass", "mono"].contains(theme)
+            NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            for width in [CGFloat(320), CGFloat(368)] {
+                for mode in ["empty", "draft", "pending", "failed"] {
+                    let state = EdgeNotchState(store: QuickDraftStore())
+                    state.expanded = true
+                    state.tasks = [task]
+                    state.selectQuickTarget(session, task: task)
+                    state.composing = true
+                    state.quickDraft = mode == "empty" ? "" : "Please summarize the test failures before making changes."
+                    state.quickSending = mode == "pending"
+                    state.quickResult = mode == "failed" ? "The reply could not be sent. Your draft is saved; try again." : nil
+                    model.status = .idle
+                    let view = EdgeTaskPreview(tasks: state.tasks, isOffline: false,
+                        reply: { _ in }, quickState: state, quickModel: model, quotaControl: control,
+                        openDock: {}, openTask: { _ in })
+                        .frame(width: width, height: 288)
+                        .background(Color.dockCanvas)
+                        .dockThemedRoot()
+                        .environment(\.colorScheme, dark ? .dark : .light)
+                    let host = NSHostingView(rootView: view)
+                    host.frame = CGRect(x: 0, y: 0, width: width, height: 288)
+                    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    window.appearance = NSApplication.shared.appearance
+                    window.contentView = host
+                    window.orderFrontRegardless()
+                    defer { window.orderOut(nil) }
+                    for _ in 0..<3 {
+                        host.layoutSubtreeIfNeeded()
+                        try await Task.sleep(for: .milliseconds(50))
+                    }
+                    let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    try #require(rep.representation(using: .png, properties: [:])).write(
+                        to: URL(fileURLWithPath: directory).appendingPathComponent("reply-\(theme)-\(Int(width))-\(mode).png"))
+                }
+            }
+        }
+    }
+
     @Test func renderDisplayStyles() async throws {
         guard let dir = ProcessInfo.processInfo.environment["NOTCH_SNAPSHOT_DIR"] else { return }
         let activities: [(String, EdgeNotchActivity)] = [
