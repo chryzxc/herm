@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwiftUI
 @testable import Herm
 
 struct GitHubIssueTests {
@@ -57,6 +58,18 @@ struct GitHubIssueTests {
         #expect(model.repositoryScope == nil)
         #expect(model.visible.map(\.number) == [2, 1])
         #expect(model.selectedIssueID == newer.id)
+    }
+
+    @Test func issueStateIconsKeepUnknownStateDistinct() {
+        var issue = GitHubIssueRecord(repository: GitHubReferenceParser.repository("owner/repo")!, localPath: "", number: 1, title: "Fixture", body: "", state: "OPEN", author: "ada", assignee: nil, updatedAt: nil, webURL: nil)
+        #expect(issue.presentationIcon == .record)
+        #expect(issue.presentationColor == Color.dockInfo)
+        issue.state = "closed"
+        #expect(issue.presentationIcon == .checkCircle)
+        #expect(issue.presentationColor == Color.dockMerged)
+        issue.state = "unavailable"
+        #expect(issue.presentationIcon == .question)
+        #expect(issue.presentationColor == Color.dockSecondaryText)
     }
 
     @Test func issueRowMetadataUsesSentenceCaseAssignmentAndOmitsMissingTime() {

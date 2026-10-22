@@ -108,7 +108,7 @@ struct PullRequestDetailView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     } else if center.isInitialLoad {
         detailLoadingPane
-    } else { VStack(spacing: 12) { DockIcon(.gitPullRequest, size: 28, color: Color.dockMetadataText); Text(center.isRefreshing ? "Loading pull requests…" : "Select a pull request").font(.system(size: 15, weight: .medium)) }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity) }
+    } else { VStack(spacing: 12) { DockIcon(.gitPullRequest, size: 28, color: Color.dockMetadataText); Text(center.isRefreshing ? "Loading pull requests…" : "Select a pull request").dockFont(size: 15, weight: .medium) }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity) }
     }
 
     private var detailLoadingPane: some View {
@@ -128,7 +128,7 @@ struct PullRequestDetailView: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading pull request")
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     RepositoryShimmerBlock(width: nil, height: 28, cornerRadius: 7)
@@ -199,7 +199,7 @@ struct PullRequestDetailView: View {
                         Text(pr.headBranch).lineLimit(1)
                         if !center.filesAreCurrent(for: pr) {
                             Text("Diff may be outdated · refresh to review")
-                                .font(DockTypography.metadata).foregroundStyle(Color.dockWarning)
+                                .dockFont(.metadata).foregroundStyle(Color.dockWarning)
                                 .lineLimit(1)
                         }
                     }
@@ -209,7 +209,7 @@ struct PullRequestDetailView: View {
                     Spacer(minLength: 16)
                     codeToolbar(fileIDs: fileIDs)
                 }
-                .font(.system(size: 13, weight: .medium))
+                .dockFont(size: 13, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(.horizontal, 16)
                 .frame(height: 62)
@@ -223,45 +223,52 @@ struct PullRequestDetailView: View {
         return LazyVStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
+                    DockIcon(pr.presentationIcon, size: 16, color: pr.presentationColor).accessibilityHidden(true)
                     Text(pr.repository.id).lineLimit(1).truncationMode(.middle)
-                    Text("#\(pr.displayNumber)").foregroundStyle(Color.dockInfo)
+                    Text("#\(pr.displayNumber)").foregroundStyle(Color.dockMetadataText)
                     Spacer(minLength: 0)
                     statusPicker(pr).foregroundStyle(pr.presentationColor)
-                }.font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                }.dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 Text(pr.title)
-                    .font(DockTypography.pageTitle)
+                    .dockFont(.pageTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     authorAvatar(pr)
                     Text(pr.author).foregroundStyle(Color.dockPrimaryText)
                     if let updatedAt = pr.updatedAt { Text("· Updated \(pullRequestAge(updatedAt)) ago") }
-                }.font(DockTypography.body).foregroundStyle(Color.dockMetadataText)
+                }.dockFont(.body).foregroundStyle(Color.dockMetadataText)
                 Color.dockBorderLight.frame(height: DockLayout.hairline)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) { branchRoute(pr); Spacer(minLength: 8); changeTotals(pr) }
                     VStack(alignment: .leading, spacing: 10) { branchRoute(pr); changeTotals(pr) }
                 }
-                summaryDetailRow(icon: .users, title: "Reviewers", color: .dockInfo) {
+                summaryDetailRow(icon: .users, title: "Reviewers", color: .dockReview) {
                     Text(pr.requestedReviewers.isEmpty ? "No reviewers requested" : pr.requestedReviewers.joined(separator: ", "))
+                        .foregroundStyle(pr.requestedReviewers.isEmpty ? Color.dockSecondaryText : Color.dockReview)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }.font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).dockCard(padding: 16)
+            }.dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockCard(padding: 16)
 
             VStack(alignment: .leading, spacing: 8) {
                 DockSectionHeader(title: "Description", isExpanded: $descriptionExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
                 if descriptionExpanded {
                     if pr.body.isEmpty { Text("No description provided.").foregroundStyle(Color.dockMetadataText) }
-                    else { MarkdownMessageView(markdown: pr.body).frame(maxWidth: .infinity, alignment: .leading) }
+                    else { MarkdownMessageView(markdown: pr.body).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading) }
                 }
-            }.font(DockTypography.body).dockCard(padding: 12)
+            }.dockFont(.body).dockCard(padding: 12)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
-                PullRequestReadinessView(center: center, record: pr)
+                VStack(alignment: .leading, spacing: 12) {
+                    PullRequestReadinessView(center: center, record: pr, embedded: true)
+                    if pr.isOpenForWork || pr.mergedAt != nil {
+                        Divider().overlay(Color.dockBorderLight)
+                        PullRequestLandingView(record: pr, client: center.api.client, embedded: true, onLanded: { center.applyLandingSnapshot($0, for: pr) }) {
+                            Task { await center.refreshSelectedDetail() }
+                        }.id(pr.id)
+                    }
+                }.dockCard(padding: 12)
                 changeBreakdown(pr)
-            }
-            if pr.isOpenForWork || pr.mergedAt != nil {
-                PullRequestLandingView(record: pr, client: center.api.client, onLanded: { center.applyLandingSnapshot($0, for: pr) }) { Task { await center.refreshSelectedDetail() } }.id(pr.id)
             }
             GitHubMetadataView(reference: pr.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(pr.id)
 
@@ -281,11 +288,13 @@ struct PullRequestDetailView: View {
 
     private func branchRoute(_ pr: PullRequestRecord) -> some View {
         HStack(spacing: 8) {
-            DockIcon(.gitBranch, size: 14, color: .dockInfo)
-            Text(pr.baseBranch).foregroundStyle(Color.dockInfo)
+            DockIcon(.gitBranch, size: 14, color: .dockSecondaryText)
+            Text(pr.baseBranch).foregroundStyle(Color.dockPrimaryText)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
             DockIcon(.arrowLeft, size: 13, color: .dockMetadataText)
             Text(pr.headBranch).foregroundStyle(Color.dockSecondaryText)
-        }.font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+        }.dockFont(size: 12, design: .monospaced).lineLimit(1).truncationMode(.middle)
             .help("Merge \(pr.headBranch) into \(pr.baseBranch)")
     }
 
@@ -296,7 +305,7 @@ struct PullRequestDetailView: View {
             }.buttonStyle(.dockLink)
             if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
             if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
-        }.font(DockTypography.body).monospacedDigit().fixedSize()
+        }.dockFont(.body).monospacedDigit().fixedSize()
     }
 
     private func changeBreakdown(_ pr: PullRequestRecord) -> some View {
@@ -311,7 +320,7 @@ struct PullRequestDetailView: View {
         if pr.checks.isEmpty {
             HStack(spacing: 12) {
             Text(pr.checksAvailable ? "No checks reported by GitHub." : "Check status unavailable. Refresh to retry.")
-                    .font(.system(size: 13))
+                    .dockFont(size: 13)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
                 DockIconButton(icon: .arrowsClockwise, label: "Refresh checks", isBusy: center.isLoadingDetail, size: 24, style: DockThemePalette(theme: DockThemeRuntime.current)) {
@@ -334,7 +343,7 @@ struct PullRequestDetailView: View {
                         Text(checkPresentation(for: check))
                             .foregroundStyle(Color.dockMetadataText)
                     }
-                    .font(.system(size: 13, weight: .medium))
+                    .dockFont(size: 13, weight: .medium)
                     .padding(.horizontal, 12)
                     .frame(minHeight: 42)
                     if check.id != pr.checks.last?.id { Divider().padding(.leading, 47) }
@@ -349,14 +358,14 @@ struct PullRequestDetailView: View {
 
     private func commentComposer(_ pr: PullRequestRecord) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Leave a comment").font(.system(size: 12, weight: .semibold))
+            Text("Leave a comment").dockFont(size: 12, weight: .semibold)
             TextEditor(text: center.commentDraft(for: pr.id))
-                .font(DockTypography.body).scrollContentBackground(.hidden)
+                .dockFont(.body).scrollContentBackground(.hidden)
                 .padding(8).frame(minHeight: 104)
                 .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill())
                 .accessibilityLabel("Comment body")
             HStack {
-                Text("\(commentDraft.count)/10000").font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
+                Text("\(commentDraft.count)/10000").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 Spacer()
                 Button { mutationCoordinator.requestComment(commentDraft, for: pr) } label: {
                     GitHubActionLabel(title: center.isPostingComment ? "Posting…" : "Post comment", isBusy: center.isPostingComment)
@@ -372,7 +381,7 @@ struct PullRequestDetailView: View {
         if ["neutral", "skipped"].contains(conclusion) { return Color.dockMetadataText }
         if conclusion == "success" { return Color.dockSuccess }
         if ["failure", "cancelled", "timed_out", "action_required"].contains(conclusion) { return Color.dockDestructive }
-        return Color.dockWarning
+        return check.isPending ? DockStatusTone.working.color : Color.dockSecondaryText
     }
     private func checkPresentation(for check: GitHubCheckSummary) -> String {
         guard check.status.lowercased() == "completed" else {
@@ -418,7 +427,13 @@ struct PullRequestDetailView: View {
     private func statusPicker(_ pr: PullRequestRecord) -> some View {
         let current: PullRequestStatus = pr.state == "closed" ? .closed : (pr.isDraft ? .draft : .readyForReview)
         if pr.availableStatusActions.isEmpty || pr.viewerCanUpdate != true {
-            Text(pr.mergedAt != nil ? "Merged" : current.rawValue)
+            Label {
+                Text(pr.mergedAt != nil ? "Merged" : current.rawValue)
+            } icon: {
+                DockIcon(pr.presentationIcon, size: 12, color: pr.presentationColor)
+            }
+            .dockFont(.body).padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Capsule().fill(pr.presentationColor.opacity(0.12)))
         } else {
             DockMenu {
                 ForEach(pr.availableStatusActions) { status in
@@ -427,12 +442,13 @@ struct PullRequestDetailView: View {
             } label: {
                 HStack(spacing: 7) {
                     if center.updatingStatusID == pr.id { ProgressView().controlSize(.mini) }
+                    if center.updatingStatusID != pr.id { DockIcon(pr.presentationIcon, size: 12, color: pr.presentationColor) }
                     Text(center.updatingStatusID == pr.id ? "Updating status…" : current.rawValue)
                     DockIcon(.caretDown, size: 12, color: Color.dockSecondaryText)
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 28)
-                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
+                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(pr.presentationColor.opacity(0.12)))
             }
             .disabled(center.isUpdatingStatus)
             .help("Change pull request status")
@@ -498,10 +514,10 @@ struct PullRequestDetailView: View {
     private func codeState(title: String, detail: String, actionTitle: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .font(DockTypography.body)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
             Button(actionTitle) {
                 center.invalidateSelectedDetail()
@@ -587,10 +603,10 @@ struct PullRequestDetailView: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("Changed files")
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text("\(files.count)")
-                    .font(.system(size: 11, weight: .regular))
+                    .dockFont(size: 11, weight: .regular)
                     .foregroundStyle(Color.dockMetadataText)
                     .padding(.horizontal, 6)
                     .frame(height: 18)
@@ -635,15 +651,15 @@ struct PullRequestDetailView: View {
                 HStack(spacing: 8) {
                     DockIcon(expanded ? .caretDown : .caretRight, size: 13, color: Color.dockMetadataText)
                     PullRequestFileIcon(path: file.path, size: 15)
-                    Text(file.path).font(.system(size: 12, weight: .semibold, design: .monospaced)).lineLimit(1)
+                    Text(file.path).dockFont(size: 12, weight: .semibold, design: .monospaced).lineLimit(1)
                     Text(file.status.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .dockFont(size: 9, weight: .bold, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                     Spacer()
                     HStack(spacing: 8) {
                         Text("+\(file.additions)").foregroundStyle(Color.dockSuccess)
                         Text("−\(file.deletions)").foregroundStyle(Color.dockDestructive)
-                    }.font(.system(size: 11, design: .monospaced))
+                    }.dockFont(size: 11, design: .monospaced)
                 }
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 10)
@@ -665,9 +681,9 @@ struct PullRequestDetailView: View {
     private func fileContent(_ file: PullRequestFile) -> some View {
         if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), let patch = file.patch, isMarkdown(file.path) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("CHANGED LINES PREVIEW · OMITTED CONTENT IS NOT SHOWN").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                Text("CHANGED LINES PREVIEW · OMITTED CONTENT IS NOT SHOWN").dockFont(size: 9, weight: .bold, design: .monospaced).foregroundStyle(Color.dockMetadataText)
                 MarkdownMessageView(markdown: previewMarkdown(from: patch)).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.dockSurface2)
-                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).font(.system(size: 10, weight: .semibold))
+                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(size: 10, weight: .semibold)
             }.padding(8)
         } else if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), isImage(file.path), let url = file.webURL {
             VStack(alignment: .leading, spacing: 6) {
@@ -675,12 +691,12 @@ struct PullRequestDetailView: View {
                     if let image = phase.image { image.resizable().scaledToFit().frame(maxHeight: 420) }
                     else { Text("Image preview unavailable. Open on GitHub to view this file.").foregroundStyle(Color.dockMetadataText) }
                 }
-                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).font(.system(size: 10, weight: .semibold))
+                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(size: 10, weight: .semibold)
             }.padding(8)
         } else if let patch = file.patch {
             diffPatch(patch, file: file)
         } else {
-            HStack { Text("Binary or truncated patch").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText); Spacer(); if let url = file.webURL { Link("Open on GitHub", destination: url).buttonStyle(.dockLink) } }.padding(12)
+            HStack { Text("Binary or truncated patch").dockFont(size: 11).foregroundStyle(Color.dockMetadataText); Spacer(); if let url = file.webURL { Link("Open on GitHub", destination: url).buttonStyle(.dockLink) } }.padding(12)
         }
     }
 

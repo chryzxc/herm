@@ -27,8 +27,8 @@ enum PullRequestChangeCategory: String, CaseIterable, Identifiable, Sendable {
         case .code: .dockInfo
         case .tests: .dockSuccess
         case .mocks: .dockMerged
-        case .docs: .dockWarning
-        case .config: .dockAccent
+        case .docs: DockAccentColor.amber.color
+        case .config: DockAccentColor.cyan.color
         case .other: .dockSecondaryText
         }
     }
@@ -73,32 +73,30 @@ struct PullRequestChangeBreakdownView: View {
                         .foregroundStyle(Color.dockSecondaryText)
                 } else {
                     let groups = PullRequestChangeGroup.summarize(files)
+                    HStack(spacing: 8) {
+                        Text("\(files.count) \(files.count == 1 ? "file" : "files")\(expectedCount == files.count ? "" : " loaded")")
+                        Spacer(minLength: 0)
+                        Text("+\(groups.reduce(0) { $0 + $1.additions })").foregroundStyle(Color.dockSuccess)
+                        Text("−\(groups.reduce(0) { $0 + $1.deletions })").foregroundStyle(Color.dockDestructive)
+                    }.monospacedDigit()
+                    Divider().overlay(Color.dockBorderLight)
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                        GridRow {
-                            Text("By file path")
-                            Text("Files")
-                            Text("Added")
-                            Text("Removed")
-                        }.font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
                         ForEach(groups) { group in
                             GridRow {
                                 HStack(spacing: 6) {
                                     Circle().fill(group.category.color).frame(width: 6, height: 6)
                                     Text(group.category.rawValue)
+                                    Text("\(group.files)").foregroundStyle(Color.dockMetadataText)
+                                    Spacer(minLength: 0)
                                 }
-                                Text("\(group.files)").foregroundStyle(Color.dockSecondaryText)
                                 Text("+\(group.additions)").foregroundStyle(Color.dockSuccess)
+                                    .gridColumnAlignment(.trailing)
                                 Text("−\(group.deletions)").foregroundStyle(Color.dockDestructive)
+                                    .gridColumnAlignment(.trailing)
                             }
                         }
-                        Color.dockBorderLight.frame(height: DockLayout.hairline).gridCellColumns(4)
-                        GridRow {
-                            Text(expectedCount == files.count ? "Total" : "Loaded total")
-                            Text("\(files.count)")
-                            Text("+\(groups.reduce(0) { $0 + $1.additions })").foregroundStyle(Color.dockSuccess)
-                            Text("−\(groups.reduce(0) { $0 + $1.deletions })").foregroundStyle(Color.dockDestructive)
-                        }
                     }.monospacedDigit()
+                    Text("Grouped by file path").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     if expectedCount != files.count {
                         Text(expectedCount.map { "Showing \(files.count) of \($0) files. Totals cover loaded files only." } ?? "File coverage is unknown. Totals cover loaded files only.")
                             .foregroundStyle(Color.dockWarning).fixedSize(horizontal: false, vertical: true)
@@ -108,17 +106,50 @@ struct PullRequestChangeBreakdownView: View {
                 Text(isLoading ? "Loading file breakdown…" : "File breakdown unavailable or outdated. Refresh to retry.")
                     .foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
             }
-        }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)
+        }.dockFont(.body).foregroundStyle(Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 12)
     }
 }
 
 extension PullRequestRecord {
+    var presentationIcon: Ph {
+        if mergedAt != nil { return .gitMerge }
+        if state == "closed" { return .xCircle }
+        if isDraft { return .pencilSimple }
+        return .gitPullRequest
+    }
+
+    /// Leading mark is lifecycle only; readiness stays in its own labeled badge.
     var presentationColor: Color {
         if mergedAt != nil { return .dockMerged }
         if state == "closed" { return .dockDestructive }
         if isDraft { return .dockSecondaryText }
-        if mergeability == .conflicting || checks.contains(where: \.isFailure) || reviewDecision == "CHANGES_REQUESTED" { return .dockWarning }
-        return .dockInfo
+        return .dockSuccess
+    }
+}
+
+extension PullRequestRecord {
+    var reviewColor: Color {
+        switch reviewDecision {
+        case "APPROVED": .dockSuccess
+        case "CHANGES_REQUESTED": DockAccentColor.pink.color
+        case "REVIEW_REQUIRED": DockCategoryTone.review.color
+        default: .dockSecondaryText
+        }
+    }
+
+    /// Keep precedence identical to readinessLabel, including terminal lifecycle.
+    var readinessColor: Color {
+        if mergedAt != nil { return .dockMerged }
+        if state == "closed" { return .dockDestructive }
+        if mergeability == .conflicting { return .dockWarning }
+        if isDraft { return .dockSecondaryText }
+        if checks.contains(where: \.isFailure) { return .dockDestructive }
+        if reviewDecision == "CHANGES_REQUESTED" { return reviewColor }
+        if checks.contains(where: \.isPending) { return DockStatusTone.working.color }
+        guard checksAvailable else { return .dockSecondaryText }
+        if reviewDecision == "REVIEW_REQUIRED" { return reviewColor }
+        if !checks.isEmpty && !checks.allSatisfy(\.isSuccess) { return .dockSecondaryText }
+        return checks.isEmpty ? .dockSecondaryText : .dockSuccess
     }
 }

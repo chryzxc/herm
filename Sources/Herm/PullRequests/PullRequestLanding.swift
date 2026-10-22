@@ -118,6 +118,7 @@ struct GitHubLandingService: Sendable {
 struct PullRequestLandingView: View {
     let record: PullRequestRecord
     let client: GitHubClient
+    var embedded = false
     var onLanded: ((GitHubLandingSnapshot) -> Void)? = nil
     let onChanged: () -> Void
     @State private var snapshot: GitHubLandingSnapshot?
@@ -132,6 +133,11 @@ struct PullRequestLandingView: View {
     @State private var result: String?
     private var service: GitHubLandingService { GitHubLandingService(client: client) }
     var body: some View {
+        Group {
+            if embedded { content } else { content.dockCard(padding: 12) }
+        }
+    }
+    private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
             DockSectionHeader(title: record.mergedAt != nil ? "Pull request merged" : "Merge pull request", style: DockThemePalette(theme: DockThemeRuntime.current)) {
                 if record.mergedAt == nil {
@@ -154,7 +160,7 @@ struct PullRequestLandingView: View {
                                     Text(method.title).fontWeight(.regular)
                                     DockIcon(.caretDown, size: 12, color: Color.dockSecondaryText)
                                 }
-                                .font(DockTypography.body).padding(.horizontal, 10).frame(height: 28)
+                                .dockFont(.body).padding(.horizontal, 10).frame(height: 28)
                                 .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
                             }
                             .disabled(busy || loading).help("Merge method").accessibilityLabel("Merge method: \(method.title)")
@@ -172,7 +178,6 @@ struct PullRequestLandingView: View {
                 let warnings = snapshot.checkWarnings(for: record)
                 if !blockers.isEmpty || !warnings.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Divider().overlay(Color.dockBorderLight)
                         ForEach(blockers, id: \.self) { blocker in
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 DockIcon(.warningCircle, size: 13, color: Color.dockWarning)
@@ -192,14 +197,17 @@ struct PullRequestLandingView: View {
                                 DockIcon(.arrowSquareOut, size: 12, color: Color.dockSecondaryText)
                             }
                         }
-                        .buttonStyle(.dockCompact)
+                        .buttonStyle(.dockLink)
                         .controlSize(.small)
                     }.foregroundStyle(Color.dockSecondaryText)
                 }
             }
+            if record.mergedAt == nil, snapshot == nil, error == nil {
+                Text("Loading merge requirements…").foregroundStyle(Color.dockSecondaryText)
+            }
             if record.mergedAt == nil, let result { Text(result).foregroundStyle(Color.dockSecondaryText) }
             if let error { Text(error).foregroundStyle(Color.dockWarning) }
-        }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).dockCard(padding: 12)
+        }.dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         .task(id: "\(record.id):\(record.headRevision ?? ""): \(record.refreshedAt?.timeIntervalSince1970 ?? 0)") { await load() }
         .confirmationDialog(pending?.rawValue ?? "Confirm GitHub action", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil; confirmed = nil } }), titleVisibility: .visible, presenting: confirmed.flatMap { snapshot in pending.map { ($0, snapshot, method) } }) { request in
             Button(request.0.rawValue) {

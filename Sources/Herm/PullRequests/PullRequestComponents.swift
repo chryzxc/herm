@@ -7,46 +7,54 @@ struct PullRequestRowView: View {
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 9) {
-                PullRequestBranchIcon(status: iconStatus).padding(.top, -1)
-                (Text("#\(pullRequest.displayNumber) ").foregroundStyle(Color.dockMetadataText) + Text(pullRequest.title).foregroundStyle(Color.dockPrimaryText))
-                    .font(.system(size: 13, weight: .semibold))
+        HStack(alignment: .top, spacing: 10) {
+            DockIcon(pullRequest.presentationIcon, size: 16, color: pullRequest.presentationColor)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(pullRequest.presentationColor.opacity(0.12)))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    Text(pullRequest.repository.id).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Text("#\(pullRequest.displayNumber)").foregroundStyle(Color.dockMetadataText).fixedSize()
+                }.dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                Text(pullRequest.title)
+                    .dockFont(size: 12, weight: .semibold)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
-            }
-            Text(pullRequest.headBranch == "unknown" ? pullRequest.repository.id : "\(pullRequest.repository.id) · \(pullRequest.headBranch)")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            HStack {
-                Text(pullRequest.readinessLabel)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(pullRequest.presentationColor)
-                    .padding(.horizontal, 6)
-                    .frame(height: 16)
-                    .background(Capsule().fill((pullRequest.presentationColor.opacity(0.12))))
-                Spacer()
-                if let adds = pullRequest.additions, let dels = pullRequest.deletions {
-                    HStack(spacing: 8) {
-                        Text("+\(adds)").foregroundStyle(Color.dockSuccess)
-                        Text("−\(dels)").foregroundStyle(Color.dockDestructive)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if pullRequest.headBranch != "unknown" {
+                    Text(pullRequest.headBranch)
+                        .dockFont(.machineMetadata)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                HStack(spacing: 8) {
+                    Text(pullRequest.readinessLabel)
+                        .dockFont(.metadata)
+                        .foregroundStyle(pullRequest.readinessColor)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(pullRequest.readinessColor.opacity(0.12)))
+                    Spacer(minLength: 0)
+                    if let adds = pullRequest.additions, let dels = pullRequest.deletions {
+                        HStack(spacing: 6) {
+                            Text("+\(adds)").foregroundStyle(Color.dockSuccess)
+                            Text("−\(dels)").foregroundStyle(Color.dockDestructive)
+                        }.dockFont(.machineMetadata).fixedSize()
                     }
-                    .font(.system(size: 10, design: .monospaced))
                 }
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.16) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
+        .padding(.vertical, 12)
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius + 1).dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Capsule().fill(Color.dockAccent).frame(width: 3).padding(.vertical, 12)
+            }
+        }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-    }
-
-    private var iconStatus: PullRequestBranchIcon.Status {
-        guard !pullRequest.isDraft else { return .draft }
-        if pullRequest.mergeability == .conflicting || pullRequest.checks.contains(where: \.isFailure) || pullRequest.reviewDecision == "CHANGES_REQUESTED" { return .failure }
-        return pullRequest.checksAvailable && !pullRequest.checks.isEmpty && pullRequest.checks.allSatisfy(\.isSuccess) ? .success : .neutral
     }
 }
 
@@ -59,7 +67,7 @@ struct PullRequestDiffStat: View {
             if additions > 0 { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
             if deletions > 0 { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
         }
-        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .dockFont(size: 10, weight: .medium, design: .monospaced)
         .fixedSize()
     }
 }
@@ -76,7 +84,7 @@ struct PullRequestFileTreeRow: View {
             HStack(spacing: 7) {
                 PullRequestFileIcon(path: node.isDirectory ? nil : node.title, size: 14)
                 Text(node.title)
-                    .font(.system(size: 12, weight: node.isDirectory ? .regular : .medium))
+                    .dockFont(size: 12, weight: node.isDirectory ? .regular : .medium)
                     .foregroundStyle(isSelected ? Color.dockPrimaryText : (node.isDirectory ? Color.dockMetadataText : Color.dockSecondaryText))
                     .lineLimit(1)
                     .truncationMode(.middle)

@@ -38,48 +38,47 @@ struct IssueRowView: View {
             viewer: viewer
         )
         HStack(alignment: .top, spacing: 10) {
-            DockIcon(.record, size: 14, color: issue.isOpen ? DockStatusTone.complete.color : Color.dockMetadataText)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 5) {
+            DockIcon(issue.presentationIcon, size: 16, color: issue.presentationColor)
+                .frame(width: 30, height: 30)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text("#\(issue.displayNumber)").foregroundStyle(Color.dockMetadataText)
+                    Spacer(minLength: 4)
+                    if let updated = metadata.updated { Text(updated).foregroundStyle(Color.dockMetadataText) }
+                }.dockFont(.machineMetadata)
                 Text(issue.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockPrimaryText.opacity(0.9))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 5) {
-                    Text("#\(issue.displayNumber)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    Text("·")
+                    .dockFont(size: 12, weight: .semibold)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(2).multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    Text(issue.state.capitalized)
+                        .foregroundStyle(Color.dockSecondaryText)
                     Text(metadata.assignment)
-                    if let updated = metadata.updated {
-                        Text("·")
-                        Text(updated)
-                    }
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1)
+                        .foregroundStyle(issue.assignees.isEmpty ? Color.dockSecondaryText : Color.dockReview)
+                        .lineLimit(1).truncationMode(.tail)
+                }.dockFont(.metadata)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(Color.dockAccent.opacity(isSelected ? 0.35 : 0), lineWidth: 0.5)
-        )
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius + 1)
+            .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear)))
+        .overlay(alignment: .leading) {
+            if isSelected { Capsule().fill(Color.dockAccent).frame(width: 3).padding(.vertical, 12) }
+        }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
     }
 }
 
 extension GitHubIssueRecord {
+    var presentationColor: Color {
+        if isOpen { return .dockInfo }
+        return state.lowercased() == "closed" ? .dockMerged : .dockSecondaryText
+    }
+    var presentationIcon: Ph { isOpen ? .record : (state.lowercased() == "closed" ? .checkCircle : .question) }
     var isOpen: Bool { state.caseInsensitiveCompare("open") == .orderedSame }
 }
 

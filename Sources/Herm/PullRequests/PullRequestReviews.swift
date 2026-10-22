@@ -239,12 +239,12 @@ struct PullRequestReviewView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ViewThatFits(in: .horizontal) {
                         HStack {
-                            Text("Review threads").font(.system(size: 12, weight: .semibold))
+                            Text("Review threads").dockFont(size: 12, weight: .semibold)
                             Spacer(minLength: 12)
                             threadControls
                         }
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Review threads").font(.system(size: 12, weight: .semibold))
+                            Text("Review threads").dockFont(size: 12, weight: .semibold)
                             threadControls
                         }
                     }
@@ -257,7 +257,7 @@ struct PullRequestReviewView: View {
                                 .foregroundStyle(Color.dockSecondaryText)
                         } else if model.threads.filter({ !unresolvedOnly || !$0.resolved }).isEmpty {
                             Text(unresolvedOnly ? "No unresolved threads" : "No review threads")
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                             Text(unresolvedOnly && !model.threads.isEmpty
                                 ? "Turn off Unresolved only to see resolved discussions."
                                 : "Comments on changed lines will appear here. Add one from the Code tab.")
@@ -269,7 +269,7 @@ struct PullRequestReviewView: View {
                 }
                 Color.dockBorderLight.frame(height: DockLayout.hairline)
                 HStack {
-                    Text("Your review").font(.system(size: 12, weight: .semibold))
+                    Text("Your review").dockFont(size: 12, weight: .semibold)
                     Spacer(minLength: 12)
                     Picker("Review type", selection: $model.event) {
                         ForEach(GitHubReviewEvent.allCases) { event in Text(event.title).tag(event) }
@@ -280,8 +280,8 @@ struct PullRequestReviewView: View {
                 ForEach(model.pendingComments) { comment in
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("\(comment.target.path):\(comment.target.line)").font(.system(size: 12, weight: .semibold))
-                            Text(comment.body).font(DockTypography.body).textSelection(.enabled)
+                            Text("\(comment.target.path):\(comment.target.line)").dockFont(size: 12, weight: .semibold)
+                            Text(comment.body).dockFont(.body).textSelection(.enabled)
                             if comment.target.revision != record.headRevision { Text("Source revision changed").foregroundStyle(Color.dockWarning) }
                         }
                         Spacer()
@@ -297,14 +297,14 @@ struct PullRequestReviewView: View {
                 GitHubMarkdownDraft(text: $model.draft, placeholder: "Leave feedback on these changes…", minimumHeight: 160)
                     .disabled(model.busy || model.uncertainSubmission)
                 HStack {
-                    Text("Markdown supported").font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
+                    Text("Markdown supported").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     Spacer(minLength: 12)
                     Button { confirm = true } label: { GitHubActionLabel(title: model.pendingAction == .submit ? "Submitting…" : "Review and submit", isBusy: model.pendingAction == .submit) }.buttonStyle(.dockPrimary).controlSize(.small)
                     .disabled(model.busy || model.uncertainSubmission || viewer == nil || record.state != "open" || record.headRevision == nil || model.draft.count > 10_000 || (model.event != .approve && model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingComments.isEmpty) || (model.event != .comment && viewer?.caseInsensitiveCompare(record.author) == .orderedSame))
                 }
             }.padding(20)
         }
-        .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)
+        .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         .confirmationDialog("Allow a deliberate retry?", isPresented: $confirmRetry) {
             Button("I checked; allow retry") { model.allowReviewRetry() }
             Button("Cancel", role: .cancel) {}
@@ -354,7 +354,7 @@ struct PullRequestThreadListView: View {
                             if let url = thread.comments.first?.url { Link("GitHub", destination: url).buttonStyle(.dockLink) }
                         }
                     }
-                }.font(DockTypography.body).dockCard(padding: 10)
+                }.dockFont(.body).dockCard(padding: 10)
             }
             if let error = model.error, path != nil { Text(error).foregroundStyle(Color.dockWarning) }
         }
@@ -382,7 +382,7 @@ struct GitHubMarkdownDraft: View {
                 DockTabButton(title: "Preview", isSelected: preview) { preview = true }
                 Spacer()
                 Text("\(text.count.formatted()) / 10,000")
-                    .font(DockTypography.metadata).monospacedDigit()
+                    .dockFont(.metadata).monospacedDigit()
                     .foregroundStyle(text.count > 10_000 ? Color.dockWarning : Color.dockMetadataText)
             }
             .padding(8)
@@ -390,7 +390,7 @@ struct GitHubMarkdownDraft: View {
             Group {
                 if preview {
                     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("Nothing to preview yet.").font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                        Text("Nothing to preview yet.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                             .padding(12).frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .topLeading)
                     } else {
                         MarkdownMessageView(markdown: text).padding(12)
@@ -398,12 +398,12 @@ struct GitHubMarkdownDraft: View {
                     }
                 } else {
                     TextEditor(text: $text)
-                        .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)
+                        .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
                         .scrollContentBackground(.hidden).padding(8)
                         .frame(minHeight: minimumHeight)
                         .overlay(alignment: .topLeading) {
                             if text.isEmpty {
-                                Text(placeholder).font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                                Text(placeholder).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                                     .padding(.horizontal, 13).padding(.vertical, 8)
                                     .allowsHitTesting(false).accessibilityHidden(true)
                             }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwiftUI
 @testable import Herm
 
 struct PullRequestPresentationTests {
@@ -25,6 +26,64 @@ struct PullRequestPresentationTests {
             pr.baseRevision = nil
             #expect(!pr.canAnalyzeConflicts)
         }
+    }
+
+    @Test func lifecycleIconsStayIndependentOfReadiness() {
+        var pr = record()
+        #expect(pr.presentationIcon == .gitPullRequest)
+        pr.checks = [.init(id: "1", name: "Build", status: "completed", conclusion: "failure", detailsURL: nil)]
+        #expect(pr.presentationIcon == .gitPullRequest)
+        pr.isDraft = true
+        #expect(pr.presentationIcon == .pencilSimple)
+        pr.state = "closed"
+        #expect(pr.presentationIcon == .xCircle)
+        pr.mergedAt = .now
+        #expect(pr.presentationIcon == .gitMerge)
+    }
+
+    @Test func lifecycleAndReadinessHaveSeparateColors() {
+        var pr = record()
+        #expect(pr.presentationColor == Color.dockSuccess)
+        #expect(pr.readinessColor == Color.dockSecondaryText)
+        pr.isDraft = true
+        #expect(pr.presentationColor == Color.dockSecondaryText)
+        #expect(pr.readinessColor == Color.dockSecondaryText)
+        pr.mergeability = .conflicting
+        #expect(pr.readinessLabel == "Conflicts")
+        #expect(pr.presentationColor == Color.dockSecondaryText)
+        #expect(pr.readinessColor == Color.dockWarning)
+        pr.isDraft = false
+        pr.mergeability = .mergeable
+        pr.checks = [.init(id: "1", name: "Tests", status: "completed", conclusion: "failure", detailsURL: nil)]
+        #expect(pr.presentationColor == Color.dockSuccess)
+        #expect(pr.readinessColor == Color.dockDestructive)
+        pr.state = "closed"
+        #expect(pr.presentationColor == Color.dockDestructive)
+        #expect(pr.readinessColor == Color.dockDestructive)
+        pr.mergedAt = .now
+        #expect(pr.presentationColor == Color.dockMerged)
+        #expect(pr.readinessColor == Color.dockMerged)
+    }
+
+    @Test func readinessDistinguishesReviewWorkFromWarningsAndUnknowns() {
+        var pr = record()
+        pr.checksAvailable = true
+        pr.reviewDecision = "CHANGES_REQUESTED"
+        #expect(pr.readinessColor == DockAccentColor.pink.color)
+        #expect(pr.reviewColor == DockAccentColor.pink.color)
+        pr.reviewDecision = "REVIEW_REQUIRED"
+        #expect(pr.readinessColor == DockCategoryTone.review.color)
+        #expect(pr.reviewColor == DockCategoryTone.review.color)
+        pr.reviewDecision = nil
+        #expect(pr.readinessLabel == "No checks")
+        #expect(pr.readinessColor == Color.dockSecondaryText)
+        pr.checks = [.init(id: "1", name: "Tests", status: "completed", conclusion: "success", detailsURL: nil)]
+        #expect(pr.readinessColor == Color.dockSuccess)
+    }
+
+    @Test func changeCategoriesDoNotUseWarningOrInteractionColors() {
+        #expect(PullRequestChangeCategory.docs.color == DockAccentColor.amber.color)
+        #expect(PullRequestChangeCategory.config.color == DockAccentColor.cyan.color)
     }
 
     @Test func lifecycleMenusOfferOnlyApplicableTransitions() {

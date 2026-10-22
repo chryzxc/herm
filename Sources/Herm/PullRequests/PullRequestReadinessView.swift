@@ -3,6 +3,7 @@ import SwiftUI
 struct PullRequestReadinessView: View {
     @ObservedObject var center: PullRequestCenterModel
     let record: PullRequestRecord
+    var embedded = false
     @State private var analysis: GitHubConflictAnalysis?
     @State private var analysisTask: Task<Void, Never>?
     @State private var analyzing = false
@@ -11,19 +12,24 @@ struct PullRequestReadinessView: View {
     @Environment(\.chatContextRouter) private var chatRouter
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     var body: some View {
+        Group {
+            if embedded { content } else { content.dockCard(padding: 12) }
+        }
+    }
+    private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
             DockSectionHeader(title: "Readiness", style: style) {
                 if let date = record.refreshedAt {
                     Text("Updated \(HumanDateFormatting.relative(date))")
-                        .font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1).fixedSize()
                         .help(date.formatted(date: .abbreviated, time: .standard))
                 }
                 DockIconButton(icon: .arrowsClockwise, label: "Refresh readiness", isBusy: center.isLoadingDetail(for: record.id), size: 24, style: style) { Task { await center.refreshSelectedDetail() } }
             }
             fact("State", record.mergedAt != nil ? "Merged" : (record.state == "closed" ? "Closed" : (record.isDraft ? "Draft · not ready for review" : "Open")), color: record.presentationColor)
-            fact("Checks", record.checksSummary)
-            fact("Review", reviewLabel)
+            fact("Checks", record.checksSummary, color: record.checks.contains(where: \.isFailure) ? .dockDestructive : .dockPrimaryText)
+            fact("Review", reviewLabel, color: record.reviewColor)
             fact("Merge", mergeLabel, warning: record.isOpenForWork && record.mergeability == .conflicting)
             if let warning = record.detailWarning { Text(warning).foregroundStyle(Color.dockWarning) }
             if record.isOpenForWork && (record.mergeability == .conflicting || analyzing) {
@@ -56,22 +62,22 @@ struct PullRequestReadinessView: View {
                     Text("Conflict analysis is outdated. Analyze the current revisions again.").foregroundStyle(Color.dockWarning)
                 } else {
                     Text("Local analysis · \(String(analysis.headRevision.prefix(7))) into \(String(analysis.baseRevision.prefix(7)))")
-                        .font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     if analysis.hasConflicts {
-                        ForEach(analysis.files, id: \.self) { path in Text(path).font(.system(size: 12, design: .monospaced)).textSelection(.enabled) }
+                        ForEach(analysis.files, id: \.self) { path in Text(path).dockFont(size: 12, design: .monospaced).textSelection(.enabled) }
                         if !analysis.complete { Text("Git reported a conflict without a complete file list. Open on GitHub for details.").foregroundStyle(Color.dockWarning) }
                     } else { Text("No conflicts found for these revisions. GitHub readiness is shown separately.").foregroundStyle(Color.dockSecondaryText) }
                 }
             }
             if let error { Text(error).foregroundStyle(Color.dockWarning) }
         }
-        .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent).dockCard(padding: 12)
+        .dockFont(.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
         .onChange(of: record.id) { _, _ in analysisTask?.cancel(); analysis = nil; error = nil }
         .onDisappear { analysisTask?.cancel() }
     }
     private func fact(_ title: String, _ value: String, warning: Bool = false, color: Color = .dockPrimaryText) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(title).foregroundStyle(Color.dockMetadataText).frame(width: 104, alignment: .leading)
+            Text(title).foregroundStyle(Color.dockMetadataText).frame(width: 64, alignment: .leading)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if warning { DockIcon(.warningCircle, size: 13, color: Color.dockWarning).accessibilityHidden(true) }
                 Text(value).fontWeight(.regular).textSelection(.enabled)

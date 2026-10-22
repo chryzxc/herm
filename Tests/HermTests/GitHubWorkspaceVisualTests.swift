@@ -32,6 +32,9 @@ private struct WorkspaceVisualTransport: GitHubIssueTransport {
                 ["filename": path, "status": "modified", "additions": index == 0 ? 100 : 2, "deletions": index == 0 ? 18 : 1] as [String: Any]
             }
         }
+        else if path.hasSuffix("/timeline") {
+            payload = [1, 2].map { ["id": $0, "event": "labeled", "actor": ["login": "ada"], "label": ["name": $0 == 1 ? "enhancement" : "type: feature"], "created_at": "2026-10-21T00:00:00Z"] as [String: Any] }
+        }
         else if path.hasSuffix("check-runs") { payload = ["check_runs": cleanReadiness ? [["id": 1, "name": "Build", "status": "completed", "conclusion": "failure"]] : []] }
         else { payload = [] }
         return (try JSONSerialization.data(withJSONObject: payload), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
@@ -106,6 +109,27 @@ struct GitHubWorkspaceVisualTests {
         #expect(dragFrame.maxX < 990) // Trailing actions also retain their own hit areas.
         #expect(dragFrame.height <= 52)
     }
+    private func closedIssueFixture(_ issue: GitHubIssueRecord) -> GitHubIssueRecord {
+        var row = issue
+        row.state = "closed"
+        row.assignees = ["ada"]
+        return row
+    }
+
+    private func rowFixture(_ record: PullRequestRecord, index: Int) -> PullRequestRecord {
+        var row = record
+        row.isDraft = index == 0
+        row.checks = []
+        row.mergeability = index == 1 ? .conflicting : .mergeable
+        row.reviewDecision = index == 1 ? "CHANGES_REQUESTED" : "REVIEW_REQUIRED"
+        row.mergedAt = index == 3 ? Date(timeIntervalSince1970: 1) : nil
+        row.state = index == 3 || index == 5 ? "closed" : "open"
+        if index == 4 {
+            row.checks = [.init(id: "failed", name: "Tests", status: "completed", conclusion: "failure", detailsURL: nil)]
+        }
+        return row
+    }
+
     @Test func renderWorkspaceThemes() async throws {
         guard let directory = ProcessInfo.processInfo.environment["GITHUB_WORKSPACE_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
@@ -121,22 +145,57 @@ struct GitHubWorkspaceVisualTests {
         await issues.open(.init(repository: repo, number: 1, kind: .issue))
         await issues.loadSelectedDetail()
         let prOnly = ProcessInfo.processInfo.environment["GITHUB_PR_ONLY"] == "1"
-        for theme: DockThemeID in (prOnly ? [.clean, .glass, .mono, .notebook, .slate, .dusk] : [.notebook, .terminal, .glass, .mono]) {
-            let dark = theme != .notebook
+        let issuesOnly = ProcessInfo.processInfo.environment["GITHUB_ISSUE_ONLY"] == "1"
+        let conversationOnly = ProcessInfo.processInfo.environment["GITHUB_CONVERSATION_SNAPSHOT"] == "1"
+        if let issue = issues.selected { await issues.conversation(for: issue).refresh() }
+        let colorAudit = ProcessInfo.processInfo.environment["GITHUB_COLOR_AUDIT"] == "1"
+        let variants: [(DockThemeID, Bool)] = colorAudit
+            ? [(.clean, false), (.clean, true), (.glass, false), (.glass, true), (.mono, true), (.eInk, false), (.dusk, true), (.warmLight, false)]
+            : ((prOnly || issuesOnly) ? [.clean, .glass, .mono, .notebook, .slate, .dusk] : [.notebook, .terminal, .glass, .mono])
+                .map { ($0, $0 != .notebook && !(issuesOnly && $0 == .clean)) }
+        for (theme, dark) in variants {
             DockThemeRuntime.current = theme; DockThemeRuntime.revision &+= 1
             for width: CGFloat in (panels ? [380, 760] : [540, 1000]) {
                 let root = Group {
-                    if panels, let record = pr.selected {
+                    if conversationOnly, let issue = issues.selected {
+                        ScrollView { GitHubConversationView(model: issues.conversation(for: issue)).padding(24) }
+                    } else if issuesOnly {
+                        HStack(spacing: 1) {
+                            if width > 600, let issue = issues.selected {
+                                VStack(spacing: 4) {
+                                    IssueRowView(issue: issue, isSelected: true, viewer: "ada")
+                                    IssueRowView(issue: closedIssueFixture(issue), isSelected: false, viewer: "ada")
+                                    Spacer()
+                                }.padding(10).frame(width: 300)
+                            }
+                            IssueDetailView(center: issues, onOpenChat: { _ in })
+                        }
+                    } else if panels, let record = pr.selected {
                         ScrollView {
                         VStack(spacing: 12) {
-                            PullRequestReadinessView(center: pr, record: record)
-                            PullRequestLandingView(record: record, client: pr.api.client, onChanged: {})
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    PullRequestReadinessView(center: pr, record: record, embedded: true)
+                                    Divider().overlay(Color.dockBorderLight)
+                                    PullRequestLandingView(record: record, client: pr.api.client, embedded: true, onChanged: {})
+                                }.dockCard(padding: 12)
+                                PullRequestChangeBreakdownView(files: pr.filesByID[record.id], expectedCount: record.changedFiles,
+                                    isCurrent: pr.filesAreCurrent(for: record), isLoading: false, onReviewFiles: {})
+                            }
                             GitHubMetadataView(reference: record.reference, client: pr.api.client)
                             Spacer(minLength: 0)
                         }.padding(16)
                         }
                     } else {
                         HStack(spacing: 1) {
+                            if prOnly, width > 600, let record = pr.selected {
+                                VStack(spacing: 4) {
+                                    ForEach(0..<(colorAudit ? 6 : 4)) { index in
+                                        PullRequestRowView(pullRequest: rowFixture(record, index: index), isSelected: index == 0)
+                                    }
+                                    Spacer()
+                                }.padding(10).frame(width: 300)
+                            }
                             PullRequestDetailView(center: pr, onOpenChat: { _ in })
                             if width > 600 && !prOnly { IssueDetailView(center: issues, onOpenChat: { _ in }) }
                         }
@@ -151,7 +210,7 @@ struct GitHubWorkspaceVisualTests {
                 for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(80)) }
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds)); host.cacheDisplay(in: host.bounds, to: bitmap)
                 let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("github-\(Int(width))-\(theme.rawValue).png"))
+                try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("github-\(Int(width))-\(theme.rawValue)\(colorAudit ? (dark ? "-dark" : "-light") : "").png"))
                 window.orderOut(nil)
                 #expect(bitmap.pixelsWide > 0)
             }

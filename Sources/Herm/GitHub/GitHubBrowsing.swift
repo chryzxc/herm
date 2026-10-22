@@ -107,7 +107,7 @@ struct GitHubBrowseControls: View {
             .help("Sort and saved view")
             .accessibilityLabel("Sort and saved view")
             Button("New") { editing = true }.buttonStyle(.dockCompact).help(kind == .issue ? "Create issue" : "Create draft pull request")
-        }.font(DockTypography.body)
+        }.dockFont(.body)
         .task { if let data = UserDefaults.standard.data(forKey: key) { saved = try? JSONDecoder().decode(GitHubBrowseOptions.self, from: data) } }
         .sheet(isPresented: $editing) { GitHubItemEditor(kind: kind, client: client, repositories: repositories, initialRepository: GitHubReferenceParser.repository(options.repository), onSaved: onCreated) }
         .sheet(isPresented: $filters) {

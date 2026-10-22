@@ -4,6 +4,7 @@ import SwiftUI
 struct IssueDetailView: View {
     @ObservedObject var center: IssueCenterModel
     let onOpenChat: (GitHubIssueRecord) -> Void
+    @State private var descriptionExpanded = true
     @Environment(\.dockTitleRow) private var titleRow
 
     var body: some View {
@@ -24,12 +25,13 @@ struct IssueDetailView: View {
                     DockIcon(.fileText, size: 28, color: Color.dockMetadataText)
                     Text("Select an issue")
                 }
-                .font(.system(size: 13, weight: .medium))
+                .dockFont(size: 13, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(Color.dockCanvas)
+        .onChange(of: center.selectedIssueID) { _, _ in descriptionExpanded = true }
     }
 
     private func shouldShowLoadingState(for issue: GitHubIssueRecord) -> Bool {
@@ -53,7 +55,7 @@ struct IssueDetailView: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading issue")
-                            .font(.system(size: 12, weight: .medium))
+                            .dockFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     .padding(.top, 28)
@@ -101,9 +103,9 @@ struct IssueDetailView: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .truncationMode(.middle)
                     Text("/").foregroundStyle(Color.dockMetadataText)
-                    Text("#\(displayedIssue.number)").foregroundStyle(Color.dockAccent)
+                    Text("#\(displayedIssue.number)").foregroundStyle(Color.dockMetadataText)
                 }
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .dockFont(size: 11, weight: .medium, design: .monospaced)
                 .lineLimit(1)
                 Spacer(minLength: 12)
                     .frame(maxHeight: .infinity)
@@ -129,36 +131,48 @@ struct IssueDetailView: View {
             .background(Color.dockCanvas)
             .zIndex(1)
 
-            if let error = center.detailErrorMessage {
-                Text(error)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 10)
-            }
-
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(displayedIssue.title)
-                        .font(.system(size: 21, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 28)
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 8) {
+                            DockIcon(displayedIssue.presentationIcon, size: 16, color: displayedIssue.presentationColor)
+                            Text(displayedIssue.repository.id).lineLimit(1).truncationMode(.middle)
+                            Text("#\(displayedIssue.displayNumber)").foregroundStyle(Color.dockMetadataText)
+                            Spacer(minLength: 0)
+                            Text(displayedIssue.state.capitalized)
+                                .foregroundStyle(displayedIssue.presentationColor)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(Capsule().fill(displayedIssue.presentationColor.opacity(0.12)))
+                        }.foregroundStyle(Color.dockSecondaryText)
+                        Text(displayedIssue.title)
+                            .dockFont(.pageTitle)
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        issueMetadata(displayedIssue)
+                        if let error = center.detailErrorMessage {
+                            Text(error).foregroundStyle(Color.dockWarning)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }.dockFont(.body).dockCard(padding: 16)
 
-                    issueMetadata(displayedIssue)
-                        .padding(.top, 14)
-                        .padding(.bottom, 22)
-
-                    Color.dockBorderLight.frame(height: 0.5)
-
-                    GitHubMetadataView(reference: displayedIssue.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(issue.id).padding(.top, 16)
-                    GitHubConversationView(model: center.conversation(for: displayedIssue), description: displayedIssue.body)
-                        .id("conversation:" + issue.id).padding(.top, 24)
-
-
+                    VStack(alignment: .leading, spacing: 8) {
+                        DockSectionHeader(title: "Description", isExpanded: $descriptionExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
+                        if descriptionExpanded {
+                            if displayedIssue.body.isEmpty {
+                                Text("No description provided.").foregroundStyle(Color.dockSecondaryText)
+                            } else {
+                                MarkdownMessageView(markdown: displayedIssue.body)
+                                    .frame(maxWidth: 820, alignment: .leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }.dockFont(.body).dockCard(padding: 12)
+                    GitHubMetadataView(reference: displayedIssue.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(issue.id)
+                    GitHubConversationView(model: center.conversation(for: displayedIssue))
+                        .id("conversation:" + issue.id)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 28)
+                .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 32)
             }
             .clipped()
         }
@@ -171,22 +185,32 @@ struct IssueDetailView: View {
             updated: issue.updatedAt.map { "updated " + HumanDateFormatting.relative($0) },
             viewer: center.viewerLogin
         )
-        return HStack(spacing: 10) {
-            DockStatusPill(tone: issue.isOpen ? .complete : .inactive, text: issue.state.capitalized)
-            HStack(spacing: 5) {
-                Text(issue.author).fontWeight(.medium).foregroundStyle(Color.dockSecondaryText)
-                Text("opened this")
-                Text("·")
-                Text(metadata.assignment)
-                if let updated = metadata.updated {
-                    Text("·")
-                    Text(updated)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                DockIcon(.user, size: 14, color: Color.dockSecondaryText)
+                Text(issue.author).foregroundStyle(Color.dockPrimaryText)
+                Text("opened this").foregroundStyle(Color.dockSecondaryText)
+            }
+            Color.dockBorderLight.frame(height: DockLayout.hairline)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    assignment(metadata.assignment, issue: issue)
+                    Spacer(minLength: 8)
+                    if let updated = metadata.updated { Text(updated).foregroundStyle(Color.dockMetadataText).fixedSize() }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    assignment(metadata.assignment, issue: issue)
+                    if let updated = metadata.updated { Text(updated).foregroundStyle(Color.dockMetadataText) }
                 }
             }
-            .lineLimit(1)
+        }.dockFont(.body)
+    }
+
+    private func assignment(_ title: String, issue: GitHubIssueRecord) -> some View {
+        HStack(spacing: 6) {
+            DockIcon(.users, size: 14, color: .dockReview)
+            Text(title).foregroundStyle(issue.assignees.isEmpty ? Color.dockSecondaryText : Color.dockReview)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 12))
-        .foregroundStyle(Color.dockMetadataText)
     }
 }
-

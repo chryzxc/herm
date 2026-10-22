@@ -125,14 +125,14 @@ struct GitHubTimelineView: View {
                         Text(item.author).fontWeight(.semibold)
                         Text(item.summary).foregroundStyle(Color.dockSecondaryText)
                         Spacer(minLength: 8)
-                        if let date = item.date { Text(HumanDateFormatting.relative(date)).font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText) }
+                        if let date = item.date { Text(HumanDateFormatting.relative(date)).dockFont(.metadata).foregroundStyle(Color.dockMetadataText) }
                         if let url = item.url { Link("GitHub", destination: url).buttonStyle(.dockLink) }
                     }
                     if !item.body.isEmpty {
                         MarkdownMessageView(markdown: item.body).frame(maxWidth: .infinity, alignment: .leading)
                         AttachToChatMenu { ChatContext(id: reference.id + ":" + item.id, title: reference.title + " · " + item.author, body: "\(reference.title)\n\(item.url?.absoluteString ?? reference.webURL.absoluteString)\n\n" + String(item.body.prefix(12_000))) }
                     }
-                }.font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
+                }.dockFont(.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
                     .modifier(GitHubTimelineRowSurface(grouped: grouped))
                 if grouped, item.id != items.last?.id { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             }
@@ -142,30 +142,74 @@ struct GitHubTimelineView: View {
 
 struct GitHubConversationView: View {
     @ObservedObject var model: GitHubConversationModel
-    let description: String
     @State private var confirm = false
     @State private var preview = false
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            MarkdownMessageView(markdown: description.isEmpty ? "No description provided." : description).frame(maxWidth: .infinity, alignment: .leading)
-            DockSectionHeader(title: "Conversation", count: model.loaded ? model.items.count : nil, style: style) {
-                DockIconButton(icon: .arrowsClockwise, label: "Refresh conversation", isBusy: model.loading, size: 24, style: style) { Task { await model.refresh() } }
-            }
-            if model.loading && !model.loaded { ProgressView("Loading conversation…") }
-            if let error = model.error { Text(error).foregroundStyle(Color.dockWarning) }
-            if model.loaded && model.items.isEmpty { Text("No discussion yet.").foregroundStyle(Color.dockSecondaryText) }
-            GitHubTimelineView(reference: model.reference, items: model.items)
-            HStack {
-                DockTabButton(title: "Write", isSelected: !preview) { preview = false }
-                DockTabButton(title: "Preview", isSelected: preview) { preview = true }
-                Spacer(); Text("\(model.draft.count)/10000").font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
-            }
-            if preview { MarkdownMessageView(markdown: model.draft).frame(minHeight: 100, alignment: .topLeading) }
-            else { TextEditor(text: $model.draft).font(DockTypography.body).scrollContentBackground(.hidden).padding(8).frame(minHeight: 100).background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)) }
-            HStack { Spacer(); Button { confirm = true } label: { GitHubActionLabel(title: model.posting ? "Posting…" : "Post comment", isBusy: model.posting) }.buttonStyle(.dockPrimary).controlSize(.small).disabled(model.posting || model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.draft.count > 10_000) }
+            VStack(alignment: .leading, spacing: 8) {
+                DockSectionHeader(title: "Conversation", count: model.loaded ? model.items.count : nil, style: style) {
+                    DockIconButton(icon: .arrowsClockwise, label: "Refresh conversation", isBusy: model.loading, size: 24, style: style) { Task { await model.refresh() } }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    if let error = model.error { Text(error).foregroundStyle(Color.dockWarning) }
+                    if !model.loaded {
+                        Text(model.loading ? "Loading conversation…" : "Conversation unavailable. Refresh to retry.")
+                            .foregroundStyle(Color.dockSecondaryText)
+                    } else if model.items.isEmpty {
+                        Text("No discussion yet. Add a comment below.").foregroundStyle(Color.dockSecondaryText)
+                    }
+                    GitHubTimelineView(reference: model.reference, items: model.items, grouped: true)
+                }.frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
+            }.dockCard(padding: 12)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Leave a comment").dockFont(size: 12, weight: .semibold)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 4) {
+                        DockTabButton(title: "Write", isSelected: !preview) { preview = false }
+                        DockTabButton(title: "Preview", isSelected: preview) { preview = true }
+                        Spacer(minLength: 0)
+                    }.padding(8)
+                    Color.dockBorderLight.frame(height: DockLayout.hairline)
+                    Group {
+                        if preview {
+                            if model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text("Nothing to preview yet.").foregroundStyle(Color.dockSecondaryText)
+                                    .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading).padding(12)
+                            } else {
+                                MarkdownMessageView(markdown: model.draft)
+                                    .frame(maxWidth: 820, minHeight: 140, alignment: .topLeading).padding(12)
+                            }
+                        } else {
+                            TextEditor(text: $model.draft)
+                                .dockFont(.body).scrollContentBackground(.hidden)
+                                .padding(8).frame(minHeight: 164)
+                                .overlay(alignment: .topLeading) {
+                                    if model.draft.isEmpty {
+                                        Text("Write a comment…")
+                                            .foregroundStyle(Color.dockMetadataText)
+                                            .padding(.horizontal, 13).padding(.top, 16)
+                                            .allowsHitTesting(false).accessibilityHidden(true)
+                                    }
+                                }
+                                .accessibilityLabel("Comment body")
+                        }
+                    }
+                }.background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill())
+                HStack(spacing: 12) {
+                    Text("\(model.draft.count)/10000")
+                        .dockFont(.metadata)
+                        .foregroundStyle(model.draft.count > 10_000 ? Color.dockWarning : Color.dockMetadataText)
+                    Spacer(minLength: 0)
+                    Button { confirm = true } label: {
+                        GitHubActionLabel(title: model.posting ? "Posting…" : "Post comment", isBusy: model.posting)
+                    }.buttonStyle(.dockPrimary).controlSize(.small)
+                        .disabled(model.posting || model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.draft.count > 10_000)
+                }
+            }.dockCard(padding: 12)
         }
-        .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText)
+        .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         .task { if !model.loaded { await model.refresh() } }
         .confirmationDialog("Post comment to \(model.reference.title)?", isPresented: $confirm, titleVisibility: .visible) {
             Button("Post comment") { Task { _ = await model.post() } }

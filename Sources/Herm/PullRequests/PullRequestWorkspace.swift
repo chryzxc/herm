@@ -10,7 +10,6 @@ struct PullRequestWorkspace: View {
     @State private var loadedBrowse = GitHubBrowseOptions()
     @Environment(\.openGitHubItem) private var openItem
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dockTitleRow) private var titleRow
 
     private var header: some View {
         DockPageHeader(
@@ -23,24 +22,16 @@ struct PullRequestWorkspace: View {
     }
 
     var body: some View {
-        // In the window the detail runs up into the title row like the chat;
-        // the page header then tops only the list column.
-        let headerInList = titleRow != nil && !isListCollapsed
         VStack(spacing: 0) {
-            if !headerInList { header }
-                AdaptiveSplit(primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true, hidesPrimary: isListCollapsed, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
-                    VStack(spacing: 0) {
-                        if headerInList { header }
-                        listPane
-                    }
-                    .frame(idealWidth: 390, maxWidth: 460)
-                } secondary: {
-                    PullRequestDetailView(center: center, onOpenChat: onOpenChat)
-                }
+            header
+            AdaptiveSplit(primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true, hidesPrimary: isListCollapsed, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
+                listPane.frame(idealWidth: 390, maxWidth: 460)
+            } secondary: {
+                PullRequestDetailView(center: center, onOpenChat: onOpenChat)
+            }
+            .environment(\.dockTitleRow, nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The split's GeometryReader honors the titlebar safe area; the detail fills that row itself.
-        .ignoresSafeArea(.container, edges: headerInList ? .top : [])
         .background(Color.dockCanvas)
         .task(id: refreshID) {
             if refreshID > 0 || !center.hasLoaded {
@@ -86,15 +77,15 @@ struct PullRequestWorkspace: View {
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         Text(center.isRefreshing ? "Loading \(center.browsing.state.rawValue.lowercased()) pull requests…" : (center.errorMessage ?? center.coverage ?? "\(center.visible.count) pull requests"))
-            .font(DockTypography.metadata).foregroundStyle(center.errorMessage != nil ? Color.dockWarning : Color.dockMetadataText).lineLimit(2).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).padding(.horizontal, 18)
+            .dockFont(.metadata).foregroundStyle(center.errorMessage != nil ? Color.dockWarning : Color.dockMetadataText).lineLimit(2).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).padding(.horizontal, 18)
         ScrollView {
             LazyVStack(spacing: 2) {
                 if center.isInitialLoad || (center.isRefreshing && center.browsing != loadedBrowse) {
                     ForEach(0..<6, id: \.self) { index in listLoadingRow(index: index) }
                 } else if center.visible.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("No pull requests match this view").font(.system(size: 12, weight: .semibold))
-                        Text("Change the scope or filters, or create a draft pull request using New.").font(DockTypography.body).foregroundStyle(Color.dockMetadataText)
+                        Text("No pull requests match this view").dockFont(size: 12, weight: .semibold)
+                        Text("Change the scope or filters, or create a draft pull request using New.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
                         Button("Clear filters") { center.query = ""; center.filter = .all; center.browsing = GitHubBrowseOptions(); refreshID += 1 }.buttonStyle(.dockCompact)
                         Button("Retry") { refreshID += 1 }.buttonStyle(.dockCompact)
                     }.padding(16)

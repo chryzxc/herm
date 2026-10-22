@@ -18,7 +18,7 @@ struct PullRequestFilterPicker: View {
                     DockMenuOption(filter.rawValue, value: filter)
                 }
             }
-            .font(DockTypography.control)
+            .dockFont(.control)
             .frame(height: 30)
             .accessibilityLabel("Pull request filter")
             .accessibilityValue(selection.rawValue)
@@ -260,7 +260,7 @@ struct PullRequestBranchIcon: View {
         ZStack(alignment: .bottomTrailing) {
             DockIcon(.gitPullRequest, size: 17, color: iconColor)
             if status == .success || status == .failure {
-                Circle().fill(status == .success ? Color.dockSuccess : Color.dockDestructive).frame(width: 6, height: 6).overlay(Circle().stroke(Color.dockSurface2, lineWidth: 1.1)).offset(x: 1, y: 1)
+                Circle().fill(status == .success ? Color.dockSuccessFill : Color.dockDestructiveFill).frame(width: 6, height: 6).overlay(Circle().stroke(Color.dockSurface2, lineWidth: 1.1)).offset(x: 1, y: 1)
             }
         }
         .frame(width: 20, height: 20)

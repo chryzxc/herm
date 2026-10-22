@@ -134,20 +134,20 @@ struct GitHubItemEditor: View {
                         Picker("Head branch", selection: $head) { Text("Choose branch").tag(""); ForEach(branches, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu)
                         Picker("Base branch", selection: $base) { Text("Choose branch").tag(""); ForEach(branches, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu)
                     }.disabled(loadingBranches || busy)
-                    Text("Only published branches are listed. Creating a PR never pushes local changes.").font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
+                    Text("Only published branches are listed. Creating a PR never pushes local changes.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 }
             }
             TextField("Title", text: $title).textFieldStyle(.dockGlass)
             HStack {
                 DockTabButton(title: "Write", isSelected: !preview) { preview = false }
                 DockTabButton(title: "Preview", isSelected: preview) { preview = true }
-                Spacer(); Text("\(text.count)/10000").font(DockTypography.metadata).foregroundStyle(text.count > 10_000 ? Color.dockWarning : Color.dockMetadataText)
+                Spacer(); Text("\(text.count)/10000").dockFont(.metadata).foregroundStyle(text.count > 10_000 ? Color.dockWarning : Color.dockMetadataText)
             }
             Group {
                 if preview { ScrollView { MarkdownMessageView(markdown: text.isEmpty ? "No description provided." : text).frame(maxWidth: .infinity, alignment: .leading) } }
-                else { TextEditor(text: $text).font(DockTypography.body).scrollContentBackground(.hidden).padding(8).background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)) }
+                else { TextEditor(text: $text).dockFont(.body).scrollContentBackground(.hidden).padding(8).background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)) }
             }.frame(height: 260)
-            Text(error ?? " ").font(DockTypography.body).foregroundStyle(Color.dockWarning).frame(minHeight: 34, alignment: .topLeading)
+            Text(error ?? " ").dockFont(.body).foregroundStyle(Color.dockWarning).frame(minHeight: 34, alignment: .topLeading)
         } footer: {
             Button("Cancel") { dismiss() }.buttonStyle(.dockSecondary).disabled(busy)
             Spacer()

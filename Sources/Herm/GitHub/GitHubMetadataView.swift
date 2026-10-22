@@ -107,14 +107,14 @@ struct GitHubMetadataView: View {
                                     Button { openItem(ref) } label: { DockMetadataPill(text: "\(ref.title) · \(link.title)", navigationIcon: .caretRight).multilineTextAlignment(.leading) }.buttonStyle(.dockHover)
                                 } else if let url = link.url { Link(destination: url) { DockMetadataPill(text: link.title, navigationIcon: .arrowSquareOut) }.buttonStyle(.dockHover) }
                                 Text(link.reference == nil ? "Linked branch" : "\(link.state.capitalized) · \(link.manuallyLinked ? "Manually linked" : "Linked by description")")
-                                    .font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
+                                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                             }
                         }
                     } else { none(model.loading.contains("Development") ? "Loading development…" : "Development unavailable") }
                 }
             }
         }
-        .font(DockTypography.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
+        .dockFont(.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
         .dockCard(padding: 12)
         .task { await model.refresh() }
         .sheet(item: $editing) { section in
@@ -204,7 +204,7 @@ struct GitHubMetadataEditor: View {
                     Button { Task { await lookUp() } } label: { GitHubActionLabel(title: lookingUp ? "Looking up…" : "Look up", isBusy: lookingUp) }.buttonStyle(.dockCompact).disabled(busy || lookup.isEmpty)
                 }
             }
-            Text(error ?? " ").font(DockTypography.body).foregroundStyle(Color.dockWarning).frame(minHeight: 34, alignment: .topLeading)
+            Text(error ?? " ").dockFont(.body).foregroundStyle(Color.dockWarning).frame(minHeight: 34, alignment: .topLeading)
         } footer: {
             Button("Cancel") { dismiss() }.buttonStyle(.dockSecondary).disabled(busy)
             Spacer()
