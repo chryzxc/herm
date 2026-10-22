@@ -50,7 +50,7 @@ extension WorkspaceActivitySidebar {
             }
             Spacer(minLength: 0)
         }
-        .font(.system(size: 11, design: .monospaced))
+        .dockFont(size: 11, design: .monospaced)
         .foregroundStyle(Color.dockMetadataText)
         .lineLimit(1)
         .truncationMode(.tail)
@@ -115,17 +115,17 @@ extension WorkspaceActivitySidebar {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(job.name)
-                    .font(.system(size: 16, weight: .semibold))
+                    .dockFont(size: 16, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 Text(health.state.rawValue.uppercased())
-                    .font(.system(size: 10, weight: .bold))
+                    .dockFont(size: 10, weight: .bold)
                     .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText)
             }
             Text(job.enabled ? "Enabled and scheduled" : "Paused")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
+                .dockFont(size: 11, weight: .medium)
+                .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
 
             Divider().overlay(Color.dockBorderLight)
             cronDetailRow("Schedule", value: CronScheduleFormatting.humanReadable(job.schedule))
@@ -141,15 +141,15 @@ extension WorkspaceActivitySidebar {
             if let latestRun {
                 cronDetailRow("Last run", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
                 HStack(spacing: 6) {
-                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning).frame(width: 5, height: 5)
+                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccessFill : Color.dockWarningFill).frame(width: 5, height: 5)
                     Text("Last status")
                     Text(latestRun.status.uppercased())
                 }
-                .font(.system(size: 11, weight: .medium))
+                .dockFont(size: 11, weight: .medium)
                 .foregroundStyle(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning)
                 if let error = latestRun.error, !error.isEmpty {
                     Text(error)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockWarning)
                         .lineLimit(3)
                 }
@@ -158,7 +158,7 @@ extension WorkspaceActivitySidebar {
                 Divider().overlay(Color.dockBorderLight)
                 Button("Open latest report") { cronReportRequest = request }
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
             }
         }
@@ -183,13 +183,13 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 DockIcon(.pulse)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 Text("Run history")
-                    .font(.system(size: 14, weight: .semibold))
+                    .dockFont(size: 14, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text("\(filteredCronRuns.count)")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .dockFont(size: 12, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
                 DockTabBar(options: AutomationHistoryScope.allCases, selection: $automationHistoryScope, title: \.title)
@@ -199,17 +199,17 @@ extension WorkspaceActivitySidebar {
 
             if let state = control.refreshState(for: "cron.history"), state.isStale {
                 Text("Showing the last successful history while Hermes reconnects.")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
             }
             if !control.cronHistoryAvailable && control.cronRuns.isEmpty {
                 Text("Hermes automation history is unavailable through the installed CLI.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             } else if filteredCronRuns.isEmpty {
                 Text(automationHistoryScope == .selected ? "No runs recorded for this schedule." : "No automation runs recorded.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
@@ -245,19 +245,19 @@ extension WorkspaceActivitySidebar {
             cronSectionHeading("Run history", count: control.cronRuns.count, icon: .pulse)
             if let state = control.refreshState(for: "cron.history"), state.isStale {
                 Text("Showing the last successful history while Hermes reconnects. \(state.error ?? "")")
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, 3)
             }
             if !control.cronHistoryAvailable && control.cronRuns.isEmpty {
                 Text("Hermes automation history is unavailable through the installed CLI.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             } else if control.cronRuns.isEmpty {
                 Text("No automation runs recorded.")
-                    .font(.system(size: 12))
+                    .dockFont(size: 12)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
@@ -285,13 +285,13 @@ extension WorkspaceActivitySidebar {
     func cronSectionHeading(_ title: String, count: Int, icon: Ph) -> some View {
         HStack(spacing: 8) {
             DockIcon(icon)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
+                .dockFont(size: 14, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text("\(count)")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .dockFont(size: 12, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
             Spacer()
         }
@@ -336,7 +336,7 @@ extension WorkspaceActivitySidebar {
         )
         return HStack(spacing: 10) {
             Circle()
-                .fill(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
+                .fill(job.enabled ? Color.dockSuccessFill : Color.dockMetadataText)
                 .frame(width: 8, height: 8)
             Button {
                 selectedCronJobID = job.id
@@ -344,23 +344,23 @@ extension WorkspaceActivitySidebar {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(job.name)
-                            .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                            .dockFont(size: 13, weight: isSelected ? .medium : .regular)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
                         if !job.enabled {
                             Text("PAUSED")
-                                .font(.system(size: 9, weight: .bold))
+                                .dockFont(size: 9, weight: .bold)
                                 .tracking(0.5)
                                 .foregroundStyle(Color.dockWarning)
                         }
                     }
                     Text(CronScheduleFormatting.humanReadable(job.schedule))
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                     if let nextRun = job.nextRun {
                         Text("Next \(HumanDateFormatting.dateAndTime(nextRun))")
-                            .font(.system(size: 10, design: .monospaced))
+                            .dockFont(size: 10, design: .monospaced)
                             .foregroundStyle(Color.dockMetadataText)
                             .lineLimit(1)
                     }
@@ -375,7 +375,7 @@ extension WorkspaceActivitySidebar {
             .buttonStyle(.dockHover)
 
             Text(health.state.rawValue.uppercased())
-                .font(.system(size: 9, weight: .bold))
+                .dockFont(size: 9, weight: .bold)
                 .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText)
                 .lineLimit(1)
 
@@ -389,7 +389,7 @@ extension WorkspaceActivitySidebar {
                             ProgressView().controlSize(.small)
                         } else {
                             DockIcon(.play, weight: .fill)
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                         }
                     }
                     .foregroundStyle(Color.dockAccent)
@@ -404,7 +404,7 @@ extension WorkspaceActivitySidebar {
 
             DockMenu { cronContextActions(job) } label: {
                 DockIcon(.dotsThree)
-                    .font(.system(size: 14, weight: .medium))
+                    .dockFont(size: 14, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -452,7 +452,7 @@ extension WorkspaceActivitySidebar {
                 .disabled(control.isActionPending(control.cronActionID("run", job: job)))
             } else {
                 Text("RUN NOW UNAVAILABLE")
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
                     .help("The installed Hermes CLI does not advertise the run-now automation capability.")
             }
@@ -475,7 +475,7 @@ extension WorkspaceActivitySidebar {
             Spacer()
         }
         .buttonStyle(.dockHover)
-        .font(.system(size: 12, weight: .semibold))
+        .dockFont(size: 12, weight: .semibold)
         .foregroundStyle(Color.dockAccent)
     }
 
@@ -484,17 +484,17 @@ extension WorkspaceActivitySidebar {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 DockIcon(job.enabled ? .clock : .clock)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
+                    .dockFont(size: 14, weight: .semibold)
+                    .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(job.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .dockFont(size: 13, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(2)
                     Text(job.enabled ? "ENABLED AND SCHEDULED" : "PAUSED")
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                         .tracking(0.45)
-                        .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
+                        .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
                 }
                 Spacer(minLength: 0)
             }
@@ -516,15 +516,15 @@ extension WorkspaceActivitySidebar {
             if let latestRun {
                 reportRow("LAST RUN", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
                 HStack(spacing: 6) {
-                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning).frame(width: 5, height: 5)
+                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccessFill : Color.dockWarningFill).frame(width: 5, height: 5)
                     Text("LAST STATUS")
                     Text(latestRun.status.uppercased())
                 }
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning)
                 if let error = latestRun.error, !error.isEmpty {
                     Text(error)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockWarning)
                         .lineLimit(3)
                 }
@@ -544,9 +544,9 @@ extension WorkspaceActivitySidebar {
                 } label: {
                     HStack(spacing: 6) {
                         DockIcon(expandedCronReportIDs.contains(job.id) ? .caretDown : .caretRight)
-                            .font(.system(size: 10, weight: .bold))
+                            .dockFont(size: 10, weight: .bold)
                         Text(expandedCronReportIDs.contains(job.id) ? "HIDE REPORT" : "VIEW LATEST REPORT")
-                            .font(.system(size: 11, weight: .semibold))
+                            .dockFont(size: 11, weight: .semibold)
                     }
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -562,10 +562,10 @@ extension WorkspaceActivitySidebar {
                 Divider().overlay(Color.dockBorderLight)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("REPORT AVAILABLE")
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                         .foregroundStyle(Color.dockSuccess)
                     Text("Hermes saved the full output in this job's latest run session.")
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("OPEN LATEST REPORT") {
@@ -574,17 +574,17 @@ extension WorkspaceActivitySidebar {
                         }
                     }
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 }
             } else {
                 Divider().overlay(Color.dockBorderLight)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("REPORT BODY UNAVAILABLE")
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(size: 11, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
                     Text("Hermes recorded this run, but the installed CLI only provides execution status and delivery metadata—not the response body. " + (job.delivery?.lowercased() == "origin" ? "This job delivers its result to its origin chat." : ""))
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("RETURN TO CHAT") {
@@ -592,7 +592,7 @@ extension WorkspaceActivitySidebar {
                         model.requestComposerFocus()
                     }
                     .buttonStyle(.dockCompact)
-                    .font(.system(size: 11, weight: .semibold))
+                    .dockFont(size: 11, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 }
             }
@@ -609,7 +609,7 @@ extension WorkspaceActivitySidebar {
                 .lineLimit(2)
         }
         .padding(.vertical, 2)
-        .font(.system(size: 11))
+        .dockFont(size: 11)
     }
 
     func cronRunIsSuccessful(_ run: CronRunSummary) -> Bool {
@@ -620,45 +620,45 @@ extension WorkspaceActivitySidebar {
     func cronRunRow(_ run: CronRunSummary, canViewReport: Bool) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Circle()
-                .fill(cronRunIsSuccessful(run) ? Color.dockSuccess : Color.dockWarning)
+                .fill(cronRunIsSuccessful(run) ? Color.dockSuccessFill : Color.dockWarningFill)
                 .frame(width: 7, height: 7)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(run.status.uppercased())
-                        .font(.system(size: 12, weight: .medium))
+                        .dockFont(size: 12, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                     Spacer(minLength: 4)
                     if canViewReport {
                         HStack(spacing: 4) {
                             Text("REPORT")
                             DockIcon(.caretRight)
-                                .font(.system(size: 9, weight: .bold))
+                                .dockFont(size: 9, weight: .bold)
                         }
-                        .font(.system(size: 10, weight: .semibold))
+                        .dockFont(size: 10, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                     }
                 }
                 if let claimedAt = run.claimedAt {
                     Text(HumanDateFormatting.dateAndTime(claimedAt))
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 if let jobID = run.jobID {
                     if let job = control.cronJobs.first(where: { $0.id == jobID }) {
                         Text(job.name)
-                            .font(.system(size: 11))
+                            .dockFont(size: 11)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                     }
                     Text(jobID)
-                        .font(.system(size: 10, design: .monospaced))
+                        .dockFont(size: 10, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
                 if let error = run.error {
                     Text(error)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockWarning)
                         .lineLimit(3)
                 }
@@ -673,7 +673,7 @@ extension WorkspaceActivitySidebar {
     func dockTextField(_ placeholder: String, text: Binding<String>) -> some View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain)
-            .font(.system(size: 13))
+            .dockFont(size: 13)
             .foregroundStyle(Color.dockPrimaryText)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
