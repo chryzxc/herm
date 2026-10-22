@@ -5,12 +5,23 @@ import XCTest
 private final class PinRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var rows: [[String: Any]] = []
+    var liveRows: [[String: Any]] = []
+    var liveUnavailable = false
+    var duringLiveRead: (() -> Void)?
     private(set) var fetchedPaths: [String] = []
     private(set) var writes: [(method: String, path: String, body: [String: Any])] = []
 
     func connect() async throws {}
     func close() {}
-    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "session.list" { return ["sessions": rows] }
+        if method == "session.active_list" {
+            if liveUnavailable { throw HermesGateway.GatewayError.malformedResponse }
+            duringLiveRead?()
+            return ["sessions": liveRows]
+        }
+        return [:]
+    }
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         fetchedPaths.append(path)
@@ -25,6 +36,53 @@ private final class PinRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 final class PinnedSessionTests: XCTestCase {
+    func testLiveActivityRefreshesUnopenedSessionsAcrossProfiles() async throws {
+        for profile in [nil, "other-bot"] as [String?] {
+            let client = PinRPCClient()
+            client.rows = [
+                ["id": "done", "pinned": true, "is_active": true, "last_active": Date().timeIntervalSince1970],
+                ["id": "busy", "pinned": true, "is_active": false, "last_active": 1]
+            ]
+            client.liveRows = [
+                ["session_key": "done", "status": "idle"],
+                ["session_key": "busy", "status": "working"]
+            ]
+            let suite = "SessionActivityTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let model = DockModel(defaults: defaults, rpcClient: client)
+            model.profileScopeID = profile
+            await model.loadSessions(quiet: true)?.value
+            XCTAssertNil(model.sessionID)
+            XCTAssertEqual(model.sessions.filter(\.isWorking).map(\.id), ["busy"])
+            XCTAssertEqual(model.pinnedSessions.filter(\.isWorking).map(\.id), ["busy"])
+            XCTAssertTrue(model.sessions.allSatisfy { $0.profileID == profile })
+
+            // A missed complete event is repaired by the next successful poll.
+            client.liveRows = []
+            await model.loadSessions(quiet: true)?.value
+            XCTAssertFalse(model.sessions.contains(where: \.isWorking))
+            XCTAssertFalse(model.pinnedSessions.contains(where: \.isWorking))
+
+            // A turn can start elsewhere without this chat ever being opened.
+            client.liveRows = [["session_key": "done", "status": "working"]]
+            await model.loadSessions(quiet: true)?.value
+            XCTAssertEqual(model.sessions.filter(\.isWorking).map(\.id), ["done"])
+
+            client.liveUnavailable = true
+            await model.loadSessions(quiet: true)?.value
+            XCTAssertEqual(model.sessions.filter(\.isWorking).map(\.id), ["done"])
+            XCTAssertEqual(model.pinnedSessions.filter(\.isWorking).map(\.id), ["done"])
+
+            // An event arriving during a snapshot read takes precedence.
+            client.liveUnavailable = false
+            client.duringLiveRead = { model.updateSessionActivity(sessionID: "done", isWorking: false) }
+            await model.loadSessions(quiet: true)?.value
+            XCTAssertFalse(model.sessions.contains(where: \.isWorking))
+            XCTAssertFalse(model.pinnedSessions.contains(where: \.isWorking))
+        }
+    }
+
     func testSessionIndexPreservesSourceForConversationBadges() async throws {
         let client = PinRPCClient()
         client.rows = [

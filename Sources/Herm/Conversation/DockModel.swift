@@ -379,6 +379,7 @@ final class DockModel: ObservableObject {
     let playApprovalSound: () -> Void
     var sessionLoadTask: Task<Void, Never>?
     var sessionLoadGeneration: UInt64 = 0
+    var sessionActivityGeneration: UInt64 = 0
 
     var streamingMessageIDForPresentation: UUID? { streamingMessageID }
 

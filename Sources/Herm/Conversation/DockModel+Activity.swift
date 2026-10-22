@@ -49,6 +49,7 @@ extension DockModel {
     /// stream and `Self.isUnreadUpdateEvent` predicate that already drive the
     /// current session's `hasUnreadResponse`.
     func updateSessionActivity(sessionID rawSessionID: String, isWorking: Bool? = nil, unread: Bool? = nil) {
+        if isWorking != nil { sessionActivityGeneration &+= 1 }
         let sessionID = rowSessionID(rawSessionID)
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let session = sessions[index]

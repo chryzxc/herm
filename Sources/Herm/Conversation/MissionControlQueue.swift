@@ -51,6 +51,7 @@ struct MissionControlQueue: View {
     let onSelectProfile: (String) -> Void
     let onOpenWindow: (() -> Void)?
     let isDockedWindow: Bool
+    let showsWindowTitleRow: Bool
     @Binding var isSidebarCollapsed: Bool
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
@@ -91,6 +92,7 @@ struct MissionControlQueue: View {
         onSelectProfile: @escaping (String) -> Void,
         onOpenWindow: (() -> Void)? = nil,
         isDockedWindow: Bool = false,
+        showsWindowTitleRow: Bool = true,
         isSidebarCollapsed: Binding<Bool> = .constant(false)
     ) {
         self.model = model
@@ -124,6 +126,7 @@ struct MissionControlQueue: View {
         self.onSelectProfile = onSelectProfile
         self.onOpenWindow = onOpenWindow
         self.isDockedWindow = isDockedWindow
+        self.showsWindowTitleRow = showsWindowTitleRow
         self._isSidebarCollapsed = isSidebarCollapsed
     }
 
@@ -247,8 +250,8 @@ struct MissionControlQueue: View {
     /// Secondary panel: identity, new conversation, and the session lists.
     private func listPanel(style: DockThemePalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // In the window the title row above stays empty for the traffic lights.
-            if isDockedWindow {
+            // Group chats retain their own title strip; conversations use the shared row.
+            if isDockedWindow && showsWindowTitleRow {
                 HStack(spacing: 0) {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
                     Spacer(minLength: 0)
@@ -343,12 +346,12 @@ struct MissionControlQueue: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(style.theme == .hermesClassic ? style.accent : style.primaryText)
                     .lineLimit(1)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(style.metadataText)
                         .lineLimit(1)
                 }
@@ -403,14 +406,14 @@ struct MissionControlQueue: View {
             if working > 0 {
                 HStack(spacing: 4) {
                     DockActivityIndicator(state: .running, size: 12)
-                    if bots.count > 1 { Text("\(working)").font(.system(size: 10, weight: .bold)) }
+                    if bots.count > 1 { Text("\(working)").dockFont(size: 10, weight: .bold) }
                 }
                 .foregroundStyle(DockActivityState.running.color)
             }
             if done > 0 {
                 HStack(spacing: 3) {
                     DockActivityIndicator(state: .done, size: 12, unreadDot: true)
-                    if bots.count > 1 { Text("\(done)").font(.system(size: 10, weight: .bold)) }
+                    if bots.count > 1 { Text("\(done)").dockFont(size: 10, weight: .bold) }
                 }
                 .foregroundStyle(DockActivityState.done.color)
             }
@@ -436,7 +439,7 @@ struct MissionControlQueue: View {
                                 size: 22
                             )
                             Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
-                                .font(.system(size: 12, weight: .semibold))
+                                .dockFont(size: 12, weight: .semibold)
                                 .foregroundStyle(style.primaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
@@ -455,7 +458,7 @@ struct MissionControlQueue: View {
                                 }
                             if option.id == selectedBot?.id {
                                 DockIcon(.check)
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .dockFont(size: 11, weight: .semibold)
                                     .foregroundStyle(style.accent)
                             }
                         }
@@ -562,9 +565,10 @@ struct MissionControlQueue: View {
             // on disappear); Hermes has no roster push event.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
-                await botMode.refreshNow()
+                guard !Task.isCancelled else { return }
                 // ponytail: poll the session index so turns running elsewhere show a spinner.
                 model.loadSessions(quiet: true)
+                await botMode.refreshNow()
             }
         }
         .sheet(isPresented: $isShowingNewGroupChat) {
@@ -608,7 +612,7 @@ struct MissionControlQueue: View {
 
     private func queueEmpty(_ text: String, style: DockThemePalette) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .dockFont(size: 12)
             .foregroundStyle(style.metadataText)
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
@@ -622,7 +626,7 @@ struct MissionControlQueue: View {
                     Text("Showing \(visible) of \(compactCount(total))")
                     Text(title)
                 }
-                .font(DockTypography.control)
+                .dockFont(.control)
                 .foregroundStyle(Color.dockAccent)
                 .frame(minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
@@ -636,9 +640,9 @@ struct MissionControlQueue: View {
             HStack(spacing: 6) {
                 Text(navigationState.showsAllConversations ? "Show recent conversations" : "Show more conversations")
                 DockIcon(navigationState.showsAllConversations ? .caretUp : .caretDown)
-                    .font(.system(size: 9, weight: .bold))
+                    .dockFont(size: 9, weight: .bold)
             }
-            .font(DockTypography.control)
+            .dockFont(.control)
             .foregroundStyle(style.secondaryText)
             .frame(minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
@@ -842,19 +846,19 @@ struct MissionControlQueue: View {
                         .fill(taskColor(task.status))
                         .frame(width: 6, height: 6)
                     Text(taskDisplayTitle(task))
-                    .font(.system(size: 12, weight: .medium))
+                    .dockFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     Spacer(minLength: 0)
                     if duplicateCount > 1 {
                         Text("×\(duplicateCount)")
-                            .font(.system(size: 11, weight: .semibold))
+                            .dockFont(size: 11, weight: .semibold)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                 }
                 if let detail = taskDisplayDetail(task) {
                     Text(detail)
-                        .font(.system(size: 11))
+                        .dockFont(size: 11)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }

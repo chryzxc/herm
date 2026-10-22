@@ -110,9 +110,9 @@ extension DockModel {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
                 await migrateLegacyLocalPins()
+                let activityGeneration = sessionActivityGeneration
                 let index = try? await Self.fetchSessionIndex(client: sessionRPCClient, profileID: scope)
                 guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
-                if let index { pinnedSessions = index.pinned }
                 // session.list rows carry only `started_at`; take recency from
                 // the `/api/sessions` rows so a cold start does not show (and
                 // sort by) when an old chat began.
@@ -120,7 +120,11 @@ extension DockModel {
                 let loaded = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }
                     .filter { !feedIDs.contains($0.id) || $0.id == self.navigationSessionID }
                     .map { Self.withRecency($0, from: index?.lastActive ?? [:]) }
-                let working = index?.working
+                // Events delivered during the read are newer than its snapshot.
+                let working = activityGeneration == sessionActivityGeneration ? index?.working : nil
+                if let index {
+                    pinnedSessions = Self.mergingSessionIndex(index.pinned, with: sessions + pinnedSessions, working: working)
+                }
                 // The session index can lag behind the live gateway stream.
                 // Keep a newer event timestamp until Hermes publishes an equal
                 // or newer canonical row, so navigation never regresses its
@@ -230,7 +234,7 @@ extension DockModel {
         return ((row["model"] as? String) ?? "").isEmpty
     }
 
-    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>, working: Set<String>) {
+    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>, working: Set<String>?) {
         var path = "/api/sessions?limit=100&order=recent"
         if let profileID, !profileID.isEmpty,
            let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
@@ -243,16 +247,18 @@ extension DockModel {
             parseSession(row, profileID: profileID).flatMap { session in session.updatedAt.map { (session.id, $0) } }
         }, uniquingKeysWith: max)
         let feedIDs = Set(rows.filter(isModellessFeed).compactMap { $0["id"] as? String })
-        // `is_active` stays true for 5 min after the last write; a tighter
-        // window keeps the spinner from lingering once a turn has finished.
-        let working = Set(rows.compactMap { row -> String? in
-            guard row["is_active"] as? Bool == true, let id = row["id"] as? String,
-                  let date = parseSession(row, profileID: profileID)?.updatedAt,
-                  Date().timeIntervalSince(date) < 90 else { return nil }
-            return id
-        })
+        // REST `is_active` means recently written, not executing. The live RPC
+        // covers unopened sessions too, including long turns without new writes.
+        let live = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
+        let working = (live?["sessions"] as? [[String: Any]]).map { sessions in
+            Set(sessions.compactMap { row -> String? in
+                guard let status = row["status"] as? String,
+                      ["starting", "working", "streaming", "waiting"].contains(status) else { return nil }
+                return row["session_key"] as? String
+            })
+        }
         let pinned = rows.filter { $0["pinned"] as? Bool == true }.compactMap { parseSession($0, profileID: profileID) }.map { session in
-            guard working.contains(session.id) else { return session }
+            guard working?.contains(session.id) == true else { return session }
             return HermesSession(id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
                                  startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
                                  source: session.source, isHidden: session.isHidden, isWorking: true, hasUnreadUpdate: session.hasUnreadUpdate)

@@ -40,11 +40,9 @@ extension DockModel {
                 messageCount: session.messageCount,
                 source: session.source,
                 isHidden: session.isHidden,
-                // The index covers turns started elsewhere, but its freshness
-                // window drops a long silent tool call mid-turn. A gateway
-                // `message.start` we observed stays authoritative until the
-                // matching complete event clears it.
-                isWorking: observed.isWorking || (session.id != openSessionID && working?.contains(session.id) == true),
+                // A successful live snapshot also clears missed completion events.
+                // Preserve stream state only when that snapshot is unavailable.
+                isWorking: working.map { $0.contains(session.id) } ?? observed.isWorking,
                 hasUnreadUpdate: observed.hasUnreadUpdate
             )
         }

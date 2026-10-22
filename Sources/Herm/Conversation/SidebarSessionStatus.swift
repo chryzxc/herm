@@ -39,7 +39,7 @@ enum SidebarSessionStatusResolver {
         if attention == .warning { return .needsApproval }
         if attention == .clarification { return .needsClarification }
         // A failure from an earlier turn is stale once a new turn is running.
-        let isLive = session.isWorking || (session.id == activeSessionID && activeStatus == .working)
+        let isLive = session.isWorking
         if attention == .failure, !isLive { return .failed }
 
         if session.id == activeSessionID {
@@ -51,14 +51,16 @@ enum SidebarSessionStatusResolver {
             if session.id == activeSessionID, let activeStatus {
                 switch activeStatus {
                 case .needsApproval, .needsClarification: return .stale
-                case .working: return .active
-                case .idle: return .completed
+                case .working, .idle: return session.isWorking ? .active : .completed
                 case .offline: return .unavailable
                 }
             }
-            // Only open sessions have a summary; the index row's own flags cover the rest.
-            guard let summary else { return session.isWorking ? .active : .completed }
-            return SessionLifecyclePresentation.status(for: summary)
+            // The session row is reconciled with the live gateway list. A separately
+            // refreshed summary must neither hide new work nor revive a finished turn.
+            if session.isWorking { return .active }
+            guard let summary else { return .completed }
+            let status = SessionLifecyclePresentation.status(for: summary)
+            return status == .active ? .completed : status
         }()
 
         switch lifecycle {
