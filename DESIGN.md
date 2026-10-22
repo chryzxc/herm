@@ -85,19 +85,34 @@ separator, or window colors, or ad hoc literals.
 | `dockBorderLight`, `dockBorder`, `dockBorderStrong` | Dividers, panel hairlines, and contours |
 | `dockDiscord` | Appearance-aware Discord identity tint for the source pill and logo |
 | `dockAccent`, `dockAccentMuted` | Interactive emphasis, the selected tab, and selected fills |
-| `dockInfo`, `dockMerged` | Blue informational context and violet merged PR outcomes; appearance-aware, neutral in Monochrome/E-Ink |
+| `dockInfo`, `dockMerged`, `dockReview` | Blue informational context, violet merged PR/closed issue outcomes, and teal reviewer/assignment context; appearance-aware, neutral in Monochrome/E-Ink |
 | `dockSuccess`, `dockWarning`, `dockDestructive` | Health and outcome of non-task state, such as quota, verification, and mutation results |
 | `dockOnAccentText` | Text on a filled accent control |
 
-The accent marks interaction. It does not mark task lifecycle, which uses the
-status tones below.
+`DockAccentColor` in `DockAccentPalette.swift` owns the approved solid reference
+palette: teal, amber, violet, coral, blue, orange, pink, green, cyan, indigo, and
+tangerine. Solid artwork, avatars, dots, and data marks use `.fill`; those values
+stay identical in Light and Dark. Small text and symbols use `.color`, which
+adjusts only enough for 4.5:1 contrast. Never lighten the solid fills into pastels.
+Monochrome and E-Ink keep neutral ink. Source identity colors remain authoritative.
+
+Skin interaction is separate from semantic color. Clean and Glass use neutral gray
+actions and selection. Character skins keep their authored interaction hue, such
+as Dusk lavender, Terminal green, Classic brass, and Warm Light brown. Cool Blue
+may use blue because it is that skin's identity. Never assign blue globally to
+primary or secondary controls. Theme surfaces and selection live in `DockTheme.swift`;
+shared components inherit them. `make color-contract`, included in `make check`,
+rejects new feature-local color literals.
+
+Interaction and task lifecycle keep separate meanings, using the same color
+families. Lifecycle uses the status tones below.
 
 ### Status tones
 
 `DockStatusTone` (`DockDesignSystem.swift`) is the only lifecycle palette for
 work: sessions, bots, Kanban tasks, and background work. Office bubbles and
 bot eyes always draw on dark sign ink and use `signageColor`. SwiftUI chrome
-uses `color`, which switches to deeper variants in light appearances.
+uses `color`, which follows the shared theme-aware accent palette.
 
 | Tone | Meaning | Office status | Motion |
 | --- | --- | --- | --- |
@@ -118,6 +133,13 @@ uses `color`, which switches to deeper variants in light appearances.
   tone.
 
 ### Typography
+
+Window mode uses `DockWorkspaceScale.window` (115%) as an inherited native
+sizing value. `dockFont` resolves fonts at their final, whole-point size;
+shared icons, action controls, and native Markdown use the same value. Floating
+panels retain compact sizes. Never magnify the workspace with a render transform
+or scaled AppKit bounds: drawing, pointer events, and text selection must share
+native coordinates. Display resolution and pixel alignment remain system-owned.
 
 System font for prose and labels. Monospaced for IDs, timestamps, durations,
 command-like values, and section labels. Roles live in `DockTypography`.
@@ -177,6 +199,9 @@ Themes also set `DockThemeStyle.material`, `selection`, `chrome`, and
 `NSGlassEffectView` (macOS 26) (page canvases and the sidebar stay clear), frosted
 cards, chips and inputs, native `glassEffect` buttons and floating panels (`dockFloatingSurface`), no outlines, and
 `DockPaneBackground` under sheets and overlays.
+The window uses one native glass layer, clipped to its panel silhouette; do not
+stack a full-window SwiftUI glass effect over it, which adds broad reflections
+across the reading surface.
 
 Surfaces must be theme-aware. Never paint a box, field, chip or track with
 `fill(Color.dockSurface…)` / `.background(Color.dockControlSurface)` directly:
@@ -289,7 +314,13 @@ uppercase labels in the same pane.
 **Page header anatomy.** Full workspace destinations start with a text title
 and subtitle aligned to the page gutter, with actions on the right and a
 hairline divider below. Do not add a decorative destination icon beside the
-title. Use the shared `DockPageHeader` treatment.
+title. Use the shared `DockPageHeader` treatment. In windows, Calendar is the
+reference: one full-width 52pt title row above the page’s panes. Titles and
+leading sidebar toggles use the same 16pt gutter after traffic-light clearance.
+Keep the title row above split panes when a list collapses; Chat’s sidebar
+toggle uses the same inset in both expanded and collapsed states. Chat’s session
+identity and actions sit in that full-width row above the session list,
+conversation, and inspector; the list does not add a second title strip.
 
 **Header bar anatomy.** Identity on the left, actions on the right, a hairline
 divider below. Identity is a 28pt avatar and a two-line stack (13pt
@@ -688,8 +719,8 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   12,000 characters and 12 actual outputs. At most eight snapshots are held
   in memory. New activity invalidates cached reads while the displayed result
   stays frozen; Update explicitly requests new content.
-- Rows are quiet: no border or surface at rest, a `dockSurface4` fill on hover
-  and a fainter one for the current session. A one-line 12pt semibold title
+- Rows are quiet: no border or surface at rest, including the current session,
+  in both the side preview and top island; hover and composing use a `dockSurface4` fill. A one-line 12pt semibold title
   uses the full row width until Reply slides left into view on hover. Its slot
   collapses when hidden; composing, keyboard navigation, and VoiceOver keep it visible.
   The reveal takes 0.18s and snaps under Reduce Motion or motion-free themes.
@@ -702,7 +733,7 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   metadata is the time since the last update. Working cards pulse and show the
   shimmer. No percentage is ever implied.
 - The open session appears only while it has live activity or an unseen
-  completion. It leads its group, uses the faint current fill, and shows
+  completion. It leads its group and shows
   "Current" instead of a time.
 - Background tasks roll up into their parent session rather than appearing as
   separate rows.
@@ -730,6 +761,17 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   Low quota is a compact advisory: a threshold-colored icon, readable provider
   allowance text, and a secondary update time that confirms sending is available.
   Attachments and status scroll within the fixed body; the footer stays in place.
+- Inline quick reply uses the task row as its only title. A single themed input
+  contains a two-line editor and one Attach/Paste/More/Send toolbar. Destination
+  stays tied to the surrounding task row's captured session. More contains capture,
+  saved drafts when available, and discard; interrupted sends also expose review
+  and retry. Project choices appear only for a new session, with a directory reset
+  only when a project has been chosen.
+  Low quota sits below the editor as one quiet provider/allowance line, with sending
+  availability and freshness in its tooltip and accessibility hint. Only actual
+  preparation, errors, and unavailable states add status text; the send shortcut is
+  in the Send tooltip. Draft errors remain visible and prevent sending. The replying
+  task row yields keyboard focus and its selection outline to the composer.
 - Explicitly entering the composer gives the panel keyboard focus and prevents
   pointer-exit dismissal and automatic announcements from interrupting typing.
   Back, Escape, tab changes, or Open Herm leave composition. The separate draft
@@ -1133,6 +1175,13 @@ single-line preview; missing values do not leave separators behind. Repository
 identity is inline metadata rather than a capsule so the list remains calm at
 narrow sidebar widths. The Pinned section remains a separate presentation.
 
+Session activity uses `session.active_list`, not the REST index’s recent-write
+flag. The visible sidebar refreshes activity every ten seconds for the selected
+profile, including unopened Bot sessions and pins. Successful live snapshots
+replace prior working flags so missed completion events cannot leave a spinner
+running indefinitely. Stream events arriving during a read take precedence;
+unavailable live reads retain the last observed activity.
+
 Pinned is a saved-conversation outline with 8pt inner margins and a comfortable
 72pt row. Title, project context, timestamp, and preview occupy separate visual
 levels: project context uses a quiet folder icon, timestamps align
@@ -1187,6 +1236,8 @@ opens at the top when the category changes.
   divider and an 11pt semibold `settingsSubheading`.
 - **Predictable locations.** General contains Hermes gateway, Startup, and Keyboard shortcuts.
   Appearance exposes Theme, Sidebar, Notch, and Hermes companion directly.
+  The theme gallery uses adaptive columns with a 224pt minimum card width;
+  specimen avatar spacing compresses to keep previews within their cards.
   Notifications contains completion and repository alerts. Updates contains
   both app and agent updates, plus Hermes update behavior. Files & terminal
   keeps the working directory, execution backend, shell, and file access together.
@@ -1296,36 +1347,48 @@ is never rendered as a fabricated meter or percentage.
 
 ### Automation
 
-The fullscreen Automation destination is a full-height operations index rather
-than a dashboard. A quiet three-column table is the primary surface: status
-dot plus name with a single metadata line (humanized cadence such as "Every
-day", and non-local delivery), Next run, and Last run. Times read relative
-first ("in 3 hr", "2 days ago") with the absolute date beneath. Enabled jobs
-whose next run is in the past show "Overdue" in `dockWarning`, and a single
-banner under the header counts them. Last run falls back to the job's own
-last status when run history is unavailable, so Paused, No run yet, Succeeded,
-and Failed stay truthful. It preserves Hermes order and uses hairline dividers.
-Run now is direct; Edit and Remove live in More and the native context menu.
+The Automation destination uses a full-height schedule list, a selected schedule
+workspace, and a resizable run inspector at wide widths. The list collapses to a
+picker when the workspace beside the inspector is narrow or through the sidebar toggle. Inset rows show the name,
+humanized cadence, labelled last outcome, and next run. Selection uses the theme's
+accent fill and leading marker; two-line titles remain readable and rows are keyboard-accessible buttons. Search filters by
+name or job ID and shows an explicit no-matches state.
 
-Selecting a row opens a contextual inspector at wide widths and the same native
-sheet at narrow widths. The inspector header carries a state pill (Active, Overdue,
-Paused), cadence, name, Run now, Edit, More, and a close button in the sheet.
-It has Overview and Runs tabs. Overview leads with four tiles (Next run, Last
-run, Cadence, Repeats), then run and delivery error callouts when Hermes
-reports them, the request (script and prompt preview), Configuration (model and
-provider, skills, toolsets, workdir, delivery), Identifiers, and the report
-action; Runs defaults to the selected job and can switch to the
-authoritative All runs scope. Empty, stale, loading, and unavailable states stay
-inside stable table or inspector regions. New automation uses a focused native
-sheet. Pause and Resume use Hermes' authoritative profile-scoped mutation path
-and appear in More and the row context menu. In-flight operations and recovery
-messages use a fixed slot in the selected job's header. Creation and editing
-include delivery, working directory, and model/provider overrides; editing first
-loads the complete Hermes job so a truncated request preview is never saved.
-Per-job history uses Hermes-returned session identities and script-output previews.
-A finished run without a reported outcome is labelled honestly and excluded from
-success percentages. Inventory failures appear in the stable content container,
-with cached schedules marked not current in the header subtitle.
+The selected schedule header carries Active, Overdue, or Paused, cadence and
+the name, and one compact action row for Edit, Run now, and More. The labelled
+Run output control belongs beside History and Details, where it opens or hides
+the inspector; it never floats among schedule mutations. Operation
+feedback occupies a fixed single-line slot with the full error in its tooltip.
+A flat, hairline-separated summary band shows Next run, Last run, and success among confirmed
+outcomes. Summary values use 12pt medium text, with sentence-case metadata labels.
+Violet `DockCategoryTone.automation` identifies scheduling context; green, amber, and red
+retain their success, warning, and failure meanings. Unconfirmed outcomes stay
+neutral and are excluded from success percentages. These colors resolve through
+the existing palette, including neutral variants in Monochrome and E-Ink.
+
+History and Details tabs sit below the summary. History has a loaded-run count,
+labelled outcomes, and rows that open the run inspector; a finished run
+without a reported outcome stays neutral. Details includes the request, cadence,
+configuration, identifiers, and reported errors. At narrow widths the run
+inspector replaces the workspace and offers a back action. Loading, empty,
+unavailable, and stale states remain within their content regions. Inventory
+errors and overdue counts use the existing page subtitle so updates do not move
+the content.
+
+The schedule title leads the detail pane, with cadence and actions on separate rows.
+Run output precedes a collapsed technical-details disclosure. The inspector uses a
+12pt semibold title, a quiet timestamp, and compact Copy/Close actions. Script
+previews use selectable 12pt regular text so log separators cannot become oversized
+Markdown headings; full agent reports retain the shared Markdown renderer at a
+12pt body size. History freshness stays in its header slot. List and history titles
+use 12pt medium; selection is conveyed by the surface and leading marker.
+
+Creation and editing use matching native sheets with schedule explanations, delivery, working directory, and
+model/provider overrides. Editing loads the complete Hermes job before saving.
+Run now, Pause, Resume, and Remove preserve their confirmation and capability
+gates. Pause and Resume use the authoritative profile-scoped mutation path.
+Per-job history uses Hermes-returned session identities and script-output
+previews; reports stay attached to their owning job and profile.
 
 ### Session inspector
 
@@ -1363,7 +1426,7 @@ header slot; retained data is explicitly marked not current. All states share
 the same content container.
 
 Chat retains the established `TurnActivityView`: live tool steps, `SignalTrace`,
-stable duration text with separate animated live-work decoration, and a compact expandable completed summary. Generated
+stable duration text with separate animated live-work decoration, and a compact expandable completed summary. Running and completed tool durations align at the trailing end of their rows. Generated
 reply content must not replace or restyle this activity presentation.
 
 ### Generated replies
@@ -1532,13 +1595,14 @@ done, failed, stopped (canceled), voice listening/thinking/replying, sleepy
 rows, the streaming reply), then compressing while Hermes compacts the open
 session. Effects use theme tokens only: accent rings, dots
 and waves for activity; warning, destructive, success and metadata badges for
-outcomes. Badge glyphs drop below 24pt. Skins set the tone (hue; gray on E-Ink
+outcomes. Badge glyphs drop below 24pt. Live face canvases observe the shared theme store and redraw on skin changes;
+gallery faces retain their explicit preview skin. Skins set the tone (hue; gray on E-Ink
 and Monochrome; accent on Terminal and HUD) and ink outlines (Cartoon,
 Brutalist, E-Ink). Gloss (sheen, rim light, highlight, sparkle) is drawn
 only on Glass and Clay; every other skin, and the saved PNG, is matte. Only moving states run a clock, gated by Reduce Motion,
 `animates`, and app focus. The PNG saved to Hermes is the still, skin-neutral
-idle face; Regenerate All re-renders it for every Bot. The legacy blob
-renderer stays only to recognize older saves. Group chat stacks place faces
+idle face; Regenerate All re-renders it for every Bot. Glossy Herm faces saved by older builds are recognized alongside the matte
+PNG. The legacy blob renderer stays only to recognize older saves. Group chat stacks place faces
 side by side with no cut-out border.
 
 ### Conversation workspace
@@ -1559,18 +1623,38 @@ at every width. Controls retain 44pt targets and resizing does not animate.
 The transcript mounts a bounded window of messages and pages earlier or later
 history automatically as the reader scrolls within one viewport of either edge;
 there are no show-more buttons, and the reader's position is held while a page
-mounts. Scrolling upward immediately suspends streaming follow until the reader
+mounts. Page anchors track reader movement during layout and repair native origin clamps;
+programmatic corrections and resize events do not trigger edge paging. One session-scoped
+coordinator owns mounting, anchors, navigation, and deferred scroll work. A page remains
+pending until its session, generation, range, and anchor match the measured row batch;
+settling alone never completes it. Session changes and explicit navigation cancel stale work. Each message owns one geometry container around its activity and body; hidden messages still report a zero-height row, so complete page batches remain measurable.
+Scrolling upward immediately suspends streaming follow until the reader
 returns to the bottom or chooses Jump to latest. Streamed output, new blocking
 prompts, and same-session transcript refreshes preserve the reader's position
 above the bottom. While following, content-height changes target the measured
 footer after layout without a second streaming timer. Jump to latest animates
 only when Reduce Motion is off.
 
-Long native Markdown documents retain their full measured height while mounting
-only visible sections and one viewport of buffer. Scrolling remounts the same
+Completed assistant replies use the section renderer at every length, including
+replies over 8 KB. Long native Markdown documents retain their full measured height while mounting
+only visible sections and one viewport of buffer. Adjacent completed pages prefetch pure
+Markdown sections away from the main actor, with immediate synchronous rendering on a miss.
+A bounded 4,000-entry memory cache reuses numeric completed-section heights by exact
+source, kind, width, body style, theme identity/revision, and mention revision. Streaming
+measurements remain local. Reusable text and code views
+measure sections before their display views are created, so cold history pages
+do not construct a text view for every offscreen paragraph. Scrolling remounts the same
 section views without reparsing their content. Focused text remains mounted so
 selection and Copy survive scrolling; VoiceOver, Switch Control, and full
 keyboard access retain the complete section hierarchy.
+Text selection stays within a Markdown section; the message's Copy action copies
+the entire reply.
+
+While the reader manually scrolls, a long live reply keeps its current Markdown
+layout. Incoming chunks continue accumulating in the existing streaming state;
+the native renderer applies the latest chunks once the clip view has been still
+for 80ms. Programmatic following and history-anchor corrections do not start
+this pause. A newly mounted live reply always renders its first snapshot.
 
 Website links in native Markdown keep their underlined accent labels and a
 fixed-size inline site icon. GitHub uses the bundled theme-aware mark; other
@@ -1827,6 +1911,8 @@ events, and main-agent tool activity.
   local status checks and confirmed CLI restart, independently of the chat transport.
 - `DockModel` owns the active conversation, event stream, subagents, tool
   calls, agent activity, and background tasks.
+  Global session tool labels use a dedicated publisher consumed by the edge dock;
+  label changes must not invalidate the open conversation or workspace.
 - `ControlCenterModel` owns read-only projections, refresh generations, stale
   state, and user-triggered control actions.
 - `DeveloperWorkflowModel` owns the single active local repository projection,
@@ -1878,16 +1964,16 @@ Before considering a UI change complete, verify:
 PR summaries begin with one themed overview: repository/number, status action,
 title, author/freshness, base ← head branch direction, change totals, and reviewers.
 Description, readiness, changes, metadata, checks, activity, and the comment
-composer reuse `.dockCard`; tabs use shared `DockTabButton`. Readiness and the
-change breakdown sit side by side when space permits and stack in narrow panes.
+composer reuse `.dockCard`; tabs use shared `DockTabButton`. Readiness and landing share one card, divided between facts and merge requirements/actions. The
+change breakdown sits alongside this card when space permits and stacks in narrow panes.
 Activity events share one divided group rather than individual pill surfaces.
 The comment editor and submit action occupy separate rows so text remains visible.
 
 The Changes group classifies current loaded file paths, with mocks/fixtures
-preceding tests, then docs/configuration/code/other. Each row shows file count,
+preceding tests, then docs/configuration/code/other. Totals lead the group, followed by compact rows with category, file count,
 additions, and deletions. Binary files count even with zero line changes; renames
-count once at the destination path. The footer reports loaded totals and explicitly
-labels incomplete/unknown coverage. Unverified revisions show unavailable or
+count once at the destination path. The totals explicitly label loaded files for incomplete/unknown coverage, with a
+coverage explanation below the rows. Unverified revisions show unavailable or
 loading text instead of presenting stale totals. Review files opens the Code tab.
 Blue denotes informational context, violet merged outcomes, amber pending or
 blocked work; green/red remain line additions/deletions and success/failure.
@@ -1947,11 +2033,11 @@ existing user-icon fallback on failure, and keep the author name visible.
 
 GitHub Details uses aligned label/value rows with a 104pt section-label column,
 wrapping values, and trailing edit actions. Recovery text stays beside the
-affected value. Landing method/actions wrap together; blockers follow a quiet
-divider with warning icons and regular-weight text. Header refresh uses the
+affected value. Landing method/actions wrap together; blockers use warning icons and regular-weight text
+below the shared readiness divider. Header refresh uses the
 shared 24pt icon control with its pending state in place.
 
-Readiness follows the same aligned 104pt label column as Details. Freshness
+Readiness uses a compact aligned 64pt label column. Freshness
 occupies the header action slot. Show conflicts once in the Merge fact with a
 warning icon and regular-weight text; recovery actions wrap below a divider.
 
@@ -2077,3 +2163,100 @@ process names from monospaced loopback addresses and include an open arrow. Empt
 checking, and failed discovery occupy one stable slot. Failed refreshes retain
 previous rows with an explicit stale subtitle. Discovery pauses under hidden surfaces
 and rejects results from a previous terminal scope. Opening remains an explicit click.
+
+PR list rows separate repository/number, title, branch, and readiness into a clear
+reading order. State icons use green for open work, neutral ink for drafts,
+violet for merged work, and red for closed work. Leading marks describe lifecycle
+only. A separate readiness badge uses amber for conflicts, red for failed checks,
+pink for requested changes, violet for required review, and neutral ink for missing
+checks. Terminal lifecycle takes precedence over old readiness results. Selection has an accent leading marker as
+well as the shared selected surface. Status controls pair a state icon and
+readable semantic ink with a quiet tinted surface. Reviewer assignments use
+`dockReview` teal, which resolves to deep ink in light themes, bright ink in dark
+themes, and neutral ink in Monochrome/E-Ink. Description prose stays within an
+820pt reading measure while its surrounding card fills the pane.
+
+
+### Calendar workspace
+
+Calendar uses the shared semantic palette for item identity: `DockCategoryTone.event` blue for events,
+`.reminder` amber for reminders, `.automation` violet for scheduled agent runs,
+and `.task` teal for Kanban. These are category accents, not lifecycle status.
+EventKit calendar/list colors take precedence for Mac items; Monochrome and
+E-Ink use neutral ink, with icons and source labels preserving identity.
+
+Keep the month/week grid dominant beside a 340pt daily agenda. Weekends have a
+quiet surface tint; today has a filled date circle and selection has a tinted
+cell with a top rule. Day cells are keyboard-focusable buttons. Event chips show time above title with a quiet category tint. The daily agenda is a divider-led list with an aligned time column, category icons, and expandable details/actions. Selection uses the skin accent; category identity stays in icons. The compact category legend sits below the grid without adding controls.
+
+Date navigation keeps Today in a fixed slot, disabled on today. The toolbar
+wraps into two rows when needed. Narrow windows stack the grid and agenda in a
+scrollable workspace. Very narrow grids show category icons and item counts
+instead of truncated event titles; full titles remain in the daily agenda. Agenda headers show the selected date and actual item
+count; the read-only Mac connection prompt follows the schedule.
+
+### Activity usage heatmap
+
+Activity → Spend shows the yearly usage heatmap above the fixed 30-day spend report.
+Tokens, Cost, and API calls select the measured intensity; hovering a day shows
+its reported usage. The year loads independently of the spend report
+and reloads with Refresh. No date-range picker is shown. Missing reports show an unavailable state; failed
+refreshes retain the last successful heatmap with a stale diagnostic.
+
+Issues follows the PR overview hierarchy: repository/number and a labeled state,
+16pt page title, author, then assignment/freshness separated by a hairline. Open
+issue state uses `dockInfo`; closed uses `dockMerged`, without implying a merge;
+unknown state remains neutral with a question icon. Assignments use `dockReview`.
+List rows use an unfilled lifecycle icon and show number/freshness, a 12pt semibold title,
+then plain neutral state text and assignment; omit repeated colored icon discs and state pills. The
+detail overview retains one tinted state badge. List selection has the shared surface plus a leading accent marker. Repository scope
+moves below intrinsic-width filter tabs when horizontal space runs out.
+
+Issue Description precedes Details in a shared Dock card, starts expanded, and
+uses the canonical Markdown renderer within an 820pt reading measure. Conversation
+uses one grouped timeline card, with loading/empty/unavailable in a stable content
+slot and refresh feedback inside its 24pt control. Leave a comment is a separate
+card: Write/Preview share an input surface, with a visible prompt and empty-preview
+message. Character count and Post comment sit below the editor. Preserve drafts,
+confirmation, posting feedback, and provider-authoritative metadata editing.
+
+
+### Activity workspace
+
+Work retains its pinned calendar and scrollable detail pane. The calendar starts
+with a labelled month overview of shipped work, sessions, and active days. Its
+heat cells and shipped meters use `dockReview` teal; sessions and hourly rhythm
+use `dockInfo` blue; automation uses `dockMerged` violet. Failed runs keep
+`dockWarning` amber. Legends, row icons, and counts preserve meaning without
+color. These category accents reuse the shared appearance-aware palette and
+resolve to neutral ink in Monochrome and E-Ink. Refresh errors occupy the existing
+toolbar status slot; initial unavailable content retains a stable content area.
+
+Spend leads with the yearly heatmap, followed by estimated cost, total tokens,
+cache reads, and sessions for the past 30 days. API
+calls, reasoning, background share, and model count form a compact supporting
+row with detail in help text. The daily chart follows the spend summary. Input is blue, output and cost teal, cache reads and background work
+violet. Tools and skills occupy two equal columns when space permits and stack
+in compact panes. Selection continues to use the interaction accent; charts
+and meters keep their category colors across metric and theme changes.
+
+Neutral skins use neutral interaction and selection. Character skins use their
+own hue. Semantic status and identity colors use the shared solid palette.
+
+Disclosure groups use `DockDisclosureGroupStyle`: the caret, label, and remaining header width form one keyboard-focusable button. Expanded content keeps its own interactions; the header reports expanded/collapsed state and respects Reduce Motion.
+
+### Component color semantics
+
+`DockCategoryTone` in `DockAccentPalette.swift` supplies category identity without
+implying health or urgency. Calendar reminders are amber rather than warning
+orange; task categories are teal; automation and review categories are violet;
+modified files and integrations are cyan; renamed files are violet. Staged file
+selection uses the skin accent. Additions are green and deletions red across all
+diff viewers. Charts use solid fill roles and keep legends mapped to their data.
+
+Ordinary IDs, branches, repository metadata, drafts, paused automations, unknown
+readiness, and triage are neutral. Actual links and actions use the skin's
+interaction accent. Never turn an ordinary identifier blue just to imply a link.
+Global navigation and page titles remain neutral; put category color in the
+content's meaningful marks. Never add color to fill space or imply a status
+that the runtime/provider did not report.
