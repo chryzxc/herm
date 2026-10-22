@@ -5,16 +5,31 @@ import SwiftUI
 /// these semantic roles rather than introducing near-duplicate font sizes,
 /// row heights, and compact control treatments.
 enum DockTypography {
-    static var pageTitle: Font { .system(size: 16, weight: .semibold, design: DockThemeStyle.current.fontDesign) }
-    static let sectionLabel: Font = .system(size: 10, weight: .semibold, design: .monospaced)
-    static var rowTitle: Font { .system(size: 12, weight: .medium, design: DockThemeStyle.current.fontDesign) }
-    static var body: Font { .system(size: 12, design: DockThemeStyle.current.fontDesign) }
-    static var control: Font { .system(size: 12, weight: .medium, design: DockThemeStyle.current.fontDesign) }
-    static var metadata: Font { .system(size: 11, design: DockThemeStyle.current.fontDesign) }
-    static let machineMetadata: Font = .system(size: 11, design: .monospaced)
-    static let compactStatus: Font = .system(size: 10, weight: .semibold, design: .monospaced)
-    /// Measured figures on monitoring surfaces, such as remaining quota.
-    static let metric: Font = .system(size: 20, weight: .semibold, design: .rounded).monospacedDigit()
+    enum Role { case pageTitle, sectionLabel, rowTitle, body, control, metadata, machineMetadata, compactStatus, metric }
+
+    static func font(_ role: Role, scale: CGFloat = 1, weight: Font.Weight? = nil) -> Font {
+        switch role {
+        case .pageTitle: .system(size: DockWorkspaceScale.points(16, scale: scale), weight: weight ?? .semibold, design: DockThemeStyle.current.fontDesign)
+        case .sectionLabel: .system(size: DockWorkspaceScale.points(10, scale: scale), weight: weight ?? .semibold, design: .monospaced)
+        case .rowTitle: .system(size: DockWorkspaceScale.points(12, scale: scale), weight: weight ?? .medium, design: DockThemeStyle.current.fontDesign)
+        case .body: .system(size: DockWorkspaceScale.points(12, scale: scale), weight: weight ?? .regular, design: DockThemeStyle.current.fontDesign)
+        case .control: .system(size: DockWorkspaceScale.points(12, scale: scale), weight: weight ?? .medium, design: DockThemeStyle.current.fontDesign)
+        case .metadata: .system(size: DockWorkspaceScale.points(11, scale: scale), weight: weight ?? .regular, design: DockThemeStyle.current.fontDesign)
+        case .machineMetadata: .system(size: DockWorkspaceScale.points(11, scale: scale), weight: weight ?? .regular, design: .monospaced)
+        case .compactStatus: .system(size: DockWorkspaceScale.points(10, scale: scale), weight: weight ?? .semibold, design: .monospaced)
+        case .metric: .system(size: DockWorkspaceScale.points(20, scale: scale), weight: weight ?? .semibold, design: .rounded).monospacedDigit()
+        }
+    }
+
+    static var pageTitle: Font { font(.pageTitle) }
+    static var sectionLabel: Font { font(.sectionLabel) }
+    static var rowTitle: Font { font(.rowTitle) }
+    static var body: Font { font(.body) }
+    static var control: Font { font(.control) }
+    static var metadata: Font { font(.metadata) }
+    static var machineMetadata: Font { font(.machineMetadata) }
+    static var compactStatus: Font { font(.compactStatus) }
+    static var metric: Font { font(.metric) }
 }
 enum DockSpacing {
     static let micro: CGFloat = 4
@@ -39,42 +54,28 @@ enum DockControlMetrics {
 
 /// The single status vocabulary shared by the office scene, its HUD, and the
 /// notch. Hue communicates state only; every use pairs it with a text label.
-enum DockStatusTone: CaseIterable {
+enum DockStatusTone: CaseIterable, Hashable {
     case attention, working, review, queued, complete, inactive
 
-    /// Pastel hues tuned for dark signage. Office bubbles always draw on dark
-    /// sign ink, so the scene uses these regardless of appearance.
+    private var accent: DockAccentColor? {
+        switch self {
+        case .attention: .orange
+        case .working: .blue
+        case .review: .violet
+        case .queued: .indigo
+        case .complete: .green
+        case .inactive: nil
+        }
+    }
+
+    /// Office signage always has a dark backing, independent of the window theme.
     var signageColor: NSColor {
-        switch self {
-        case .attention: NSColor(srgbRed: 1.0, green: 0.74, blue: 0.36, alpha: 1)
-        case .working: NSColor(srgbRed: 0.45, green: 0.93, blue: 1.0, alpha: 1)
-        case .review: NSColor(srgbRed: 0.74, green: 0.64, blue: 1.0, alpha: 1)
-        case .queued: NSColor(srgbRed: 0.62, green: 0.72, blue: 0.98, alpha: 1)
-        case .complete: NSColor(srgbRed: 0.55, green: 0.95, blue: 0.72, alpha: 1)
-        case .inactive: NSColor(srgbRed: 0.62, green: 0.64, blue: 0.72, alpha: 1)
-        }
+        accent?.signageColor ?? NSColor(white: 0.60, alpha: 1)
     }
 
-    /// Deeper variants that keep dots and borders legible on light surfaces.
-    private var paperColor: NSColor {
-        switch self {
-        case .attention: NSColor(srgbRed: 0.71, green: 0.40, blue: 0.04, alpha: 1)
-        case .working: NSColor(srgbRed: 0.05, green: 0.46, blue: 0.56, alpha: 1)
-        case .review: NSColor(srgbRed: 0.43, green: 0.24, blue: 0.80, alpha: 1)
-        case .queued: NSColor(srgbRed: 0.23, green: 0.36, blue: 0.80, alpha: 1)
-        case .complete: NSColor(srgbRed: 0.08, green: 0.50, blue: 0.24, alpha: 1)
-        case .inactive: NSColor(srgbRed: 0.42, green: 0.45, blue: 0.50, alpha: 1)
-        }
-    }
-
-    var nsColor: NSColor {
-        let signage = signageColor, paper = paperColor
-        return NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? signage : paper
-        }
-    }
-
-    var color: Color { Color(nsColor: nsColor) }
+    var nsColor: NSColor { NSColor(color) }
+    var color: Color { accent?.color ?? .dockMetadataText }
+    var fill: Color { accent?.fill ?? .dockMetadataText }
 
     /// Live states breathe; attention breathes faster. Settled states hold still.
     var pulseDuration: Double? {
@@ -97,7 +98,7 @@ struct DockStatusDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var fill: Color {
-        guard muted else { return tone.color }
+        guard muted else { return tone.fill }
         return tone == .attention ? .dockWarning : .dockSecondaryText
     }
 
@@ -124,13 +125,13 @@ struct DockStatusPill: View {
     var body: some View {
         HStack(spacing: 6) {
             if let symbol {
-                DockIcon(symbol).font(.system(size: 10, weight: .semibold))
+                DockIcon(symbol).dockFont(size: 10, weight: .semibold)
                     .foregroundStyle(tone.color)
             } else {
                 DockStatusDot(tone: tone, size: 6)
             }
             Text(text)
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
         }
@@ -153,7 +154,7 @@ struct DockSectionLabel: View {
                 .foregroundStyle(Color.dockSectionText)
             if let count {
                 Text("\(count)")
-                    .font(DockTypography.sectionLabel.monospacedDigit())
+                    .dockFont(.sectionLabel).monospacedDigit()
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -249,13 +250,13 @@ struct DockNavRow: View {
                 DockIcon(icon, size: 15, color: inverted ? style.background : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 18)
                 Text(title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular, design: DockThemeStyle.current.fontDesign))
+                    .dockFont(size: 13, weight: isSelected ? .semibold : .regular, design: DockThemeStyle.current.fontDesign)
                     .foregroundStyle(inverted ? style.background : isSelected || isHovering ? style.primaryText : style.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if showsUpdateBadge {
                     Text("Update")
-                        .font(.system(size: 10, weight: .semibold))
+                        .dockFont(size: 10, weight: .semibold)
                         .foregroundStyle(inverted ? style.background : style.warning)
                         .padding(.horizontal, 6)
                         .frame(height: 18)
@@ -313,6 +314,7 @@ struct DockRailButton: View {
 /// Square icon action for sidebar headers: quiet until hovered; prominent
 /// actions keep an accent tint so the primary action reads at a glance.
 struct DockIconButton: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let icon: Ph
     let label: String
     var isProminent = false
@@ -332,7 +334,8 @@ struct DockIconButton: View {
                     DockIcon(icon, size: size * 0.5, color: isProminent ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 }
             }
-            .frame(width: size, height: size)
+            .frame(width: DockWorkspaceScale.points(size, scale: workspaceScale),
+                   height: DockWorkspaceScale.points(size, scale: workspaceScale))
             .background(shape.fill(isProminent
                                    ? style.accent.opacity(isHovering ? 0.24 : 0.14)
                                    : style.surface4.opacity(isHovering ? 0.9 : 0.6)))
@@ -514,14 +517,14 @@ struct DockSectionHeader<Actions: View>: View {
         HStack(spacing: 6) {
             // Sentence case, quiet weight: a label, not a banner.
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .dockFont(size: 12, weight: .medium)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
                 .foregroundStyle(isHovering && isExpanded != nil ? style.secondaryText : style.metadataText)
             if let count {
                 Text(count > 99 ? "99+" : "\(count)")
-                    .font(.system(size: 12).monospacedDigit())
+                    .dockFont(size: 12).monospacedDigit()
                     .foregroundStyle(style.metadataText)
             }
             if let isExpanded {

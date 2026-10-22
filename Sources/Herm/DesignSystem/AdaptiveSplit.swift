@@ -38,7 +38,7 @@ struct AdaptiveSplit<Primary: View, Secondary: View>: View {
                         HStack {
                             Button(action: onBack) { DockIconLabel("BACK", icon: .caretLeft) }
                                 .buttonStyle(.dockCompact)
-                                .font(.system(size: 11, weight: .semibold))
+                                .dockFont(size: 11, weight: .semibold)
                                 .foregroundStyle(Color.dockAccent)
                             Spacer()
                         }

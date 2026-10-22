@@ -5,6 +5,55 @@ import Testing
 
 @MainActor
 struct DockThemeStoreTests {
+    @Test func existingHermFacesFollowSkinChanges() async throws {
+        _ = NSApplication.shared
+        let store = DockThemeStore.shared
+        let savedTheme = store.selectedThemeID
+        let savedAppearance = NSApp.appearance
+        defer { store.selectedThemeID = savedTheme; NSApp.appearance = savedAppearance }
+        store.selectedThemeID = .clean
+        let bot = BotSummary(id: "nexus", name: "Nexus", title: nil, description: nil, model: nil,
+                             isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+                             isHidden: false, hasAvatar: true, isDefault: true)
+        let tiff = try #require(BotFaceMark.still(id: bot.id, theme: .glass, originalColors: true).nsImage?.tiffRepresentation)
+        let savedFace = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+        let faces = [
+            AnyView(BotFaceMark(id: "nexus", size: 80)),
+            AnyView(DockBotOrbitCanvas(id: "nexus", image: nil, size: 80, mood: .idle, pose: .rest)),
+            AnyView(BotAvatarView(bot: bot, imageData: savedFace, size: 80, animated: false)),
+            AnyView(BotAvatarView(bot: bot, imageData: savedFace, size: 80, animated: false)
+                .environment(\.dockBotIndicatorFrame, DockBotIndicatorFrame(date: .distantPast, moves: false))),
+            AnyView(BotFaceMark(id: "nexus", size: 80, theme: .cartoon))
+        ]
+        let hosts = faces.map { NSHostingView(rootView: $0.frame(width: 120, height: 120)) }
+        let windows = hosts.map { host in
+            host.frame = NSRect(x: 0, y: 0, width: 120, height: 120)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.orderFrontRegardless()
+            return window
+        }
+        defer { windows.forEach { $0.close() } }
+        var baseline: [Data] = []
+        for theme in [DockThemeID.clean, .mono, .terminal, .cartoon, .clean] {
+            store.selectedThemeID = theme
+            windows.forEach { $0.appearance = NSAppearance(named: .aqua) }
+            try await Task.sleep(for: .milliseconds(150))
+            let images = try hosts.map { host in
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                return try #require(bitmap.representation(using: .png, properties: [:]))
+            }
+            if baseline.isEmpty { baseline = images }
+            for index in 0..<4 {
+                #expect((images[index] == baseline[index]) == (theme == .clean), "Face \(index), skin \(theme)")
+            }
+            #expect(images[4] == baseline[4], "Explicit gallery skin must stay fixed")
+        }
+    }
+
     @Test func existingNotchAndPreviewFollowSkinChanges() async throws {
         _ = NSApplication.shared
         let store = DockThemeStore.shared
@@ -233,7 +282,8 @@ struct DockThemeStoreTests {
             }
             let c = rgb!
             let luma = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
-            #expect(luma <= 0.86, "\(id) primary text too bright")
+            // Clean follows the approved reference's #E4E4E4 soft white; other skins retain their ceiling.
+            #expect(luma <= (id == .clean ? 0.90 : 0.86), "\(id) primary text too bright")
         }
     }
 

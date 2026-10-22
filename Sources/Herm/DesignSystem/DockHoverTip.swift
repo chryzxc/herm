@@ -165,7 +165,7 @@ final class DockHoverTipPresenter {
       320, screen.visibleFrame.width - 30,
       ceil((anchor.text as NSString).size(withAttributes: [.font: font]).width))
     let tip = Text(anchor.text)
-      .font(DockTypography.control)
+      .dockFont(.control)
       .foregroundStyle(Color.dockPrimaryText)
       .lineLimit(12)
       .frame(width: textWidth, alignment: .leading)

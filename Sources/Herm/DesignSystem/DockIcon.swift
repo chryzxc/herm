@@ -6,8 +6,9 @@ import SwiftUI
 /// family; views never instantiate SF Symbols or other icon sets.
 ///
 /// Without `size`, the icon sizes like an SF Symbol: one em of the inherited
-/// `.font`, so `.font(.system(size: 13))` sizes it the way it sized symbols.
+/// `.font`, so `.dockFont(size: 13)` sizes it the way it sized symbols.
 struct DockIcon: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     enum Weight { case regular, fill }
 
     /// Phosphor glyphs sit inside padding on their grid. This scale gives them
@@ -37,7 +38,7 @@ struct DockIcon: View {
     @ViewBuilder private var glyph: some View {
         let shape = PhosphorShape(icon: icon, weight: weight)
         if let size {
-            shape.frame(width: size, height: size).accessibilityHidden(true)
+            shape.frame(width: DockWorkspaceScale.points(size, scale: workspaceScale), height: DockWorkspaceScale.points(size, scale: workspaceScale)).accessibilityHidden(true)
         } else {
             Text(verbatim: "\u{2003}")
                 .hidden()

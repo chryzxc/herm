@@ -16,7 +16,7 @@ struct DockMetadataPill: View {
                 DockIcon(navigationIcon, size: 12, color: .dockAccent)
             }
         }
-            .font(DockTypography.body)
+            .dockFont(.body)
             .fontWeight(.regular)
             .foregroundStyle(navigationIcon == nil ? (labelColor?.foreground ?? Color.dockPrimaryText) : Color.dockAccent)
             .padding(.horizontal, 10)

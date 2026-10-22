@@ -51,9 +51,17 @@ extension Color {
     static var dockMetadataText: Color { DockThemePalette(theme: DockThemeRuntime.current).metadataText }
     static var dockSectionText: Color { dockSecondaryText }
     // Kanban lifecycle accents shared by board and session-kanban surfaces.
-    static var dockKanbanRunning: Color { dockAccent }
-    static var dockKanbanReview: Color { dockSecondaryText }
+    static var dockKanbanRunning: Color { DockStatusTone.working.color }
+    static var dockKanbanReview: Color { DockStatusTone.review.color }
+    // Solid fill roles are distinct from readable semantic ink.
+    static var dockInfoFill: Color { DockAccentColor.blue.fill }
+    static var dockReviewFill: Color { DockAccentColor.teal.fill }
+    static var dockMergedFill: Color { DockAccentColor.violet.fill }
+    static var dockSuccessFill: Color { DockAccentColor.green.fill }
+    static var dockWarningFill: Color { DockAccentColor.orange.fill }
+    static var dockDestructiveFill: Color { DockAccentColor.coral.fill }
     static var dockInfo: Color { DockThemePalette(theme: DockThemeRuntime.current).info }
+    static var dockReview: Color { DockThemePalette(theme: DockThemeRuntime.current).review }
     static var dockMerged: Color { DockThemePalette(theme: DockThemeRuntime.current).merged }
     static var dockSuccess: Color { DockThemePalette(theme: DockThemeRuntime.current).success }
     static var dockWarning: Color { DockThemePalette(theme: DockThemeRuntime.current).warning }
@@ -438,7 +446,7 @@ struct NativeLiquidGlassBackground: NSViewRepresentable {
 struct DockWindowBackground: View {
     // Observed so the canvas repaints on theme switch; it has no other inputs.
     @ObservedObject private var themeStore = DockThemeStore.shared
-    /// Outline for the glass rim; pass the clip shape so curved edges (notch) keep it.
+    /// Clip the native material to the panel silhouette, including attached notches.
     var shape = AnyShape(Rectangle())
 
     /// Glass samples the real backdrop with the system Liquid Glass effect
@@ -446,7 +454,8 @@ struct DockWindowBackground: View {
     @ViewBuilder private var glassOrPopover: some View {
         if DockThemeRuntime.current == .glass, #available(macOS 26.0, *) {
             NativeLiquidGlassBackground()
-                .overlay(Color.clear.glassEffect(.regular, in: shape))
+                // A second full-window glass effect adds a broad specular reflection over the transcript.
+                .clipShape(shape)
         } else {
             NativePopoverBackground(material: DockThemeRuntime.current == .glass ? .underWindowBackground : .popover)
         }
@@ -475,6 +484,7 @@ struct DockPaneBackground: View {
 /// button and input specifications. Keeping them here prevents native control
 /// styles from leaking into individual Control, chat, or Activity views.
 struct DockPressButtonStyle: ButtonStyle {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -482,9 +492,9 @@ struct DockPressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         configuration.label
-            .font(DockTypography.control)
+            .dockFont(.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
-            .padding(3)
+            .padding(DockWorkspaceScale.points(3, scale: workspaceScale))
             .background {
                 if DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(shape)
@@ -533,13 +543,14 @@ struct DockHoverModifier: ViewModifier {
 /// pixels (and press dims them) so it never paints outside the visible control
 /// when the hit area is larger than the artwork.
 struct DockHoverButtonStyle: ButtonStyle {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(DockTypography.control)
+            .dockFont(.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .brightness(configuration.isPressed ? -0.06 : isHovering && isEnabled ? 0.12 : 0)
             .opacity(isEnabled ? 1 : 0.42)
@@ -560,6 +571,7 @@ extension View {
 /// The single accent-tinted action treatment from DESIGN.md. Use it only for the
 /// primary action in a section; secondary actions keep a neutral outline.
 struct DockPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
@@ -573,10 +585,10 @@ struct DockPrimaryButtonStyle: ButtonStyle {
         // Glass matches macOS `.glassProminent`: accent-tinted glass, no outline or canvas.
         let isGlass = DockThemeStyle.current.material == .glass
         configuration.label
-            .font(DockTypography.control)
+            .dockFont(.control)
             .foregroundStyle(isGlass ? Color.dockOnAccentText : Color.dockPrimaryText)
-            .padding(.horizontal, isCompact ? 10 : 12)
-            .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
+            .padding(.horizontal, DockWorkspaceScale.points(isCompact ? 10 : 12, scale: workspaceScale))
+            .frame(minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale))
             .background {
                 if isGlass {
                     Color.clear.dockLiquidGlass(shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true, elevated: true)
@@ -601,6 +613,7 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 /// The outlined companion to the primary action (Cancel, Remove, Copy). A
 /// destructive role tints the label instead of filling the control.
 struct DockSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlSize) private var controlSize
@@ -611,10 +624,10 @@ struct DockSecondaryButtonStyle: ButtonStyle {
         let isCompact = compact || controlSize == .small || controlSize == .mini
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration.label
-            .font(DockTypography.control)
+            .dockFont(.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
-            .padding(.horizontal, isCompact ? 10 : 12)
-            .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
+            .padding(.horizontal, DockWorkspaceScale.points(isCompact ? 10 : 12, scale: workspaceScale))
+            .frame(minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale))
             .background {
                 // Glass matches macOS `.glass`: interactive glass supplies hover/press and rim, so no outline.
                 if DockThemeStyle.current.material == .glass {
@@ -736,10 +749,10 @@ struct DockPageHeader<Trailing: View>: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(DockTypography.pageTitle)
+                .dockFont(.pageTitle)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(subtitle)
-                .font(.system(size: 10))
+                .dockFont(size: 10)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
         }
@@ -770,12 +783,12 @@ struct DockPageHeader<Trailing: View>: View {
         HStack(spacing: 8) {
             sidebarToggle
             Text(title)
-                .font(.system(size: 13, weight: .semibold, design: DockThemeStyle.current.fontDesign))
+                .dockFont(size: 13, weight: .semibold, design: DockThemeStyle.current.fontDesign)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .layoutPriority(1)
             Text(subtitle)
-                .font(.system(size: 12))
+                .dockFont(size: 12)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -783,8 +796,8 @@ struct DockPageHeader<Trailing: View>: View {
             refreshButton
             trailing().fixedSize()
         }
-        // The toggle sits where every title row puts it; without one the title gets the usual inset.
-        .padding(.leading, sidebarCollapsed != nil ? DockWindowChrome.sidebarToggleLeading : 16 + row.leadingClearance)
+        // Titles and sidebar controls share Calendar’s gutter beside the traffic lights.
+        .padding(.leading, 16 + row.leadingClearance)
         .padding(.trailing, 12)
         .frame(height: row.height)
         .background { TitlebarDoubleClickArea() }
@@ -938,7 +951,7 @@ struct DockCallout<Content: View>: View {
             HStack(spacing: DockSpacing.control) {
                 DockIcon(icon, size: 14, weight: .fill, color: tint)
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .dockFont(size: 13, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -973,7 +986,7 @@ struct DockCallout<Content: View>: View {
     private func statusPill(_ badge: String, tint: Color) -> some View {
         HStack(spacing: DockSpacing.micro) {
             Circle().fill(tint).frame(width: 5, height: 5)
-            Text(badge).font(.system(size: 11, weight: .semibold))
+            Text(badge).dockFont(size: 11, weight: .semibold)
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 8)
@@ -998,7 +1011,7 @@ struct DockCalloutDisclosure: View {
                 HStack(spacing: DockSpacing.tight) {
                     DockIcon(isOpen ? .caretDown : .caretRight, size: 11, color: .dockMetadataText)
                     Text(title)
-                        .font(.system(size: 12, weight: .medium))
+                        .dockFont(size: 12, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer(minLength: 0)
                 }
@@ -1009,7 +1022,7 @@ struct DockCalloutDisclosure: View {
             if isOpen {
                 ScrollView(.vertical) {
                     Text(text)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineSpacing(2)
                         .textSelection(.enabled)
@@ -1056,7 +1069,7 @@ struct DockExpandableText: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DockSpacing.tight) {
             Text(text)
-                .font(.system(size: 12, design: monospaced ? .monospaced : .default))
+                .dockFont(size: 12, design: monospaced ? .monospaced : .default)
                 .foregroundStyle(prominent ? Color.dockPrimaryText : Color.dockSecondaryText)
                 .lineSpacing(2)
                 .lineLimit(isExpanded || !isLong ? nil : lineLimit)
@@ -1115,11 +1128,11 @@ struct DockLoadingState: View {
                 .controlSize(.regular)
                 .tint(Color.dockAccent)
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .dockFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if let detail {
                 Text(detail)
-                    .font(.system(size: 11))
+                    .dockFont(size: 11)
                     .foregroundStyle(Color.dockSecondaryText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1154,13 +1167,14 @@ extension ButtonStyle where Self == DockSecondaryButtonStyle {
 
 /// Inline navigation and disclosure stay recognizable in monochrome themes too.
 struct DockLinkButtonStyle: ButtonStyle {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         let tint = configuration.role == .destructive ? Color.dockDestructive : Color.dockAccent
         configuration.label
-            .font(DockTypography.control)
+            .dockFont(.control)
             .foregroundStyle(tint)
             .underline(true, color: tint)
             .contentShape(Rectangle())
@@ -1327,7 +1341,7 @@ struct DockTabButton: View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
+                .dockFont(size: 11, weight: isSelected ? .medium : .regular)
                 .foregroundStyle(isSelected ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText) : Color.dockSecondaryText)
                 .padding(.horizontal, 10)
                 .frame(height: 30)

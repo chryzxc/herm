@@ -64,6 +64,16 @@ user-visible changes. Do not commit or push unless asked.
 
 ## UI consistency
 
+- Color changes start in `Sources/Herm/DesignSystem/DockAccentPalette.swift`
+  (solid reference colors) or `DockTheme.swift` (skin surfaces/interaction).
+  New features use `Color.dock*` roles or `DockAccentColor`: `.fill` for solid
+  artwork/data marks, `.color` for readable ink. Do not invent feature palettes.
+  Neutral skins use gray interaction/selection; character skins keep their own
+  hue. Status/identity colors never become a global blue interaction override.
+  Run `make color-contract`; CI rejects new feature-local literals. Existing
+  counted source/legacy exceptions must not be expanded to bypass the check.
+  See `docs/color-system.md` for examples and source-color exceptions.
+
 - Match the closest existing component before introducing a new visual
   treatment. Reuse shared `Dock*` components and color tokens.
 - Clickable text must be recognizable before hover: use `.dockCompact` for

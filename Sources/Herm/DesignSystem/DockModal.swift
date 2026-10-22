@@ -66,7 +66,7 @@ struct DockModal<Content: View, Footer: View>: View {
                 badge
             } else if let icon {
                 DockIcon(icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .dockFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                     .frame(width: 32, height: 32)
                     .background(
@@ -76,12 +76,12 @@ struct DockModal<Content: View, Footer: View>: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .dockFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 12))
+                        .dockFont(size: 12)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -90,7 +90,7 @@ struct DockModal<Content: View, Footer: View>: View {
             Spacer(minLength: 12)
             Button { dismiss() } label: {
                 DockIcon(.x)
-                    .font(.system(size: 12, weight: .semibold))
+                    .dockFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 22, height: 22)
             }
@@ -123,7 +123,7 @@ extension DockModal where Footer == EmptyView {
 func modalSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 9) {
         Text(title)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .dockFont(size: 10, weight: .semibold, design: .monospaced)
             .tracking(1.1)
             .foregroundStyle(Color.dockMetadataText)
         content()
@@ -137,11 +137,11 @@ func labeledField<Content: View>(_ title: String, hint: String? = nil, @ViewBuil
     VStack(alignment: .leading, spacing: 5) {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if let hint {
                 Text(hint)
-                    .font(.system(size: 10))
+                    .dockFont(size: 10)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
             }
@@ -158,10 +158,10 @@ struct ModalNote: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if let icon { DockIcon(icon).font(.system(size: 11)) }
+            if let icon { DockIcon(icon).dockFont(size: 11) }
             Text(text).fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 11))
+        .dockFont(size: 11)
         .foregroundStyle(tone)
     }
 }
@@ -191,7 +191,7 @@ struct DockModalButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .dockFont(size: 13, weight: .semibold)
             .foregroundStyle(isPrimary ? Color.dockOnAccentText : Color.dockPrimaryText)
             .padding(.horizontal, 16)
             .frame(minWidth: 92, minHeight: DockLayout.controlHeight)

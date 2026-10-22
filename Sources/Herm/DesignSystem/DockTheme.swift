@@ -14,46 +14,46 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .glass: "Liquid glass"
         case .clean: "Quiet porcelain"
-        case .hermesClassic: "Midnight & brass"
+        case .hermesClassic: "Midnight ink"
         case .ares: "Oxblood & bronze"
         case .mono: "Graphite ledger"
         case .slate: "Steel blueprint"
         case .warmLight: "Cream stationery"
         case .cartoon: "Ink & stickers"
-        case .terminal: "Green phosphor"
+        case .terminal: "Phosphor canvas"
         case .brutalist: "Bold print studio"
         case .origami: "Folded ivory"
         case .dusk: "Plum & lavender"
         case .retro: "Silver desktop"
         case .eInk: "Paper & ink"
-        case .swiss: "Red editorial"
+        case .swiss: "Open editorial"
         case .clay: "Soft terracotta"
         case .pixel: "Indigo arcade"
         case .notebook: "Pencil & paper"
-        case .hud: "Cyan instruments"
+        case .hud: "Night instruments"
         case .island: "Pure black"
         }
     }
     var detail: String {
         switch self {
         case .glass: "Native macOS Liquid Glass with neutral graphite tint. Follows macOS appearance."
-        case .clean: "Porcelain surfaces, soft gray selection, and borderless cards. Follows macOS appearance."
+        case .clean: "Porcelain surfaces, neutral gray selection, and borderless cards. Follows macOS appearance."
         case .hermesClassic: "Midnight ink, brass accents, serif lettering, and fine gold selection bars."
         case .ares: "Oxblood panels, bronze contours, crisp corners, and hard offset shadows."
         case .mono: "Graphite surfaces, monospaced lettering, and inverted silver selection."
         case .slate: "Steel-blue panels, a fine blueprint grid, and precise blue selection bars."
         case .warmLight: "Cream paper, brown ink, serif lettering, and gently pressed surfaces."
         case .cartoon: "Cream canvas, white stickers, chunky ink outlines, and springy rounded controls."
-        case .terminal: "Green phosphor, fine scanlines, monospaced lettering, and inverted selection."
+        case .terminal: "Green-black surfaces, fine scanlines, monospaced lettering, and inverted selection."
         case .brutalist: "White stock, a dotted print grid, cobalt actions, and heavy black offset outlines."
         case .origami: "Ivory paper, indigo ink, clipped folds, and softly layered panels."
         case .dusk: "Plum-black surfaces, lavender accents, soft depth, and generous corners."
-        case .retro: "Silver panels, navy selection, and raised and sunken desktop bevels. No motion."
+        case .retro: "Silver panels, blue selection, and raised and sunken desktop bevels. No motion."
         case .eInk: "Crisp paper, black rules, square controls, and inverted selection. No motion."
         case .swiss: "Open typographic layout, a clear canvas, red underlines, and a single-rule composer."
-        case .clay: "Terracotta accents, warm porcelain, rounded lettering, and softly molded controls."
+        case .clay: "Warm porcelain, terracotta accents, rounded lettering, and softly molded controls."
         case .pixel: "Indigo panels, magenta accents, stepped corners, and pixel-grid shadows. No motion."
-        case .notebook: "Ruled cream paper, blue ink, pencil outlines, and yellow highlighter selection."
+        case .notebook: "Ruled cream paper, blue accents, pencil outlines, and highlighter selection."
         case .hud: "Cyan instruments, crosshair grid, chamfered panels, and fine corner brackets."
         case .island: "Pure black surfaces and white type that blend with the camera notch. Used by the top island."
         }
@@ -207,17 +207,27 @@ struct DockThemePalette {
     var usesStructuredDividers: Bool { true }
     var showsDestinationIcons: Bool { true }
     /// Semantic hex roles for one appearance of a theme.
-    private static func luminance(_ hex: String) -> Double {
+    static func luminance(_ hex: String) -> Double {
         let c = NSColor(hex: hex).usingColorSpace(.sRGB) ?? .black
         func lin(_ v: CGFloat) -> Double { let d = Double(v); return d <= 0.03928 ? d / 12.92 : pow((d + 0.055) / 1.055, 2.4) }
         return 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent) + 0.0722 * lin(c.blueComponent)
     }
-    fileprivate static func onAccentHex(forAccent accent: String) -> String {
+    static func onAccentHex(forAccent accent: String) -> String {
         let l = luminance(accent)
         return (1.05 / (l + 0.05)) >= ((l + 0.05) / (luminance("#111111") + 0.05)) ? "#FFFFFF" : "#111111"
     }
-    fileprivate typealias Roles = (bg: String, surface: String, surface2: String, surface4: String, primary: String, secondary: String, metadata: String, accent: String, selected: String, divider: String, success: String, warning: String, destructive: String)
+    typealias Roles = (bg: String, surface: String, surface2: String, surface4: String, primary: String, secondary: String, metadata: String, accent: String, selected: String, divider: String, success: String, warning: String, destructive: String)
     fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
+        var roles = baseRoles(theme, dark: isDark)
+        guard theme != .mono && theme != .eInk else { return roles }
+        // Interaction and selection belong to the skin, never the status palette.
+        roles.success = DockAccentColor.green.hex(on: roles)
+        roles.warning = DockAccentColor.orange.hex(on: roles)
+        roles.destructive = DockAccentColor.coral.hex(on: roles)
+        return roles
+    }
+
+    private static func baseRoles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         switch theme {
         case .hermesClassic: return isDark ? ("#1A1A2E", "#211F35", "#171728", "#333355", "#D3CCB4", "#BBB8AC", "#988964", "#E5B23E", "#3A3A55", "#544F67", "#8FBC8F", "#E3C04F", "#FF6B6B") : ("#F7F3E8", "#F1E8D3", "#FBF9F2", "#E9DFC6", "#3E321F", "#61523A", "#756549", "#B8860B", "#E8DCC2", "#D7C9A9", "#2E7D32", "#B45309", "#B4232F")
         case .ares: return isDark ? ("#1D1115", "#2B191E", "#160E12", "#48252B", "#CCC2AF", "#C7B4A5", "#AC7C78", "#DD4A3A", "#692620", "#6E584B", "#7BC96F", "#C7A96B", "#EF5350") : ("#F8EEE8", "#F1DDD3", "#FCF7F4", "#E8C6B8", "#3B201B", "#60433C", "#7E5850", "#DD4A3A", "#F0D1C7", "#DAB2A2", "#4CAF50", "#C7A96B", "#EF5350")
@@ -237,7 +247,7 @@ struct DockThemePalette {
         case .dusk: return ("#111019", "#1D1928", "#15121E", "#2A2436", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740", "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B")
         // Apple system grays and a graphite accent: neutral, like macOS 26 Liquid Glass.
         case .glass: return isDark ? ("#1C1C1E", "#2C2C2E", "#232325", "#323234", "#D8D8DC", "#AEAEB2", "#99999E", "#AEAEB2", "#3A3A3C", "#48484A", "#30D158", "#FF9F0A", "#FF453A") : ("#F5F5F7", "#FFFFFF", "#FAFAFA", "#E8E8ED", "#1D1D1F", "#515154", "#6E6E73", "#6E6E73", "#E3E3E8", "#D2D2D7", "#248A3D", "#C93400", "#D70015")
-        case .clean: return isDark ? ("#141414", "#1E1E1E", "#191919", "#2A2A2A", "#D6D6D6", "#B0B0B0", "#8C8C8C", "#C7C7CC", "#2C2C2C", "#303030", "#4CC27A", "#E5A640", "#FF6B6B") : ("#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#3A3A3C", "#EBEBEB", "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A")
+        case .clean: return isDark ? ("#171716", "#20201F", "#1B1B1A", "#2B2B2A", "#E4E4E4", "#B0B0AE", "#999997", "#B0B0AE", "#2B2B2A", "#303030", "#4CC27A", "#E5A640", "#FF6B6B") : ("#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#666664", "#EFEFEE", "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A")
         case .eInk: return ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#EDEDED", "#000000", "#2B2B2B", "#555555", "#000000", "#D9D9D9", "#000000", "#1A1A1A", "#333333", "#000000")
         case .swiss: return isDark ? ("#0A0A0A", "#0A0A0A", "#0A0A0A", "#1C1C1C", "#D4D4D4", "#B0B0B0", "#7A7A7A", "#FF3B30", "#2A1412", "#2E2E2E", "#9A9A9A", "#B0B0B0", "#FF3B30") : ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#F0F0F0", "#0A0A0A", "#4A4A4A", "#747474", "#E30613", "#FBE4E5", "#D9D9D9", "#555555", "#777777", "#E30613")
         }
@@ -252,8 +262,14 @@ struct DockThemePalette {
     var background: Color { resolvedTokens.background }; var surface: Color { resolvedTokens.surface }; var surface2: Color { resolvedTokens.surface2 }; var surface4: Color { resolvedTokens.surface4 }
     var surface6: Color { surface4.opacity(0.86) }; var surface8: Color { surface4.opacity(0.72) }
     var onAccent: Color { resolvedTokens.onAccent }
+    func color(_ accent: DockAccentColor) -> Color { resolvedTokens.accents[accent.rawValue] }
+    /// Solid identity artwork keeps the midtone fill; small text uses contrast-adjusted ink.
+    func fill(_ accent: DockAccentColor) -> Color {
+        theme == .mono || theme == .eInk ? color(accent) : Color(nsColor: NSColor(hex: accent.hex))
+    }
     var info: Color { resolvedTokens.info }
     var merged: Color { resolvedTokens.merged }
+    var review: Color { resolvedTokens.review }
     var primaryText: Color { resolvedTokens.primaryText }; var secondaryText: Color { resolvedTokens.secondaryText }; var metadataText: Color { resolvedTokens.metadataText }; var accent: Color { resolvedTokens.accent }; var selectedFill: Color { resolvedTokens.selectedFill }; var divider: Color { resolvedTokens.divider }; var success: Color { resolvedTokens.success }; var warning: Color { resolvedTokens.warning }; var destructive: Color { resolvedTokens.destructive }
     /// Rail and session list; tinted skins set them apart from the chat page.
     var sidebarBackground: Color { theme.style.tintedSidebar ? surface2 : background }
@@ -261,7 +277,8 @@ struct DockThemePalette {
 }
 
 private struct Tokens {
-    let windowBackground, background, surface, surface2, surface4, primaryText, secondaryText, metadataText, accent, onAccent, selectedFill, divider, success, warning, destructive, info, merged: Color
+    let accents: [Color]
+    let windowBackground, background, surface, surface2, surface4, primaryText, secondaryText, metadataText, accent, onAccent, selectedFill, divider, success, warning, destructive, info, merged, review: Color
 
     init(theme: DockThemeID) {
         let light = DockThemePalette.roles(theme, dark: false)
@@ -281,16 +298,14 @@ private struct Tokens {
                 })
             }
         }
-        // Supplemental semantic hues follow the actual canvas brightness, including
-        // fixed-appearance skins. Monochrome skins keep their ink vocabulary.
-        func semantic(light: String, dark: String) -> Color {
+        accents = DockAccentColor.allCases.map { accent in
             color { roles in
-                if theme == .mono || theme == .eInk { return roles.secondary }
-                return DockThemePalette.onAccentHex(forAccent: roles.bg) == "#111111" ? light : dark
+                theme == .mono || theme == .eInk ? roles.secondary : accent.hex(on: roles)
             }
         }
-        info = semantic(light: "#174780", dark: "#8ABEFF")
-        merged = semantic(light: "#5B2C8A", dark: "#C5A3FF")
+        info = accents[DockAccentColor.blue.rawValue]
+        merged = accents[DockAccentColor.violet.rawValue]
+        review = accents[DockAccentColor.teal.rawValue]
         // Glass is composited over the system material. Its neutral tint is a
         // whisper so the wallpaper reads through like native Liquid Glass; the
         // blur underneath keeps text from windows behind Herm unreadable.
@@ -310,7 +325,7 @@ private struct Tokens {
     }
 }
 
-private extension NSColor {
+extension NSColor {
     convenience init(hex: String) {
         var value: UInt64 = 0; Scanner(string: hex.replacingOccurrences(of: "#", with: "")).scanHexInt64(&value)
         self.init(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255, alpha: 1)
