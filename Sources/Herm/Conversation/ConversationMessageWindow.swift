@@ -27,11 +27,10 @@ enum ConversationMessageScrollAnchor: Equatable {
 /// mounted transcript without bound. "Live tail" is derived, never stored:
 /// `range.upperBound == totalCount`.
 enum ConversationMessageWindow {
-    // The active fallback renderer uses an exact SwiftUI stack, so keep its
-    // default mounted page small. History is revealed in the same bounded
-    // increment from either edge of the window.
+    // Keep initial exact-stack mounting small; larger history pages amortize
+    // anchor transactions without widening the mounting backstop.
     static let initialLimit = 12
-    static let pageSize = 4
+    static let pageSize = 8
     /// Context mounted above and below a jump target.
     static let jumpContextAbove = 12
     static let jumpContextBelow = 12

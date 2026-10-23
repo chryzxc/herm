@@ -30,6 +30,15 @@ struct MessageNavigatorItem: Equatable, Identifiable {
     var sessionID: String { target.sessionID }
 }
 
+/// Immutable projection identity lets transcript refreshes skip walking unchanged history.
+final class MessageNavigatorSnapshot {
+    let items: [MessageNavigatorItem]
+
+    init(items: [MessageNavigatorItem]) {
+        self.items = items
+    }
+}
+
 enum MessageNavigator {
     static let defaultPreviewLimit = 160
     static let minimumPreviewLimit = 2
@@ -37,23 +46,21 @@ enum MessageNavigator {
 
     static func items(messages: [ChatMessage], sessionID: String, previewLimit: Int = defaultPreviewLimit) -> [MessageNavigatorItem] {
         let limit = max(minimumPreviewLimit, previewLimit)
-        // The transcript rebuilds this projection inside its body, which the
-        // popover re-evaluates on every scroll frame and model publication.
-        // Serve the unchanged projection from the memo instead of
-        // re-normalizing a preview for every message in the session.
+        // Reuse previews when callers outside DockModel request the same projection.
         let fingerprint = projectionFingerprint(messages: messages, sessionID: sessionID, previewLimit: limit)
         if let memoized = memo.itemsIfFresh(fingerprint: fingerprint) {
             return memoized
         }
         let projected = messages.enumerated().map { index, message in
-            MessageNavigatorItem(
+            let text = GenerativeUIIntegration.readableText(message)
+            return MessageNavigatorItem(
                 target: MessageNavigatorTarget(sessionID: sessionID, messageID: message.id),
                 ordinal: index + 1,
                 roleLabel: message.role == .user ? "You" : "Hermes",
-                preview: boundedPreview(GenerativeUIIntegration.readableText(message), limit: limit),
+                preview: boundedPreview(text, limit: limit),
                 contentRevision: message.contentRevision,
                 hasImages: !message.images.isEmpty,
-                searchText: GenerativeUIIntegration.readableText(message)
+                searchText: text
             )
         }
         memo.store(items: projected, fingerprint: fingerprint)
@@ -351,7 +358,7 @@ struct MessageNavigatorView: View {
                 DockIcon(.magnifyingGlass, size: 13, color: Color.dockMetadataText)
                 DockTextField("Find a message", text: $searchQuery)
                     .textFieldStyle(.plain)
-                    .dockFont(size: 13)
+                    .dockFont(.navigation)
                     .foregroundStyle(Color.dockPrimaryText)
                     .focused($isSearchFocused)
                     .onSubmit(selectFirstSearchResult)
@@ -359,7 +366,7 @@ struct MessageNavigatorView: View {
                     .accessibilityLabel("Find a message")
                 if hasSearchQuery, !searchResults.isEmpty {
                     Text("\(searchResults.count)")
-                        .dockFont(size: 11, weight: .medium).monospacedDigit()
+                        .dockFont(.metadata, weight: .medium).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Button { isSearchPresented = false } label: {
@@ -379,7 +386,7 @@ struct MessageNavigatorView: View {
                 Color.dockBorder.frame(height: DockLayout.hairline)
                 if searchResults.isEmpty {
                     Text(isLoadingHistory ? "Searching earlier messages…" : "No matching messages")
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
@@ -396,14 +403,14 @@ struct MessageNavigatorView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         HStack(spacing: 6) {
                                             Text(item.roleLabel)
-                                                .dockFont(size: 11, weight: .semibold)
+                                                .dockFont(.metadata, weight: .semibold)
                                                 .foregroundStyle(item.roleLabel == "You" ? Color.dockAccent : Color.dockPrimaryText)
                                             Text("#\(item.ordinal)")
-                                                .dockFont(size: 10).monospacedDigit()
+                                                .dockFont(.compactStatus, weight: .regular).monospacedDigit()
                                                 .foregroundStyle(Color.dockMetadataText)
                                         }
                                         Text(item.preview.isEmpty ? "(empty message)" : item.preview)
-                                            .dockFont(size: 12)
+                                            .dockFont(.body)
                                             .foregroundStyle(Color.dockSecondaryText)
                                             .lineLimit(2)
                                     }
@@ -515,10 +522,10 @@ struct MessageNavigatorView: View {
             if let previewItem {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(previewItem.ordinal) · \(previewItem.roleLabel)")
-                        .dockFont(size: 10, weight: .semibold)
+                        .dockFont(.compactStatus, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(previewItem.preview.isEmpty ? "(empty message)" : previewItem.preview)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(2)
                 }

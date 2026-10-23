@@ -68,22 +68,14 @@ struct ConversationTranscriptSnapshot: Equatable {
     let rows: [Row]
     let context: Context
     let prepend: TranscriptHistoryPrepend?
-    let navigatorItems: [MessageNavigatorItem]
+    let navigator: MessageNavigatorSnapshot
+    var navigatorItems: [MessageNavigatorItem] { navigator.items }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.sessionID == rhs.sessionID && lhs.layoutGeneration == rhs.layoutGeneration
             && lhs.messages.count == rhs.messages.count
             && lhs.range == rhs.range && lhs.rows == rhs.rows && lhs.context == rhs.context
-            && lhs.prepend == rhs.prepend && navigatorEqual(lhs.navigatorItems, rhs.navigatorItems)
-    }
-
-    private static func navigatorEqual(_ lhs: [MessageNavigatorItem], _ rhs: [MessageNavigatorItem]) -> Bool {
-        guard lhs.count == rhs.count else { return false }
-        return zip(lhs, rhs).allSatisfy {
-            $0.target == $1.target && $0.roleLabel == $1.roleLabel && $0.ordinal == $1.ordinal
-                && $0.contentRevision == $1.contentRevision
-                && $0.hasImages == $1.hasImages && $0.storedRowID == $1.storedRowID && $0.preview == $1.preview
-        }
+            && lhs.prepend == rhs.prepend && lhs.navigator === rhs.navigator
     }
 }
 
@@ -212,12 +204,23 @@ final class ConversationTranscriptSource: ObservableObject {
         let range =
             clamped.isEmpty && !model.messages.isEmpty
             ? ConversationMessageWindow.tailRange(totalCount: model.messages.count) : clamped
+        let streamingID = model.streamingMessageIDForPresentation
+        let streamingMounted = range.contains { model.messages[$0].id == streamingID }
+        let dispatches = model.botDispatchesByToolCallID
+        let workingBots = model.workingBotDispatches
+        let mentions = model.pendingBotMentions
+        let botRecordIDs = Set(dispatches.values.map(\.id) + workingBots.map(\.id) + mentions.map(\.id))
+        let botSteps = Dictionary(uniqueKeysWithValues: botRecordIDs.compactMap { id in
+            model.botLiveSteps[id].map { (id, $0) }
+        })
         return ConversationTranscriptSnapshot(
             sessionID: model.sessionID, layoutGeneration: generation, messages: model.messages, range: range,
             rows: range.map { .init(index: $0, message: model.messages[$0]) },
             context: .init(
-                status: model.status, streamingID: model.streamingMessageIDForPresentation,
-                streamingActivity: model.streamingTurnActivity, streamingStartedAt: model.streamingResponseStartedAt,
+                status: model.status, streamingID: streamingID,
+                // The canonical turn keeps accumulating while its row is unmounted.
+                streamingActivity: streamingMounted ? model.streamingTurnActivity : [],
+                streamingStartedAt: streamingMounted ? model.streamingResponseStartedAt : nil,
                 activeBotID: model.activeBotProfileID, sessionProfileID: model.sessionProfileID,
                 compactingID: model.compactingSessionID, approval: model.approvalDetails,
                 approvalTitle: model.approvalTitle, approvalText: model.approvalText,
@@ -228,15 +231,15 @@ final class ConversationTranscriptSource: ObservableObject {
                 respondingToClarification: model.isRespondingToClarification,
                 valuePrompt: model.valuePrompt, valuePromptError: model.valuePromptError,
                 respondingToValuePrompt: model.isRespondingToValuePrompt, restoring: model.isRestoringSession,
-                dispatches: model.botDispatchesByToolCallID, workingBots: model.workingBotDispatches,
-                mentions: model.pendingBotMentions, botSteps: model.botLiveSteps,
+                dispatches: dispatches, workingBots: workingBots,
+                mentions: mentions, botSteps: botSteps,
                 rosterRevision: bots.rosterRevision, selectedProfileID: bots.selectedProfileID,
                 pinSupport: model.messagePinsSupported, pinnedIDs: model.pinnedMessageUIDs,
                 pinnedRows: model.pinnedMessageRowIDs,
                 storedReferences: model.storedMessageReferences, updatingPin: model.updatingMessagePinRowID,
                 pendingActions: actions.pendingActions, speakingID: voice.speakingMessageID,
                 historyLoading: model.isLoadingTranscriptHistory, latestRequest: model.scrollToLatestMessageRequest
-            ), prepend: model.lastTranscriptPrepend, navigatorItems: model.messageNavigatorItems
+            ), prepend: model.lastTranscriptPrepend, navigator: model.messageNavigatorSnapshot
         )
     }
 }

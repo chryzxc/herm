@@ -52,6 +52,63 @@ struct GenerativeUIIsolationTests {
         #expect(GenerativeUIIntegration.displayUserText("Ordinary [Herm rendering context v1] text") == "Ordinary [Herm rendering context v1] text")
     }
 
+    @Test func ordinaryStreamingDoesNotRestartRichParsingAndRichRequestsInvalidate() throws {
+        var text = "# Ordinary Markdown\n\n"
+        for _ in 0..<100 {
+            text += "Another **streaming** chunk.\n"
+            #expect(RichDocumentParseRequest(text, streaming: true, identity: "session/message:1") == nil)
+        }
+        #expect(RichDocumentParseRequest(text, streaming: false, identity: "session/message:1") == nil)
+        let live = try #require(RichDocumentParseRequest(surface, streaming: true, identity: "session/message:1"))
+        let completed = try #require(RichDocumentParseRequest(surface, streaming: false, identity: "session/message:1"))
+        #expect(live != completed)
+        #expect(completed != RichDocumentParseRequest(surface + "\nNew content", streaming: false, identity: completed.identity))
+        #expect(completed != RichDocumentParseRequest(surface, streaming: false, identity: "another-session/message:1"))
+        #expect(completed != RichDocumentParseRequest(surface, streaming: false, identity: "session/message:2"))
+        #expect(RichDocument(live.source, streaming: live.streaming).segments == [.pending])
+        #expect(RichDocument(completed.source, streaming: completed.streaming).plainText.contains("Readable result"))
+    }
+
+    @Test func rendererReturnsToTheOrdinaryFallbackAfterRichContent() async throws {
+        var appearances = 0
+        var disappearances = 0
+        func reply(_ text: String, streaming: Bool) -> some View {
+            GenerativeUIIntegration.renderReply(text, streaming: streaming, enabled: false) {
+                Text("Existing renderer")
+                    .onAppear { appearances += 1 }
+                    .onDisappear { disappearances += 1 }
+            }
+        }
+        let host = NSHostingView(rootView: reply("Plain reply", streaming: true))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 160),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(appearances == 1)
+        for index in 0..<5 {
+            host.rootView = reply("Plain reply, chunk \(index)", streaming: true)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(appearances == 1)
+        #expect(disappearances == 0)
+        host.rootView = reply(surface, streaming: true)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(disappearances == 1)
+        host.rootView = reply(surface, streaming: false)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(appearances == 1)
+        host.rootView = reply("Next ordinary reply", streaming: false)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(appearances == 2)
+    }
+
     @Test func disabledRendererUsesExistingContent() async throws {
         var appeared = false
         let root = GenerativeUIIntegration.renderReply("Plain reply", enabled: false) {

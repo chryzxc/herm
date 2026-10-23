@@ -214,7 +214,7 @@ extension DockModel {
     func prependEarlierTranscript(_ rows: [[String: Any]], cursor: TranscriptHistoryCursor) {
         transcriptHistoryCursor = cursor
         // Loaded prompts leave the navigator's unloaded list with the cursor.
-        cachedMessageNavigatorItems = nil
+        messageNavigatorNeedsRefresh = true
         let restored = Self.parseMessages(
             rows,
             defaultBotProfileID: activeBotProfileID,

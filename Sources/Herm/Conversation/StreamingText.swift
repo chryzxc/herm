@@ -420,7 +420,7 @@ struct StreamingMessageText: View {
     @ViewBuilder
     private var standardBody: some View {
         if StreamingMarkdownRendererPolicy.usesNativeRenderer(for: streaming.text) {
-            NativeStreamingMarkdownView(chunks: streaming.chunks, themeRevision: DockThemeRuntime.revision)
+            NativeStreamingMarkdownView(chunks: streaming.chunks, source: streaming.text, themeRevision: DockThemeRuntime.revision)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(streaming.chunks) { chunk in
@@ -439,22 +439,25 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
     let chunks: [StreamingPresentationChunk]
+    let source: String
     let themeRevision: Int
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
+        view.markdownOpenURL = context.environment.markdownOpenURL
         view.setBodyStyle(size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        context.coordinator.update(view, chunks: chunks, themeRevision: themeRevision)
+        context.coordinator.update(view, chunks: chunks, source: source, themeRevision: themeRevision)
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.markdownOpenURL = context.environment.markdownOpenURL
         nsView.setBodyStyle(size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        context.coordinator.update(nsView, chunks: chunks, themeRevision: themeRevision)
+        context.coordinator.update(nsView, chunks: chunks, source: source, themeRevision: themeRevision)
     }
 
     func sizeThatFits(
@@ -468,19 +471,49 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private var renderedThemeRevision: Int?
+        private(set) var sectionPreparationCount = 0
+        private var previousChunks: [StreamingPresentationChunk] = []
+        private var sectionEnds: [Int] = []
+        private(set) var preparedSections: [MarkdownRenderSection] = []
         func update(
             _ view: NativeMarkdownDocumentContainerView,
             chunks: [StreamingPresentationChunk],
+            source: String,
             themeRevision: Int
         ) {
             let started = DispatchTime.now().uptimeNanoseconds
+            let preparationsBefore = sectionPreparationCount
             if renderedThemeRevision != nil, renderedThemeRevision != themeRevision { view.reset() }
             renderedThemeRevision = themeRevision
-            let sections = MarkdownRenderDocumentBuilder.sections(for: chunks)
-            view.applyStreaming(sections: sections, source: chunks.map(\.text).joined())
+            var prefix = 0
+            while prefix < min(previousChunks.count, chunks.count) {
+                let previous = previousChunks[prefix]
+                let next = chunks[prefix]
+                guard previous == next, previous.text == next.text,
+                      previous.context == next.context, previous.isMutableTail == next.isMutableTail else { break }
+                prefix += 1
+            }
+            // Stable chunks retain their exact sections and byte offsets; only a changed suffix is classified.
+            let retained = prefix == 0 ? 0 : sectionEnds[prefix - 1]
+            preparedSections.removeSubrange(retained...)
+            sectionEnds.removeSubrange(prefix...)
+            var offset = preparedSections.last?.sourceRange.upperBound ?? 0
+            for chunk in chunks.dropFirst(prefix) {
+                let sections = MarkdownRenderDocumentBuilder.sections(for: [chunk])
+                sectionPreparationCount += 1
+                preparedSections.append(contentsOf: sections.map { section in
+                    MarkdownRenderSection(id: section.id,
+                        sourceRange: (section.sourceRange.lowerBound + offset)..<(section.sourceRange.upperBound + offset),
+                        source: section.source, kind: section.kind, continuation: section.continuation)
+                })
+                offset += chunk.text.utf8.count
+                sectionEnds.append(preparedSections.count)
+            }
+            previousChunks = chunks
+            view.applyStreaming(sections: preparedSections, source: source)
             let tailBytes = chunks.last(where: { $0.isMutableTail })?.text.utf8.count ?? 0
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-            DebugLog.writePerformance("markdown_native_update mode=streaming stable_sections=\(chunks.filter { !$0.isMutableTail }.count) tail_bytes=\(tailBytes) duration_ms=\(String(format: "%.2f", elapsed))")
+            DebugLog.writePerformance("markdown_native_update mode=streaming stable_sections=\(chunks.filter { !$0.isMutableTail }.count) prepared_chunks=\(sectionPreparationCount - preparationsBefore) tail_bytes=\(tailBytes) duration_ms=\(String(format: "%.2f", elapsed))")
         }
     }
 }

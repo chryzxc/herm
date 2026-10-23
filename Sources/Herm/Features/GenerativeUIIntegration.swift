@@ -38,6 +38,19 @@ enum GenerativeUIIntegration {
     }
 }
 
+struct RichDocumentParseRequest: Equatable {
+    let source: String
+    let streaming: Bool
+    let identity: String
+
+    init?(_ source: String, streaming: Bool, identity: String) {
+        guard source.contains("herm-ui") else { return nil }
+        self.source = source
+        self.streaming = streaming
+        self.identity = identity
+    }
+}
+
 private struct GenerativeReply<Content: View>: View {
     let text: String
     let streaming: Bool
@@ -45,28 +58,27 @@ private struct GenerativeReply<Content: View>: View {
     let fallback: Content
     @AppStorage(GenerativeUIIntegration.preferenceKey) private var enabled = true
     @State private var parsed: RichDocument?
-    @State private var parsedSource: String?
-    @State private var parsedStreaming = false
+    @State private var parsedRequest: RichDocumentParseRequest?
     @Environment(\.richReplyContext) private var context
     var body: some View {
+        let identity = context.map { "\($0.sourceKey):\($0.revision)" } ?? "standalone"
+        let request = RichDocumentParseRequest(text, streaming: streaming, identity: identity)
         Group {
-            if text.contains("herm-ui"), let document = parsed, parsedSource == text, parsedStreaming == streaming {
+            if let request, let document = parsed, parsedRequest == request {
                 if override ?? enabled { RichDocumentView(document: document) }
                 else { MarkdownMessageView(markdown: document.plainText) }
-            } else if text.contains("herm-ui") {
+            } else if request != nil {
                 if override ?? enabled {
                     Text("Preparing visual reply…").dockFont(.body).foregroundStyle(Color.dockSecondaryText).frame(minHeight: 44)
                 } else { MarkdownMessageView(markdown: GenerativeUIIntegration.plainText(text)) }
             } else { fallback }
         }
-        .task(id: text + (streaming ? "-streaming" : "-complete")) {
-            guard text.contains("herm-ui") else { parsed = nil; parsedSource = nil; return }
-            let source = text
-            let isStreaming = streaming
-            let identity = context.map { "\($0.sourceKey):\($0.revision)" } ?? "standalone"
-            let value = await RichDocumentCache.shared.document(source, identity: identity, streaming: isStreaming)
+        .task(id: request) {
+            guard let request else { parsed = nil; parsedRequest = nil; return }
+            let value = await RichDocumentCache.shared.document(
+                request.source, identity: request.identity, streaming: request.streaming)
             guard !Task.isCancelled else { return }
-            parsed = value; parsedSource = source; parsedStreaming = isStreaming
+            parsed = value; parsedRequest = request
         }
         .onChange(of: enabled) { _, value in
             if !value { GeneratedHTMLCoordinator.shared.close() }

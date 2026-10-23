@@ -421,7 +421,7 @@ struct ConversationManualScrollTests {
                 "Applying deferred text must preserve the reader's position above the bottom")
         if let streaming {
             let expected = NativeMarkdownDocumentContainerView()
-            NativeStreamingMarkdownView.Coordinator().update(expected, chunks: streaming.chunks, themeRevision: DockThemeRuntime.revision)
+            NativeStreamingMarkdownView.Coordinator().update(expected, chunks: streaming.chunks, source: streaming.text, themeRevision: DockThemeRuntime.revision)
             let live = try #require(containers.max { $0.frame.height < $1.frame.height })
             #expect(abs(live.measuredHeight(forWidth: live.bounds.width) - expected.measuredHeight(forWidth: live.bounds.width)) < 1,
                     "Settling must render every chunk received during the gesture")

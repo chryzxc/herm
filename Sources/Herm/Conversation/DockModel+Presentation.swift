@@ -12,18 +12,30 @@ extension DockModel {
 
     /// Invalidate at the canonical array mutation boundary, not by hashing
     /// the entire history again on each scroll or live-tail layout update.
-    var messageNavigatorItems: [MessageNavigatorItem] {
+    var messageNavigatorSnapshot: MessageNavigatorSnapshot {
         let owner = sessionID ?? ""
-        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner {
-            return cached.items
+        if !messageNavigatorNeedsRefresh, let cached = cachedMessageNavigatorItems, cached.sessionID == owner {
+            return cached.snapshot
         }
         let items = MessageNavigator.items(
             messages: messages,
             earlierPrompts: unloadedTranscriptPrompts,
             sessionID: owner
         )
-        cachedMessageNavigatorItems = (owner, items)
-        return items
+        // Metadata-only message edits must not invalidate navigator identity.
+        let snapshot: MessageNavigatorSnapshot
+        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner, cached.snapshot.items == items {
+            snapshot = cached.snapshot
+        } else {
+            snapshot = MessageNavigatorSnapshot(items: items)
+        }
+        cachedMessageNavigatorItems = (owner, snapshot)
+        messageNavigatorNeedsRefresh = false
+        return snapshot
+    }
+
+    var messageNavigatorItems: [MessageNavigatorItem] {
+        messageNavigatorSnapshot.items
     }
 
     /// Compatibility accessor over the composer's draft so send, steering,
@@ -148,6 +160,7 @@ extension DockModel {
         let botID: String
         var botChatSessionID: String?
         var clarificationRequestID: String?
+        var replyText = ""
     }
 
     /// Every id the open chat answers to: runtime alias, stored row, and the
@@ -160,7 +173,6 @@ extension DockModel {
     func rowSessionID(_ id: String) -> String {
         quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : storageIDsByRuntimeID[id] ?? id)
     }
-        var replyText = ""
 
     var kanbanSessionID: String? {
         Self.kanbanAttributionID(

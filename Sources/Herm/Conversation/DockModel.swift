@@ -33,14 +33,16 @@ final class DockModel: ObservableObject {
     @Published var status: HermesStatus = .idle
     @Published var isHermesConnected = false
     @Published var messages: [ChatMessage] = [] {
-        didSet { cachedMessageNavigatorItems = nil }
+        didSet { messagesRevision &+= 1; messageNavigatorNeedsRefresh = true }
     }
-    var cachedMessageNavigatorItems: (sessionID: String, items: [MessageNavigatorItem])?
+    private(set) var messagesRevision: UInt64 = 0
+    var cachedMessageNavigatorItems: (sessionID: String, snapshot: MessageNavigatorSnapshot)?
+    var messageNavigatorNeedsRefresh = true
 
     let composer = ComposerText()
+    var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
     let streamingText = StreamingText()
     /// Unflushed-to-step reasoning, observed only by an open live thought row.
-    var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
     let liveReasoning = LiveReasoningText()
 
     /// Message the next prompt replies to; sent as a leading quote line (see ReplyQuote).
@@ -367,7 +369,7 @@ final class DockModel: ObservableObject {
     var lastTranscriptPrepend: TranscriptHistoryPrepend? { didSet { transcriptPresentationChanges.send() } }
     /// Every stored prompt of the active paged transcript, oldest first.
     var transcriptTimeline: [TranscriptTimelineEntry] = [] {
-        didSet { cachedMessageNavigatorItems = nil; transcriptPresentationChanges.send() }
+        didSet { messageNavigatorNeedsRefresh = true; transcriptPresentationChanges.send() }
     }
     var transcriptMessageIDsByRowID: [Int: UUID] = [:]
     /// True while search or a jump reads older history in one step.

@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct ConversationRenderOptimizationTests {
-    @Test func windowPagingTraversesAndReversesInFourRowBatches() {
+    @Test func windowPagingTraversesAndReversesInEightRowBatches() {
         let messages = (0..<500).map { ChatMessage(role: .hermes, text: "Message \($0)") }
         var range = ConversationMessageWindow.tailRange(totalCount: messages.count)
         var visited = Set(range)
@@ -19,7 +19,7 @@ struct ConversationRenderOptimizationTests {
                     ? ConversationMessageWindow.revealEarlier(previous, totalCount: messages.count, visibleSpan: visible)
                     : ConversationMessageWindow.revealLater(previous, totalCount: messages.count, visibleSpan: visible)
                 let added = Set(range).subtracting(previous)
-                #expect(added.count <= 4)
+                #expect(added.count <= 8)
                 #expect(range.contains(visible.lowerBound) && range.contains(visible.upperBound))
                 #expect(range.lowerBound >= 0 && range.upperBound <= messages.count)
                 #expect(range.count <= 36)
@@ -33,17 +33,17 @@ struct ConversationRenderOptimizationTests {
         let middle = 200..<225
         let earlier = ConversationMessageWindow.revealEarlier(middle, totalCount: 500, visibleSpan: 205...210)
         let reversed = ConversationMessageWindow.revealLater(earlier, totalCount: 500, visibleSpan: 205...210)
-        #expect(earlier == 196..<215)
-        #expect(reversed == 201..<219)
+        #expect(earlier == 192..<219)
+        #expect(reversed == 197..<227)
     }
 
     @Test func windowPagingProtectsOversizedVisibleSpans() {
         #expect(ConversationMessageWindow.revealEarlier(
             100..<150, totalCount: 500, visibleSpan: 100...149
-        ) == 96..<150)
+        ) == 92..<150)
         #expect(ConversationMessageWindow.revealLater(
             100..<150, totalCount: 500, visibleSpan: 100...149
-        ) == 100..<154)
+        ) == 100..<158)
         #expect(ConversationMessageWindow.revealEarlier(
             2..<14, totalCount: 500, visibleSpan: nil
         ) == 0..<14)
@@ -65,16 +65,16 @@ struct ConversationRenderOptimizationTests {
         #expect(ConversationMessageWindow.jumpWindow(aroundIndex: 0, totalCount: 500) == 0..<13)
         #expect(ConversationMessageWindow.jumpWindow(aroundIndex: 499, totalCount: 500) == 487..<500)
         #expect(ConversationMessageWindow.revealEarlier(
-            200..<236, totalCount: 500, visibleSpan: nil) == 196..<232)
+            200..<236, totalCount: 500, visibleSpan: nil) == 192..<228)
         #expect(ConversationMessageWindow.revealLater(
-            200..<236, totalCount: 500, visibleSpan: nil) == 204..<240)
+            200..<236, totalCount: 500, visibleSpan: nil) == 208..<244)
     }
 
     @Test func windowPagingClampsShrinkAndRetainsPrependIdentity() {
         let messages = (0..<500).map { ChatMessage(role: .hermes, text: "Message \($0)") }
         let shrunk = ConversationMessageWindow.visibleRange(488..<500, totalCount: 490)
         #expect(shrunk == 488..<490)
-        #expect(ConversationMessageWindow.revealEarlier(shrunk, totalCount: 490, visibleSpan: 488...489) == 484..<490)
+        #expect(ConversationMessageWindow.revealEarlier(shrunk, totalCount: 490, visibleSpan: 488...489) == 480..<490)
         #expect(ConversationMessageWindow.revealLater(shrunk, totalCount: 490, visibleSpan: 488...489) == shrunk)
         #expect(ConversationMessageWindow.revealEarlier(0..<0, totalCount: 0, visibleSpan: nil).isEmpty)
         #expect(ConversationMessageWindow.revealLater(0..<0, totalCount: 0, visibleSpan: nil).isEmpty)
@@ -83,7 +83,7 @@ struct ConversationRenderOptimizationTests {
         let shifted = 220..<245
         #expect(prepended[shifted].map(\.id) == messages[200..<225].map(\.id))
         let revealed = ConversationMessageWindow.revealEarlier(shifted, totalCount: prepended.count, visibleSpan: 220...224)
-        #expect(revealed == 216..<229)
+        #expect(revealed == 212..<233)
         #expect(prepended[220..<225].map(\.id) == messages[200..<205].map(\.id))
         #expect(ConversationMessageWindow.rangeAfterCountChange(
             200..<225, oldCount: 500, newCount: 501, isAtBottom: false) == 200..<225)

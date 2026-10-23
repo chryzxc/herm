@@ -88,7 +88,7 @@ struct ConversationTranscriptView: View, Equatable {
                                 let range = effectiveMountedRange
                                 let generation = snapshot.layoutGeneration
                                 let sessionID = snapshot.sessionID
-                                let dispatches = model.botDispatchesByToolCallID
+                                let dispatches = snapshot.context.dispatches
                                 let defaultBot = botMode.visibleBots.first(where: \.isDefault)
                                 ForEach(snapshot.rows, id: \.message.id) { descriptor in
                                     let message = descriptor.message
@@ -268,7 +268,7 @@ struct ConversationTranscriptView: View, Equatable {
                         avatars: botMode.avatarImages,
                         steps: Dictionary(
                             model.workingBotDispatches.compactMap { record in
-                                model.botLiveSteps[record.id].map { (record.botID, $0) }
+                                source.snapshot.context.botSteps[record.id].map { (record.botID, $0) }
                             }, uniquingKeysWith: { first, _ in first })
                     )
                     .transition(.opacity.combined(with: .offset(y: 6)))
@@ -296,21 +296,27 @@ struct ConversationTranscriptView: View, Equatable {
     ) -> some View {
         let target = MessageNavigatorTarget(sessionID: model.sessionID ?? "", messageID: message.id)
         let isStreaming = message.id == model.streamingMessageIDForPresentation
-        let activity = isStreaming ? model.streamingTurnActivity : message.activity
+        let activity = isStreaming ? source.snapshot.context.streamingActivity : message.activity
         let workingBotID =
             message.botProfileID ?? model.activeBotProfileID ?? model.sessionProfileID
             ?? botMode.selectedProfileID
         // An unknown or unset profile falls back to the default Bot, as the handoff row does.
         let workingBot = workingBotID.flatMap { botMode.botsByID[$0] } ?? defaultBot
         if message.role == .hermes, isStreaming || !activity.isEmpty {
+            let rowDispatches = Dictionary(activity.compactMap { call in
+                dispatches[call.id].map { (call.id, $0) }
+            }, uniquingKeysWith: { first, _ in first })
+            let rowSteps = Dictionary(rowDispatches.values.compactMap { record in
+                source.snapshot.context.botSteps[record.id].map { (record.id, $0) }
+            }, uniquingKeysWith: { first, _ in first })
             TurnActivityView(
                 activity: activity,
                 runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,
                 duration: message.responseDuration,
                 bot: isStreaming ? workingBot : nil,
                 botAvatar: workingBot.flatMap { botMode.avatarImages[$0.id] },
-                dispatches: dispatches,
-                botLiveSteps: model.botLiveSteps,
+                dispatches: rowDispatches,
+                botLiveSteps: rowSteps,
                 crew: isStreaming ? workingCrew : [],
                 botsByID: botMode.botsByID,
                 avatars: botMode.avatarImages,

@@ -5,6 +5,134 @@ import Testing
 
 @MainActor
 struct ConversationTranscriptSourceTests {
+    @Test func navigatorReusesLongHistoryAndUpdatesOffscreenSearchContent() {
+        let model = DockModel(initialSessionID: "navigator-owner")
+        model.messages = (0..<5_000).map { ChatMessage(role: .hermes, text: "Message \($0)") }
+        let source = ConversationTranscriptSource(model: model, bots: BotModeModel(),
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
+        let original = source.snapshot.navigator
+        for _ in 0..<100 {
+            source.refresh()
+            #expect(source.snapshot.navigator === original)
+        }
+        #expect(source.publicationCount == 0)
+        #expect(source.snapshot.rows.count == 12)
+        let metadata = model.messages[1]
+        model.messages[1] = ChatMessage(id: metadata.id, role: metadata.role, text: metadata.text,
+            timestamp: metadata.timestamp, tokenCount: 50)
+        source.refresh()
+        #expect(source.snapshot.navigator === original)
+        #expect(source.publicationCount == 0)
+        model.streamingText.appendPresentation("Only the live leaf observes this")
+        model.approvalText = "Current approval"
+        source.refresh()
+        #expect(source.snapshot.navigator === original)
+        #expect(source.snapshot.context.approvalText == "Current approval")
+
+        let old = model.messages[0]
+        model.messages[0] = ChatMessage(id: old.id, role: old.role, text: "Edited offscreen search needle", timestamp: old.timestamp)
+        source.refresh()
+        #expect(source.snapshot.navigator !== original)
+        #expect(original.items[0].searchText == "Message 0")
+        #expect(MessageNavigator.search(items: source.snapshot.navigatorItems, query: "needle").map(\.messageID) == [old.id])
+        #expect(!source.snapshot.rows.contains { $0.message.id == old.id })
+        let edited = source.snapshot.navigator
+        model.sessionID = "another-owner"
+        source.refresh()
+        #expect(source.snapshot.navigator !== edited)
+        #expect(source.snapshot.navigatorItems.allSatisfy { $0.sessionID == "another-owner" })
+    }
+
+    @Test func navigatorInvalidatesForStoredPromptsAndHistoryPrepend() {
+        let model = DockModel(initialSessionID: "navigator-history")
+        model.sessionStorageID = "stored-history"
+        model.transcriptHistoryCursor = TranscriptHistoryCursor(storageSessionID: "stored-history", profileID: nil)
+        model.messages = [ChatMessage(role: .hermes, text: "Loaded reply")]
+        let source = ConversationTranscriptSource(model: model, bots: BotModeModel(),
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
+        let original = source.snapshot.navigator
+        model.transcriptTimeline = [.init(rowID: 7, preview: "Older prompt", timestamp: nil)]
+        source.refresh()
+        #expect(source.snapshot.navigator !== original)
+        #expect(source.snapshot.navigatorItems.first?.storedRowID == 7)
+        let stored = source.snapshot.navigator
+        let cursor = TranscriptHistoryCursor(storageSessionID: "stored-history", profileID: nil, seenRowIDs: [7])
+        model.prependEarlierTranscript([["role": "user", "text": "Older prompt", "row_id": 7]], cursor: cursor)
+        source.refresh()
+        #expect(source.snapshot.navigator !== stored)
+        #expect(source.snapshot.navigatorItems.count == 2)
+        #expect(source.snapshot.navigatorItems.allSatisfy { $0.storedRowID == nil })
+        #expect(source.snapshot.navigatorItems.first?.messageID == model.messages.first?.id)
+        #expect(source.snapshot.navigatorItems.map(\.ordinal) == [1, 2])
+    }
+
+    @Test func backgroundBotStepsDoNotPublishIntoTheSelectedSession() async throws {
+        let model = DockModel(initialSessionID: "runtime-open")
+        model.sessionStorageID = "stored-open"
+        let record = BotActivityRecord(id: "bot-dispatch:open-tool", originSessionID: "stored-open",
+            botID: "bot", botName: "Bot", summary: "Selected-session work", state: .working)
+        model.botActivityBySessionID = ["stored-open": [record]]
+        model.botLiveSteps = [record.id: "Selected step", "background-record": "Other step"]
+        let source = ConversationTranscriptSource(model: model, bots: BotModeModel(),
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
+        #expect(source.snapshot.context.botSteps == [record.id: "Selected step"])
+        for batch in 0..<5 {
+            for index in 0..<8 {
+                let id = "background-\(index)"
+                let recordID = "bot-dispatch:\(id)"
+                model.botActivityBySessionID[id] = [BotActivityRecord(id: recordID, originSessionID: id,
+                    botID: "bot", botName: "Bot", summary: "Background batch \(batch)", state: .working)]
+                model.botLiveSteps[recordID] = "Background step \(batch)"
+            }
+            model.botActivityRevision &+= 1
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(source.publicationCount == 0)
+        model.botLiveSteps[record.id] = "Updated selected step"
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(source.publicationCount == 1)
+        #expect(source.snapshot.context.botSteps[record.id] == "Updated selected step")
+        model.botActivityBySessionID["stored-open"]?[0].state = .completed
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(source.snapshot.context.workingBots.isEmpty)
+        #expect(source.snapshot.context.dispatches["open-tool"]?.state == .completed)
+        model.sessionStorageID = "background-0"
+        model.sessionID = "runtime-background"
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(source.snapshot.context.botSteps == ["bot-dispatch:background-0": "Background step 4"])
+        #expect(source.snapshot.context.workingBots.first?.originSessionID == "background-0")
+    }
+
+    @Test func unmountedStreamingActivityDoesNotRepublishHistoryAndIsCurrentOnReturn() async throws {
+        let model = DockModel(initialSessionID: "open")
+        model.messages = (0..<500).map { ChatMessage(role: .hermes, text: "Message \($0)") }
+        model.streamingMessageID = model.messages.last?.id
+        let coordinator = ConversationTranscriptCoordinator()
+        coordinator.reset(sessionID: model.sessionID, totalCount: 500, bubbleCount: 500)
+        coordinator.jump(to: 250)
+        let source = ConversationTranscriptSource(model: model, bots: BotModeModel(),
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator)
+        for batch in 0..<5 {
+            model.streamingTurnActivity.append(ActiveToolCall(id: "tool-\(batch)", name: "terminal",
+                input: "Synthetic tool", context: "", startedAt: .distantPast, isComplete: false))
+            model.activityPresentationRevision &+= 1
+            model.streamingText.appendPresentation("Incoming chunk \(batch).\n")
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(source.publicationCount == 0)
+        #expect(source.snapshot.context.streamingActivity.isEmpty)
+        coordinator.jumpToLatest()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(source.snapshot.rows.contains { $0.message.id == model.streamingMessageID })
+        #expect(source.snapshot.context.streamingActivity == model.streamingTurnActivity)
+        let before = source.publicationCount
+        model.streamingTurnActivity[0].isComplete = true
+        model.activityPresentationRevision &+= 1
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(source.publicationCount == before + 1)
+        #expect(source.snapshot.context.streamingActivity[0].isComplete)
+    }
+
     @Test func onlyRelevantChangesPublishAndOnlyMountedRowsGetDescriptors() async throws {
         let model = DockModel(initialSessionID: "source-test")
         model.messages = (0..<500).map { ChatMessage(role: .hermes, text: "Message \($0)") }

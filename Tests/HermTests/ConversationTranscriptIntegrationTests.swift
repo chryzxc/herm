@@ -11,14 +11,23 @@ struct ConversationTranscriptIntegrationTests {
     struct Parent: View {
         @ObservedObject var model: DockModel
         let transcript: ConversationTranscriptView
+        var timeline: SessionTraceModel? = nil
+        @ViewBuilder
         var body: some View {
             let _ = model.isLoadingSessions
-            transcript.equatable()
+            if let timeline {
+                HStack(spacing: 0) {
+                    transcript.equatable()
+                    SessionTraceView(model: model, trace: timeline).equatable().frame(width: 400)
+                }
+            } else { transcript.equatable() }
         }
     }
 
     final class RowEvaluations {
         var messageBodies = 0
+        var timelineCanvases = 0
+        var activityBodies = 0
     }
 
     struct Root: View {
@@ -30,6 +39,8 @@ struct ConversationTranscriptIntegrationTests {
                     \.conversationRowEvaluation,
                     { name, _ in
                         if name == "message" { evaluations.messageBodies += 1 }
+                        if name == "timeline-canvas" { evaluations.timelineCanvases += 1 }
+                        if name == "turn-activity" { evaluations.activityBodies += 1 }
                     })
             #else
                 parent
@@ -44,11 +55,13 @@ struct ConversationTranscriptIntegrationTests {
         let coordinator: ConversationTranscriptCoordinator
         let performance = ConversationPerformanceMonitor()
         let evaluations = RowEvaluations()
+        let timeline: SessionTraceModel?
         let host: NSHostingView<Root>
         let window: NSWindow
         var layoutWorkMS = 0.0
 
-        init(source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil) {
+        init(source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil, includeTimeline: Bool = false) {
+            timeline = includeTimeline ? SessionTraceModel() : nil
             coordinator = ConversationTranscriptCoordinator(controller: controller)
             _ = NSApplication.shared
             model = DockModel(initialSessionID: "scroll-integration")
@@ -72,9 +85,9 @@ struct ConversationTranscriptIntegrationTests {
                 selectedChatImage: .constant(nil), coordinator: transcriptCoordinator
             )
             host = NSHostingView(
-                rootView: Root(parent: Parent(model: model, transcript: view), evaluations: evaluations))
+                rootView: Root(parent: Parent(model: model, transcript: view, timeline: timeline), evaluations: evaluations))
             host.sizingOptions = []
-            host.frame = NSRect(x: 0, y: 0, width: 640, height: 600)
+            host.frame = NSRect(x: 0, y: 0, width: includeTimeline ? 1040 : 640, height: 600)
             window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.contentView = host
         }
@@ -104,6 +117,12 @@ struct ConversationTranscriptIntegrationTests {
 
     @Test func streamingTailStillAllowsPagingWhileBrowsingHistory() async throws {
         try await checkProductionPaging(streaming: true)
+    }
+
+    @Test func largerPagesPreserveAnchorsAcrossTallMarkdownAndCodeRows() async throws {
+        let source = String(repeating: "A tall **Markdown** paragraph with `inline code`.\n\n", count: 240)
+            + "```swift\n" + String(repeating: "let value = 42 // source line\n", count: 500) + "```\n"
+        try await checkProductionPaging(source: source, streaming: true)
     }
 
     @Test(arguments: [false, true])
@@ -170,6 +189,9 @@ struct ConversationTranscriptIntegrationTests {
         defer { fixture.window.orderOut(nil) }
         try await fixture.settle()
         for earlier in [true, true, false, false] {
+            let previousRange = fixture.coordinator.mountedRange
+            let previousPages = fixture.coordinator.performance.pageTransactions
+            let previousCorrections = fixture.coordinator.performance.anchorCorrections
             let before = fixture.coordinator.rowViewports
             let anchor = try #require(earlier ? before.min { $0.index < $1.index } : before.max { $0.index < $1.index })
             let geometry = try #require(fixture.controller.geometry)
@@ -184,6 +206,12 @@ struct ConversationTranscriptIntegrationTests {
             #expect(abs(restored.minY - current.visibleTop - offset) < 1)
             #expect(fixture.coordinator.rowViewports.count <= ConversationMessageWindow.maxMountedRowCount)
             #expect(fixture.coordinator.pendingPage == nil)
+            let range = fixture.coordinator.mountedRange
+            let revealed = earlier ? previousRange.lowerBound - range.lowerBound : range.upperBound - previousRange.upperBound
+            let remaining = earlier ? previousRange.lowerBound : fixture.model.messages.count - previousRange.upperBound
+            #expect(revealed == min(8, remaining))
+            #expect(fixture.coordinator.performance.pageTransactions == previousPages + 1)
+            #expect(fixture.coordinator.performance.anchorCorrections == previousCorrections + 1)
         }
         #expect(fixture.coordinator.performance.pageTransactions >= 4)
     }
@@ -215,6 +243,120 @@ struct ConversationTranscriptIntegrationTests {
         #expect(fixture.coordinator.performance.transcriptEvaluations > beforeRelevant)
     }
 
+    @Test(arguments: [false, true])
+    func concurrentSessionBurstsKeepCompletedRowsAndScrollPositionStable(browsingHistory: Bool) async throws {
+        let fixture = Fixture(
+            source: String(repeating: "Long **Markdown** paragraph with `code` and wrapping text.\n\n", count: 160),
+            streaming: true)
+        defer { fixture.window.orderOut(nil) }
+        fixture.model.sessions = (0..<8).map {
+            HermesSession(id: "background-\($0)", title: "Background \($0)", preview: "", startedAt: nil,
+                messageCount: 500, source: "test", isWorking: true)
+        }
+        try await fixture.settle()
+        if browsingHistory {
+            fixture.coordinator.jump(to: 250)
+            try await fixture.settle()
+            let row = try #require(fixture.coordinator.rowViewports.first { $0.index == 250 })
+            try fixture.move(to: row.minY + 20)
+            try await fixture.settle()
+        }
+        let streamingID = fixture.model.streamingMessageID
+        let beforeRows = fixture.coordinator.rowViewports.filter { $0.target.messageID != streamingID }
+        let beforeBodies = fixture.evaluations.messageBodies
+        let beforeTop = try #require(fixture.controller.geometry).visibleTop
+        func containers(_ view: NSView) -> [NativeMarkdownDocumentContainerView] {
+            (view as? NativeMarkdownDocumentContainerView).map { [$0] } ?? view.subviews.flatMap(containers)
+        }
+        let beforeContainers = containers(fixture.host)
+        let beforeMeasurements = beforeContainers.map(\.sectionMeasurementCount)
+        let initialText = fixture.model.streamingText.text
+        var receivedText = ""
+        for batch in 0..<5 {
+            for index in 0..<200 {
+                let owner = "background-\(index % 8)"
+                fixture.model.receiveGatewayEvent("message.delta", params: [
+                    "session_id": owner, "payload": ["delta": "Background chunk \(index)"]
+                ])
+                fixture.model.receiveGatewayEvent("tool.call", params: [
+                    "session_id": owner,
+                    "payload": ["id": "\(batch)-\(index)", "name": "terminal", "args": ["command": "echo synthetic"]]
+                ])
+                fixture.model.botLiveSteps[owner] = "Background step \(batch)-\(index)"
+            }
+            let delta = "\n\nVisible-session chunk \(batch)."
+            receivedText += delta
+            fixture.model.streamingText.appendPresentation(delta)
+            fixture.model.activeToolCalls.append(ActiveToolCall(id: "current-\(batch)", name: "terminal",
+                input: "Selected-session tool", context: "", startedAt: .distantPast, isComplete: false))
+            fixture.model.isLoadingSessions.toggle()
+            try await fixture.settle()
+        }
+        #expect(fixture.model.streamingText.text == initialText + receivedText)
+        #expect(fixture.model.sessions.count == 8 && fixture.model.sessions.allSatisfy(\.isWorking))
+        #expect(fixture.model.sessionActivityLabels.keys.filter { $0.hasPrefix("background-") }.count == 8)
+        #expect(fixture.model.activeToolCalls.count == 5)
+        #expect(fixture.evaluations.messageBodies == beforeBodies)
+        #expect(fixture.coordinator.mountedRange.count <= ConversationMessageWindow.maxMountedRowCount)
+        for row in beforeRows {
+            let current = try #require(fixture.coordinator.rowViewports.first { $0.target == row.target })
+            #expect(abs((current.maxY - current.minY) - (row.maxY - row.minY)) < 1)
+        }
+        if browsingHistory {
+            #expect(abs((try #require(fixture.controller.geometry)).visibleTop - beforeTop) < 1)
+            #expect(containers(fixture.host).map(ObjectIdentifier.init) == beforeContainers.map(ObjectIdentifier.init))
+            #expect(containers(fixture.host).map(\.sectionMeasurementCount) == beforeMeasurements)
+            let range = fixture.coordinator.mountedRange
+            let first = try #require(fixture.coordinator.rowViewports.min { $0.index < $1.index })
+            try fixture.move(to: first.minY + 20)
+            try fixture.move(to: first.minY + 10)
+            let offset = first.minY - (try #require(fixture.controller.geometry)).visibleTop
+            try await fixture.settle()
+            #expect(fixture.coordinator.mountedRange.lowerBound < range.lowerBound)
+            #expect(fixture.coordinator.pendingPage == nil)
+            let restored = try #require(fixture.coordinator.rowViewports.first { $0.target == first.target })
+            #expect(abs(restored.minY - (try #require(fixture.controller.geometry)).visibleTop - offset) < 1)
+        }
+    }
+
+    @Test func botStepUpdatesOnlyEvaluateTheirOwningActivityRow() async throws {
+        let messages = (0..<60).map { index in
+            ChatMessage(role: .hermes, text: "Completed reply \(index)", activity: [
+                ActiveToolCall(id: "call-\(index)", name: "terminal", input: "Synthetic tool",
+                    context: "", startedAt: .distantPast, isComplete: true)
+            ])
+        }
+        let fixture = Fixture(messages: messages)
+        defer { fixture.window.orderOut(nil) }
+        let record = BotActivityRecord(id: "bot-dispatch:call-59", originSessionID: "scroll-integration",
+            botID: "fixture-bot", botName: "Bot", summary: "Waiting for input", state: .waiting)
+        fixture.model.botActivityBySessionID = ["scroll-integration": [record]]
+        fixture.model.botLiveSteps = [record.id: "Original step"]
+        try await fixture.settle()
+        let bodies = fixture.evaluations.messageBodies
+        let activity = fixture.evaluations.activityBodies
+        #if DEBUG
+            #expect(activity > 0)
+        #endif
+        fixture.model.botLiveSteps[record.id] = "Current step"
+        try await fixture.settle()
+        #expect(fixture.evaluations.messageBodies == bodies)
+        #if DEBUG
+            #expect(fixture.evaluations.activityBodies == activity + 1)
+        #endif
+        fixture.model.botLiveSteps["unrelated-record"] = "Background step"
+        try await fixture.settle()
+        #if DEBUG
+            #expect(fixture.evaluations.activityBodies == activity + 1)
+        #endif
+        fixture.model.botActivityBySessionID["scroll-integration"]?[0].state = .completed
+        try await fixture.settle()
+        #expect(fixture.evaluations.messageBodies == bodies)
+        #if DEBUG
+            #expect(fixture.evaluations.activityBodies == activity + 2)
+        #endif
+    }
+
     @Test func sessionReplacementResetsProductionMountingAndRejectsOldGeometry() async throws {
         let fixture = Fixture()
         defer { fixture.window.orderOut(nil) }
@@ -232,6 +374,77 @@ struct ConversationTranscriptIntegrationTests {
         #expect(fixture.coordinator.pendingPage == nil)
         #expect(fixture.coordinator.rowViewports.allSatisfy { $0.target.sessionID == "replacement" })
         #expect(fixture.coordinator.rowViewports.count == 4)
+    }
+
+    @Test func timelineAndChatStayIsolatedDuringLiveActivityAndHistoryPaging() async throws {
+        let start = Date().addingTimeInterval(-1_000)
+        let messages = (0..<500).map { index in
+            ChatMessage(role: index.isMultiple(of: 2) ? .user : .hermes,
+                text: String(repeating: "Message \(index), **Markdown** and `code`.\n\n", count: 6),
+                timestamp: start.addingTimeInterval(Double(index)),
+                activity: index.isMultiple(of: 2) ? [] : [ActiveToolCall(id: "old-\(index)", name: "terminal",
+                    input: "Saved tool", context: "", startedAt: start.addingTimeInterval(Double(index)),
+                    isComplete: true, traceDuration: 1, traceTiming: .runtime)])
+        }
+        let fixture = Fixture(streaming: true, messages: messages, includeTimeline: true)
+        defer { fixture.window.orderOut(nil) }
+        fixture.model.isHermesConnected = true
+        fixture.model.status = .working
+        fixture.model.streamingMessageSessionID = fixture.model.sessionID
+        fixture.model.streamingResponseStartedAt = Date()
+        fixture.model.activeSubagents = (0..<8).map {
+            HermesSubagent(id: "worker-\($0)", name: "Worker \($0)", goal: "Selected-session work",
+                status: "running", startedAt: Date())
+        }
+        try await fixture.settle()
+        fixture.coordinator.jump(to: 250)
+        try await fixture.settle()
+        let anchor = try #require(fixture.coordinator.rowViewports.first { $0.index == 250 })
+        try fixture.move(to: anchor.minY + 20)
+        try await fixture.settle()
+        let top = try #require(fixture.controller.geometry).visibleTop
+        let bodies = fixture.evaluations.messageBodies
+        let timeline = try #require(fixture.timeline)
+        let scans = timeline.historyScanCount
+        for batch in 0..<5 {
+            for index in 0..<200 {
+                fixture.model.receiveGatewayEvent("tool.call", params: [
+                    "session_id": "background-\(index % 8)",
+                    "payload": ["id": "\(batch)-\(index)", "name": "terminal"]
+                ])
+            }
+            fixture.model.streamingText.appendPresentation("\n\nIncoming chunk \(batch).")
+            fixture.model.activeToolCalls.append(ActiveToolCall(id: "selected-\(batch)", name: "terminal",
+                input: "Selected tool", context: "", startedAt: Date(), isComplete: false, traceTiming: .observed))
+            fixture.model.isLoadingSessions.toggle()
+            try await fixture.settle()
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        try await fixture.settle()
+        #expect(timeline.historyScanCount == scans)
+        #expect(timeline.turns.flatMap(\.calls).filter { $0.id.hasPrefix("selected-") }.count == 5)
+        #expect(timeline.turns.last?.agentCount == 8)
+        #expect(fixture.evaluations.messageBodies == bodies)
+        #expect(abs((try #require(fixture.controller.geometry)).visibleTop - top) < 1)
+        let canvases = fixture.evaluations.timelineCanvases
+        let updates = timeline.updateCount
+        for index in 0..<100 {
+            fixture.model.botLiveSteps["background"] = "Step \(index)"
+            fixture.model.isLoadingSessions.toggle()
+        }
+        try await fixture.settle()
+        #expect(timeline.updateCount == updates)
+        #expect(fixture.evaluations.timelineCanvases == canvases)
+        let previousRange = fixture.coordinator.mountedRange
+        let first = try #require(fixture.coordinator.rowViewports.min { $0.index < $1.index })
+        try fixture.move(to: first.minY + 20)
+        try fixture.move(to: first.minY + 10)
+        let offset = first.minY - (try #require(fixture.controller.geometry)).visibleTop
+        try await fixture.settle()
+        #expect(fixture.coordinator.mountedRange.lowerBound < previousRange.lowerBound)
+        #expect(fixture.coordinator.pendingPage == nil)
+        let restored = try #require(fixture.coordinator.rowViewports.first { $0.target == first.target })
+        #expect(abs(restored.minY - (try #require(fixture.controller.geometry)).visibleTop - offset) < 1)
     }
 
     /// Five cold/warm pairs; layout/display work excludes synthetic pacing sleeps.
