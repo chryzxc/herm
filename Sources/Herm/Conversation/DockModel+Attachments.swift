@@ -152,7 +152,12 @@ extension DockModel {
 
     /// Reads the image's text on-device and stages it in the draft; the image itself stays attached.
     func stageText(from attachment: ImageAttachment) async {
-        guard let text = await ImageTextRecognizer.text(in: attachment.image) else {
+        guard extractingImageTextIDs.insert(attachment.id).inserted else { return }
+        defer { extractingImageTextIDs.remove(attachment.id) }
+        let session = navigationSessionID
+        let text = await ImageTextRecognizer.text(in: attachment.image)
+        guard navigationSessionID == session, pendingImages.contains(where: { $0.id == attachment.id }) else { return }
+        guard let text else {
             pendingAttachmentError = "No text was found in that image."
             return
         }

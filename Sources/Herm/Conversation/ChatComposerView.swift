@@ -336,6 +336,12 @@ struct ChatComposerView: View {
                                             .scaledToFill()
                                             .frame(width: 32, height: 32)
                                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                            .overlay {
+                                                if model.extractingImageTextIDs.contains(image.id) {
+                                                    ProgressView().controlSize(.mini).accessibilityLabel(
+                                                        "Reading image text")
+                                                }
+                                            }
                                         Button(action: { model.removePendingImage(image) }) {
                                             DockIcon(.x)
                                                 .dockFont(.compactStatus, weight: .bold)
@@ -356,6 +362,7 @@ struct ChatComposerView: View {
                                         Button("Add Text from Image to Message") {
                                             Task { await model.stageText(from: image) }
                                         }
+                                        .disabled(model.extractingImageTextIDs.contains(image.id))
                                     }
                                 }
                             }

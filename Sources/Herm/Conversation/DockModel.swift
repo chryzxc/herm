@@ -71,6 +71,7 @@ final class DockModel: ObservableObject {
     @Published var attachedContexts: [ChatContext] = []
     @Published var pendingPDFURL: URL?
     @Published var pendingPDFError: String?
+    @Published var extractingImageTextIDs: Set<UUID> = []
     @Published var pendingAttachmentError: String?
     @Published var isSending = false
     @Published var steeringError: String?
