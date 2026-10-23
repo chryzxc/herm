@@ -1341,7 +1341,7 @@ private struct SessionTraceScrollObserver: NSViewRepresentable {
         var scroll: SessionTraceScroll?
         var onUserScroll: (() -> Void)?
         private var monitor: Any?
-        private var bounds_: NSObjectProtocol?
+        private var boundsObserver: NSObjectProtocol?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -1349,7 +1349,7 @@ private struct SessionTraceScrollObserver: NSViewRepresentable {
             guard window != nil else { return }
             if let clip = enclosingScrollView?.contentView {
                 clip.postsBoundsChangedNotifications = true
-                bounds_ = NotificationCenter.default.addObserver(
+                boundsObserver = NotificationCenter.default.addObserver(
                     forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
                 ) { [weak self] _ in
                     MainActor.assumeIsolated { self?.report() }
@@ -1376,9 +1376,9 @@ private struct SessionTraceScrollObserver: NSViewRepresentable {
         }
         func stop() {
             if let monitor { NSEvent.removeMonitor(monitor) }
-            if let bounds_ { NotificationCenter.default.removeObserver(bounds_) }
+            if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
             monitor = nil
-            bounds_ = nil
+            boundsObserver = nil
         }
     }
 }

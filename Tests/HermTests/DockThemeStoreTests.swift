@@ -91,11 +91,11 @@ struct DockThemeStoreTests {
             window.orderFrontRegardless()
             return window
         }
-        defer { windows.forEach { $0.close() } }
+        defer { for window in windows { window.close() } }
         var baseline: [Data] = []
         for theme in [DockThemeID.clean, .mono, .terminal, .cartoon, .clean] {
             store.selectedThemeID = theme
-            windows.forEach { $0.appearance = NSAppearance(named: .aqua) }
+            for window in windows { window.appearance = NSAppearance(named: .aqua) }
             try await Task.sleep(for: .milliseconds(150))
             let images = try hosts.map { host in
                 host.layoutSubtreeIfNeeded()

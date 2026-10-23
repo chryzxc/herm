@@ -372,7 +372,8 @@ struct OfficePreviewLayout {
                 for node in head + gridNodes + tail {
                     if position(nodes.last!) != position(node) { nodes.append(node) }
                 }
-                if nodes.last == last { /* already at the destination approach */
+                if nodes.last == last {
+                    // Already at the destination approach.
                 } else if position(nodes.last!) == position(last) && nodes.last != first {
                     nodes[nodes.count - 1] = last
                 } else {

@@ -579,7 +579,7 @@ final class DeveloperWorkflowModel: ObservableObject {
             desired.append(WatchedRepository(id: repository.repositoryID, path: repository.path))
         }
         watchGeneration = UUID()
-        debounceTasks.values.forEach { $0.cancel() }
+        for task in debounceTasks.values { task.cancel() }
         debounceTasks = [:]
         watchedPaths = Dictionary(uniqueKeysWithValues: desired.map { ($0.id, $0.path) })
         watchedFingerprints = watchedFingerprints.filter { watchedPaths[$0.key] != nil }

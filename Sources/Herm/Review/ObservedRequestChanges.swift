@@ -66,7 +66,9 @@ final class ObservedRequestChanges: ObservableObject {
                         head: head, fingerprint: before, patches: patches, completionRowID: completionRowID,
                         capturedAt: .now))
                 comparisons = Array(comparisons.suffix(8))
-            } catch { /* Missing or unstable comparisons fall back to current Git changes. */  }
+            } catch {
+                // Missing or unstable comparisons fall back to current Git changes.
+            }
         }
     }
     func current(for session: HermesSession, replyID: String?) async -> ObservedRequestComparison? {

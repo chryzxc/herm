@@ -856,7 +856,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             if showsAgents != lastShowsAgents {
                 lastShowsAgents = showsAgents
                 for root in avatarRoots.values { root.isEnabled = showsAgents }
-                if !showsAgents { labels.values.forEach { $0.setVisible(false) } }
+                if !showsAgents { for label in labels.values { label.setVisible(false) } }
                 layoutLabels()
             }
             guard agents != lastPresentations || reduceMotion != lastReduceMotion || isDataCurrent != lastDataCurrent
@@ -1244,13 +1244,13 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
         func stop() {
             savePlacements()
-            movementTasks.values.forEach { $0.cancel() }
+            for task in movementTasks.values { task.cancel() }
             movementTasks.removeAll()
             actionSubscription?.cancel()
             actionSubscription = nil
             resetTask?.cancel()
             resumeFrameWaiters()
-            labels.values.forEach { $0.removeFromSuperview() }
+            for label in labels.values { label.removeFromSuperview() }
             labels.removeAll()
             if let roomGeometry, let navigation = roomLayout.authored {
                 roomGeometry.removeFromParent()
@@ -1263,7 +1263,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         }
 
         deinit {
-            movementTasks.values.forEach { $0.cancel() }
+            for task in movementTasks.values { task.cancel() }
             resetTask?.cancel()
         }
 
@@ -1437,7 +1437,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             guard !frameWaiters.isEmpty else { return }
             let waiters = frameWaiters
             frameWaiters.removeAll()
-            waiters.forEach { $0.resume() }
+            for waiter in waiters { waiter.resume() }
         }
 
         private func stationYaw(_ node: OfficePreviewLayout.Node) -> Float? {
@@ -1506,7 +1506,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             palette = next
             guard anchor != nil else { return }
             rebuildRoom()
-            labels.values.forEach { $0.applyInk(next.signInk) }
+            for label in labels.values { label.applyInk(next.signInk) }
         }
 
         /// A glowing floor ring marks the bot whose details are open.
@@ -2075,7 +2075,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             labelsNeedLayout = false
             positionMusicControl()
             guard showsAgents else {
-                labels.values.forEach { $0.setVisible(false) }
+                for label in labels.values { label.setVisible(false) }
                 return
             }
             var occupied: [CGRect] = []
@@ -2172,8 +2172,8 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             let dt = Float(min(delta, 0.1))
             parts.marker.scale = .init(repeating: musicHovered ? 1.35 : 1)
             guard !lastReduceMotion else {
-                parts.notes.forEach { $0.isEnabled = false }
-                parts.waves.forEach { $0.isEnabled = false }
+                for note in parts.notes { note.isEnabled = false }
+                for wave in parts.waves { wave.isEnabled = false }
                 return
             }
             musicTime += dt

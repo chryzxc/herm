@@ -188,9 +188,9 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         PullRequestWatchStore.shared.start()
         _ = DesktopCaptureService.shared
         quickCaptureHotKey = QuickCaptureHotKey { [weak self] in self?.edgeDock?.toggleQuickCapture() }
-        windowCaptureHotKey = QuickCaptureHotKey(identifier: 2, preference: { DesktopCaptureShortcut.stored }) {
-            [weak self] in self?.edgeDock?.captureWindow()
-        }
+        windowCaptureHotKey = QuickCaptureHotKey(
+            identifier: 2, preference: { DesktopCaptureShortcut.stored },
+            onPress: { [weak self] in self?.edgeDock?.captureWindow() })
         writeStatusItemDiagnosticIfRequested()
         HermAppUpdater.shared.isBusy = { [model] in model.isSending || model.status == .working }
         HermAppUpdater.shared.start()

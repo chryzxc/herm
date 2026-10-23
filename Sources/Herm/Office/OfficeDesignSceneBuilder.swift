@@ -883,8 +883,8 @@ final class OfficeDesignSceneBuilder {
         }
         box(bar, "grinder-body", [0.22, 0.34, 0.24], [-0.55, 1.19, -0.12], trim, radius: 0.04)
         oval(bar, "grinder-hopper", [0.2, 0.22, 0.2], [-0.55, 1.45, -0.12], wood)
-        let case_ = box(bar, "pastry-case", [1.0, 0.36, 0.5], [0.45, 1.2, 0], paper, radius: 0.03)
-        case_.model?.materials = [
+        let pastryCase = box(bar, "pastry-case", [1.0, 0.36, 0.5], [0.45, 1.2, 0], paper, radius: 0.03)
+        pastryCase.model?.materials = [
             SimpleMaterial(color: palette.glass.withAlphaComponent(0.35), roughness: 0.2, isMetallic: false)
         ]
         for i in 0..<4 {

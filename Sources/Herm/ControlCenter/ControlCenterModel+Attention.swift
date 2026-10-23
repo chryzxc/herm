@@ -129,14 +129,14 @@ extension ControlCenterModel {
                     actions: [.approve, .deny, .stop]
                 ))
         case "clarification.request", "clarify.request":
-            let choices =
-                ((payload["choices"] as? [String])
+            let rawChoices =
+                (payload["choices"] as? [String])
                 ?? (params["choices"] as? [String])
-                    ?? (payload["options"] as? [String])
-                        ?? (params["options"] as? [String]))
-                ?.filter {
-                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                }
+                ?? (payload["options"] as? [String])
+                ?? (params["options"] as? [String])
+            let choices = rawChoices?.filter {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
             let requestID =
                 (payload["request_id"] as? String)
                 ?? (params["request_id"] as? String)

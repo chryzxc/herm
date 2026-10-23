@@ -378,7 +378,7 @@ private final class HangingCapabilityProbeClient: HermesRPCClientProtocol {
     func release() {
         let pending = continuations
         continuations.removeAll()
-        pending.forEach { $0.resume() }
+        for continuation in pending { continuation.resume() }
     }
     func close() { release() }
 }
@@ -400,6 +400,6 @@ private final class ToggleHangingCapabilityProbeClient: CapabilityProbeClient {
     func release() {
         let pending = continuations
         continuations.removeAll()
-        pending.forEach { $0.resume() }
+        for continuation in pending { continuation.resume() }
     }
 }

@@ -162,56 +162,56 @@ struct BotRosterPage: View {
                     await model.loadBotDeletionCapability()
                 }
             },
-            isRefreshing: model.isRefreshing
-        ) {
-            HStack(spacing: 10) {
-                if selectedSection == .bots {
-                    Button {
-                        isShowingCreateSheet = true
-                    } label: {
-                        DockIconLabel("New Bot", icon: .plus)
+            isRefreshing: model.isRefreshing,
+            trailing: {
+                HStack(spacing: 10) {
+                    if selectedSection == .bots {
+                        Button {
+                            isShowingCreateSheet = true
+                        } label: {
+                            DockIconLabel("New Bot", icon: .plus)
+                        }
+                        .controlSize(.regular)
+                        .disabled(!model.canCreateBots)
+                        .help(
+                            model.canCreateBots
+                                ? "Create a new Hermes Bot profile"
+                                : "Bot creation requires a Hermes runtime with profile support")
+                        Button {
+                            showsAvatarTip.toggle()
+                        } label: {
+                            DockActionLabel(
+                                title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
+                        }
+                        .controlSize(.regular)
+                        .disabled(isPopulatingAvatars)
+                        .popover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
+                            BotAvatarGeneratorTip(
+                                pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
+                                onFillMissing: { generateAvatars(all: false) },
+                                onRegenerateAll: {
+                                    showsAvatarTip = false
+                                    confirmsRegenerateAll = true
+                                }
+                            )
+                        }
+                        .confirmationDialog("Regenerate all avatars?", isPresented: $confirmsRegenerateAll) {
+                            Button("Regenerate All") { generateAvatars(all: true) }
+                        } message: {
+                            Text("Every Bot gets its Herm face, replacing uploaded and generated images.")
+                        }
+                    } else {
+                        Button {
+                            isShowingRoutineForm = true
+                        } label: {
+                            DockIconLabel("New Routine", icon: .plus)
+                        }
+                        .controlSize(.regular)
+                        .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
+                        .help("Attach a recurring routine to a Bot")
                     }
-                    .controlSize(.regular)
-                    .disabled(!model.canCreateBots)
-                    .help(
-                        model.canCreateBots
-                            ? "Create a new Hermes Bot profile"
-                            : "Bot creation requires a Hermes runtime with profile support")
-                    Button {
-                        showsAvatarTip.toggle()
-                    } label: {
-                        DockActionLabel(
-                            title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
-                    }
-                    .controlSize(.regular)
-                    .disabled(isPopulatingAvatars)
-                    .popover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
-                        BotAvatarGeneratorTip(
-                            pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
-                            onFillMissing: { generateAvatars(all: false) },
-                            onRegenerateAll: {
-                                showsAvatarTip = false
-                                confirmsRegenerateAll = true
-                            }
-                        )
-                    }
-                    .confirmationDialog("Regenerate all avatars?", isPresented: $confirmsRegenerateAll) {
-                        Button("Regenerate All") { generateAvatars(all: true) }
-                    } message: {
-                        Text("Every Bot gets its Herm face, replacing uploaded and generated images.")
-                    }
-                } else {
-                    Button {
-                        isShowingRoutineForm = true
-                    } label: {
-                        DockIconLabel("New Routine", icon: .plus)
-                    }
-                    .controlSize(.regular)
-                    .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
-                    .help("Attach a recurring routine to a Bot")
                 }
-            }
-        }
+            })
     }
 
     @ViewBuilder

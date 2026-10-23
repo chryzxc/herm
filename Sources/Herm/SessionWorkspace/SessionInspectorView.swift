@@ -279,11 +279,8 @@ struct SessionInspector: View {
     private func extraContent(_ extra: ExtraTab) -> some View {
         if extra.kind == .browser {
             if let workspace = browserWorkspace, let browser = workspace.extras.first(where: { $0.id == extra.id }) {
-                SessionBrowserView(
-                    model: model, workspace: workspace, browser: browser,
-                    discoveryActive: selectedExtraID == extra.id && isVisible(extra)
-                )
-                .id(browser.id)
+                SessionBrowserView(model: model, workspace: workspace, browser: browser)
+                    .id(browser.id)
             }
         } else {
             SessionTerminalView(
@@ -700,7 +697,7 @@ struct SessionInspector: View {
             )
         case .browser:
             if let workspace = browserWorkspace {
-                SessionBrowserView(model: model, workspace: workspace, discoveryActive: selectedExtraID == nil)
+                SessionBrowserView(model: model, workspace: workspace)
                     .id(workspace.primary.id)
             }
         }

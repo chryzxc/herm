@@ -47,12 +47,15 @@ struct HermesGatewayLifecycleModelTests {
     @MainActor
     func restart() async {
         var calls: [HermesGatewayCommand] = []
-        let service = HermesGatewayLifecycleModel(pause: {}) { command in
-            calls.append(command)
-            let output =
-                calls.contains(.restart) ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
-            return .init(succeeded: true, output: command == .status ? output : "")
-        }
+        let service = HermesGatewayLifecycleModel(
+            pause: {},
+            run: { command in
+                calls.append(command)
+                let output =
+                    calls.contains(.restart)
+                    ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
+                return .init(succeeded: true, output: command == .status ? output : "")
+            })
         await service.refresh()
         #expect(service.canRestart)
         await service.restart()
@@ -67,10 +70,12 @@ struct HermesGatewayLifecycleModelTests {
     func unmanaged() async {
         var output = Self.running
         var restarts = 0
-        let service = HermesGatewayLifecycleModel(pause: {}) { command in
-            if command == .restart { restarts += 1 }
-            return .init(succeeded: true, output: output)
-        }
+        let service = HermesGatewayLifecycleModel(
+            pause: {},
+            run: { command in
+                if command == .restart { restarts += 1 }
+                return .init(succeeded: true, output: output)
+            })
         await service.refresh()
         output = "✓ Gateway is running (PID: 42)"
         await service.restart()
@@ -83,7 +88,8 @@ struct HermesGatewayLifecycleModelTests {
     @MainActor
     func readFailure() async {
         var succeeds = true
-        let service = HermesGatewayLifecycleModel(pause: {}) { _ in .init(succeeded: succeeds, output: Self.running) }
+        let service = HermesGatewayLifecycleModel(
+            pause: {}, run: { _ in .init(succeeded: succeeds, output: Self.running) })
         await service.refresh()
         succeeds = false
         await service.refresh()
@@ -98,9 +104,11 @@ struct HermesGatewayLifecycleModelTests {
     @Test("Command failure stays visible even when the subsequent status is running")
     @MainActor
     func restartFailure() async {
-        let service = HermesGatewayLifecycleModel(pause: {}) { command in
-            .init(succeeded: command == .status, output: Self.running)
-        }
+        let service = HermesGatewayLifecycleModel(
+            pause: {},
+            run: { command in
+                .init(succeeded: command == .status, output: Self.running)
+            })
         await service.refresh()
         await service.restart()
         #expect(service.status.state == .running)
@@ -112,9 +120,11 @@ struct HermesGatewayLifecycleModelTests {
     @Test("A zero exit code does not imply the gateway recovered")
     @MainActor
     func unconfirmedRestart() async {
-        let service = HermesGatewayLifecycleModel(pause: {}) { _ in
-            .init(succeeded: true, output: Self.managed + "✗ Gateway service is not loaded")
-        }
+        let service = HermesGatewayLifecycleModel(
+            pause: {},
+            run: { _ in
+                .init(succeeded: true, output: Self.managed + "✗ Gateway service is not loaded")
+            })
         await service.refresh()
         await service.restart()
         #expect(service.status.state == .stopped)
@@ -126,15 +136,18 @@ struct HermesGatewayLifecycleModelTests {
     func duplicateActions() async {
         var continuation: CheckedContinuation<HermesGatewayCommandResult, Never>?
         var calls: [HermesGatewayCommand] = []
-        let service = HermesGatewayLifecycleModel(pause: {}) { command in
-            calls.append(command)
-            if command == .restart {
-                return await withCheckedContinuation { continuation = $0 }
-            }
-            let output =
-                calls.contains(.restart) ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
-            return .init(succeeded: true, output: output)
-        }
+        let service = HermesGatewayLifecycleModel(
+            pause: {},
+            run: { command in
+                calls.append(command)
+                if command == .restart {
+                    return await withCheckedContinuation { continuation = $0 }
+                }
+                let output =
+                    calls.contains(.restart)
+                    ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
+                return .init(succeeded: true, output: output)
+            })
         await service.refresh()
         let restart = Task { await service.restart() }
         while continuation == nil { await Task.yield() }
@@ -153,12 +166,14 @@ struct HermesGatewayLifecycleModelTests {
     func replacementProcess() async {
         var restarting = false
         var polls = 0
-        let service = HermesGatewayLifecycleModel(pause: {}) { command in
-            if command == .restart { restarting = true }
-            if restarting && command == .status { polls += 1 }
-            let output = polls >= 3 ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
-            return .init(succeeded: true, output: output)
-        }
+        let service = HermesGatewayLifecycleModel(
+            pause: {},
+            run: { command in
+                if command == .restart { restarting = true }
+                if restarting && command == .status { polls += 1 }
+                let output = polls >= 3 ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
+                return .init(succeeded: true, output: output)
+            })
         await service.refresh()
         await service.restart()
         #expect(polls == 3)
@@ -169,7 +184,7 @@ struct HermesGatewayLifecycleModelTests {
     @Test("An unchanged PID is not proof of a completed restart")
     @MainActor
     func unchangedProcess() async {
-        let service = HermesGatewayLifecycleModel(pause: {}) { _ in .init(succeeded: true, output: Self.running) }
+        let service = HermesGatewayLifecycleModel(pause: {}, run: { _ in .init(succeeded: true, output: Self.running) })
         await service.refresh()
         await service.restart()
         #expect(service.error?.contains("not confirmed running") == true)

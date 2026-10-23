@@ -33,7 +33,7 @@ enum ExternalOpen {
             savedLevels = NSApp.windows.compactMap { $0 is DockPanel && $0.level > .normal ? ($0, $0.level) : nil }
         }
         guard !savedLevels.isEmpty else { return }
-        savedLevels.forEach { $0.0.level = .normal }
+        for (window, _) in savedLevels { window.level = .normal }
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { event in
             restore()
@@ -45,7 +45,7 @@ enum ExternalOpen {
     }
 
     private static func restore() {
-        savedLevels.forEach { $0.0.level = $0.1 }
+        for (window, level) in savedLevels { window.level = level }
         savedLevels = []
         if let monitor { NSEvent.removeMonitor(monitor) }
         if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }

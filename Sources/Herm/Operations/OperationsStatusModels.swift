@@ -77,10 +77,6 @@ struct OperationsStatusCard: Identifiable, Equatable, Sendable {
 struct OperationsStatusSnapshot: Equatable, Sendable {
     let cards: [OperationsStatusCard]
 
-    init(cards: [OperationsStatusCard]) {
-        self.cards = cards
-    }
-
     static let unavailable = OperationsStatusSnapshot(
         cards: OperationsSurface.allCases.map {
             OperationsStatusCard(

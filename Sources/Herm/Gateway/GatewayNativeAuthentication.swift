@@ -271,7 +271,7 @@ final class GatewayOAuthCallback {
 
     func stop() {
         finish(.failure(CancellationError()))
-        connections.forEach { $0.cancel() }
+        for connection in connections { connection.cancel() }
         connections.removeAll()
     }
 }

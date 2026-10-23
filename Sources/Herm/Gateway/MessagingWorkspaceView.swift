@@ -237,11 +237,9 @@ struct MessagingWorkspaceView: View {
                                     platform: platformID, whatsappMode: whatsappMode, profileID: profileID)
                             }
                         } label: {
-                            Label {
-                                Text(telegram ? "Create with QR" : "Link with QR")
-                            } icon: {
-                                DockIcon(.qrCode, size: 13)
-                            }
+                            DockActionLabel(
+                                title: telegram ? "Create with QR" : "Link with QR", pendingTitle: "Connecting…",
+                                isPending: model.busy)
                         }
                         .buttonStyle(.dockPrimary).disabled(model.busy)
                     }
@@ -327,19 +325,15 @@ struct MessagingWorkspaceView: View {
             Spacer()
             if ["pending_restart", "gateway_stopped", "startup_failed"].contains(platform.state) {
                 let start = platform.state == "gateway_stopped"
-                Button(start ? "Start gateway" : "Restart gateway") {
-                    Task {
-                        model.error = nil
-                        await model.restartGateway(start: start, profileID: profileID)
-                    }
+                DockAsyncButton(start ? "Start gateway" : "Restart gateway") {
+                    model.error = nil
+                    await model.restartGateway(start: start, profileID: profileID)
                 }
                 .buttonStyle(.dockSecondary).disabled(model.busy)
             }
-            Button("Test") {
-                Task {
-                    model.error = nil
-                    await model.test(platform, profileID: profileID)
-                }
+            DockAsyncButton("Test") {
+                model.error = nil
+                await model.test(platform, profileID: profileID)
             }
             .buttonStyle(.dockSecondary).disabled(model.busy || changed)
             .help(changed ? "Save changes before testing" : "Check this platform's connection")
@@ -352,11 +346,7 @@ struct MessagingWorkspaceView: View {
                     }
                 }
             } label: {
-                Label {
-                    Text("Save changes")
-                } icon: {
-                    DockIcon(.floppyDisk, size: 13)
-                }
+                DockActionLabel(title: "Save changes", pendingTitle: "Saving…", isPending: model.busy)
             }
             .buttonStyle(.dockPrimary).disabled(model.busy || !changed)
         }

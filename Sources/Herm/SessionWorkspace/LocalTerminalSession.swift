@@ -127,7 +127,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
             environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
             free(directoryPath)
-            (arguments + environmentPointers).forEach { free($0) }
+            for pointer in arguments + environmentPointers { free(pointer) }
         }
         let child = forkpty(&fd, nil, nil, &size)
         guard child >= 0 else {

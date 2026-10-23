@@ -131,7 +131,7 @@ final class CodeEditorContainerView: NSView {
 
     deinit {
         highlightTask?.cancel()
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
     override func layout() {

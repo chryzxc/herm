@@ -15,7 +15,7 @@ struct GatewaySettingsRenderTests {
         ]
         var models: [HermesGatewayLifecycleModel] = []
         for state in states {
-            let model = HermesGatewayLifecycleModel(pause: {}) { _ in .init(succeeded: true, output: state) }
+            let model = HermesGatewayLifecycleModel(pause: {}, run: { _ in .init(succeeded: true, output: state) })
             await model.refresh()
             models.append(model)
         }

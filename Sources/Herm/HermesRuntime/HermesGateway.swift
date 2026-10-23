@@ -94,9 +94,9 @@ final class HermesGateway: NSObject {
         socket?.cancel(with: .goingAway, reason: nil)
         urlSession?.invalidateAndCancel()
         backend?.terminate()
-        backendStartWaiters.forEach { $0.resume(throwing: GatewayError.disconnected) }
+        for waiter in backendStartWaiters { waiter.resume(throwing: GatewayError.disconnected) }
         backendStartWaiters.removeAll()
-        timeoutTasks.values.forEach { $0.cancel() }
+        for task in timeoutTasks.values { task.cancel() }
     }
 
     func connect() async throws {
@@ -226,11 +226,11 @@ final class HermesGateway: NSObject {
         sshBridge?.close()
         sshBridge = nil
         backendOutput = ""
-        backendStartWaiters.forEach { $0.resume(throwing: GatewayError.disconnected) }
+        for waiter in backendStartWaiters { waiter.resume(throwing: GatewayError.disconnected) }
         backendStartWaiters.removeAll()
-        pending.values.forEach { $0.resume(throwing: GatewayError.disconnected) }
+        for continuation in pending.values { continuation.resume(throwing: GatewayError.disconnected) }
         pending.removeAll()
-        timeoutTasks.values.forEach { $0.cancel() }
+        for task in timeoutTasks.values { task.cancel() }
         timeoutTasks.removeAll()
         onConnectionChange?(false)
     }
@@ -432,9 +432,9 @@ final class HermesGateway: NSObject {
         socket = nil
         urlSession?.invalidateAndCancel()
         urlSession = nil
-        pending.values.forEach { $0.resume(throwing: GatewayError.disconnected) }
+        for continuation in pending.values { continuation.resume(throwing: GatewayError.disconnected) }
         pending.removeAll()
-        timeoutTasks.values.forEach { $0.cancel() }
+        for task in timeoutTasks.values { task.cancel() }
         timeoutTasks.removeAll()
         scheduleReconnect()
     }
@@ -565,7 +565,7 @@ final class HermesGateway: NSObject {
                     DebugLog.write("backend: discovered port \(value)")
                     let waiters = self?.backendStartWaiters ?? []
                     self?.backendStartWaiters.removeAll()
-                    waiters.forEach { $0.resume() }
+                    for waiter in waiters { waiter.resume() }
                 }
             }
             process.terminationHandler = { [weak self, weak process] _ in
@@ -579,7 +579,7 @@ final class HermesGateway: NSObject {
                     self.onConnectionChange?(false)
                     let waiters = self.backendStartWaiters
                     self.backendStartWaiters.removeAll()
-                    waiters.forEach { $0.resume(throwing: GatewayError.backendUnavailable) }
+                    for waiter in waiters { waiter.resume(throwing: GatewayError.backendUnavailable) }
                     guard wasReady else { return }
 
                     DebugLog.write("backend: process terminated unexpectedly")
@@ -587,9 +587,9 @@ final class HermesGateway: NSObject {
                     self.socket = nil
                     self.urlSession?.invalidateAndCancel()
                     self.urlSession = nil
-                    self.pending.values.forEach { $0.resume(throwing: GatewayError.disconnected) }
+                    for continuation in self.pending.values { continuation.resume(throwing: GatewayError.disconnected) }
                     self.pending.removeAll()
-                    self.timeoutTasks.values.forEach { $0.cancel() }
+                    for task in self.timeoutTasks.values { task.cancel() }
                     self.timeoutTasks.removeAll()
                 }
             }
@@ -597,7 +597,7 @@ final class HermesGateway: NSObject {
                 backend = nil
                 let waiters = backendStartWaiters
                 backendStartWaiters.removeAll()
-                waiters.forEach { $0.resume(throwing: error) }
+                for waiter in waiters { waiter.resume(throwing: error) }
             }
 
             Task { [weak self] in
@@ -609,7 +609,7 @@ final class HermesGateway: NSObject {
                     self.backend?.terminate()
                     let waiters = self.backendStartWaiters
                     self.backendStartWaiters.removeAll()
-                    waiters.forEach { $0.resume(throwing: GatewayError.backendUnavailable) }
+                    for waiter in waiters { waiter.resume(throwing: GatewayError.backendUnavailable) }
                 }
             }
         }

@@ -205,8 +205,26 @@ struct WorkspaceActivitySidebar: View {
     /// Set in the window: page toolbars move up into the title row like a native toolbar.
     @Environment(\.dockTitleRow) var titleRow
 
+    @StateObject private var confirmedAction = DockAsyncAction()
+
     var body: some View {
         observedSidebar
+            .overlay(alignment: .bottomTrailing) {
+                if confirmedAction.isPending {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Applying change…").dockFont(.body)
+                    }
+                    .padding(10)
+                    .dockFloatingSurface(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius), tint: .dockSurface2,
+                        stroke: .dockBorderLight
+                    )
+                    .padding(12)
+                    .accessibilityElement(children: .combine)
+                    .allowsHitTesting(false)
+                }
+            }
             .sheet(isPresented: $isShowingCommandPalette) {
                 DockActionPalette(repositoryAvailable: activeRepositoryPath != nil, isWorking: model.status == .working)
                 { command in
@@ -253,7 +271,7 @@ struct WorkspaceActivitySidebar: View {
             }
             .confirmationDialog("Create Scheduled Job?", isPresented: $isShowingAutomationConfirmation) {
                 Button("Create Job") {
-                    Task {
+                    confirmedAction.perform {
                         if await control.createCron(
                             name: automationName, schedule: automationSchedule, prompt: automationPrompt)
                         {
@@ -266,8 +284,8 @@ struct WorkspaceActivitySidebar: View {
                             reconcileSelectedCronJob()
                         }
                     }
-                }
-                .disabled(control.isActionPending("cron.create"))
+                }.disabled(confirmedAction.isPending)
+                    .disabled(control.isActionPending("cron.create"))
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Hermes will create ‘\(automationName)’ on schedule ‘\(automationSchedule)’.")
@@ -282,15 +300,15 @@ struct WorkspaceActivitySidebar: View {
             }
             .confirmationDialog("Create Kanban Task?", isPresented: $isShowingKanbanConfirmation) {
                 Button("Create Kanban Task") {
-                    Task {
+                    confirmedAction.perform {
                         if await control.createKanbanTask(title: kanbanTitle, body: kanbanBody) {
                             kanbanTitle = ""
                             kanbanBody = ""
                             isShowingKanbanComposer = false
                         }
                     }
-                }
-                .disabled(control.isCreatingKanbanTask)
+                }.disabled(confirmedAction.isPending)
+                    .disabled(control.isCreatingKanbanTask)
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Hermes will create this task in the authoritative Kanban board through its CLI.")
@@ -310,7 +328,9 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             .confirmationDialog("Undo Last Turn?", isPresented: $isShowingUndoConfirmation) {
-                Button("Undo Last Turn", role: .destructive) { Task { _ = await control.undoActiveSession() } }
+                Button("Undo Last Turn", role: .destructive) {
+                    confirmedAction.perform { _ = await control.undoActiveSession() }
+                }.disabled(confirmedAction.isPending)
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(
@@ -318,15 +338,19 @@ struct WorkspaceActivitySidebar: View {
                 )
             }
             .confirmationDialog("Create Session Branch?", isPresented: $isShowingBranchConfirmation) {
-                Button("Create Branch") { Task { _ = await control.branchActiveSession(name: sessionBranchName) } }
+                Button("Create Branch") {
+                    confirmedAction.perform { _ = await control.branchActiveSession(name: sessionBranchName) }
+                }.disabled(confirmedAction.isPending)
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Hermes will create a new session branch from the current conversation.")
             }
             .confirmationDialog("Compress Session Context?", isPresented: $isShowingCompressConfirmation) {
                 Button("Compress Context") {
-                    Task { _ = await control.compressActiveSession(focusTopic: sessionCompressTopic) }
-                }
+                    confirmedAction.perform {
+                        _ = await control.compressActiveSession(focusTopic: sessionCompressTopic)
+                    }
+                }.disabled(confirmedAction.isPending)
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Hermes will summarize the current session context. The session remains authoritative.")
@@ -335,12 +359,12 @@ struct WorkspaceActivitySidebar: View {
                 Button("Create Handoff") {
                     let prompt = workflow.handoffPrompt(
                         focus: handoffFocus, verification: control.verification, review: workflow.review)
-                    Task {
+                    confirmedAction.perform {
                         if await control.startBackgroundTask(prompt, kind: .handoff) {
                             handoffFocus = ""
                         }
                     }
-                }
+                }.disabled(confirmedAction.isPending)
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(
@@ -349,8 +373,8 @@ struct WorkspaceActivitySidebar: View {
             }
             .confirmationDialog("Change Global Delegation?", isPresented: $isShowingDelegationConfirmation) {
                 Button(control.delegationPaused ? "Resume Delegation" : "Pause Delegation") {
-                    Task { _ = await control.pauseDelegation(!control.delegationPaused) }
-                }
+                    confirmedAction.perform { _ = await control.pauseDelegation(!control.delegationPaused) }
+                }.disabled(confirmedAction.isPending)
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This changes delegation for Hermes globally, not only for the current session.")
@@ -384,11 +408,11 @@ struct WorkspaceActivitySidebar: View {
             ) {
                 if let checkpoint = checkpointForRestore {
                     Button("Restore Checkpoint", role: .destructive) {
-                        Task {
+                        confirmedAction.perform {
                             _ = await control.restoreCheckpoint(checkpoint)
                             checkpointForRestore = nil
                         }
-                    }
+                    }.disabled(confirmedAction.isPending)
                 }
                 Button("Cancel", role: .cancel) {
                     control.cancelRestoreCheckpoint()
@@ -405,15 +429,17 @@ struct WorkspaceActivitySidebar: View {
                 if let mutation = pendingProjectMutation, let project = control.selectedProject {
                     switch mutation {
                     case .activate:
-                        Button("Set Active Project") { Task { _ = await control.setActiveProject(project) } }
+                        Button("Set Active Project") {
+                            confirmedAction.perform { _ = await control.setActiveProject(project) }
+                        }.disabled(confirmedAction.isPending)
                     case .archive:
                         Button("Archive Project", role: .destructive) {
-                            Task { _ = await control.archiveProject(project) }
-                        }
+                            confirmedAction.perform { _ = await control.archiveProject(project) }
+                        }.disabled(confirmedAction.isPending)
                     case .delete:
                         Button("Delete Project", role: .destructive) {
-                            Task { _ = await control.deleteProject(project) }
-                        }
+                            confirmedAction.perform { _ = await control.deleteProject(project) }
+                        }.disabled(confirmedAction.isPending)
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -426,8 +452,8 @@ struct WorkspaceActivitySidebar: View {
                 if let folder = pendingProjectFolder {
                     Button("Create Project") {
                         let name = folder.lastPathComponent
-                        Task { _ = await control.createProject(name: name, folder: folder.path) }
-                    }
+                        confirmedAction.perform { _ = await control.createProject(name: name, folder: folder.path) }
+                    }.disabled(confirmedAction.isPending)
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -441,11 +467,11 @@ struct WorkspaceActivitySidebar: View {
             ) {
                 if let process = pendingProcess {
                     Button("Stop \(process.name)", role: .destructive) {
-                        Task {
+                        confirmedAction.perform {
                             _ = await control.killProcess(process)
                             pendingProcess = nil
                         }
-                    }
+                    }.disabled(confirmedAction.isPending)
                 }
                 Button("Cancel", role: .cancel) { pendingProcess = nil }
             } message: {
@@ -457,11 +483,11 @@ struct WorkspaceActivitySidebar: View {
             ) {
                 if let agentID = pendingAgentID {
                     Button("Interrupt Agent", role: .destructive) {
-                        Task {
+                        confirmedAction.perform {
                             _ = await control.interruptSubagent(agentID)
                             pendingAgentID = nil
                         }
-                    }
+                    }.disabled(confirmedAction.isPending)
                 }
                 Button("Cancel", role: .cancel) { pendingAgentID = nil }
             } message: {

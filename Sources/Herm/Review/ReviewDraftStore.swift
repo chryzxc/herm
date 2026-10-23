@@ -16,5 +16,5 @@ final class ReviewDraftStore {
         stores[key] = created
         return created
     }
-    func flush() { stores.values.forEach { $0.flush() } }
+    func flush() { for store in stores.values { store.flush() } }
 }

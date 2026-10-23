@@ -157,7 +157,7 @@ struct PullRequestChatTests {
         #expect(chat.error != nil)
     }
 
-    @Test func PRSwitchesKeepSeparateDraftsAndConversations() throws {
+    @Test func prSwitchesKeepSeparateDraftsAndConversations() throws {
         let details = PullRequestDetailStore()
         let firstCenter = PullRequestCenterModel(details: details)
         let inspectorCenter = PullRequestCenterModel(details: details)

@@ -341,7 +341,7 @@ private final class DiffLineRuler: NSRulerView {
         guard let text, let manager = text.layoutManager, let container = text.textContainer,
             manager.numberOfGlyphs > 0
         else {
-            commentButtons.values.forEach { $0.removeFromSuperview() }
+            for button in commentButtons.values { button.removeFromSuperview() }
             commentButtons.removeAll()
             return
         }

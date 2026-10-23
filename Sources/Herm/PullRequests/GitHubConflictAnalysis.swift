@@ -165,8 +165,8 @@ private enum GitHubGitProcess {
         let argv = (["/usr/bin/git"] + arguments).map { strdup($0) } + [nil]
         let env = environment.sorted { $0.key < $1.key }.map { strdup($0.key + "=" + $0.value) } + [nil]
         defer {
-            argv.forEach { if let pointer = $0 { free(pointer) } }
-            env.forEach { if let pointer = $0 { free(pointer) } }
+            for pointer in argv { if let pointer { free(pointer) } }
+            for pointer in env { if let pointer { free(pointer) } }
         }
         var pid: pid_t = 0
         let spawned = argv.withUnsafeBufferPointer { args in

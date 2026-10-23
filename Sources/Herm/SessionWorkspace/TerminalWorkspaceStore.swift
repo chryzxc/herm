@@ -19,7 +19,7 @@ final class TerminalWorkspaceStore {
     }
     func closeWorkspace(key: String) { workspaces.removeValue(forKey: key)?.closeAll() }
     func shutdown() {
-        workspaces.values.forEach { $0.closeAll() }
+        for workspace in workspaces.values { workspace.closeAll() }
         workspaces = [:]
     }
 }
@@ -98,7 +98,7 @@ final class TerminalTabStore: ObservableObject {
     }
 
     func closeAll() {
-        sessions.forEach { $0.close() }
+        for session in sessions { session.close() }
     }
 
     private func observe(_ session: LocalTerminalSession) {

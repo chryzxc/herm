@@ -87,7 +87,7 @@ struct ArtifactService {
             ).lowercased()
             let producer = test(producerTool, name) || name.hasPrefix("bfl_flux3_")
             if producer || name == "terminal" { collectText(text, push) }
-            if name == "browser_vision" { matches(screenshotPattern, in: text).forEach { push($0) } }
+            if name == "browser_vision" { for match in matches(screenshotPattern, in: text) { push(match) } }
 
             var payloads = [text, untrustedPayload(text)].compactMap { $0 }.compactMap(parseJSON)
             if let content = message["content"], content is [Any] || content is [String: Any] {
@@ -104,7 +104,7 @@ struct ArtifactService {
                         return
                     }
                     guard explicitKey(keyPath, producer: producer) else { return }
-                    mediaValues(value).forEach { push($0, explicit: true) }
+                    for media in mediaValues(value) { push(media, explicit: true) }
                     push(value)
                 }
             }
@@ -128,7 +128,7 @@ struct ArtifactService {
                 }
                 out.append(value)
             }
-            mediaValues(text).forEach { push($0, explicit: true) }
+            for media in mediaValues(text) { push(media, explicit: true) }
             for payload in [text, untrustedPayload(text)].compactMap({ $0 }).compactMap(parseJSON) {
                 collectStrings(payload, keyPath: "tool_result") { value, keyPath in
                     guard explicitKey(keyPath, producer: true) else { return }
@@ -187,12 +187,12 @@ struct ArtifactService {
     }
 
     private static func collectText(_ text: String, _ push: (String, Bool) -> Void) {
-        mediaValues(text).forEach { push($0, true) }
-        matches(markdownImagePattern, in: text).forEach { push($0, false) }
-        matches(markdownLinkPattern, in: text).forEach { push($0, false) }
-        matches(urlPattern, in: text).forEach { push($0, false) }
-        matches(pathPattern, in: text).forEach { push($0, false) }
-        matches(windowsPathPattern, in: text).forEach { push($0, false) }
+        for media in mediaValues(text) { push(media, true) }
+        for match in matches(markdownImagePattern, in: text) { push(match, false) }
+        for match in matches(markdownLinkPattern, in: text) { push(match, false) }
+        for match in matches(urlPattern, in: text) { push(match, false) }
+        for match in matches(pathPattern, in: text) { push(match, false) }
+        for match in matches(windowsPathPattern, in: text) { push(match, false) }
     }
 
     static func mediaValues(_ text: String) -> [String] {

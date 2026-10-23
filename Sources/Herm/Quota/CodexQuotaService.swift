@@ -77,7 +77,7 @@ enum CodexQuotaService {
             let (data, response) = try await URLSession.shared.data(for: request)
             let http = response as? HTTPURLResponse
             var headers: [String: String] = [:]
-            (http?.allHeaderFields ?? [:]).forEach { key, value in
+            for (key, value) in http?.allHeaderFields ?? [:] {
                 if let key = key as? String, let value = value as? String { headers[key.lowercased()] = value }
             }
             return (data, http?.statusCode ?? 0, headers)

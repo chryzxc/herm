@@ -24,57 +24,72 @@ final class AutomationService {
 
     static func parseCron(_ payload: [String: Any]) -> [AutomationCronJob]? {
         guard let rows = payload["jobs"] as? [[String: Any]] else { return nil }
-        return parseRows(rows, id: { $0["id"] ?? $0["job_id"] }) { row in
-            guard let id = nonEmpty(row["id"] ?? row["job_id"]),
-                let name = nonEmpty(row["name"]), let schedule = nonEmpty(row["schedule"])
-            else { return nil }
-            let skills = (row["skills"] as? [String]) ?? []
-            return AutomationCronJob(
-                id: id, name: name, schedule: schedule,
-                enabled: (row["enabled"] as? Bool) ?? !(row["paused"] as? Bool ?? false),
-                skills: skills, prompt: row["prompt"] as? String ?? row["request"] as? String ?? row["task"] as? String,
-                model: row["model"] as? String, provider: row["provider"] as? String,
-                workdir: row["workdir"] as? String, delivery: row["delivery"] as? String ?? row["deliver"] as? String,
-                script: row["script"] as? String, noAgent: row["no_agent"] as? Bool,
-                chain: row["chain"] as? String, monitor: row["monitor"] as? String,
-                attachSession: row["attach_session"] as? Bool, repeatStatus: row["repeat_status"] as? String)
-        }
+        return parseRows(
+            rows, id: { $0["id"] ?? $0["job_id"] },
+            { row in
+                guard let id = nonEmpty(row["id"] ?? row["job_id"]),
+                    let name = nonEmpty(row["name"]), let schedule = nonEmpty(row["schedule"])
+                else { return nil }
+                let skills = (row["skills"] as? [String]) ?? []
+                return AutomationCronJob(
+                    id: id, name: name, schedule: schedule,
+                    enabled: (row["enabled"] as? Bool) ?? !(row["paused"] as? Bool ?? false),
+                    skills: skills,
+                    prompt: row["prompt"] as? String ?? row["request"] as? String ?? row["task"] as? String,
+                    model: row["model"] as? String, provider: row["provider"] as? String,
+                    workdir: row["workdir"] as? String,
+                    delivery: row["delivery"] as? String ?? row["deliver"] as? String,
+                    script: row["script"] as? String, noAgent: row["no_agent"] as? Bool,
+                    chain: row["chain"] as? String, monitor: row["monitor"] as? String,
+                    attachSession: row["attach_session"] as? Bool, repeatStatus: row["repeat_status"] as? String)
+            })
     }
 
     static func parseKanban(_ payload: [String: Any]) -> [AutomationKanbanTask]? {
         guard let rows = payload["tasks"] as? [[String: Any]] else { return nil }
-        return parseRows(rows, id: { $0["id"] }) { row in
-            guard let id = nonEmpty(row["id"]), let title = nonEmpty(row["title"]), let status = nonEmpty(row["status"])
-            else { return nil }
-            return AutomationKanbanTask(id: id, title: title, status: status)
-        }
+        return parseRows(
+            rows, id: { $0["id"] },
+            { row in
+                guard let id = nonEmpty(row["id"]), let title = nonEmpty(row["title"]),
+                    let status = nonEmpty(row["status"])
+                else { return nil }
+                return AutomationKanbanTask(id: id, title: title, status: status)
+            })
     }
 
     static func parseGoals(_ payload: [String: Any]) -> [AutomationGoal]? {
         guard let rows = payload["goals"] as? [[String: Any]] else { return nil }
-        return parseRows(rows, id: { $0["id"] }) { row in
-            guard let id = nonEmpty(row["id"]), let title = nonEmpty(row["title"]), let status = nonEmpty(row["status"])
-            else { return nil }
-            return AutomationGoal(id: id, title: title, status: status)
-        }
+        return parseRows(
+            rows, id: { $0["id"] },
+            { row in
+                guard let id = nonEmpty(row["id"]), let title = nonEmpty(row["title"]),
+                    let status = nonEmpty(row["status"])
+                else { return nil }
+                return AutomationGoal(id: id, title: title, status: status)
+            })
     }
 
     static func parseLoops(_ payload: [String: Any]) -> [AutomationLoop]? {
         guard let rows = payload["loops"] as? [[String: Any]] else { return nil }
-        return parseRows(rows, id: { $0["id"] }) { row in
-            guard let id = nonEmpty(row["id"]), let name = nonEmpty(row["name"]), let status = nonEmpty(row["status"])
-            else { return nil }
-            return AutomationLoop(id: id, name: name, status: status)
-        }
+        return parseRows(
+            rows, id: { $0["id"] },
+            { row in
+                guard let id = nonEmpty(row["id"]), let name = nonEmpty(row["name"]),
+                    let status = nonEmpty(row["status"])
+                else { return nil }
+                return AutomationLoop(id: id, name: name, status: status)
+            })
     }
 
     static func parseHeartbeats(_ payload: [String: Any]) -> [AutomationHeartbeat]? {
         guard let rows = payload["heartbeats"] as? [[String: Any]] else { return nil }
-        return parseRows(rows, id: { $0["id"] }) { row in
-            guard let id = nonEmpty(row["id"]), let status = nonEmpty(row["status"]) else { return nil }
-            return AutomationHeartbeat(
-                id: id, status: status, lastSeen: row["last_seen"] as? String ?? row["lastSeen"] as? String)
-        }
+        return parseRows(
+            rows, id: { $0["id"] },
+            { row in
+                guard let id = nonEmpty(row["id"]), let status = nonEmpty(row["status"]) else { return nil }
+                return AutomationHeartbeat(
+                    id: id, status: status, lastSeen: row["last_seen"] as? String ?? row["lastSeen"] as? String)
+            })
     }
 
     func refresh(using transport: AutomationTransport) async {
