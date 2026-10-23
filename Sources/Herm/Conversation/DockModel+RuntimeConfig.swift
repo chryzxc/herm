@@ -149,7 +149,7 @@ extension DockModel {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await gateway.request(HermesFeatureIDs.ID.configGet.rawValue, params: ["key": "reasoning"])
+                let result = try await gateway.request(HermesFeatureIDs.ID.configGet.rawValue, params: globalConfigParams(["key": "reasoning"]))
                 guard let value = result["value"] as? String else { return }
                 defaultReasoningVariant = HermesReasoningVariant(rawValue: value.lowercased())
             } catch {
@@ -263,6 +263,30 @@ extension DockModel {
     /// launch profile's global default instead).
     func updateDefaultReasoning(_ variant: HermesReasoningVariant) {
         defaultReasoningVariant = variant
+    }
+
+    /// Settings writes Hermes' global thinking default (`agent.reasoning_effort`).
+    /// Open sessions keep their own override.
+    func updateGlobalReasoning(_ variant: HermesReasoningVariant) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.configSet.rawValue, params: globalConfigParams([
+                    "key": "reasoning",
+                    "value": variant.rawValue,
+                    "scope": "global"
+                ]))
+                defaultReasoningVariant = variant
+            } catch {
+                runtimeConfigurationError = "Hermes could not save the default thinking level: \(Self.safeUserDiagnostic(error.localizedDescription))"
+            }
+        }
+    }
+
+    /// Settings target the launch profile, never the open session's profile.
+    private func globalConfigParams(_ params: [String: Any]) -> [String: Any] {
+        guard let profileID = profileScopeID, !profileID.isEmpty else { return params }
+        return params.merging(["profile": profileID]) { _, new in new }
     }
 
     nonisolated static func globalRuntimeModelSwitchRequest(

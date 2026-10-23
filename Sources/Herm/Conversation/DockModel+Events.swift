@@ -862,11 +862,14 @@ extension DockModel {
             closeTurnThinking()
             reasoningState = ReasoningState(text: "", isComplete: false)
             isShowingReasoning = false
-        case "reasoning.delta", "reasoning.available":
+        case "reasoning.delta", "reasoning.available", "moa.reference", "moa.progress", "moa.phase":
             // Hermes never sends `reasoning.start`: the first delta opens the
             // block and the next tool call or reply text closes it.
             // `thinking.delta` is Hermes' wait/spinner notice, not reasoning.
-            let delta = (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
+            // MoA advisor output and fan-out progress share the block, as in Hermes Desktop.
+            let delta = type.hasPrefix("moa.")
+                ? Self.moaReasoningLine(type: type, payload: payload) ?? ""
+                : (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
             guard !delta.isEmpty else { return }
             if reasoningState?.isComplete != false {
                 closeTurnThinking()
@@ -1437,10 +1440,30 @@ extension DockModel {
     static func isMidTurnEvent(_ type: String) -> Bool {
         switch type {
         case "tool.call", "tool.start", "tool.use", "tool_use",
-             "reasoning.start", "reasoning.delta", "reasoning.available", "thinking", "thinking.delta":
+             "reasoning.start", "reasoning.delta", "reasoning.available", "thinking", "thinking.delta",
+             "moa.reference", "moa.progress", "moa.phase":
             true
         default:
             false
+        }
+    }
+
+    /// One reasoning line per Mixture of Agents event; nil when the payload
+    /// carries nothing to show.
+    nonisolated static func moaReasoningLine(type: String, payload: [String: Any]) -> String? {
+        let label = (payload["label"] as? String) ?? ""
+        switch type {
+        case "moa.reference":
+            guard let text = payload["text"] as? String, !text.isEmpty else { return nil }
+            return "◇ \(label.isEmpty ? "Reference" : label)\n\(text)\n"
+        case "moa.progress":
+            guard let done = (payload["refs_done"] as? NSNumber)?.intValue,
+                  let total = (payload["refs_total"] as? NSNumber)?.intValue else { return nil }
+            return label.isEmpty ? "◇ MoA refs \(done)/\(total)\n" : "◇ MoA refs \(done)/\(total) — \(label)\n"
+        case "moa.phase":
+            return payload["phase"] as? String == "aggregator" ? "◇ MoA aggregating…\n" : nil
+        default:
+            return nil
         }
     }
 

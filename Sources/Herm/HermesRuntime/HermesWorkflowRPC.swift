@@ -104,6 +104,67 @@ struct WorkflowSubagent: Identifiable {
 enum WorkflowSteeringOutcome: String { case queued, rejected }
 enum WorkflowOAuthStatus: Equatable { case pending, approved, failed }
 
+/// One Mixture of Agents provider/model slot (`moa.presets.<name>.reference_models[]` or `.aggregator`).
+struct HermesMoASlot: Equatable {
+  var provider: String
+  var model: String
+  var enabled = true
+  var reasoningEffort: String?
+
+  init(provider: String, model: String) {
+    self.provider = provider
+    self.model = model
+  }
+  init?(_ raw: Any?) {
+    guard let raw = raw as? [String: Any], let provider = raw["provider"] as? String,
+      let model = raw["model"] as? String, !provider.isEmpty, !model.isEmpty
+    else { return nil }
+    self.provider = provider
+    self.model = model
+    enabled = raw["enabled"] as? Bool ?? true
+    reasoningEffort = raw["reasoning_effort"] as? String
+  }
+  var dictionary: [String: Any] {
+    var result: [String: Any] = ["provider": provider, "model": model, "enabled": enabled]
+    if let reasoningEffort { result["reasoning_effort"] = reasoningEffort }
+    return result
+  }
+}
+
+/// Hermes' normalized `moa` section from `/api/model/moa`. Edits replace only the fields the editor
+/// shows, so a PUT round-trip keeps fan-out, temperatures and timeouts Herm doesn't surface.
+struct HermesMoAConfig {
+  private(set) var raw: [String: Any]
+
+  init(_ result: [String: Any]) throws {
+    guard let presets = result["presets"] as? [String: Any], !presets.isEmpty else {
+      throw HermesGateway.GatewayError.malformedResponse
+    }
+    raw = result.filter { $0.key != "ok" }
+  }
+  private var presets: [String: [String: Any]] { raw["presets"] as? [String: [String: Any]] ?? [:] }
+  var defaultPreset: String { raw["default_preset"] as? String ?? presetNames.first ?? "default" }
+  var presetNames: [String] { presets.keys.sorted() }
+  func references(_ preset: String) -> [HermesMoASlot] {
+    (presets[preset]?["reference_models"] as? [Any] ?? []).compactMap(HermesMoASlot.init)
+  }
+  func aggregator(_ preset: String) -> HermesMoASlot? { HermesMoASlot(presets[preset]?["aggregator"]) }
+  func isEnabled(_ preset: String) -> Bool { presets[preset]?["enabled"] as? Bool ?? true }
+
+  mutating func update(
+    _ preset: String, references: [HermesMoASlot]? = nil, aggregator: HermesMoASlot? = nil,
+    enabled: Bool? = nil
+  ) {
+    var all = presets
+    guard var entry = all[preset] else { return }
+    if let references { entry["reference_models"] = references.map(\.dictionary) }
+    if let aggregator { entry["aggregator"] = aggregator.dictionary }
+    if let enabled { entry["enabled"] = enabled }
+    all[preset] = entry
+    raw["presets"] = all
+  }
+}
+
 /// Only verified named lifecycle operations; transport dictionaries stay outside views.
 @MainActor
 final class HermesWorkflowRPC {
@@ -415,6 +476,15 @@ final class HermesWorkflowRPC {
       }
     }
     return stars
+  }
+  func moaConfig() async throws -> HermesMoAConfig {
+    try HermesMoAConfig(try await client.fetchHTTP("/api/model/moa" + query([:])))
+  }
+  /// Hermes validates the whole section and rejects incomplete slots (422) instead of repairing them.
+  func saveMoAConfig(_ config: HermesMoAConfig) async throws -> HermesMoAConfig {
+    let result = try await client.sendHTTP("PUT", path: "/api/model/moa" + query([:]), body: config.raw)
+    try acknowledged(result)
+    return try HermesMoAConfig(result)
   }
   /// Toolsets Hermes Desktop also hides: platform adapters and internals with no user switch.
   static let hiddenToolsets: Set<String> = ["discord", "discord_admin", "yuanbao", "context_engine", "moa"]

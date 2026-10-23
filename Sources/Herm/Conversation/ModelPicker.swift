@@ -131,7 +131,11 @@ struct ModelPickerView: View {
             // Plain-button menu draws this SwiftUI label as-is, so long
             // provider/model names truncate instead of widening the toolbar.
             HStack(spacing: 4) {
-                Text(selectedOption?.model ?? "Select model")
+                // A MoA "model" is a preset name; say which mode is driving the chat.
+                if selectedOption?.provider == "moa" {
+                    DockIcon(.usersThree, size: 12, color: Color.dockAccent)
+                }
+                Text(selectedOption.map { $0.provider == "moa" ? "MoA · \($0.model)" : $0.model } ?? "Select model")
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let notice = selectedPeakNotice, notice.isPeak {
