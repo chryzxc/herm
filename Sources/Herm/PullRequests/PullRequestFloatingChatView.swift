@@ -124,7 +124,7 @@ struct PullRequestFloatingChatView: View {
                     }
                     if let error = chat.error ?? unavailable {
                         Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
-                        Button("Refresh conversation") { Task { await chat.refresh(client: runtime.controlRPCClient) } }
+                        DockAsyncButton("Refresh conversation") { await chat.refresh(client: runtime.controlRPCClient) }
                             .buttonStyle(.dockCompact).disabled(chat.sending || chat.destination == nil)
                     }
                     if chat.needsReview {

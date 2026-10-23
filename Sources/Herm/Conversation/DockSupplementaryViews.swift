@@ -578,7 +578,7 @@ struct CronEditEditor: View {
                     }.disabled(loadedJob == nil || isSaving)
                     if let error { ModalNote(text: error, icon: .warning, tone: .dockWarning) }
                     if !isLoading, loadedJob == nil {
-                        Button("Retry loading details") { Task { await load() } }.buttonStyle(.dockCompact)
+                        DockAsyncButton("Retry loading details") { await load() }.buttonStyle(.dockCompact)
                     }
                 }
             }.frame(height: 440)
@@ -752,7 +752,7 @@ struct RepositoryFleetRow: View {
             }
             HStack(spacing: 12) {
                 Button("SELECT") { select(path) }
-                Button("REFRESH") { Task { await refresh() } }
+                DockAsyncButton("REFRESH") { await refresh() }
             }
             .buttonStyle(.dockCompact)
             .dockFont(.metadata, weight: .semibold)

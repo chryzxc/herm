@@ -174,9 +174,9 @@ struct HermesPetSettingsView: View {
             HStack {
                 Text("Hermes companion").dockFont(.body, weight: .semibold)
                 Spacer()
-                Button("Refresh") {
+                DockAsyncButton("Refresh") {
                     pet.refresh()
-                    Task { await pet.loadGallery() }
+                    await pet.loadGallery()
                 }
                 .buttonStyle(.dockPress).disabled(pet.isLoading || !pet.online)
             }

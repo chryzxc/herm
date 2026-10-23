@@ -97,7 +97,7 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         ) { value, range, _ in
             if value != nil { iconRanges.append(range) }
         }
-        iconRanges.reversed().forEach { document.deleteCharacters(in: $0) }
+        for range in iconRanges.reversed() { document.deleteCharacters(in: range) }
         return document
     }
 

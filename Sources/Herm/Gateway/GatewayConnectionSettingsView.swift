@@ -202,9 +202,7 @@ struct GatewayConnectionSettingsView: View {
                     }
                 }
                 ForEach(model.agents) { agent in
-                    Button {
-                        Task { await model.chooseAgent(agent) }
-                    } label: {
+                    DockAsyncButton(action: { await model.chooseAgent(agent) }) {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(agent.name).dockFont(.body, weight: .semibold).foregroundStyle(
@@ -233,9 +231,9 @@ struct GatewayConnectionSettingsView: View {
             let signedIn = portal ? model.portalSignedIn : model.signedIn
             Text(signedIn ? "Signed in" : "Sign-in required").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             Spacer()
-            if portal && signedIn { Button("Refresh agents") { Task { await model.refreshCloud() } } }
-            Button(signedIn ? "Sign in again" : "Sign in") { Task { await model.signIn() } }
-            if signedIn { Button("Sign out") { Task { await model.signOut() } } }
+            if portal && signedIn { DockAsyncButton("Refresh agents") { await model.refreshCloud() } }
+            DockAsyncButton(signedIn ? "Sign in again" : "Sign in") { await model.signIn() }
+            if signedIn { DockAsyncButton("Sign out") { await model.signOut() } }
         }.buttonStyle(.dockPress).dockFont(.body, weight: .medium)
     }
 

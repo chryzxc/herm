@@ -33,7 +33,7 @@ struct MoASettingsView: View {
                 HStack(spacing: 8) {
                     Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
                     if config == nil {
-                        Button("Retry") { Task { await load() } }.buttonStyle(.dockCompact)
+                        DockAsyncButton("Retry") { await load() }.buttonStyle(.dockCompact)
                     }
                 }
             }

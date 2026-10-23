@@ -440,9 +440,15 @@ struct CalendarWorkspaceView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 8) {
-                    Button("Connect") { Task { await system.requestAccess() } }
-                        .buttonStyle(.dockPrimary)
-                        .controlSize(.small)
+                    Button {
+                        Task { await system.requestAccess() }
+                    } label: {
+                        DockActionLabel(
+                            title: "Connect", pendingTitle: "Connecting…", isPending: system.isRequestingAccess)
+                    }
+                    .disabled(system.isRequestingAccess)
+                    .buttonStyle(.dockPrimary)
+                    .controlSize(.small)
                     Button("Not now") { useSystem = false }
                         .buttonStyle(.dockSecondary)
                         .controlSize(.small)
@@ -606,7 +612,7 @@ struct CalendarWorkspaceView: View {
     }
 
     private func createTaskButton(_ item: CalendarItem) -> some View {
-        Button("Create Kanban task") { createTask(item) }
+        DockAsyncButton("Create Kanban task") { await createTask(item) }
             .buttonStyle(.dockSecondary)
             .controlSize(.small)
             .disabled(!control.capabilityAvailable("kanban.create"))
@@ -615,11 +621,9 @@ struct CalendarWorkspaceView: View {
                     ? "Create a Hermes Kanban task from this item" : "Kanban is unavailable in this Hermes runtime")
     }
 
-    private func createTask(_ item: CalendarItem) {
-        Task {
-            let created = await control.createKanbanTask(title: item.title, body: item.chatBody)
-            actionStatus = created ? "Kanban task created." : (control.lastError ?? "Hermes did not create the task.")
-        }
+    private func createTask(_ item: CalendarItem) async {
+        let created = await control.createKanbanTask(title: item.title, body: item.chatBody)
+        actionStatus = created ? "Kanban task created." : (control.lastError ?? "Hermes did not create the task.")
     }
 
     private func icon(_ item: CalendarItem) -> Ph {

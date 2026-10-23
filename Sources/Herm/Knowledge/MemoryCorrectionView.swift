@@ -11,17 +11,21 @@ struct MemoryCorrectionView: View {
     var body: some View {
         DisclosureGroup("Correct a memory entry") {
             VStack(alignment: .leading, spacing: 10) {
-                Button("Load memory entries") { Task { await load() } }.buttonStyle(.dockCompact).disabled(
+                DockAsyncButton("Load memory entries") { await load() }.buttonStyle(.dockCompact).disabled(
                     pending)
                 ForEach(entries) { entry in
-                    Button(entry.label) { Task { await inspect(entry) } }.buttonStyle(.dockCompact).disabled(
+                    DockAsyncButton(entry.label) { await inspect(entry) }.buttonStyle(.dockCompact).disabled(
                         pending)
                 }
                 if let selected {
                     Text(selected.label).dockFont(.body, weight: .semibold)
                     TextEditor(text: $content).dockFont(.body).frame(height: 120).disabled(pending)
                     HStack {
-                        Button("Save correction…") { confirmation = "Save" }.buttonStyle(.dockCompact)
+                        Button {
+                            confirmation = "Save"
+                        } label: {
+                            DockActionLabel(title: "Save correction…", pendingTitle: "Updating…", isPending: pending)
+                        }.buttonStyle(.dockCompact)
                         Button("Delete entry…", role: .destructive) { confirmation = "Delete" }.buttonStyle(
                             .dockCompact)
                     }.disabled(pending)
@@ -54,6 +58,7 @@ struct MemoryCorrectionView: View {
             }
     }
     private func load() async {
+        guard !pending else { return }
         pending = true
         defer { pending = false }
         do {

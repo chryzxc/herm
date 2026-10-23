@@ -230,16 +230,14 @@ extension WorkspaceActivitySidebar {
                         HStack(spacing: 8) {
                             DockTextField("Steer the active turn…", text: $sessionSteerText)
                                 .textFieldStyle(.dockGlass)
-                            Button("Steer") {
+                            DockAsyncButton("Steer") {
                                 let text = sessionSteerText
-                                Task {
-                                    guard let result = await control.steerActiveSession(text) else { return }
-                                    if result.wasAccepted {
-                                        sessionSteerText = ""
-                                        sessionSteerFeedback = "GUIDANCE QUEUED"
-                                    } else {
-                                        sessionSteerFeedback = "GUIDANCE REJECTED — text retained"
-                                    }
+                                guard let result = await control.steerActiveSession(text) else { return }
+                                if result.wasAccepted {
+                                    sessionSteerText = ""
+                                    sessionSteerFeedback = "GUIDANCE QUEUED"
+                                } else {
+                                    sessionSteerFeedback = "GUIDANCE REJECTED — text retained"
                                 }
                             }
                             .buttonStyle(.dockCompact)
@@ -284,10 +282,8 @@ extension WorkspaceActivitySidebar {
                         HStack(spacing: 8) {
                             DockTextField("New session title", text: $sessionRenameText)
                                 .textFieldStyle(.dockGlass)
-                            Button("Rename") {
-                                Task {
-                                    if await control.renameActiveSession(sessionRenameText) { sessionRenameText = "" }
-                                }
+                            DockAsyncButton("Rename") {
+                                if await control.renameActiveSession(sessionRenameText) { sessionRenameText = "" }
                             }
                             .buttonStyle(.dockCompact)
                             .foregroundStyle(Color.dockAccent)
@@ -296,12 +292,10 @@ extension WorkspaceActivitySidebar {
                         HStack(spacing: 8) {
                             DockTextField("Redirect the active turn…", text: $sessionRedirectText)
                                 .textFieldStyle(.dockGlass)
-                            Button("Redirect") {
+                            DockAsyncButton("Redirect") {
                                 let text = sessionRedirectText
-                                Task {
-                                    if let result = await control.redirectActiveSession(text), result.wasAccepted {
-                                        sessionRedirectText = ""
-                                    }
+                                if let result = await control.redirectActiveSession(text), result.wasAccepted {
+                                    sessionRedirectText = ""
                                 }
                             }
                             .buttonStyle(.dockCompact)

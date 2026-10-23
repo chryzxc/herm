@@ -371,7 +371,7 @@ extension WorkspaceActivitySidebar {
                     ) {
                         workflow.toggleWatching(preferences: commandCenterPreferences, control: control)
                     }
-                    Button("REFRESH") { Task { await refreshRepository() } }
+                    DockAsyncButton("REFRESH") { await refreshRepository() }
                 }
                 .buttonStyle(.dockCompact)
                 .dockFont(.metadata, weight: .semibold)

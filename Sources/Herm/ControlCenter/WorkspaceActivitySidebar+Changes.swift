@@ -31,18 +31,18 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(review.completeness == .complete ? Color.dockSuccess : Color.dockWarning)
                 }
                 HStack(spacing: 10) {
-                    Button("RUN LOCAL REVIEW") {
-                        Task { await workflow.runReview(preferences: commandCenterPreferences) }
+                    DockAsyncButton("RUN LOCAL REVIEW") {
+                        await workflow.runReview(preferences: commandCenterPreferences)
                     }
                     Button("SAVE BASELINE") {
                         workflow.saveReviewBaseline(
                             preferences: commandCenterPreferences, acknowledgedFindingIDs: review.findings.map(\.id))
                     }
                     .disabled(!workflow.canSaveReviewBaseline)
-                    Button("REVIEW WITH HERMES") {
+                    DockAsyncButton("REVIEW WITH HERMES") {
                         let prompt =
                             "Review the current repository changes without editing files. Local findings: \(review.blockerCount) blockers, \(review.warningCount) warnings, \(review.noteCount) notes. Inspect safely and report risks, missing tests, and verification scope."
-                        Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
+                        _ = await control.startBackgroundTask(prompt, kind: .review)
                     }
                 }
                 .buttonStyle(.dockCompact)
@@ -61,7 +61,7 @@ extension WorkspaceActivitySidebar {
                     EmptyView()
                 }
             } else {
-                Button("RUN LOCAL REVIEW") { Task { await workflow.runReview(preferences: commandCenterPreferences) } }
+                DockAsyncButton("RUN LOCAL REVIEW") { await workflow.runReview(preferences: commandCenterPreferences) }
                     .buttonStyle(.dockCompact)
                     .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
@@ -262,8 +262,8 @@ extension WorkspaceActivitySidebar {
                     ) {
                         workflow.toggleWatching(preferences: commandCenterPreferences, control: control)
                     }
-                    Button("REFRESH FLEET") {
-                        Task { await workflow.refresh(preferences: commandCenterPreferences, control: control) }
+                    DockAsyncButton("REFRESH FLEET") {
+                        await workflow.refresh(preferences: commandCenterPreferences, control: control)
                     }
                     if case .watching = workflow.watchState {
                         Text("WATCHING").foregroundStyle(Color.dockSuccess)
@@ -287,10 +287,10 @@ extension WorkspaceActivitySidebar {
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 10) {
                             Button("OPEN SOURCE CONTROL") { select(.changes) }
-                            Button("REVIEW WITH HERMES") {
+                            DockAsyncButton("REVIEW WITH HERMES") {
                                 let prompt =
                                     "Review repository \(notice.displayName) without editing files. Herm detected \(notice.changedFiles) changed files. Report risks, missing tests, and verification scope without quoting suspected credential values."
-                                Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
+                                _ = await control.startBackgroundTask(prompt, kind: .review)
                             }
                         }
                         .buttonStyle(.dockCompact)

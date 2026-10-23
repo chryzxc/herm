@@ -427,7 +427,7 @@ final class WorkflowIntegrationModel: ObservableObject {
         }
     }
     func cancelActiveReads() {
-        removalTasks.values.forEach { $0.cancel() }
+        for task in removalTasks.values { task.cancel() }
         removalTasks = [:]
         connectTask?.cancel()
     }
@@ -572,7 +572,7 @@ struct WorkflowIntegrationView: View {
                 HStack {
                     DockTextField("Search skill hub", text: $query).textFieldStyle(.dockGlass)
                         .onSubmit { Task { await model.refresh(query: query.isEmpty ? nil : query) } }
-                    Button("Search") { Task { await model.refresh(query: query.isEmpty ? nil : query) } }
+                    DockAsyncButton("Search") { await model.refresh(query: query.isEmpty ? nil : query) }
                         .buttonStyle(.dockSecondary).controlSize(.small)
                     if !query.isEmpty {
                         Button("Installed") {

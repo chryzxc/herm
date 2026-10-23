@@ -20,6 +20,7 @@ final class SystemCalendarService: ObservableObject {
     @Published private(set) var items: [CalendarItem] = []
     @Published private(set) var sources: [Source] = []
     /// Why the last access request failed, if macOS returned an error.
+    @Published private(set) var isRequestingAccess = false
     @Published private(set) var requestError: String?
     /// Connect ran and macOS still refused; only then is System Settings the way out.
     @Published private(set) var stillRefused = false
@@ -43,6 +44,9 @@ final class SystemCalendarService: ObservableObject {
 
     /// Only from an explicit "Connect" tap; never on launch.
     func requestAccess() async {
+        guard !isRequestingAccess else { return }
+        isRequestingAccess = true
+        defer { isRequestingAccess = false }
         requestError = nil
         // macOS only prompts while a service is undecided. After an earlier refusal
         // or write-only grant, reset Herm's own decision so the prompt shows here

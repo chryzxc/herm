@@ -516,7 +516,7 @@ struct HermesConfigCategoryView: View {
                 case .failed(let message):
                     SettingsSection(title: "Hermes config unavailable", subtitle: "", tint: .dockWarning) {
                         Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                        Button("Retry") { Task { await editor.load() } }
+                        DockAsyncButton("Retry") { await editor.load() }
                             .buttonStyle(.dockCompact)
                             .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)

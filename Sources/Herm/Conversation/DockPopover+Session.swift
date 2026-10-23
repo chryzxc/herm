@@ -87,6 +87,8 @@ extension DockPopover {
                 .dotsThree, size: DockLayout.toolbarIconSize,
                 color: isSessionMenuHovering ? style.primaryText : style.secondaryText
             )
+            .opacity(sessionActionPending ? 0 : 1)
+            .overlay { if sessionActionPending { ProgressView().controlSize(.mini) } }
             .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
@@ -108,6 +110,12 @@ extension DockPopover {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private var sessionActionPending: Bool {
+        guard let id = model.navigationSessionID else { return false }
+        return model.pinningSessionID == id || model.renamingSessionID == id
+            || model.updatingSessionVisibilityID == id || model.deletingSessionID == id
     }
 
     /// The open conversation as a session row, so list actions can target it.
