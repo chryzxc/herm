@@ -32,6 +32,7 @@ final class AgentBrowser: ObservableObject {
     @Published private(set) var pages: [Page] = []
     @Published private(set) var activeTargetID: String?
     @Published private(set) var consoleErrors: [String] = []
+    @Published private(set) var navigation = BrowserNavigationState()
     /// A page's alert/confirm/prompt/beforeunload; the page is frozen until it's answered.
     @Published private(set) var dialog: Dialog?
     /// You took the page over from Hermes; the pane offers to hand it back.
@@ -83,6 +84,8 @@ final class AgentBrowser: ObservableObject {
     private var backingScale: CGFloat = 2
     private var viewportTask: Task<Void, Never>?
     private var themeCancellable: AnyCancellable?
+    private var navigationRequestID = UUID()
+    private var historyRequestID = UUID()
 
     init(key: SessionBrowserKey) {
         self.key = key
@@ -178,6 +181,9 @@ final class AgentBrowser: ObservableObject {
         sessionID = nil
         mainFrameID = nil
         annotateContextID = nil
+        navigationRequestID = UUID()
+        historyRequestID = UUID()
+        navigation = BrowserNavigationState()
         activeTargetID = nil
         pages = []
         consoleErrors = []
@@ -316,6 +322,8 @@ final class AgentBrowser: ObservableObject {
         }
         sessionID = sid
         activeTargetID = targetID
+        navigationRequestID = UUID()
+        navigation = BrowserNavigationState()
         consoleErrors = []
         dialog = nil
         annotateContextID = nil
@@ -324,12 +332,17 @@ final class AgentBrowser: ObservableObject {
         _ = try await cdp.send("Page.addScriptToEvaluateOnNewDocument", ["source": BrowserAnnotation.script, "worldName": Self.world], session: sid)
         let tree = try await cdp.send("Page.getFrameTree", session: sid)
         mainFrameID = ((tree["frameTree"] as? [String: Any])?["frame"] as? [String: Any])?["id"] as? String
+        refreshHistory()
         if let mainFrameID,
            let context = try await cdp.send("Page.createIsolatedWorld", ["frameId": mainFrameID, "worldName": Self.world], session: sid)["executionContextId"] as? Int {
             annotateContextID = context
             _ = try await cdp.send("Runtime.evaluate", ["expression": BrowserAnnotation.script, "contextId": context], session: sid)
         }
         _ = try await cdp.send("Runtime.enable", session: sid)
+        if let document = try? await cdp.send("Runtime.evaluate", ["expression": "document.readyState", "returnByValue": true], session: sid),
+           sessionID == sid, let readyState = (document["result"] as? [String: Any])?["value"] as? String {
+            navigation.isLoading = readyState != "complete"
+        }
         applyAnnotating()
         try await applyViewport()
         if state == .running, let url = pendingURL { navigate(url) }
@@ -392,6 +405,7 @@ final class AgentBrowser: ObservableObject {
             break
         }
         guard let session, session == sessionID else { return }
+        navigation.receiveCDP(method, params: params, mainFrameID: mainFrameID)
         switch method {
         case "Page.screencastFrame":
             if let ack = params["sessionId"] { cdp?.fire("Page.screencastFrameAck", ["sessionId": ack], session: session) }
@@ -406,6 +420,16 @@ final class AgentBrowser: ObservableObject {
             guard let frame = params["frame"] as? [String: Any], frame["parentId"] == nil else { return }
             mainFrameID = frame["id"] as? String
             consoleErrors = []
+            if let index = pages.firstIndex(where: { $0.id == activeTargetID }), let url = frame["url"] as? String {
+                pages[index].url = frame["unreachableUrl"] as? String ?? url
+            }
+            refreshHistory()
+        case "Page.navigatedWithinDocument", "Page.frameStoppedLoading":
+            guard params["frameId"] as? String == mainFrameID else { return }
+            if let url = params["url"] as? String, let index = pages.firstIndex(where: { $0.id == activeTargetID }) {
+                pages[index].url = url
+            }
+            refreshHistory()
         case "Page.javascriptDialogOpening":
             dialog = Dialog(type: params["type"] as? String ?? "alert", message: params["message"] as? String ?? "",
                             defaultPrompt: params["defaultPrompt"] as? String ?? "")
@@ -494,7 +518,7 @@ final class AgentBrowser: ObservableObject {
     func navigate(_ url: URL) {
         guard state == .running, sessionID != nil else { pendingURL = url; return }
         pendingURL = nil
-        fire("Page.navigate", ["url": url.absoluteString])
+        performNavigation("Page.navigate", ["url": url.absoluteString])
     }
     func answerDialog(accept: Bool, text: String? = nil) {
         var params: [String: Any] = ["accept": accept]
@@ -519,9 +543,53 @@ final class AgentBrowser: ObservableObject {
                                 images: [], pdfURL: nil))
     }
 
-    func goBack() { fire("Runtime.evaluate", ["expression": "history.back()"]) }
-    func goForward() { fire("Runtime.evaluate", ["expression": "history.forward()"]) }
-    func reload() { fire("Page.reload") }
+    func goBack() {
+        guard navigation.canGoBack else { return }
+        performNavigation("Runtime.evaluate", ["expression": "history.back()"])
+    }
+    func goForward() {
+        guard navigation.canGoForward else { return }
+        performNavigation("Runtime.evaluate", ["expression": "history.forward()"])
+    }
+    func reload() { performNavigation("Page.reload") }
+    func stopLoading() {
+        navigationRequestID = UUID()
+        fire("Page.stopLoading")
+        navigation.finish()
+    }
+    func clearNavigationError() { navigation.error = nil }
+
+    private func performNavigation(_ method: String, _ params: [String: Any] = [:]) {
+        guard let cdp, let sessionID else { return }
+        let requestID = UUID()
+        navigationRequestID = requestID
+        navigation.start()
+        Task {
+            do {
+                let result = try await cdp.send(method, params, session: sessionID)
+                guard self.sessionID == sessionID, navigationRequestID == requestID else { return }
+                if let error = result["errorText"] as? String, error != "net::ERR_ABORTED" {
+                    navigation.fail(HermesDiagnosticsService.safeSummary(error))
+                } else if method == "Page.navigate", result["loaderId"] == nil {
+                    navigation.finish() // Same-document navigation has no new loader.
+                }
+            } catch {
+                guard self.sessionID == sessionID, navigationRequestID == requestID else { return }
+                navigation.fail(HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            }
+        }
+    }
+
+    private func refreshHistory() {
+        guard let cdp, let sessionID else { return }
+        let requestID = UUID()
+        historyRequestID = requestID
+        Task {
+            guard let result = try? await cdp.send("Page.getNavigationHistory", session: sessionID),
+                  self.sessionID == sessionID, historyRequestID == requestID else { return }
+            navigation.updateHistory(result)
+        }
+    }
     func select(_ page: Page) { Task { try? await attach(page.id) } }
     func newTab() { fire("Target.createTarget", ["url": "about:blank"], browserLevel: true) }
 
@@ -806,7 +874,7 @@ struct AgentBrowserPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
                 VStack(spacing: 8) {
-                    Text(message).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(.center)
+                    Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(.center)
                     Button("Try Again") { browser.start() }
                 }
                 .padding(16)
@@ -850,7 +918,7 @@ struct AgentBrowserPane: View {
         HStack(spacing: 8) {
             DockIcon(.handPointing, size: 12, color: Color.dockAccent)
             Text("You're in control")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
             Button("Hand back to Hermes") { browser.handBack() }
@@ -874,13 +942,13 @@ struct AgentBrowserPane: View {
         HStack(spacing: 8) {
             DockStatusDot(tone: .working, size: 7, pulses: true)
             Text("Hermes is browsing")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
             HStack(spacing: 4) {
                 DockIcon(step.icon, size: 11, color: Color.dockSecondaryText)
                 Text(step.title)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -916,12 +984,12 @@ private struct AgentDialogCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .dockFont(size: 13, weight: .semibold)
+                .dockFont(.navigation, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if !dialog.message.isEmpty {
                 ScrollView {
                     Text(dialog.message)
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

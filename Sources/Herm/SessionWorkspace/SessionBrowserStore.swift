@@ -44,6 +44,13 @@ final class SessionBrowserWorkspace: ObservableObject {
     extras.removeAll { $0.id == id }
   }
 
+  /// The closed Browser tab: quit the agent's Chrome and unload the page; reopening restarts both.
+  func suspend() {
+    agent.stop()
+    primary.web.stopLoading()
+    primary.web.load(URLRequest(url: URL(string: "about:blank")!))
+  }
+
   func open(_ url: URL) {
     primary.address = url.absoluteString
     if agent.isActive { agent.navigate(url) } else { primary.open(url) }

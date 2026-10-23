@@ -33,6 +33,14 @@ enum BrowserViewport: Int, CaseIterable, Identifiable {
         case .desktop: "Desktop · 1280"
         }
     }
+    var icon: Ph {
+        switch self {
+        case .fit: .arrowsOutSimple
+        case .phone: .deviceMobile
+        case .tablet: .deviceTablet
+        case .desktop: .desktop
+        }
+    }
 }
 
 /// Annotate mode's payload (Resources/BrowserAnnotate.js) and how it lands in the composer.
@@ -123,6 +131,7 @@ enum BrowserPageMessage {
 /// automatically); other tabs, or a failed agent start, use WebKit. Both support annotate,
 /// send-page and console errors.
 struct SessionBrowserView: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @ObservedObject var model: DockModel
     let workspace: SessionBrowserWorkspace
     let isPrimary: Bool
@@ -150,6 +159,8 @@ struct SessionBrowserView: View {
     private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     private var consoleErrors: [String] { showsAgent ? agent.consoleErrors : browser.consoleErrors }
     private var annotating: Bool { showsAgent ? agent.annotating : browser.annotating }
+    private var navigation: BrowserNavigationState { showsAgent ? agent.navigation : browser.navigation }
+    private var controlHeight: CGFloat { DockWorkspaceScale.points(28, scale: workspaceScale) }
 
     /// The Browser tab fell back to WebKit: say so, since Hermes' browser tools are off too.
     private func offlineNotice(_ message: String) -> some View {
@@ -157,10 +168,10 @@ struct SessionBrowserView: View {
             DockStatusDot(tone: .attention, size: 7)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Agent browser offline")
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text("Hermes can't browse. \(message)")
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -183,21 +194,24 @@ struct SessionBrowserView: View {
             toolbar
                 .padding(8)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-
-            if isPrimary, case .failed(let message) = agent.state { offlineNotice(message) }
-
-            if showsAgent {
-                AgentBrowserPane(browser: agent, model: model)
-            } else {
-                GeometryReader { geo in
-                    BrowserWebView(web: browser.web)
-                        .frame(width: viewport == .fit ? geo.size.width : min(geo.size.width, CGFloat(viewport.rawValue)))
-                        .frame(maxWidth: .infinity)
-                        .onAppear { browser.zoom(toFit: viewport.rawValue, in: geo.size.width) }
-                        .onChange(of: geo.size.width) { _, width in browser.zoom(toFit: viewport.rawValue, in: width) }
-                        .onChange(of: viewportRaw) { _, raw in browser.zoom(toFit: raw, in: geo.size.width) }
+                .overlay(alignment: .bottom) {
+                    if navigation.isLoading { DockShimmerTrack(tone: .working, muted: true) }
                 }
-            }
+
+            pageContent
+                .overlay(alignment: .top) {
+                    if let error = navigation.error {
+                        navigationFailure(error)
+                    } else if isPrimary, case .failed(let message) = agent.state {
+                        offlineNotice(message)
+                    }
+                }
+        }
+        .background {
+            Button("Focus browser address") { isEditingAddress = true }
+                .keyboardShortcut("l", modifiers: .command).hidden().accessibilityHidden(true)
+            Button("Reload page") { reload() }
+                .keyboardShortcut("r", modifiers: .command).hidden().accessibilityHidden(true)
         }
         .onAppear {
             browser.model = model
@@ -205,7 +219,7 @@ struct SessionBrowserView: View {
                let restored = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL {
                 browser.address = restored
             }
-            field = pageURL.isEmpty ? browser.address : pageURL
+            field = displayAddress(pageURL.isEmpty ? browser.address : pageURL)
             guard isPrimary else { return }
             agent.model = model
             agent.presetWidth = viewportRaw
@@ -214,7 +228,7 @@ struct SessionBrowserView: View {
         }
         .onReceive(browser.$currentURL) { url in
             guard let url, !showsAgent else { return }
-            if !isEditingAddress { field = url }
+            if !isEditingAddress { field = displayAddress(url) }
             browser.address = url
             let key = WorkspaceIdentity.session(model)
             var presentation = WorkspacePresentationStore.shared.load(key) ?? InspectorPresentation()
@@ -223,41 +237,95 @@ struct SessionBrowserView: View {
         }
         .onChange(of: agent.activePage, initial: true) { _, page in
             guard showsAgent, let url = page?.url else { return }
-            if !isEditingAddress { field = url }  // never clobber what you're typing
+            if !isEditingAddress { field = displayAddress(url) }  // never clobber what you're typing
             if url != "about:blank" { browser.address = url }
         }
         .onChange(of: viewportRaw) { _, raw in if isPrimary { agent.presetWidth = raw } }
         .onChange(of: showsAgent) { _, agentMode in
-            field = agentMode ? agent.activePage?.url ?? "" : browser.currentURL ?? ""
+            field = displayAddress(agentMode ? agent.activePage?.url ?? "" : browser.currentURL ?? browser.address)
             // Agent browser failed to start: carry on in WebKit.
             if !agentMode { browser.loadAddressIfNeeded() }
         }
     }
 
-    private var toolbar: some View {
+    var toolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                navigationButtons
+                addressField.frame(minWidth: 180)
+                pageActions
+            }
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    navigationButtons
+                    addressField.frame(minWidth: 80)
+                }
+                pageActions
+            }
+        }
+    }
+
+    private var navigationButtons: some View {
         HStack(spacing: 4) {
             DockIconButton(icon: .arrowLeft, label: "Back", style: palette) {
                 if showsAgent { agent.goBack() } else { browser.web.goBack() }
-            }
-            .disabled(!showsAgent && !browser.canGoBack)
+            }.disabled(!navigation.canGoBack)
             DockIconButton(icon: .arrowRight, label: "Forward", style: palette) {
                 if showsAgent { agent.goForward() } else { browser.web.goForward() }
+            }.disabled(!navigation.canGoForward)
+            DockIconButton(icon: navigation.isLoading ? .x : .arrowClockwise,
+                           label: navigation.isLoading ? "Stop loading" : "Reload page (⌘R)", style: palette) {
+                if navigation.isLoading {
+                    if showsAgent { agent.stopLoading() } else { browser.stopLoading() }
+                } else { reload() }
             }
-            .disabled(!showsAgent && !browser.canGoForward)
-            DockIconButton(icon: .arrowClockwise, label: "Reload", style: palette) {
-                if showsAgent { agent.reload() } else { browser.web.reload() }
+        }
+    }
+
+    private var addressField: some View {
+        TextField("Search or enter address", text: $field)
+            .textFieldStyle(DockGlassTextFieldStyle(compact: true, trailingInset: 20))
+            .focused($isEditingAddress)
+            .onSubmit { go(field); isEditingAddress = false }
+            .onExitCommand { field = displayAddress(pageURL); isEditingAddress = false }
+            .accessibilityLabel("Browser address")
+            .help(navigation.isLoading ? "Loading page…" : "Search or enter address (⌘L)")
+            .overlay(alignment: .trailing) {
+                if navigation.isLoading, !isEditingAddress {
+                    ProgressView().controlSize(.mini).padding(.trailing, 8)
+                        .accessibilityLabel("Loading page")
+                        .allowsHitTesting(false)
+                }
             }
-            TextField(showsAgent ? "Agent browser address" : "Search or enter address", text: $field)
-                .textFieldStyle(.dockGlass)
-                .frame(minWidth: 80)
-                .focused($isEditingAddress)
-                .onSubmit { go(field); isEditingAddress = false }
+    }
+
+    private var pageActions: some View {
+        HStack(spacing: 6) {
             DockIconButton(icon: .cursorClick, label: annotating ? "Stop Annotating (Esc)" : "Annotate: click an element to comment on it",
                            isProminent: annotating, style: palette) {
                 if showsAgent { agent.annotating.toggle() } else { browser.annotating.toggle() }
             }
+            .disabled(pageURL.isEmpty || pageURL == "about:blank")
             LocalServersMenu(processIDs: TerminalWorkspaceStore.shared.processIDs(matching:
-                WorkspaceIdentity.session(model)), active: discoveryActive)
+                WorkspaceIdentity.session(model)), active: discoveryActive, toolbarControl: true)
+            Spacer(minLength: 0)
+            DockMenu {
+                ForEach(BrowserViewport.allCases) { option in
+                    DockMenuCheckRow(title: option.title, isSelected: option == viewport) { viewportRaw = option.rawValue }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    DockIcon(viewport.icon, size: 14)
+                    Text(viewport == .fit ? "Fit" : "\(viewport.rawValue) px").dockFont(.control)
+                    DockIcon(.caretDown, size: 10)
+                }
+                .foregroundStyle(Color.dockPrimaryText)
+                .padding(.horizontal, 8).frame(height: controlHeight)
+                .background(DockThemeShape(cornerRadius: 7).fill(Color.dockControlSurface))
+            }
+            .fixedSize()
+            .help("Viewport: \(viewport.title)")
+            .accessibilityLabel("Viewport: \(viewport.title)")
             moreMenu
         }
     }
@@ -265,17 +333,18 @@ struct SessionBrowserView: View {
     private var moreMenu: some View {
         DockMenu {
             Button("Send Page to Chat", icon: .paperPlaneTilt) { Task { await sendPage() } }
+                .disabled(pageURL.isEmpty || pageURL == "about:blank")
+            Button("Copy Address", icon: .copy) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(pageURL, forType: .string)
+            }.disabled(pageURL.isEmpty || pageURL == "about:blank")
+            Button("Open in Default Browser", icon: .arrowSquareOut) {
+                if let url = URL(string: pageURL) { ExternalOpen.open(url) }
+            }.disabled(!["http", "https"].contains(URL(string: pageURL)?.scheme?.lowercased() ?? ""))
             Button(consoleErrors.isEmpty ? "No Console Errors" : "Send \(consoleErrors.count) Console Errors", icon: .bugBeetle) {
                 sendConsole()
             }
             .disabled(consoleErrors.isEmpty)
-            DockMenuSection("Viewport") {
-                ForEach(BrowserViewport.allCases) { option in
-                    Button { viewportRaw = option.rawValue } label: {
-                        if option == viewport { Label(option.title, icon: .check) } else { Text(option.title) }
-                    }
-                }
-            }
             if showsAgent, agent.pages.count > 1 {
                 DockMenuSection("Agent Tabs") {
                     ForEach(agent.pages) { page in
@@ -288,13 +357,67 @@ struct SessionBrowserView: View {
             }
         } label: {
             DockIcon(.dotsThree)
-                .dockFont(size: 14, weight: .medium)
+                .dockFont(.conversation, weight: .medium)
                 .foregroundStyle(consoleErrors.isEmpty ? Color.dockSecondaryText : Color.dockWarning)
-                .frame(width: 28, height: 28)
+                .frame(width: controlHeight, height: controlHeight)
+                .background(DockThemeShape(cornerRadius: 7).fill(Color.dockControlSurface))
                 .contentShape(Rectangle())
         }
         .help(consoleErrors.isEmpty ? "More browser actions" : "\(consoleErrors.count) console errors")
+        .accessibilityLabel(consoleErrors.isEmpty ? "More browser actions" : "More browser actions, \(consoleErrors.count) console errors")
     }
+
+    @ViewBuilder private var pageContent: some View {
+        ZStack {
+            if showsAgent {
+                AgentBrowserPane(browser: agent, model: model)
+            } else {
+                GeometryReader { geo in
+                    BrowserWebView(web: browser.web)
+                        .frame(width: viewport == .fit ? geo.size.width : min(geo.size.width, CGFloat(viewport.rawValue)))
+                        .frame(maxWidth: .infinity)
+                        .onAppear { browser.zoom(toFit: viewport.rawValue, in: geo.size.width) }
+                        .onChange(of: geo.size.width) { _, width in browser.zoom(toFit: viewport.rawValue, in: width) }
+                        .onChange(of: viewportRaw) { _, raw in browser.zoom(toFit: raw, in: geo.size.width) }
+                }
+            }
+            if (pageURL.isEmpty || pageURL == "about:blank"), !navigation.isLoading, !showsAgent || agent.state == .running {
+                VStack(spacing: 8) {
+                    DockIcon(.globe, size: 24, color: Color.dockSecondaryText)
+                    Text("Open a page").dockFont(.body, weight: .semibold)
+                    Text("Enter an address or open a local preview.")
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        .multilineTextAlignment(.center)
+                    Button("Enter Address") { isEditingAddress = true }.buttonStyle(.dockSecondary)
+                }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.dockCanvas)
+            }
+        }
+        .background(Color.dockCanvas)
+    }
+
+    private func navigationFailure(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            DockIcon(.warningCircle, size: 14, color: Color.dockWarning)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Couldn’t load page").dockFont(.body, weight: .semibold)
+                Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("Retry") { go(field.isEmpty ? pageURL : field) }.buttonStyle(.dockCompact)
+            DockIconButton(icon: .x, label: "Dismiss navigation error", size: 24, style: palette) {
+                if showsAgent { agent.clearNavigationError() } else { browser.clearNavigationError() }
+            }
+        }
+        .padding(10).background(Color.dockOpaqueCanvas)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private func reload() {
+        if showsAgent { agent.reload() } else { browser.reload() }
+    }
+
+    private func displayAddress(_ address: String) -> String { address == "about:blank" ? "" : address }
 
     private var pageURL: String { showsAgent ? agent.activePage?.url ?? "" : browser.web.url?.absoluteString ?? "" }
     private var pageTitle: String { showsAgent ? agent.activePage?.title ?? "" : browser.web.title ?? "" }
@@ -324,13 +447,7 @@ struct SessionBrowserView: View {
     }
 
     private func go(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let hasHost = trimmed.contains(".") && !trimmed.contains(" ")
-        let raw = trimmed.contains("://") ? trimmed
-            : hasHost ? "https://\(trimmed)"
-            : "https://www.google.com/search?q=\(trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed)"
-        if let url = URL(string: raw) { open(url) }
+        if let url = BrowserAddress.url(for: text) { open(url) }
     }
 }
 
@@ -349,13 +466,14 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     let key: SessionBrowserKey
     let web: WKWebView
     var address = ""
-    @Published var canGoBack = false
-    @Published var canGoForward = false
+    @Published private(set) var navigation = BrowserNavigationState()
     @Published var currentURL: String?
     @Published var consoleErrors: [String] = []
     @Published var annotating = false { didSet { if annotating != oldValue { applyAnnotating() } } }
     weak var model: DockModel?
     private var themeCancellable: AnyCancellable?
+    private var webObservations: [AnyCancellable] = []
+    private var activeNavigation: WKNavigation?
 
     init(key: SessionBrowserKey, dataStore: WKWebsiteDataStore) {
         self.key = key
@@ -375,6 +493,19 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
                                            forMainFrameOnly: true, in: .page))
         content.add(handler, contentWorld: .page, name: "hermConsole")
         web.navigationDelegate = self
+        web.publisher(for: \.isLoading).combineLatest(web.publisher(for: \.canGoBack), web.publisher(for: \.canGoForward))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] loading, back, forward in
+                self?.navigation.isLoading = loading
+                self?.navigation.canGoBack = back
+                self?.navigation.canGoForward = forward
+            }.store(in: &webObservations)
+        web.publisher(for: \.url).receive(on: RunLoop.main)
+            .sink { [weak self] url in
+                guard let self, let url else { return }
+                address = url.absoluteString
+                currentURL = url.absoluteString
+            }.store(in: &webObservations)
         themeCancellable = DockThemeStore.shared.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.applyAnnotating() }
@@ -382,8 +513,23 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
 
     func open(_ url: URL) {
         address = url.absoluteString
-        web.load(URLRequest(url: url))
+        navigation.start()
+        activeNavigation = web.load(URLRequest(url: url))
     }
+
+    func reload() {
+        if navigation.error != nil, let url = URL(string: address), !address.isEmpty { return open(url) }
+        activeNavigation = web.reload()
+        if activeNavigation != nil { navigation.start() }
+    }
+
+    func stopLoading() {
+        web.stopLoading()
+        activeNavigation = nil
+        navigation.finish()
+    }
+
+    func clearNavigationError() { navigation.error = nil }
 
     func loadAddressIfNeeded() {
         guard !address.isEmpty, let url = URL(string: address), web.url == nil || currentURL != address else { return }
@@ -399,12 +545,34 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
         consoleErrors = []
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        activeNavigation = navigation
+        self.navigation.start()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        canGoBack = webView.canGoBack
-        canGoForward = webView.canGoForward
+        guard activeNavigation == nil || activeNavigation === navigation else { return }
+        self.navigation.finish()
+        self.navigation.canGoBack = webView.canGoBack
+        self.navigation.canGoForward = webView.canGoForward
         if let url = webView.url { address = url.absoluteString }
         currentURL = webView.url?.absoluteString
         applyAnnotating()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        failed(navigation, error: error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        failed(navigation, error: error)
+    }
+
+    private func failed(_ navigation: WKNavigation?, error: Error) {
+        let nsError = error as NSError
+        guard !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled),
+              activeNavigation == nil || activeNavigation === navigation else { return }
+        self.navigation.fail(HermesDiagnosticsService.safeSummary(error.localizedDescription))
     }
 
     func received(_ message: WKScriptMessage) {

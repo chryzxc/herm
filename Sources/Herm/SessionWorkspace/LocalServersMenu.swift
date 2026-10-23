@@ -2,8 +2,10 @@ import SwiftUI
 
 struct LocalServersMenu: View {
     @Environment(\.localPreviewDiscoveryVisible) private var surfaceVisible
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let processIDs: [Int32]
     var active = true
+    var toolbarControl = false
     @StateObject private var discovery = LocalPreviewDiscoveryModel()
     @State private var isOpen = false
     private var isActive: Bool { active && surfaceVisible }
@@ -13,6 +15,7 @@ struct LocalServersMenu: View {
             isOpen.toggle()
         } label: {
             LocalPreviewsLabel()
+                .frame(height: toolbarControl ? DockWorkspaceScale.points(28, scale: workspaceScale) : nil)
         }
         .buttonStyle(.dockCompact)
         .help("Open a local development preview")
@@ -48,9 +51,9 @@ struct LocalServersMenu: View {
 struct LocalPreviewsLabel: View {
     var body: some View {
         HStack(spacing: DockSpacing.tight) {
-            DockIcon(.globe).dockFont(size: 12)
+            DockIcon(.globe).dockFont(.body)
             Text("Previews").dockFont(.control)
-            DockIcon(.caretDown).dockFont(size: 10)
+            DockIcon(.caretDown).dockFont(.compactStatus, weight: .regular)
         }.foregroundStyle(Color.dockPrimaryText)
     }
 }
@@ -65,7 +68,7 @@ struct LocalPreviewsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DockSpacing.group) {
                 VStack(alignment: .leading, spacing: DockSpacing.micro) {
-                    Text("Local previews").dockFont(size: 12, weight: .semibold)
+                    Text("Local previews").dockFont(.body, weight: .semibold)
                     Text(
                         error != nil && !servers.isEmpty
                             ? "Previous results · refresh failed" : "From this session’s terminals"
@@ -85,7 +88,7 @@ struct LocalPreviewsPanel: View {
                             ? "Couldn’t find previews"
                             : isRefreshing ? "Looking for local previews…" : "No local previews"
                     )
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     Text(
                         error
                             ?? (isRefreshing
@@ -107,9 +110,9 @@ struct LocalPreviewsPanel: View {
                                     DockIcon(.globe).foregroundStyle(Color.dockSecondaryText)
                                     VStack(alignment: .leading, spacing: DockSpacing.micro) {
                                         Text(server.processName ?? "Process \(server.pid)")
-                                            .dockFont(size: 12, weight: .semibold).lineLimit(1).truncationMode(
+                                            .dockFont(.body, weight: .semibold).lineLimit(1).truncationMode(
                                                 .middle)
-                                        Text(server.url.absoluteString).dockFont(size: 11, design: .monospaced)
+                                        Text(server.url.absoluteString).dockFont(.metadata, weight: .regular, design: .monospaced)
                                             .fontDesign(.monospaced)
                                             .foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                                     }
