@@ -111,12 +111,12 @@ struct KanbanBoardView: View, Equatable {
                 DockIcon(lane.icon, size: 13, color: Color.dockMetadataText)
                     .foregroundStyle(lane.color)
                 Text(lane.rawValue.uppercased())
-                    .dockFont(size: 11, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .tracking(0.8)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                 Text("\(laneTasks.count)")
-                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                    .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(lane.color)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -127,7 +127,7 @@ struct KanbanBoardView: View, Equatable {
                     expansion.collapse(lane, hasTasks: !laneTasks.isEmpty)
                 } label: {
                     DockIcon(.sidebarSimple, weight: .fill)
-                        .dockFont(size: 10, weight: .bold)
+                        .dockFont(.compactStatus, weight: .bold)
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
@@ -144,10 +144,10 @@ struct KanbanBoardView: View, Equatable {
             if laneTasks.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(lane.emptyTitle)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                     Text(lane.emptyDetail)
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -270,12 +270,12 @@ private struct KanbanLaneRail: View {
                     .foregroundStyle(lane.color)
                     .frame(height: 20)
                 Text("\(count)")
-                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                    .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(count > 0 ? lane.color : Color.dockMetadataText)
                 VStack(spacing: 1) {
                     ForEach(Array(lane.rawValue.uppercased().enumerated()), id: \.offset) { _, letter in
                         Text(String(letter))
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(isHovered ? Color.dockPrimaryText : Color.dockSecondaryText)
                             .frame(height: 13)
                     }
@@ -330,12 +330,18 @@ private struct KanbanTaskCard: View {
 
     // Hover is local so it re-renders one card, not the board.
     @State private var isHovered = false
+    #if DEBUG
+        @Environment(\.conversationRowEvaluation) private var evaluation
+    #endif
 
     var body: some View {
+        #if DEBUG
+            let _ = evaluation?("kanban-card:\(task.id)", 0)
+        #endif
         let isDraggable = !actions.destinations(for: task.status).isEmpty && !isMutationPending
         VStack(alignment: .leading, spacing: 6) {
             Text(task.title)
-                .dockFont(size: 13, weight: .medium)
+                .dockFont(.navigation, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
@@ -344,7 +350,7 @@ private struct KanbanTaskCard: View {
 
             if let summary = summary ?? nonEmpty(task.detail) {
                 Text(summary)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
@@ -370,7 +376,7 @@ private struct KanbanTaskCard: View {
                     .truncationMode(.middle)
                     .layoutPriority(1)
             }
-            .dockFont(size: 10, weight: .medium)
+            .dockFont(.compactStatus, weight: .medium)
             .lineLimit(1)
         }
         .padding(.horizontal, 10)
@@ -436,7 +442,7 @@ private struct KanbanTaskCard: View {
 
     private var dragPreview: some View {
         Text(task.title)
-            .dockFont(size: 12, weight: .medium)
+            .dockFont(.body, weight: .medium)
             .foregroundStyle(Color.dockPrimaryText)
             .lineLimit(2)
             .frame(width: KanbanBoardView.laneWidth - 40, alignment: .leading)
@@ -460,7 +466,7 @@ private struct KanbanTaskCard: View {
     private func priorityTag(_ priority: String) -> some View {
         let tint = (Int(priority) ?? 0) >= 80 ? Color.dockWarning : Color.dockSecondaryText
         return Text("P\(priority)")
-            .dockFont(size: 10, weight: .semibold, design: .monospaced)
+            .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
             .foregroundStyle(tint)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
