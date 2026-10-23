@@ -135,14 +135,15 @@ final class ComposerText: ObservableObject {
     private var restoreDraft = ""
     private var isUpdatingFromHistory = false
 
-    /// Clears draft-local state when the active conversation changes so
-    /// history, text, and temporary image files cannot cross session boundaries.
-    func reset() {
+    /// Replaces a conversation's editor state with one final text publication.
+    func reset(to text: String = "") {
         isUpdatingFromHistory = true
-        text = ""
+        if self.text != text { self.text = text }
         isUpdatingFromHistory = false
         historyIndex = nil
         restoreDraft = ""
+        pendingCaret = nil
+        isCompletionOpen = false
     }
 
     /// Moves through the user prompts already present in the active session.

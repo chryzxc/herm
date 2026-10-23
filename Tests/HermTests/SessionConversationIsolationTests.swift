@@ -102,7 +102,7 @@ struct SessionConversationIsolationTests {
         #expect(model.queuedPrompts.map(\.text) == ["Follow up in B"])
     }
 
-    @Test func queuedAttachmentsAndEditsSurviveNewChatAndReopening() async throws {
+    @Test func queuedAttachmentsSurviveNewChatAndReopening() async throws {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [
             ["session_id": "runtime-a-1", "session_key": Fixtures.sessionA, "messages": []],
@@ -121,17 +121,14 @@ struct SessionConversationIsolationTests {
         model.draft = "Use the image"
         model.queueDraft()
         let id = try #require(model.currentSessionQueuedPrompts.first?.id)
-        model.editingQueuedPromptID = id
-        model.updateQueuedPrompt(id, text: "Use the edited image")
         model.newChat()
         #expect(model.currentSessionQueuedPrompts.isEmpty)
         #expect(FileManager.default.fileExists(atPath: imageURL.path))
         model.resumeSession(session)
         try await waitUntil { model.sessionID == "runtime-a-2" && model.status == .idle }
         #expect(model.currentSessionQueuedPrompts.first?.id == id)
-        #expect(model.currentSessionQueuedPrompts.first?.text == "Use the edited image")
+        #expect(model.currentSessionQueuedPrompts.first?.text == "Use the image")
         #expect(model.currentSessionQueuedPrompts.first?.images.first?.fileURL == imageURL)
-        #expect(model.editingQueuedPromptID == id)
         model.removeQueuedPrompt(id)
         #expect(model.currentSessionQueuedPrompts.isEmpty)
     }

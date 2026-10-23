@@ -75,6 +75,7 @@ struct ChatContext: Identifiable, Equatable, Codable, Sendable {
 @MainActor
 final class ChatContextRouter {
     weak var model: DockModel?
+    weak var bots: BotModeModel?
     /// Called once the target session is active, so the host can navigate to it.
     var onOpened: (String?) -> Void = { _ in }
 
@@ -124,7 +125,7 @@ struct AttachToChatMenu: View {
                         Text("Attach to chat")
                         DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
                     }
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.horizontal, 10)
                     .frame(height: 28)

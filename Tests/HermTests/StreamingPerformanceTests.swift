@@ -103,27 +103,6 @@ struct StreamingPerformanceTests {
         #expect(model.queuedPrompts.isEmpty)
     }
 
-    @Test func queuedPromptStillBeingEditedMovesIntoTheComposerInsteadOfSending() {
-        let model = DockModel(initialSessionID: "queue-edit-session")
-        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queue-edit-\(UUID().uuidString).png")
-        model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
-        model.draft = "Use this image"
-        model.status = .working
-        model.isSending = true
-        model.submitComposerInput()
-        let id = model.queuedPrompts[0].id
-        model.editingQueuedPromptID = id
-        model.updateQueuedPrompt(id, text: "Use this image, but crop it")
-
-        model.receiveGatewayEvent("message.complete", params: ["session_id": "queue-edit-session", "payload": ["text": "Done"]])
-
-        #expect(model.queuedPrompts.isEmpty)
-        #expect(model.editingQueuedPromptID == nil)
-        #expect(!model.isSending)
-        #expect(model.draft == "Use this image, but crop it")
-        #expect(model.pendingImages.count == 1)
-    }
-
     @Test func toolEventOfATurnAlreadyRunningAtAttachOpensTheLiveRow() {
         let model = DockModel(initialSessionID: "attached-mid-turn")
         model.messages = [ChatMessage(role: .user, text: "commit it")]

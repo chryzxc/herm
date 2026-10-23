@@ -17,6 +17,8 @@ struct ChatComposerView: View {
     /// Nil hides the quota chip (previews and snapshots).
     var controlCenter: ControlCenterModel? = nil
     var openQuota: () -> Void = {}
+    /// The session's folder and branch, shown in the tray under the input.
+    var worktreeBar: WorktreePicker? = nil
 
     @State private var composerHeight: CGFloat = 44
     @State private var isComposerPulsing = false
@@ -29,36 +31,31 @@ struct ChatComposerView: View {
     @State private var pasteMonitor: Any?
     @State private var showingAttachmentPopover = false
     @State private var showingFilePicker = false
-    @State private var showingImagePicker = false
-    @State private var showingFolderPicker = false
+    @State private var attachmentPicker: AttachmentPopoverFilePicker = .files
     /// Separate from voice mode's `speechInput`: dictation only fills the draft.
     @StateObject private var dictation = SpeechInput(isDictation: true)
+    @State private var liveDictation = ComposerDictation()
     @StateObject private var completions = ComposerCompletionController()
     @FocusState private var isComposerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         composerContent
-            .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.png, .jpeg, .gif, .heic, .webP, .pdf], allowsMultipleSelection: true) { result in
+            // A single importer owns presentation; stacked importers can shadow one another.
+            .fileImporter(
+                isPresented: $showingFilePicker,
+                allowedContentTypes: attachmentPicker.allowedContentTypes,
+                allowsMultipleSelection: attachmentPicker.allowsMultipleSelection
+            ) { result in
                 if case .success(let urls) = result {
-                    stageAttachmentFiles(urls)
-                } else if case .failure(let error) = result,
-                          let message = AttachmentPopoverPresentation.importerErrorMessage(error) {
-                    model.reportAttachmentError(message)
-                }
-            }
-            .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image, .pdf], allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result {
-                    stageAttachmentFiles(urls)
-                } else if case .failure(let error) = result,
-                          let message = AttachmentPopoverPresentation.importerErrorMessage(error) {
-                    model.reportAttachmentError(message)
-                }
-            }
-            .fileImporter(isPresented: $showingFolderPicker, allowedContentTypes: [.folder]) { result in
-                if case .success(let url) = result {
-                    composer.text = AttachmentPopoverPresentation.insertingPath(url, into: composer.text)
-                    isComposerFocused = true
+                    if attachmentPicker == .folder {
+                        if let url = urls.first {
+                            composer.text = AttachmentPopoverPresentation.insertingPath(url, into: composer.text)
+                            isComposerFocused = true
+                        }
+                    } else {
+                        stageAttachmentFiles(urls)
+                    }
                 } else if case .failure(let error) = result,
                           let message = AttachmentPopoverPresentation.importerErrorMessage(error) {
                     model.reportAttachmentError(message)
@@ -76,13 +73,19 @@ struct ChatComposerView: View {
                 isComposerPulsing = isRecording
             }
             .onChange(of: dictation.isRecording) { _, isRecording in
-                // Dictation ends by mic tap, final result, or error; keep what was heard.
-                let spoken = dictation.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !isRecording, !spoken.isEmpty else { return }
-                composer.text += (composer.text.isEmpty || composer.text.hasSuffix(" ") || composer.text.hasSuffix("\n") ? "" : " ") + spoken
-                isComposerFocused = true
+                if !isRecording { updateDictation(); liveDictation = ComposerDictation() }
             }
-            .onDisappear { dictation.stop() }
+            .onChange(of: dictation.transcript) { _, _ in
+                updateDictation()
+            }
+            .onChange(of: model.sessionID) { _, _ in
+                liveDictation = ComposerDictation()
+                dictation.reset()
+            }
+            .onDisappear {
+                liveDictation = ComposerDictation()
+                dictation.reset()
+            }
             .onChange(of: model.attachedContexts) { previous, _ in
                 model.embedInlineContexts(previous: previous, caret: isComposerFocused ? contextCaret : nil)
             }
@@ -148,6 +151,8 @@ struct ChatComposerView: View {
                             return event
                         }
                         let consumed = MainActor.assumeIsolated {
+                            // Let the editor paste files through the same path as drops.
+                            guard AttachmentPopoverFileSelection.fileURLs(from: .general).isEmpty else { return false }
                             if !event.modifierFlags.contains(.shift), dockModel.stageLargePaste() { return true }
                             return dockModel.pasteImageFromPasteboard()
                         }
@@ -158,6 +163,10 @@ struct ChatComposerView: View {
             .onChange(of: composer.text) { _, text in
                 // Sends and session switches clear the draft programmatically.
                 if text.isEmpty { completions.close() }
+                if liveDictation.owner != nil, !liveDictation.owns(text) {
+                    liveDictation = ComposerDictation()
+                    dictation.stop()
+                }
             }
             .onDisappear {
                 completions.close()
@@ -212,16 +221,22 @@ struct ChatComposerView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
+            // One tray joins the plan, queue and folder bar to the input. With
+            // none of them showing, the input covers it completely.
+            VStack(spacing: 0) {
             PinnedWorkStrip(model: model)
             if let controlCenter { RunningProcessesStrip(control: controlCenter, isTurnActive: isResponding) }
 
             if !queuedPrompts.isEmpty {
                 QueuedPromptList(model: model, prompts: queuedPrompts)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
             }
 
             if let quote = model.replyQuote {
                 ReplyQuoteChip(quote: quote, showsAuthor: false) { model.replyQuote = nil }
                     .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
             }
 
             VStack(spacing: 6) {
@@ -267,7 +282,7 @@ struct ChatComposerView: View {
                 // Placeholder text shares the editor's single visual gutter.
                 if composer.text.isEmpty {
                     Text(placeholderText)
-                        .dockFont(size: 14, design: DockThemeStyle.current.fontDesign)
+                        .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
                         .foregroundStyle(Color.dockSecondaryText)
                         .padding(.leading, textContentInset)
                         .allowsHitTesting(false)
@@ -296,7 +311,7 @@ struct ChatComposerView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 Button(action: { model.removePendingImage(image) }) {
                                     DockIcon(.x)
-                                        .dockFont(size: 10, weight: .bold)
+                                        .dockFont(.compactStatus, weight: .bold)
                                         .foregroundStyle(Color.dockSecondaryText)
                                     .frame(width: 22, height: 22)
                                     .contentShape(Rectangle())
@@ -333,7 +348,7 @@ struct ChatComposerView: View {
                                 .accessibilityLabel("Inspect context: " + context.title)
                                 Button { model.removeAttachedContext(context) } label: {
                                     DockIcon(.x)
-                                        .dockFont(size: 10, weight: .bold)
+                                        .dockFont(.compactStatus, weight: .bold)
                                         .foregroundStyle(Color.dockSecondaryText)
                                     .frame(width: 22, height: 22)
                                     .contentShape(Rectangle())
@@ -354,12 +369,12 @@ struct ChatComposerView: View {
                     DockIcon(.fileText)
                         .foregroundStyle(Color.dockAccent)
                     Text(pdfURL.lastPathComponent)
-                        .dockFont(size: 11, weight: .medium)
+                        .dockFont(.metadata, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     Button { model.removePendingPDF() } label: {
                         DockIcon(.x)
-                            .dockFont(size: 10, weight: .bold)
+                            .dockFont(.compactStatus, weight: .bold)
                             .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -374,12 +389,12 @@ struct ChatComposerView: View {
             ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) { error in
                 HStack(spacing: 6) {
                     Text(error)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockWarning)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button { model.clearAttachmentErrors() } label: {
                         DockIcon(.x)
-                            .dockFont(size: 10, weight: .bold)
+                            .dockFont(.compactStatus, weight: .bold)
                             .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 22, height: 22)
                             .contentShape(Rectangle())
@@ -452,7 +467,10 @@ struct ChatComposerView: View {
                     composerReasoningPicker
 
                     if !speechInput.isRecording {
-                        Button { dictation.toggle() } label: {
+                        Button {
+                            if dictation.isRecording { dictation.stop() }
+                            else { beginDictation() }
+                        } label: {
                             DockIcon(dictation.isRecording ? .stop : .microphone, size: 14,
                                      color: dictation.isRecording ? Color.dockDestructive : Color.dockSecondaryText)
                                 .frame(width: 28, height: 28)
@@ -472,7 +490,7 @@ struct ChatComposerView: View {
                     if showsInterruptControl {
                         Button(action: { onStop() }) {
                             DockIcon(.stop, weight: .fill)
-                                .dockFont(size: 10, weight: .bold)
+                                .dockFont(.compactStatus, weight: .bold)
                                 .foregroundStyle(Color.dockDestructive)
                                 .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
                                 .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
@@ -505,16 +523,16 @@ struct ChatComposerView: View {
                             Group {
                                 if speechInput.isRecording {
                                     DockIcon(.stop, weight: .fill)
-                                        .dockFont(size: 10, weight: .bold)
+                                        .dockFont(.compactStatus, weight: .bold)
                                         .foregroundStyle(Color.dockPrimaryText)
                                 } else if showStop {
                                     DockIcon(.stop, weight: .fill)
-                                        .dockFont(size: 10, weight: .bold)
+                                        .dockFont(.compactStatus, weight: .bold)
                                         .foregroundStyle(Color.dockDestructive)
                                         .transition(.scale(scale: 0.3).combined(with: .opacity))
                                 } else {
                                     DockIcon(.arrowUp)
-                                        .dockFont(size: 12, weight: .semibold)
+                                        .dockFont(.body, weight: .semibold)
                                         // Use soft dockPrimaryText instead of stark white to prevent eye strain
                                         .foregroundStyle(canSubmit ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
                                         // Send: the arrow launches up and drops back in.
@@ -555,21 +573,36 @@ struct ChatComposerView: View {
 
             // Voice Recording & Steering Status Messages
             if let error = speechInput.errorMessage ?? dictation.errorMessage {
-                Text(error)
-                    .dockFont(size: 11)
-                    .foregroundStyle(Color.dockWarning)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
+                HStack(spacing: 8) {
+                    Text(error)
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockWarning)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Retry", action: beginDictation)
+                        .buttonStyle(.dockCompact)
+                        .disabled(model.isRestoringSession || dictation.isStarting)
+                    Button {
+                        speechInput.dismissError()
+                        dictation.dismissError()
+                    } label: {
+                        DockIcon(.x, size: 12)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.dockHover)
+                    .accessibilityLabel("Dismiss speech recognition warning")
+                }
+                .padding(.top, 2)
             }
             if let steeringError = model.steeringError {
                 Text(steeringError)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .padding(.top, 2)
             }
             if let clarificationResponseError = model.clarificationResponseError {
                 Text(clarificationResponseError)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
@@ -605,6 +638,16 @@ struct ChatComposerView: View {
                         .dockBevel(pressed: true)
                         .dockCardMarks()
                         .shadow(color: Color.black.opacity(0.10), radius: skin.composerShadow, y: skin.composerShadow == 0 ? 0 : 2)
+                }
+            }
+
+            if let worktreeBar { worktreeBar.padding(.vertical, 2) }
+            }
+            .background {
+                let skin = DockSkinPresentation.current
+                if skin.composer != .line {
+                    DockThemeShape(cornerRadius: skin.composerRadius, role: .pane)
+                        .dockSurfaceFill(Color.dockSurface4, stroke: Color.dockBorderLight)
                 }
             }
         }
@@ -675,33 +718,30 @@ struct ChatComposerView: View {
         .help("Select thinking depth")
     }
 
-    private func submitComposerInput() {
-        if !reduceMotion { sendKick += 1 }
-        // Hermes only gives message_agent to canonical Bot Chat sessions, so a
-        // message naming one roster Bot is delivered through bot_relay.deliver
-        // into that Bot's Bot Chat and its reply projected here. Attachments and in-flight turns keep the
-        // ordinary path until Hermes exposes a profile-scoped attachment API.
-        // A busy foreground turn doesn't block it: relay runs in the Bot's own
-        // chat, while steering would hand the mention to an agent without
-        // message_agent.
-        if !model.hasQueuedOrRedirectingPrompt,
-           model.attachedContexts.isEmpty,
-           ComposerMentionPresentation.canDirectRouteBot(
-               hasImages: !model.pendingImages.isEmpty,
-               hasPDF: model.pendingPDFURL != nil
-           ),
-           let request = ComposerMentionPresentation.botRelayRequest(
-                in: composer.text,
-                profileIDs: botMode.visibleBots.map(\.id)
-           ),
-           let bot = botMode.visibleBots.first(where: { $0.id == request.profileID }) {
-            completions.close()
-            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text, chatSessionID: bot.chat?.sessionID, quote: model.replyQuote)
+    private func beginDictation() {
+        speechInput.dismissError()
+        liveDictation.begin(owner: WorkspaceIdentity.session(model), text: composer.text)
+        dictation.startListening()
+    }
+
+    private func updateDictation() {
+        guard liveDictation.owner != nil else { return }
+        guard let text = liveDictation.update(dictation.transcript, text: composer.text,
+            owner: WorkspaceIdentity.session(model)) else {
+            liveDictation = ComposerDictation()
+            dictation.stop()
             return
         }
-        // Other mentions are identified for the session agent, which can
-        // deliver them with message_agent when it runs in a Bot Chat.
-        model.submitComposerInput(mentionProfiles: botMode.visibleBots.map { $0.id })
+        composer.text = text
+        isComposerFocused = true
+    }
+
+    private func submitComposerInput() {
+        liveDictation = ComposerDictation()
+        dictation.stop()
+        if !reduceMotion { sendKick += 1 }
+        completions.close()
+        model.submitComposerInput(bots: botMode.visibleBots)
     }
 
     private func mentionRelayNotice(_ trigger: ComposerCompletionTrigger) -> String? {
@@ -730,14 +770,17 @@ struct ChatComposerView: View {
         case .captureWindow:
             model.captureDesktopWindow()
         case .files:
+            attachmentPicker = .files
             showingFilePicker = true
         case .images:
-            showingImagePicker = true
+            attachmentPicker = .images
+            showingFilePicker = true
         case .pasteImage:
             _ = model.pasteImageFromPasteboard()
             isComposerFocused = true
         case .folder:
-            showingFolderPicker = true
+            attachmentPicker = .folder
+            showingFilePicker = true
         case .url, .promptSnippets:
             break
         }
@@ -748,6 +791,7 @@ struct ChatComposerView: View {
             urls,
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
+            stageFile: model.stageFile,
             reportError: model.reportAttachmentError,
             clearErrors: model.clearAttachmentErrors
         )
@@ -852,7 +896,7 @@ private struct SessionContextRing: View {
                     .frame(width: 12, height: 12)
                     .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: fraction)
                     Text(compacting ? "Compacting" : "\(percent)%")
-                        .dockFont(size: 11, weight: .medium, design: .monospaced)
+                        .dockFont(.metadata, weight: .medium, design: .monospaced)
                         .foregroundStyle(tint)
                         .contentTransition(.numericText(value: Double(percent)))
                         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: percent)
@@ -898,7 +942,7 @@ private struct SessionContextRing: View {
     private var contextDetails: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Context").dockFont(size: 12, weight: .semibold)
+                Text("Context").dockFont(.body, weight: .semibold)
                 Spacer()
                 if model.compactingSessionID == model.sessionID {
                     Text("Compacting").foregroundStyle(Color.dockAccent)
@@ -929,7 +973,7 @@ private struct SessionContextRing: View {
                 if details.categories.isEmpty {
                     Text("Context breakdown is unavailable.").foregroundStyle(Color.dockMetadataText)
                 } else {
-                    Text("Estimated breakdown").dockFont(size: 12, weight: .semibold)
+                    Text("Estimated breakdown").dockFont(.body, weight: .semibold)
                     ForEach(details.categories) { category in
                         detailRow(category.label, SessionTokenFormatting.format(category.tokens))
                     }
@@ -941,7 +985,7 @@ private struct SessionContextRing: View {
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
-        .dockFont(size: 12)
+        .dockFont(.body)
         .foregroundStyle(Color.dockPrimaryText)
         .padding(16)
         .frame(width: 340, alignment: .leading)
@@ -982,12 +1026,11 @@ private struct QueuedPromptList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("QUEUED · SENDS WHEN HERMES FINISHES")
-                .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockMetadataText)
 
             ForEach(prompts) { prompt in
-                let isEditing = model.editingQueuedPromptID == prompt.id
                 HStack(spacing: 8) {
                     ForEach(prompt.images) { image in
                         Image(nsImage: image.image)
@@ -997,35 +1040,20 @@ private struct QueuedPromptList: View {
                             .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                             .help(image.fileName)
                     }
-                    if isEditing {
-                        DockTextField("Queued message", text: Binding(
-                            get: { model.editingQueuedPromptText },
-                            set: { model.editingQueuedPromptText = $0 }
-                        ), axis: .vertical)
-                            .textFieldStyle(.dockGlass)
-                            .dockFont(size: 12, weight: .medium)
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .lineLimit(1...4)
-                            .onSubmit { model.finishQueuedPromptEdit(save: true) }
-                    } else {
-                        Text(label(for: prompt))
-                            .dockFont(size: 12, weight: .medium)
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .lineLimit(2)
-                            .truncationMode(.tail)
-                    }
+                    Text(label(for: prompt))
+                        .dockFont(.body, weight: .medium)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
                     Spacer(minLength: 0)
-                    rowButton(isEditing ? .check : .pencilSimple, label: isEditing ? "Done editing" : "Edit queued message") {
-                        if isEditing { model.finishQueuedPromptEdit(save: true) } else { model.editQueuedPrompt(prompt.id) }
+                    rowButton(.pencilSimple, label: "Edit in composer") {
+                        model.editQueuedPrompt(prompt.id)
                     }
-                    if isEditing {
-                        Button("Cancel") { model.finishQueuedPromptEdit(save: false) }.buttonStyle(.dockCompact)
-                    }
-                    if !isEditing, model.canSteerQueuedPrompt(prompt) {
+                    if model.canSteerQueuedPrompt(prompt) {
                         rowButton(.arrowBendDownRight, label: "Steer into the running turn") {
                             model.steerQueuedPrompt(prompt.id)
                         }
-                    } else if !isEditing, model.canSendQueuedPromptNow(prompt) {
+                    } else if model.canSendQueuedPromptNow(prompt) {
                         rowButton(.arrowUp, label: "Stop the running turn and send this now") {
                             model.sendQueuedPromptNow(prompt.id)
                         }
@@ -1050,10 +1078,10 @@ private struct QueuedPromptList: View {
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .fill(Color.dockAccent.opacity(isEditing ? 0.1 : 0.06))
+                        .fill(Color.dockAccent.opacity(0.06))
                         .overlay {
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .stroke(Color.dockAccent.opacity(isEditing ? 0.5 : 0.24), lineWidth: DockLayout.hairline)
+                                .stroke(Color.dockAccent.opacity(0.24), lineWidth: DockLayout.hairline)
                         }
                 )
             }
@@ -1064,7 +1092,7 @@ private struct QueuedPromptList: View {
     private func rowButton(_ icon: Ph, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             DockIcon(icon)
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
@@ -1099,6 +1127,7 @@ enum ComposerCompletionKey {
 }
 
 struct ComposerInputEditor: NSViewRepresentable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Binding var text: String
     let isFocused: Bool
     let onSubmit: () -> Void
@@ -1130,7 +1159,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
         textView.contexts = contexts; textView.onInspectContext = onInspectContext
-        textView.font = DockSkinPresentation.nativeFont(size: 14)
+        textView.font = DockSkinPresentation.nativeFont(size: DockTypography.size(.conversation))
         textView.textColor = NSColor(Color.dockPrimaryText)
         textView.insertionPointColor = NSColor(Color.dockAccent)
         textView.drawsBackground = false
@@ -1187,7 +1216,7 @@ struct ComposerInputEditor: NSViewRepresentable {
 
         func synchronize(_ textView: NSTextView) {
             isSynchronizingText = true
-            synchronization.synchronize(textView, markdown: parent.text, contexts: parent.contexts, inset: parent.inset)
+            synchronization.synchronize(textView, markdown: parent.text, contexts: parent.contexts, inset: parent.inset, bodySize: DockTypography.size(.conversation, scale: parent.workspaceScale))
             isSynchronizingText = false
         }
 
@@ -1206,6 +1235,8 @@ struct ComposerInputEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             guard !isSynchronizingText else { return }
+            // Typing supersedes a completion's queued selection before the next redraw.
+            _ = parent.takePendingCaret()
             if !textView.hasMarkedText() { bulletizeCurrentLine(textView) }
             let markdown = synchronization.markdown(in: textView)
             if !isSynchronizingText, parent.text != markdown {
@@ -1269,7 +1300,13 @@ private final class ComposerInputTextView: NSTextView {
 
     /// Dropped files become attachments; NSTextView would otherwise insert their paths as text.
     private func droppedFileURLs(_ sender: NSDraggingInfo) -> [URL] {
-        sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        AttachmentPopoverFileSelection.fileURLs(from: sender.draggingPasteboard)
+    }
+
+    override func paste(_ sender: Any?) {
+        let urls = AttachmentPopoverFileSelection.fileURLs(from: .general)
+        guard !urls.isEmpty, let onDropFiles else { super.paste(sender); return }
+        onDropFiles(urls)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -1345,13 +1382,15 @@ private struct PinnedWorkStrip: View {
                     HStack(spacing: 6) {
                         DockActivityIndicator(state: .running, size: 12)
                         Text(task.prompt).lineLimit(1).truncationMode(.tail)
-                            .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
-                        Text("background").dockFont(size: 10, design: .monospaced).foregroundStyle(Color.dockMetadataText)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        Text("background").dockFont(.compactStatus, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 28)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(4)
         }
     }
 }
@@ -1382,7 +1421,7 @@ private struct RunningProcessesStrip: View {
                     HStack(spacing: 6) {
                         DockIcon(.terminal, size: 12, color: Color.dockSecondaryText)
                         Text("\(control.processes.count) background process\(control.processes.count == 1 ? "" : "es") running")
-                            .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
@@ -1393,17 +1432,18 @@ private struct RunningProcessesStrip: View {
                     ForEach(control.processes) { process in
                         HStack(spacing: 8) {
                             Text(process.name).lineLimit(1).truncationMode(.middle)
-                                .dockFont(size: 11, design: .monospaced).foregroundStyle(Color.dockPrimaryText)
+                                .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(Color.dockPrimaryText)
                                 .help(process.detail ?? process.name)
                             Spacer(minLength: 0)
                             Button("Stop") { pending = process }
-                                .buttonStyle(.dockCompact).dockFont(size: 11).foregroundStyle(Color.dockWarning)
+                                .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
                         }
                         .padding(.leading, 18)
                     }
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .confirmationDialog("Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
                 if let process = pending {
                     Button("Stop \(process.name)", role: .destructive) {

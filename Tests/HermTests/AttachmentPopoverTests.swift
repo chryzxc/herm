@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Testing
+import UniformTypeIdentifiers
 @testable import Herm
 
 struct AttachmentPopoverTests {
@@ -8,6 +9,15 @@ struct AttachmentPopoverTests {
         #expect(AttachmentPopoverAction.allCases.map(\.id) == [
             "files", "folder", "capture-window", "saved-prompts", "conversation", "images", "paste-image", "url", "prompt-snippets"
         ])
+    }
+
+    @Test func sharedPickerUsesTheSelectedAttachmentKind() {
+        #expect(AttachmentPopoverFilePicker.files.allowedContentTypes == [.data])
+        #expect(AttachmentPopoverFilePicker.images.allowedContentTypes == [.png, .jpeg, .image, .pdf])
+        #expect(AttachmentPopoverFilePicker.folder.allowedContentTypes == [.folder])
+        #expect(AttachmentPopoverFilePicker.files.allowsMultipleSelection)
+        #expect(AttachmentPopoverFilePicker.images.allowsMultipleSelection)
+        #expect(!AttachmentPopoverFilePicker.folder.allowsMultipleSelection)
     }
 
     @Test func acceptsOnlyHTTPAndHTTPSURLsWithAHost() {
@@ -35,22 +45,104 @@ struct AttachmentPopoverTests {
         #expect(AttachmentPopoverPresentation.insertingSnippet("Summarize this.", into: "  Keep this draft  ") == "  Keep this draft  \nSummarize this.")
     }
 
-    @Test func rejectsUnsupportedFilesAndReportsThem() {
-        let unsupported = URL(fileURLWithPath: "/tmp/attachment.txt")
+    @Test func routesMarkdownAndTextFilesToGenericAttachments() {
+        let files = [URL(fileURLWithPath: "/tmp/README.md"), URL(fileURLWithPath: "/tmp/attachment.txt")]
+        var stagedFiles: [URL] = []
         var stagedImages: [URL] = []
         var stagedPDFs: [URL] = []
         var errors: [String] = []
 
         AttachmentPopoverFileSelection.process(
-            [unsupported],
+            files,
             stageImage: { stagedImages.append($0) },
             stagePDF: { stagedPDFs.append($0) },
+            stageFile: { stagedFiles.append($0) },
             reportError: { errors.append($0) }
         )
 
         #expect(stagedImages.isEmpty)
         #expect(stagedPDFs.isEmpty)
-        #expect(errors == ["Unsupported attachment: attachment.txt"])
+        #expect(stagedFiles == files)
+        #expect(errors.isEmpty)
+    }
+
+    @Test @MainActor func markdownDropStagesOneRemovableFileContext() throws {
+        let model = DockModel(approvalSoundPlayer: {})
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("README.md")
+        try Data("# Read me".utf8).write(to: url)
+        AttachmentPopoverFileSelection.process([url, url], stageImage: model.stageImageFile,
+            stagePDF: model.stagePDFFile, stageFile: model.stageFile, reportError: model.reportAttachmentError)
+        let context = try #require(model.attachedContexts.first)
+        #expect(model.attachedContexts.count == 1)
+        #expect(context.kind == .file)
+        #expect(context.title == "README.md")
+        #expect(context.attachmentURL == url)
+        #expect(model.pendingAttachmentError == nil)
+        model.removeAttachedContext(context)
+        #expect(model.attachedContexts.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test @MainActor func genericFilesRejectDirectoriesAndOversizedFiles() throws {
+        let model = DockModel(approvalSoundPlayer: {})
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        model.stageFile(at: directory)
+        #expect(model.attachedContexts.isEmpty)
+        #expect(model.pendingAttachmentError == "Choose a file. Use Folder to insert a directory path.")
+        let url = directory.appendingPathComponent("large.txt")
+        try Data(repeating: 0, count: 8 * 1024 * 1024 + 1).write(to: url)
+        model.stageFile(at: url)
+        #expect(model.attachedContexts.isEmpty)
+        #expect(model.pendingAttachmentError == "File attachments are limited to 8 MB.")
+    }
+
+    @Test @MainActor func genericFileUploadUsesExistingContractAndRetainsFilesWithoutCapability() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("README.md")
+        let bytes = Data("# Read me".utf8)
+        try bytes.write(to: url)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.writeObjects([url as NSURL])
+        pasteboard.setData(Data("file icon bitmap".utf8), forType: .tiff)
+        #expect(!DockModel.pasteboardHoldsImageOnly(pasteboard))
+        #expect(AttachmentPopoverFileSelection.fileURLs(from: pasteboard) == [url])
+        for supported in [true, false] {
+            let rpc = ComposerFileAttachmentRPC(supported: supported)
+            let model = DockModel(sessionAgentStateFileURL: directory.appendingPathComponent("state.json"),
+                defaults: UserDefaults(suiteName: "AttachmentUpload-\(UUID())")!,
+                approvalSoundPlayer: {}, initialSessionID: "file-session", rpcClient: rpc)
+            AttachmentPopoverFileSelection.process(AttachmentPopoverFileSelection.fileURLs(from: pasteboard),
+                stageImage: model.stageImageFile, stagePDF: model.stagePDFFile,
+                stageFile: model.stageFile, reportError: model.reportAttachmentError)
+            #expect(model.pendingImages.isEmpty)
+            var finished = false
+            var submissionError: String?
+            model.send(onSubmission: { submissionError = $0; finished = true })
+            for _ in 0..<200 where !finished { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(finished)
+            let uploads = rpc.calls.filter { $0.0 == "file.attach" }
+            if supported {
+                let upload = try #require(uploads.first?.1)
+                #expect(upload["session_id"] as? String == "file-session")
+                #expect(upload["name"] as? String == "README.md")
+                #expect(upload["data_url"] as? String == "data:application/octet-stream;base64," + bytes.base64EncodedString())
+                #expect(rpc.calls.contains { $0.0 == "prompt.submit" && ($0.1["text"] as? String)?.contains("@file:README.md") == true })
+                #expect(submissionError == nil)
+            } else {
+                #expect(uploads.isEmpty)
+                #expect(!rpc.calls.contains { $0.0 == "prompt.submit" })
+                #expect(model.attachedContexts.first?.attachmentURL == url)
+                #expect(submissionError != nil)
+            }
+        }
     }
 
     @Test @MainActor func fileSelectionUsesTheRealPDFStagingPath() throws {
@@ -67,6 +159,7 @@ struct AttachmentPopoverTests {
             [pdfURL],
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
+            stageFile: model.stageFile,
             reportError: model.reportAttachmentError
         )
 
@@ -88,6 +181,7 @@ struct AttachmentPopoverTests {
             [imageURL],
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
+            stageFile: model.stageFile,
             reportError: model.reportAttachmentError
         )
 
@@ -117,15 +211,28 @@ struct AttachmentPopoverTests {
         defer { try? FileManager.default.removeItem(at: imageURL) }
 
         AttachmentPopoverFileSelection.process(
-            [URL(fileURLWithPath: "/tmp/rejected.txt"), imageURL],
+            [FileManager.default.temporaryDirectory.appendingPathComponent("missing-\(UUID()).txt"), imageURL],
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
+            stageFile: model.stageFile,
             reportError: model.reportAttachmentError,
             clearErrors: model.clearAttachmentErrors
         )
 
         #expect(model.pendingImages.count == 1)
-        #expect(model.pendingAttachmentError == "Unsupported attachment: rejected.txt")
+        #expect(model.pendingAttachmentError?.hasPrefix("Could not attach file:") == true)
+    }
+
+    @Test @MainActor func bitmapAndTextPastesKeepTheirExistingClassification() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.setData(Data(), forType: .png)
+        #expect(DockModel.pasteboardHoldsImageOnly(pasteboard))
+        pasteboard.setString("https://example.com/image.png", forType: .string)
+        #expect(DockModel.pasteboardHoldsImageOnly(pasteboard))
+        pasteboard.setString("Keep this text", forType: .string)
+        #expect(!DockModel.pasteboardHoldsImageOnly(pasteboard))
+        #expect(AttachmentPopoverFileSelection.fileURLs(from: pasteboard).isEmpty)
     }
 
     @Test @MainActor func invalidClipboardImagePublishesAnActionableError() {
@@ -145,5 +252,24 @@ struct AttachmentPopoverTests {
     @Test func promptSnippetsAreNonEmptyAndHaveStableLabels() {
         #expect(AttachmentPopoverPresentation.promptSnippets.map(\.label) == ["Summarize", "Extract action items", "Review this"])
         #expect(AttachmentPopoverPresentation.promptSnippets.allSatisfy { !$0.text.isEmpty })
+    }
+}
+
+@MainActor
+private final class ComposerFileAttachmentRPC: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var calls: [(String, [String: Any])] = []
+    let supported: Bool
+    init(supported: Bool) { self.supported = supported }
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        calls.append((method, params))
+        switch method {
+        case "gateway.capabilities": return ["per_session_exclusive_submit": supported]
+        case "file.attach": return ["attached": true, "ref_text": "@file:README.md"]
+        case "prompt.submit": return ["status": "streaming"]
+        default: return [:]
+        }
     }
 }

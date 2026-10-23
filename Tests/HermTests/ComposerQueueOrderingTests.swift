@@ -123,22 +123,32 @@ struct ComposerQueueOrderingTests {
     }
   }
 
-  // Desktop parity: Enter steers the live turn even with older messages parked.
-  @Test func newDraftSteersPastAnOlderQueuedMessage() async throws {
+  @Test(arguments: [false, true])
+  func newDraftWaitsBehindOlderQueuedMessages(useBotRouting: Bool) async throws {
     let client = ComposerQueueRPCClient()
     let model = model(client)
     parkFirstMessage(model)
     model.draft = "Later message"
 
+    if useBotRouting { model.submitComposerInput(bots: []) } else { model.submitComposerInput() }
+    model.draft = "Newest message"
     model.submitComposerInput()
 
     #expect(model.draft.isEmpty)
-    let deadline = Date().addingTimeInterval(2)
-    while !client.requests.contains(where: { $0.method == "session.redirect" }), Date() < deadline {
-      try await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(client.requests.contains { $0.method == "session.redirect" })
-    #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Earlier message"])
+    #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Earlier message", "Later message", "Newest message"])
+    #expect(!model.messages.contains { $0.role == .user && $0.text == "Later message" })
+    #expect(client.submitted.isEmpty)
+    complete(model)
+    try await waitForSubmissions(1, client: client)
+    #expect(client.submitted == ["Earlier message"])
+    complete(model)
+    try await waitForSubmissions(2, client: client)
+    #expect(client.submitted == ["Earlier message", "Later message"])
+    complete(model)
+    try await waitForSubmissions(3, client: client)
+    #expect(client.submitted == ["Earlier message", "Later message", "Newest message"])
+    #expect(model.currentSessionQueuedPrompts.isEmpty)
+    #expect(!client.requests.contains { $0.method == "session.redirect" || $0.method == "session.steer" })
   }
 
   @Test func sendNowStopsTheTurnAndSendsTheUnsteerablePromptFirst() async throws {

@@ -58,7 +58,7 @@ struct MissionControlQueue: View {
     @State private var creatingProjectPath: String?
     @State private var isShowingProjectSheet = false
     @State private var isShowingNewGroupChat = false
-    @StateObject private var sidebarSessionSeenStore = SidebarSessionSeenStore()
+    @ObservedObject private var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -160,21 +160,13 @@ struct MissionControlQueue: View {
     }
 
     private var sidebarSessionStatuses: [String: SidebarSessionStatus] {
-        let summaries = Dictionary(uniqueKeysWithValues: sidebarSnapshot.inputs.activeSessions.map { ($0.id, $0) })
-        let profileID = sidebarSnapshot.inputs.profileScopeID ?? model.profileScopeID
         // Pins can sit past the recents page, so they need their own status.
-        return Dictionary((sidebarSnapshot.conversations + pinnedSessionPresentation.sessions).map { session in
-            let status = SidebarSessionStatusResolver.resolve(
-                session: session,
-                summary: summaries[session.id],
-                activeSessionID: sidebarSnapshot.inputs.activeSessionID,
-                activeStatus: session.id == sidebarSnapshot.inputs.activeSessionID ? sidebarSnapshot.inputs.activeStatus : nil,
-                attention: sidebarSnapshot.attentionDots[session.id],
-                seenAt: sidebarSessionSeenStore.seenAt(profileID: session.profileID ?? profileID, sessionID: session.id),
-                isProfileBaselined: sidebarSessionSeenStore.isBaselined(profileID: session.profileID ?? profileID)
-            )
-            return (session.id, status)
-        }, uniquingKeysWith: { first, _ in first })
+        SidebarSessionStatusResolver.statuses(
+            for: sidebarSnapshot.conversations + pinnedSessionPresentation.sessions,
+            snapshot: sidebarSnapshot,
+            seenStore: sidebarSessionSeenStore,
+            fallbackProfileID: model.profileScopeID
+        )
     }
 
     private func markSessionSeen(_ session: HermesSession) {
@@ -250,7 +242,7 @@ struct MissionControlQueue: View {
     /// Secondary panel: identity, new conversation, and the session lists.
     private func listPanel(style: DockThemePalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Group chats retain their own title strip; conversations use the shared row.
+            // The session list owns its title strip beside the conversation and inspector.
             if isDockedWindow && showsWindowTitleRow {
                 HStack(spacing: 0) {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
@@ -346,12 +338,12 @@ struct MissionControlQueue: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .dockFont(size: 13, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(style.theme == .hermesClassic ? style.accent : style.primaryText)
                     .lineLimit(1)
                 if let subtitle {
                     Text(subtitle)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(style.metadataText)
                         .lineLimit(1)
                 }
@@ -406,14 +398,14 @@ struct MissionControlQueue: View {
             if working > 0 {
                 HStack(spacing: 4) {
                     DockActivityIndicator(state: .running, size: 12)
-                    if bots.count > 1 { Text("\(working)").dockFont(size: 10, weight: .bold) }
+                    if bots.count > 1 { Text("\(working)").dockFont(.compactStatus, weight: .bold) }
                 }
                 .foregroundStyle(DockActivityState.running.color)
             }
             if done > 0 {
                 HStack(spacing: 3) {
                     DockActivityIndicator(state: .done, size: 12, unreadDot: true)
-                    if bots.count > 1 { Text("\(done)").dockFont(size: 10, weight: .bold) }
+                    if bots.count > 1 { Text("\(done)").dockFont(.compactStatus, weight: .bold) }
                 }
                 .foregroundStyle(DockActivityState.done.color)
             }
@@ -439,7 +431,7 @@ struct MissionControlQueue: View {
                                 size: 22
                             )
                             Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
-                                .dockFont(size: 12, weight: .semibold)
+                                .dockFont(.body, weight: .semibold)
                                 .foregroundStyle(style.primaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
@@ -458,7 +450,7 @@ struct MissionControlQueue: View {
                                 }
                             if option.id == selectedBot?.id {
                                 DockIcon(.check)
-                                    .dockFont(size: 11, weight: .semibold)
+                                    .dockFont(.metadata, weight: .semibold)
                                     .foregroundStyle(style.accent)
                             }
                         }
@@ -566,8 +558,6 @@ struct MissionControlQueue: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
-                // ponytail: poll the session index so turns running elsewhere show a spinner.
-                model.loadSessions(quiet: true)
                 await botMode.refreshNow()
             }
         }
@@ -612,7 +602,7 @@ struct MissionControlQueue: View {
 
     private func queueEmpty(_ text: String, style: DockThemePalette) -> some View {
         Text(text)
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(style.metadataText)
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
@@ -846,19 +836,19 @@ struct MissionControlQueue: View {
                         .fill(taskColor(task.status))
                         .frame(width: 6, height: 6)
                     Text(taskDisplayTitle(task))
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     Spacer(minLength: 0)
                     if duplicateCount > 1 {
                         Text("×\(duplicateCount)")
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                 }
                 if let detail = taskDisplayDetail(task) {
                     Text(detail)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }

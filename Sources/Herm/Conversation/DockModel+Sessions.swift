@@ -24,7 +24,6 @@ extension DockModel {
         }
         profileScopeID = next
         profileScopeUnavailable = nextUnavailable
-        sessionProfileID = next
         if let next { defaults.set(next, forKey: profileScopeKey) }
         else { defaults.removeObject(forKey: profileScopeKey) }
         sessionLoadGeneration &+= 1
@@ -33,6 +32,7 @@ extension DockModel {
         isLoadingSessions = false
         sessions = []
         sessionProjectionState = .loading
+        // Keep the outgoing session profile until its draft has been saved.
         newChat()
         loadSessions()
     }
@@ -167,6 +167,9 @@ extension DockModel {
             var params: [String: Any] = ["session_id": session.id]
             if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
+            discardComposerDraft(for: SessionComposerDraft.Key(
+                profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id
+            ))
             sessions.removeAll { $0.id == session.id }
             DebugLog.write("model: deleted saved session \(session.id)")
             return true
@@ -510,11 +513,12 @@ extension DockModel {
 
     @discardableResult
     func resumeSession(_ session: HermesSession, reportFailure: Bool, profileID: String? = nil) async -> Bool {
-        let owningProfileID = profileID ?? session.profileID ?? profileScopeID
+        let owningProfileID = Self.normalizedProfileID(profileID ?? session.profileID ?? profileScopeID)
         // The session queue uses Hermes' durable storage identity, whereas a
         // resume can expose a different runtime identity. Both identify the
         // same active conversation and must retain its unsent composer text.
-        let isRefreshingActiveSession = session.id == sessionID || session.id == sessionStorageID
+        let isRefreshingActiveSession = (session.id == sessionID || session.id == sessionStorageID)
+            && owningProfileID == Self.normalizedProfileID(sessionProfileID)
         if let sessionStorageID, streamingMessageID != nil {
             inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
             unconfirmedUserMessagesBySessionID[sessionStorageID] = Self.unconfirmedUserMessages(
@@ -530,7 +534,9 @@ extension DockModel {
         // and must survive navigation through a Control page or a repeated
         // click in the session queue.
         if !isRefreshingActiveSession {
-            resetComposerForSessionChange()
+            stopVoiceConversation()
+            saveComposerDraft()
+            restoreComposerDraft(for: SessionComposerDraft.Key(profileID: owningProfileID, sessionID: session.id))
             invalidateRuntimeModelOptionsRefresh()
             if profileID == nil {
                 detachInFlightBotActivities(as: .canceled)
@@ -741,13 +747,6 @@ extension DockModel {
         }
     }
 
-    func resetComposerForSessionChange() {
-        composer.reset()
-        attachedContexts = []
-        clearPendingImages()
-        removePendingPDF()
-    }
-
     func newChat(projectPath: String? = nil) {
         detachInFlightBotActivities(as: .canceled)
         commitStreamingMessage()
@@ -757,7 +756,8 @@ extension DockModel {
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
-        resetComposerForSessionChange()
+        stopVoiceConversation()
+        saveComposerDraft()
         invalidateRuntimeModelOptionsRefresh()
         sessionResumeGeneration &+= 1
         restoreGeneration &+= 1
@@ -773,6 +773,7 @@ extension DockModel {
         clearMessagePins()
         newSessionCreationAuthorized = true
         newSessionProjectPath = projectPath
+        restoreComposerDraft(for: composerDraftKey)
         showClarification(nil)
         presentedClarificationRequestIDs = []
         valuePrompt = nil

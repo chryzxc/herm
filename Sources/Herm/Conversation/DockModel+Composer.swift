@@ -99,7 +99,7 @@ extension DockModel {
                 if contexts.contains(where: { $0.attachmentURL != nil }) {
                     let capabilities = try await sessionRPCClient.request(HermesFeatureIDs.ID.gatewayCapabilities.rawValue, params: [:])
                     guard capabilities["per_session_exclusive_submit"] as? Bool == true else {
-                        throw QuickDraftError.message("This Hermes runtime cannot confirm protected file attachments. Your pasted text is retained; open its chip and choose Paste as text.")
+                        throw QuickDraftError.message("This Hermes runtime cannot confirm protected file attachments. Your files are retained; text files can also be inserted using Paste as text.")
                     }
                 }
                 for context in contexts {
@@ -108,10 +108,10 @@ extension DockModel {
                     guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
                     let attached = try await sessionRPCClient.request(HermesFeatureIDs.ID.fileAttach.rawValue,
                         params: scopedSessionParams(["session_id": promptSessionID,
-                            "data_url": "data:text/plain;base64," + encoded, "name": url.lastPathComponent]))
+                            "data_url": "data:application/octet-stream;base64," + encoded, "name": url.lastPathComponent]))
                     guard attached["attached"] as? Bool == true,
                           let reference = attached["ref_text"] as? String, reference.hasPrefix("@file:"), !reference.contains("\n") else {
-                        throw QuickDraftError.message("Hermes could not attach the pasted text. The draft context is retained for retry.")
+                        throw QuickDraftError.message("Hermes could not attach the file. The draft context is retained for retry.")
                     }
                     fileReferences.append(reference)
                 }
@@ -220,7 +220,7 @@ extension DockModel {
         }
     }
 
-    /// Mid-turn input: plain text redirects the
+    /// Mid-turn input: plain text with no earlier queued input redirects the
     /// live turn (`session.redirect`) and lands in the transcript at once as an
     /// ordinary user message. Anything a redirect can't carry (attachments,
     /// slash commands, a turn parked on an approval) or a redirect Hermes
@@ -228,7 +228,7 @@ extension DockModel {
     func steerDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let sessionID, !sessionID.isEmpty else { return }
-        guard !isRedirectInFlight,
+        guard !hasQueuedOrRedirectingPrompt,
               pendingImages.isEmpty, pendingPDFURL == nil, attachedContexts.isEmpty, replyQuote == nil,
               !text.isEmpty, status == .working, ComposerSlashCommand(text) == nil else {
             queueDraft()
@@ -330,7 +330,7 @@ extension DockModel {
     func canSteerQueuedPrompt(_ prompt: QueuedPrompt) -> Bool {
         let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return status == .working && sessionID != nil && !isRedirectInFlight
-            && prompt.id != editingQueuedPromptID && !text.isEmpty
+            && !text.isEmpty
             && prompt.images.isEmpty && prompt.pdfURL == nil && prompt.contexts.isEmpty
             && prompt.replyQuote == nil && ComposerSlashCommand(text) == nil
     }
@@ -347,7 +347,7 @@ extension DockModel {
     /// and stop the turn; the settled turn sends them (desktop `sendQueuedNow`).
     func canSendQueuedPromptNow(_ prompt: QueuedPrompt) -> Bool {
         status == .working && sessionID != nil && interruptState != .requesting
-            && prompt.id != editingQueuedPromptID && !canSteerQueuedPrompt(prompt)
+            && !canSteerQueuedPrompt(prompt)
     }
 
     func sendQueuedPromptNow(_ id: UUID) {
@@ -375,24 +375,16 @@ extension DockModel {
 
     func removeQueuedPrompt(_ id: UUID) {
         guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
-        if editingQueuedPromptID == id { editingQueuedPromptID = nil }
         cleanupImageAttachments(queuedPrompts.remove(at: index).images)
     }
 
-    func updateQueuedPrompt(_ id: UUID, text: String) {
-        guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
-        queuedPrompts[index].text = text
-    }
-
     /// Sends the oldest queued prompt of the open session, one per settled turn.
-    /// One still being edited lands in the composer, attachments included.
     func drainQueuedPromptIfIdle() {
         guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
               !nativeVoiceCapture.isAwaitingPlaybackDrain,
               sessionID != nil, let sessionID = queuedPromptSessionID,
               redirectingPrompts[sessionID] == nil,
               let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID }) else { return }
-        guard queuedPrompts[index].id != editingQueuedPromptID else { return }
         send(queuedPrompts.remove(at: index))
     }
 
@@ -411,20 +403,11 @@ extension DockModel {
         if replyQuote == nil { replyQuote = prompt.replyQuote }
     }
 
-    /// Hold the original payload and position until the user saves or cancels.
+    /// Pulls a queued prompt back into the composer, attachments included.
+    /// Sending it again re-queues it at the tail.
     func editQueuedPrompt(_ id: UUID) {
         guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
-        editingQueuedPromptID = id
-        editingQueuedPromptText = queuedPrompts[index].contexts.reduce(queuedPrompts[index].text) { value, context in context.inlineToken.map { value.replacingOccurrences(of: $0, with: "") } ?? value }
-    }
-
-    func finishQueuedPromptEdit(save: Bool) {
-        if save, let id = editingQueuedPromptID, let prompt = queuedPrompts.first(where: { $0.id == id }) {
-            updateQueuedPrompt(id, text: editingQueuedPromptText + prompt.contexts.compactMap(\.inlineToken).joined())
-        }
-        editingQueuedPromptID = nil
-        editingQueuedPromptText = ""
-        drainQueuedPromptIfIdle()
+        moveIntoComposer(queuedPrompts.remove(at: index))
     }
 
     func moveQueuedPrompt(_ id: UUID, offset: Int) {

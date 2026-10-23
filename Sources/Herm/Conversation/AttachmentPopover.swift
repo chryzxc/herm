@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Actions exposed by the composer attachment menu. The order is part of the
 /// compact popover contract so keyboard users get a predictable traversal.
@@ -43,6 +44,22 @@ enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
         case .promptSnippets: .quotes
         }
     }
+}
+
+enum AttachmentPopoverFilePicker {
+    case files
+    case images
+    case folder
+
+    var allowedContentTypes: [UTType] {
+        switch self {
+        case .files: [.data]
+        case .images: [.png, .jpeg, .image, .pdf]
+        case .folder: [.folder]
+        }
+    }
+
+    var allowsMultipleSelection: Bool { self != .folder }
 }
 
 struct AttachmentPromptSnippet: Equatable, Identifiable {
@@ -93,10 +110,15 @@ enum AttachmentPopoverPresentation {
 enum AttachmentPopoverFileSelection {
     private static let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "heic", "webp"])
 
+    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    }
+
     static func process(
         _ urls: [URL],
         stageImage: (URL) -> Void,
         stagePDF: (URL) -> Void,
+        stageFile: (URL) -> Void,
         reportError: (String) -> Void,
         clearErrors: () -> Void = {}
     ) {
@@ -109,7 +131,7 @@ enum AttachmentPopoverFileSelection {
             } else if imageExtensions.contains(pathExtension) {
                 stageImage(url)
             } else {
-                reportError("Unsupported attachment: \(url.lastPathComponent)")
+                stageFile(url)
             }
         }
 
@@ -134,7 +156,7 @@ struct AttachmentPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ATTACH OR INSERT")
-                .dockFont(size: 11, weight: .semibold, design: .monospaced)
+                .dockFont(.metadata, weight: .semibold, design: .monospaced)
                 .tracking(0.7)
                 .foregroundStyle(Color.dockAccent)
 
@@ -171,7 +193,7 @@ struct AttachmentPopover: View {
                 Text(action.title)
                 Spacer()
             }
-            .dockFont(size: 12, weight: .medium)
+            .dockFont(.body, weight: .medium)
             .foregroundStyle(unavailable ? Color.dockMetadataText : Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -188,21 +210,21 @@ struct AttachmentPopover: View {
                 DockIcon(AttachmentPopoverAction.url.icon)
                     .frame(width: 16)
                 Text("URL")
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                 Spacer()
             }
             HStack(spacing: 6) {
                 DockTextField("https://…", text: $urlText)
                     .textFieldStyle(.dockGlass)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .onSubmit(insertURL)
                 Button("Insert", action: insertURL)
                     .buttonStyle(.dockCompact)
-                    .dockFont(size: 11, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .disabled(AttachmentPopoverPresentation.validatedURL(from: urlText) == nil)
             }
             Text("Only http:// and https:// URLs are accepted.")
-                .dockFont(size: 10)
+                .dockFont(.compactStatus, weight: .regular)
                 .foregroundStyle(Color.dockMetadataText)
         }
     }
@@ -221,7 +243,7 @@ struct AttachmentPopover: View {
                 DockIcon(.caretRight)
                     .dockFont(size: 9, weight: .semibold)
             }
-            .dockFont(size: 12, weight: .medium)
+            .dockFont(.body, weight: .medium)
             .foregroundStyle(Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())

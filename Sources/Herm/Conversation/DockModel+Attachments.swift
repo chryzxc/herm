@@ -9,6 +9,8 @@ extension DockModel {
     /// Text keeps its normal paste. Browsers add the image's URL or name as a
     /// one-token string beside the bitmap; that still counts as an image paste.
     static func pasteboardHoldsImageOnly(_ pasteboard: NSPasteboard) -> Bool {
+        // Finder supplies an icon bitmap alongside the actual file URLs.
+        guard AttachmentPopoverFileSelection.fileURLs(from: pasteboard).isEmpty else { return false }
         guard pasteboard.types?.contains(where: { $0 == .png || $0 == .tiff }) == true else { return false }
         guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return true }
         return text.isEmpty || !text.contains(where: \.isWhitespace)
@@ -58,6 +60,35 @@ extension DockModel {
             return
         }
         pendingPDFURL = url
+    }
+
+    func stageFile(at url: URL) {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true else {
+                reportAttachmentError("Choose a file. Use Folder to insert a directory path.")
+                return
+            }
+            guard let size = values.fileSize, size <= 8 * 1024 * 1024 else {
+                reportAttachmentError("File attachments are limited to 8 MB.")
+                return
+            }
+            guard FileManager.default.isReadableFile(atPath: url.path) else {
+                reportAttachmentError("Could not read the selected file. Select it again.")
+                return
+            }
+            let id = "file:" + url.standardizedFileURL.path
+            guard !attachedContexts.contains(where: { $0.id == id }) else { return }
+            var context = ChatContext(id: id, title: url.lastPathComponent,
+                body: "Read the attached file \(url.lastPathComponent) as context.")
+            context.kind = .file
+            context.attachmentURL = url
+            attachedContexts.append(context)
+        } catch {
+            reportAttachmentError("Could not attach file: \(Self.safeUserDiagnostic(error.localizedDescription))")
+        }
     }
 
     func reportPDFError(_ message: String) {

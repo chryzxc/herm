@@ -48,7 +48,7 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
         return serialized
     }
 
-    func synchronize(_ textView: NSTextView, markdown: String, contexts: [ChatContext], inset: NSSize) {
+    func synchronize(_ textView: NSTextView, markdown: String, contexts: [ChatContext], inset: NSSize, bodySize: CGFloat = DockTypography.size(.conversation)) {
         observe(textView)
         // Do not replace the native marked range while the input method owns it.
         if !textView.hasMarkedText(), self.contexts != contexts || self.markdown(in: textView) != markdown {
@@ -61,7 +61,7 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
             let location = min(selection.location, length)
             textView.setSelectedRange(NSRange(location: location, length: min(selection.length, length - location)))
         }
-        let font = DockSkinPresentation.nativeFont(size: 14)
+        let font = DockSkinPresentation.nativeFont(size: bodySize)
         let color = NSColor(Color.dockPrimaryText)
         let accent = NSColor(Color.dockAccent)
         if textView.font != font { textView.font = font }

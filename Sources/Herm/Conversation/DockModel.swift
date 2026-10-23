@@ -40,6 +40,7 @@ final class DockModel: ObservableObject {
     let composer = ComposerText()
     let streamingText = StreamingText()
     /// Unflushed-to-step reasoning, observed only by an open live thought row.
+    var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
     let liveReasoning = LiveReasoningText()
 
     /// Message the next prompt replies to; sent as a leading quote line (see ReplyQuote).
@@ -78,8 +79,6 @@ final class DockModel: ObservableObject {
     var queuedPromptSessionID: String? { sessionStorageID ?? sessionID }
     /// A queued prompt open for editing is never auto-sent; when its turn
     /// comes it moves into the composer instead.
-    @Published var editingQueuedPromptID: UUID?
-    @Published var editingQueuedPromptText = ""
     @Published var approvalTitle: String?
     @Published var approvalText: String?
     /// Full request (reason, offered choices, request id) behind `approvalTitle`/`approvalText`.
