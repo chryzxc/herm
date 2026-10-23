@@ -24,6 +24,7 @@ struct BrowserNavigationTests {
         let url = try #require(BrowserAddress.url(for: query))
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
         #expect(components.queryItems == [URLQueryItem(name: "q", value: query)])
+        #expect(components.percentEncodedQuery?.contains("%2B") == true)
         #expect(components.fragment == nil)
     }
 

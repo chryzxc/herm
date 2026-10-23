@@ -77,6 +77,7 @@ enum BrowserAddress {
         }
         var search = URLComponents(string: "https://www.google.com/search")!
         search.queryItems = [URLQueryItem(name: "q", value: text)]
+        search.percentEncodedQuery = search.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         return search.url
     }
 }
