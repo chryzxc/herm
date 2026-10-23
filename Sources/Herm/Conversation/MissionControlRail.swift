@@ -37,6 +37,28 @@ struct SessionActivityGlyph: View {
     }
 }
 
+/// Aggregate the resolved statuses used by conversation rows.
+struct ChatRailActivity: Equatable {
+    let isWorking: Bool
+    let unreadCount: Int
+
+    init(statuses: [SidebarSessionStatus], foregroundWorking: Bool, isConnected: Bool) {
+        isWorking = isConnected && (foregroundWorking || statuses.contains(.working))
+        unreadCount = statuses.filter { $0 == .unreadComplete }.count
+    }
+
+    var unreadBadgeLabel: String { unreadCount > 99 ? "99+" : "\(unreadCount)" }
+
+    var summary: String {
+        var parts: [String] = []
+        if isWorking { parts.append("Sessions running") }
+        if unreadCount > 0 {
+            parts.append("\(unreadCount) completed chat\(unreadCount == 1 ? "" : "s") to review")
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
 struct ConversationRepositoryBadgePresentation: Equatable {
     static let maximumLabelLength = 24
 
@@ -116,6 +138,10 @@ struct ConversationRepositoryBadgeAssociationProjection {
 /// Primary navigation: icon-only destinations, always visible. Chats opens the
 /// session lists panel; every other destination renders full-width.
 struct MissionControlRail: View {
+    let model: DockModel
+    let controlCenter: ControlCenterModel
+    let workspaceStore: WorkspaceStore
+    let isWorkspaceVisible: Bool
     @ObservedObject var agentUpdateService: HermesUpdateService
     @ObservedObject var navigationState: MissionControlNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
@@ -143,7 +169,10 @@ struct MissionControlRail: View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         VStack(spacing: 4) {
             VStack(spacing: 4) {
-                destination("Chats", icon: .chatsCircle, isSelected: isChatsActive, style: style, action: onOpenChats)
+                ChatRailButton(
+                    model: model, control: controlCenter, store: workspaceStore,
+                    isSelected: isChatsActive, isVisible: isWorkspaceVisible, style: style, action: onOpenChats
+                )
             }
             VStack(spacing: 4) {
                 if showsKanban { globalDestination(.kanban, style: style) }
@@ -156,7 +185,7 @@ struct MissionControlRail: View {
                 globalDestination(.capabilities, style: style)
             }
             VStack(spacing: 4) {
-                destination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style, action: onOpenArtifacts)
+                destination("Artifacts", icon: .files, isSelected: navigationState.selection.selection == .artifacts, style: style, action: onOpenArtifacts)
                 if showsOffice { globalDestination(.officePreview, style: style) }
             }
             VStack(spacing: 4) {

@@ -74,6 +74,33 @@ enum SidebarSessionStatusResolver {
         case .stale, .unavailable: return .none
         }
     }
+
+    /// One status per session from the same snapshot the rail renders, so the
+    /// rail and the compact session picker always agree.
+    @MainActor
+    static func statuses(
+        for sessions: [HermesSession],
+        snapshot: MissionControlSidebarSnapshot,
+        seenStore: SidebarSessionSeenStore,
+        fallbackProfileID: String?
+    ) -> [String: SidebarSessionStatus] {
+        let summaries = Dictionary(snapshot.inputs.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let profileID = snapshot.inputs.profileScopeID ?? fallbackProfileID
+        let activeID = snapshot.inputs.activeSessionID
+        return Dictionary(sessions.map { session in
+            let sessionProfileID = session.profileID ?? profileID
+            let status = resolve(
+                session: session,
+                summary: summaries[session.id],
+                activeSessionID: activeID,
+                activeStatus: session.id == activeID ? snapshot.inputs.activeStatus : nil,
+                attention: snapshot.attentionDots[session.id],
+                seenAt: seenStore.seenAt(profileID: sessionProfileID, sessionID: session.id),
+                isProfileBaselined: seenStore.isBaselined(profileID: sessionProfileID)
+            )
+            return (session.id, status)
+        }, uniquingKeysWith: { first, _ in first })
+    }
 }
 
 /// Dock-owned, profile-scoped seen timestamps. Historical sessions are
@@ -81,6 +108,9 @@ enum SidebarSessionStatusResolver {
 /// with unread markers; new completed updates naturally become unread again.
 @MainActor
 final class SidebarSessionSeenStore: ObservableObject {
+    /// The rail and the session picker mark and read the same seen state.
+    static let shared = SidebarSessionSeenStore()
+
     private struct Payload: Codable {
         var seenAt: [String: Date]
         var baselinedProfiles: Set<String>
