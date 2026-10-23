@@ -16,7 +16,6 @@ struct KanbanRenderingTests {
                     + String(repeating: "Task context. ", count: 100),
                 priority: "50", assignee: nil)
         }
-        var evaluations: [String: Int] = [:]
     }
 
     private struct Board: View {
@@ -38,11 +37,10 @@ struct KanbanRenderingTests {
     @Test func largeBoardUpdatesOnlyAffectedCards() async throws {
         #if DEBUG
             let fixture = Fixture()
+            let evaluations = KanbanCardEvaluations()
             let host = NSHostingView(
                 rootView: Board(fixture: fixture)
-                    .environment(\.conversationRowEvaluation) { name, _ in
-                        fixture.evaluations[name, default: 0] += 1
-                    })
+                    .environment(\.kanbanCardEvaluations, evaluations))
             host.sizingOptions = []
             host.frame = NSRect(x: 0, y: 0, width: 900, height: 640)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -57,33 +55,33 @@ struct KanbanRenderingTests {
             }
 
             try await settle()
-            #expect(!fixture.evaluations.isEmpty)
-            #expect(fixture.evaluations.count < 100)
+            #expect(!evaluations.counts.isEmpty)
+            #expect(evaluations.counts.count < 100)
 
-            fixture.evaluations = [:]
+            evaluations.counts = [:]
             fixture.tasks = fixture.tasks.map { $0 }
             try await settle()
-            #expect(fixture.evaluations.isEmpty)
+            #expect(evaluations.counts.isEmpty)
 
-            fixture.evaluations = [:]
+            evaluations.counts = [:]
             fixture.selection = "task-0"
             try await settle()
-            #expect(Set(fixture.evaluations.keys) == ["kanban-card:task-0"])
+            #expect(Set(evaluations.counts.keys) == ["task-0"])
 
-            fixture.evaluations = [:]
+            evaluations.counts = [:]
             fixture.pending = ["kanban.complete:task-1"]
             try await settle()
-            #expect(Set(fixture.evaluations.keys) == ["kanban-card:task-1"])
+            #expect(Set(evaluations.counts.keys) == ["task-1"])
 
-            fixture.evaluations = [:]
+            evaluations.counts = [:]
             fixture.tasks[2].assignee = "forge"
             try await settle()
-            #expect(Set(fixture.evaluations.keys) == ["kanban-card:task-2"])
+            #expect(Set(evaluations.counts.keys) == ["task-2"])
 
-            fixture.evaluations = [:]
+            evaluations.counts = [:]
             fixture.selection = "task-1"
             try await settle()
-            #expect(Set(fixture.evaluations.keys) == ["kanban-card:task-0", "kanban-card:task-1"])
+            #expect(Set(evaluations.counts.keys) == ["task-0", "task-1"])
         #endif
     }
 }

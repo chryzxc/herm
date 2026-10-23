@@ -2,6 +2,24 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+#if DEBUG
+    @MainActor
+    final class KanbanCardEvaluations {
+        var counts: [String: Int] = [:]
+    }
+
+    private struct KanbanCardEvaluationsKey: EnvironmentKey {
+        static let defaultValue: KanbanCardEvaluations? = nil
+    }
+
+    extension EnvironmentValues {
+        var kanbanCardEvaluations: KanbanCardEvaluations? {
+            get { self[KanbanCardEvaluationsKey.self] }
+            set { self[KanbanCardEvaluationsKey.self] = newValue }
+        }
+    }
+#endif
+
 /// Card actions the adapter currently supports. Values, not the model, so the
 /// board can skip re-rendering when unrelated control-center state publishes.
 struct KanbanCardActionAvailability: Equatable {
@@ -338,7 +356,7 @@ private struct KanbanTaskCard: View, Equatable {
     // Hover is local so it re-renders one card, not the board.
     @State private var isHovered = false
     #if DEBUG
-        @Environment(\.conversationRowEvaluation) private var evaluation
+        @Environment(\.kanbanCardEvaluations) private var evaluations
     #endif
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
@@ -357,7 +375,7 @@ private struct KanbanTaskCard: View, Equatable {
 
     var body: some View {
         #if DEBUG
-            let _ = evaluation?("kanban-card:\(task.id)", 0)
+            let _ = evaluations.map { $0.counts[task.id, default: 0] += 1 }
         #endif
         let isDraggable = !actions.destinations(for: task.status).isEmpty && !isMutationPending
         VStack(alignment: .leading, spacing: 6) {
