@@ -147,10 +147,8 @@ extension DockModel {
         DebugLog.write("kanban: observed exact task reference in session activity")
     }
 
-    /// Relay acknowledgements may not contain the Bot Chat session ID. Bind a
-    /// single unattributed in-flight request when its own approval,
-    /// clarification, or completion event arrives on the gateway stream.
-    /// This keeps direct Bot activity truthful without guessing from prose.
+    /// Direct mentions bind to the recipient before submission; only that
+    /// session's events may update their activity or supply the inline reply.
     func reconcileDirectBotLifecycle(type: String, params: [String: Any]) {
         let payload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
@@ -168,9 +166,25 @@ extension DockModel {
             }
         case "message.start":
             setInFlightBotActivityWorking(for: eventSessionID)
-        case "message.complete":
-            let result = Self.messageCompletionError(from: payload)
-            updateInFlightBotActivity(for: eventSessionID, state: result == nil ? .completed : .failed, result: result)
+        case "message.delta":
+            for activity in Array(inFlightBotActivities.values) where activity.botChatSessionID == eventSessionID {
+                inFlightBotActivities[activity.activityID]?.replyText += (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
+            }
+        case "message.complete", "message.error", "error":
+            let rawError = Self.messageCompletionError(from: payload)
+                ?? (type == "message.complete" ? nil : Self.eventText(payload))
+            let error = rawError.map(Self.safeUserDiagnostic)
+            for activity in Array(inFlightBotActivities.values) where activity.botChatSessionID == eventSessionID {
+                let completedText = Self.completedMessageText(from: payload).flatMap { $0.isEmpty ? nil : $0 }
+                let reply = error ?? completedText ?? activity.replyText
+                if currentSessionIDs.contains(activity.originSessionID), !currentSessionIDs.contains(eventSessionID), !reply.isEmpty {
+                    let name = botActivityBySessionID[activity.originSessionID]?.first(where: { $0.id == activity.activityID })?.botName ?? activity.botID
+                    messages.append(ChatMessage(role: .hermes, text: reply, isError: error != nil,
+                                                botProfileID: activity.botID, botDisplayName: name))
+                }
+                updateBotActivity(id: activity.activityID, state: error == nil ? .completed : .failed, result: reply.isEmpty ? nil : reply)
+                inFlightBotActivities.removeValue(forKey: activity.activityID)
+            }
         default:
             break
         }

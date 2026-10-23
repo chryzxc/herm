@@ -160,6 +160,7 @@ extension DockModel {
     func rowSessionID(_ id: String) -> String {
         quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : storageIDsByRuntimeID[id] ?? id)
     }
+        var replyText = ""
 
     var kanbanSessionID: String? {
         Self.kanbanAttributionID(

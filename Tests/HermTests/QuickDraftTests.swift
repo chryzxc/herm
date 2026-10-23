@@ -10,6 +10,8 @@ private final class CaptureRPC: HermesRPCClientProtocol {
   var onEvent: ((String, [String: Any]) -> Void)?
   var calls: [(String, [String: Any])] = []
   var busy = false
+  var missingDirectoryResponses = 0
+  var reportedDirectory = "/tmp/project"
   var exclusive = true
   var failMethod: String?
   var failure: Error = NSError(
@@ -26,13 +28,15 @@ private final class CaptureRPC: HermesRPCClientProtocol {
     case "gateway.capabilities": return ["per_session_exclusive_submit": exclusive]
     case "session.create": return ["session_id": "runtime", "stored_session_id": "created"]
     case "session.resume":
+      let missingDirectory = missingDirectoryResponses > 0
+      missingDirectoryResponses = max(0, missingDirectoryResponses - 1)
       return [
         "session_id": "runtime",
         "stored_session_id": returnedOwner ?? params["session_id"] as? String ?? "created",
         "running": busy, "message_count": 0,
         "info": [
           "profile_name": returnedProfile ?? params["profile"] as? String ?? "default",
-          "cwd": "/tmp/project",
+          "cwd": missingDirectory ? "" : reportedDirectory,
         ],
       ]
     case "image.attach_bytes":
@@ -48,6 +52,28 @@ private final class CaptureRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct QuickDraftTests {
+  @Test func newProjectSessionWaitsForDirectoryBeforeSubmitting() async throws {
+    let rpc = CaptureRPC()
+    rpc.missingDirectoryResponses = 1
+    let draft = QuickDraftRecord(destination: QuickDestination(projectPath: "/tmp/project"), text: "Review this")
+    _ = try await QuickDraftSubmission.send(draft, client: rpc, progress: { _ in })
+    #expect(rpc.calls.filter { $0.0 == "session.create" }.count == 1)
+    #expect(rpc.calls.filter { $0.0 == "prompt.submit" }.count == 1)
+    #expect(rpc.calls.filter { $0.0 == "session.resume" }.count >= 3)
+  }
+
+  @Test func confirmedWrongDirectoryNeverSubmits() async {
+    let rpc = CaptureRPC()
+    rpc.reportedDirectory = "/tmp/other"
+    let draft = QuickDraftRecord(destination: QuickDestination(projectPath: "/tmp/project"), text: "Review this")
+    do {
+      _ = try await QuickDraftSubmission.send(draft, client: rpc, progress: { _ in })
+      Issue.record("A mismatched project must not submit")
+    } catch {}
+    #expect(!rpc.calls.contains { $0.0 == "prompt.submit" })
+    #expect(rpc.calls.filter { $0.0 == "session.resume" }.count == 1)
+  }
+
   @Test func deliveredAnswersUseTheirCapturedOwnerAndRequireImmediateAcknowledgment() async throws {
     let question = EdgeDeliveryQuestion(
       taskID: "task", sessionID: "owner", profileID: "research",

@@ -648,16 +648,16 @@ struct BotCrewRow: View {
         let names = (repliesToUser ? [from] + partners : partners).map(\.name).formatted(.list(type: .and))
         (Text(names).foregroundStyle(Color.dockPrimaryText)
           + Text(repliesToUser ? " replying to you" : " messaged by \(from.name)").fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
-          .dockFont(size: 12, weight: .semibold)
+          .dockFont(.body, weight: .semibold)
           .lineLimit(1)
         TimelineView(.periodic(from: .now, by: 1)) { context in
           Text("Working for about \(TurnActivityView.roughDuration(context.date.timeIntervalSince(since)))")
-            .dockFont(size: 11)
+            .dockFont(.metadata)
             .foregroundStyle(Color.dockMetadataText)
         }
         ForEach(stepped, id: \.bot.id) { item in
           (Text(stepped.count > 1 ? "\(item.bot.name): " : "").fontWeight(.medium) + Text(item.step))
-            .dockFont(size: 11)
+            .dockFont(.metadata)
             .foregroundStyle(Color.dockSecondaryText)
             .lineLimit(1).truncationMode(.tail)
             .modifier(WorkingTitleShimmer(isActive: true, color: Color.dockAccent))
@@ -686,9 +686,10 @@ struct BotDispatchCard: View {
   @State private var openIDs: Set<String> = []
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .center, spacing: 6) {
       ForEach(records) { row($0) }
     }
+    .frame(maxWidth: .infinity)
   }
 
   @ViewBuilder
@@ -698,7 +699,7 @@ struct BotDispatchCard: View {
     let canOpen = reply != nil && !record.isLive
     let isOpen = canOpen && openIDs.contains(record.id)
     DockLiveActivityDecoration(active: record.isLive) {
-    VStack(alignment: .leading, spacing: 4) {
+    VStack(alignment: .center, spacing: isOpen ? DockSpacing.group : DockSpacing.micro) {
       Button {
         guard canOpen else { return }
         withAnimation(.easeOut(duration: 0.18)) {
@@ -717,15 +718,17 @@ struct BotDispatchCard: View {
           (Text(assignedIDs.contains(record.id) ? "Assigned " : "Messaged ").foregroundStyle(Color.dockSecondaryText)
             + Text(bot?.name ?? record.botName).fontWeight(.semibold).foregroundStyle(Color.dockPrimaryText)
             + Text(record.summary.isEmpty ? "" : "  \(record.summary)").foregroundStyle(Color.dockMetadataText))
-            .dockFont(size: 12)
+            .dockFont(.body)
             .lineLimit(1).truncationMode(.tail)
-          Spacer(minLength: 8)
           status(record)
           if canOpen {
             DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
           }
         }
-        .contentShape(Rectangle())
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.dockSurface2))
+        .contentShape(Capsule())
       }
       .buttonStyle(.dockHover)
       .help(record.state == .failed ? (reply ?? "Failed") : record.linkedCardID.map { "Kanban \($0)" } ?? "")
@@ -733,31 +736,32 @@ struct BotDispatchCard: View {
       if record.isLive, let step = liveSteps[record.id] {
         // The Bot's newest step, read from its own session.
         Text(step)
-          .dockFont(size: 11)
+          .dockFont(.metadata)
           .foregroundStyle(Color.dockMetadataText)
           .lineLimit(1).truncationMode(.tail)
-          .padding(.leading, 24)
           .contentTransition(.opacity)
           .animation(.easeOut(duration: 0.18), value: step)
           .help(step)
       }
       if isOpen, let reply {
         Text(DockModel.botReply(from: reply).reply)
-          .dockFont(size: 12)
+          .dockFont(.body)
           .foregroundStyle(Color.dockSecondaryText)
-          .lineLimit(8)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.leading, 10)
-          .overlay(alignment: .leading) {
-            Capsule()
-              .fill(DockAccentColor.identity(for: record.botID).fill)
-              .frame(width: 2)
+          .padding(DockSpacing.group)
+          .background {
+            RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
+              .dockSurfaceFill(Color.dockSurface2)
           }
-          .padding(.leading, 24)
+          .overlay {
+            RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
+              .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+          }
           .transition(.opacity)
       }
     }
+    .padding(.vertical, isOpen ? DockSpacing.control : 0)
     }
   }
 
@@ -793,7 +797,7 @@ struct BotDispatchCard: View {
         .transition(.scale(scale: 0.6).combined(with: .opacity))
       }
     }
-    .dockFont(size: 11).monospacedDigit()
+    .dockFont(.metadata).monospacedDigit()
     .foregroundStyle(Color.dockMetadataText)
     // The clock settles into a check (or ×) when the Bot finishes.
     .animation(.spring(response: 0.35, dampingFraction: 0.65), value: record.state)
@@ -816,6 +820,9 @@ extension BotActivityRecord {
 /// response streams the list stays open and grows per call; once complete it
 /// collapses to a "Worked for …" summary the reader can expand.
 struct TurnActivityView: View, Equatable {
+  #if DEBUG
+    @Environment(\.conversationRowEvaluation) private var evaluation
+  #endif
   let activity: [ActiveToolCall]
   /// Turn start while streaming; nil once the response is complete.
   let runningSince: Date?
@@ -849,6 +856,9 @@ struct TurnActivityView: View, Equatable {
   }
 
   var body: some View {
+    #if DEBUG
+      let _ = evaluation?("turn-activity", 0)
+    #endif
     VStack(alignment: .leading, spacing: 2) {
       if let runningSince {
         // One transaction keeps each new step and the Bot's movement together.
@@ -877,7 +887,7 @@ struct TurnActivityView: View, Equatable {
                 .foregroundStyle(Color.dockPrimaryText)
                 + Text(crew.isEmpty ? "" : " with \(crew.map(\.name).formatted(.list(type: .and)))")
                 .fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .lineLimit(1)
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -897,7 +907,7 @@ struct TurnActivityView: View, Equatable {
           withAnimation(disclosureMotion) { isExpanded.toggle() }
         } label: {
           HStack(spacing: 6) {
-            Text(summary).dockFont(size: 12, weight: .medium)
+            Text(summary).dockFont(.body, weight: .medium)
             DockIcon(isExpanded ? .caretDown : .caretRight, size: 10)
           }
           .foregroundStyle(Color.dockSecondaryText)
@@ -909,10 +919,10 @@ struct TurnActivityView: View, Equatable {
         .transition(.opacity)
         if isExpanded {
           steps
-        } else if segments.contains(where: { $0.records.contains(where: \.isLive) }) {
-          // Bots still working outlive the collapse until they finish.
+        } else if segments.contains(where: { !$0.records.isEmpty }) {
+          // Bot interactions stay in the conversation as pills, collapsed or not.
           VStack(alignment: .leading, spacing: 6) {
-            ForEach(segments.filter { $0.records.contains(where: \.isLive) }) { card($0) }
+            ForEach(segments.filter { !$0.records.isEmpty }) { card($0) }
           }
         }
       }
@@ -1008,7 +1018,7 @@ struct TurnActivityView: View, Equatable {
       } label: {
         HStack(spacing: 8) {
           stepIcon(.brain)
-          Text(title).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+          Text(title).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
           if !call.isComplete { ProgressView().controlSize(.mini) }
           DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
         }
@@ -1024,7 +1034,7 @@ struct TurnActivityView: View, Equatable {
             Text((call.result ?? "").isEmpty ? "…" : call.result ?? "")
           }
         }
-          .dockFont(size: 12)
+          .dockFont(.body)
           .foregroundStyle(Color.dockMetadataText)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -1054,7 +1064,7 @@ struct TurnActivityView: View, Equatable {
             Text("−\(stats.removed)").foregroundStyle(Color.dockDestructive)
             DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
           }
-          .dockFont(size: 11, weight: .medium, design: .monospaced)
+          .dockFont(.metadata, weight: .medium, design: .monospaced)
           .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -1087,7 +1097,7 @@ struct TurnActivityView: View, Equatable {
         stepIcon(Self.icon(for: call.name))
       }
       let title = Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
-        .dockFont(size: 12)
+        .dockFont(.body)
         .foregroundStyle(call.isComplete ? Color.dockSecondaryText : Color.dockPrimaryText)
         .lineLimit(1).truncationMode(.tail)
       title
@@ -1095,7 +1105,7 @@ struct TurnActivityView: View, Equatable {
       if call.isComplete {
         if let completedAt = call.completedAt {
           Text(Self.stepDuration(completedAt.timeIntervalSince(call.startedAt)))
-            .dockFont(size: 11).monospacedDigit()
+            .dockFont(.metadata).monospacedDigit()
             .foregroundStyle(Color.dockMetadataText)
         }
       } else {
@@ -1104,7 +1114,7 @@ struct TurnActivityView: View, Equatable {
           Text("running · \(BotDispatchCard.clock(context.date.timeIntervalSince(call.startedAt)))")
             .contentTransition(.numericText())
         }
-        .dockFont(size: 11).monospacedDigit()
+        .dockFont(.metadata).monospacedDigit()
         .foregroundStyle(Color.dockMetadataText)
       }
     }
@@ -1194,13 +1204,13 @@ private struct CompactionStepRow: View {
       if call.isComplete {
         DockIcon(.arrowsInLineVertical, size: 13, color: Color.dockSecondaryText).frame(width: 16, height: 16)
           .transition(.scale.combined(with: .opacity))
-        Text(title).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+        Text(title).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
       } else {
         TimelineView(.dockMotion(paused: reduceMotion)) { context in
           HStack(spacing: 8) {
             squeezeGlyph(reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 1.4)).frame(width: 16, height: 16)
             Text("Compacting context")
-              .dockFont(size: 12, weight: .medium)
+              .dockFont(.body, weight: .medium)
               .foregroundStyle(Color.dockAccent)
               .overlay { if !reduceMotion { shimmerOverlay(-1 + 2 * DockMotionSchedule.loop(context.date, period: 1.4)) } }
           }
@@ -1236,7 +1246,7 @@ private struct CompactionStepRow: View {
         .frame(width: proxy.size.width * 0.5)
         .offset(x: shimmer * proxy.size.width)
     }
-    .mask(Text("Compacting context").dockFont(size: 12, weight: .medium))
+    .mask(Text("Compacting context").dockFont(.body, weight: .medium))
     .allowsHitTesting(false)
   }
 }

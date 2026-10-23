@@ -14,13 +14,13 @@ extension DockModel {
         Task { _ = await resumeSession(HermesSession(id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive, messageCount: 0, source: "hermes-bot"), reportFailure: true, profileID: chat.profileID) }
     }
 
-    /// Routes an explicit, unambiguous Bot mention through Hermes' relay
-    /// contract. Relay owns the Bot Chat turn; this model keeps the foreground
-    /// session untouched and projects the returned reply into its transcript.
+    /// Routes an explicit, unambiguous Bot mention to its profile-scoped Bot Chat.
+    /// The recipient owns the turn; this model keeps the foreground
+    /// session untouched and projects the streamed reply into its transcript.
     /// Generic `delegate_task` workers are never relabelled as the Bot.
     func sendDirectBotRequest(profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // First message of a new chat: create the session, then relay.
+        // First message of a new chat: create the origin, then contact the Bot.
         if sessionID == nil, !request.isEmpty, !isSending, !isRestoringSession,
            newSessionCreationAuthorized, !isCreatingSession {
             Task {
@@ -54,7 +54,7 @@ extension DockModel {
         draft = ""
         replyQuote = nil
         messages.append(ChatMessage(role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName))
-        // A running foreground turn keeps owning status/isSending; the relay
+        // A running foreground turn keeps owning status/isSending; the request
         // is tracked by its activity and must not mark that turn idle.
         let ownsTurn = !isSending && status != .working
         if ownsTurn {
@@ -66,34 +66,23 @@ extension DockModel {
                 try await sessionRPCClient.connect()
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == currentSessionID else { return }
-                let result = try await sessionRPCClient.request(
-                    HermesFeatureIDs.ID.botRelayDeliver.rawValue,
-                    params: ["profile": profileID, "message": relayMessage]
-                )
-                guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == currentSessionID else { return }
-                let reply = (result["reply"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let reportedBotSessionID = (result["session_id"] as? String) ?? (result["bot_session_id"] as? String)
-                let botSessionID = reportedBotSessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let botSessionID, !botSessionID.isEmpty {
+                let botSessionID = try await HermesControlRPC(client: sessionRPCClient).submitBotMessage(
+                    profileID: profileID, message: relayMessage, chatSessionID: explicitBotSessionID
+                ) { botSessionID in
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == currentSessionID else {
+                        throw CancellationError()
+                    }
+                    guard !self.inFlightBotActivities.values.contains(where: {
+                        $0.activityID != activity.id && $0.botChatSessionID == botSessionID
+                    }) else {
+                        throw QuickDraftError.message("This Bot is already answering an earlier mention. Wait for its reply before sending again.")
+                    }
                     self.inFlightBotActivities[activity.id]?.botChatSessionID = botSessionID
                     self.updateBotActivity(id: activity.id, state: .working, botChatSessionID: botSessionID)
                 }
-                if reply.isEmpty {
-                    // Relay already accepted and owns the asynchronous turn.
-                    // Without Hermes' explicit session correlation, retain
-                    // this activity as unresolved rather than guessing or
-                    // resubmitting through a canonical Bot Chat.
-                    if ownsTurn {
-                        status = .idle
-                        isSending = false
-                    }
-                    return
-                }
-                messages.append(ChatMessage(role: .hermes, text: reply, botProfileID: profileID, botDisplayName: displayName))
-                updateBotActivity(id: activity.id, state: .completed, result: reply)
-                inFlightBotActivities.removeValue(forKey: activity.id)
-                if ownsTurn {
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == currentSessionID else { return }
+                if ownsTurn, !currentSessionIDs.contains(botSessionID) {
                     status = .idle
                     isSending = false
                 }
@@ -110,6 +99,18 @@ extension DockModel {
                 }
             }
         }
+    }
+
+    func submitComposerInput(bots: [BotSummary]) {
+        if !hasQueuedOrRedirectingPrompt, attachedContexts.isEmpty,
+           ComposerMentionPresentation.canDirectRouteBot(hasImages: !pendingImages.isEmpty, hasPDF: pendingPDFURL != nil),
+           let request = ComposerMentionPresentation.botRelayRequest(in: draft, profileIDs: bots.map(\.id)),
+           let bot = bots.first(where: { $0.id == request.profileID }) {
+            sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text,
+                                 chatSessionID: bot.chat?.sessionID, quote: replyQuote)
+            return
+        }
+        submitComposerInput(mentionProfiles: bots.map(\.id))
     }
 
     func projectBotMessagesIntoActivity() {

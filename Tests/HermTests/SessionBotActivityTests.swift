@@ -180,7 +180,7 @@ struct SessionBotActivityTests {
 
     @Test @MainActor func directBotPromptTransportFailureFailsOriginActivity() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-transport-failure-\(UUID().uuidString).json")
-        let rpc = SessionBotActivityRPCClient(relayError: true)
+        let rpc = SessionBotActivityRPCClient(promptError: true)
         let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: rpc)
 
         model.sendDirectBotRequest(profileID: "forge", displayName: "Forge", text: "work")
@@ -191,27 +191,29 @@ struct SessionBotActivityTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    @Test @MainActor func acknowledgedAsyncRelayDoesNotSubmitTheTurnAgain() async throws {
+    @Test @MainActor func acknowledgedBotPromptIsSubmittedOnlyOnce() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-async-relay-\(UUID().uuidString).json")
-        let rpc = SessionBotActivityRPCClient(relayReply: "", relaySessionID: "bot-session")
+        let rpc = SessionBotActivityRPCClient(relaySessionID: "bot-session")
         let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: rpc)
 
         model.sendDirectBotRequest(profileID: "forge", displayName: "Forge", text: "work")
         try await waitUntilActivity(model) { $0.state == .working }
 
-        #expect(rpc.requests.filter { $0 == "prompt.submit" }.isEmpty)
+        #expect(rpc.requests.filter { $0 == "prompt.submit" }.count == 1)
         #expect(model.status == .idle)
         model.shutdown()
         try? FileManager.default.removeItem(at: url)
     }
 
-    @Test @MainActor func completedRelayActivityStaysCompletedAfterNewChat() async throws {
+    @Test @MainActor func completedBotActivityStaysCompletedAfterNewChat() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-completed-relay-\(UUID().uuidString).json")
-        let rpc = SessionBotActivityRPCClient(relayReply: "Done")
+        let rpc = SessionBotActivityRPCClient()
         let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: rpc)
 
         model.sendDirectBotRequest(profileID: "forge", displayName: "Forge", text: "work")
-        try await waitUntilActivity(model) { $0.state == .completed }
+        try await waitUntilActivity(model) { $0.state == .working }
+        model.receiveGatewayEvent("message.complete", params: ["session_id": "bot-session", "payload": ["text": "Done"]])
+        #expect(model.botActivityBySessionID["origin"]?.first?.state == .completed)
         model.newChat()
 
         #expect(model.botActivityBySessionID["origin"]?.first?.state == .completed)
@@ -219,18 +221,18 @@ struct SessionBotActivityTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    @Test @MainActor func acknowledgedRelayUsesProvidedBotChatSessionIDWithoutResubmitting() async throws {
+    @Test @MainActor func directPromptUsesProvidedBotChatSessionID() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-fallback-session-\(UUID().uuidString).json")
         let rpc = SessionBotActivityRPCClient()
         let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: rpc)
 
         model.sendDirectBotRequest(profileID: "forge", displayName: "Forge", text: "work", chatSessionID: "forge-chat")
-        for _ in 0..<50 where !rpc.requests.contains(where: { $0 == "bot_relay.deliver" }) {
+        for _ in 0..<50 where !rpc.requests.contains(where: { $0 == "prompt.submit" }) {
             try? await Task.sleep(for: .milliseconds(10))
         }
 
-        #expect(rpc.sessionResumeIDs.isEmpty)
-        #expect(rpc.requests.filter { $0 == "prompt.submit" }.isEmpty)
+        #expect(rpc.sessionResumeIDs == ["forge-chat"])
+        #expect(rpc.requests.filter { $0 == "prompt.submit" }.count == 1)
         #expect(model.botActivityBySessionID["origin"]?.first?.botChatSessionID == "forge-chat")
         model.shutdown()
         try? FileManager.default.removeItem(at: url)
@@ -308,24 +310,18 @@ struct SessionBotActivityTests {
 private final class SessionBotActivityRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     let promptError: Bool
-    let relayError: Bool
     let resumeErrorAfterSwitch: Bool
-    let relayReply: String?
     let relaySessionID: String?
     private(set) var requests: [String] = []
     private(set) var sessionResumeIDs: [String] = []
 
     init(
         promptError: Bool = false,
-        relayError: Bool = false,
         resumeErrorAfterSwitch: Bool = false,
-        relayReply: String? = nil,
         relaySessionID: String? = nil
     ) {
         self.promptError = promptError
-        self.relayError = relayError
         self.resumeErrorAfterSwitch = resumeErrorAfterSwitch
-        self.relayReply = relayReply
         self.relaySessionID = relaySessionID
     }
 
@@ -340,20 +336,15 @@ private final class SessionBotActivityRPCClient: HermesRPCClientProtocol {
                 try await Task.sleep(for: .milliseconds(100))
                 throw NSError(domain: "Hermes", code: 408, userInfo: [NSLocalizedDescriptionKey: "delayed resume failure"])
             }
-            return ["session_id": "bot-session", "session_key": BotService.canonicalBotChatTitle, "messages": []]
-        case "bot_relay.deliver":
-            if relayError {
-                throw NSError(domain: "Hermes", code: 503, userInfo: [NSLocalizedDescriptionKey: "relay transport failed"])
-            }
-            var result: [String: Any] = [:]
-            if let relayReply { result["reply"] = relayReply }
-            if let relaySessionID { result["session_id"] = relaySessionID }
-            return result
+            let requested = params["session_id"] as? String ?? BotService.canonicalBotChatTitle
+            let runtime = relaySessionID ?? (requested == BotService.canonicalBotChatTitle ? "bot-session" : requested)
+            return ["session_id": runtime, "session_key": requested, "messages": [],
+                    "info": ["profile_name": params["profile"] as? String ?? "default"]]
         case "prompt.submit":
             if promptError {
                 throw NSError(domain: "Hermes", code: 503, userInfo: [NSLocalizedDescriptionKey: "prompt transport failed"])
             }
-            return [:]
+            return ["status": "streaming"]
         default:
             return [:]
         }

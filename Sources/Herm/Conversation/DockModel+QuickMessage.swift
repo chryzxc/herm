@@ -17,7 +17,8 @@ extension DockModel {
         delegationRefreshTask?.cancel()
         delegationMonitoringTask?.cancel()
         gatewayReplayTask?.cancel()
-        nativeVoiceCapture.reset()
+        stopVoiceConversation()
+        for key in Array(composerDrafts.keys) { discardComposerDraft(for: key) }
         gateway.close()
         detachInFlightBotActivities(as: .canceled)
         Task {

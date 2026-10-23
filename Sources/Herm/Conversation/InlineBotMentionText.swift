@@ -15,11 +15,13 @@ struct InlineBotMentionText: NSViewRepresentable {
         // Fill before the first sizeThatFits: SwiftUI can measure a fresh view
         // before updateNSView, which cached a zero-height (empty) bubble.
         let view = NativeMarkdownTextView()
+        view.markdownOpenURL = context.environment.markdownOpenURL
         apply(to: view, colorScheme: context.environment.colorScheme)
         return view
     }
 
     func updateNSView(_ view: NativeMarkdownTextView, context: Context) {
+        view.markdownOpenURL = context.environment.markdownOpenURL
         apply(to: view, colorScheme: context.environment.colorScheme)
     }
 
@@ -46,11 +48,27 @@ struct InlineBotMentionText: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NativeMarkdownTextView, context: Context) -> CGSize? {
-        let width = max(1, proposal.width ?? NativeMarkdownDocumentSizing.fallbackWidth)
+        let width: CGFloat
+        if let proposed = proposal.width, proposed.isFinite, proposed > 1 {
+            width = proposed
+        } else if nsView.bounds.width > 1 {
+            width = nsView.bounds.width
+        } else {
+            width = NativeMarkdownDocumentSizing.fallbackWidth
+        }
         guard let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
+        // A trial proposal must not change wrapping in the displayed bubble.
+        defer {
+            if nsView.bounds.width > 1 {
+                container.size = NSSize(width: nsView.bounds.width, height: .greatestFiniteMagnitude)
+            }
+        }
         container.size = NSSize(width: width, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
         let used = layout.usedRect(for: container)
-        return CGSize(width: min(width, ceil(used.width)), height: ceil(used.height))
+        let huggedWidth = min(width, ceil(used.width))
+        container.size = NSSize(width: huggedWidth, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        return CGSize(width: huggedWidth, height: ceil(layout.usedRect(for: container).height))
     }
 }

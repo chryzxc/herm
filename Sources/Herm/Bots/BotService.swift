@@ -28,13 +28,16 @@ final class BotService {
         // Some runtimes expose Bots as a managed plugin; desktop-only toggles
         // are not included in this gateway contract.
         let pluginResult = try? await client.request(HermesFeatureIDs.ID.pluginsManage.rawValue, params: ["action": "list"])
-        let botPlugin = (pluginResult?["plugins"] as? [[String: Any]])?
-            .first { ($0["key"] as? String) == "hermes-bots" }
+        let pluginRows = pluginResult?["plugins"] as? [[String: Any]]
+        let botPlugin = pluginRows?.first { ($0["key"] as? String) == "hermes-bots" }
         if let botPlugin, botPlugin["status"] as? String != "enabled" {
             return BotInventory(availability: .unsupported, bots: [], diagnostic: "The Hermes Bots plugin is not enabled.")
         }
         var roster = await rosterList()
-        roster.isPluginEnabled = botPlugin?["status"] as? String == "enabled"
+        // Current Hermes builds Bot Mode in and lists no `hermes-bots` row;
+        // only an unanswered probe leaves the state unknown.
+        roster.isPluginEnabled = pluginRows != nil
+            && (botPlugin == nil || botPlugin?["status"] as? String == "enabled")
         guard roster.availability == .ready else { return roster }
         let live = await liveBusy()
         guard !live.isEmpty else { return roster }

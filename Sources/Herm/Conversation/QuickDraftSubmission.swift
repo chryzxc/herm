@@ -70,7 +70,7 @@ enum QuickDraftSubmission {
       }
       var validatedCount: Int?
       var validatedDirectory: String?
-      func validateDestination() async throws -> String {
+      func validateDestination(directoryRetries: Int = 0) async throws -> String {
         var params = scope
         params["session_id"] = owner
         params["omit_messages"] = true
@@ -119,6 +119,10 @@ enum QuickDraftSubmission {
         }
         if let requested = draft.destination.projectPath {
           let reported = result["cwd"] as? String ?? info["cwd"] as? String
+          if reported?.isEmpty != false, directoryRetries > 0 {
+            try await Task.sleep(for: .seconds(1))
+            return try await validateDestination(directoryRetries: directoryRetries - 1)
+          }
           guard let reported,
             URL(fileURLWithPath: reported).standardizedFileURL
               == URL(fileURLWithPath: requested).standardizedFileURL
@@ -130,7 +134,7 @@ enum QuickDraftSubmission {
         }
         return runtime
       }
-      let runtime = try await validateDestination()
+      let runtime = try await validateDestination(directoryRetries: creatingSession ? 10 : 0)
       if creatingSession, let path = draft.destination.projectPath,
          let preferred = ProjectPreferences.shared.modelID(path), let session = draft.destination.session {
         let workflow = HermesWorkflowRPC(client: client, profileID: draft.destination.profileID)

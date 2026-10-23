@@ -30,6 +30,15 @@ struct BotServiceTests {
         #expect(model.orbHermFaceID(profileID: "research") == nil)
     }
 
+    @Test func builtInBotModeShowsOrbFaceWithoutPluginRow() async {
+        let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        client.stubNextResult = ["plugins": [["key": "platforms/qqbot", "status": "enabled"]]]
+        await model.refreshNow(force: true)
+        #expect(model.orbHermFaceID(profileID: "research") == "research")
+    }
+
     @Test func unavailableRosterRetainsBotsButClearsUnconfirmedOrbFace() async {
         let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
         let model = BotModeModel()

@@ -187,6 +187,36 @@ final class HermesControlRPC {
     func startBackgroundPrompt(sessionID: String, text: String) async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.promptBackground.rawValue, params: ["session_id": sessionID, "text": text])
     }
+    /// A user's mention is a user turn in the recipient's canonical Bot Chat.
+    func submitBotMessage(profileID: String, message: String, chatSessionID: String?,
+                          beforeSubmit: (String) throws -> Void) async throws -> String {
+        let requested = chatSessionID ?? BotService.canonicalBotChatTitle
+        let result = try await client.request(HermesFeatureIDs.ID.sessionResume.rawValue,
+            params: ["session_id": requested, "profile": profileID, "source": "herm", "omit_messages": true])
+        let info = result["info"] as? [String: Any] ?? [:]
+        let profile = result["profile"] as? String ?? info["profile_name"] as? String ?? info["profile"] as? String
+        guard let runtime = result["session_id"] as? String, !runtime.isEmpty,
+              profile == profileID,
+              DockModel.resumeResponseProvesSessionOwnership(requestedSessionID: requested, resolvedSessionID: runtime, result: result) else {
+            throw QuickDraftError.message("Hermes did not confirm the mentioned Bot’s conversation. The message was not sent.")
+        }
+        guard result["running"] as? Bool != true, info["running"] as? Bool != true else {
+            throw QuickDraftError.message("The mentioned Bot is busy. Wait for its current turn before sending again.")
+        }
+        try beforeSubmit(runtime)
+        let submitted: [String: Any]
+        do {
+            submitted = try await client.request(HermesFeatureIDs.ID.promptSubmit.rawValue,
+                params: ["session_id": runtime, "profile": profileID, "text": message])
+        } catch {
+            throw QuickDraftError.message("The Bot’s submission was not confirmed. Check its Bot Chat before resending. "
+                + HermesDiagnosticsService.safeSummary(error.localizedDescription))
+        }
+        guard submitted["status"] as? String == "streaming" else {
+            throw QuickDraftError.message("Hermes did not confirm the Bot’s turn. Check its Bot Chat before resending.")
+        }
+        return runtime
+    }
     func sessionTitle(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionTitle.rawValue, params: ["session_id": sessionID]) }
     func setSessionTitle(sessionID: String, title: String) async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.sessionTitle.rawValue, params: ["session_id": sessionID, "title": title])
