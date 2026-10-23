@@ -8,18 +8,18 @@ struct SessionInspector: View {
     @ObservedObject var botMode: BotModeModel
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
+    @ObservedObject var gitHub: GitHubInspectorStore
+    var onOpenPullRequestChat: (PullRequestRecord) -> Void
+    var onOpenIssueChat: (GitHubIssueRecord) -> Void
     let sessionRepositoryPath: String?
     let sessionProjectIsBound: Bool
-    /// The session's bound folder; `sessionRepositoryPath` may be a worktree of it.
-    var sessionRootPath: String? = nil
-    var onSelectWorktree: ((String) -> Void)? = nil
     var showsHeader = true
     /// Collapses the inspector; shown at the right of the tab strip when set.
     var onToggle: (() -> Void)?
     /// Matches the chat header beside it so both rows share one baseline and separator.
     var headerHeight: CGFloat = 44
     // Persisted so collapsing and reopening the panel keeps the open tab.
-    @AppStorage("sessionInspector.selectedSection") private var selectedSection = Section.activity
+    @AppStorage("sessionInspector.selectedSection") private var selectedSection = Section.timeline
     @AppStorage("sessionInspector.closedSections") private var closedRaw = "Browser"
     /// Sessions whose Browser tab is open. The browser belongs to the session it was
     /// opened in (by Hermes or a chat link) and stays out of every other session.
@@ -27,6 +27,7 @@ struct SessionInspector: View {
     @State private var isShowingNewTab = false
     @State private var reopenMonitor: Any?
     @State private var closingExtra: ExtraTab?
+    @State private var closingTerminal = false
     @State private var recentClosed: [String] = []
     @State private var restoringPresentation = false
     /// Extra Terminal/Browser instances opened from +. They stay mounted while
@@ -44,7 +45,6 @@ struct SessionInspector: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.expandedReviewRouter) private var reviewRouter
 
-    private let sessionTabFont = Font.system(size: 12, weight: .semibold)
 
     private struct ExtraTab: Identifiable {
         let id: UUID
@@ -65,29 +65,35 @@ struct SessionInspector: View {
     }
 
     private enum Section: String, CaseIterable, Identifiable {
-        case activity = "Activity"
+        case timeline = "Timeline"
         case files = "Files"
         case changes = "Source Control"
+        case diff = "Diff"
         case terminal = "Terminal"
         case browser = "Browser"
+        case github = "GitHub"
 
         var id: Self { self }
         var navigationTitle: String {
             switch self {
             case .files: "Explorer"
             case .terminal: "Terminal"
-            case .activity: "Activity"
+            case .timeline: "Timeline"
             case .changes: "Source Control"
+            case .diff: "Diff"
             case .browser: "Browser"
+            case .github: "GitHub"
             }
         }
         var icon: Ph {
             switch self {
-            case .activity: .pulse
+            case .timeline: .chartBarHorizontal
             case .files: .folder
             case .changes: .gitBranch
+            case .diff: .gitDiff
             case .terminal: .terminal
             case .browser: .globe
+            case .github: .gitPullRequest
             }
         }
     }
@@ -98,21 +104,13 @@ struct SessionInspector: View {
                 inspectorHeader
             }
             sessionModePicker
-            if selectedSection == .changes, filePreview.attachmentDiff == nil, let onSelectWorktree, workflow.repository.isGitRepository, !workflow.worktrees.isEmpty {
-                WorktreePicker(
-                    worktrees: workflow.worktrees,
-                    mainPath: sessionRootPath,
-                    selection: Binding(get: { sessionRepositoryPath }, set: { $0.map(onSelectWorktree) })
-                )
-                .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-            }
 
-            if let workflowError = workflow.error, filePreview.attachmentDiff == nil {
+            if selectedSection != .timeline, selectedSection != .github, let workflowError = workflow.error, filePreview.attachmentDiff == nil {
                 HStack(spacing: 8) {
                     DockIcon(.warning)
                         .foregroundStyle(Color.dockWarning)
                     Text(workflowError)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockWarning)
                         .lineLimit(2)
                     Spacer(minLength: 0)
@@ -156,8 +154,16 @@ struct SessionInspector: View {
             Button("Close terminals", role: .destructive) { if let extra = closingExtra { finishClosingExtra(extra) }; closingExtra = nil }
             Button("Cancel", role: .cancel) { closingExtra = nil }
         } message: { Text("The foreground commands will stop. Other terminal groups stay open.") }
+        .confirmationDialog("Close the terminal?", isPresented: $closingTerminal) {
+            Button("Close terminals", role: .destructive) { finishClose(.terminal) }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("The foreground commands will stop. Other terminal groups stay open.") }
         .task(id: WorkspaceIdentity.session(model)) {
             restoringPresentation = true
+            if let legacy = UserDefaults.standard.string(forKey: "sessionInspector.selectedSection"), legacy == "Activity" {
+                selectedSection = .timeline
+            }
+            closedRaw = closedRaw.split(separator: "|").map { InspectorPresentation.migratedTab(String($0)) }.joined(separator: "|")
             if let saved = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model)) {
                 closedRaw = saved.closed
                 recentClosed = saved.recentClosed
@@ -173,14 +179,23 @@ struct SessionInspector: View {
                 if let index = saved.selectedBrowser, let workspace = browserWorkspace, workspace.extras.indices.contains(index) { selectedExtraID = workspace.extras[index].id }
                 if let section = Section(rawValue: saved.selected) { selectedSection = section }
             }
+            if gitHub.item(for: WorkspaceIdentity.session(model))?.reference != nil { reopen(.github) }
+            else if selectedSection == .github { selectedSection = .timeline }
+            if filePreview.attachmentDiff != nil { reopen(.diff) }
+            else if selectedSection == .diff { selectedSection = .changes }
             restoringPresentation = false
         }
         .onChange(of: selectedExtraID) { _, _ in savePresentation() }
+        .onChange(of: gitHub.revision) { _, _ in
+            if gitHub.item(for: WorkspaceIdentity.session(model))?.reference != nil { reopen(.github) }
+        }
         .onChange(of: selectedSection) { _, _ in savePresentation() }
         .onChange(of: closedRaw) { _, _ in savePresentation() }
         .onReceive(filePreview.$attachmentDiff) { changes in
             if changes != nil {
                 attachmentDiffID = UUID()
+                reopen(.diff)
+            } else if selectedSection == .diff {
                 reopen(.changes)
             }
         }
@@ -200,9 +215,9 @@ struct SessionInspector: View {
 
     @ViewBuilder
     private var baseContent: some View {
-        if selectedSection == .terminal || selectedSection == .files || selectedSection == .browser || (selectedSection == .changes && filePreview.attachmentDiff != nil) {
+        if selectedSection == .github || selectedSection == .timeline || selectedSection == .terminal || selectedSection == .files || selectedSection == .browser || selectedSection == .diff {
             inspectorContent
-                .padding(.horizontal, 12)
+                .padding(.horizontal, selectedSection == .github ? 0 : 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
@@ -248,11 +263,12 @@ struct SessionInspector: View {
     private func extraTerminalKey(_ extra: ExtraTab) -> String {
         WorkspaceIdentity.session(model) + ":extra:" + extra.id.uuidString + ":" + (sessionRepositoryPath ?? "home")
     }
+    private var baseTerminalKey: String { WorkspaceIdentity.session(model) + ":" + (sessionRepositoryPath ?? "home") }
+    private func hasRunningCommand(_ key: String) -> Bool {
+        TerminalWorkspaceStore.shared.workspace(key: key).sessions.contains { $0.hasForegroundJob || $0.projectCommand?.isRunning == true }
+    }
     private func closeExtra(_ extra: ExtraTab) {
-        if extra.kind == .terminal {
-            let store = TerminalWorkspaceStore.shared.workspace(key: extraTerminalKey(extra))
-            if store.sessions.contains(where: { $0.hasForegroundJob || $0.projectCommand?.isRunning == true }) { closingExtra = extra; return }
-        }
+        if extra.kind == .terminal, hasRunningCommand(extraTerminalKey(extra)) { closingExtra = extra; return }
         finishClosingExtra(extra)
     }
     private func finishClosingExtra(_ extra: ExtraTab) {
@@ -285,7 +301,7 @@ struct SessionInspector: View {
 
     // Keep Source Control reachable while its repository snapshot loads or refreshes.
     private var visibleSections: [Section] {
-        [.activity, .terminal, .files, .changes, .browser]
+        [.timeline, .terminal, .files, .changes, .browser] + (filePreview.attachmentDiff == nil ? [] : [.diff]) + (gitHub.item(for: WorkspaceIdentity.session(model))?.reference == nil ? [] : [.github])
     }
 
     private var browserSessions: [String] { browserSessionsRaw.split(separator: "|").map(String.init) }
@@ -324,9 +340,16 @@ struct SessionInspector: View {
 
     private func close(_ section: Section) {
         guard openSections.count > 1 else { return }
-        recentClosed.append(section.rawValue)
-        if section == .changes { filePreview.attachmentDiff = nil }
-        if section == .browser { setBrowserOpenHere(false) } else { closedRaw += "|" + section.rawValue }
+        if section == .terminal, hasRunningCommand(baseTerminalKey) { closingTerminal = true; return }
+        finishClose(section)
+    }
+
+    /// Closed tabs stop their work: shells exit and the browser pages unload.
+    private func finishClose(_ section: Section) {
+        if section != .diff { recentClosed.append(section.rawValue) }
+        if section == .diff { filePreview.attachmentDiff = nil }
+        if section == .terminal { TerminalWorkspaceStore.shared.closeWorkspace(key: baseTerminalKey) }
+        if section == .browser { browserWorkspace?.suspend(); setBrowserOpenHere(false) } else { closedRaw += "|" + section.rawValue }
         if selectedSection == section, let next = openSections.first(where: { $0 != section }) { selectedSection = next }
     }
 
@@ -356,7 +379,7 @@ struct SessionInspector: View {
                 newTabRow("New Terminal", icon: .terminal) { openNew(.terminal) }
                 newTabRow("New Browser", icon: .globe) { openNew(.browser) }
                 ForEach(closedSections.filter { $0 != .terminal && $0 != .browser }) { section in
-                    newTabRow(section.navigationTitle, icon: section.icon) { reopen(section) }
+                    newTabRow(sectionTitle(section), icon: section.icon) { reopen(section) }
                 }
             }
             .padding(6)
@@ -371,7 +394,7 @@ struct SessionInspector: View {
         } label: {
             HStack(spacing: 8) {
                 DockIcon(icon, size: 14, color: Color.dockSecondaryText)
-                Text(title).dockFont(size: 12, weight: .medium)
+                Text(title).dockFont(.body, weight: .medium)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
@@ -415,6 +438,11 @@ struct SessionInspector: View {
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
+    private func sectionTitle(_ section: Section) -> String {
+        guard section == .github else { return section.navigationTitle }
+        return gitHub.item(for: WorkspaceIdentity.session(model))?.reference?.kind == .issue ? "Issue" : "Pull Request"
+    }
+
     private func sectionButton(_ section: Section) -> some View {
         let isSelected = selectedSection == section && selectedExtraID == nil
         return HStack(spacing: 6) {
@@ -423,13 +451,13 @@ struct SessionInspector: View {
             } label: {
                 HStack(spacing: 6) {
                     DockIcon(section.icon, size: 12, color: isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-                    if isSelected || !isCompactStrip { Text(section.navigationTitle).lineLimit(1) }
+                    if isSelected || !isCompactStrip { Text(sectionTitle(section)).lineLimit(1) }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(section.navigationTitle)
-            .accessibilityLabel("Show \(section.rawValue)")
+            .help(sectionTitle(section))
+            .accessibilityLabel("Show \(sectionTitle(section))")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             if isSelected, openSections.count + extras.filter(isVisible).count > 1 {
@@ -439,10 +467,10 @@ struct SessionInspector: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Close \(section.navigationTitle)")
+                .accessibilityLabel("Close \(sectionTitle(section))")
             }
         }
-        .font(sessionTabFont)
+        .dockFont(.body, weight: .semibold)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(height: 32)
@@ -475,7 +503,7 @@ struct SessionInspector: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Close \(extra.kind.navigationTitle) \(extra.number)")
         }
-        .font(sessionTabFont)
+        .dockFont(.body, weight: .semibold)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(height: 32)
@@ -487,23 +515,23 @@ struct SessionInspector: View {
     private var inspectorHeader: some View {
         HStack(alignment: .center, spacing: 9) {
             DockIcon(.chats)
-                .dockFont(size: 13, weight: .semibold)
+                .dockFont(.navigation, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.currentSessionTitle ?? "Untitled session")
-                    .dockFont(size: 13, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if let sessionProjectName {
                     DockIconLabel(sessionProjectName, icon: .folder)
-                        .dockFont(size: 10, weight: .medium)
+                        .dockFont(.compactStatus, weight: .medium)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
             Text(model.status.title.uppercased())
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(model.status == .working ? Color.dockAccent : Color.dockSecondaryText)
         }
         .padding(.horizontal, 16)
@@ -522,33 +550,38 @@ struct SessionInspector: View {
     @ViewBuilder
     private var inspectorContent: some View {
         switch selectedSection {
-        case .activity:
-            SessionActivityOverviewView(
-                model: model,
-                control: control,
-                botMode: botMode,
-                sessionID: model.kanbanSessionID
-            )
-            .id(model.navigationSessionID)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+        case .github:
+            if let item = gitHub.item(for: WorkspaceIdentity.session(model)), let reference = item.reference {
+                if reference.kind == .pullRequest {
+                    PullRequestDetailView(center: item.pullRequests, onOpenChat: onOpenPullRequestChat, isInspector: true)
+                } else {
+                    IssueDetailView(center: item.issues, onOpenChat: onOpenIssueChat, isInspector: true)
+                }
+            }
+        case .timeline:
+            SessionTraceView(model: model, isVisible: selectedExtraID == nil)
+                .equatable()
+                .id(WorkspaceIdentity.session(model))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .files:
             SessionFilesView(
                 projectPath: sessionRepositoryPath,
                 onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
             )
-        case .changes:
+        case .diff:
             if let changes = filePreview.attachmentDiff {
-                ChatAttachmentDiffPreview(changes: changes) { filePreview.attachmentDiff = nil }
+                SessionAttachmentDiffTab(changes: changes)
                     .id(attachmentDiffID)
-            } else {
-                RepositoryChangesBrowser(
-                    model: model,
-                    workflow: workflow,
-                    projectPath: sessionRepositoryPath,
-                    onRefresh: { await workflow.refresh(preferences: preferences, control: control) },
-                    isInspector: true
-                )
             }
+        case .changes:
+            RepositoryChangesBrowser(
+                model: model,
+                workflow: workflow,
+                projectPath: sessionRepositoryPath,
+                onRefresh: { await workflow.refresh(preferences: preferences, control: control) },
+                isInspector: true,
+                showsBranch: false
+            )
         case .terminal:
             SessionTerminalView(
                 projectPath: sessionRepositoryPath,
@@ -567,7 +600,7 @@ struct SessionInspector: View {
 
     private func inspectorLabel(_ text: String) -> some View {
         Text(text)
-            .dockFont(size: 11, weight: .semibold)
+            .dockFont(.metadata, weight: .semibold)
             .tracking(0.8)
             .foregroundStyle(Color.dockSecondaryText)
     }
@@ -610,10 +643,10 @@ struct SessionInspector: View {
                         } label: {
                             HStack(spacing: 6) {
                                 DockIcon(isSwitchingBranch ? .arrowsClockwise : branch.icon)
-                                    .dockFont(size: 11)
+                                    .dockFont(.metadata)
                                     .foregroundStyle(Color.dockAccent)
                                 Text(branch.value)
-                                    .dockFont(size: 12, weight: .semibold, design: .monospaced)
+                                    .dockFont(.body, weight: .semibold, design: .monospaced)
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
@@ -636,14 +669,14 @@ struct SessionInspector: View {
                     ForEach(items.filter { $0.id != "branch" }) { item in
                         HStack(spacing: 6) {
                             DockIcon(item.icon)
-                                .dockFont(size: 11)
+                                .dockFont(.metadata)
                                 .foregroundStyle(Color.dockAccent)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.label)
                                     .dockFont(size: 9, weight: .semibold, design: .monospaced)
                                     .foregroundStyle(Color.dockSecondaryText)
                                 Text(item.value)
-                                    .dockFont(size: 11, weight: .medium)
+                                    .dockFont(.metadata, weight: .medium)
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                             }
@@ -673,25 +706,25 @@ struct SessionInspector: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 DockIcon(.shieldCheck)
-                    .dockFont(size: 11, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(color)
                 Text("PRE-FLIGHT READINESS")
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .tracking(0.75)
                     .foregroundStyle(color)
                 Spacer(minLength: 0)
                 Text(readiness.state.rawValue.uppercased())
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(color)
             }
 
             Text(readiness.detail)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
 
             if let scope = readiness.verificationScope {
                 Text("Scope: \(scope)")
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -705,20 +738,20 @@ struct SessionInspector: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 DockIcon(.warning)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                 Text(attention.title)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text(attention.kind.rawValue.uppercased())
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(Color.dockWarning)
             }
             if !attention.detail.isEmpty {
                 Text(attention.detail)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }

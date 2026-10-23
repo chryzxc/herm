@@ -89,6 +89,10 @@ struct ActiveToolCall: Identifiable, Equatable, Codable {
     /// The call's arguments as text, for describing what it does.
     var args: [String: String]? = nil
 
+    var traceDuration: TimeInterval? = nil
+    var traceTiming: SessionTraceTiming? = nil
+    var traceOutcome: String? = nil
+
     /// Marks a thinking segment in a response's activity log.
     static let thinkingName = "__thinking"
     /// Marks a context compaction in a response's activity log.
@@ -223,10 +227,20 @@ struct AgentActivity: Identifiable, Equatable, Codable {
     let diffPreview: String?
     let parentAgentID: String?
     let childSessionID: String?
+    var traceCallID: String? = nil
+    var traceTiming: SessionTraceTiming? = nil
+    var traceDuration: Double? = nil
+    var traceOutcome: String? = nil
 
     init(id: UUID, timestamp: Date, agentID: String?, kind: String, text: String,
          toolName: String?, handoffTarget: String?, diffPreview: String? = nil,
-         parentAgentID: String? = nil, childSessionID: String? = nil) {
+         parentAgentID: String? = nil, childSessionID: String? = nil,
+         traceCallID: String? = nil, traceTiming: SessionTraceTiming? = nil,
+         traceDuration: Double? = nil, traceOutcome: String? = nil) {
+        self.traceCallID = traceCallID
+        self.traceTiming = traceTiming
+        self.traceDuration = traceDuration
+        self.traceOutcome = traceOutcome
         self.id = id
         self.timestamp = timestamp
         self.agentID = agentID

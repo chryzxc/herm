@@ -718,7 +718,12 @@ extension DockModel {
             handoffTarget: payload["handoff_target"] as? String,
             diffPreview: Self.diffPreview(from: payload),
             parentAgentID: (payload["parent_id"] as? String) ?? (payload["parent_subagent_id"] as? String),
-            childSessionID: payload["child_session_id"] as? String
+            childSessionID: payload["child_session_id"] as? String,
+            traceCallID: (payload["tool_id"] ?? payload["tool_call_id"] ?? payload["tool_use_id"] ?? payload["id"]) as? String,
+            traceTiming: (dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"])) != nil
+                ? .runtime : params["herm_trace_replayed"] as? Bool == true ? .unavailable : .observed,
+            traceDuration: SessionTraceProjection.measuredDuration(payload["duration_s"]),
+            traceOutcome: SessionTraceProjection.outcome(payload["result"] ?? payload["output"])
         ))
         if agentActivities.count > 250 { agentActivities.removeFirst(agentActivities.count - 250) }
     }

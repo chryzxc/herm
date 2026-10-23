@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 struct InspectorPresentation: Codable {
-    var selected = "Activity"
+    var selected = "Timeline"
     var closed = "Browser"
     var recentClosed: [String] = []
     var browserURL: String?
@@ -10,6 +10,17 @@ struct InspectorPresentation: Codable {
     var browserTabs: [String]?
     var selectedExtra: UUID?
     var selectedBrowser: Int?
+
+    /// Activity became Trace, which became Timeline.
+    static func migratedTab(_ value: String) -> String { value == "Activity" || value == "Trace" ? "Timeline" : value }
+
+    var migratingActivity: Self {
+        var result = self
+        result.selected = Self.migratedTab(selected)
+        result.closed = closed.split(separator: "|").map { Self.migratedTab(String($0)) }.joined(separator: "|")
+        result.recentClosed = recentClosed.map(Self.migratedTab)
+        return result
+    }
 }
 
 /// Durable references only; no source, transcript, browser state, or terminal output.
@@ -24,7 +35,7 @@ final class WorkspacePresentationStore {
     func defaultsData(_ identity: String) -> Data? { defaults.data(forKey: key(identity) + ".references") }
     func saveData(_ data: Data, identity: String) { defaults.set(data, forKey: key(identity) + ".references") }
     func load(_ identity: String) -> InspectorPresentation? {
-        defaults.data(forKey: key(identity)).flatMap { try? JSONDecoder().decode(InspectorPresentation.self, from: $0) }
+        defaults.data(forKey: key(identity)).flatMap { (try? JSONDecoder().decode(InspectorPresentation.self, from: $0))?.migratingActivity }
     }
     func save(_ value: InspectorPresentation, identity: String) {
         if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: key(identity)) }

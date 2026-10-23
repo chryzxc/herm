@@ -256,7 +256,9 @@ extension DockModel {
                     return left < right
                 }) {
                     guard let type = frame["type"] as? String else { continue }
-                    self.receiveGatewayEvent(type, params: frame)
+                    var replayed = frame
+                    replayed["herm_trace_replayed"] = true
+                    self.receiveGatewayEvent(type, params: replayed)
                 }
                 if (result["truncated"] as? Bool) == true {
                     self.refreshDelegationStatus()
@@ -953,7 +955,9 @@ extension DockModel {
                 agentID: eventAgentID,
                 parentAgentID: payload["parent_id"] as? String,
                 childSessionID: childSessionID,
-                args: Self.textArgs(argsDict)
+                args: Self.textArgs(argsDict),
+                traceTiming: (dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"])) != nil
+                    ? .runtime : params["herm_trace_replayed"] as? Bool == true ? .unavailable : .observed
             ))
             if Self.isDelegationTool(name) {
                 synthesizeSubagent(toolCallID: id, args: argsDict)
@@ -981,6 +985,11 @@ extension DockModel {
                 activeToolCalls[index].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
                 activeToolCalls[index].isComplete = true
                 activeToolCalls[index].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
+                activeToolCalls[index].traceDuration = SessionTraceProjection.measuredDuration(payload["duration_s"])
+                activeToolCalls[index].traceOutcome = SessionTraceProjection.outcome(payload["result"] ?? payload["output"])
+                if params["herm_trace_replayed"] as? Bool == true && dateValue(params["timestamp"]) == nil && dateValue(payload["timestamp"]) == nil {
+                    activeToolCalls[index].traceTiming = .unavailable
+                }
                 activeToolCalls[index].diffPreview = diffPreview
                 if activeToolCalls[index].args == nil { activeToolCalls[index].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: id, result: result, payload: payload) }
@@ -993,6 +1002,8 @@ extension DockModel {
                 activeToolCalls[last].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
                 activeToolCalls[last].isComplete = true
                 activeToolCalls[last].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
+                // The legacy completion fallback does not prove trace ownership.
+                activeToolCalls[last].traceTiming = .unavailable
                 activeToolCalls[last].diffPreview = diffPreview
                 if activeToolCalls[last].args == nil { activeToolCalls[last].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload) }
@@ -1205,7 +1216,10 @@ extension DockModel {
                 context: "",
                 startedAt: Date(),
                 result: state.text,
-                isComplete: state.isComplete
+                isComplete: state.isComplete,
+                completedAt: state.isComplete ? Date() : nil,
+                // Herm watches this segment arrive, so its clock times it.
+                traceTiming: .observed
             ))
         }
         liveReasoning.text = state.text
@@ -1227,7 +1241,8 @@ extension DockModel {
                 input: "",
                 context: "",
                 startedAt: Date(),
-                isComplete: false
+                isComplete: false,
+                traceTiming: .observed
             ))
         }
     }

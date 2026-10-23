@@ -244,7 +244,8 @@ extension DockModel {
             if let reasoning = ((row["display_reasoning"] ?? row["reasoning"] ?? row["reasoning_content"]) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !reasoning.isEmpty {
                 pendingActivity.append(ActiveToolCall(
                     id: "thinking:\(UUID().uuidString)", name: ActiveToolCall.thinkingName, input: "", context: "",
-                    startedAt: rowTimestamp ?? Date(), result: reasoning, isComplete: true
+                    startedAt: rowTimestamp ?? Date(), result: reasoning, isComplete: true,
+                    completedAt: rowTimestamp, traceTiming: rowTimestamp == nil ? .unavailable : .runtime
                 ))
             }
             // Mid-turn Codex commentary splits the turn like live `message.interim`:
@@ -262,7 +263,13 @@ extension DockModel {
                 messages.append(message)
                 if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") { rowIDs[rowID] = message.id }
             }
-            pendingActivity.append(contentsOf: historyToolCalls(in: row, timestamp: rowTimestamp ?? Date()))
+            // The requesting row and the result row are both stamped by Hermes,
+            // so a restored call spans between them; without stamps it stays unplaced.
+            pendingActivity.append(contentsOf: historyToolCalls(in: row, timestamp: rowTimestamp ?? Date()).map {
+                var call = $0
+                call.traceTiming = rowTimestamp == nil ? .unavailable : .runtime
+                return call
+            })
             // session.resume projects each tool call as its own compact
             // `{role: tool, name, context}` row.
             if role == "tool" {
@@ -270,11 +277,19 @@ extension DockModel {
                 let result = messageText(row["content"])
                 if let index = pendingActivity.firstIndex(where: { $0.id == id }) {
                     if !result.isEmpty { pendingActivity[index].result = truncatedForPersistence(result) }
+                    if pendingActivity[index].traceTiming == .runtime, let rowTimestamp,
+                       rowTimestamp >= pendingActivity[index].startedAt {
+                        pendingActivity[index].completedAt = rowTimestamp
+                    } else {
+                        pendingActivity[index].traceTiming = .unavailable
+                    }
                 } else if let name = row["name"] as? String, !name.isEmpty {
                     pendingActivity.append(ActiveToolCall(
                         id: id, name: name, input: "", context: row["context"] as? String ?? "",
                         startedAt: rowTimestamp ?? Date(), result: result.isEmpty ? nil : truncatedForPersistence(result),
-                        isComplete: true
+                        isComplete: true, completedAt: rowTimestamp,
+                        // Hermes stamps only the result row: the finish is exact, the start unknown.
+                        traceTiming: rowTimestamp == nil ? .unavailable : .runtime
                     ))
                 }
                 continue

@@ -14,52 +14,30 @@ private final class WorkflowFeatureRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct NativeWorkflowFeatureTests {
-    @Test func editingQueuePreservesDraftPayloadAndPosition() {
+    @Test func editingQueuedPromptMovesItIntoComposerAndRequeuesAtTail() {
         let model = DockModel(
             sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
             initialSessionID: "owner", rpcClient: WorkflowFeatureRPC())
         defer { model.shutdown() }
         model.status = .working
         model.isSending = true
-        model.draft = "Original"
-        model.queueDraft()
-        model.draft = "Second"
-        model.queueDraft()
-        model.draft = "Unsent active draft"
-        let id = model.queuedPrompts[0].id
-        model.editQueuedPrompt(id)
-        model.editingQueuedPromptText = "Edited"
-        #expect(model.queuedPrompts.map(\.text) == ["Original", "Second"])
-        #expect(model.draft == "Unsent active draft")
-        model.finishQueuedPromptEdit(save: false)
-        #expect(model.queuedPrompts[0].text == "Original")
-        model.editQueuedPrompt(id)
-        model.editingQueuedPromptText = "Edited"
-        model.finishQueuedPromptEdit(save: true)
-        #expect(model.queuedPrompts.map(\.text) == ["Edited", "Second"])
-        #expect(model.queuedPrompts[0].id == id)
-        #expect(model.draft == "Unsent active draft")
-        model.moveQueuedPrompt(id, offset: 1)
-        #expect(model.queuedPrompts.map(\.text) == ["Second", "Edited"])
-    }
-
-    @Test func editingHeadHoldsQueueAtCompletion() {
-        let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            initialSessionID: "owner", rpcClient: WorkflowFeatureRPC())
-        defer { model.shutdown() }
-        model.status = .working
-        model.isSending = true
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queue-edit-\(UUID().uuidString).png")
+        model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
         model.draft = "First"
         model.queueDraft()
         model.draft = "Second"
         model.queueDraft()
+
         model.editQueuedPrompt(model.queuedPrompts[0].id)
-        model.status = .idle
-        model.isSending = false
-        model.drainQueuedPromptIfIdle()
-        #expect(model.queuedPrompts.map(\.text) == ["First", "Second"])
-        #expect(!model.isSending)
+        #expect(model.queuedPrompts.map(\.text) == ["Second"])
+        #expect(model.draft == "First")
+        #expect(model.pendingImages.first?.fileURL == imageURL)
+
+        model.draft = "First, edited"
+        model.submitComposerInput()
+        #expect(model.queuedPrompts.map(\.text) == ["Second", "First, edited"])
+        #expect(model.queuedPrompts[1].images.first?.fileURL == imageURL)
+        #expect(model.draft.isEmpty && model.pendingImages.isEmpty)
     }
 
     @Test func diffIdentityAndSourcePreserveWhitespaceAndUnicode() {
