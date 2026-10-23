@@ -58,6 +58,7 @@ final class SpeechInput: ObservableObject {
         isStopping = false
         isUnavailable = false
         errorMessage = nil
+        transcript = ""
         requestPermissionsAndStart(generation: startGeneration)
     }
 
@@ -86,6 +87,19 @@ final class SpeechInput: ObservableObject {
 
     func consumeCompletedTranscript() {
         completedTranscript = nil
+    }
+
+    func reset() {
+        stop()
+        completedTranscript = nil
+        transcript = ""
+        errorMessage = nil
+        isUnavailable = false
+    }
+
+    func dismissError() {
+        errorMessage = nil
+        isUnavailable = false
     }
 
     /// Assistant playback must never share a recognition turn. Cancelling the
@@ -217,12 +231,15 @@ final class SpeechInput: ObservableObject {
                     transcript = result.bestTranscription.formattedString
                     scheduleAutomaticSubmit(after: transcript)
                 }
-                if let error {
-                    errorMessage = "Speech recognition stopped: \(error.localizedDescription)"
-                    isUnavailable = true
+                switch VoiceRecognitionCompletion.resolve(transcript, isFinal: result?.isFinal == true, hasError: error != nil) {
+                case .listening:
+                    break
+                case .finished(let text):
                     stop()
-                } else if result?.isFinal == true {
-                    if !isDictation { completedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    if !isDictation { completedTranscript = text }
+                case .failed:
+                    errorMessage = "Speech recognition couldn’t continue. Try again."
+                    isUnavailable = true
                     stop()
                 }
             }
@@ -266,7 +283,21 @@ final class SpeechInput: ObservableObject {
     }
 }
 
-/// Microphone tap for the voice orb while Hermes' gateway owns speech output.
+/// Recognition can end with an error after successfully producing words.
+/// Keep that utterance instead of losing it behind a Retry message.
+enum VoiceRecognitionCompletion: Equatable {
+    case listening
+    case finished(String)
+    case failed
+
+    static func resolve(_ transcript: String, isFinal: Bool, hasError: Bool) -> Self {
+        guard isFinal || hasError else { return .listening }
+        let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        return hasError && text.isEmpty ? .failed : .finished(text)
+    }
+}
+
+/// Microphone tap and live transcription for the voice orb.
 /// CoreAudio shares input devices between processes, so this never competes
 /// with Hermes' recorder. While endpointing it also transcribes on-device, so
 /// captions follow the user live and a turn submits the moment they stop
@@ -451,7 +482,7 @@ final class MicLevelMeter: ObservableObject {
                 self.level += (value - self.level) * smoothing
                 guard self.isEndpointing else { return }
                 let now = ProcessInfo.processInfo.systemUptime
-                if !self.heardPlayback, NativeVoicePlaybackGate.isOutputRunning() == true { self.heardPlayback = true }
+                if !self.heardPlayback, VoiceAudioOutput.isOutputRunning() == true { self.heardPlayback = true }
                 if self.endpoint.ingest(level: Double(value), at: now) {
                     self.pendingEndSince = self.pendingEndSince ?? now
                 }
@@ -468,9 +499,9 @@ final class MicLevelMeter: ObservableObject {
                 }
                 // Words trail the audio, and a soft voice can stay under the
                 // level detector, so the transcript also ends (and keeps awake) a turn.
-                if !self.endpoint.isHearingSpeech, VoiceEndpointDetector.shouldEndTurn(
+                if VoiceEndpointDetector.shouldEndTurn(
                     self.utteranceTranscript, lastWordAt: self.lastWordAt, quietSince: self.pendingEndSince, now: now,
-                    finished: self.turnVerdict
+                    finished: self.turnVerdict, isHearingSpeech: self.endpoint.isHearingSpeech
                 ) {
                     self.pendingEndSince = nil
                     self.onUtteranceEnd?(self.utteranceTranscript)
@@ -594,6 +625,7 @@ struct VoiceEndpointDetector {
         speechStart = nil
         silenceStart = nil
         hasSpoken = false
+        isHearingSpeech = false
     }
 
     /// Returns true once, when confirmed speech is followed by `endSilence` of quiet.
@@ -631,8 +663,14 @@ struct VoiceEndpointDetector {
     /// `finished` is the smart-turn model's verdict when installed; it replaces
     /// the trailing-word guess and leaves 0.5s for the last words to transcribe.
     static func shouldEndTurn(
-        _ transcript: String?, lastWordAt: TimeInterval, quietSince: TimeInterval?, now: TimeInterval, finished: Bool? = nil
+        _ transcript: String?, lastWordAt: TimeInterval, quietSince: TimeInterval?, now: TimeInterval,
+        finished: Bool? = nil, isHearingSpeech: Bool = false
     ) -> Bool {
+        // New words extend a turn; steady background noise cannot hold it forever.
+        if isHearingSpeech {
+            guard let transcript, !transcript.isEmpty else { return false }
+            return now - lastWordAt >= 4
+        }
         guard let transcript else { return quietSince != nil }
         if transcript.isEmpty { return quietSince.map { now - $0 >= 3 } ?? false }
         return now - lastWordAt >= turnHold(transcript, quietSince: quietSince, finished: finished)

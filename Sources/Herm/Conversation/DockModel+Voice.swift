@@ -6,10 +6,8 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DockModel {
-    /// Starts Hermes' native VAD/TTS voice loop. Hermes owns the microphone,
-    /// transcription, streaming speech, and spoken barge-in for this mode.
-    /// If the locally installed CLI is missing those optional dependencies, the
-    /// Dock keeps its existing Apple speech-recognition flow as a clear fallback.
+    /// Local recognition starts without probing unused backend audio devices.
+    /// Hermes synthesizes replies; Herm owns playback for this session only.
     func startVoiceConversation() {
         guard !isRestoringSession else { return }
         guard sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
@@ -20,11 +18,15 @@ extension DockModel {
         guard !voiceState.isNativeConversationActive else { return }
         voiceConversationGeneration &+= 1
         let generation = voiceConversationGeneration
+        voiceSessionID = sessionID
+        voiceProfileID = sessionProfileID ?? profileScopeID
         nativeVoiceCapture.reset()
         voiceState = .preparing
 
         Task {
             do {
+                await MicLevelMeter.askForSpeechPermission()
+                guard voiceConversationGeneration == generation else { return }
                 try await sessionRPCClient.connect()
                 guard voiceConversationGeneration == generation else { return }
                 if sessionID == nil {
@@ -32,35 +34,26 @@ extension DockModel {
                 }
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
                 guard voiceConversationGeneration == generation else { return }
+                voiceSessionID = sessionID
 
-                let requirements = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: scopedSessionParams(["action": "status"]))
-                guard voiceConversationGeneration == generation else { return }
-                guard (requirements["available"] as? Bool) != false,
-                      (requirements["stt_available"] as? Bool) != false else {
-                    let detail = Self.safeUserDiagnostic(
-                        (requirements["details"] as? String) ?? "Hermes voice dependencies are unavailable."
-                    )
-                    voiceState = .localFallback(detail)
-                    return
+                if !canTranscribeVoice() {
+                    let requirements = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: scopedSessionParams(["action": "status"]))
+                    guard voiceConversationGeneration == generation else { return }
+                    guard (requirements["available"] as? Bool) == true,
+                          (requirements["stt_available"] as? Bool) == true else {
+                        voiceState = .localFallback(Self.safeUserDiagnostic(
+                            (requirements["details"] as? String) ?? "Hermes voice dependencies are unavailable."))
+                        return
+                    }
                 }
-
-                let enabled = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: scopedSessionParams(["action": "on"]))
-                guard voiceConversationGeneration == generation else { return }
-                if (enabled["tts"] as? Bool) != true {
-                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: scopedSessionParams(["action": "tts"]))
-                }
-                // Before the first capture picks its path: without an answer
-                // yet, turn one fell to Hermes' recorder and never ended.
-                await MicLevelMeter.askForSpeechPermission()
-                guard voiceConversationGeneration == generation else { return }
                 voiceRepliesEnabled = true
                 isVoiceMicMuted = false
                 skipNextVoicePlaybackDrain = false
                 localVoiceTranscriptionFailed = false
                 voiceFollowUpArmed = false
                 voiceTelemetry.beginListening()
-                voiceState = .listening
-                armNativeVoiceCapture()
+                voiceState = isSending ? .thinking : .listening
+                if !isSending { armNativeVoiceCapture() }
             } catch {
                 guard voiceConversationGeneration == generation else { return }
                 DebugLog.write("voice: Hermes native voice unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
@@ -114,7 +107,9 @@ extension DockModel {
         if let defaultReasoningVariant {
             createParams["reasoning_effort"] = defaultReasoningVariant.rawValue
         }
+        let generation = sessionResumeGeneration
         let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
+        guard sessionResumeGeneration == generation else { throw CancellationError() }
         guard let createdSessionID = result["session_id"] as? String,
               !createdSessionID.isEmpty else {
             throw HermesGateway.GatewayError.malformedResponse
@@ -145,21 +140,27 @@ extension DockModel {
 
     func stopVoiceConversation() {
         voiceConversationGeneration &+= 1
-        let wasNative = voiceState.isNativeConversationActive
+        let recorderID = voiceRecorderSessionID
+        let profile = voiceProfileID ?? "default"
+        voiceSessionID = nil
+        voiceProfileID = nil
+        voiceRecorderSessionID = nil
+        voiceRecorderEnabled = false
+        stopVoicePlayback()
         skipNextVoicePlaybackDrain = false
         isVoicePromptActive = false
-        speakReplyAfterVoicePrompt = false
         isVoiceMicMuted = false
         nativeVoiceCapture.reset()
         voiceState = .inactive
-        guard wasNative else { return }
-        let recordParams = sessionID.map { scopedSessionParams(["action": "stop", "session_id": $0]) }
-        let toggleParams = scopedSessionParams(["action": "off"])
-        Task {
-            if let recordParams {
-                _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: recordParams)
-            }
-            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: toggleParams)
+        guard let recorderID else { return }
+        let previous = voiceRequestChain
+        voiceRequestChain = Task {
+            await previous?.value
+            guard !hasShutDown else { return }
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue,
+                params: ["action": "stop", "session_id": recorderID, "profile": profile])
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.slashExec.rawValue,
+                params: ["command": "voice off", "session_id": recorderID, "profile": profile])
         }
     }
 
@@ -237,6 +238,7 @@ extension DockModel {
             skipNextVoicePlaybackDrain = true
             _ = stop()
         case .speaking:
+            stopVoicePlayback()
             _ = stop()
             resumeVoiceListening(force: true)
         default:
@@ -265,6 +267,7 @@ extension DockModel {
     /// Re-opens the microphone after a no-speech pause (or a cut-off reply).
     func resumeVoiceListening(force: Bool = false) {
         guard voiceState == .paused || force, voiceState.isNativeConversationActive else { return }
+        stopVoicePlayback()
         isVoiceMicMuted = false
         nativeVoiceCapture.reset()
         voiceState = .listening
@@ -285,6 +288,7 @@ extension DockModel {
         guard voiceState == .listening, let sessionID else { return }
         nativeVoiceCapture.reset()
         voiceState = .paused
+        guard voiceRecorderSessionID == sessionID else { return }
         let params = scopedSessionParams(["action": "stop", "session_id": sessionID])
         Task {
             _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: params)
@@ -293,19 +297,16 @@ extension DockModel {
 
     func toggleVoiceReplies() {
         guard voiceState.isNativeConversationActive else { return }
-        let generation = voiceConversationGeneration
         voiceRepliesEnabled.toggle()
-        let params = scopedSessionParams(["action": "tts"])
-        Task {
-            let result = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: params)
-            guard voiceConversationGeneration == generation else { return }
-            if let tts = result?["tts"] as? Bool { voiceRepliesEnabled = tts }
+        if !voiceRepliesEnabled, voiceState == .speaking {
+            stopVoicePlayback()
+            resumeVoiceListening(force: true)
         }
     }
 
     /// Whether voice mode asks approvals and questions aloud and takes spoken answers.
     var answersVoicePromptsAloud: Bool {
-        !localVoiceTranscriptionFailed && MicLevelMeter.canTranscribe
+        !localVoiceTranscriptionFailed && canTranscribeVoice()
     }
 
     /// What voice mode reads aloud for a pending approval or clarify question.
@@ -333,13 +334,9 @@ extension DockModel {
         guard let speech else {
             guard isVoicePromptActive else { return }
             isVoicePromptActive = false
-            enqueueVoiceRequest(HermesFeatureIDs.ID.voiceToggle.rawValue, ["action": "on"])
-            if voiceRepliesEnabled {
-                enqueueVoiceRequest(HermesFeatureIDs.ID.voiceToggle.rawValue, ["action": "tts"])
-            }
+            stopVoicePlayback()
             if isSending || status == .working {
                 // The turn resumes; hold the microphone until its reply ends.
-                speakReplyAfterVoicePrompt = voiceRepliesEnabled
                 nativeVoiceCapture.receivedTranscript(hasText: true)
                 voiceState = .thinking
             } else {
@@ -348,17 +345,9 @@ extension DockModel {
             return
         }
         guard answersVoicePromptsAloud else { return }
-        if !isVoicePromptActive {
-            isVoicePromptActive = true
-            // Hermes keeps its barge-in listener live while a turn is blocked on
-            // a prompt, so a spoken answer would interrupt the turn instead of
-            // answering it. Voice mode off parks that listener.
-            enqueueVoiceRequest(HermesFeatureIDs.ID.voiceToggle.rawValue, ["action": "off"])
-        }
+        isVoicePromptActive = true
         guard voiceRepliesEnabled else { return resumeVoiceListening(force: true) }
-        voiceState = .speaking
-        enqueueVoiceRequest(HermesFeatureIDs.ID.voiceTTS.rawValue, ["text": speech])
-        awaitNativeVoicePlaybackDrain(generation: nativeVoiceCapture.completedResponse(), responseText: speech)
+        speakNativeVoiceReply(speech)
     }
 
     /// Routes a spoken answer to the pending approval or question. Returns a
@@ -395,15 +384,6 @@ extension DockModel {
         }
     }
 
-    func enqueueVoiceRequest(_ method: String, _ params: [String: Any]) {
-        let previous = voiceRequestChain
-        nonisolated(unsafe) let params = scopedSessionParams(params)
-        voiceRequestChain = Task {
-            await previous?.value
-            _ = try? await sessionRPCClient.request(method, params: params)
-        }
-    }
-
     func armNativeVoiceCapture(generation expectedGeneration: Int? = nil) {
         if let expectedGeneration, !nativeVoiceCapture.isCurrent(generation: expectedGeneration) {
             return
@@ -418,6 +398,7 @@ extension DockModel {
               let sessionID,
               nativeVoiceCapture.beginCapture() else { return }
         let captureGeneration = nativeVoiceCapture.generation
+        let conversationGeneration = voiceConversationGeneration
         nativeCaptureIsLocal = isVoicePromptActive || answersVoicePromptsAloud
         if nativeCaptureIsLocal {
             // Herm's mic meter transcribes this turn live and ends it.
@@ -426,10 +407,32 @@ extension DockModel {
             return
         }
 
-        let params = scopedSessionParams(["action": "start", "session_id": sessionID])
-        Task {
+        let profile = voiceProfileID ?? "default"
+        let needsEnable = !voiceRecorderEnabled
+        voiceRecorderSessionID = sessionID
+        voiceState = .preparing
+        let previous = voiceRequestChain
+        voiceRequestChain = Task {
+            await previous?.value
+            guard voiceConversationGeneration == conversationGeneration,
+                  self.sessionID == sessionID else { return }
             do {
-                let recording = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: params)
+                if needsEnable {
+                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.slashExec.rawValue,
+                        params: ["command": "voice on", "session_id": sessionID, "profile": profile])
+                    let mode = try await sessionRPCClient.request(HermesFeatureIDs.ID.configGet.rawValue,
+                        params: ["key": "voice", "session_id": sessionID, "profile": profile])
+                    guard ["voice_only", "all"].contains(mode["value"] as? String ?? "") else {
+                        throw NSError(domain: "HermVoice", code: 501, userInfo: [NSLocalizedDescriptionKey:
+                            "This Hermes runtime does not support session-scoped voice recording."])
+                    }
+                    guard voiceConversationGeneration == conversationGeneration else { return }
+                    voiceRecorderEnabled = true
+                }
+                guard voiceConversationGeneration == conversationGeneration,
+                      nativeVoiceCapture.isCurrent(generation: captureGeneration) else { return }
+                let recording = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue,
+                    params: ["action": "start", "session_id": sessionID, "profile": profile])
                 guard nativeVoiceCapture.isCurrent(generation: captureGeneration),
                       voiceState.isNativeConversationActive else { return }
                 if (recording["status"] as? String) == "busy" {
@@ -442,6 +445,8 @@ extension DockModel {
                         // switch replies to the system voice mid-conversation.
                         DebugLog.write("voice: Hermes microphone stayed busy; pausing")
                         voiceState = .paused
+                        messages.append(ChatMessage(role: .hermes,
+                            text: "The voice microphone is busy. Release it and tap to resume.", isError: true))
                     }
                     return
                 }
@@ -457,6 +462,8 @@ extension DockModel {
                 } else {
                     DebugLog.write("voice: capture failed to start; pausing: \(Self.safeUserDiagnostic(error.localizedDescription))")
                     voiceState = .paused
+                    messages.append(ChatMessage(role: .hermes,
+                        text: "I couldn’t start the voice microphone: \(Self.safeUserDiagnostic(error.localizedDescription))", isError: true))
                 }
             }
         }
@@ -473,34 +480,58 @@ extension DockModel {
         }
     }
 
-    func awaitNativeVoicePlaybackDrain(generation: Int, responseText: String) {
+    func stopVoicePlayback() {
+        voicePlaybackTask?.cancel()
+        voicePlaybackTask = nil
+        voicePlayback.stop()
+        voiceSpokenCaption = nil
+    }
+
+    func speakNativeVoiceReply(_ responseText: String) {
+        guard voiceState.isNativeConversationActive, voiceState != .preparing,
+              voiceSessionID == sessionID, let sessionID else { return }
+        stopVoicePlayback()
+        voiceState = .speaking
+        voiceSpokenCaption = nil
         lastVoiceSpeech = responseText
-        let delay = NativeVoicePlaybackDrain.estimatedDuration(for: responseText)
-        let formattedDelay = String(format: "%.1f", delay)
-        DebugLog.write("voice: holding microphone up to \(formattedDelay)s while TTS drains")
-        Task { [weak self] in
-            var gate = NativeVoicePlaybackGate(startedAt: ProcessInfo.processInfo.systemUptime, cap: delay)
-            repeat {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard let self, self.nativeVoiceCapture.isCurrent(generation: generation) else { return }
-            } while !gate.isDrained(
-                outputRunning: NativeVoicePlaybackGate.isOutputRunning() ?? true,
-                at: ProcessInfo.processInfo.systemUptime
-            )
-            guard let self,
-                  self.voiceState.isNativeConversationActive,
-                  self.nativeVoiceCapture.playbackDrainCompleted(generation: generation) else { return }
-            self.voiceTelemetry.beginListening()
-            self.voiceState = .listening
-            self.drainQueuedPromptIfIdle()
-            self.armNativeVoiceCapture()
+        let generation = voiceConversationGeneration
+        let captureGeneration = nativeVoiceCapture.completedResponse()
+        let profile = voiceProfileID
+        voicePlaybackTask = Task {
+            do {
+                try Task.checkCancellation()
+                if !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    try await voicePlayback.speak(responseText, profileID: profile, client: sessionRPCClient) { [weak self] cue in
+                        guard let self, self.voiceConversationGeneration == generation,
+                              self.sessionID == sessionID, self.nativeVoiceCapture.isCurrent(generation: captureGeneration) else { return }
+                        self.voiceSpokenCaption = cue
+                    }
+                }
+                guard !Task.isCancelled, voiceConversationGeneration == generation,
+                      self.sessionID == sessionID,
+                      nativeVoiceCapture.playbackDrainCompleted(generation: captureGeneration) else { return }
+                voiceTelemetry.beginListening()
+                voiceSpokenCaption = nil
+                voiceState = .listening
+                drainQueuedPromptIfIdle()
+                armNativeVoiceCapture()
+            } catch {
+                guard !Task.isCancelled, voiceConversationGeneration == generation,
+                      self.sessionID == sessionID else { return }
+                nativeVoiceCapture.reset()
+                voiceSpokenCaption = nil
+                voiceState = .paused
+                messages.append(ChatMessage(role: .hermes,
+                    text: "I couldn’t play the voice reply: \(Self.safeUserDiagnostic(error.localizedDescription))",
+                    modelName: currentModelName, isError: true))
+            }
         }
     }
 
     func submitNativeVoiceTranscript(_ text: String) {
         guard let sessionID, !isSending else { return }
         let requestGeneration = sessionResumeGeneration
-        let params = scopedSessionParams(["session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text)])
+        let params = scopedSessionParams(["session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text), "voice_turn": true])
         messages.append(ChatMessage(role: .user, text: text))
         status = .working
         isSending = true

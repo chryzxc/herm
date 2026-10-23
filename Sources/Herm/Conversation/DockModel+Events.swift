@@ -624,6 +624,7 @@ extension DockModel {
             }
         case "voice.interrupted":
             guard voiceState == .thinking || voiceState == .speaking else { return }
+            stopVoicePlayback()
             status = .idle
             isSending = false
             voiceTelemetry.markInterrupted()
@@ -634,6 +635,7 @@ extension DockModel {
             status = .working
             isSending = true
             if voiceState.isNativeConversationActive, !isVoicePromptActive {
+                stopVoicePlayback()
                 nativeVoiceCapture.receivedTranscript(hasText: true)
                 voiceState = .thinking
             }
@@ -724,28 +726,18 @@ extension DockModel {
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
             }
             if voiceState.isNativeConversationActive, completionError != nil, !wasInterrupting {
+                stopVoicePlayback()
                 skipNextVoicePlaybackDrain = false
-                speakReplyAfterVoicePrompt = false
                 nativeVoiceCapture.reset()
                 voiceState = .paused
             } else if voiceState.isNativeConversationActive, skipNextVoicePlaybackDrain || !voiceRepliesEnabled {
                 skipNextVoicePlaybackDrain = false
-                speakReplyAfterVoicePrompt = false
                 voiceTelemetry.completedResponse()
                 resumeVoiceListening(force: true)
-            } else if voiceState.isNativeConversationActive {
+            } else if voiceState.isNativeConversationActive, voiceState != .preparing {
                 voiceTelemetry.completedResponse()
-                voiceState = .speaking
                 let response = messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? ""
-                if speakReplyAfterVoicePrompt {
-                    speakReplyAfterVoicePrompt = false
-                    enqueueVoiceRequest(HermesFeatureIDs.ID.voiceTTS.rawValue, ["text": response])
-                }
-                let drainGeneration = nativeVoiceCapture.completedResponse()
-                awaitNativeVoicePlaybackDrain(
-                    generation: drainGeneration,
-                    responseText: response
-                )
+                speakNativeVoiceReply(response)
             }
             if let sessionStorageID { cacheAgentState(for: sessionStorageID); Task { await agentStateWriter.flush() } }
             // A stopped turn keeps its queue; Enter on an empty composer sends it.
@@ -841,8 +833,8 @@ extension DockModel {
             streamingMessageSessionID = nil
             isSending = false
             if voiceState.isNativeConversationActive {
+                stopVoicePlayback()
                 skipNextVoicePlaybackDrain = false
-                speakReplyAfterVoicePrompt = false
                 nativeVoiceCapture.reset()
                 voiceState = wasInterrupting ? .listening : .paused
             }
@@ -1405,7 +1397,6 @@ extension DockModel {
         endLocalTurn(eventSessionID: sessionID)
         if voiceState.isNativeConversationActive {
             skipNextVoicePlaybackDrain = false
-            speakReplyAfterVoicePrompt = false
             resumeVoiceListening(force: true)
         }
         if let sessionStorageID { cacheAgentState(for: sessionStorageID) }

@@ -224,7 +224,8 @@ final class DockModel: ObservableObject {
     @Published var defaultReasoningVariant: HermesReasoningVariant?
     @Published var voiceState: HermesVoiceState = .inactive
     @Published var voiceTelemetry = VoiceTurnTelemetry()
-    /// Mirrors Hermes' process-wide `HERMES_VOICE_TTS` flag for this voice chat.
+    @Published var voiceSpokenCaption: String?
+    /// Spoken replies are enabled only for the conversation that owns voice.
     @Published var voiceRepliesEnabled = true
     /// Keeps the call open with the microphone closed.
     @Published var isVoiceMicMuted = false
@@ -241,7 +242,11 @@ final class DockModel: ObservableObject {
     var quickWorkflowClient: HermesRPCClientProtocol { sessionRPCClient }
     let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
-    @Published var sessionID: String?
+    @Published var sessionID: String? {
+        didSet {
+            if let voiceSessionID, voiceSessionID != sessionID { stopVoiceConversation() }
+        }
+    }
     /// Authoritative `session.usage` total, keyed by the session it was read for
     /// so a switch never shows the previous chat's count.
     @Published var sessionTokenUsage: (sessionID: String, total: Int)?
@@ -259,7 +264,14 @@ final class DockModel: ObservableObject {
     @Published var profileScopeID: String?
     @Published var profileScopeUnavailable = false
 
-    @Published var sessionProfileID: String?
+    @Published var sessionProfileID: String? {
+        didSet {
+            if voiceSessionID != nil,
+               (voiceProfileID ?? "default") != (sessionProfileID ?? profileScopeID ?? "default") {
+                stopVoiceConversation()
+            }
+        }
+    }
     /// Profile identity for a profile-scoped Bot Chat. This is authoritative
     /// session context, not an inference from the assistant's prose.
     @Published var activeBotProfileID: String?
@@ -365,15 +377,18 @@ final class DockModel: ObservableObject {
     var interruptGeneration = 0
     var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
     var voiceConversationGeneration = 0
+    var voiceSessionID: String?
+    var voiceProfileID: String?
+    var voiceRecorderSessionID: String?
+    var voiceRecorderEnabled = false
+    var canTranscribeVoice: () -> Bool = { MicLevelMeter.canTranscribe }
+    let voicePlayback: HermesVoicePlaybackProtocol
+    var voicePlaybackTask: Task<Void, Never>?
     /// The user interrupted a generating turn; its `message.complete` has no
     /// speech left to drain, so listening resumes immediately.
     var skipNextVoicePlaybackDrain = false
-    /// An approval or clarify question is being asked aloud; Hermes' voice
-    /// mode is parked so its barge-in listener cannot interrupt the turn.
+    /// An approval or clarify question is being asked aloud.
     var isVoicePromptActive = false
-    /// Parking voice mode cut the turn's streamed speech, so Herm asks Hermes
-    /// to speak the reply that resumes after the prompt.
-    var speakReplyAfterVoicePrompt = false
     /// On-device recognition failed this conversation; Hermes' whisper takes over.
     var localVoiceTranscriptionFailed = false
     var nativeCaptureIsLocal = false
@@ -381,7 +396,7 @@ final class DockModel: ObservableObject {
     var voiceFollowUpArmed = false
     /// What Hermes last said aloud, to recognize the mic hearing it back.
     var lastVoiceSpeech = ""
-    /// Voice mode toggles must reach Hermes in order (off, tts, on).
+    /// Session recorder controls must reach Hermes in order, including cleanup.
     var voiceRequestChain: Task<Void, Never>?
     var hasShutDown = false
     let completionNotificationsKey = "hermes.control.notifications.completion.v1"
@@ -410,7 +425,8 @@ final class DockModel: ObservableObject {
         approvalSoundPlayer: @escaping () -> Void = { NSSound.beep() },
         initialSessionID: String? = nil,
         botActivityFileURL: URL? = nil,
-        rpcClient: HermesRPCClientProtocol? = nil
+        rpcClient: HermesRPCClientProtocol? = nil,
+        voicePlayback: HermesVoicePlaybackProtocol? = nil
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
         self.agentStateStore = agentStateStore
@@ -431,6 +447,7 @@ final class DockModel: ObservableObject {
         self.kanbanAttributionSessionID = initialSessionID
         self.interruptRPC = HermesControlRPC(client: rpcClient ?? gateway)
         self.sessionRPCClient = rpcClient ?? gateway
+        self.voicePlayback = voicePlayback ?? HermesVoicePlayback()
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.write("model: initialized")
         gateway.onEvent = { [weak self] type, params in

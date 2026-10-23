@@ -58,28 +58,13 @@ extension DockPopover {
             VStack(spacing: 8) {
                 if let user = captions.user {
                     Text(user)
-                        .dockFont(size: 13, weight: .medium)
+                        .dockFont(.navigation, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(2)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                if let reply = captions.reply {
-                    TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                        let cue = voiceSubtitles.cue(
-                            messageID: reply.id,
-                            text: reply.text,
-                            now: context.date.timeIntervalSinceReferenceDate
-                        )
-                        MarkdownMessageView(
-                            markdown: cue ?? "",
-                            bodySize: immersive ? 17 : 14, bodyWeight: .medium
-                        )
-                            .equatable()
-                            .lineLimit(3)
-                            .id(cue)
-                            .transition(.opacity)
-                            .animation(.dockEase(duration: 0.2), value: cue)
-                    }
+                if let caption = model.voiceState.isNativeConversationActive ? model.voiceSpokenCaption : captions.reply?.text {
+                    VoiceReplyCaption(text: caption, immersive: immersive)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
@@ -141,7 +126,7 @@ extension DockPopover {
         case .listening: return .listening
         case .transcribing, .interrupted: return .transcribing
         case .preparing, .thinking: return .thinking
-        case .speaking: return .speaking
+        case .speaking: return model.voiceSpokenCaption == nil ? .thinking : .speaking
         case .paused, .inactive, .localFallback: return model.status == .working ? .thinking : .idle
         }
     }
@@ -159,7 +144,7 @@ extension DockPopover {
     var voiceStatusLabel: some View {
         if let detail = model.voiceState.fallbackDetail, !speechInput.isRecording, !voiceOutput.isSpeaking {
             Text("LOCAL FALLBACK · \(detail)")
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .tracking(0.35)
                 .foregroundStyle(Color.dockWarning)
                 .lineLimit(2)
@@ -168,7 +153,7 @@ extension DockPopover {
         } else if model.voiceState.isNativeConversationActive {
             VStack(spacing: 4) {
                 Text(voiceStatusText)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .tracking(0.75)
                     .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent))
                     .contentTransition(.opacity)
@@ -178,7 +163,7 @@ extension DockPopover {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         } else if speechInput.isRecording || voiceOutput.isSpeaking {
             Text(speechInput.isRecording ? "\(model.agentDisplayName.uppercased()) IS LISTENING" : "\(model.agentDisplayName.uppercased()) IS SPEAKING")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .tracking(0.75)
                 .foregroundStyle(speechInput.isRecording ? Color.dockSuccess : Color.dockAccent)
         }
@@ -208,6 +193,7 @@ extension DockPopover {
     /// What you said and what the agent is saying, so the conversation reads
     /// like live captions rather than a hidden transcript.
     var voiceCaptions: (user: String?, reply: (id: UUID, text: String)?) {
+        if model.voiceState == .preparing { return (nil, nil) }
         if speechInput.isRecording || (model.voiceState.isNativeConversationActive && voiceOrbMode == .listening) {
             let live = speechInput.isRecording ? speechInput.transcript : micLevelMeter.transcript
             let partial = live.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -275,6 +261,7 @@ extension DockPopover {
 
     var voiceStatusText: String {
         if model.isVoiceMicMuted { return "MIC MUTED — TAP TO RESUME" }
+        if model.voiceState == .speaking, model.voiceSpokenCaption == nil { return "PREPARING SPOKEN REPLY" }
         if model.voiceState == .paused, wakesByVoice {
             return "SAY “HEY \(model.agentDisplayName.uppercased())” OR TAP"
         }
@@ -317,6 +304,7 @@ extension DockPopover {
     }
 
     func resumeVoiceConversationIfReady() {
+        guard case .localFallback = model.voiceState, model.voiceSessionID == model.sessionID else { return }
         // A pending approval or question waits for a spoken answer.
         let awaitsAnswer = model.voicePromptSpeech != nil
         guard sessionWorkspaceMode == .voice,
@@ -348,7 +336,7 @@ extension DockPopover {
         HStack(spacing: 8) {
             ThinkingDots()
             Text(voiceActivityText)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .tracking(0.6)
                 .lineLimit(1)
         }

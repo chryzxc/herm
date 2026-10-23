@@ -107,16 +107,7 @@ struct VoiceTurnTelemetryTests {
         #expect(!competingCaptureStarted)
     }
 
-    @Test func playbackDrainAccountsForSpeechAndSynthesisLatency() {
-        let shortReply = NativeVoicePlaybackDrain.estimatedDuration(for: "Hello there.")
-        let conversationalReply = NativeVoicePlaybackDrain.estimatedDuration(
-            for: "Hello! I'm here and ready. What can I help you with?"
-        )
 
-        #expect(shortReply >= 2.5)
-        #expect(conversationalReply >= 5.0)
-        #expect(conversationalReply > shortReply)
-    }
 }
 
 struct VoiceConversationStateTests {

@@ -67,6 +67,35 @@ struct VoicePromptsTests {
         #expect(VoiceEndpointDetector.isRecognizerFailure(heardSpeech: false, failed: true, lived: 0.2))
     }
 
+    @Test func backgroundNoiseCannotHoldARecognizedRequestForever() {
+        #expect(!VoiceEndpointDetector.shouldEndTurn("Hello", lastWordAt: 10, quietSince: nil,
+            now: 13.9, isHearingSpeech: true))
+        #expect(VoiceEndpointDetector.shouldEndTurn("Hello", lastWordAt: 10, quietSince: nil,
+            now: 14, isHearingSpeech: true))
+        #expect(!VoiceEndpointDetector.shouldEndTurn("Hello there", lastWordAt: 13, quietSince: nil,
+            now: 14, isHearingSpeech: true))
+        #expect(!VoiceEndpointDetector.shouldEndTurn("", lastWordAt: 0, quietSince: nil,
+            now: 100, isHearingSpeech: true))
+    }
+
+    @Test func recognizedWordsSurviveAnErrorAtTheEndOfCapture() {
+        #expect(VoiceRecognitionCompletion.resolve("  Hello  ", isFinal: false, hasError: true) == .finished("Hello"))
+        #expect(VoiceRecognitionCompletion.resolve("Hello", isFinal: true, hasError: false) == .finished("Hello"))
+        #expect(VoiceRecognitionCompletion.resolve("Hello", isFinal: false, hasError: false) == .listening)
+        #expect(VoiceRecognitionCompletion.resolve("  ", isFinal: false, hasError: true) == .failed)
+    }
+
+    @Test @MainActor func speechWarningCanBeDismissedWithoutStartingAnotherCapture() {
+        let speech = SpeechInput()
+        speech.errorMessage = "Speech recognition couldn’t continue. Try again."
+        speech.isUnavailable = true
+        speech.dismissError()
+        #expect(speech.errorMessage == nil)
+        #expect(!speech.isUnavailable)
+        #expect(!speech.isRecording)
+        #expect(!speech.isStarting)
+    }
+
     @Test func echoOfTheReplyIsNotTheUser() {
         let reply = "Sure. I booked a table for two at seven tonight."
         #expect(VoicePrompts.isEcho("I booked a table for two at seven", of: reply))

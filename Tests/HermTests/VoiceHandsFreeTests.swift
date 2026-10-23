@@ -33,30 +33,6 @@ struct VoiceHandsFreeTests {
         #expect(!feed(&detector, level: 0.1, seconds: 3, from: &t))
     }
 
-    private func drained(_ gate: inout NativeVoicePlaybackGate, _ running: Bool, _ time: Double) -> Bool {
-        gate.isDrained(outputRunning: running, at: time)
-    }
-
-    @Test func playbackGateResumesSoonAfterSpeakersGoQuiet() {
-        var gate = NativeVoicePlaybackGate(startedAt: 0, cap: 30)
-        #expect(!drained(&gate, true, 0.1))
-        #expect(!drained(&gate, false, 4.0), "gap between sentences")
-        #expect(!drained(&gate, true, 4.5))
-        #expect(!drained(&gate, false, 8.0))
-        #expect(drained(&gate, false, 9.0), "1s quiet ends the hold, not the 30s estimate")
-    }
-
-    @Test func playbackGateWaitsForLateSynthesisAndCapsBusyOutput() {
-        var late = NativeVoicePlaybackGate(startedAt: 0, cap: 30)
-        #expect(!drained(&late, false, 0.1))
-        #expect(!drained(&late, false, 1.5), "TTS may not have started yet")
-        #expect(drained(&late, false, 3.0))
-
-        var music = NativeVoicePlaybackGate(startedAt: 0, cap: 6)
-        #expect(!drained(&music, true, 5.9))
-        #expect(drained(&music, true, 6.0))
-    }
-
     @Test func pillQueueCapsReplacesOldestAndUpdatesInPlace() {
         var queue = VoicePillQueue()
         let now = Date()
@@ -100,18 +76,12 @@ struct VoiceHandsFreeTests {
         #expect(queue.pills.isEmpty)
     }
 
-    @Test func subtitlesStartAtTheBeginningAndOnlyMoveForward() {
-        let track = VoiceSubtitleTrack()
-        let id = UUID()
-        #expect(track.cue(messageID: id, text: "Hello there.", now: 0) == "Hello there.")
-        // More text streams in before the first cue has been spoken.
-        #expect(track.cue(messageID: id, text: "Hello there. The build finished cleanly.", now: 0.5) == "Hello there.")
-        #expect(track.cue(messageID: id, text: "Hello there. The build finished cleanly.", now: 1.3) == "The build finished cleanly.")
-        #expect(track.cue(messageID: id, text: "Hello there. The build finished cleanly.", now: 60) == "The build finished cleanly.", "stays on the last cue")
-        #expect(track.cue(messageID: UUID(), text: "Next reply.", now: 61) == "Next reply.")
-
+    @Test func speechCuesPreserveTheTextInShortOrderedSegments() {
+        #expect(VoiceSubtitleTrack.cues(from: "Hello there. The build finished cleanly.") == ["Hello there.", "The build finished cleanly."])
         let long = Array(repeating: "word", count: 60).joined(separator: " ") + "."
-        #expect(VoiceSubtitleTrack.cues(from: long).allSatisfy { $0.count <= VoiceSubtitleTrack.maxCueLength })
+        let cues = VoiceSubtitleTrack.cues(from: long)
+        #expect(cues.allSatisfy { $0.count <= VoiceSubtitleTrack.maxCueLength })
+        #expect(cues.joined(separator: " ") == long)
     }
 
     @Test func pillTargetsPreferWebLinksThenExistingFiles() {

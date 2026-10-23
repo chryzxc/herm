@@ -105,9 +105,8 @@ struct NativeVoiceCaptureLifecycle: Equatable {
         return !hasPendingTranscript
     }
 
-    /// `message.complete` closes model generation, not speaker playback. Hold
-    /// the normal recorder while Hermes flushes its streamed TTS queue; its
-    /// full-duplex listener remains responsible for real user barge-in.
+    /// Model completion precedes synthesis and playback. Keep the recorder
+    /// closed until the conversation's own player finishes.
     @discardableResult
     mutating func completedResponse() -> Int {
         generation &+= 1
@@ -152,62 +151,8 @@ struct NativeVoiceCaptureLifecycle: Equatable {
     }
 }
 
-/// Hermes currently has no gateway event for "the final speaker sample has
-/// played". Streaming TTS can finish several seconds after `message.complete`,
-/// so reopening the ordinary recorder at that event feeds Hermes its own
-/// voice. This conservative estimate keeps barge-in on Hermes' dedicated
-/// full-duplex listener while delaying only the next quiet listening turn.
-enum NativeVoicePlaybackDrain {
-    static func estimatedDuration(for text: String) -> TimeInterval {
-        // Hermes' speech path caps a reply at 4,000 characters.
-        let spokenText = String(text.prefix(4_000))
-        let words = spokenText.split(whereSeparator: { $0.isWhitespace }).count
-        let sentenceEnds = spokenText.reduce(into: 0) { count, character in
-            if character == "." || character == "!" || character == "?" {
-                count += 1
-            }
-        }
-        let sentences = max(1, min(sentenceEnds, 12))
-
-        // About 135 spoken words/minute, plus synthesis startup per sentence
-        // and an acoustic tail so CoreAudio has released the output device.
-        return max(2.5, (Double(words) / 2.25) + (Double(sentences) * 0.65) + 0.8)
-    }
-}
-
-/// Ends the post-reply microphone hold when the speakers actually go quiet,
-/// instead of always waiting out the word-count estimate (which is kept as the
-/// cap for when other audio, like music, keeps the output device busy).
-struct NativeVoicePlaybackGate {
-    let startedAt: TimeInterval
-    let cap: TimeInterval
-    /// Longer than Hermes' gap between two streamed TTS sentences (~0.5s).
-    var quietHold: TimeInterval = 1.0
-    /// Before any playback is heard, synthesis may still be starting.
-    var startupGrace: TimeInterval = 3.0
-    private var sawPlayback = false
-    private var quietSince: TimeInterval?
-
-    init(startedAt: TimeInterval, cap: TimeInterval) {
-        self.startedAt = startedAt
-        self.cap = cap
-    }
-
-    mutating func isDrained(outputRunning: Bool, at now: TimeInterval) -> Bool {
-        let elapsed = now - startedAt
-        if elapsed >= cap { return true }
-        if outputRunning {
-            sawPlayback = true
-            quietSince = nil
-            return false
-        }
-        let since = quietSince ?? now
-        quietSince = since
-        return now - since >= quietHold && (sawPlayback || elapsed >= startupGrace)
-    }
-
-    /// Whether any process is playing through the default output device.
-    /// Hermes plays each TTS sentence with `afplay`; nil if CoreAudio fails.
+/// Whether another process is playing audio that could echo into the microphone.
+enum VoiceAudioOutput {
     static func isOutputRunning() -> Bool? {
         var device = AudioObjectID(0)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)

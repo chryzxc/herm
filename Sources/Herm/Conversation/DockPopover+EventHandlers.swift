@@ -44,14 +44,22 @@ extension DockPopover {
     }
 
     func handleVoiceStateChange(_ state: HermesVoiceState) {
-        // Hermes' gateway owns the microphone in native mode; a passive meter
-        // lets the orb follow the user's voice anyway.
-        if state.isNativeConversationActive { micLevelMeter.start() } else { micLevelMeter.stop() }
+        // Permission and runtime setup finish before capture starts.
+        if state.isNativeConversationActive, state != .preparing { micLevelMeter.start() } else { micLevelMeter.stop() }
+        let sessionID = model.sessionID
+        let generation = model.voiceConversationGeneration
         micLevelMeter.onUtteranceEnd = { [model, micLevelMeter] transcript in
+            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
             model.finishVoiceUtterance(transcript: transcript, overPlayback: micLevelMeter.heardPlayback)
         }
-        micLevelMeter.onIdle = { [model] in model.sleepVoiceConversation() }
-        micLevelMeter.onBargeSpeech = { [model] heard in model.bargeInVoiceReply(heard: heard) }
+        micLevelMeter.onIdle = { [model] in
+            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
+            model.sleepVoiceConversation()
+        }
+        micLevelMeter.onBargeSpeech = { [model] heard in
+            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
+            model.bargeInVoiceReply(heard: heard)
+        }
         // Asleep, the meter only listens for the wake phrase, and only on-device.
         let listensForWake = state == .paused && !model.isVoiceMicMuted && wakesByVoice
         micLevelMeter.listen(
@@ -96,7 +104,7 @@ extension DockPopover {
 
     func releaseVoiceCapture() {
         micLevelMeter.stop()
-        speechInput.stop()
+        speechInput.stopForAssistantSpeech()
         voiceOutput.stop()
         model.stopVoiceConversation()
     }
@@ -107,6 +115,10 @@ extension DockPopover {
     }
 
     func handleCompletedTranscript(_ transcript: String?) {
+        guard sessionWorkspaceMode == .voice, model.voiceSessionID == model.sessionID else {
+            speechInput.consumeCompletedTranscript()
+            return
+        }
         if sessionWorkspaceMode == .voice, model.voicePromptSpeech != nil, let transcript, !transcript.isEmpty {
             speechInput.consumeCompletedTranscript()
             if let retry = model.answerVoicePrompt(transcript) { speakLocalVoicePrompt(retry) }
@@ -141,7 +153,8 @@ extension DockPopover {
         if status == .idle, activeSessionRepositoryPath != nil {
             Task { await refreshSessionWorkflow() }
         }
-        guard sessionWorkspaceMode == .voice,
+        guard case .localFallback = model.voiceState, model.voiceSessionID == model.sessionID,
+              sessionWorkspaceMode == .voice,
               status == .idle,
               !model.voiceState.isNativeConversationActive else { return }
         if suppressNextVoiceResponse {
@@ -169,6 +182,11 @@ extension DockPopover {
         synchronizePanelLayout()
 
         guard oldValue != newValue else { return }
+        if oldValue != nil {
+            speechInput.reset()
+            releaseVoiceCapture()
+            if sessionWorkspaceMode == .voice { sessionWorkspaceMode = .chat }
+        }
         let title = model.currentSessionTitle
         let previousTitle = lastSessionTitleAtIdentityChange
         let titleChanged = previousTitle != nil && title != previousTitle

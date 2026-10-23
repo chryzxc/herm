@@ -1,34 +1,24 @@
 import Foundation
+import SwiftUI
 
-/// Movie-style captions for a spoken reply: the reply is cut into short cues
-/// that are shown one at a time at roughly speaking pace, and only ever move
-/// forward. A reference type held in `@State`, advanced from a timeline, so
-/// ticking it never invalidates the view.
-final class VoiceSubtitleTrack {
-    static let maxCueLength = 110
+struct VoiceReplyCaption: View {
+    let text: String
+    var immersive = false
 
-    private var messageID: UUID?
-    private var index = 0
-    private var shownAt: TimeInterval = 0
-
-    /// The cue to show for `text` at `now`. A new `messageID` restarts at the
-    /// first cue; otherwise the track moves on once the current cue is
-    /// complete and has been on screen long enough to be spoken.
-    func cue(messageID: UUID, text: String, now: TimeInterval) -> String? {
-        if messageID != self.messageID {
-            self.messageID = messageID
-            index = 0
-            shownAt = now
-        }
-        let cues = Self.cues(from: text)
-        guard !cues.isEmpty else { return nil }
-        index = min(index, cues.count - 1)
-        if index + 1 < cues.count, now - shownAt >= Self.duration(of: cues[index]) {
-            index += 1
-            shownAt = now
-        }
-        return cues[index]
+    var body: some View {
+        Text(text)
+            .dockFont(size: immersive ? 17 : 14, weight: .medium)
+            .foregroundStyle(Color.dockPrimaryText)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .lineLimit(4)
     }
+}
+
+/// Short speech segments. Each caption is shown by its audio player's start,
+/// rather than an estimated reading-speed timer.
+enum VoiceSubtitleTrack {
+    static let maxCueLength = 110
 
     /// Sentences, with long ones split on word boundaries. The last cue may
     /// still be growing while the reply streams.
@@ -57,8 +47,4 @@ final class VoiceSubtitleTrack {
         return cues
     }
 
-    /// Matches the speaking rate `NativeVoicePlaybackDrain` assumes.
-    static func duration(of cue: String) -> TimeInterval {
-        max(1.2, Double(cue.split(separator: " ").count) / 2.25 + 0.3)
-    }
 }
