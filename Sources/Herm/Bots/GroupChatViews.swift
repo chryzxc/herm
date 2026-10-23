@@ -86,6 +86,9 @@ private struct GroupChatSidebarRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if store.pendingRooms.contains(room.id) {
+                        ProgressView().controlSize(.mini).accessibilityLabel("Updating group")
+                    }
                     if isHovered {
                         DockMenu {
                             actions
@@ -477,7 +480,7 @@ struct GroupChatView: View {
                     text:
                         "A member's turn was interrupted and its result is unknown. Retrying may repeat work it already did."
                 ) {
-                    Button("Retry") { Task { await store.retry(taskID, in: roomID) } }
+                    DockAsyncButton("Retry") { await store.retry(taskID, in: roomID) }
                         .buttonStyle(.dockPrimary)
                 }
             }
@@ -546,20 +549,18 @@ struct GroupChatView: View {
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
-                    if isWorking { ThinkingDots() }
+                    if store.pendingRooms.contains(roomID) {
+                        ProgressView().controlSize(.mini).accessibilityLabel("Updating group")
+                    } else if isWorking {
+                        ThinkingDots()
+                    }
                 }
             }
             Spacer(minLength: 12)
             if isWorking {
-                Button {
-                    Task { await store.stop(roomID) }
-                } label: {
-                    DockIconLabel("Stop", icon: .stop)
-                }
+                DockAsyncButton(action: { await store.stop(roomID) }) { DockIconLabel("Stop", icon: .stop) }
             }
-            Button {
-                Task { await store.poll(roomID) }
-            } label: {
+            DockAsyncButton(action: { await store.poll(roomID) }) {
                 DockIcon(.arrowsClockwise)
                     .dockFont(.conversation, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -678,7 +679,7 @@ struct GroupChatView: View {
                         .padding(.top, 40)
                     }
                     if (store.earliestLoadedSeq[roomID] ?? 0) > 0 {
-                        Button("Load earlier messages") { Task { await store.loadEarlier(roomID) } }
+                        DockAsyncButton("Load earlier messages") { await store.loadEarlier(roomID) }
                             .buttonStyle(.dockCompact)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockAccent)
@@ -855,8 +856,15 @@ struct GroupChatView: View {
                 .lineLimit(2)
             Spacer()
             Button("Deny") { Task { await store.respond(to: approval, in: roomID, approve: false) } }
-            Button("Allow once") { Task { await store.respond(to: approval, in: roomID, approve: true) } }
-                .buttonStyle(.dockPrimary)
+                .disabled(store.pendingRooms.contains(roomID))
+            Button {
+                Task { await store.respond(to: approval, in: roomID, approve: true) }
+            } label: {
+                DockActionLabel(
+                    title: "Allow once", pendingTitle: "Responding…", isPending: store.pendingRooms.contains(roomID))
+            }
+            .disabled(store.pendingRooms.contains(roomID))
+            .buttonStyle(.dockPrimary)
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface2))
@@ -1008,7 +1016,9 @@ struct GroupChatView: View {
                             Circle()
                                 .fill(isWorking ? Color.dockSurface6 : canSend ? Color.dockAccent : Color.dockSurface6)
                                 .frame(width: 32, height: 32)
-                            if isWorking && !canSend {
+                            if store.pendingRooms.contains(roomID) {
+                                ProgressView().controlSize(.small)
+                            } else if isWorking && !canSend {
                                 DockIcon(.stop, weight: .fill)
                                     .dockFont(.compactStatus, weight: .bold)
                                     .foregroundStyle(Color.dockDestructive)
@@ -1021,7 +1031,7 @@ struct GroupChatView: View {
                         }
                     }
                     .buttonStyle(.dockHover)
-                    .disabled(!isWorking && !canSend)
+                    .disabled(store.pendingRooms.contains(roomID) || (!isWorking && !canSend))
                     .help(isWorking && !canSend ? "Stop the room" : "Send")
                 }
                 .frame(height: 44)
@@ -1110,7 +1120,9 @@ struct GroupChatView: View {
 
     private func send() {
         let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !store.pendingRooms.contains(roomID), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
         draft = ""
         let outgoing = replyQuote?.composing(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? text
         replyQuote = nil

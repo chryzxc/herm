@@ -240,6 +240,7 @@ final class GroupChatStore: ObservableObject {
     @Published private(set) var isAvailable = false
     @Published private(set) var rooms: [GroupRoom] = []
     @Published private(set) var events: [String: [GroupRoomEvent]] = [:]
+    @Published private(set) var pendingRooms: Set<String> = []
     @Published private(set) var workingRooms: Set<String> = []
     @Published private(set) var approvals: [String: [GroupRoomApproval]] = [:]
     @Published private(set) var retries: [String: [String]] = [:]
@@ -378,6 +379,8 @@ final class GroupChatStore: ObservableObject {
     }
 
     func send(_ text: String, to roomID: String, thread: String = mainThreadID) async {
+        guard pendingRooms.insert(roomID).inserted else { return }
+        defer { pendingRooms.remove(roomID) }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let client, !trimmed.isEmpty else { return }
         do {
@@ -571,6 +574,8 @@ final class GroupChatStore: ObservableObject {
     }
 
     func retry(_ taskID: String, in roomID: String) async {
+        guard pendingRooms.insert(roomID).inserted else { return }
+        defer { pendingRooms.remove(roomID) }
         do {
             _ = try await client?.request(
                 HermesFeatureIDs.ID.groupsRetry.rawValue, params: ["room_id": roomID, "task_id": taskID])
@@ -582,11 +587,15 @@ final class GroupChatStore: ObservableObject {
     }
 
     func stop(_ roomID: String) async {
+        guard pendingRooms.insert(roomID).inserted else { return }
+        defer { pendingRooms.remove(roomID) }
         _ = try? await client?.request(HermesFeatureIDs.ID.groupsStop.rawValue, params: ["room_id": roomID])
         await poll(roomID)
     }
 
     func rename(_ roomID: String, to name: String) async {
+        guard pendingRooms.insert(roomID).inserted else { return }
+        defer { pendingRooms.remove(roomID) }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         _ = try? await client?.request(
@@ -598,6 +607,8 @@ final class GroupChatStore: ObservableObject {
     }
 
     func disband(_ roomID: String) async {
+        guard pendingRooms.insert(roomID).inserted else { return }
+        defer { pendingRooms.remove(roomID) }
         do {
             _ = try await client?.request(HermesFeatureIDs.ID.groupsDisband.rawValue, params: ["room_id": roomID])
             rooms.removeAll { $0.id == roomID }
@@ -610,6 +621,8 @@ final class GroupChatStore: ObservableObject {
 
     /// Room members may only offer `once` or `deny` (Hermes' room driver).
     func respond(to approval: GroupRoomApproval, in roomID: String, approve: Bool) async {
+        guard pendingRooms.insert(roomID).inserted else { return }
+        defer { pendingRooms.remove(roomID) }
         _ = try? await client?.request(
             HermesFeatureIDs.ID.groupsApprove.rawValue,
             params: [

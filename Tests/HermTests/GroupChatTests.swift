@@ -94,6 +94,27 @@ struct GroupChatTests {
         #expect((client.sent?["payload"] as? [String: Any])?["thread_id"] as? String == "t-1")
     }
 
+    @Test func pendingSendIsVisibleAndRejectsAnotherRoomMutation() async {
+        let client = RoomClient()
+        let (pause, release) = AsyncStream<Void>.makeStream()
+        let (started, didStart) = AsyncStream<Void>.makeStream()
+        client.sendPause = pause
+        client.sendStarted = didStart
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        let task = Task { await store.send("hello", to: "r") }
+        for await _ in started { break }
+        #expect(store.pendingRooms.contains("r"))
+        await store.send("duplicate", to: "r")
+        await store.stop("r")
+        #expect(client.sendCount == 1)
+        #expect(client.stopCount == 0)
+        release.yield(())
+        release.finish()
+        await task.value
+        #expect(store.pendingRooms.isEmpty)
+    }
+
     @Test func roomsStartReadAndTurnUnreadOnLaterActivity() async {
         let client = RoomClient()
         let store = GroupChatStore(defaults: freshDefaults())
@@ -161,6 +182,10 @@ struct GroupChatTests {
 @MainActor
 private final class RoomClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
+    var sendPause: AsyncStream<Void>?
+    var sendStarted: AsyncStream<Void>.Continuation?
+    var sendCount = 0
+    var stopCount = 0
     var driver = true
     var latest = 2
     var listedSeq = 2
@@ -178,7 +203,15 @@ private final class RoomClient: HermesRPCClientProtocol {
             return ["driver": driver]
         case "groups.list":
             return ["rooms": [["room_id": "r", "name": "Audit", "members": [], "latest_seq": listedSeq]]]
+        case "groups.stop":
+            stopCount += 1
+            return [:]
         case "groups.send":
+            sendCount += 1
+            if let sendPause {
+                sendStarted?.yield(())
+                for await _ in sendPause { break }
+            }
             sent = params
             return [:]
         case "groups.peer.invite":
