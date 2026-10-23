@@ -137,6 +137,38 @@ struct GitHubWriteSafetyTests {
                 "GitHub reports an unmet repository rule. Open on GitHub to see the exact requirement."
             ])
     }
+    @Test(arguments: [
+        "CLEAN", "HAS_HOOKS", "UNSTABLE", "BLOCKED", "BEHIND", "DIRTY", "UNKNOWN", "DRAFT", "REVIEW_REQUIRED",
+        "CHANGES_REQUESTED", "QUEUE", "NO_PERMISSION", "STALE_HEAD",
+    ])
+    func mergeButtonUsesGitHubEligibilityAndExplainsBlockers(state: String) {
+        var pr = record()
+        pr.isDraft = state == "DRAFT"
+        let snapshot = GitHubLandingSnapshot(
+            id: "PR", head: state == "STALE_HEAD" ? "changed" : pr.headRevision!,
+            state: "OPEN", draft: pr.isDraft, mergeable: state == "DIRTY" ? "CONFLICTING" : "MERGEABLE",
+            mergeState: ["CLEAN", "HAS_HOOKS", "UNSTABLE", "BLOCKED", "BEHIND", "DIRTY", "UNKNOWN"].contains(state)
+                ? state : "CLEAN",
+            reviewDecision: ["REVIEW_REQUIRED", "CHANGES_REQUESTED"].contains(state) ? state : "APPROVED",
+            canMerge: state != "NO_PERMISSION", canAuto: false, canDisableAuto: false,
+            queueEnabled: state == "QUEUE", queued: false, autoEnabled: false, methods: [.merge])
+        let reason = GitHubLandingSnapshot.mergeDisabledReason(record: pr, snapshot: snapshot, method: .merge)
+        #expect((reason == nil) == ["CLEAN", "HAS_HOOKS", "UNSTABLE"].contains(state))
+        if state == "DRAFT" { #expect(reason?.contains("Mark it ready for review") == true) }
+    }
+
+    @Test func draftAndUnavailableRequirementsFailClosed() {
+        var pr = record()
+        pr.isDraft = true
+        #expect(
+            GitHubLandingSnapshot.mergeDisabledReason(record: pr, snapshot: nil, method: .merge)?.contains("draft")
+                == true)
+        pr.isDraft = false
+        #expect(
+            GitHubLandingSnapshot.mergeDisabledReason(record: pr, snapshot: nil, method: .merge)?.contains(
+                "unavailable") == true)
+    }
+
     @Test func nonPassingChecksWarnWithoutOverridingProviderMergeability() async throws {
         let transport = WriteSafetyTransport(.unstable)
         let service = GitHubLandingService(client: GitHubClient(transport: transport))

@@ -7,6 +7,7 @@ struct PullRequestMergeButton: View {
     var isBusy = false
     var enabled = true
     var selectionEnabled = true
+    var help = "Choose a merge method, then confirm the merge."
     var onShowRequirements: (() -> Void)? = nil
     let action: () -> Void
     @Environment(\.dockWorkspaceScale) private var scale
@@ -30,6 +31,8 @@ struct PullRequestMergeButton: View {
         .controlSize(.small)
         .disabled(!enabled)
         .accessibilityLabel(method.actionTitle)
+        .accessibilityHint(help)
+        .dockHoverTip(help)
         .overlay(alignment: .trailing) {
             DockMenu {
                 ForEach(methods) { option in

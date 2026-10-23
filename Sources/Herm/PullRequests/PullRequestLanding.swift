@@ -52,6 +52,24 @@ struct GitHubLandingSnapshot: Equatable, Sendable {
             && ["CLEAN", "HAS_HOOKS", "UNSTABLE"].contains(mergeState) && !queueEnabled
             && reviewDecision != "CHANGES_REQUESTED" && reviewDecision != "REVIEW_REQUIRED"
     }
+    static func mergeDisabledReason(record: PullRequestRecord, snapshot: Self?, method: GitHubMergeMethod) -> String? {
+        if record.isDraft || snapshot?.draft == true {
+            return "This pull request is a draft. Mark it ready for review before merging."
+        }
+        guard let snapshot else {
+            return "Merge requirements are unavailable. Refresh merge requirements to check again."
+        }
+        let blockers = snapshot.mergeBlockers(for: record)
+        if !blockers.isEmpty {
+            return (blockers + (snapshot.mergeState == "BLOCKED" ? snapshot.checkWarnings(for: record) : [])).joined(
+                separator: "\n")
+        }
+        if !snapshot.methods.contains(method) {
+            return "This merge method is not available for the repository. Choose another method."
+        }
+        return snapshot.canMergeNow
+            ? nil : "GitHub has not confirmed that this pull request can be merged. Refresh merge requirements."
+    }
     func mergeBlockers(for record: PullRequestRecord) -> [String] {
         guard state == "OPEN" else {
             return [
@@ -277,27 +295,38 @@ struct PullRequestLandingView: View {
         if record.mergedAt != nil {
             Button("Merged") { showsRequirements = true }.buttonStyle(.dockSecondary)
         } else {
-            mergeControl(enabled: true) {
-                if snapshot?.canMergeNow == true, snapshot?.methods.contains(method) == true {
-                    request(.merge)
-                } else {
-                    showsRequirements = true
-                }
-            }
+            mergeControl { request(.merge) }
         }
     }
 
-    private func mergeControl(enabled: Bool, action: @escaping () -> Void) -> some View {
-        PullRequestMergeButton(
+    private func mergeControl(action: @escaping () -> Void) -> some View {
+        let reason = GitHubLandingSnapshot.mergeDisabledReason(record: record, snapshot: snapshot, method: method)
+        let help: String
+        if record.isDraft {
+            help = reason ?? "Mark this draft ready for review before merging."
+        } else if loading {
+            help = "Checking GitHub merge requirements…"
+        } else if busy {
+            help = "A GitHub action is in progress…"
+        } else {
+            help = reason ?? "\(method.actionTitle). Confirmation is required."
+        }
+        return PullRequestMergeButton(
             method: $method, methods: snapshot?.methods ?? [],
-            isBusy: loading || activeAction == .merge, enabled: enabled && !busy && !loading && pending == nil,
+            isBusy: loading || activeAction == .merge, enabled: reason == nil && !busy && !loading && pending == nil,
             selectionEnabled: !busy && !loading && pending == nil,
+            help: help,
             onShowRequirements: toolbar && !showsRequirements ? { showsRequirements = true } : nil,
             action: action)
     }
 
     private func request(_ action: GitHubLandingAction) {
         guard pending == nil, !busy, !loading, let snapshot else { return }
+        if action == .merge,
+            GitHubLandingSnapshot.mergeDisabledReason(record: record, snapshot: snapshot, method: method) != nil
+        {
+            return
+        }
         confirmed = snapshot
         confirmedMethod = method
         pending = action
@@ -333,9 +362,7 @@ struct PullRequestLandingView: View {
                                             && snapshot.reviewDecision != "CHANGES_REQUESTED"))
                             )
                         } else {
-                            mergeControl(enabled: snapshot.canMergeNow && snapshot.methods.contains(method)) {
-                                request(.merge)
-                            }
+                            mergeControl { request(.merge) }
                         }
                         if snapshot.canDisableAuto && snapshot.autoEnabled {
                             actionButton(.disableAuto, enabled: true)
