@@ -31,7 +31,7 @@ struct SessionBrowserRenderTests {
                 let browser = workspace.addTab()
                 let content = SessionBrowserView(
                     model: DockModel(initialSessionID: "browser-states"), workspace: workspace,
-                    browser: browser, discoveryActive: false
+                    browser: browser
                 )
                 .frame(width: width, height: 420).dockThemedRoot()
                 let host = NSHostingView(rootView: content)
@@ -91,11 +91,11 @@ struct SessionBrowserRenderTests {
             DockThemeRuntime.revision &+= 1
             NSApplication.shared.appearance = NSAppearance(
                 named: [.clean, .eInk].contains(theme) ? .aqua : .darkAqua)
-            for width in [300.0, 380.0, 760.0] {
+            for width in [280.0, 320.0, 390.0, 540.0, 760.0] {
                 for loading in [false, true] {
                     if loading { browser.webView(browser.web, didStartProvisionalNavigation: nil) }
                     let toolbar = SessionBrowserView(
-                        model: model, workspace: workspace, browser: browser, discoveryActive: false
+                        model: model, workspace: workspace, browser: browser
                     ).toolbar
                     let content = toolbar.padding(8).frame(width: width).background(
                         Color.dockCanvas

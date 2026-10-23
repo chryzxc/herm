@@ -2,10 +2,8 @@ import SwiftUI
 
 struct LocalServersMenu: View {
     @Environment(\.localPreviewDiscoveryVisible) private var surfaceVisible
-    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let processIDs: [Int32]
     var active = true
-    var toolbarControl = false
     @StateObject private var discovery = LocalPreviewDiscoveryModel()
     @State private var isOpen = false
     private var isActive: Bool { active && surfaceVisible }
@@ -15,7 +13,6 @@ struct LocalServersMenu: View {
             isOpen.toggle()
         } label: {
             LocalPreviewsLabel()
-                .frame(height: toolbarControl ? DockWorkspaceScale.points(28, scale: workspaceScale) : nil)
         }
         .buttonStyle(.dockCompact)
         .help("Open a local development preview")

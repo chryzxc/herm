@@ -30,7 +30,7 @@ enum BrowserViewport: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .fit: "Fit Panel"
+        case .fit: "Auto · Fit Panel"
         case .phone: "Phone · 390"
         case .tablet: "Tablet · 768"
         case .desktop: "Desktop · 1280"
@@ -141,18 +141,14 @@ struct SessionBrowserView: View {
     @ObservedObject var model: DockModel
     let workspace: SessionBrowserWorkspace
     let isPrimary: Bool
-    var discoveryActive = true
     @AppStorage("sessionInspector.browserViewport") private var viewportRaw = 0
     @ObservedObject private var browser: BrowserController
     @ObservedObject private var agent: AgentBrowser
     @State private var field = ""
+    @State private var sendingPage = false
     @FocusState private var isEditingAddress: Bool
 
-    init(
-        model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil,
-        discoveryActive: Bool = true
-    ) {
-        self.discoveryActive = discoveryActive
+    init(model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil) {
         self.model = model
         self.workspace = workspace
         isPrimary = browser == nil
@@ -195,6 +191,7 @@ struct SessionBrowserView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Color.dockWarning.opacity(0.08))
+        .background(Color.dockOpaqueCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         .accessibilityElement(children: .combine)
     }
@@ -264,14 +261,24 @@ struct SessionBrowserView: View {
             HStack(spacing: 6) {
                 navigationButtons
                 addressField.frame(minWidth: 180)
-                pageActions
+                annotationButton
+                viewportMenu(compact: false)
+                moreMenu
             }
-            VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                navigationButtons
+                addressField.frame(minWidth: 220)
+                viewportMenu(compact: true)
+                moreMenu
+            }
+            VStack(spacing: 8) {
+                addressField
                 HStack(spacing: 6) {
                     navigationButtons
-                    addressField.frame(minWidth: 80)
+                    Spacer(minLength: 8)
+                    viewportMenu(compact: false)
+                    moreMenu
                 }
-                pageActions
             }
         }
     }
@@ -320,48 +327,54 @@ struct SessionBrowserView: View {
             }
     }
 
-    private var pageActions: some View {
-        HStack(spacing: 6) {
-            DockIconButton(
-                icon: .cursorClick,
-                label: annotating ? "Stop Annotating (Esc)" : "Annotate: click an element to comment on it",
-                isProminent: annotating, style: palette
-            ) {
-                if showsAgent { agent.annotating.toggle() } else { browser.annotating.toggle() }
-            }
-            .disabled(pageURL.isEmpty || pageURL == "about:blank")
-            LocalServersMenu(
-                processIDs: TerminalWorkspaceStore.shared.processIDs(
-                    matching:
-                        WorkspaceIdentity.session(model)), active: discoveryActive, toolbarControl: true)
-            Spacer(minLength: 0)
-            DockMenu {
+    private var annotationButton: some View {
+        DockIconButton(
+            icon: .cursorClick,
+            label: annotating ? "Stop Annotating (Esc)" : "Annotate: click an element to comment on it",
+            isProminent: annotating, style: palette
+        ) {
+            toggleAnnotation()
+        }
+        .disabled(pageURL.isEmpty || pageURL == "about:blank")
+    }
+
+    private func viewportMenu(compact: Bool) -> some View {
+        DockMenu {
+            DockMenuSection("Responsive viewport") {
                 ForEach(BrowserViewport.allCases) { option in
                     DockMenuCheckRow(title: option.title, isSelected: option == viewport) {
                         viewportRaw = option.rawValue
                     }
                 }
-            } label: {
-                HStack(spacing: 5) {
-                    DockIcon(viewport.icon, size: 14)
-                    Text(viewport == .fit ? "Fit" : "\(viewport.rawValue) px").dockFont(.control)
+            }
+        } label: {
+            HStack(spacing: 5) {
+                DockIcon(viewport.icon, size: 14)
+                if !compact {
+                    Text(viewport == .fit ? "Auto" : "\(viewport.rawValue)").dockFont(.control)
                     DockIcon(.caretDown, size: 10)
                 }
-                .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 8).frame(height: controlHeight)
-                .background(DockThemeShape(cornerRadius: 7).fill(Color.dockControlSurface))
             }
-            .fixedSize()
-            .help("Viewport: \(viewport.title)")
-            .accessibilityLabel("Viewport: \(viewport.title)")
-            moreMenu
+            .foregroundStyle(Color.dockPrimaryText)
+            .padding(.horizontal, compact ? 0 : 8)
+            .frame(minWidth: controlHeight, minHeight: controlHeight)
+            .background(DockThemeShape(cornerRadius: 7).fill(Color.dockControlSurface))
         }
+        .fixedSize()
+        .help(viewport == .fit ? "Auto: page follows the panel width" : "\(viewport.title): fixed preview width")
+        .accessibilityLabel("Viewport: \(viewport.title)")
+    }
+
+    private func toggleAnnotation() {
+        if showsAgent { agent.annotating.toggle() } else { browser.annotating.toggle() }
     }
 
     private var moreMenu: some View {
         DockMenu {
-            Button("Send Page to Chat", icon: .paperPlaneTilt) { Task { await sendPage() } }
+            Button(annotating ? "Stop Annotating" : "Annotate Page", icon: .cursorClick) { toggleAnnotation() }
                 .disabled(pageURL.isEmpty || pageURL == "about:blank")
+            Button("Send Page to Chat", icon: .paperPlaneTilt) { Task { await sendPage() } }
+                .disabled(sendingPage || pageURL.isEmpty || pageURL == "about:blank")
             Button("Copy Address", icon: .copy) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(pageURL, forType: .string)
@@ -390,6 +403,10 @@ struct SessionBrowserView: View {
             }
         } label: {
             DockIcon(.dotsThree)
+                .opacity(sendingPage ? 0 : 1)
+                .overlay {
+                    if sendingPage { ProgressView().controlSize(.mini).accessibilityLabel("Adding page to chat") }
+                }
                 .dockFont(.conversation, weight: .medium)
                 .foregroundStyle(consoleErrors.isEmpty ? Color.dockSecondaryText : Color.dockWarning)
                 .frame(width: controlHeight, height: controlHeight)
@@ -407,16 +424,8 @@ struct SessionBrowserView: View {
             if showsAgent {
                 AgentBrowserPane(browser: agent, model: model)
             } else {
-                GeometryReader { geo in
-                    BrowserWebView(web: browser.web)
-                        .frame(
-                            width: viewport == .fit ? geo.size.width : min(geo.size.width, CGFloat(viewport.rawValue))
-                        )
-                        .frame(maxWidth: .infinity)
-                        .onAppear { browser.zoom(toFit: viewport.rawValue, in: geo.size.width) }
-                        .onChange(of: geo.size.width) { _, width in browser.zoom(toFit: viewport.rawValue, in: width) }
-                        .onChange(of: viewportRaw) { _, raw in browser.zoom(toFit: raw, in: geo.size.width) }
-                }
+                BrowserWebView(web: browser.web, viewport: viewport)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             if pageURL.isEmpty || pageURL == "about:blank", !navigation.isLoading,
                 !showsAgent || agent.state == .running
@@ -424,7 +433,7 @@ struct SessionBrowserView: View {
                 VStack(spacing: 8) {
                     DockIcon(.globe, size: 24, color: Color.dockSecondaryText)
                     Text("Open a page").dockFont(.body, weight: .semibold)
-                    Text("Enter an address or open a local preview.")
+                    Text("Enter a URL or search from the address bar.")
                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         .multilineTextAlignment(.center)
                     Button("Enter Address") { isEditingAddress = true }.buttonStyle(.dockSecondary)
@@ -462,6 +471,9 @@ struct SessionBrowserView: View {
     private var pageTitle: String { showsAgent ? agent.activePage?.title ?? "" : browser.web.title ?? "" }
 
     private func sendPage() async {
+        guard !sendingPage else { return }
+        sendingPage = true
+        defer { sendingPage = false }
         let url = pageURL
         guard !url.isEmpty else { return }
         let selection = showsAgent ? await agent.selection() : await browser.selection()
@@ -524,7 +536,8 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
         // WKWebView's default UA has no Safari token, so sites like Google serve their no-JS page.
-        configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"  // ponytail: fixed version, bump if sites start sniffing it
+        // shortcut: fixed version, bump if sites start sniffing it.
+        configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
         web = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         let content = configuration.userContentController
@@ -584,11 +597,6 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     func loadAddressIfNeeded() {
         guard !address.isEmpty, let url = URL(string: address), web.url == nil || currentURL != address else { return }
         open(url)
-    }
-
-    /// Responsive presets wider than the panel zoom out so the page lays out at that width.
-    func zoom(toFit width: Int, in available: CGFloat) {
-        web.pageZoom = width > 0 && available > 0 ? min(1, available / CGFloat(width)) : 1
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -676,8 +684,46 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     }
 }
 
-private struct BrowserWebView: NSViewRepresentable {
+struct BrowserWebView: NSViewRepresentable {
     let web: WKWebView
-    func makeNSView(context: Context) -> WKWebView { web }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    var viewport = BrowserViewport.fit
+    func makeNSView(context: Context) -> BrowserPageContainer { BrowserPageContainer(web: web, viewport: viewport) }
+    func updateNSView(_ nsView: BrowserPageContainer, context: Context) { nsView.viewport = viewport }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: BrowserPageContainer, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+}
+
+/// Native bounds own the live page size; resizing never reloads its document.
+final class BrowserPageContainer: NSView {
+    let web: WKWebView
+    var viewport: BrowserViewport { didSet { layoutPage() } }
+
+    init(web: WKWebView, viewport: BrowserViewport) {
+        self.web = web
+        self.viewport = viewport
+        super.init(frame: .zero)
+        web.removeFromSuperview()
+        addSubview(web)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutPage()
+    }
+
+    override func layout() {
+        super.layout()
+        layoutPage()
+    }
+
+    private func layoutPage() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let width = viewport == .fit ? bounds.width : min(bounds.width, CGFloat(viewport.rawValue))
+        let zoom = viewport == .fit ? 1 : min(1, width / CGFloat(viewport.rawValue))
+        if web.pageZoom != zoom { web.pageZoom = zoom }
+        web.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: bounds.height)
+    }
 }

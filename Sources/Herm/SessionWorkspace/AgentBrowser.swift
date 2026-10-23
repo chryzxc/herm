@@ -84,7 +84,7 @@ final class AgentBrowser: ObservableObject {
     private var sessionID: String?
     private var mainFrameID: String?
     private var annotateContextID: Int?
-    private var panelSize = CGSize(width: 1280, height: 800)
+    private(set) var panelSize = CGSize(width: 1280, height: 800)
     private var backingScale: CGFloat = 2
     private var viewportTask: Task<Void, Never>?
     private var themeCancellable: AnyCancellable?
@@ -177,7 +177,7 @@ final class AgentBrowser: ObservableObject {
     private func fail(_ message: String) {
         guard state != .off else { return }
         teardown()
-        state = .failed(message)
+        state = .failed(HermesDiagnosticsService.safeSummary(message))
     }
 
     private func teardown() {
@@ -417,8 +417,10 @@ final class AgentBrowser: ObservableObject {
             "Emulation.setDeviceMetricsOverride",
             [
                 "width": Int(width), "height": Int(height), "deviceScaleFactor": backingScale,
+                "screenWidth": Int(width), "screenHeight": Int(height),
                 "mobile": presetWidth > 0 && presetWidth < 800,
             ], session: sid)
+        guard !Task.isCancelled, sessionID == sid else { return }
         cdp.fire("Page.stopScreencast", session: sid)
         guard viewers > 0 else { return }
         cdp.fire(
@@ -475,7 +477,7 @@ final class AgentBrowser: ObservableObject {
             mainFrameID = frame["id"] as? String
             consoleErrors = []
             if let index = pages.firstIndex(where: { $0.id == activeTargetID }), let url = frame["url"] as? String {
-                pages[index].url = frame["unreachableUrl"] as? String ?? url
+                pages[index].url = frame["unreachableUrl"] as? String ?? (url + (frame["urlFragment"] as? String ?? ""))
             }
             refreshHistory()
         case "Page.navigatedWithinDocument", "Page.frameStoppedLoading":
@@ -797,7 +799,7 @@ final class CDPConnection {
     private func failPending(_ error: Error) {
         let waiting = pending
         pending = [:]
-        waiting.values.forEach { $0.resume(throwing: error) }
+        for continuation in waiting.values { continuation.resume(throwing: error) }
     }
 }
 
@@ -855,14 +857,15 @@ final class AgentBrowserCanvas: NSView {
             hints: [.interpolation: NSImageInterpolation.high])
     }
 
-    override func layout() {
-        super.layout()
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsDisplay = true
         browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        needsLayout = true
+        browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
     }
 
     private func cssPoint(_ event: NSEvent) -> CGPoint {
@@ -966,6 +969,9 @@ private struct AgentCanvasView: NSViewRepresentable {
         return canvas
     }
     func updateNSView(_ nsView: AgentBrowserCanvas, context: Context) {}
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: AgentBrowserCanvas, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
 }
 
 /// The Browser tab in agent mode: live view, start/failure states, and what Hermes is doing.
