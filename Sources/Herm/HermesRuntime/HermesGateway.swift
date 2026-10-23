@@ -227,9 +227,13 @@ final class HermesGateway: NSObject {
     }
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        try await fetchHTTP(path, timeout: 15)
+    }
+
+    func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any] {
         try await connect()
         guard let baseURL else { throw GatewayError.backendUnavailable }
-        let (status, result) = try await GatewayHTTP.request(GatewayConnectionSettings.endpoint(baseURL, path), token: usesBrowserSignIn ? nil : token, signIn: usesBrowserSignIn, authBase: baseURL)
+        let (status, result) = try await GatewayHTTP.request(GatewayConnectionSettings.endpoint(baseURL, path), token: usesBrowserSignIn ? nil : token, signIn: usesBrowserSignIn, authBase: baseURL, timeout: timeout)
         guard (200..<300).contains(status) else { throw GatewayError.httpError(status) }
         return result
     }

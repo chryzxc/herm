@@ -4,6 +4,55 @@ import Testing
 
 @MainActor
 struct YearActivityTests {
+    @Test func spendLoadsRecentReportFirstAndSharesRequestsAcrossTabChanges() async {
+        let client = YearActivityClient()
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        client.onFetch = {
+            if client.paths.last == "/api/analytics/usage?days=365" {
+                #expect(control.tokenUsage != nil)
+                #expect(control.refreshState(for: "token.usage")?.isRefreshing == false)
+            }
+        }
+        let parent = Task { @MainActor in
+            let load = control.refreshSpend()
+            withUnsafeCurrentTask { $0?.cancel() }
+            return load
+        }
+        let first = await parent.value
+        let second = control.refreshSpend(force: true)
+        await first.value
+        await second.value
+        #expect(client.paths.filter { $0.contains("/usage?") } == [
+            "/api/analytics/usage?days=30", "/api/analytics/usage?days=365"
+        ])
+        #expect(client.timeouts == [60, 60])
+        #expect(control.tokenUsage != nil)
+        #expect(control.yearActivity != nil)
+        #expect(control.spendRefreshTask == nil)
+
+        let paths = client.paths
+        await control.refreshSpend().value
+        #expect(client.paths == paths)
+        await control.refreshSpend(force: true).value
+        #expect(client.paths.filter { $0.contains("/usage?") }.count == 4)
+    }
+
+    @Test func tokenUsageSharesInflightReadsAndKeepsGoodDataOnTimeout() async {
+        let client = YearActivityClient()
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let first = control.refreshTokenUsage(days: 30)
+        let second = control.refreshTokenUsage(days: 30)
+        await first?.value
+        await second?.value
+        #expect(client.paths.filter { $0.contains("/usage?") }.count == 1)
+        let previous = control.tokenUsage
+        client.failure = URLError(.timedOut)
+        await control.refreshTokenUsage(days: 30)?.value
+        #expect(control.tokenUsage == previous)
+        #expect(control.refreshState(for: "token.usage")?.isRefreshing == false)
+        #expect(control.refreshState(for: "token.usage")?.isStale == true)
+    }
+
     @Test func loadsYearIndependentlyAndRetainsItOnFailure() async {
         let client = YearActivityClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
@@ -47,6 +96,8 @@ struct YearActivityTests {
 private final class YearActivityClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var paths: [String] = []
+    var timeouts: [TimeInterval] = []
+    var failure: Error?
     var onFetch: (() -> Void)?
     var response: [String: Any] = ["daily": [["day": "2026-10-20", "input_tokens": 100]]]
     func connect() async throws {}
@@ -55,6 +106,12 @@ private final class YearActivityClient: HermesRPCClientProtocol {
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         paths.append(path)
         onFetch?()
+        try await Task.sleep(for: .milliseconds(10))
+        if let failure { throw failure }
         return response
+    }
+    func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any] {
+        timeouts.append(timeout)
+        return try await fetchHTTP(path)
     }
 }

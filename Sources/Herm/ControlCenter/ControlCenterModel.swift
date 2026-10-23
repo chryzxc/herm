@@ -70,6 +70,9 @@ final class ControlCenterModel: ObservableObject {
     @Published var yearActivity: [TokenUsageReport.Day]?
     var yearActivityGeneration = UUID()
     var tokenUsageGeneration = UUID()
+    var tokenUsageTask: Task<Void, Never>?
+    var tokenUsageDays: Int?
+    var spendRefreshTask: Task<Void, Never>?
     var tokenUsageModelRows: [String: Any] = [:]
     @Published var workCalendar: WorkCalendarIndex?
     /// Fetched sessions/commits/usage per month start; Kanban and cron runs are

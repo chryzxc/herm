@@ -29,17 +29,47 @@ extension ControlCenterModel {
         }
     }
 
-    func refreshTokenUsage(days: Int) {
+    /// Keep expensive analytics alive across tab changes and prioritize the visible breakdown.
+    @discardableResult
+    func refreshSpend(force: Bool = false) -> Task<Void, Never> {
+        if let spendRefreshTask { return spendRefreshTask }
+        let bindingGeneration = clientBindingGeneration
+        let task = Task { @MainActor in
+            defer {
+                if bindingGeneration == clientBindingGeneration { spendRefreshTask = nil }
+            }
+            let usageState = refreshState(for: "token.usage")
+            if force || tokenUsage == nil || usageState?.isStale == true
+                || (usageState?.lastSuccess?.timeIntervalSinceNow ?? -.infinity) < -60 {
+                await refreshTokenUsage(days: UsageWorkspaceView.reportDays)?.value
+            }
+            guard !Task.isCancelled, bindingGeneration == clientBindingGeneration else { return }
+            let yearState = refreshState(for: "usage.year")
+            if force || yearActivity == nil || yearState?.isStale == true
+                || (yearState?.lastSuccess?.timeIntervalSinceNow ?? -.infinity) < -60 {
+                await refreshYearActivity()
+            }
+        }
+        spendRefreshTask = task
+        return task
+    }
+
+    @discardableResult
+    func refreshTokenUsage(days: Int) -> Task<Void, Never>? {
+        if tokenUsageDays == days, let tokenUsageTask { return tokenUsageTask }
+        tokenUsageTask?.cancel()
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         tokenUsageGeneration = generation
         guard let rpc else {
             recordProjectionUnavailable("token.usage")
-            return
+            return nil
         }
+        tokenUsageDays = days
         beginProjectionRefresh("token.usage")
-        Task { @MainActor in
+        let task = Task { @MainActor in
+            defer { if generation == tokenUsageGeneration { tokenUsageTask = nil } }
             do {
                 let result = try await rpc.usageAnalytics(days: days)
                 guard generation == tokenUsageGeneration,
@@ -48,16 +78,21 @@ extension ControlCenterModel {
                 recordProjectionSuccess("token.usage", count: tokenUsage?.sessions ?? 0)
                 // Models is slower (models.dev lookups) and only adds provider
                 // pills, so it lands after the dashboard is already drawn.
-                guard let modelRows = try? await rpc.modelAnalytics(days: days),
-                      generation == tokenUsageGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
-                tokenUsageModelRows = modelRows
-                tokenUsage = Self.parseTokenUsage(result, models: modelRows)
+                Task { @MainActor in
+                    guard let modelRows = try? await rpc.modelAnalytics(days: days),
+                          generation == tokenUsageGeneration,
+                          isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    tokenUsageModelRows = modelRows
+                    tokenUsage = Self.parseTokenUsage(result, models: modelRows)
+                }
             } catch {
-                guard generation == tokenUsageGeneration else { return }
+                guard generation == tokenUsageGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 recordProjectionFailure("token.usage", error: error.localizedDescription)
             }
         }
+        tokenUsageTask = task
+        return task
     }
 
     func refreshYearActivity() async {

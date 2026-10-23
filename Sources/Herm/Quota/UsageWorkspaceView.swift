@@ -35,13 +35,15 @@ struct UsageWorkspaceView: View {
                 }
             } else if refreshState?.isRefreshing == true {
                 message(title: "Reading Hermes usage…", detail: "Hermes is totalling tokens and cost for the past 30 days.")
+            } else if refreshState?.error != nil {
+                message(title: "Usage unavailable", detail: "Refresh to try loading the past 30 days again.")
             } else {
                 message(title: "No usage report yet", detail: "Usage comes from the Hermes web server. Start Hermes and refresh.")
             }
 
             if let usage = control.sessionUsage { sessionSection(usage) }
 
-            if let state = refreshState, let error = state.error {
+            if let state = refreshState, !state.isRefreshing, let error = state.error {
                 Text(state.isStale ? "Showing last successful data. \(error)" : error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
@@ -50,7 +52,7 @@ struct UsageWorkspaceView: View {
         }
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task { await control.refreshYearActivity() }
+        .task { control.refreshSpend() }
     }
 
     private var yearActivity: some View {
@@ -60,11 +62,11 @@ struct UsageWorkspaceView: View {
                 UsageHeatmap(daily: daily)
             } else {
                 message(
-                    title: state?.isRefreshing == true ? "Reading yearly activity…" : "Yearly activity unavailable",
-                    detail: "The heatmap reads the past year of usage from Hermes. Refresh to try again."
+                    title: state?.isRefreshing == true ? "Reading yearly activity…" : (state == nil && refreshState?.isRefreshing == true ? "Yearly activity queued" : "Yearly activity unavailable"),
+                    detail: "The heatmap loads after the 30-day spend report."
                 )
             }
-            if let error = state?.error {
+            if state?.isRefreshing != true, let error = state?.error {
                 Text(state?.isStale == true ? "Showing last successful activity. \(error)" : error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
@@ -343,7 +345,7 @@ struct UsageWorkspaceView: View {
     private func message(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
                 .dockFont(.body)
@@ -465,7 +467,7 @@ private struct DailyUsageChart: View {
     private func dayTooltip(_ day: TokenUsageReport.Day) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(day.day, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Group {
                 Text("\(UsageWorkspaceView.tokens(day.inputTokens)) in · \(UsageWorkspaceView.tokens(day.outputTokens)) out")
@@ -485,6 +487,9 @@ struct UsageToolbar: View {
     @ObservedObject var control: ControlCenterModel
 
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "token.usage") }
+    private var isRefreshing: Bool {
+        refreshState?.isRefreshing == true || control.refreshState(for: "usage.year")?.isRefreshing == true
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -503,12 +508,11 @@ struct UsageToolbar: View {
 
             DockIconButton(
                 icon: .arrowsClockwise,
-                label: refreshState?.isRefreshing == true ? "Refreshing usage" : "Refresh usage",
-                isBusy: refreshState?.isRefreshing == true,
+                label: isRefreshing ? "Refreshing usage" : "Refresh usage",
+                isBusy: isRefreshing,
                 style: DockThemePalette(theme: DockThemeRuntime.current)
             ) {
-                control.refreshTokenUsage(days: UsageWorkspaceView.reportDays)
-                Task { await control.refreshYearActivity() }
+                control.refreshSpend(force: true)
             }
         }
     }

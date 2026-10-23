@@ -2,6 +2,7 @@ import SwiftUI
 
 /// A year of daily activity, one square per day, oldest week on the left.
 struct UsageHeatmap: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let daily: [TokenUsageReport.Day]
     @State private var metric: Metric = .tokens
     @State private var selected: Date?
@@ -52,7 +53,7 @@ struct UsageHeatmap: View {
                 .overlay { popoverAnchor(start: start, values: values) }
 
             Text("Main conversation only · days bucketed by session start · hover a square for details")
-                .font(DockTypography.metadata)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
         }
         .dockCard(padding: 14)
@@ -71,7 +72,7 @@ struct UsageHeatmap: View {
                     if row == 0, calendar.component(.month, from: date) != lastMonth {
                         lastMonth = calendar.component(.month, from: date)
                         context.draw(
-                            Text(date, format: .dateTime.month(.abbreviated)).font(DockTypography.machineMetadata).foregroundStyle(Color.dockMetadataText),
+                            Text(date, format: .dateTime.month(.abbreviated)).font(DockTypography.font(.machineMetadata, scale: workspaceScale)).foregroundStyle(Color.dockMetadataText),
                             at: CGPoint(x: Double(week) * pitch, y: 0), anchor: .topLeading)
                     }
                     let rect = CGRect(x: Double(week) * pitch, y: top + Double(row) * pitch, width: cell, height: cell)
@@ -135,7 +136,7 @@ struct UsageHeatmap: View {
     private func stats(_ date: Date, _ day: TokenUsageReport.Day?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
-                .font(.system(size: 11, weight: .semibold))
+                .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if let day {
                 Group {
@@ -143,11 +144,11 @@ struct UsageHeatmap: View {
                     Text("\(UsageWorkspaceView.tokens(day.cacheReadTokens)) cache · \(UsageWorkspaceView.tokens(day.reasoningTokens)) reasoning")
                     Text("\(day.sessions) sessions · \(day.apiCalls) calls · \(UsageWorkspaceView.cost(day.estimatedCost))")
                 }
-                .font(DockTypography.machineMetadata)
+                .dockFont(.machineMetadata)
                 .foregroundStyle(Color.dockSecondaryText)
             } else {
                 Text("No activity")
-                    .font(DockTypography.machineMetadata)
+                    .dockFont(.machineMetadata)
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }

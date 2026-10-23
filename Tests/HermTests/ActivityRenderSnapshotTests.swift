@@ -46,12 +46,38 @@ struct ActivityRenderSnapshotTests {
             WorkCommit(repo: offset % 2 == 0 ? "Herm" : "Workspace", hash: "fixture-\(offset)",
                        subject: "Improve workspace navigation", date: now.addingTimeInterval(-Double(offset) * 12_000))
         }
-        control.workCalendar = WorkCalendarIndex.build(month: now, sessions: [], tasks: [], commits: commits, runs: [], usage: report.daily)
-        for (theme, dark) in [(DockThemeID.clean, false), (.clean, true), (.glass, false), (.mono, true), (.eInk, false)] {
+        let pullRequests = (0..<4).map { offset in
+            WorkPullRequest(repo: offset % 2 == 0 ? "Herm" : "Workspace", number: offset + 1,
+                            title: "Improve workspace navigation", url: nil, mergedAt: now.addingTimeInterval(-Double(offset) * 24_000))
+        }
+        let sessions = (0..<3).map { offset in
+            SessionSummary(id: "fixture-session-\(offset)", title: "Review workspace navigation", state: "idle", preview: nil,
+                           updatedAt: now.addingTimeInterval(-Double(offset) * 36_000))
+        }
+        let tasks = (0..<2).map { offset in
+            KanbanTaskSummary(id: "fixture-task-\(offset)", title: "Ship workspace navigation", status: "done", detail: nil,
+                              priority: nil, assignee: nil, completedAt: now.addingTimeInterval(-Double(offset) * 36_000))
+        }
+        let runs = (0..<2).map { offset in
+            CronRunSummary(id: "fixture-run-\(offset)", status: offset == 0 ? "failed" : "completed", jobID: "fixture-job",
+                           source: "cron", claimedAt: now.addingTimeInterval(-Double(offset) * 36_000).ISO8601Format(), error: nil)
+        }
+        control.workCalendar = WorkCalendarIndex.build(month: now, sessions: sessions, tasks: tasks, commits: commits,
+                                                      pullRequests: pullRequests, runs: runs, usage: report.daily)
+        let selectedThemes = ProcessInfo.processInfo.environment["HERM_ACTIVITY_REVIEW_THEMES"]?.split(separator: ",").map(String.init)
+        let themes = DockThemeID.allCases.filter { selectedThemes?.contains($0.rawValue) ?? true }
+        #expect(!themes.isEmpty)
+        let appearances = themes.flatMap { theme -> [(DockThemeID, Bool)] in
+            let modes: [Bool] = switch theme.appearance { case .light: [false]; case .dark: [true]; case .system: [false, true] }
+            return modes.map { (theme, $0) }
+        }
+        for (theme, dark) in appearances {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
             for width: CGFloat in [640, 1380] {
-                for work in [true, false] {
+                for page in ["day", "week", "month", "spend"] {
+                    let work = page != "spend"
+                    defaults.set(work ? page : "day", forKey: "dock.calendar.scope")
                     let content = work ? AnyView(WorkActivityView(control: control, repoPaths: [])) : AnyView(ScrollView { UsageWorkspaceView(control: control) })
                     let view = content.defaultAppStorage(defaults).padding(20)
                         .frame(width: width, height: 1000)
@@ -60,6 +86,7 @@ struct ActivityRenderSnapshotTests {
                     let host = NSHostingView(rootView: view)
                     host.frame = NSRect(x: 0, y: 0, width: width, height: 1000)
                     let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    window.isReleasedWhenClosed = false
                     window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                     window.contentView = host
                     window.orderFrontRegardless()
@@ -70,9 +97,9 @@ struct ActivityRenderSnapshotTests {
                     let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                     host.cacheDisplay(in: host.bounds, to: bitmap)
                     let png = try #require(bitmap.representation(using: .png, properties: [:]))
-                    let name = "\(work ? "work" : "spend")-\(theme.rawValue)-\(dark ? "dark" : "light")-\(Int(width)).png"
+                    let name = "\(work ? "work-\(page)" : "spend")-\(theme.rawValue)-\(dark ? "dark" : "light")-\(Int(width)).png"
                     try png.write(to: URL(fileURLWithPath: path).appendingPathComponent(name))
-                    window.orderOut(nil)
+                    window.close()
                     #expect(bitmap.pixelsWide > 0 && bitmap.pixelsHigh > 0)
                 }
             }

@@ -17,6 +17,11 @@ struct CommandCenterModelsTests {
         #expect(SessionPreviewPresentation.summary("{\"payload\":{}}") == "Session activity updated")
     }
 
+    @Test func sessionPreviewDropsHermRenderingContext() {
+        #expect(SessionPreviewPresentation.summary("Hello hello\n\n[Herm rendering context v1]\nWhen useful") == "Hello hello")
+        #expect(SessionPreviewPresentation.summary("[Herm rendering context v1]\nWhen useful") == nil)
+    }
+
     @MainActor @Test func sessionParsingUsesLastActivityForUpdatedTime() {
         let updated = Date(timeIntervalSince1970: 20_000)
         let result = ControlCenterModel.parseSessions(["sessions": [[

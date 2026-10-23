@@ -27,6 +27,11 @@ struct WorkDay: Equatable {
     var commits: [WorkCommit] = []
     /// Merged PRs are the rollup of commits, so they stay out of `shippedCount` and `activityCount`.
     var pullRequests: [WorkPullRequest] = []
+    var pullRequestsByRepository: [WorkCount] {
+        Dictionary(grouping: pullRequests, by: \.repo)
+            .map { WorkCount(id: $0.key, count: $0.value.count) }
+            .sorted { ($0.count, $1.id) > ($1.count, $0.id) }
+    }
     var cronRuns: [CronRunSummary] = []
     var usage: TokenUsageReport.Day?
     /// 0 (idle) … 4 (busiest day of the month).
@@ -240,7 +245,7 @@ struct WorkCalendarIndex: Equatable {
     }
 }
 
-/// A run of days from one month's index, summed for the Week and Month scopes.
+/// Records and totals for any scope, projected from the same daily buckets.
 struct WorkRange: Equatable {
     struct Point: Equatable, Identifiable {
         let date: Date
@@ -252,15 +257,18 @@ struct WorkRange: Equatable {
         var total: Int { shipped + sessions + runs }
     }
     var points: [Point] = []
-    var pullRequests = 0, tasks = 0, commits = 0, sessions = 0, runs = 0, activeDays = 0, tokens = 0
+    var pullRequests: [WorkPullRequest] = []
+    var tasks: [KanbanTaskSummary] = []
+    var commits: [WorkCommit] = []
+    var sessions: [SessionSummary] = []
+    var runs: [CronRunSummary] = []
+    var pullRequestsByRepository: [WorkCount] = []
+    var activeDays = 0, tokens = 0, apiCalls = 0, usageSessions = 0
+    var hasUsage = false
     var activeHours = 0, shippedItems = 0
-    struct Job: Identifiable, Equatable {
-        let id: String
-        var runs = 0
-        var failed = 0
-    }
-    /// Automation runs per job, most runs first.
-    var jobs: [Job] = []
+    var hours = [Int](repeating: 0, count: 24)
+    /// Longest consecutive stretch within a single day, never across midnight.
+    var longestStretch = 0
     /// Mean activity per occurrence of each weekday (index 0 = Sunday); empty under two weeks of days.
     var weekdayMeans: [Double] = []
     /// Activity per active day against the month's other active days.
@@ -271,15 +279,16 @@ struct WorkRange: Equatable {
     var repos: [WorkCount] = []
     var assignees: [WorkCount] = []
 
-    var isEmpty: Bool { points.allSatisfy { $0.total == 0 } && pullRequests == 0 }
+    var isEmpty: Bool {
+        pullRequests.isEmpty && tasks.isEmpty && commits.isEmpty && sessions.isEmpty && runs.isEmpty && !hasUsage
+    }
 }
 
 extension WorkCalendarIndex {
     /// Days in `[from, to]` that fall inside this month; a week crossing a month edge only counts the loaded side.
     func range(from: Date, to: Date, calendar: Calendar = .current) -> WorkRange {
         var range = WorkRange()
-        var repoTally: [String: Int] = [:], assigneeTally: [String: Int] = [:]
-        var jobTally: [String: WorkRange.Job] = [:]
+        var repoTally: [String: Int] = [:], prTally: [String: Int] = [:], assigneeTally: [String: Int] = [:]
         var weekdayTotals = [Int](repeating: 0, count: 7), weekdayDays = [Int](repeating: 0, count: 7)
         let monthEnd = calendar.date(byAdding: .month, value: 1, to: month) ?? month
         var cursor = max(calendar.startOfDay(for: from), month)
@@ -294,26 +303,25 @@ extension WorkCalendarIndex {
                 hasFailure: day?.hasFailedRun ?? false
             ))
             if let day {
-                range.pullRequests += day.pullRequests.count
-                range.tasks += day.doneTasks.count
-                range.commits += day.commits.count
-                range.sessions += day.sessions.count
-                range.runs += day.cronRuns.count
+                range.pullRequests.append(contentsOf: day.pullRequests)
+                range.tasks.append(contentsOf: day.doneTasks)
+                range.commits.append(contentsOf: day.commits)
+                range.sessions.append(contentsOf: day.sessions)
+                range.runs.append(contentsOf: day.cronRuns)
                 if day.activityCount > 0 { range.activeDays += 1 }
                 range.activeHours += day.activeHours
+                range.longestStretch = max(range.longestStretch, day.longestStretch)
+                for hour in range.hours.indices { range.hours[hour] += day.hours[hour] }
                 range.shippedItems += day.shippedItems
                 if let usage = day.usage {
+                    range.hasUsage = true
                     range.tokens += usage.inputTokens + usage.outputTokens
+                    range.apiCalls += usage.apiCalls
+                    range.usageSessions += usage.sessions
                     range.cost += usage.estimatedCost
                 }
                 for commit in day.commits { repoTally[commit.repo, default: 0] += 1 }
-                for run in day.cronRuns {
-                    let id = run.jobID ?? "manual"
-                    var job = jobTally[id] ?? WorkRange.Job(id: id)
-                    job.runs += 1
-                    if run.isFailure { job.failed += 1 }
-                    jobTally[id] = job
-                }
+                for repo in day.pullRequestsByRepository { prTally[repo.id, default: 0] += repo.count }
                 for bot in day.assignees { assigneeTally[bot.id, default: 0] += bot.count }
             }
             let weekday = calendar.component(.weekday, from: cursor) - 1
@@ -325,7 +333,11 @@ extension WorkCalendarIndex {
             tally.map { WorkCount(id: $0.key, count: $0.value) }.sorted { ($0.count, $1.id) > ($1.count, $0.id) }
         }
         range.repos = ranked(repoTally)
-        range.jobs = jobTally.values.sorted { ($0.runs, $1.id) > ($1.runs, $0.id) }
+        range.pullRequestsByRepository = ranked(prTally)
+        range.pullRequests.sort { $0.mergedAt > $1.mergedAt }
+        range.tasks.sort { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        range.commits.sort { $0.date > $1.date }
+        range.sessions.sort { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
         if range.points.count >= 14 {
             range.weekdayMeans = (0..<7).map { weekdayDays[$0] > 0 ? Double(weekdayTotals[$0]) / Double(weekdayDays[$0]) : 0 }
         }

@@ -427,7 +427,12 @@ enum SessionLifecyclePresentation {
 /// navigation.
 enum SessionPreviewPresentation {
     static func summary(_ value: String?) -> String? {
-        guard let value else { return nil }
+        guard var value else { return nil }
+        // Herm appends a rendering-context block to prompts; Hermes previews
+        // are truncated, so the closing marker is often missing.
+        if let context = value.range(of: "[Herm rendering context v1]") {
+            value = String(value[..<context.lowerBound])
+        }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -1611,7 +1616,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .usage: .chartBar
         case .calendar: .calendarBlank
         case .capabilities: .puzzlePiece
-        case .messaging: .chatCircle
+        case .messaging: .paperPlaneTilt
         }
     }
 

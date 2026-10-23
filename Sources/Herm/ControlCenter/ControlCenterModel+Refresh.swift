@@ -68,6 +68,14 @@ extension ControlCenterModel {
             sessionUsage = nil
             yearActivity = nil
             yearActivityGeneration = UUID()
+            tokenUsageGeneration = UUID()
+            tokenUsageTask?.cancel()
+            tokenUsageTask = nil
+            tokenUsageDays = nil
+            spendRefreshTask?.cancel()
+            spendRefreshTask = nil
+            tokenUsage = nil
+            tokenUsageModelRows = [:]
             sessionContext = nil
             sessionCockpitSessionID = nil
             providerQuotas = []

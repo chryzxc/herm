@@ -12,12 +12,16 @@ protocol HermesRPCClientProtocol: AnyObject {
     func connect() async throws
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any]
     func fetchHTTP(_ path: String) async throws -> [String: Any]
+    func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any]
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any]
     func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String: Any]
     func close()
 }
 
 extension HermesRPCClientProtocol {
+    func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any] {
+        try await fetchHTTP(path)
+    }
     func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
         try await sendHTTP(method, path: path, body: body)
     }
@@ -167,7 +171,7 @@ final class HermesControlRPC {
         )
     }
     /// Hermes clamps `days` to 1…365 server-side.
-    func usageAnalytics(days: Int) async throws -> [String: Any] { try await client.fetchHTTP("/api/analytics/usage?days=\(days)") }
+    func usageAnalytics(days: Int) async throws -> [String: Any] { try await client.fetchHTTP("/api/analytics/usage?days=\(days)", timeout: 60) }
 
     func modelAnalytics(days: Int) async throws -> [String: Any] { try await client.fetchHTTP("/api/analytics/models?days=\(days)") }
     func sessionUsage(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionUsage.rawValue, params: ["session_id": sessionID]) }
