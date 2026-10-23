@@ -13,13 +13,31 @@ updated: 2026-10-17 · head: 938aeb6 (+ folder restructure)
 The chat transcript uses `ConversationTranscriptView` over a disposable
 `ConversationTranscriptSnapshot`. `ConversationTranscriptSource` subscribes to specific
 model publishers; Hermes-owned messages remain in `DockModel`.
+The snapshot scopes bot steps to selected-session record identities and omits live
+activity for unmounted streaming rows; canonical activity remains in `DockModel`.
 `ConversationTranscriptCoordinator` owns the session-scoped mounted window, page
 transaction, navigation generation, and deferred native scroll work. Geometry does
 not publish transcript updates. Each mounted message has one geometry/identity
 container around activity and reply content, including zero-height hidden rows.
+`ConversationMessageWindow` sets eight-message history pages, a 12-message initial
+window, and the existing 36-row backstop with visible-row protection. Markdown
+prefetch uses that same page size in both directions.
 Markdown section parsing is independent of AppKit;
 adjacent-page prefetch runs off the main actor, while styling and exact measurement
-remain on it. The shared completed-height cache retains numbers only.
+remain on it. The shared completed-height cache retains numbers only. The native streaming
+coordinator retains stable chunk sections and byte offsets, rebuilding only changed
+suffixes and reading canonical text from `StreamingText`. Activity row inputs are
+scoped by their tool-call identities before the equatable view boundary.
+`DockModel` caches an immutable `MessageNavigatorSnapshot` at message/history
+mutation boundaries; transcript equality compares its identity instead of walking
+all navigator entries. Ordinary Markdown keeps a nil rich-document parse request;
+only visual replies schedule parsing, keyed by source, stream completion, and reply identity.
+
+`SessionTraceModel` owns Timeline’s focused execution subscriptions and coalesced
+projection, caching completed request inputs by `DockModel.messagesRevision`.
+`SessionTraceRowViewport` adapts the native vertical clip view for both fixed-height
+label and bar windows; it owns presentation geometry only. Clock bounds and visible
+grid/ruler drawing keep time ticks independent of history length.
 
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
 - `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), Mission Control rail/queue/session rows, transcript views, composer, session lifecycle guards.
@@ -32,7 +50,7 @@ remain on it. The shared completed-height cache retains numbers only.
 - `Repository/` — GitHub remote discovery, pull-request center, source control, code editor.
 - `Review/` — shared immutable diff documents, native canvas, read-only comparison loading, private revision notes, captured local changes, and review-guide coordination.
 - `Projects/` — explicitly configured local actions, project model preferences, and model comparison launch coordination.
-- `SessionWorkspace/` — session-scoped file explorer, browser, terminal, activity overview.
+- `SessionWorkspace/` — session-scoped file explorer, browser, terminal, and execution trace waterfall.
 - `Gateway/` — gateway state, connection health, recovery guidance.
 - `Workspace/` — `WorkspaceStore`: persistent local state (preferences, filters, cached metadata). Never a second copy of Hermes-owned data.
 - `Quota/` — provider quota adapters (Codex/OpenCode Go/GLM/Claude/Antigravity) plus the quota/usage/provider-connect views.

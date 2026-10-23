@@ -57,7 +57,7 @@ It is not intended to reproduce every page or feature in Hermes Agent Desktop. H
 | **Ambient agent awareness** | An edge notch with session activity, Kanban updates, requests for your attention, and finished results you haven't opened. |
 | **Quota at a glance** | A notch preview for supported providers' allowance and reset times, without opening a dashboard. |
 | **Quick interaction** | Start a new chat or reply to a specific session from the notch without changing the conversation selected in the workspace. |
-| **Real-time spoken conversation** | Continuous Voice mode with streaming speech, spoken interruptions and steering, captions, and a native voice stage with live activity. |
+| **Real-time spoken conversation** | Continuous Voice mode with spoken replies, interruptions and steering, captions, and a native voice stage with live activity. |
 | **Inspect and give feedback** | Preview files in-app, annotate selected text, send revision notes back to the originating session, and inspect local Git diffs. |
 | **A view of your agent team** | Profile-based bots, real Hermes Kanban boards, a map of agent handoffs, and a 3D Office Preview driven by task status. |
 | **Review alongside the work** | Repository checks and coverage information, changed-file diffs. These are aids for inspection, not a guarantee that the agent's work is correct. |
@@ -72,9 +72,22 @@ Actions use visible buttons, including compact buttons in dense panes. Inline
 navigation and Show more links stay underlined before hover, and linked GitHub
 metadata carries a navigation arrow so it is distinct from static metadata.
 Workspace pages share Calendar’s top titlebar treatment, with sidebar toggles aligned
-beside the traffic lights, including Chat. Chat keeps its session title and actions
-in that row above the session list, conversation, and inspector.
+beside the traffic lights. Chat uses three full-height panes: the session list,
+conversation, and inspector. The session title and Chat/Talk controls stay inside
+the conversation pane; the inspector's tabs extend to the top of its own pane.
+Navigation distinguishes Chats (speech bubbles), Messaging (paper plane), and
+Artifacts (stacked files), while keeping the Bots ghost icon. Chats shows a small
+spinner for running sessions and a count of completed chats with unread updates
+for the selected bot. Both appear together when work is running and results await
+review; opening a completed chat clears its unread badge. Badge calculations are
+cached independently of transcript updates; status polling pauses while the
+workspace is hidden or Hermes is disconnected.
 Contributors should follow the shared treatments in [DESIGN.md](DESIGN.md).
+
+Chat keeps unsent text, attachments, context, and reply quotes with each session
+while Herm is open. Switch sessions, pages, or bots and return to continue your
+draft. Drafts are separate for each bot/profile and are cleared when Herm quits.
+Drafts are saved during navigation; typing continues to update only the composer.
 
 ## The notch
 
@@ -159,15 +172,22 @@ Chat message timestamps appear on hover, with no separator after the assistant m
 
 ### How to use it
 
-Window mode uses shared native sizing for larger fonts, icons, and action
-controls. Text renders at its final size, with normal pointer and selection
+Session and group-chat lists, project pickers, inspector tabs, approval details,
+usage labels, shared inputs, and the chat composer follow the window text scale. Markdown headings
+and fenced code resize with reply prose.
+
+Standard UI and conversation font sizes live in `DockTypography`; SwiftUI views
+and native Markdown/composer text share these definitions.
+
+Window mode uses standard 100% sizing for fonts, icons, and action
+controls: 12pt body text, 13pt navigation labels, and 14pt conversation text. Text renders at its final size, with normal pointer and selection
 coordinates on Retina and standard-resolution screens.
 
 | Action | Result |
 |---|---|
 | **Hover** | Opens a preview with two tabs. |
 | **Tasks tab** | Lists every session that's in progress, with the ones that need you first, plus finished results you haven't opened yet. Click one to go straight to it. |
-| **Quota tab** | Shows provider usage and reset times, so you know how much allowance is left before starting a long task. |
+| **Quota tab** | Shows provider usage and reset times, so you know how much allowance is left before starting a long task. A compact **Open Quota** button opens the full quota workspace. |
 | **Click** | Expands the notch into the full workspace in the same window. |
 | **Double-tap ⌘** | Opens or closes the workspace from anywhere. |
 | **Double-tap ⌥** | Opens or closes the hover preview from the keyboard. |
@@ -196,7 +216,12 @@ See [visual reply formats and isolation](docs/generative-ui.md).
 Workspace page headers use consistent text titles and subtitles, with refresh
 and other actions on the right. Buttons share 12pt themed labels, hover and
 pressed feedback, and disabled states. Primary actions use a quiet accent tint;
-secondary actions use the shared outlined or compact treatment.
+secondary actions use the shared outlined or compact treatment. The pull request
+Merge action uses matching icon and label ink on every skin, including filled
+Storm and Glass controls. PR toolbar actions use compact sizing for a tighter row.
+Merge uses a shared split button in the toolbar and merge panel: choose an available
+merge commit, squash, or rebase method, then confirm the selected action. The dropdown
+also opens merge requirements; repository rules and expected-head checks still apply.
 Workspace pages, including Settings, use a flat theme canvas without a corner glow.
 
 The default **Glass** appearance follows macOS Light/Dark with frosted panels
@@ -207,14 +232,18 @@ automatically when macOS switches between Light and Dark, including while the
 workspace is open. Skin changes also apply to the side notch and its open preview.
 
 Choose from the skin gallery in **Settings → Appearance**. Every tile previews
-its own typography, material, geometry, and selection treatment. The gallery
-reflows into fewer columns in narrow windows, keeping previews inside their cards. The 20 skins
-range from Classic Hermes' midnight brass and Ares' oxblood panels to folded
+its own typography, material, geometry, and selection treatment. Switching skins
+keeps the Appearance page selected while the new skin applies immediately. The gallery
+reflows into fewer columns in narrow windows, keeping previews inside their cards. The 21 skins
+range from Hermes' desktop look (Nous blue with the etched backdrop from Hermes
+desktop) and Ares' oxblood panels to folded
 Origami, ruled Notebook, molded Clay, and silver-beveled Retro. Terminal has
-phosphor scanlines, Pixel has stepped arcade outlines, and HUD has cyan
-crosshairs. Navigation and composers follow the selected skin while keeping
-the workspace layout and controls in place. E-Ink, Pixel, and Retro remain
-motion-free; other skins respect Reduce Motion.
+phosphor scanlines, Pixel has stepped arcade outlines, HUD has cyan
+crosshairs, and Storm has Tokyo Night indigo with neon rain. Navigation and composers follow the selected skin while keeping
+the workspace layout and controls in place. Each skin also moves in its own
+way: Hermes snaps like its desktop app, instrument skins move crisply, Cartoon
+and Clay spring, and Glass, Dusk, Storm, and Island settle softly. E-Ink,
+Pixel, and Retro remain motion-free; other skins respect Reduce Motion.
 
 ### Conversations
 
@@ -222,18 +251,20 @@ The header shows compact labelled Chat, Talk, and repository PRs tabs. The selec
 
 Discord sessions show a compact tinted pill with the Discord icon beside the preview. Other session sources omit the origin pill.
 
-- **Streaming chat** with Markdown (including tables with optional outer pipes), images, tool output, and inline clarification requests. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
+- **Streaming chat** with Markdown (including tables with optional outer pipes and table text sized to match reply prose), images, tool output, and inline clarification requests. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
 - **Working bot**: a larger, borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
 - **Running activity** keeps duration text free of shimmer while elapsed time continues updating, with a separate live-work sweep that pauses when Herm loses focus and stays still under Reduce Motion or motion-free themes. Running and completed tool durations align at the right end of each chat activity row.
-- **Transcript scrolling** follows new output only while you are at the bottom. Scrolling up keeps your reading position through streamed replies, new questions, and transcript refreshes; return to the bottom or choose Jump to latest to resume following. Completed assistant replies of every length create nearby text sections as needed while preserving their full height and selected text. History paging preserves ongoing scroll movement instead of restoring an earlier offset. Replies with tool activity and hidden entries also continue loading older pages. A session-scoped coordinator owns paging and navigation; unrelated workspace refreshes leave transcript snapshots unchanged. Nearby completed Markdown is parsed ahead of paging, and bounded in-memory height measurements survive row remounts. During manual scrolling, live replies defer text reflow and show the latest received text when scrolling settles. Jump to latest respects Reduce Motion.
+- **Transcript scrolling** follows new output only while you are at the bottom. Scrolling up keeps your reading position through streamed replies, new questions, and transcript refreshes; return to the bottom or choose Jump to latest to resume following. Completed assistant replies of every length create nearby text sections as needed while preserving their full height and selected text. History paging reveals eight messages at a time and preserves ongoing scroll movement instead of restoring an earlier offset. Replies with tool activity and hidden entries also continue loading older pages. A session-scoped coordinator owns paging and navigation; unrelated workspace refreshes leave transcript snapshots unchanged. Activity in other sessions and streaming activity outside the mounted history window also leave the visible transcript unchanged; returning to the live reply shows its current activity. Nearby completed Markdown is parsed ahead of paging, and bounded in-memory height measurements survive row remounts. Long streaming replies reuse stable Markdown sections and prepare only changed chunks. Navigator history is reused across activity updates, and ordinary Markdown streaming avoids restarting visual-reply parsing tasks. Activity updates reach only the message owning the relevant bot dispatch. During manual scrolling, live replies defer text reflow and show the latest received text when scrolling settles. Jump to latest respects Reduce Motion.
 - **Steering during a turn**: guidance you type while Hermes is working is added to the running turn at the next tool boundary.
-- **Queued messages**: new submissions wait behind earlier messages, including a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
-- **Attachments**: files, pasted images, URLs, prompt snippets, several images at once, or a single PDF up to 25 MB.
+- **Queued messages**: when the current conversation has queued messages, every subsequent send joins the end of that queue, including plain text during a running turn. New submissions also wait behind a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
+- **Attachments**: files, pasted images, URLs, prompt snippets, several images at once, or a single PDF up to 25 MB. Drop Markdown, text, source, and other files into the composer as removable attachments (up to 8 MB each); uploads require Hermes protected file attachment support. **Files** and **Images** open a native attachment picker; **Folder** opens a directory picker and inserts its path into the draft.
 - **Message actions**: branch from a message, copy it, have it read aloud, or refresh it from Hermes.
+- **Bot replies** expand beneath their activity pill into padded cards with vertical breathing room and fully selectable text.
 - **Pinned conversations** use Hermes' own pin, so pins are shared with Hermes Agent Desktop and `hermes sessions pin`.
 - **Pinned messages**: pin or unpin saved user and assistant messages, then use the header's pin button to jump to them. Pins live in Hermes, survive compression, and stay separate for each profile and branch. Requires the message-pins backend patch in [docs/message-pins.md](docs/message-pins.md); stock runtimes show an unavailable notice.
 - **Model picker** grouped by provider, with search. **Edit available models… → Unselect All** hides every model except the active one; selections are saved locally.
+- **Mixture of Agents**: Settings → Runtime edits Hermes' MoA presets (reference models, aggregator, enabled). Enabled presets appear in model pickers as `MoA · <preset>`; while a MoA turn runs, advisor output, fan-out progress and the aggregating phase stream into the thinking block. Settings → Runtime also sets the default thinking level for new sessions.
 - **Context guardrails**: the composer shows context progress without a session token total. Its percentage measures the full context window; Hermes can compact earlier based on its configured token limit or other runtime triggers. During compaction, the composer shows **Compacting**, including during streaming turns, and refreshes usage afterward. Context usage is labelled normal, warning (80%), or critical (90%), with actions to branch, compress, or hand off.
 - **Dangerous-command approvals**: *Deny*, *Allow once*, or *Always allow*. *Always allow* is saved to the Hermes allowlist.
 
@@ -241,13 +272,15 @@ Discord sessions show a compact tinted pill with the Discord icon beside the pre
 
 Voice mode is more than a microphone button for dictating a prompt. Speak with your agent, hear its replies, and continue the conversation without typing each turn.
 
-- **Continuous conversation** using Hermes' voice loop, speech recognition, voice activity detection, and streaming text-to-speech. It returns to listening after a reply while Voice mode remains active.
-- Spoken requests stay with the active conversation's Bot profile. Recorder updates cannot restart listening during a pending reply or its audio playback; a failed request pauses Voice mode and shows the error in chat.
+- **Continuous conversation** with local speech recognition, voice activity detection, and Hermes-configured speech synthesis. Local recognition starts without waiting for backend recorder checks; Hermes' session recorder is used when local transcription is unavailable. Recognized requests submit after speech stops, including in a noisy room.
+- Voice belongs only to the session where you activate it. Switching conversations or leaving Voice mode stops capture and playback, including delayed audio that finishes synthesizing afterward. Spoken requests and reply voices stay with that conversation's Bot profile. Playback returns to listening when its audio finishes; failed requests or playback pause Voice mode and show the error in chat.
 - **Spoken interruption and steering**: speak over a reply to interrupt it, or give additional guidance while Hermes is working. The orb also lets you send an utterance immediately, interrupt, or resume listening.
-- **A native voice stage** with an audio-reactive orb (Bots wearing a Herm face appear live at its core only when Hermes reports the `hermes-bots` plugin enabled; uploaded or generated avatars keep the plain orb), listening/thinking/speaking states, Markdown-rendered reply captions, tool activity cards, and subagent indicators. Immersive mode gives the conversation the workspace while keeping live work visible. Activity chips stay in separate, spaced columns and make room for tool cards.
+- **A native voice stage** with an audio-reactive orb (Bots wearing a Herm face appear live at its core only when Hermes reports the `hermes-bots` plugin enabled; uploaded or generated avatars keep the plain orb), listening/thinking/speaking states, centered spoken-reply captions, tool activity cards, and subagent indicators. Immersive mode gives the conversation the workspace while keeping live work visible. Activity chips stay in separate, spaced columns and make room for tool cards.
 - **Spoken approvals and clarifications** when on-device recognition is available. Requests remain visible, and spoken answers go to the pending request rather than becoming a new prompt. Permanent **Always allow** approvals still require the on-screen control.
 - **Follow-up and wake behavior**: with on-device recognition, a quiet follow-up window can pause into wake-phrase listening. Say `Hey <agent name>` to resume; this applies while Voice mode is active, not as a system-wide wake listener.
 - **Separate microphone and spoken-reply controls**, so you can mute input or turn off spoken replies.
+- **Playback-aligned captions** show the same short segment sent to speech synthesis when its audio starts. Captions stay centered and wait during synthesis, rather than advancing on a reading-speed timer.
+- **Live dictation** updates the composer as words are recognized, including corrections, without sending the draft. Recognition warnings offer Retry and Dismiss, clear on a new capture or session change, and keep any successfully recognized words.
 - **Clearly labeled fallback** to macOS speech when Hermes voice support or dependencies are unavailable. The fallback is not a promise of the same continuous experience.
 
 Voice mode requires microphone access; on-device recognition also requires macOS speech-recognition permission. Transcription and speech output depend on the installed Hermes runtime and its configured voice services. “Real-time” here describes the interactive spoken experience, not a claim of a provider-independent, full-duplex speech-to-speech transport.
@@ -276,23 +309,28 @@ Hover Send for the keyboard shortcut or the quota notice for its update time.
 
 ### Pull requests
 
-- The summary groups identity, branch direction, and change totals in a shared themed overview. Changes breaks down loaded files into code, tests, mocks/fixtures, documentation, configuration, and other files, with additions/deletions and explicit partial-coverage notices.
+- The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. Expand Changes for file categories and partial-coverage notices. Merge opens the existing protected landing controls from the toolbar.
+- A floating bottom-right **Chat** panel asks Hermes about the current PR, includes its context, and shows replies without switching the selected workspace conversation. Each PR has its own conversation using the default bot profile. Minimize the chat to a compact composer with centered controls; open its full conversation for approvals or clarification. Failed messages keep their draft, and uncertain deliveries require review before retrying.
 - Pull request rows separate repository, title, branch, and status, with a visible selection marker. Blue open states, amber drafts/blockers, violet merges, and teal reviewer context adapt to the active theme; Monochrome and E-Ink retain neutral ink. Summary status controls include state icons, and description text keeps a readable line width.
 
-- Open pull requests for the session's repository, with check status, review state, blockers, and deep links.
+- PR summaries use a violet branch-route icon and baseline-aligned reviewer and conflict-warning icons.
+- Open pull requests for the session's repository, with check status, review state, blockers, and deep links. The **Merged** filter includes the repository's merged PRs from the last 14 days, including PRs by other contributors; unavailable merged history is reported without hiding open PRs.
 - The session header shows Pull Requests only when the session is connected to a project or repository.
 - Pull request filters adapt to narrow panes with a compact selection menu; session search stays in the full-width first row, matching the Issues layout.
 - Pull request and issue headers provide one GitHub open button; the actions menu keeps editing and Copy link.
-- Summary, Code, and Reviews tabs keep their full clickable area when the detail header shares the window title row.
+- Summary, Changes, and Reviews tabs keep their full clickable area when the detail header shares the window title row.
 - Reviews groups thread filters and feedback in clear sections, with an editor prompt, Markdown preview, and character limit.
+- Newly opened diff files start at the left edge, with source visible beside the line-number gutter.
+- GitHub Details matches the shared content-section title style used by Description, Checks, and Activity.
 - Diff toolbars use a grouped layout switch and compact icon actions, with a visible wrap state and loading spinner for additional context.
-- Expanded reviews keep file titles clear of window controls, show explicit Unified/Split choices, and use the full width for added or deleted files.
+- Every expanded page (Timeline, file diffs, local and observed reviews, pull request code review) shares one header that stays clear of the window controls, with Close and Esc to return. The pull request inspector’s Changes tab has an Expand button for full-window review.
+- Expanded reviews show explicit Unified/Split choices, and use the full width for added or deleted files.
 - Review-option menus align labels to the left and show checked or unchecked boxes on the right.
 - The Code toolbar uses an ellipsis menu for review actions, including watching a pull request and generating a review guide.
 - The Pull requests page loads its list first, then fetches branch, check, and review details as rows come into view.
 - Create draft pull requests and edit a pull request's title or body, with a confirmation step.
 - Shared metadata uses wrapping pills for assigned labels, assignees, projects, milestones, and Development links. Labels, Projects V2 membership/Status, Milestone, assignees, and Development editors prepare changes locally and confirm before saving. Restricted Projects do not hide other details.
-- Readiness groups state, check, review, and merge facts with merge requirements and actions in one panel. Changes sits alongside it on wide panes, with loaded totals above compact category rows; narrow panes stack the panels. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
+- Readiness keeps state, check, review, and merge facts in the summary side column. The Merge toolbar action opens requirements and landing controls; narrow panes stack the sections. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
 - Activity and discussion entries show the author’s GitHub avatar when available.
 - Discussion, review bodies, inline threads, replies, thread resolution, approval, and request-changes use the common Markdown renderer. Changed lines have line numbers and a context-menu comment action.
 - GitHub recovery links in readiness and landing use compact themed buttons with an external-link icon.
@@ -327,7 +365,7 @@ See [GitHub workspace behavior and validation](docs/github-workspace.md) and the
 - **Task plan above the composer**: a compact progress ring and count expand into readable steps, with an emphasized current step and completion marks. The current step spins while the turn is working, including after reopening the task details. Progress, step changes, and disclosure animate briefly; Reduce Motion and motion-free themes keep them still.
 - **Explorer**: a repository browser with blame information. Project chats use their assigned folder immediately, even before the project list refreshes.
 - **Source Control** stays available in the inspector and its + menu while Git state loads or refreshes.
-- **Source Control / Changes**: compact Staged Changes and Changes lists with per-file and group stage/unstage actions, read-only diffs, and a commit message field (⌘Return commits staged changes only). A collapsible Commits section shows the latest 50 commits on the selected worktree’s branch, with author, date, references, and copyable hashes. Local review also checks added lines for conflict markers, likely credentials, and debug statements; credential values are never shown.
+- **Source Control / Changes**: compact Staged Changes and Changes lists with icon-led section titles and a 12pt left inset for section contents (including Graph), hover-revealed per-file stage/unstage toggles, group stage/unstage actions, VS Code–style right-click menus (Open Changes, Open File, Stage/Unstage, Discard Changes with confirmation — untracked files go to the Trash, staged content is kept — Add to .gitignore, Copy Path, Reveal in Finder; group headers offer Stage/Unstage/Discard All), read-only diffs, and a commit message field (⌘Return commits staged changes only). A collapsible **Stash** section saves staged and working-tree changes with an optional message and untracked files, previews saved diffs, and offers Apply, Pop, and confirmed Delete. Apply and Pop restore staged state; failed restoration keeps the stash. Stashes are shared across repository worktrees. A collapsible **Graph** section draws the latest 50 commits of the branch and its upstream as colored lanes with branch, remote, and tag pills; expanding a commit shows its full message, author email, parents, and changed files with line counts, plus Copy hash and Open on GitHub. Graph header actions fetch all remotes, pull (fast-forward only), and push to the upstream; Git credential prompts fail fast instead of hanging. Local review also checks added lines for conflict markers, likely credentials, and debug statements; credential values are never shown.
 - **Terminal**: a native terminal in the session's project folder, with history, Tab completion, and optional repository checks.
 - **Repository review**: reviews the whole repository locally and tells you what it didn't cover. Optional repository watching never starts Hermes work on its own.
 - **⌘K command palette** for app actions and Inbox filters.
@@ -339,7 +377,7 @@ See [GitHub workspace behavior and validation](docs/github-workspace.md) and the
 - Select text in a document to add a quoted review note, or add a general note. Notes are saved locally and remain highlighted in the preview.
 - Send draft notes as one **revision request to the session the preview came from**, rather than manually copying excerpts into a different conversation.
 - Inspect changes against the file contents saved when notes were sent. A removed quote can be marked addressed; that is a matching heuristic, not proof that the requested revision is correct.
-- Use **Open diff** on chat file attachments with local Git changes to open the third panel's **Source Control** tab at that file. It shows current staged and working-tree changes separately, or the added contents of a new file, from the attachment's own worktree. **Open preview** remains available for the file itself. These are current Git changes, which may include edits beyond the AI response.
+- Use **Open diff** on chat file attachments with local Git changes to open a dedicated **Diff** tab in the third panel. It shows current staged and working-tree changes separately, or the added contents of a new file, from the attachment's own worktree. **Open preview** remains available for the file itself. These are current Git changes, which may include edits beyond the AI response. Source Control keeps its inline file previews. Both use the shared diff viewer, which wraps long lines by default without horizontal scrolling.
 
 ### Built-in browser
 
@@ -351,6 +389,8 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Annotate** (cursor icon): click any element, describe the change, and Herm sends the element's selector, styles, HTML and a screenshot to the chat. The popup uses your Herm theme.
 - **Session browsers stay open.** Switching sessions or closing the inspector keeps each session's live pages, history, and form state without reloading. Each session and bot profile has its own browser data; extra browser tabs share only that session's data.
 - **Links in chat** open their exact destination in that session's Browser tab, including while the browser is starting.
+- **Navigation feedback.** A spinner and slim loading track appear while pages load; Reload becomes Stop. Failed navigation offers Retry without shifting the page. Back and Forward reflect the active page’s history.
+- **Compact browser controls.** The toolbar wraps in narrow panels, with consistent control heights and visible Fit, Phone, Tablet, and Desktop viewport presets. Use ⌘L for the address and ⌘R to reload. Local addresses such as `localhost:5173` open directly; the actions menu includes Copy Address and Open in Default Browser.
 - **Offline notice.** If the agent browser can't start or keeps closing, a notice says Hermes can't browse, and the tab falls back to a regular web view. Use **Retry**, reopen the tab, or reconnect Hermes to try again.
 - **Sharing the browser with other tools.** Each session's agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. Hermes follows the selected session's endpoint. A Chrome DevTools MCP configured with `--browserUrl=http://127.0.0.1:9333` stays attached to the session that acquired that port.
 
@@ -359,13 +399,16 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - Skill and command highlights include the full namespaced token, such as `/cpipe:run`, in the composer and sent message bubbles.
 - Browse projects and their conversations within the selected bot's scope.
 - Create a project, set it active, archive it, or delete it when the installed Hermes runtime exposes the corresponding project methods.
-- Keep queued messages, edits, and attachments with their session when switching conversations or starting a new chat. Reopening a session restores its queue, including when Hermes assigns a new runtime session ID.
+- Keep queued messages and attachments with their session when switching conversations or starting a new chat. Reopening a session restores its queue, including when Hermes assigns a new runtime session ID.
+- Edit a queued message to move it, attachments included, back into the composer; sending it again adds it to the end of the queue.
 - Queued messages advance automatically when the active turn settles. Voice mode sends the next message after reply audio drains; an explicit Stop keeps the remaining queue for you to resume.
 - Share conversation pins with the Hermes CLI and Desktop rather than maintaining a separate pin list.
 
 ### Bots
 
-Leading bot mentions render an avatar-and-name pill inline with the text inside your message bubble. Mentions follow Hermes’ chat flow: the current agent receives the resolved profile identity and uses `message_agent` to contact its Bot Chat. If that tool is unavailable in the session, Hermes reports it.
+Leading bot mentions render an avatar-and-name pill inline with the text inside your message bubble. The pill and message text appear together as soon as you send. A single resolved bot mention anywhere in a message, without attachments or queued input, is submitted to that profile’s canonical Bot Chat. Herm verifies the recipient’s profile and session before sending, and shows its reply in the current conversation. A busy or unconfirmed recipient shows an error. Other mentions pass the resolved profile identity to the current agent for `message_agent`; Hermes reports when that tool is unavailable.
+
+The forward-message composer keeps the insertion point with newly typed text when a delayed completion update arrives.
 
 - A **Bots page** showing each Hermes profile's model, avatar, latest message, and live presence.
 - Create, clone, edit, duplicate, hide, and permanently delete bots. **Delete Bot…** in More or the context menu confirms removal of the profile and its data; the default bot is protected. Deletion requires Hermes CLI support. Editable fields include avatar, title, model, `SOUL.md`, skills, toolsets, and MCP servers.
@@ -380,11 +423,16 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 - Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
 - Filters for status, assignee, "mine", and session are passed to Hermes.
 - While open, the board refreshes every five seconds with live work and every fifteen seconds otherwise. Board and filter changes made during a refresh load the latest selection automatically.
+- Large boards format card descriptions as cards become visible; refreshes update changed cards without rebuilding unchanged card content.
 
 ### Activity
 
 - **Work** shows what shipped each day: sessions, finished tasks, commits, automation runs, and cost. A month summary sits above the calendar; teal marks shipped work, blue sessions, violet automation, and amber failed runs.
+- Today stays visible in every skin with a filled date badge, a stronger cell outline, and a light skin-accent tint, including when another date or range is selected.
+- The daily **Pull requests merged** section shows merged PR counts per repository, busiest first, above the individual PR links.
+- Day, Week, and Month share the same PR, task, commit, session, automation, and usage details. Week and Month show records and repository counts for their selected range, with dates on each row and Show more for longer lists; usage-only periods remain visible.
 - **Spend** shows token usage and cost by model and day, plus a yearly activity heatmap with Tokens, Cost, and API calls. The yearly heatmap appears first, followed by cost, tokens, cache reads, sessions, and the daily chart for the past 30 days. Tools and skills share the available width and stack in compact windows. There is no date-range picker; hover a heatmap day for details.
+- Spend loads the 30-day report before the yearly heatmap, shares ongoing requests across tab changes, and reuses successful reports for one minute. Refresh reloads both; failed refreshes retain the previous figures with a stale indicator.
 
 ### Calendar
 
@@ -408,12 +456,27 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 - **Artifacts**: images, files, and links across Hermes profiles and saved, unarchived sessions, including terminal outputs and pre-compaction history. The index pages through complete transcripts rather than stopping at the sidebar or message limit. Parsing runs off the UI thread; refresh reuses unchanged sessions and caches only artifact records.
 - **Core**: token usage, context breakdown, rollback checkpoints, skills, MCP servers, plugins, and Hermes health.
 
-The session inspector’s **Activity** tab separates **Overview** (current work,
-delegates, and Bot / Kanban / background results) from **History** (searchable
-execution details with source and status filters). Expand entries for full
-inputs, results, diffs, timing, and related conversations where available.
-Updates are coalesced, ordinary reply text does not rebuild execution history,
-and lists load ten rows at a time. Activity stays scoped to the selected session.
+The session inspector’s **Timeline** tab replaces the former Activity Overview/History
+with a live execution waterfall. It opens on **All activity**, which stacks every loaded
+request with idle time between them collapsed; the menu narrows it to one request or
+follows the current turn. A metrics strip shows duration, model calls, tool calls,
+delegates, reported tokens, and errors. Steps use the chat’s activity icons and a
+color per tool type; the slowest step is badged. Subagents and Steps sit in separate cards with 14pt headings and collapse independently, and the
+Steps header holds the step controls. Search (⌘F) preserves the step
+hierarchy; Fit and Live help navigate longer runs. Live is on by default and keeps
+the last row of the waterfall and the playhead in view; scrolling the timeline turns it off.
+In the inspector the step list is capped in height with the selected step's details
+below it; Expand opens the full timeline over the workspace (Close or Esc returns). Finished requests can be
+replayed at 0.5–4× with a playhead. Select a step for a card with timing metrics and
+its input, result, and diff rendered with the chat’s Markdown renderer. Restored
+history takes timing from Hermes message timestamps; restored tool steps are placed at
+the time Hermes recorded their result and labelled Finished, since Hermes keeps no start time; local receipt is labelled
+observed, and missing timing stays unavailable. Model calls are derived from gaps
+between tool batches and labelled as such; the final reply’s model call and cost
+are not reported. Delegated subagents appear as their own rows, named by their task when Hermes
+gives no name, live bars, nested tool calls, and a link to their conversation. A collapsible Subagents section above the steps lists delegates as Agent 1, Agent 2, … (or shows
+an empty state when the request delegated nothing) with each one's task, status, duration, and what it is doing now (or its summary once finished).
+Saved Activity and Trace tabs reopen as Timeline. Long timelines prepare nearby labels and bars instead of every loaded step; live activity reuses completed history, and hidden timelines stop their update work.
 
 Capabilities loads each tab on first use and keeps its inventory in memory until Refresh or a profile change. Plugins entry and Refresh read only the plugin inventory; its profile picker reads only profile names, and plugin changes refresh only Plugins while invalidating other tabs for their next visit. Plugin catalogs become browsable before optional GitHub star counts finish. Catalog sorting and search text are prepared when source data changes; selection and filtering reuse that index. Empty catalogs are remembered, overlapping catalog reads are coalesced, and Refresh explicitly retries the catalog. Quick-view inspectors show runtime-provided plugin versions, source and pinned revision, toolset setup and tool counts, connector policy and account state, and MCP transport and required key names. Skills show their profile and SKILL.md preview; versions are shown only where Hermes supplies them.
 
@@ -545,20 +608,32 @@ Project management and bot **@mention autocomplete** are already implemented; ru
   incomplete coverage and changed sources remain visible.
 - Shared native diffs support syntax colors, split/unified layouts, wrapping, Find,
   expanded review, private line-range revision notes, and validated local context expansion.
-- Revision notes stage context in the source conversation. GitHub line comments can
-  be collected as local review drafts and published together by **Submit review**.
+- Revision notes stage context in the source conversation. Use **+** beside a PR
+  diff line to compose an inline review in the file, including expanded file views.
+  Line comments stay private and can be edited beside the file or in **Reviews**;
+  **Submit review** publishes them together with the summary after confirmation.
+  The Reviews panel explains unavailable submission actions and links directly to Code.
 - Private revision-note editors show numbered captured source above the note field.
   The tray keeps **Send revision** in its header and explains when an owning
   conversation is required.
 - **Generate review guide** requests analysis in a separate Hermes conversation. It
   preserves the original task and draft and does not claim an execution sandbox.
+  **Generate review guide** is the single AI-review entry point; the PR toolbar
+  keeps **Attach to chat** for general questions.
+  Choose a reviewer when Bots is enabled, or use the default bot. The guide opens
+  immediately, shows a waiting state, and refreshes saved replies automatically
+  while open. Open its conversation to follow tool activity or answer the reviewer.
 - Terminals survive inspector and session navigation, support splits, and attach
-  selected output to chat. Closing the app ends shells; reopening starts fresh ones.
+  selected output to chat. Closing the app or a Terminal tab ends its shells (Herm
+  asks first if a command is running); reopening starts fresh ones. Closing the
+  Browser tab quits the agent's browser and unloads its page until you reopen it.
 - **Actions** stores manually launched project commands. **Previews** finds loopback
   servers in Herm's terminal process trees. Its themed panel lists process names and
   addresses, supports Refresh, and labels stale results. Nothing runs or opens automatically.
 - Composer attachments include window capture, saved prompts, and selected conversation
   excerpts. Large pastes become text-file context; Command-Shift-V keeps text editable.
+  Pasting copied files attaches their contents as compact file chips, even when
+  the clipboard also includes a file icon preview.
   Optional app text is configured in **Settings → General → Window capture**.
   **Settings → Appearance → Replies → Generative UI** controls visual replies.
 - PR watching is opt-in and passive while Herm runs. It never starts agent work.
@@ -652,3 +727,19 @@ PR lists use green for open work; Issues uses blue status icons with neutral sta
 Ordinary IDs, branches, and drafts keep neutral ink. PR readiness is colored separately from lifecycle.
 Category colors distinguish calendar sources, automation, and file changes;
 orange is reserved for attention rather than normal draft or modified state.
+
+The expanded floating workspace fills the panel vertically without extra top or bottom shell padding.
+
+PR Summary sections share a padded leading edge for headings and content, with stronger section titles.
+
+Review actions group pull-request watching and guide actions in a compact menu. Raw submission diagnostics stay in the guide; startup shows a loading indicator. New review sessions wait briefly for project-directory confirmation, and active first turns wait for saved history.
+
+Markdown GitHub pull request and issue overview links open the shared PR or issue detail view in chat’s Pull Request or Issue inspector tab
+when that page is enabled in Settings and GitHub resolves the item. Each chat keeps
+its own GitHub selection; opening a link leaves the conversation visible. Disabled pages,
+unavailable items, and links to anchors or subpages retain the browser fallback.
+
+Chat’s Pull Request and Issue tabs use the standard 12pt inspector side gutters.
+
+Open pull requests offer Edit beside Reviewers to select people with repository write access.
+Changes require confirmation, preserve team requests, and refresh from GitHub.

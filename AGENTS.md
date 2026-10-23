@@ -74,6 +74,9 @@ user-visible changes. Do not commit or push unless asked.
   counted source/legacy exceptions must not be expanded to bypass the check.
   See `docs/color-system.md` for examples and source-color exceptions.
 
+- Full-window or expanded presentations use `DockExpandedPage` (see
+  `docs/expanded-pages.md`). Never hand-roll a header for an expanded layer;
+  it draws under the window controls.
 - Match the closest existing component before introducing a new visual
   treatment. Reuse shared `Dock*` components and color tokens.
 - Clickable text must be recognizable before hover: use `.dockCompact` for
