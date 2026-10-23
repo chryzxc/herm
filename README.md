@@ -311,7 +311,7 @@ Hover Send for the keyboard shortcut or the quota notice for its update time.
 
 ### Pull requests
 
-- The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. Expand Changes for file categories and partial-coverage notices. Merge opens the existing protected landing controls from the toolbar.
+- The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. The header first compacts into one row, then uses left-aligned tabs above compact actions at phone-like widths, keeping every action available. Compact tabs omit line totals, which remain in the summary. Expand Changes for file categories and partial-coverage notices. The Merge dropdown opens protected landing controls from the toolbar.
 - A floating bottom-right **Chat** panel asks Hermes about the current PR, includes its context, and shows replies without switching the selected workspace conversation. Each PR has its own conversation using the default bot profile. Minimize the chat to a compact composer with centered controls; open its full conversation for approvals or clarification. Failed messages keep their draft, and uncertain deliveries require review before retrying.
 - Pull request rows separate repository, title, branch, and status, with a visible selection marker. Blue open states, amber drafts/blockers, violet merges, and teal reviewer context adapt to the active theme; Monochrome and E-Ink retain neutral ink. Summary status controls include state icons, and description text keeps a readable line width.
 
@@ -332,7 +332,7 @@ Hover Send for the keyboard shortcut or the quota notice for its update time.
 - The Pull requests page loads its list first, then fetches branch, check, and review details as rows come into view.
 - Create draft pull requests and edit a pull request's title or body, with a confirmation step.
 - Shared metadata uses wrapping pills for assigned labels, assignees, projects, milestones, and Development links. Labels, Projects V2 membership/Status, Milestone, assignees, and Development editors prepare changes locally and confirm before saving. Restricted Projects do not hide other details.
-- Readiness keeps state, check, review, and merge facts in the summary side column. The Merge toolbar action opens requirements and landing controls; narrow panes stack the sections. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
+- Readiness keeps state, check, review, and merge facts in the summary side column. The Merge toolbar dropdown opens requirements and landing controls; narrow panes stack the sections. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
 - Activity and discussion entries show the author’s GitHub avatar when available.
 - Discussion, review bodies, inline threads, replies, thread resolution, approval, and request-changes use the common Markdown renderer. Changed lines have line numbers and a context-menu comment action.
 - GitHub recovery links in readiness and landing use compact themed buttons with an external-link icon.
@@ -392,7 +392,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Session browsers stay open.** Switching sessions or closing the inspector keeps each session's live pages, history, and form state without reloading. Each session and bot profile has its own browser data; extra browser tabs share only that session's data.
 - **Links in chat** open their exact destination in that session's Browser tab, including while the browser is starting.
 - **Navigation feedback.** A spinner and slim loading track appear while pages load; Reload becomes Stop. Failed navigation offers Retry without shifting the page. Back and Forward reflect the active page’s history.
-- **Compact browser controls.** The toolbar wraps in narrow panels, with consistent control heights and visible Fit, Phone, Tablet, and Desktop viewport presets. Use ⌘L for the address and ⌘R to reload. Local addresses such as `localhost:5173` open directly; the actions menu includes Copy Address and Open in Default Browser.
+- **Responsive browser controls.** The toolbar keeps navigation and the address on one row when space permits; phone-width panels give the address its own full-width row. **Auto** follows the panel’s live width without reloading the page. Phone, Tablet, and Desktop keep a fixed preview width. Annotation is also available in More; Local Previews is removed from Browser. Use ⌘L for the address and ⌘R to reload. Local addresses such as `localhost:5173` open directly; the actions menu includes Copy Address and Open in Default Browser.
 - **Offline notice.** If the agent browser can't start or keeps closing, a notice says Hermes can't browse, and the tab falls back to a regular web view. Use **Retry**, reopen the tab, or reconnect Hermes to try again.
 - **Sharing the browser with other tools.** Each session's agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. Hermes follows the selected session's endpoint. A Chrome DevTools MCP configured with `--browserUrl=http://127.0.0.1:9333` stays attached to the session that acquired that port.
 
@@ -647,10 +647,14 @@ Project management and bot **@mention autocomplete** are already implemented; ru
 ```sh
 swift build   # build
 swift test    # run the test suite
+make guard    # fast strict lint, color, and conflict/whitespace checks
 make check    # everything CI runs
 ```
 
 CI runs on every pull request and on every push to `main`.
+Run `make guard` before review and `make format` to fix mechanical Swift
+formatting. The shared formatter uses four-space indentation; lint findings
+fail CI. See [Contributing](CONTRIBUTING.md) for the focused development loop.
 
 Local attachment previews decode off the UI thread and reuse bounded thumbnails;
 attachment uploads also prepare file data in the background. Explorer syntax
@@ -745,3 +749,12 @@ Chat’s Pull Request and Issue tabs use the standard 12pt inspector side gutter
 
 Open pull requests offer Edit beside Reviewers to select people with repository write access.
 Changes require confirmation, preserve team requests, and refresh from GitHub.
+
+Async actions show local progress while requests are pending. Markdown PR and issue
+links show an “Opening…” indicator while GitHub resolves their inspector tab;
+settings, connection, memory, review, and group-chat actions expose pending feedback
+and suppress repeat submission. See [the loading-state audit](docs/loading-states.md).
+
+Merge stays disabled for draft pull requests and unmet GitHub merge requirements.
+Hover over the main button for the blocker; the dropdown retains View merge
+requirements for refresh, queue, and auto-merge actions.

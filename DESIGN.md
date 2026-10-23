@@ -2186,7 +2186,11 @@ Before considering a UI change complete, verify:
 
 The PR detail panel follows the ChatGPT pull request reference: an open reading
 canvas, a compact capsule tab strip (Summary, Changes with line totals, Reviews),
-and a quiet action toolbar. Repository/number, status, title, author/freshness,
+and a quiet action toolbar. Before wrapping, the header drops tab line totals and
+uses an accessible review icon. At phone-like widths, compact tabs and actions
+form left-aligned rows, with actions wrapping further when needed. Watch, GitHub,
+Refresh, More, Review, and Merge remain
+available. Line totals remain in the summary. Repository/number, status, title, author/freshness,
 and base ← head branch direction sit above the content without an overview card.
 At 840pt and wider, description and Activity occupy the reading column while a
 280pt right column holds Changes, reviewers, checks, readiness, and metadata,
@@ -2420,16 +2424,21 @@ supporting text. Review trays place the count and Send revision in their header;
 file metadata and Edit/Remove share a wrapping row, followed by readable-width note
 text and stale-source status. Explain why sending is unavailable beside the tray.
 
-Terminal and Browser Previews use a compact, surfaced globe/label/chevron control
+Terminal Previews uses a compact, surfaced globe/label/chevron control
 and a shared 320pt themed popover. Its header owns refresh feedback; rows separate
 process names from monospaced loopback addresses and include an open arrow. Empty,
 checking, and failed discovery occupy one stable slot. Failed refreshes retain
 previous rows with an explicit stale subtitle. Discovery pauses under hidden surfaces
 and rejects results from a previous terminal scope. Opening remains an explicit click.
 
-The Browser toolbar uses 28pt controls and a compact themed address field. Narrow
-panels move annotation, Previews, viewport selection, and More to a second row,
-preserving address-entry space. The viewport menu stays visible and names the
+The Browser toolbar uses 28pt controls and a compact themed address field. It
+first collapses viewport labels and moves annotation into More; phone-width
+panels give the address a full-width row above navigation and viewport actions.
+Browser has no Local Previews control or discovery polling. Auto follows native
+page bounds on every resize without reloading; device presets retain their CSS
+width and scale to fit. WebKit sizing belongs to its native page container;
+Chromium’s canvas reports frame changes directly rather than waiting for a
+subview layout pass. The viewport menu stays visible and names the
 selected CSS width; its accessible label includes the device preset. Page loading
 uses a reserved address-field spinner and a slim indeterminate track over the
 toolbar’s bottom edge; Reload becomes Stop in the same footprint. Navigation
@@ -2591,6 +2600,30 @@ by `PullRequestLandingView` so selection, requirements, confirmation, pending st
 and GitHub writes follow one path. The primary segment names the selected method;
 the chevron shows repository-supported methods with descriptions and a checkmark.
 Selection stays available when checks block immediate merging, including for
-auto-merge. Unavailable requirements and blocked or queued merges open the
-requirements panel; successful eligibility still requires explicit confirmation
+auto-merge. Unavailable requirements and blocked or queued merges disable the
+main action; the dropdown opens requirements. Successful eligibility requires explicit confirmation
 and provider revalidation. All segments share primary-button ink across skins.
+
+### Async action feedback
+
+User-triggered asynchronous actions acknowledge the click immediately, keep progress
+visible until their awaited work settles, and disable repeat submission while pending.
+Use `DockAsyncButton` for persistent controls without model-owned pending state; its
+spinner slot preserves the control's width. Existing model-owned `DockActionLabel`,
+`DockIconButton`, and modal pending states remain the preferred treatments when available.
+Menu and confirmation actions show progress on the persistent parent, since their
+invoking control dismisses. Errors and drafts stay owned by the existing action.
+
+Markdown GitHub overview links show a non-interactive “Opening…” progress overlay in
+the current conversation while resolving, without moving transcript content. Progress
+is scoped to that conversation and clears on success, failure, or cancellation. Repeated
+clicks during resolution do not start another lookup. Browser fallbacks remain available.
+Group sends, approval responses, rename, retry, stop, and disband expose room-scoped
+request progress, separate from the runtime's working status.
+
+Merge eligibility and its tooltip share `GitHubLandingSnapshot.mergeDisabledReason`
+in toolbar and landing controls. Drafts disable immediately from the PR record,
+even before requirements load. Missing requirements fail closed. GitHub merge
+state controls required-check and branch-protection gating; optional failing
+checks remain warnings when GitHub reports the PR mergeable. Disabled Merge
+keeps an active hover-tip anchor and the separate requirements dropdown.
