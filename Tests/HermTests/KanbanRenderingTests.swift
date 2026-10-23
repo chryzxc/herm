@@ -28,16 +28,16 @@ struct KanbanRenderingTests {
                 onSelect: { fixture.selection = $0.id }, onAction: { _, _ in },
                 onDrop: { _, _ in }, onAssign: { _, _ in })
                 .equatable()
-                .environment(\.conversationRowEvaluation) { name, _ in
-                    fixture.evaluations[name, default: 0] += 1
-                }
         }
     }
 
     @Test func largeBoardUpdatesOnlyAffectedCards() async throws {
         #if DEBUG
             let fixture = Fixture()
-            let host = NSHostingView(rootView: Board(fixture: fixture))
+            let host = NSHostingView(rootView: Board(fixture: fixture)
+                .environment(\.conversationRowEvaluation) { name, _ in
+                    fixture.evaluations[name, default: 0] += 1
+                })
             host.sizingOptions = []
             host.frame = NSRect(x: 0, y: 0, width: 900, height: 640)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -56,6 +56,11 @@ struct KanbanRenderingTests {
             #expect(fixture.evaluations.count < 100)
 
             fixture.evaluations = [:]
+            fixture.tasks = fixture.tasks.map { $0 }
+            try await settle()
+            #expect(fixture.evaluations.isEmpty)
+
+            fixture.evaluations = [:]
             fixture.selection = "task-0"
             try await settle()
             #expect(Set(fixture.evaluations.keys) == ["kanban-card:task-0"])
@@ -69,6 +74,11 @@ struct KanbanRenderingTests {
             fixture.tasks[2].assignee = "forge"
             try await settle()
             #expect(Set(fixture.evaluations.keys) == ["kanban-card:task-2"])
+
+            fixture.evaluations = [:]
+            fixture.selection = "task-1"
+            try await settle()
+            #expect(Set(fixture.evaluations.keys) == ["kanban-card:task-0", "kanban-card:task-1"])
         #endif
     }
 }

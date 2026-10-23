@@ -161,21 +161,24 @@ struct KanbanBoardView: View, Equatable {
                             KanbanTaskCard(
                                 task: task,
                                 lane: lane,
-                                summary: snapshot.detail(for: task.id),
                                 bot: snapshot.visibleBot(for: task.assignee),
                                 avatarData: snapshot.visibleBot(for: task.assignee).flatMap { avatarImages[$0.id] },
                                 isSelected: selectedTaskID == task.id,
-                                now: now,
+                                activityLabel: (task.latestEventAt ?? task.startedAt).map {
+                                    KanbanBoardPresentation.compactAge(since: $0, now: now)
+                                } ?? "No activity",
                                 actions: actions,
-                                pendingActionIDs: pendingActionIDs,
+                                pendingActionIDs: pendingActionIDs.filter { $0.hasSuffix(":\(task.id)") },
                                 isLoadingDetail: loadingDetailTaskID == task.id,
                                 assignableBots: bots,
+                                isDragging: draggingTaskID == task.id,
                                 draggingTaskID: $draggingTaskID,
                                 onSelect: onSelect,
                                 onAction: onAction,
                                 onMove: onDrop,
                                 onAssign: onAssign
                             )
+                            .equatable()
                         }
                     }
                     .padding(8)
@@ -310,18 +313,18 @@ private struct KanbanLaneRail: View {
     }
 }
 
-private struct KanbanTaskCard: View {
+private struct KanbanTaskCard: View, Equatable {
     let task: KanbanTaskSummary
     let lane: KanbanLane
-    let summary: String?
     let bot: BotSummary?
     let avatarData: Data?
     let isSelected: Bool
-    let now: Date
+    let activityLabel: String
     let actions: KanbanCardActionAvailability
     let pendingActionIDs: Set<String>
     let isLoadingDetail: Bool
     let assignableBots: [BotSummary]
+    let isDragging: Bool
     @Binding var draggingTaskID: String?
     let onSelect: (KanbanTaskSummary) -> Void
     let onAction: (KanbanTaskSummary, KanbanTaskAction) -> Void
@@ -333,6 +336,20 @@ private struct KanbanTaskCard: View {
     #if DEBUG
         @Environment(\.conversationRowEvaluation) private var evaluation
     #endif
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.isSelected == rhs.isSelected
+            && lhs.isLoadingDetail == rhs.isLoadingDetail
+            && lhs.isDragging == rhs.isDragging
+            && lhs.activityLabel == rhs.activityLabel
+            && lhs.actions == rhs.actions
+            && lhs.pendingActionIDs == rhs.pendingActionIDs
+            && lhs.task == rhs.task
+            && lhs.lane == rhs.lane
+            && lhs.bot == rhs.bot
+            && lhs.avatarData == rhs.avatarData
+            && lhs.assignableBots == rhs.assignableBots
+    }
 
     var body: some View {
         #if DEBUG
@@ -348,7 +365,8 @@ private struct KanbanTaskCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.trailing, 24)
 
-            if let summary = summary ?? nonEmpty(task.detail) {
+            // Format only mounted cards; task bodies can be large on old boards.
+            if let summary = KanbanBoardPresentation.cardDetail(task.detail) ?? nonEmpty(task.detail) {
                 Text(summary)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -429,7 +447,7 @@ private struct KanbanTaskCard: View {
         .onHover { isHovered = $0 }
         .modifier(KanbanCardDragCursor(
             isEnabled: isDraggable,
-            isDragging: draggingTaskID == task.id
+            isDragging: isDragging
         ))
         .contextMenu { actionMenu }
         .accessibilityElement(children: .contain)
@@ -456,11 +474,6 @@ private struct KanbanTaskCard: View {
     private var background: Color {
         if isSelected { return Color.dockAccent.opacity(0.10) }
         return isHovered ? Color.dockSurface2 : Color.dockSurface
-    }
-
-    private var activityLabel: String {
-        guard let date = task.latestEventAt ?? task.startedAt else { return "No activity" }
-        return KanbanBoardPresentation.compactAge(since: date, now: now)
     }
 
     private func priorityTag(_ priority: String) -> some View {

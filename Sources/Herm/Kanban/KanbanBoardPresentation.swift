@@ -45,16 +45,11 @@ struct KanbanBoardPresentation {
         let tasksByLane: [KanbanLane: [KanbanTaskSummary]]
         let botByAssignee: [String: BotSummary]
         let visibleBotByAssignee: [String: BotSummary]
-        let detailByTaskID: [String: String]
 
         var totalCount: Int { tasksByLane.values.reduce(0) { $0 + $1.count } }
 
         func tasks(in lane: KanbanLane) -> [KanbanTaskSummary] {
             tasksByLane[lane] ?? []
-        }
-
-        func detail(for taskID: String) -> String? {
-            detailByTaskID[taskID]
         }
 
         func bot(for assignee: String?) -> BotSummary? {
@@ -74,13 +69,8 @@ struct KanbanBoardPresentation {
         visibleBots: [BotSummary]? = nil
     ) -> Snapshot {
         var tasksByLane = Dictionary(uniqueKeysWithValues: KanbanLane.allCases.map { ($0, [KanbanTaskSummary]()) })
-        var detailByTaskID: [String: String] = [:]
-
         for task in tasks {
             tasksByLane[lane(for: task.status), default: []].append(task)
-            if let detail = cardDetail(task.detail) {
-                detailByTaskID[task.id] = detail
-            }
         }
 
         var botByAssignee: [String: BotSummary] = [:]
@@ -95,8 +85,7 @@ struct KanbanBoardPresentation {
         return Snapshot(
             tasksByLane: tasksByLane,
             botByAssignee: botByAssignee,
-            visibleBotByAssignee: visibleBotByAssignee,
-            detailByTaskID: detailByTaskID
+            visibleBotByAssignee: visibleBotByAssignee
         )
     }
 
