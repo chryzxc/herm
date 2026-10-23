@@ -164,7 +164,7 @@ struct GitHubConversationView: View {
             }.dockCard(padding: 12)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Leave a comment").dockFont(size: 12, weight: .semibold)
+                Text("Leave a comment").dockFont(.body, weight: .semibold)
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 4) {
                         DockTabButton(title: "Write", isSelected: !preview) { preview = false }

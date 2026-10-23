@@ -51,7 +51,7 @@ struct ProjectActionsMenu: View {
             case .terminal(let action, let directory):
                 VStack(spacing: 0) {
                     HStack {
-                        Text(action.name).dockFont(size: 12, weight: .semibold)
+                        Text(action.name).dockFont(.body, weight: .semibold)
                         Spacer()
                         Button("Close") { presentation = nil }.buttonStyle(.dockCompact)
                     }.padding(12)

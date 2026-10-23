@@ -143,7 +143,7 @@ struct HermesPetSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Hermes companion").dockFont(size: 12, weight: .semibold)
+                Text("Hermes companion").dockFont(.body, weight: .semibold)
                 Spacer()
                 Button("Refresh") { pet.refresh(); Task { await pet.loadGallery() } }
                     .buttonStyle(.dockPress).disabled(pet.isLoading || !pet.online)
@@ -151,15 +151,15 @@ struct HermesPetSettingsView: View {
             HStack(spacing: 12) {
                 HermesPetView(pet: pet).frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(pet.info.displayName ?? "Choose a companion").dockFont(size: 12, weight: .semibold)
-                    Text(pet.profileLabel).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                    Text(pet.info.displayName ?? "Choose a companion").dockFont(.body, weight: .semibold)
+                    Text(pet.profileLabel).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 }
                 Spacer()
                 Toggle("Enabled", isOn: Binding(get: { enabled }, set: { enabled = $0; dirty = true }))
                     .toggleStyle(.switch).controlSize(.small).fixedSize()
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("Select a pet").dockFont(size: 12, weight: .semibold)
+                Text("Select a pet").dockFont(.body, weight: .semibold)
                 DockTextField("Search pets", text: $query).textFieldStyle(.dockGlass)
                 ScrollView {
                     LazyVStack(spacing: 4) {
@@ -174,27 +174,27 @@ struct HermesPetSettingsView: View {
                                     .accessibilityLabel("Select \(entry.displayName)")
                                     .accessibilityAddTraits(slug == entry.slug ? .isSelected : [])
                             }
-                            if matches.isEmpty { Text("No companions found").dockFont(size: 12) }
+                            if matches.isEmpty { Text("No companions found").dockFont(.body) }
                         } else {
-                            Text(pet.isLoading ? "Loading companions…" : "Gallery unavailable. Refresh to retry.").dockFont(size: 12)
+                            Text(pet.isLoading ? "Loading companions…" : "Gallery unavailable. Refresh to retry.").dockFont(.body)
                         }
                     }
                 }.frame(height: 220)
                 Text("Select a pet, then choose Apply to Hermes. Up to 60 matches shown; search to find more.")
-                    .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             }
             HStack {
-                Text("Pet size").dockFont(size: 12)
+                Text("Pet size").dockFont(.body)
                 Slider(value: Binding(get: { scale }, set: { scale = $0; dirty = true }), in: 0.1...3, step: 0.05)
-                Text("\(Int(scale * 100))%").dockFont(size: 12).monospacedDigit().frame(width: 44)
+                Text("\(Int(scale * 100))%").dockFont(.body).monospacedDigit().frame(width: 44)
             }
             Text("Choose Apply to Hermes to save selection and size. Size scales the floating pet in Herm and is shared with Hermes Desktop and the TUI.")
-                .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             Text("Only in Herm. Drag the pet away from the notch to let it roam; drag it back (or call it home from the notch menu) to attach it again. Reduce Motion keeps a free pet in place.")
-                .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             HStack {
                 Text(changedElsewhere ? "Changed in Hermes. Reload or apply your choices." : pet.galleryNotice ?? pet.notice ?? (pet.online ? "" : "Hermes is offline"))
-                    .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 Spacer()
                 if changedElsewhere { Button("Reload", action: reload).buttonStyle(.dockPress) }
             }.frame(minHeight: 30)
@@ -235,11 +235,11 @@ private struct HermesPetGalleryRow: View {
         HStack(spacing: 8) {
             Group {
                 if let thumbnail { Image(nsImage: thumbnail).resizable().scaledToFit() }
-                else { Text(String(entry.displayName.prefix(1))).dockFont(size: 12, weight: .semibold) }
+                else { Text(String(entry.displayName.prefix(1))).dockFont(.body, weight: .semibold) }
             }.frame(width: 36, height: 36)
-            Text(entry.displayName).dockFont(size: 12, weight: .medium).lineLimit(1)
+            Text(entry.displayName).dockFont(.body, weight: .medium).lineLimit(1)
             Spacer()
-            Text(selected ? "Selected" : entry.installed ? "Installed" : "Download").dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+            Text(selected ? "Selected" : entry.installed ? "Installed" : "Download").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
         }.padding(6).background(selected ? Color.dockAccentMuted : Color.clear)
             .contentShape(Rectangle())
             .task(id: entry.slug) { thumbnail = await pet.thumbnail(entry) }

@@ -84,7 +84,7 @@ struct PullRequestWorkspace: View {
                     ForEach(0..<6, id: \.self) { index in listLoadingRow(index: index) }
                 } else if center.visible.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("No pull requests match this view").dockFont(size: 12, weight: .semibold)
+                        Text("No pull requests match this view").dockFont(.body, weight: .semibold)
                         Text("Change the scope or filters, or create a draft pull request using New.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
                         Button("Clear filters") { center.query = ""; center.filter = .all; center.browsing = GitHubBrowseOptions(); refreshID += 1 }.buttonStyle(.dockCompact)
                         Button("Retry") { refreshID += 1 }.buttonStyle(.dockCompact)

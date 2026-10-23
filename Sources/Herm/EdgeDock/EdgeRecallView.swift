@@ -73,12 +73,12 @@ struct EdgeRecallView: View {
             Text(error).foregroundStyle(Color.dockWarning)
           } else if search.hits.isEmpty, !search.loading {
             Text(query.isEmpty ? "Search previous conversations" : "No matching conversations")
-              .dockFont(size: 12, weight: .semibold)
+              .dockFont(.body, weight: .semibold)
           }
           ForEach(search.hits) { hit in
             VStack(alignment: .leading, spacing: 5) {
-              Text(hit.session.displayTitle).dockFont(size: 12, weight: .semibold)
-              Text(hit.snippet).dockFont(size: 12).lineLimit(5)
+              Text(hit.session.displayTitle).dockFont(.body, weight: .semibold)
+              Text(hit.snippet).dockFont(.body).lineLimit(5)
               HStack {
                 Button("Open conversation") { open(hit.session) }.buttonStyle(.dockCompact)
                 DockCopyButton(
@@ -86,7 +86,7 @@ struct EdgeRecallView: View {
                 ).buttonStyle(.dockCompact)
                 Button("Insert") { insert(hit) }.buttonStyle(.dockCompact).accessibilityLabel(
                   "Insert snippet into quick draft with source reference")
-              }.dockFont(size: 11)
+              }.dockFont(.metadata)
             }
           }
         }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
@@ -96,7 +96,7 @@ struct EdgeRecallView: View {
         Button("Back", action: back).buttonStyle(.dockCompact)
         Spacer()
         Text("Opens a conversation").foregroundStyle(Color.dockSecondaryText)
-      }.dockFont(size: 11).padding(10)
+      }.dockFont(.metadata).padding(10)
     }.foregroundStyle(Color.dockPrimaryText)
       .onAppear { focused = true }
       .task(id: query) { await search.search(query, profileID: profileID, client: client) }

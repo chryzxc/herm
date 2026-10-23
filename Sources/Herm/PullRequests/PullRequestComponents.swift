@@ -19,7 +19,7 @@ struct PullRequestRowView: View {
                     Text("#\(pullRequest.displayNumber)").foregroundStyle(Color.dockMetadataText).fixedSize()
                 }.dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                 Text(pullRequest.title)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,7 +67,7 @@ struct PullRequestDiffStat: View {
             if additions > 0 { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
             if deletions > 0 { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
         }
-        .dockFont(size: 10, weight: .medium, design: .monospaced)
+        .dockFont(.compactStatus, weight: .medium, design: .monospaced)
         .fixedSize()
     }
 }
@@ -84,7 +84,7 @@ struct PullRequestFileTreeRow: View {
             HStack(spacing: 7) {
                 PullRequestFileIcon(path: node.isDirectory ? nil : node.title, size: 14)
                 Text(node.title)
-                    .dockFont(size: 12, weight: node.isDirectory ? .regular : .medium)
+                    .dockFont(.body, weight: node.isDirectory ? .regular : .medium)
                     .foregroundStyle(isSelected ? Color.dockPrimaryText : (node.isDirectory ? Color.dockMetadataText : Color.dockSecondaryText))
                     .lineLimit(1)
                     .truncationMode(.middle)

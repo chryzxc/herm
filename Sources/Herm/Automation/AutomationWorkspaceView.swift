@@ -284,13 +284,13 @@ struct AutomationWorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Run output")
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
                 Button {
                     isRunPanelOpen = false
                 } label: {
-                    DockIcon(.x).dockFont(size: 11, weight: .semibold).frame(width: 28, height: 28)
+                    DockIcon(.x).dockFont(.metadata, weight: .semibold).frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)
@@ -414,9 +414,9 @@ struct AutomationWorkspaceView: View {
 
     private func summaryChip(_ value: String, label: String, tint: Color) -> some View {
         HStack(spacing: 4) {
-            Text(value).dockFont(size: 11, weight: .semibold, design: .monospaced).foregroundStyle(
+            Text(value).dockFont(.metadata, weight: .semibold, design: .monospaced).foregroundStyle(
                 tint)
-            Text(label).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+            Text(label).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
         }
         .padding(.horizontal, 8)
         .frame(height: 24)
@@ -473,7 +473,7 @@ struct AutomationWorkspaceView: View {
                     .padding(.top, 5)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(job.name)
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(
                             job.enabled ? Color.dockPrimaryText : Color.dockSecondaryText
                         )
@@ -569,7 +569,7 @@ struct AutomationWorkspaceView: View {
                         ? Color.dockMetadataText : (overdue ? Color.dockWarning : Color.dockSuccess)
                 )
                 Text(CronScheduleFormatting.humanReadable(job.schedule))
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -611,7 +611,7 @@ struct AutomationWorkspaceView: View {
                     ?? (control.routineActions.contains(reference.id)
                         ? "Waiting for Hermes to confirm the operation…" : " ")
             )
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(
                 control.routineActionErrors[reference.id] != nil
                     ? Color.dockWarning : Color.dockMetadataText
@@ -699,7 +699,7 @@ struct AutomationWorkspaceView: View {
                         ProgressView().controlSize(.small)
                         Text("Loading run history…")
                     }
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .padding(20)
                 } else if let error = state?.error {
@@ -730,7 +730,7 @@ struct AutomationWorkspaceView: View {
                 statusDot(result)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Unknown time")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(
                         run.claimedAt.map { HumanDateFormatting.relative($0) }
@@ -782,7 +782,7 @@ struct AutomationWorkspaceView: View {
                     }
                     if let prompt = job.prompt, !prompt.isEmpty {
                         Text(prompt)
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
@@ -858,7 +858,7 @@ struct AutomationWorkspaceView: View {
     private func statePill(_ title: String, tint: Color) -> some View {
         HStack(spacing: 5) {
             Circle().fill(tint).frame(width: 6, height: 6)
-            Text(title).dockFont(size: 11, weight: .semibold)
+            Text(title).dockFont(.metadata, weight: .semibold)
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 7)
@@ -876,7 +876,7 @@ struct AutomationWorkspaceView: View {
                     .foregroundStyle(Color.dockMetadataText)
             }
             Text(value)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(tint)
                 .fixedSize(horizontal: false, vertical: true)
             Text(detail ?? " ")
@@ -902,7 +902,7 @@ struct AutomationWorkspaceView: View {
     {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
-                .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
             content()
         }
@@ -914,10 +914,10 @@ struct AutomationWorkspaceView: View {
     private func placeholder(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -984,10 +984,10 @@ struct AutomationWorkspaceView: View {
     private var emptyWorkspace: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("No automations")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text("Create a schedule when Hermes should run work without you.")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
             Button("New automation") { isShowingCreationSheet = true }
                 .buttonStyle(.dockCompact)
@@ -1042,10 +1042,10 @@ private struct AutomationRunDetailPanel: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text("Run output")
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
                         Text(run.status.capitalized)
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(
                                 result == .failed
                                     ? Color.dockDestructive
@@ -1068,7 +1068,7 @@ private struct AutomationRunDetailPanel: View {
                 }
                 if let onClose {
                     Button(action: onClose) {
-                        DockIcon(.x).dockFont(size: 11, weight: .semibold).frame(
+                        DockIcon(.x).dockFont(.metadata, weight: .semibold).frame(
                             width: 28, height: 28
                         )
                         .contentShape(Rectangle())
@@ -1121,7 +1121,7 @@ private struct AutomationRunDetailPanel: View {
                         .padding(.top, 12)
                     }
                     .disclosureGroupStyle(DockDisclosureGroupStyle())
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(18)
                 }
@@ -1138,7 +1138,7 @@ private struct AutomationRunDetailPanel: View {
                 ProgressView().controlSize(.small)
                 Text("Loading output…")
             }
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(Color.dockMetadataText)
         } else if let report {
             MarkdownMessageView(markdown: report.markdown, bodySize: 12)
@@ -1157,7 +1157,7 @@ private struct AutomationRunDetailPanel: View {
                         ? "Hermes recorded a script-only run without a stored preview."
                         : "No transcript is linked to this execution record. Refresh run history to load Hermes-recorded sessions.")
             )
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(Color.dockMetadataText)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -1190,7 +1190,7 @@ private struct AutomationDetailRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .frame(width: 78, alignment: .leading)
             Text(value)
@@ -1211,10 +1211,10 @@ private struct AutomationCallout: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(tint)
             Text(message)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)

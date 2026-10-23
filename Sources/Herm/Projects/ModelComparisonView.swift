@@ -44,7 +44,7 @@ struct ModelComparisonView: View {
                 ScrollView {
                     ForEach(coordinator.runs) { run in
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(run.option.model).dockFont(size: 12, weight: .semibold)
+                            Text(run.option.model).dockFont(.body, weight: .semibold)
                             if let error = run.error {
                                 Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
                             }

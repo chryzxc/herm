@@ -62,7 +62,7 @@ struct BotActivityBanner: View {
                 HStack(spacing: 6) {
                     DockActivityIndicator(state: event.finished ? .done : .running, size: 12)
                     Text(event.text)
-                        .dockFont(size: 11, weight: .medium)
+                        .dockFont(.metadata, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                 }

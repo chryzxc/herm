@@ -143,11 +143,11 @@ struct AgentBoardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Active Agents")
-                    .dockFont(size: 13, weight: .medium)
+                    .dockFont(.navigation, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                 Spacer(minLength: 0)
                 Text(agentSummary)
-                    .dockFont(size: 10, weight: .medium)
+                    .dockFont(.compactStatus, weight: .medium)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
             }
@@ -159,7 +159,7 @@ struct AgentBoardView: View {
                         }
                     } label: {
                         Text(scope.rawValue.uppercased())
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(agentScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
                             .frame(width: 50, height: 30)
                             .background(agentScope == scope ? Color.dockAccentMuted : Color.clear)
@@ -223,18 +223,18 @@ struct AgentBoardView: View {
                 .overlay {
                     Circle().stroke(agent?.agentColor ?? agentColor(for: subagent.id), lineWidth: 1.2)
                     Text(String(name.prefix(1)).uppercased())
-                        .dockFont(size: 12, weight: .bold)
+                        .dockFont(.body, weight: .bold)
                         .foregroundStyle(Color.dockPrimaryText)
                 }
                 .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(name)
-                    .dockFont(size: 13, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Text(detail)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
@@ -242,14 +242,14 @@ struct AgentBoardView: View {
             Spacer(minLength: 8)
 
             Text("\(eventCount) \(eventCount == 1 ? "EVENT" : "EVENTS")")
-                .dockFont(size: 10, weight: .medium)
+                .dockFont(.compactStatus, weight: .medium)
                 .foregroundStyle(color(for: subagent.status))
             Text(subagent.status.uppercased())
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(color(for: subagent.status))
                 .frame(minWidth: 62, alignment: .trailing)
             DockIcon(isSelected ? .caretUp : .caretDown)
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(Color.dockMetadataText)
         }
         .padding(.horizontal, 12)
@@ -278,14 +278,14 @@ struct AgentBoardView: View {
 
             Spacer()
             Text("HERMES AGENT BOARD")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .tracking(1.15)
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer()
 
             Button(action: onClose) {
                 DockIcon(.caretLeft)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 36, height: 36)
                     .background(Color.dockSurface4)
@@ -313,11 +313,11 @@ struct AgentBoardView: View {
     private func sectionHeading(_ title: String, detail: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title.lowercased().capitalized)
-                .dockFont(size: 13, weight: .medium)
+                .dockFont(.navigation, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer()
             Text(detail)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
         }
     }
@@ -325,13 +325,13 @@ struct AgentBoardView: View {
     private func emptyState(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             DockIcon(.users)
-                .dockFont(size: 13)
+                .dockFont(.navigation)
                 .foregroundStyle(Color.dockMetadataText)
             Text(title)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -352,16 +352,16 @@ struct AgentBoardView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Activity History")
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(agent.agentColor)
                 Spacer()
                 Text("\(activities.count) EVENTS")
-                    .dockFont(size: 10)
+                    .dockFont(.compactStatus, weight: .regular)
                     .foregroundStyle(Color.dockMetadataText)
             }
             if activities.isEmpty {
                 Text("No Hermes activity has been received for this agent yet.")
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 activityGroup("PENDING", items: pending, color: Color.dockSecondaryText, agentColor: agent.agentColor)
@@ -377,7 +377,7 @@ struct AgentBoardView: View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(title)  ·  \(items.count)")
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(color)
                 ForEach(items) { activity in
                     Button {
@@ -391,22 +391,22 @@ struct AgentBoardView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
                                         Text(activity.status.uppercased())
-                                            .dockFont(size: 10, weight: .semibold)
+                                            .dockFont(.compactStatus, weight: .semibold)
                                             .foregroundStyle(agentColor)
                                         if !activity.agent.isEmpty {
                                             Text("·")
                                                 .foregroundStyle(Color.dockMetadataText)
                                             Text(activity.agent)
-                                                .dockFont(size: 10, weight: .semibold)
+                                                .dockFont(.compactStatus, weight: .semibold)
                                                 .foregroundStyle(agentColor)
                                                 .lineLimit(1)
                                         }
                                         Text(HumanDateFormatting.timeOnly(activity.timestamp))
-                                            .dockFont(size: 10)
+                                            .dockFont(.compactStatus, weight: .regular)
                                             .foregroundStyle(Color.dockMetadataText)
                                     }
                                     Text(activity.task)
-                                        .dockFont(size: 11)
+                                        .dockFont(.metadata)
                                         .foregroundStyle(Color.dockSecondaryText)
                                         .lineLimit(2)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -471,7 +471,7 @@ struct AgentBoardView: View {
                         pipelineContent(item)
                     }
                 }
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 10)
@@ -486,7 +486,7 @@ struct AgentBoardView: View {
             Text("·")
             pipelineDuration(item)
         }
-        .dockFont(size: 11)
+        .dockFont(.metadata)
         .foregroundStyle(Color.dockMetadataText)
         .monospacedDigit()
         .lineLimit(1)
@@ -573,7 +573,7 @@ struct AgentBoardView: View {
                 .tracking(0.7)
                 .foregroundStyle(accent)
             Text(value)
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockSecondaryText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -586,12 +586,12 @@ struct AgentBoardView: View {
 
         return VStack(alignment: .leading, spacing: 2) {
             Text(allLines.count > lines.count ? "DIFF PREVIEW · \(lines.count)/\(allLines.count) LINES" : "DIFF PREVIEW")
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .tracking(0.7)
                 .foregroundStyle(Color.dockMetadataText)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line.isEmpty ? " " : line)
-                    .dockFont(size: 10)
+                    .dockFont(.compactStatus, weight: .regular)
                     .foregroundStyle(diffLineColor(line))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -621,7 +621,7 @@ struct AgentBoardView: View {
         alignment: Alignment = .leading
     ) -> some View {
         let label = Text(title)
-            .dockFont(size: 12, weight: .semibold)
+            .dockFont(.body, weight: .semibold)
             .tracking(1.1)
             .foregroundStyle(Color.dockSecondaryText)
 

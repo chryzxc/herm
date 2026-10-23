@@ -423,13 +423,13 @@ struct EdgeTaskPreview: View {
                 HStack(alignment: .top, spacing: 6) {
                     if case .sending = submission { ProgressView().controlSize(.mini) }
                     Text(submission.message)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(3)
                     if case .failed = submission {
                         Button("Retry") { answer(task, submission.choice) }
                             .buttonStyle(.dockCompact)
-                            .dockFont(size: 11, weight: .medium)
+                            .dockFont(.metadata, weight: .medium)
                             .disabled(!task.isStatusCurrent)
                             .accessibilityLabel("Retry answer to \(task.title)")
                     }
@@ -437,7 +437,7 @@ struct EdgeTaskPreview: View {
                        let request = task.attentionRequest, let quickModel {
                         Button("Check request") { quickModel.recheckAttention(request) }
                             .buttonStyle(.dockCompact)
-                            .dockFont(size: 11, weight: .medium)
+                            .dockFont(.metadata, weight: .medium)
                             .disabled(!task.isStatusCurrent)
                             .accessibilityLabel("Check whether request for \(task.title) is still pending")
                     }
@@ -543,7 +543,7 @@ struct EdgeTaskPreview: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(task.title)
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .lineLimit(1)
                         Spacer(minLength: 6)
                         trailing(for: task, now: now)
@@ -554,12 +554,12 @@ struct EdgeTaskPreview: View {
                         let showStatus = !(task.tone == .working && task.detail?.isEmpty == false)
                         if showStatus {
                             Text(task.displayStatus)
-                                .dockFont(size: 11, weight: .medium)
+                                .dockFont(.metadata, weight: .medium)
                                 .foregroundStyle(task.tone == .attention ? task.tone.color : Color.dockSecondaryText)
                         }
                         if let detail = task.detail, !detail.isEmpty, task.choices.isEmpty {
                             (Text(showStatus ? " · " : "") + Self.detailText(detail))
-                                .dockFont(size: 11)
+                                .dockFont(.metadata)
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                     }
@@ -587,7 +587,7 @@ struct EdgeTaskPreview: View {
     private func trailing(for task: EdgeNotchTask, now: Date) -> some View {
         if task.isCurrent {
             Text("Current")
-                .dockFont(size: 11, weight: .medium)
+                .dockFont(.metadata, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.horizontal, 6)
                 .frame(height: 16)
@@ -595,7 +595,7 @@ struct EdgeTaskPreview: View {
                 .fixedSize()
         } else if let updatedAt = task.updatedAt {
             Text("\(EdgeQuotaPreview.shortDuration(now.timeIntervalSince(updatedAt))) ago")
-                .dockFont(size: 11).monospacedDigit()
+                .dockFont(.metadata).monospacedDigit()
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize()
         }
@@ -604,7 +604,7 @@ struct EdgeTaskPreview: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: DockSpacing.tight) {
             Text(emptyTitle)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
             Text(emptyDetail)
                 .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
@@ -644,7 +644,7 @@ struct EdgeTaskPreview: View {
                 Button(action: quickMessage) {
                     HStack(spacing: 8) {
                         DockIcon(.chats, size: 13, color: .dockSecondaryText)
-                        Text("Quick message…").dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
+                        Text("Quick message…").dockFont(.body).foregroundStyle(Color.dockMetadataText)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
@@ -708,12 +708,12 @@ struct EdgePreviewFooterButton: View {
             HStack(spacing: 8) {
                 DockIcon(icon, size: 13, color: isHovering ? .dockPrimaryText : .dockSecondaryText)
                 Text(title)
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(isHovering ? Color.dockPrimaryText : Color.dockSecondaryText)
                 if fillsWidth { Spacer(minLength: 8) }
                 if let shortcut {
                     Text(shortcut)
-                        .dockFont(size: 10, weight: .medium, design: .rounded)
+                        .dockFont(.compactStatus, weight: .medium, design: .rounded)
                         .foregroundStyle(Color.dockMetadataText)
                         .padding(.horizontal, 5)
                         .frame(height: 16)

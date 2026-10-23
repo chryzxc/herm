@@ -27,7 +27,7 @@ struct SavedPromptLibrary: View {
                 ForEach(prompts) { record in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text(record.savedName ?? "Prompt").dockFont(size: 12, weight: .semibold)
+                            Text(record.savedName ?? "Prompt").dockFont(.body, weight: .semibold)
                             Spacer()
                             Button("Restore") { restore(record) }.buttonStyle(.dockCompact)
                             Button("Delete") {

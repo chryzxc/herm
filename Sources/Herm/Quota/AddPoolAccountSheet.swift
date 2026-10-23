@@ -153,7 +153,7 @@ struct AddPoolAccountSheet: View {
             } else if !providerID.isEmpty {
                 Toggle("Use an API key instead of browser sign-in", isOn: $useAPIKey)
                     .toggleStyle(.checkbox)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
             }
             if usesKey {
                 labeledField("API key") {

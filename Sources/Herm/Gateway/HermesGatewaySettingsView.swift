@@ -15,7 +15,7 @@ struct HermesGatewaySettingsView: View {
             HStack(spacing: 8) {
                 Circle().fill(statusColor).frame(width: 7, height: 7).accessibilityHidden(true)
                 Text(service.label)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .accessibilityLabel("Hermes gateway: \(service.label)")
                 Spacer(minLength: 0)
@@ -28,11 +28,11 @@ struct HermesGatewaySettingsView: View {
                         .frame(width: 140)
                 }
                 .buttonStyle(.dockPress)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .disabled(!service.canRestart)
             }
             Text(service.detail)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(service.error == nil ? Color.dockSecondaryText : Color.dockWarning)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)

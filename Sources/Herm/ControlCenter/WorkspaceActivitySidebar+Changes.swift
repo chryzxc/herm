@@ -10,7 +10,7 @@ extension WorkspaceActivitySidebar {
             sectionLabel("CHANGE REVIEW")
             if let codeWorkspaceError {
                 Text(codeWorkspaceError)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -23,7 +23,7 @@ extension WorkspaceActivitySidebar {
                     todayMetric("WARNINGS", value: review.warningCount, color: review.warningCount > 0 ? .dockWarning : .dockSuccess)
                     todayMetric("NOTES", value: review.noteCount, color: .dockSecondaryText)
                     Text(review.completeness == .complete ? "COMPLETE" : "PARTIAL")
-                        .dockFont(size: 11, weight: .semibold)
+                        .dockFont(.metadata, weight: .semibold)
                         .foregroundStyle(review.completeness == .complete ? Color.dockSuccess : Color.dockWarning)
                 }
                 HStack(spacing: 10) {
@@ -36,7 +36,7 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 .buttonStyle(.dockCompact)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
                 switch workflow.baselineStatus {
                 case .current(let date):
@@ -51,7 +51,7 @@ extension WorkspaceActivitySidebar {
             } else {
                 Button("RUN LOCAL REVIEW") { Task { await workflow.runReview(preferences: commandCenterPreferences) } }
                     .buttonStyle(.dockCompact)
-                    .dockFont(size: 11, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
             }
             // The repository browser owns the unloaded/loading state. Once
@@ -92,7 +92,7 @@ extension WorkspaceActivitySidebar {
                     showingRepositoryPicker = true
                 }
                 .buttonStyle(.dockCompact)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             }
         }
@@ -126,10 +126,10 @@ extension WorkspaceActivitySidebar {
             VStack(alignment: .leading, spacing: 8) {
                 if let diff = selectedRepositoryDiff, diff.path == file.path, diff.isStaged == file.isStaged {
                     Text(diff.text.isEmpty ? "No textual diff is available for this file." : diff.text)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
-                    if diff.isTruncated { Text("Diff truncated for safe display.").dockFont(size: 12).foregroundStyle(Color.dockWarning) }
+                    if diff.isTruncated { Text("Diff truncated for safe display.").dockFont(.body).foregroundStyle(Color.dockWarning) }
                     diffAuditSummary(diff)
                 } else {
                     Button(isLoadingRepositoryDiff ? "LOADING DIFF…" : "LOAD DIFF") { loadRepositoryDiff(for: file) }
@@ -147,7 +147,7 @@ extension WorkspaceActivitySidebar {
                 Text(writers.isEmpty
                     ? "UNATTRIBUTED LOCAL CHANGE"
                     : "HERMES REPORTED WRITE · " + writers.map { $0.name ?? $0.role ?? $0.id }.joined(separator: ", "))
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(writers.isEmpty ? Color.dockMetadataText : Color.dockAccent)
             }
             .padding(.top, 5)
@@ -158,9 +158,9 @@ extension WorkspaceActivitySidebar {
                 Text(file.path).lineLimit(1).foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 Text(file.isStaged ? "STAGED" : file.status.rawValue.uppercased())
-                    .dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockMetadataText)
+                    .dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockMetadataText)
             }
-            .dockFont(size: 12)
+            .dockFont(.body)
         }
         .disclosureGroupStyle(DockDisclosureGroupStyle())
         .dockListRow()
@@ -182,11 +182,11 @@ extension WorkspaceActivitySidebar {
                 DockIcon(findings.isEmpty ? .shieldCheck : .shieldWarning)
                 Text(findings.isEmpty ? "LOCAL AUDIT · NO OBVIOUS SIGNALS" : "LOCAL AUDIT · \(findings.count) SIGNAL\(findings.count == 1 ? "" : "S")")
             }
-            .dockFont(size: 11, weight: .semibold)
+            .dockFont(.metadata, weight: .semibold)
             .foregroundStyle(findings.contains(where: { $0.severity == .blocker }) ? Color.dockDestructive : findings.isEmpty ? Color.dockSuccess : Color.dockWarning)
 
             Text("Checks added lines only. It does not replace repository verification or review.")
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
 
             ForEach(findings) { finding in
@@ -197,10 +197,10 @@ extension WorkspaceActivitySidebar {
                         .padding(.top, 5)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(finding.title)\(finding.line.map { " · LINE \($0)" } ?? "")")
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
                         Text(finding.detail)
-                            .dockFont(size: 11)
+                            .dockFont(.metadata)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
@@ -215,7 +215,7 @@ extension WorkspaceActivitySidebar {
         return VStack(alignment: .leading, spacing: 22) {
             sectionLabel("REPOSITORY FLEET  ·  \(paths.count)")
             Text("Repositories are local read-only references attached to Hermes sessions. No remotes are fetched automatically.")
-                .dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
+                .dockFont(.body).foregroundStyle(Color.dockMetadataText)
             if workflow.repository.isGitRepository {
                 HStack(spacing: 10) {
                     Button(commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID) ? "STOP WATCHING" : "WATCH REPOSITORY") {
@@ -229,16 +229,16 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 .buttonStyle(.dockCompact)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             }
             if !workflow.notices.isEmpty {
                 sectionLabel("RECENT REPOSITORY CHANGES")
                 ForEach(workflow.notices) { notice in
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(notice.displayName).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                        Text(notice.displayName).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                         Text("\(notice.changedFiles) changed file\(notice.changedFiles == 1 ? "" : "s") · \(HumanDateFormatting.dateAndTime(notice.createdAt))")
-                            .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+                            .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 10) {
                             Button("OPEN SOURCE CONTROL") { select(.changes) }
                             Button("REVIEW WITH HERMES") {
@@ -247,7 +247,7 @@ extension WorkspaceActivitySidebar {
                             }
                         }
                         .buttonStyle(.dockCompact)
-                        .dockFont(size: 11, weight: .semibold)
+                        .dockFont(.metadata, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                     }
                     .dockListRow()
@@ -264,18 +264,18 @@ extension WorkspaceActivitySidebar {
                                     .foregroundStyle(worktree.snapshot?.conflictedFiles ?? 0 > 0 ? Color.dockDestructive : Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(worktree.displayName).foregroundStyle(Color.dockPrimaryText)
-                                    Text(worktree.branch ?? "DETACHED HEAD").dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+                                    Text(worktree.branch ?? "DETACHED HEAD").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                                 }
                                 Spacer()
-                                Text("\(worktree.snapshot?.changedFiles ?? 0) CHANGED").dockFont(size: 10).foregroundStyle(Color.dockSecondaryText)
+                                Text("\(worktree.snapshot?.changedFiles ?? 0) CHANGED").dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockSecondaryText)
                                 Button("USE") { store.attachProject(at: worktree.path, toSessionID: model.sessionID) }
                             }
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .dockListRow()
                         }
                     }
                     .disclosureGroupStyle(DockDisclosureGroupStyle())
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 }
                 ForEach(paths, id: \.self) { path in

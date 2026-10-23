@@ -53,7 +53,7 @@ struct MessagePinsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Pinned messages").dockFont(size: 12, weight: .semibold)
+                Text("Pinned messages").dockFont(.body, weight: .semibold)
                 Spacer()
                 DockIconButton(icon: .arrowClockwise, label: "Refresh pinned messages", isBusy: model.isLoadingMessagePins, size: 24, style: DockThemePalette(theme: theme.selectedThemeID)) {
                     Task { await model.refreshMessagePins() }
@@ -65,7 +65,7 @@ struct MessagePinsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if model.pinnedMessages.isEmpty {
                         Text(model.messagePinError != nil ? "Pinned messages unavailable" : model.isLoadingMessagePins ? "Loading pinned messages…" : "No pinned messages")
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                         if !model.isLoadingMessagePins && model.messagePinError == nil {
                             Text("Pin a saved message using its pin action.")
                                 .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
@@ -76,7 +76,7 @@ struct MessagePinsView: View {
                             Button { onSelect(pin) } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(pin.role == "user" ? "You" : "Hermes")
-                                        .dockFont(size: 12, weight: .semibold)
+                                        .dockFont(.body, weight: .semibold)
                                     Text(pin.preview.isEmpty ? "Message with an attachment" : pin.preview)
                                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                                 }

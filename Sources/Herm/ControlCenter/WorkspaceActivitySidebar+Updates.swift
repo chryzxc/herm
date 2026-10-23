@@ -21,7 +21,7 @@ extension WorkspaceActivitySidebar {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 7, height: 7)
                 Text(status)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(color)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -32,12 +32,12 @@ extension WorkspaceActivitySidebar {
                 } else if appUpdater.canCheck && !isUnavailable {
                     Button("Check for updates") { appUpdater.checkForUpdates() }
                         .buttonStyle(.dockCompact)
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockAccent)
                 }
             }
             Text("Source  ·  \(HermAppUpdater.repository)" + (appUpdater.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
         }
     }
@@ -46,20 +46,20 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("Hermes Agent")
-                    .dockFont(size: 13, weight: .medium)
+                    .dockFont(.navigation, weight: .medium)
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 if agentUpdateService.phase == .checking {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("Checking…")
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 } else {
                     Button("Check for updates") { agentUpdateService.checkForUpdates() }
                         .buttonStyle(.dockCompact)
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(!agentUpdateService.canCheck)
                 }
@@ -95,7 +95,7 @@ extension WorkspaceActivitySidebar {
 
     var agentUpdateIdleContent: some View {
         Text("Compares the installed Hermes agent with the latest release from NousResearch/hermes-agent.")
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(Color.dockMetadataText)
     }
 
@@ -104,15 +104,15 @@ extension WorkspaceActivitySidebar {
             if let installed = agentUpdateService.installed {
                 HStack(spacing: 8) {
                     Text("Installed")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 76, alignment: .leading)
                     Text(installed.displayVersion)
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                     if let method = agentUpdateService.installMethod {
                         Text("·  \(method)")
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                 }
@@ -121,18 +121,18 @@ extension WorkspaceActivitySidebar {
             if let latest = agentUpdateService.latest {
                 HStack(spacing: 8) {
                     Text("Latest release")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 76, alignment: .leading)
                     Text(latest.displayVersion + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let page = latest.pageURL, let url = URL(string: page) {
                         Button("Release notes") { ExternalOpen.open(url) }
                             .buttonStyle(.dockLink)
-                            .dockFont(size: 11, weight: .medium)
+                            .dockFont(.metadata, weight: .medium)
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
@@ -140,13 +140,13 @@ extension WorkspaceActivitySidebar {
             HStack(spacing: 8) {
                 Circle().fill(statusColor).frame(width: 7, height: 7)
                 Text(statusText.lowercased().capitalized)
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(statusColor)
                 if showsUpdateButton,
                    let installed = agentUpdateService.installed,
                    let latest = agentUpdateService.latest {
                     Text("\(installed.displayVersion) → \(latest.displayVersion)")
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -164,7 +164,7 @@ extension WorkspaceActivitySidebar {
             .background(statusColor.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
             Text("Source  ·  NousResearch/hermes-agent" + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
         }
     }
@@ -177,7 +177,7 @@ extension WorkspaceActivitySidebar {
             HStack(alignment: .top, spacing: 8) {
                 Circle().fill(Color.dockWarningFill).frame(width: 6, height: 6).padding(.top, 5)
                 Text(reason)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -189,7 +189,7 @@ extension WorkspaceActivitySidebar {
             HStack(spacing: 8) {
                 DockStatusDot(tone: .working, size: 7, pulses: true)
                 Text("Updating Hermes Agent")
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 TimelineView(.periodic(from: agentUpdateService.updateStartedAt ?? Date(), by: 1)) { context in
@@ -201,7 +201,7 @@ extension WorkspaceActivitySidebar {
             DockShimmerTrack(tone: .working)
             if let latestLine = agentUpdateService.logLines.last {
                 Text(latestLine)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -214,10 +214,10 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 DockIcon(.checkCircle, weight: .fill)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSuccess)
                 Text("HERMES AGENT UPDATED")
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockSuccess)
                 Spacer()
             }
@@ -225,7 +225,7 @@ extension WorkspaceActivitySidebar {
                 diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.dockSuccess)
             }
             Text("Herm will restart automatically so new sessions run the updated agent.")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
             agentUpdateLogTail
@@ -236,20 +236,20 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 DockIcon(.warning)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockDestructive)
                 Text(reason)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text("Herm never retries an update automatically. Review the output below and run CHECK before trying again.")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             if let latestLine = agentUpdateService.logLines.last {
                 Text(latestLine)
-                    .dockFont(size: 12, design: .monospaced)
+                    .dockFont(.body, weight: .regular, design: .monospaced)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                     .textSelection(.enabled)
@@ -265,9 +265,9 @@ extension WorkspaceActivitySidebar {
             } label: {
                 HStack(spacing: 6) {
                     DockIcon(isAgentUpdateOutputExpanded ? .caretDown : .caretRight)
-                        .dockFont(size: 10, weight: .semibold)
+                        .dockFont(.compactStatus, weight: .semibold)
                     Text(isAgentUpdateOutputExpanded ? "Hide output" : "Show output")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                 }
                 .foregroundStyle(Color.dockSecondaryText)
                 .contentShape(Rectangle())
@@ -279,7 +279,7 @@ extension WorkspaceActivitySidebar {
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(Array(agentUpdateService.logLines.suffix(120).enumerated()), id: \.offset) { _, line in
                             Text(line)
-                                .dockFont(size: 11, design: .monospaced)
+                                .dockFont(.metadata, weight: .regular, design: .monospaced)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }

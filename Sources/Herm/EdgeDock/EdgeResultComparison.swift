@@ -59,7 +59,7 @@ struct EdgeResultComparison: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Two observed reads").dockFont(size: 12, weight: .semibold)
+      Text("Two observed reads").dockFont(.body, weight: .semibold)
       readLabel("Previous", content: previous)
       readLabel("Current", content: current)
       if comparison.identical, addedOutputs.isEmpty, removedOutputs.isEmpty {
@@ -86,14 +86,14 @@ struct EdgeResultComparison: View {
       Text(
         "An unchanged path does not prove unchanged file contents. These reads may refer to different turns; supplied reply references identify them only when available."
       )
-      .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
-    }.dockFont(size: 12)
+      .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+    }.dockFont(.body)
   }
   private func readLabel(_ label: String, content: EdgeResultContent) -> some View {
     Text(
       "\(label): \(content.loadedAt.formatted(date: .abbreviated, time: .standard))\(content.revisionID.map { " · reply \($0)" } ?? " · reply identity unavailable")"
     )
-    .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
+    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
   }
   private func marker(_ kind: ResultTextComparison.Line.Kind) -> String {
     switch kind {

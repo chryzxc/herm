@@ -118,9 +118,9 @@ struct OfficeMusicControl: View {
                 .background(Circle().fill(Color.dockAccent.opacity(0.15)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(music.state.track ?? "Spotify")
-                    .dockFont(size: 12, weight: .semibold).lineLimit(1)
+                    .dockFont(.body, weight: .semibold).lineLimit(1)
                 Text(music.state.track == nil ? (music.state.message ?? "Loading…") : (music.state.artist ?? ""))
-                    .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
+                    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(width: 200, alignment: .leading)

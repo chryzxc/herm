@@ -111,7 +111,7 @@ struct ProvidersSettingsView: View {
             }
             if visible.isEmpty && !isLoading && loadError == nil {
                 Text(rows.isEmpty ? "Hermes hasn't reported any providers yet." : "No providers match.")
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -173,7 +173,7 @@ struct ProvidersSettingsView: View {
                             if row.isCurrent { tag("Current", color: .dockAccent) }
                         }
                         Text(subtitle(row))
-                            .dockFont(size: 11)
+                            .dockFont(.metadata)
                             .foregroundStyle(Color.dockMetadataText)
                             .lineLimit(1)
                     }
@@ -217,7 +217,7 @@ struct ProvidersSettingsView: View {
 
     private func tag(_ text: String, color: Color) -> some View {
         Text(text)
-            .dockFont(size: 10, weight: .semibold)
+            .dockFont(.compactStatus, weight: .semibold)
             .foregroundStyle(color)
             .padding(.horizontal, 6)
             .frame(height: 18)

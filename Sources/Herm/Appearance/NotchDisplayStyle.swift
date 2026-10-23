@@ -50,7 +50,7 @@ struct NotchDisplaySettings: View {
                             EdgeNotchStatusIndicator(activity: option.previewActivity, style: option)
                                 .frame(width: 28, height: 44)
                             Text(option.title)
-                                .dockFont(size: 12, weight: .medium)
+                                .dockFont(.body, weight: .medium)
                         }
                         .foregroundStyle(style == option ? Color.dockAccent : Color.dockSecondaryText)
                         .frame(maxWidth: .infinity, minHeight: 44)

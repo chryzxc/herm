@@ -269,11 +269,11 @@ struct BotRosterPage: View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass)
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockMetadataText)
                 DockTextField("Search Bots", text: $model.searchText)
                     .textFieldStyle(.plain)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockPrimaryText)
                     .frame(minWidth: 140)
             }
@@ -300,7 +300,7 @@ struct BotRosterPage: View {
                 }
             } label: {
                 Label(activityFilter.title, icon: .funnelSimple)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
                     .padding(.horizontal, 10)
@@ -328,7 +328,7 @@ struct BotRosterPage: View {
                 }
             } label: {
                 Label(showsHiddenBots ? "All Bots" : "Visible", icon: showsHiddenBots ? .eye : .eyeSlash)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
                     .padding(.horizontal, 10)
@@ -415,15 +415,15 @@ struct BotRosterPage: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     Text("ROUTINES")
-                        .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                        .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                         .tracking(0.8)
                         .foregroundStyle(Color.dockMetadataText)
                     Text("\(model.routines.count)")
-                        .dockFont(size: 11, design: .monospaced)
+                        .dockFont(.metadata, weight: .regular, design: .monospaced)
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer()
                     Text("Recurring Hermes jobs")
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, DockLayout.compactInset)
@@ -431,13 +431,13 @@ struct BotRosterPage: View {
 
                 if model.isLoadingRoutines {
                     Text("Loading routines…")
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                         .padding(.horizontal, DockLayout.compactInset)
                 } else if model.routines.isEmpty {
                     Text("No routines yet — a routine is a recurring Hermes cron job that runs in its Bot’s chat.")
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
                         .padding(.horizontal, DockLayout.compactInset)
@@ -476,12 +476,12 @@ struct BotRosterPage: View {
     private func emptyRoster(isSearching: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(BotRosterPresentation.emptyStateTitle(isSearching: isSearching))
-                .dockFont(size: 13, weight: .semibold)
+                .dockFont(.navigation, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(isSearching
                 ? "Try a different name, role, or description."
                 : "A Bot is a Hermes profile with its own model, memory, skills, and forever-chat. Create one to give it a role.")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
             if !isSearching {
                 Button {
@@ -501,7 +501,7 @@ struct BotRosterPage: View {
     private var hiddenOnlyRoster: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("No visible Bots")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Button("Reveal hidden Bots", icon: .eye) { showsHiddenBots = true }
                 .controlSize(.small)
@@ -513,14 +513,14 @@ struct BotRosterPage: View {
     private func unavailableContent(title: String, detail: String, showsRetry: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             DockIconLabel(title, icon: .users)
-                .dockFont(size: 13, weight: .semibold)
+                .dockFont(.navigation, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
             if !model.inventory.diagnostic.isEmpty {
                 Text(model.inventory.diagnostic)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
             }
             HStack {
@@ -619,7 +619,7 @@ struct BotCreationSheet: View {
                 withAnimation { showsAdvanced.toggle() }
             } label: {
                 DockIconLabel(showsAdvanced ? "Hide Advanced" : "Advanced", icon: showsAdvanced ? .caretUp : .caretDown)
-                    .dockFont(size: 11, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             .buttonStyle(.dockPress)
@@ -652,10 +652,10 @@ private struct BotActivityHistorySheet: View {
             if records.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("No recorded Bot activity")
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text("Herm has not dispatched work to \(bot.name) in the retained session history.")
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -690,20 +690,20 @@ private struct BotActivityHistorySheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text(record.state.label.uppercased())
-                        .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                        .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                         .foregroundStyle(statusColor(for: record.state))
                     Spacer(minLength: 8)
                     Text(record.updatedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                        .dockFont(size: 10, design: .monospaced)
+                        .dockFont(.compactStatus, weight: .regular, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Text(record.summary)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockPrimaryText)
                     .textSelection(.enabled)
                 if let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines), !result.isEmpty {
                     Text(result)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(3)
                         .textSelection(.enabled)
@@ -795,13 +795,13 @@ private struct BotRoutineRow: View, Equatable {
     var body: some View {
         HStack(spacing: 10) {
             DockIcon(.clockCounterClockwise)
-                .dockFont(size: 14, weight: .medium)
+                .dockFont(.conversation, weight: .medium)
                 .foregroundStyle(routine.enabled ? Color.dockAccent : Color.dockMetadataText)
                 .frame(width: 28, height: 44)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(routine.name)
-                        .dockFont(size: 13, weight: .medium)
+                        .dockFont(.navigation, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     if !routine.enabled {
@@ -819,7 +819,7 @@ private struct BotRoutineRow: View, Equatable {
                         Text(prompt)
                     }
                 }
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
             }
@@ -829,7 +829,7 @@ private struct BotRoutineRow: View, Equatable {
                 Button("Remove", icon: .trash, role: .destructive, action: onRemove)
             } label: {
                 DockIcon(.dotsThree)
-                    .dockFont(size: 14, weight: .medium)
+                    .dockFont(.conversation, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -941,7 +941,7 @@ struct MissionControlBotRow: View, Equatable {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(bot.name)
-                    .dockFont(size: 13, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(bot.isHidden ? Color.dockSecondaryText : Color.dockPrimaryText)
                     .lineLimit(1)
                 if isSelected { chip("Active", color: Color.dockSuccess) }
@@ -949,7 +949,7 @@ struct MissionControlBotRow: View, Equatable {
                 if bot.isHidden { chip("Hidden", color: Color.dockMetadataText) }
             }
             Text(BotRosterPresentation.role(for: bot))
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)
         }
@@ -979,7 +979,7 @@ struct MissionControlBotRow: View, Equatable {
 
     private var activity: some View {
         Text(BotRosterPresentation.activity(for: bot))
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(bot.recentSession == nil && !isActive ? Color.dockMetadataText : Color.dockSecondaryText)
             .lineLimit(2)
     }
@@ -1000,13 +1000,13 @@ struct MissionControlBotRow: View, Equatable {
                     Text("Never active")
                 }
             }
-            .dockFont(size: 11)
+            .dockFont(.metadata)
             .foregroundStyle(isActive ? Color.dockAccent : Color.dockMetadataText)
             .lineLimit(1)
             Spacer(minLength: 8)
             if let counts {
                 Text(counts.label)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
             }
@@ -1015,7 +1015,7 @@ struct MissionControlBotRow: View, Equatable {
 
     private func chip(_ text: String, color: Color, monospaced: Bool = false) -> some View {
         Text(text)
-            .dockFont(size: 10, weight: .medium, design: monospaced ? .monospaced : .default)
+            .dockFont(.compactStatus, weight: .medium, design: monospaced ? .monospaced : .default)
             .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -1056,7 +1056,7 @@ struct MissionControlBotRow: View, Equatable {
                 if isDeleting { ProgressView().controlSize(.small) }
                 else { DockIcon(.dotsThree) }
             }
-                .dockFont(size: 14, weight: .medium)
+                .dockFont(.conversation, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -1092,7 +1092,7 @@ private struct BotAvatarGeneratorTip: View {
         let faces = pending.isEmpty ? samples.map { ($0, nil as String?) } : pending.prefix(4).map { ($0.id, Optional($0.name)) }
         VStack(alignment: .leading, spacing: 10) {
             Text("Herm faces for your Bots")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             HStack(spacing: 12) {
                 ForEach(faces, id: \.0) { id, name in
@@ -1107,7 +1107,7 @@ private struct BotAvatarGeneratorTip: View {
                             }
                             .transition(.scale.combined(with: .opacity))
                         if let name {
-                            Text(name).dockFont(size: 10).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                            Text(name).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                         }
                     }
                     .frame(width: 56)
@@ -1116,11 +1116,11 @@ private struct BotAvatarGeneratorTip: View {
             Text(pending.isEmpty
                  ? "Faces blink and glance, and a star orbits them while their Bot works. Click a sample to shuffle."
                  : "Faces blink and glance, and a star orbits them while their Bot works.")
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Label("Uploaded images stay still. Animations only work on Herm faces.", icon: .info)
-                .dockFont(size: 10)
+                .dockFont(.compactStatus, weight: .regular)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
@@ -1159,22 +1159,22 @@ private struct BotAvatarOptionCard: View {
                     .rotationEffect(.degrees(hovering && !done ? (icon == .arrowsClockwise ? 90 : 12) : 0))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(title).dockFont(size: 12, weight: .semibold)
+                        Text(title).dockFont(.body, weight: .semibold)
                             .foregroundStyle(done ? Color.dockSecondaryText : Color.dockPrimaryText)
                         if let badge {
-                            Text(badge).dockFont(size: 10, weight: .semibold, design: .rounded)
+                            Text(badge).dockFont(.compactStatus, weight: .semibold, design: .rounded)
                                 .foregroundStyle(Color.dockAccent)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Capsule().fill(Color.dockAccent.opacity(0.14)))
                         }
                     }
-                    Text(detail).dockFont(size: 10).foregroundStyle(Color.dockSecondaryText)
+                    Text(detail).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 4)
                 if done {
                     DockIconLabel("All set", icon: .check)
-                        .dockFont(size: 10, weight: .medium)
+                        .dockFont(.compactStatus, weight: .medium)
                         .foregroundStyle(Color.dockSuccess)
                 } else {
                     DockIcon(.caretRight, size: 10, color: .dockMetadataText)

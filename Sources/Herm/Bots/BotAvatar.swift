@@ -496,7 +496,7 @@ private struct ThoughtBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(text)
-                .dockFont(size: 10, weight: .medium)
+                .dockFont(.compactStatus, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .padding(.horizontal, 7).padding(.vertical, 3)

@@ -5,7 +5,7 @@ struct ProvenanceInspectorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             DockIconLabel("Provenance", icon: .link)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockAccent)
             provenanceRow("SOURCE", presentation.sourceLabel)
             provenanceRow("SESSION", presentation.sessionID ?? "unavailable")
@@ -13,7 +13,7 @@ struct ProvenanceInspectorView: View {
             provenanceRow("REPOSITORY", presentation.repositoryPath ?? "unavailable")
             provenanceRow("BRANCH", presentation.branch ?? "unavailable")
             Text(presentation.verified ? "Observed from runtime" : "Unverified / context only")
-                .dockFont(size: 10, weight: .medium)
+                .dockFont(.compactStatus, weight: .medium)
                 .foregroundStyle(presentation.verified ? Color.dockSuccess : Color.dockWarning)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -22,8 +22,8 @@ struct ProvenanceInspectorView: View {
 
     private func provenanceRow(_ label: String, _ value: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(label).dockFont(size: 10, weight: .medium).foregroundStyle(Color.dockMetadataText).frame(width: 72, alignment: .leading)
-            Text(value).dockFont(size: 11).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
+            Text(label).dockFont(.compactStatus, weight: .medium).foregroundStyle(Color.dockMetadataText).frame(width: 72, alignment: .leading)
+            Text(value).dockFont(.metadata).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
         }
     }
 }

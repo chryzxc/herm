@@ -38,7 +38,7 @@ struct MessagingWorkspaceView: View {
                     detail(current).id(current.id)
                 } else {
                     Text(model.platforms.isEmpty && model.error == nil ? "Loading…" : "No platforms match.")
-                        .dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
+                        .dockFont(.body).foregroundStyle(Color.dockMetadataText)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -68,14 +68,14 @@ struct MessagingWorkspaceView: View {
                 DockTextField("Try \u{201C}discord\u{201D}", text: $search).textFieldStyle(.plain)
             }
             if !botMode.bots.isEmpty {
-                Text("Applies to").dockFont(size: 12, weight: .medium).foregroundStyle(Color.dockSecondaryText)
+                Text("Applies to").dockFont(.body, weight: .medium).foregroundStyle(Color.dockSecondaryText)
                 DockChipFlow(spacing: 6) {
                     ForEach(botMode.bots) { bot in
                         chip(bot.name, selected: bot.id == profileID) { profileID = bot.id }
                     }
                 }
                 Text("Changes on this page apply to the \u{201C}\(profile?.name ?? "launch")\u{201D} profile.")
-                    .dockFont(size: 11).foregroundStyle(Color.dockAccent)
+                    .dockFont(.metadata).foregroundStyle(Color.dockAccent)
             }
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
@@ -84,7 +84,7 @@ struct MessagingWorkspaceView: View {
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).dockFont(size: 12, weight: selected ? .semibold : .regular)
+            Text(title).dockFont(.body, weight: selected ? .semibold : .regular)
                 .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
                 .padding(.horizontal, 10).frame(height: 26)
                 .background(Capsule().fill(selected ? Color.dockSurface : .clear))
@@ -105,7 +105,7 @@ struct MessagingWorkspaceView: View {
                     Button { selection = platform.id } label: {
                         HStack(spacing: 10) {
                             MessagingPlatformIcon(platform: platform)
-                            Text(platform.name).dockFont(size: 13, weight: selected ? .semibold : .regular)
+                            Text(platform.name).dockFont(.navigation, weight: selected ? .semibold : .regular)
                                 .foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                             Spacer(minLength: 6)
                             DockStatusDot(tone: platform.enabled ? platform.statusTone : .inactive, size: 6)
@@ -139,7 +139,7 @@ struct MessagingWorkspaceView: View {
                         }
                     }
                     if !platform.description.isEmpty {
-                        Text(platform.description).dockFont(size: 13).foregroundStyle(Color.dockSecondaryText)
+                        Text(platform.description).dockFont(.navigation).foregroundStyle(Color.dockSecondaryText)
                     }
                     if let message = model.error {
                         DockCallout(tone: .danger, icon: .warningCircle, title: "Couldn't update messaging", message: message) { EmptyView() }
@@ -151,7 +151,7 @@ struct MessagingWorkspaceView: View {
                                     title: result.ok ? "Test passed" : "Test failed", message: result.message) { EmptyView() }
                     }
                     if let notice = model.notice {
-                        Text(notice).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                        Text(notice).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
                     if MessagingPlatformsModel.qrPlatforms.contains(platform.id) { quickSetup(platform.id) }
                     credentialsGuide(platform, first: required.first)
@@ -180,13 +180,13 @@ struct MessagingWorkspaceView: View {
             sectionLabel("Quick setup")
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Text("Quick setup").dockFont(size: 14, weight: .semibold)
+                    Text("Quick setup").dockFont(.conversation, weight: .semibold)
                     DockStatusPill(tone: .complete, text: "Recommended")
                 }
                 Text(telegram
                     ? "Scan a QR code and confirm in Telegram. Hermes creates the bot and detects your Telegram user ID automatically."
                     : "Scan the QR code from WhatsApp → Linked devices. Hermes links this number and saves the setup.")
-                    .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 if let pairing = model.pairing, pairing.platform == platformID {
                     HStack(alignment: .top, spacing: 16) {
                         if let image = MessagingQRCode.image(pairing.qrPayload) {
@@ -197,7 +197,7 @@ struct MessagingWorkspaceView: View {
                             HStack(spacing: 6) {
                                 ProgressView().controlSize(.small)
                                 Text(pairing.qrPayload.isEmpty ? "Preparing QR code…" : "Waiting for confirmation in \(telegram ? "Telegram" : "WhatsApp")…")
-                                    .dockFont(size: 12)
+                                    .dockFont(.body)
                             }
                             if let link = pairing.deepLink { Link("Open in Telegram", destination: link).buttonStyle(.dockLink) }
                             Button("Cancel") { model.cancelQR() }.buttonStyle(.dockSecondary).controlSize(.small)
@@ -233,7 +233,7 @@ struct MessagingWorkspaceView: View {
         if !text.isEmpty || platform.docsURL != nil {
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("Get your credentials")
-                if !text.isEmpty { Text(text).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText) }
+                if !text.isEmpty { Text(text).dockFont(.body).foregroundStyle(Color.dockSecondaryText) }
                 if let docs = platform.docsURL {
                     Link(destination: docs) {
                         HStack(spacing: 4) { Text("Open setup guide"); DockIcon(.arrowSquareOut, size: 12) }
@@ -260,9 +260,9 @@ struct MessagingWorkspaceView: View {
                     get: { drafts[env.key] ?? (env.isPassword ? "" : env.value ?? "") },
                     set: { drafts[env.key] = $0 })
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(env.prompt).dockFont(size: 13, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                    Text(env.prompt).dockFont(.navigation, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                     if !env.description.isEmpty, env.description != env.prompt {
-                        Text(env.description).dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+                        Text(env.description).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     }
                     HStack(spacing: 8) {
                         if env.isPassword || (env.isSet && env.value == nil) {
@@ -282,7 +282,7 @@ struct MessagingWorkspaceView: View {
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title.uppercased()).dockFont(size: 11, weight: .semibold).tracking(1.2)
+        Text(title.uppercased()).dockFont(.metadata, weight: .semibold).tracking(1.2)
             .foregroundStyle(Color.dockSecondaryText)
     }
 
@@ -290,7 +290,7 @@ struct MessagingWorkspaceView: View {
         let enabled = Binding(get: { enabledDraft ?? platform.enabled }, set: { enabledDraft = $0 })
         let changed = (enabledDraft.map { $0 != platform.enabled } ?? false) || !drafts.isEmpty
         return HStack {
-            Toggle(isOn: enabled) { Text(enabled.wrappedValue ? "Enabled" : "Disabled").dockFont(size: 12) }
+            Toggle(isOn: enabled) { Text(enabled.wrappedValue ? "Enabled" : "Disabled").dockFont(.body) }
                 .toggleStyle(.dockSwitch)
             Spacer()
             if ["pending_restart", "gateway_stopped", "startup_failed"].contains(platform.state) {
@@ -346,7 +346,7 @@ private struct MessagingPlatformIcon: View {
             if let symbol {
                 DockIcon(symbol, size: 14, color: .dockAccent)
             } else {
-                Text(platform.name.prefix(1).uppercased()).dockFont(size: 12, weight: .semibold)
+                Text(platform.name.prefix(1).uppercased()).dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }

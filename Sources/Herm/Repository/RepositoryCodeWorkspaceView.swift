@@ -57,7 +57,7 @@ struct RepositoryCodeWorkspaceView: View {
             editor
             if let saveError {
                 DockIconLabel(saveError, icon: .warning)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -139,7 +139,7 @@ struct RepositoryCodeWorkspaceView: View {
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Text(component)
-                    .dockFont(size: 12, weight: index == components.count - 1 ? .semibold : .regular)
+                    .dockFont(.body, weight: index == components.count - 1 ? .semibold : .regular)
                     .foregroundStyle(index == components.count - 1 ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -213,31 +213,31 @@ struct RepositoryCodeWorkspaceView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(commit.isUncommitted ? "?" : String(commit.author.prefix(1)).uppercased())
-                    .dockFont(size: 11, weight: .bold)
+                    .dockFont(.metadata, weight: .bold)
                     .foregroundStyle(Color.dockOnAccentText)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(commit.isUncommitted ? DockCategoryTone.modified.fill : Color.dockAccent))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(commit.isUncommitted ? "Not committed yet" : commit.author)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     if let date = commit.authoredAt, !commit.isUncommitted {
                         Text("\(HumanDateFormatting.relative(date)) · \(date.formatted(date: .abbreviated, time: .shortened))")
-                            .dockFont(size: 11)
+                            .dockFont(.metadata)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
             }
             if !commit.isUncommitted {
                 Text(commit.summary)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockPrimaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
-                    DockIcon(.gitCommit).dockFont(size: 11)
-                    Text(commit.shortHash).dockFont(size: 11, design: .monospaced)
+                    DockIcon(.gitCommit).dockFont(.metadata)
+                    Text(commit.shortHash).dockFont(.metadata, weight: .regular, design: .monospaced)
                     Spacer(minLength: 0)
-                    Text("Right-click for actions").dockFont(size: 10)
+                    Text("Right-click for actions").dockFont(.compactStatus, weight: .regular)
                 }
                 .foregroundStyle(Color.dockMetadataText)
             }
@@ -262,7 +262,7 @@ struct RepositoryCodeWorkspaceView: View {
             Text("UTF-8")
             Text(language.name)
         }
-        .dockFont(size: 11)
+        .dockFont(.metadata)
         .foregroundStyle(Color.dockMetadataText)
         .lineLimit(1)
         .padding(.horizontal, 12)

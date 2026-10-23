@@ -49,16 +49,16 @@ struct IssueWorkspace: View {
                         ForEach(0..<6, id: \.self) { _ in issueLoadingRow }
                     } else if !center.hasLoaded && center.errorMessage != nil {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("Issues unavailable").dockFont(size: 12, weight: .semibold)
-                            Text("Check your GitHub sign-in and try again.").dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
+                            Text("Issues unavailable").dockFont(.body, weight: .semibold)
+                            Text("Check your GitHub sign-in and try again.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
                             Button("Try again") { refresh() }.buttonStyle(.dockCompact).foregroundStyle(Color.dockAccent)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     } else if center.visible.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(center.hasActiveFilters ? "No issues match this view" : "No open issues")
-                                .dockFont(size: 12, weight: .semibold)
+                                .dockFont(.body, weight: .semibold)
                             Text(center.hasActiveFilters ? "Try another filter or search term." : "Issues from your repositories will appear here.")
-                                .dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
+                                .dockFont(.body).foregroundStyle(Color.dockMetadataText)
                             if center.hasActiveFilters {
                                 Button("Clear filters") { center.resetFilters() }
                                     .buttonStyle(.dockCompact)

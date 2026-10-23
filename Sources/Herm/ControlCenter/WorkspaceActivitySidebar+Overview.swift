@@ -10,19 +10,19 @@ extension WorkspaceActivitySidebar {
             sectionLabel("SEARCH SOURCES")
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass)
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockAccent)
                     .frame(width: 16)
                 DockTextField("Sessions, projects, Inbox, reminders", text: $searchQuery)
                     .textFieldStyle(.plain)
-                    .dockFont(size: 13)
+                    .dockFont(.navigation)
                     .foregroundStyle(Color.dockPrimaryText)
                 if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Button {
                         searchQuery = ""
                     } label: {
                         DockIcon(.xCircle, weight: .fill)
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     .buttonStyle(.dockHover)
@@ -38,10 +38,10 @@ extension WorkspaceActivitySidebar {
             if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Search across the sources already connected to Hermes.")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text("Sessions  ·  projects  ·  Inbox  ·  Apple Reminders")
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.top, 2)
@@ -49,7 +49,7 @@ extension WorkspaceActivitySidebar {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("SEARCHING HERMES SOURCES…")
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             } else if control.searchResults.isEmpty {
@@ -74,28 +74,28 @@ extension WorkspaceActivitySidebar {
     func searchResultRow(_ result: ControlSearchResult) -> some View {
         HStack(alignment: .top, spacing: 9) {
             DockIcon(result.reference.source == .appleReminder ? .listChecks : .circleDashed)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockAccent)
                 .frame(width: 15)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(result.title)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(2)
                     Spacer(minLength: 4)
                     Text(result.sourceLabel)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 Text(result.detail)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }
             if result.reference.source != .appleReminder && result.reference.source != .hermesCronJob {
                 DockIcon(.caretRight)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -121,7 +121,7 @@ extension WorkspaceActivitySidebar {
                 .dockFont(size: 18, weight: .semibold)
                 .foregroundStyle(color == Color.dockWarning || color == Color.dockDestructive ? color : Color.dockPrimaryText)
             Text(label == label.uppercased() ? label.lowercased().capitalized : label)
-                .dockFont(size: 11, weight: .medium)
+                .dockFont(.metadata, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -154,15 +154,15 @@ extension WorkspaceActivitySidebar {
                     .foregroundStyle(workflow.repository.isGitRepository ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(workflow.repository.isGitRepository ? workflow.repository.branch : "No project folder selected")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     if workflow.repository.isGitRepository {
                         Text(workflow.repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S")")
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
                     } else if let path = activeRepositoryPath {
-                        Text(path).dockFont(size: 12).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                        Text(path).dockFont(.body).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -196,13 +196,13 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 .buttonStyle(.dockHover)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
                 .disabled(isRefreshingRepository || workflow.isRefreshing)
             }
             if workflow.repository.isGitRepository, !workflow.repository.latestCommit.isEmpty {
                 Text(workflow.repository.latestCommit)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }
@@ -222,7 +222,7 @@ extension WorkspaceActivitySidebar {
                 .disabled(isRefreshingRepository)
             }
             .buttonStyle(.dockCompact)
-            .dockFont(size: 12, weight: .semibold)
+            .dockFont(.body, weight: .semibold)
             .foregroundStyle(Color.dockAccent)
         }
         .padding(12)
@@ -232,20 +232,20 @@ extension WorkspaceActivitySidebar {
     func providerSetupCard(_ capability: CapabilityState) -> some View {
         HStack(alignment: .top, spacing: 8) {
             DockIcon(.warning)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockWarning)
                 .frame(width: 15)
             VStack(alignment: .leading, spacing: 3) {
                 Text(capability.title)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text(capability.detail)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
                 if let recovery = capability.recovery {
                     Text(recovery)
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockWarning)
                         .lineLimit(2)
                 }
@@ -258,7 +258,7 @@ extension WorkspaceActivitySidebar {
                         color: .dockAccent
                     )
                     .buttonStyle(.dockCompact)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                 }
             }
             Spacer(minLength: 0)
@@ -276,10 +276,10 @@ extension WorkspaceActivitySidebar {
 
     func attentionRow(icon: Ph, title: String, detail: String, color: Color) -> some View {
         HStack(alignment: .top, spacing: 9) {
-            DockIcon(icon).dockFont(size: 12).foregroundStyle(color).frame(width: 14)
+            DockIcon(icon).dockFont(.body).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).dockFont(size: 12, weight: .medium).foregroundStyle(Color.dockPrimaryText)
-                Text(detail).dockFont(size: 12).foregroundStyle(Color.dockMetadataText).lineLimit(2)
+                Text(title).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
+                Text(detail).dockFont(.body).foregroundStyle(Color.dockMetadataText).lineLimit(2)
             }
             Spacer(minLength: 0)
         }
@@ -374,12 +374,12 @@ extension WorkspaceActivitySidebar {
                     Circle().fill(color).frame(width: 5, height: 5)
                 }
                 Text(title.uppercased())
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .tracking(0.5)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Text(subtitle)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
@@ -396,16 +396,16 @@ extension WorkspaceActivitySidebar {
     func activityRow(_ activity: AgentActivity) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(HumanDateFormatting.timeOnly(activity.timestamp))
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
                 .frame(width: 34, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased())
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .tracking(0.5)
                     .foregroundStyle(Color.dockAccent)
                 Text(activity.text)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(2)
             }
@@ -427,17 +427,17 @@ extension WorkspaceActivitySidebar {
             Circle().fill(capabilityReadinessColor(capability)).frame(width: 6, height: 6).padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(capability.title).dockFont(size: 12, weight: .medium).foregroundStyle(Color.dockPrimaryText)
+                    Text(capability.title).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
                     Text(capabilityReadinessLabel(capability).uppercased())
-                        .dockFont(size: 10, weight: .semibold)
+                        .dockFont(.compactStatus, weight: .semibold)
                         .foregroundStyle(capabilityReadinessColor(capability))
                     Text(capabilityAccessLabel(capability).uppercased())
-                        .dockFont(size: 10, weight: .medium)
+                        .dockFont(.compactStatus, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
-                Text(capability.detail).dockFont(size: 12).foregroundStyle(Color.dockMetadataText).lineLimit(2)
+                Text(capability.detail).dockFont(.body).foregroundStyle(Color.dockMetadataText).lineLimit(2)
                 if let recovery = capability.recovery {
-                    Text(recovery).dockFont(size: 12).foregroundStyle(Color.dockWarning).lineLimit(2)
+                    Text(recovery).dockFont(.body).foregroundStyle(Color.dockWarning).lineLimit(2)
                 }
                 if let command = capability.recoveryCommand {
                     DockCopyButton(
@@ -448,7 +448,7 @@ extension WorkspaceActivitySidebar {
                         color: .dockAccent
                     )
                     .buttonStyle(.dockCompact)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                 }
             }
             Spacer(minLength: 0)
@@ -496,7 +496,7 @@ extension WorkspaceActivitySidebar {
             Text("\(capabilityInventorySnapshot.missingCount + capabilityInventorySnapshot.unsupportedCount) MISSING/UNSUPPORTED")
                 .foregroundStyle(Color.dockWarning)
         }
-        .dockFont(size: 10, weight: .semibold)
+        .dockFont(.compactStatus, weight: .semibold)
         .foregroundStyle(Color.dockSecondaryText)
         .lineLimit(1)
         .minimumScaleFactor(0.7)

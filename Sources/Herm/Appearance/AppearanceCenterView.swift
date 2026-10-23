@@ -43,7 +43,7 @@ public struct AppearanceCenterView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             LabeledContent(plugin.name, value: plugin.status.rawValue.capitalized)
                             Text("\(plugin.mode.rawValue.capitalized) plugin")
-                                .font(.caption)
+                                .dockFont(.metadata)
                                 .foregroundStyle(Color.dockSecondaryText)
                         }
                     }
@@ -51,7 +51,7 @@ public struct AppearanceCenterView: View {
             }
             Section("Unavailable actions") {
                 Text("Skin and pet selection, and desktop-plugin enable/reload, require a verified Hermes command contract. No configuration is edited locally.")
-                    .font(.caption)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }

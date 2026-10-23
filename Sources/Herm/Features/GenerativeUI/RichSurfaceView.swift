@@ -34,7 +34,7 @@ struct RichSurfaceView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text(surface.title).dockFont(size: 12, weight: .semibold).foregroundStyle(
+      Text(surface.title).dockFont(.body, weight: .semibold).foregroundStyle(
         Color.dockPrimaryText)
       if surface.kind == .html {
         Text(surface.fallback).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
@@ -157,7 +157,7 @@ struct RichSourceDisclosure: View {
             source, label: "Copy source", accessibilityLabel: "Copy interactive source"
           ).buttonStyle(.dockCompact)
           ScrollView([.horizontal, .vertical]) {
-            Text(source).dockFont(size: 12, design: .monospaced).textSelection(.enabled)
+            Text(source).dockFont(.body, weight: .regular, design: .monospaced).textSelection(.enabled)
               .foregroundStyle(Color.dockSecondaryText).frame(
                 maxWidth: .infinity, alignment: .leading)
           }.frame(maxHeight: 220)

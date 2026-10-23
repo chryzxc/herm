@@ -20,7 +20,7 @@ struct ChatImagePreviewModal: View {
                 .padding(28)
             Button(action: { dismiss() }) {
                 DockIcon(.x)
-                    .dockFont(size: 13, weight: .bold)
+                    .dockFont(.navigation, weight: .bold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color.dockControlSurface))

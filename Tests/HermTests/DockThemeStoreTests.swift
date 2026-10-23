@@ -5,6 +5,51 @@ import Testing
 
 @MainActor
 struct DockThemeStoreTests {
+    @Test func themeRootKeepsSettingsSelectionWhileUpdatingColorScheme() async throws {
+        _ = NSApplication.shared
+        let store = DockThemeStore.shared
+        let savedTheme = store.selectedThemeID
+        let savedAppearance = NSApp.appearance
+        defer { store.selectedThemeID = savedTheme; NSApp.appearance = savedAppearance }
+
+        for systemScheme in [ColorScheme.light, .dark] {
+            store.selectedThemeID = .clean
+            var selection: Binding<SettingsCategory>?
+            var renderedCategory: SettingsCategory?
+            var renderedScheme: ColorScheme?
+            let host = NSHostingView(rootView: ThemeRootSelectionProbe { category, scheme in
+                selection = category
+                renderedCategory = category.wrappedValue
+                renderedScheme = scheme
+            }.dockThemedRoot().environment(\.colorScheme, systemScheme))
+            host.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.close() }
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(renderedCategory == .general)
+            let category = try #require(selection)
+            category.wrappedValue = .appearance
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(renderedCategory == .appearance)
+
+            for theme in [DockThemeID.warmLight, .slate, .glass, .cartoon, .terminal, .clean] {
+                store.selectedThemeID = theme
+                try await Task.sleep(for: .milliseconds(100))
+                host.layoutSubtreeIfNeeded()
+                #expect(renderedCategory == .appearance, "Settings selection reset for \(theme)")
+                let expectedScheme: ColorScheme = switch theme.appearance {
+                case .light: .light
+                case .dark: .dark
+                case .system: systemScheme
+                }
+                #expect(renderedScheme == expectedScheme, "Wrong color scheme for \(theme)")
+            }
+        }
+    }
+
     @Test func existingHermFacesFollowSkinChanges() async throws {
         _ = NSApplication.shared
         let store = DockThemeStore.shared
@@ -171,8 +216,12 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.warmLight.appearance == .light)
         #expect(DockThemeID.slate.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.glass, .clean, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island])
-        #expect(DockThemeID.hermesClassic.style.fontDesign == .serif && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
+        #expect(DockThemeID.hermOnly == [.glass, .clean, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .storm, .island])
+        #expect(DockThemeID.hermesClassic.style.motion == .snap && DockThemeID.cartoon.style.motion == .bouncy && DockThemeID.glass.style.motion == .float && DockThemeID.hud.style.motion == .mechanical)
+        #expect(DockThemeID.notebook.style.motion == .glide)
+        #expect(DockThemeID.storm.appearance == .dark && DockThemeID.storm.style.backdrop == .rain && DockThemeID.storm.style.glow > 0)
+        #expect(DockThemeID.storm.style.selection == .neon && DockThemePalette(theme: .storm).neonHues.count == 3 && DockThemePalette(theme: .dusk).neonHues.isEmpty)
+        #expect(DockThemeID.hermesClassic.appearance == .system && DockThemeID.hermesClassic.style.backdrop == .etching && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
         #expect(DockThemeID.terminal.style.glow > 0 && DockThemeID.terminal.style.selection == .invert)
         #expect(DockThemeID.dusk.style.accentGradient && DockThemeID.warmLight.style.cardShadow > 0)
         #expect(DockThemeID.pixel.style.geometry == .pixel && !DockThemeID.pixel.style.animates)
@@ -196,7 +245,7 @@ struct DockThemeStoreTests {
         let option = DockAppearanceCatalog.options(installedSkins: []).first { $0.themeID == .retro }
         #expect(option != nil && option?.isHermesInstalled == false)
         #expect(DockThemeID.retro.appearance == .light && DockThemeID.retro.style.bevel)
-        for theme in DockThemeID.allCases where ![.retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud].contains(theme) {
+        for theme in DockThemeID.allCases where ![.retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .storm].contains(theme) {
             #expect(theme.presentation == DockSkinPresentation())
         }
     }
@@ -259,6 +308,25 @@ struct DockThemeStoreTests {
         _ = observation
     }
 
+    @Test func readingThemeTokenTracksSkinSwitch() {
+        let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
+        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let store = DockThemeStore(defaults: defaults, appliesToApplication: true)
+        store.selectedThemeID = .clean
+        final class Flag: @unchecked Sendable { var isSet = false }
+        let invalidated = Flag()
+        // SwiftUI tracks view bodies the same way, so a view that only reads a
+        // token (and whose inputs are unchanged) still re-renders.
+        withObservationTracking { _ = Color.dockSurface } onChange: { invalidated.isSet = true }
+
+        store.selectedThemeID = .terminal
+
+        #expect(invalidated.isSet)
+    }
+
     @Test func appearanceCatalogJoinsMappedSkinsAndDeduplicatesUnknowns() {
         let skins = [
             AppearanceSkin(id: "slate", name: "Cool Blue", isActive: true),
@@ -317,5 +385,26 @@ struct DockThemeStoreTests {
             #expect(!lightPath.isEmpty)
             #expect(lightPath.contains(CGPoint(x: 60, y: 30)))
         }
+    }
+}
+
+private struct ThemeRootSelectionProbe: View {
+    @State private var category = SettingsCategory.general
+    let observe: (Binding<SettingsCategory>, ColorScheme) -> Void
+
+    var body: some View {
+        ThemeRootSelectionBridge(category: $category, observe: observe)
+    }
+}
+
+private struct ThemeRootSelectionBridge: NSViewRepresentable {
+    @Binding var category: SettingsCategory
+    @Environment(\.colorScheme) private var colorScheme
+    let observe: (Binding<SettingsCategory>, ColorScheme) -> Void
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        observe($category, colorScheme)
     }
 }

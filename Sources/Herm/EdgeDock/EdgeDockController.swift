@@ -1814,7 +1814,7 @@ struct EdgeNotchView: View {
     private func tabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .dockFont(size: 12, weight: isSelected ? .semibold : .medium)
+                .dockFont(.body, weight: isSelected ? .semibold : .medium)
                 .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
                 .padding(.horizontal, 8)
                 .frame(height: 24)

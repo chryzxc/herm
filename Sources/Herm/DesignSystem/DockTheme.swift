@@ -2,19 +2,19 @@ import AppKit
 import SwiftUI
 
 enum DockThemeID: String, CaseIterable, Identifiable, Codable {
-    case glass, clean, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud, island
+    case glass, clean, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud, storm, island
     var id: String { rawValue }
     var hermesSkinID: String? {
-        switch self { case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island: nil }
+        switch self { case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .storm, .island: nil }
     }
     var title: String {
-        switch self { case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .clean: "Clean"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD"; case .island: "Island" }
+        switch self { case .hermesClassic: "Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .clean: "Clean"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD"; case .storm: "Storm"; case .island: "Island" }
     }
     var signature: String {
         switch self {
         case .glass: "Liquid glass"
         case .clean: "Quiet porcelain"
-        case .hermesClassic: "Midnight ink"
+        case .hermesClassic: "Nous etching"
         case .ares: "Oxblood & bronze"
         case .mono: "Graphite ledger"
         case .slate: "Steel blueprint"
@@ -31,6 +31,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .pixel: "Indigo arcade"
         case .notebook: "Pencil & paper"
         case .hud: "Night instruments"
+        case .storm: "Neon rain"
         case .island: "Pure black"
         }
     }
@@ -38,7 +39,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .glass: "Native macOS Liquid Glass with neutral graphite tint. Follows macOS appearance."
         case .clean: "Porcelain surfaces, neutral gray selection, and borderless cards. Follows macOS appearance."
-        case .hermesClassic: "Midnight ink, brass accents, serif lettering, and fine gold selection bars."
+        case .hermesClassic: "The Hermes desktop look: clean chrome, Nous blue, square controls, and a faint etched backdrop. Follows macOS appearance."
         case .ares: "Oxblood panels, bronze contours, crisp corners, and hard offset shadows."
         case .mono: "Graphite surfaces, monospaced lettering, and inverted silver selection."
         case .slate: "Steel-blue panels, a fine blueprint grid, and precise blue selection bars."
@@ -55,14 +56,15 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .pixel: "Indigo panels, magenta accents, stepped corners, and pixel-grid shadows. No motion."
         case .notebook: "Ruled cream paper, blue accents, pencil outlines, and highlighter selection."
         case .hud: "Cyan instruments, crosshair grid, chamfered panels, and fine corner brackets."
+        case .storm: "Storm-night indigo, neon blue glow, falling rain streaks, and luminous selection bars."
         case .island: "Pure black surfaces and white type that blend with the camera notch. Used by the top island."
         }
     }
     var appearance: DockThemeAppearance {
         switch self {
-        case .glass, .clean, .swiss: .system
+        case .glass, .clean, .swiss, .hermesClassic: .system
         case .warmLight, .cartoon, .brutalist, .origami, .eInk, .clay, .notebook, .retro: .light
-        case .hermesClassic, .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud, .island: .dark
+        case .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud, .storm, .island: .dark
         }
     }
     var usesNativeMaterial: Bool { style.material == .glass }
@@ -70,26 +72,27 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
     static var hermOnly: [DockThemeID] { allCases.filter { $0.hermesSkinID == nil } }
     var style: DockThemeStyle {
         switch self {
-        case .hermesClassic: DockThemeStyle(controlRadius: 6, paneRadius: 8, outlineWidth: 1, fontDesign: .serif, selection: .bar, glow: 3, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
+        case .hermesClassic: DockThemeStyle(controlRadius: 2, paneRadius: 3, outlineWidth: 0.5, backdrop: .etching, motion: .snap, pressScale: 1, cardFill: 1, tintedSidebar: true)
         case .warmLight: DockThemeStyle(controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, fontDesign: .serif, selection: .fill, cardShadow: 6, emboss: 3, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .ares: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1.5, stickerShadow: 3, selection: .bar, accentGradient: true, pressScale: 0.97, cardFill: 1, tintedSidebar: true)
-        case .mono: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 0.5, fontDesign: .monospaced, selection: .invert, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .clay: DockThemeStyle(controlRadius: 16, paneRadius: 22, outlineWidth: 0, fontDesign: .rounded, cardShadow: 8, accentGradient: true, emboss: 7, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+        case .ares: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1.5, stickerShadow: 3, selection: .bar, accentGradient: true, motion: .mechanical, pressScale: 0.97, cardFill: 1, tintedSidebar: true)
+        case .mono: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 0.5, fontDesign: .monospaced, selection: .invert, motion: .mechanical, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+        case .clay: DockThemeStyle(controlRadius: 16, paneRadius: 22, outlineWidth: 0, fontDesign: .rounded, cardShadow: 8, accentGradient: true, emboss: 7, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
         case .pixel: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 3, stickerShadow: 4, geometry: .pixel, fontDesign: .monospaced, selection: .invert, animates: false, backdrop: .grid, pressScale: 1, cardFill: 1, tintedSidebar: true)
         case .notebook: DockThemeStyle(controlRadius: 6, paneRadius: 8, outlineWidth: 1.5, geometry: .sketch, fontDesign: .serif, selection: .highlight, backdrop: .ruled, pressScale: 0.97, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .hud: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1, geometry: .chamfered, fontDesign: .monospaced, selection: .bar, glow: 5, backdrop: .crosshairs, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
-        case .cartoon: DockThemeStyle(controlRadius: 14, paneRadius: 18, outlineWidth: 2.5, stickerShadow: 4, fontDesign: .rounded, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+        case .hud: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1, geometry: .chamfered, fontDesign: .monospaced, selection: .bar, glow: 5, backdrop: .crosshairs, motion: .mechanical, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
+        case .storm: DockThemeStyle(controlRadius: 8, paneRadius: 12, outlineWidth: 1, selection: .neon, glow: 4, cardShadow: 8, accentGradient: true, backdrop: .rain, motion: .float, pressScale: 0.97, cardFill: 1, tintedSidebar: true)
+        case .cartoon: DockThemeStyle(controlRadius: 14, paneRadius: 18, outlineWidth: 2.5, stickerShadow: 4, fontDesign: .rounded, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
         case .retro: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .invert, animates: false, bevel: true, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .terminal: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 1, fontDesign: .monospaced, selection: .invert, glow: 3, backdrop: .scanlines, pressScale: 1, cardFill: 0.85, tintedSidebar: true)
-        case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .dots, pressScale: 1, cardFill: 1, tintedSidebar: true)
-        case .dusk: DockThemeStyle(controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 5, cardShadow: 10, accentGradient: true, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
+        case .terminal: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 1, fontDesign: .monospaced, selection: .invert, glow: 3, backdrop: .scanlines, motion: .mechanical, pressScale: 1, cardFill: 0.85, tintedSidebar: true)
+        case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .dots, motion: .mechanical, pressScale: 1, cardFill: 1, tintedSidebar: true)
+        case .dusk: DockThemeStyle(controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 5, cardShadow: 10, accentGradient: true, motion: .float, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
         case .origami: DockThemeStyle(controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, selection: .bar, cardShadow: 6, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, pressScale: 0.97, neutralUserBubble: true)
+        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, motion: .float, pressScale: 0.97, neutralUserBubble: true)
         case .eInk: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 1, selection: .invert, animates: false, pressScale: 1, cardFill: 1, neutralUserBubble: true)
-        case .swiss: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open, pressScale: 1, neutralUserBubble: true)
+        case .swiss: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open, motion: .mechanical, pressScale: 1, neutralUserBubble: true)
         case .clean: DockThemeStyle(controlRadius: 10, paneRadius: 18, outlineWidth: 0, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .slate: DockThemeStyle(controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .bar, backdrop: .grid, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
-        case .island: DockThemeStyle(controlRadius: 14, paneRadius: 22, outlineWidth: 0, pressScale: 0.97, cardFill: 1, neutralUserBubble: true)
+        case .slate: DockThemeStyle(controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .bar, backdrop: .grid, motion: .mechanical, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
+        case .island: DockThemeStyle(controlRadius: 14, paneRadius: 22, outlineWidth: 0, motion: .float, pressScale: 0.97, cardFill: 1, neutralUserBubble: true)
         }
     }
 }
@@ -107,9 +110,23 @@ enum DockThemeGeometry: Equatable {
 
 enum DockThemeMaterial: Equatable { case solid, glass }
 /// How a selected or hovered tab/row is marked.
-enum DockThemeSelection: Equatable { case fill, invert, underline, highlight, bar }
+/// `.neon` is a gradient wash with a glowing leading bar, drawn from the palette's `neonHues`.
+enum DockThemeSelection: Equatable { case fill, invert, underline, highlight, bar, neon }
 /// Faint pattern drawn on the window canvas.
-enum DockThemeBackdrop: Equatable { case none, ruled, grid, dots, scanlines, crosshairs }
+enum DockThemeBackdrop: Equatable { case none, ruled, grid, dots, scanlines, crosshairs, rain, etching }
+/// How a skin moves: the curve and pace every `dockEase` transition takes.
+enum DockThemeMotion: Equatable {
+    /// Soft deceleration; the default.
+    case glide
+    /// Hermes desktop: fast ease-out, and hover/press paint instantly so only the return eases.
+    case snap
+    /// Short, overshoot-free instrument motion.
+    case mechanical
+    /// Springy overshoot for sticker and molded skins.
+    case bouncy
+    /// Slower, weightless settle for glass and night skins.
+    case float
+}
 /// `.open` drops card fills and strokes so structure comes from type and spacing.
 enum DockThemeChrome: Equatable { case boxed, open }
 
@@ -140,6 +157,7 @@ struct DockThemeStyle: Equatable {
     /// Win95-style 3D edges: light top-left and dark bottom-right on raised parts, reversed when pressed or inset.
     var bevel: Bool = false
     var backdrop: DockThemeBackdrop = .none
+    var motion: DockThemeMotion = .glide
     var pressScale: CGFloat = 0.96
     /// Opacity of the surface fill behind cards; solid skins raise it so cards read by tone alone.
     var cardFill: CGFloat = 0.26
@@ -198,7 +216,7 @@ enum DockAppearanceCatalog {
 
 struct DockThemePalette {
     let theme: DockThemeID
-    var labelFont: Font { .system(size: 13, weight: .regular) }
+    var labelFont: Font { DockTypography.font(.navigation) }
     var profileFont: Font { .system(size: 13, weight: .medium) }
     var sectionFont: Font { .system(size: 12, weight: .medium) }
     var rowHeight: CGFloat { 44 }
@@ -229,7 +247,8 @@ struct DockThemePalette {
 
     private static func baseRoles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         switch theme {
-        case .hermesClassic: return isDark ? ("#1A1A2E", "#211F35", "#171728", "#333355", "#D3CCB4", "#BBB8AC", "#988964", "#E5B23E", "#3A3A55", "#544F67", "#8FBC8F", "#E3C04F", "#FF6B6B") : ("#F7F3E8", "#F1E8D3", "#FBF9F2", "#E9DFC6", "#3E321F", "#61523A", "#756549", "#B8860B", "#E8DCC2", "#D7C9A9", "#2E7D32", "#B45309", "#B4232F")
+        // Hermes desktop "Nous": GitHub Default neutrals carrying Nous blue.
+        case .hermesClassic: return isDark ? ("#0D1117", "#161B22", "#010409", "#21262D", "#D1D9E0", "#B1BAC4", "#7D8590", "#4A84FE", "#17243A", "#30363D", "#3FB950", "#D29922", "#F85149") : ("#FFFFFF", "#F6F8FA", "#F6F8FA", "#EAEEF2", "#1F2328", "#424A53", "#656D76", "#0053FD", "#E3EDFF", "#D0D7DE", "#1A7F37", "#9A6700", "#CF222E")
         case .ares: return isDark ? ("#1D1115", "#2B191E", "#160E12", "#48252B", "#CCC2AF", "#C7B4A5", "#AC7C78", "#DD4A3A", "#692620", "#6E584B", "#7BC96F", "#C7A96B", "#EF5350") : ("#F8EEE8", "#F1DDD3", "#FCF7F4", "#E8C6B8", "#3B201B", "#60433C", "#7E5850", "#DD4A3A", "#F0D1C7", "#DAB2A2", "#4CAF50", "#C7A96B", "#EF5350")
         case .mono: return isDark ? ("#1F1F1F", "#282828", "#181818", "#464646", "#C8C8C8", "#C8C8C8", "#909090", "#AAAAAA", "#505050", "#5E5E5E", "#B5B5B5", "#AAAAAA", "#D0D0D0") : ("#F5F5F5", "#EDEDED", "#FAFAFA", "#E2E2E2", "#202020", "#565656", "#696969", "#555555", "#E0E0E0", "#C7C7C7", "#5F5F5F", "#777777", "#8A8A8A")
         case .slate: return isDark ? ("#151C2F", "#1C2740", "#111827", "#324867", "#BEC6CE", "#BEC6CE", "#8891A0", "#7EB8F6", "#3A5375", "#545E6B", "#63D0A6", "#E6A855", "#F7A072") : ("#EFF4FA", "#E4ECF6", "#F7FAFD", "#D4E1F0", "#17243A", "#46576B", "#5B6A7F", "#2563C7", "#D3E0F4", "#B7C8DD", "#238B67", "#A86916", "#C94C4C")
@@ -243,6 +262,8 @@ struct DockThemePalette {
         case .pixel: return ("#1A1033", "#261A4A", "#20143F", "#3A2A6B", "#D6D0EE", "#C2BBE2", "#8F85B9", "#FF4FA3", "#4B2F8A", "#5A46A0", "#3DDC97", "#FFD23F", "#FF5C6C")
         case .notebook: return ("#FBF6E9", "#FFFDF5", "#F5EFDC", "#E9E0C6", "#2B2A33", "#55525E", "#6C6879", "#2F4FA8", "#FFF0A8", "#77747F", "#3F8F5B", "#A86F00", "#C8362E")
         case .hud: return ("#060B14", "#0C1626", "#09111E", "#12263D", "#A9DCEB", "#83B8CA", "#5C8796", "#19D3F3", "#0F3A52", "#1F5C75", "#3DEB9A", "#FFB020", "#FF4D5E")
+        // Tokyo Night Storm, with metadata lifted from the comment gray for legible text.
+        case .storm: return ("#24283B", "#292E42", "#1F2335", "#3B4261", "#C0CAF5", "#B8C0E2", "#8E97C6", "#7AA2F7", "#394B70", "#414868", "#9ECE6A", "#E0AF68", "#F7768E")
         case .island: return ("#000000", "#141414", "#0A0A0A", "#262626", "#D9D9DC", "#B3B3B8", "#8A8A90", "#F5F5F7", "#2C2C2E", "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A")
         case .dusk: return ("#111019", "#1D1928", "#15121E", "#2A2436", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740", "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B")
         // Apple system grays and a graphite accent: neutral, like macOS 26 Liquid Glass.
@@ -273,7 +294,13 @@ struct DockThemePalette {
     var primaryText: Color { resolvedTokens.primaryText }; var secondaryText: Color { resolvedTokens.secondaryText }; var metadataText: Color { resolvedTokens.metadataText }; var accent: Color { resolvedTokens.accent }; var selectedFill: Color { resolvedTokens.selectedFill }; var divider: Color { resolvedTokens.divider }; var success: Color { resolvedTokens.success }; var warning: Color { resolvedTokens.warning }; var destructive: Color { resolvedTokens.destructive }
     /// Rail and session list; tinted skins set them apart from the chat page.
     var sidebarBackground: Color { theme.style.tintedSidebar ? surface2 : background }
-    var swatches: [Color] { [background, selectedFill, primaryText, accent, success] }
+    var swatches: [Color] { neonHues.isEmpty ? [background, selectedFill, primaryText, accent, success] : [background, selectedFill, primaryText] + neonHues }
+    /// Neon skins light card rims, primary fills, and selection with a gradient
+    /// from the accent through these hues; empty on every other skin.
+    var neonHues: [Color] { theme == .storm ? [accent, Self.stormMagenta, Self.stormCyan] : [] }
+    // Tokyo Night magenta and cyan; Storm's brand hues beside its blue accent.
+    private static let stormMagenta = Color(nsColor: NSColor(hex: "#BB9AF7"))
+    private static let stormCyan = Color(nsColor: NSColor(hex: "#7DCFFF"))
 }
 
 private struct Tokens {
@@ -356,6 +383,7 @@ final class DockThemeStore: ObservableObject {
     private let defaults: UserDefaults
     private let appliesToApplication: Bool
     private var systemAppearanceObservation: NSKeyValueObservation?
+    private var popoverObserver: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard, appliesToApplication: Bool = false) {
         self.defaults = defaults
@@ -364,6 +392,7 @@ final class DockThemeStore: ObservableObject {
         selectedThemeID = defaults.string(forKey: Self.storageKey).flatMap(DockThemeID.init(rawValue:)) ?? .glass
         applyToApplication(themeID: selectedThemeID)
         observeSystemAppearance()
+        pinPopoverAppearance()
     }
     var palette: DockThemePalette { DockThemePalette(theme: selectedThemeID) }
 
@@ -375,16 +404,34 @@ final class DockThemeStore: ObservableObject {
         DockThemeRuntime.current = themeID
         DockThemeRuntime.revision &+= 1
         guard let app = NSApp else { return }
-        let appearance: NSAppearance? = switch themeID.appearance {
-        case .system: nil
-        case .light: NSAppearance(named: .aqua)
-        case .dark: NSAppearance(named: .darkAqua)
-        }
+        let appearance = Self.nsAppearance(for: themeID)
         if app.appearance?.name != appearance?.name { app.appearance = appearance }
         // A window keeps a forced appearance (e.g. .aqua from a light skin) after
         // the app-level one is cleared, which left System/Glass stuck on a plain
         // light material until relaunch. Re-assert it per window.
         for window in app.windows where window.appearance?.name != appearance?.name { window.appearance = appearance }
+    }
+
+    private static func nsAppearance(for themeID: DockThemeID) -> NSAppearance? {
+        switch themeID.appearance {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+
+    /// Popovers open in their own window, which kept the system (or a previous
+    /// skin's) appearance and painted a light material under dark-skin text.
+    /// Pin each one to the current skin as it opens.
+    private func pinPopoverAppearance() {
+        guard appliesToApplication else { return }
+        popoverObserver = NotificationCenter.default.addObserver(forName: NSPopover.willShowNotification, object: nil, queue: .main) { note in
+            // Delivered on the main queue, where the popover lives.
+            nonisolated(unsafe) let popover = note.object as? NSPopover
+            MainActor.assumeIsolated {
+                popover?.appearance = Self.nsAppearance(for: DockThemeRuntime.current)
+            }
+        }
     }
 
     /// Native macOS follows the system Light/Dark setting. Content that bakes
@@ -406,7 +453,23 @@ final class DockThemeStore: ObservableObject {
     }
 }
 
+/// Observable so every view body that reads a `Color.dock*` token re-renders on
+/// a skin switch. A plain static only refreshed views whose inputs happened to
+/// change; the rest kept the old skin until relaunch.
+@Observable
+final class DockThemeRuntimeState: @unchecked Sendable {
+    var current: DockThemeID = .glass
+    var revision = 0
+}
+
 enum DockThemeRuntime {
-    nonisolated(unsafe) static var current: DockThemeID = .glass
-    nonisolated(unsafe) static var revision: Int = 0
+    static let state = DockThemeRuntimeState()
+    static var current: DockThemeID {
+        get { state.current }
+        set { state.current = newValue }
+    }
+    static var revision: Int {
+        get { state.revision }
+        set { state.revision = newValue }
+    }
 }

@@ -93,7 +93,7 @@ struct EdgeQuickMessageView: View {
             HStack(alignment: .top, spacing: DockSpacing.control) {
                 VStack(alignment: .leading, spacing: DockSpacing.micro) {
                     Text(state.quickTarget == nil ? "Quick message" : "Reply")
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                     destinationMenu()
                 }
                 Spacer(minLength: DockSpacing.control)
@@ -170,9 +170,9 @@ struct EdgeQuickMessageView: View {
         return VStack(alignment: .leading, spacing: 2) {
             let profile = record.destination.profileID ?? "Launch profile"
             Text(state.quickTarget == nil ? "New session · \(profile)" : "Replying in \(record.destination.title) · \(profile)")
-                .dockFont(size: 12).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.body).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
             if let path = record.destination.projectPath {
-                Text("Project: \(URL(fileURLWithPath: path).lastPathComponent)").dockFont(size: 11).lineLimit(1)
+                Text("Project: \(URL(fileURLWithPath: path).lastPathComponent)").dockFont(.metadata).lineLimit(1)
             }
         }
     }
@@ -293,7 +293,7 @@ struct EdgeQuickMessageView: View {
             ForEach(state.quickSources, id: \.self) { source in
                 Text(source).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
             }
-        }.dockFont(size: 11)
+        }.dockFont(.metadata)
     }
 
     private func review() {

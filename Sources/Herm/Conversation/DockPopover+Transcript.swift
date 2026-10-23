@@ -17,7 +17,7 @@ extension DockPopover {
     func reasoningBlock(_ reasoning: ReasoningState) -> some View {
         DisclosureGroup(isExpanded: $model.isShowingReasoning) {
             Text(reasoning.text.isEmpty ? "…" : reasoning.text)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .textSelection(.enabled)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -25,9 +25,9 @@ extension DockPopover {
         } label: {
             HStack(spacing: 5) {
                 DockIcon(.brain)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                 Text("Reasoning")
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                 if !reasoning.isComplete {
                     ProgressView()
                         .controlSize(.small)
@@ -52,7 +52,7 @@ extension DockPopover {
             selectQuickPrompt(quickPrompt)
         }
         .buttonStyle(.dockCompact)
-        .dockFont(size: 12, weight: .medium)
+        .dockFont(.body, weight: .medium)
         .foregroundStyle(isAvailable ? Color.dockSecondaryText : Color.dockMetadataText)
         .padding(.horizontal, 9)
         .frame(minHeight: 26)
@@ -72,7 +72,7 @@ extension DockPopover {
             }
         } label: {
             DockIconLabel("More", icon: .dotsThree)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.horizontal, 9)
                 .frame(minHeight: 26)

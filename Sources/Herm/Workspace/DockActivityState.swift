@@ -59,6 +59,7 @@ struct DockActivityIndicator: View {
     var tint: Color?
     /// Only a session that finished work with news you haven't seen shows a dot instead of the check.
     var unreadDot = false
+    var animates = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -80,7 +81,7 @@ struct DockActivityIndicator: View {
 
     /// Drawn arc rather than ProgressView, which ignores tint and washes out on avatars.
     @ViewBuilder private func spinner(_ color: Color) -> some View {
-        if reduceMotion {
+        if reduceMotion || !animates {
             spinnerArc(color, turn: 0)
         } else {
             // Keep ticking when SwiftUI suspends animation timelines in task disclosures.

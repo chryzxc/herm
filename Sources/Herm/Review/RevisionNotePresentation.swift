@@ -7,7 +7,7 @@ struct RevisionNoteLocation: View {
         HStack(alignment: .firstTextBaseline, spacing: DockSpacing.control) {
             DockIcon(.file).foregroundStyle(Color.dockMetadataText)
             Text((note.path as NSString).lastPathComponent)
-                .dockFont(size: 12, weight: .semibold).lineLimit(1).truncationMode(.middle)
+                .dockFont(.body, weight: .semibold).lineLimit(1).truncationMode(.middle)
             Text(
                 "\(note.selection.anchor.first)"
                     + (note.selection.anchor.last == note.selection.anchor.first
@@ -42,7 +42,7 @@ struct RevisionNoteExcerpt: View {
                         .frame(minWidth: 20, alignment: .trailing)
                     Text(note.selection.excerpt).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                 }
-                .dockFont(size: 12, design: .monospaced).fontDesign(.monospaced).lineSpacing(3)
+                .dockFont(.body, weight: .regular, design: .monospaced).fontDesign(.monospaced).lineSpacing(3)
                 .padding(DockSpacing.group).frame(minWidth: geometry.size.width, alignment: .leading)
             }
         }
@@ -109,7 +109,7 @@ struct RevisionNotesTray: View {
     }
     private var title: some View {
         HStack(spacing: DockSpacing.control) {
-            Text("Private revision notes").dockFont(size: 12, weight: .semibold)
+            Text("Private revision notes").dockFont(.body, weight: .semibold)
             Text("\(state.notes.count)").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
         }
     }

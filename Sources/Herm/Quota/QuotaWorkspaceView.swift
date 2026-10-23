@@ -439,7 +439,7 @@ struct QuotaWorkspaceView: View {
                     renameField(snapshot)
                 } else {
                     Text(snapshot.displayName)
-                        .dockFont(size: 13, weight: .semibold)
+                        .dockFont(.navigation, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .onTapGesture(count: 2) { beginRename(snapshot) }
@@ -519,7 +519,7 @@ struct QuotaWorkspaceView: View {
 
     private func dragHandle(_ snapshot: ProviderQuotaSnapshot) -> some View {
         DockIcon(.list)
-            .dockFont(size: 11, weight: .semibold)
+            .dockFont(.metadata, weight: .semibold)
             .foregroundStyle(Color.dockMetadataText)
             .frame(width: 16, height: DockControlMetrics.compactHeight)
             .contentShape(Rectangle())
@@ -533,7 +533,7 @@ struct QuotaWorkspaceView: View {
                 HStack(spacing: 8) {
                     ProviderMarkBadge(mark: Self.mark(for: snapshot), size: 20)
                     Text(snapshot.displayName)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                 }
                 .padding(.horizontal, 12)
@@ -601,7 +601,7 @@ struct QuotaWorkspaceView: View {
     private func renameField(_ snapshot: ProviderQuotaSnapshot) -> some View {
         TextField(control.reportedProviderName(for: snapshot.provider) ?? snapshot.displayName, text: $renameDraft)
             .textFieldStyle(.plain)
-            .dockFont(size: 12, weight: .semibold)
+            .dockFont(.body, weight: .semibold)
             .foregroundStyle(Color.dockPrimaryText)
             .focused($renameFieldFocused)
             .onSubmit { commitRename(snapshot.provider) }
@@ -819,7 +819,7 @@ struct QuotaWorkspaceView: View {
     private func compactMessage(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
                 .dockFont(.body)
@@ -888,7 +888,7 @@ private struct QuotaHealthPill: View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(text)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
         }

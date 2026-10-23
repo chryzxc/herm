@@ -47,7 +47,7 @@ struct EdgeSessionCapacity: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack {
-        Text(destination.displayTitle).dockFont(size: 12, weight: .semibold).lineLimit(1)
+        Text(destination.displayTitle).dockFont(.body, weight: .semibold).lineLimit(1)
         Spacer()
         Button("Back", action: back).buttonStyle(.dockCompact)
       }.padding(10).frame(height: 40)
@@ -58,13 +58,13 @@ struct EdgeSessionCapacity: View {
             let provider = snapshot.modelID?.components(separatedBy: "|").first
             if let reading = control.quotaReading(for: provider) {
               Text("\(reading.snapshot.displayName): \(Int(reading.remaining.rounded()))% provider allowance remaining")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(QuotaWorkspaceView.color(for: reading.window.threshold))
               if let resets = reading.window.resetsAt {
                 Text("Resets: \(resets.formatted(date: .abbreviated, time: .shortened))")
               }
               Text("Provider advisory · read \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
-                .dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
             } else {
               Text("Provider quota unavailable. Open Quota to review connected providers.")
             }
@@ -87,13 +87,13 @@ struct EdgeSessionCapacity: View {
           }
           if let error { Text(error).foregroundStyle(Color.dockWarning) }
           Button("Refresh") { revision += 1 }.buttonStyle(.dockCompact).disabled(pending)
-        }.dockFont(size: 12).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        }.dockFont(.body).padding(10).frame(maxWidth: .infinity, alignment: .leading)
       }
       Divider().overlay(Color.dockBorderLight)
       HStack {
         Spacer()
         Button("Open session", action: open).buttonStyle(.dockCompact)
-      }.dockFont(size: 12).padding(10)
+      }.dockFont(.body).padding(10)
     }.foregroundStyle(Color.dockPrimaryText)
       .task(id: revision) { await load() }
       .confirmationDialog(

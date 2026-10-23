@@ -13,7 +13,7 @@ struct RevisionNoteEditor: View {
                 }
             }
             VStack(alignment: .leading, spacing: DockSpacing.control) {
-                Text("Your note").dockFont(size: 12, weight: .semibold)
+                Text("Your note").dockFont(.body, weight: .semibold)
                 TextField("Describe the change you want…", text: $state.note, axis: .vertical)
                     .textFieldStyle(.dockGlass).lineLimit(4...8).focused($isEditing)
                     .accessibilityLabel("Revision note")

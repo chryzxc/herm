@@ -365,14 +365,14 @@ struct HermesConfigCategoryView: View {
                 case .idle, .loading:
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
-                        Text("READING HERMES CONFIG…").dockFont(size: 12).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
+                        Text("READING HERMES CONFIG…").dockFont(.body).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
                     }
                 case .failed(let message):
                     SettingsSection(title: "Hermes config unavailable", subtitle: "", tint: .dockWarning) {
-                        Text(message).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                        Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         Button("Retry") { Task { await editor.load() } }
                             .buttonStyle(.dockCompact)
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     }
                 case .ready:
@@ -420,14 +420,14 @@ private struct HermesConfigFieldRow: View {
                     if listDraft != listText {
                         Button("Save") { editor.set(key, listItems(listDraft)) }
                             .buttonStyle(.dockCompact)
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     } else if editor.savingKeys.contains(key) {
                         ProgressView().controlSize(.small)
                     }
                 }
                 TextEditor(text: $listDraft)
-                    .dockFont(size: 12, design: .monospaced)
+                    .dockFont(.body, weight: .regular, design: .monospaced)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 54, maxHeight: 120)
                     .padding(6)

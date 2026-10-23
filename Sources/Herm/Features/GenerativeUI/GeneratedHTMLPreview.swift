@@ -57,7 +57,7 @@ struct GeneratedHTMLPreview: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
-        Text("Interactive view").dockFont(size: 12, weight: .medium)
+        Text("Interactive view").dockFont(.body, weight: .medium)
         Spacer()
         if !expanded { Button("Expand") { showingExpanded = true }.buttonStyle(.dockCompact) }
         Button("Reload") {

@@ -5,12 +5,25 @@ import Testing
 
 @MainActor
 struct DockWorkspaceScaleTests {
+    @Test func typographyRolesShareCompactAndWindowSizes() {
+        let sizes: [(DockTypography.Role, CGFloat, CGFloat)] = [
+            (.body, 12, 12), (.navigation, 13, 13), (.conversation, 14, 14),
+            (.metadata, 11, 11), (.code, 12.5, 12.5), (.pageTitle, 16, 16)
+        ]
+        for (role, compact, window) in sizes {
+            #expect(DockTypography.size(role) == compact)
+            #expect(DockTypography.size(role, scale: DockWorkspaceScale.window) == window)
+        }
+        #expect(NativeMarkdownAttributedTextBuilder.bodySize == DockTypography.size(.conversation))
+        #expect(NativeMarkdownAttributedTextBuilder.codeSize == DockTypography.size(.code))
+    }
+
     @Test func nativeSizesUseWholePointsAndLeaveCompactModeUnchanged() {
         #expect(DockWorkspaceScale.points(12, scale: 1) == 12)
         #expect(DockWorkspaceScale.points(11.5, scale: 1) == 11.5)
-        #expect(DockWorkspaceScale.points(12, scale: DockWorkspaceScale.window) == 14)
-        #expect(DockWorkspaceScale.points(14, scale: DockWorkspaceScale.window) == 16)
-        #expect(DockWorkspaceScale.points(28, scale: DockWorkspaceScale.window) == 32)
+        #expect(DockWorkspaceScale.points(12, scale: DockWorkspaceScale.window) == 12)
+        #expect(DockWorkspaceScale.points(14, scale: DockWorkspaceScale.window) == 14)
+        #expect(DockWorkspaceScale.points(28, scale: DockWorkspaceScale.window) == 28)
     }
 
     @Test func visibleSwiftUIButtonsReceiveClicksAcrossDisplaysAndResizes() async throws {

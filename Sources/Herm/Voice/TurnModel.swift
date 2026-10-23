@@ -219,17 +219,17 @@ struct TurnModelSettingsView: View {
                     ProgressView(value: fraction)
                         .frame(width: 120)
                     Text("\(Int(fraction * 100))%")
-                        .dockFont(size: 11).monospacedDigit()
+                        .dockFont(.metadata).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(width: 32, alignment: .trailing)
                     Button("Cancel") { store.cancel() }
                         .buttonStyle(.dockCompact)
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                 }
             case .installed:
                 Button("Remove") { store.remove() }
                     .buttonStyle(.dockCompact)
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockAccent)
             }
         }

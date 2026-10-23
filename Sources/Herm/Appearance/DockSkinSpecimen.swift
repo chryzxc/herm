@@ -30,14 +30,14 @@ struct DockSkinSpecimen: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("Herm")
-                    .dockFont(size: 16, weight: .semibold, design: style.fontDesign)
+                    .dockFont(.pageTitle, weight: .semibold, design: style.fontDesign)
                     .foregroundStyle(palette.primaryText)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("Aa")
-                        .dockFont(size: 16, weight: .semibold, design: style.fontDesign)
+                        .dockFont(.pageTitle, weight: .semibold, design: style.fontDesign)
                         .foregroundStyle(palette.primaryText)
                     Text("012")
-                        .dockFont(size: 11, design: .monospaced)
+                        .dockFont(.metadata, weight: .regular, design: .monospaced)
                         .foregroundStyle(palette.secondaryText)
                     Spacer(minLength: 0)
                     Circle().fill(palette.accent).frame(width: 7, height: 7)
@@ -70,7 +70,7 @@ struct DockSkinSpecimen: View {
     private var selection: some View {
         let shape = DockThemeShape(cornerRadius: style.controlRadius, geometry: style.geometry)
         return Text("H")
-            .dockFont(size: 12, weight: .semibold, design: style.fontDesign)
+            .dockFont(.body, weight: .semibold, design: style.fontDesign)
             .foregroundStyle(style.selection == .invert ? palette.background : palette.accent)
             .frame(width: 26, height: 26)
             .dockSelectionBackground(shape, active: true, fill: palette.selectedFill, theme: theme)

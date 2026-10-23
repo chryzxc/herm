@@ -140,7 +140,7 @@ struct CalendarWorkspaceView: View {
                     Text("Calendars")
                     DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
                 }
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.horizontal, 10)
                 .frame(height: 28)
@@ -277,7 +277,7 @@ struct CalendarWorkspaceView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("\(calendar.component(.day, from: day))")
-                        .dockFont(size: 12, weight: isToday ? .bold : .medium).monospacedDigit()
+                        .dockFont(.body, weight: isToday ? .bold : .medium).monospacedDigit()
                         .foregroundStyle(isToday ? Color.dockOnAccentText : (outside ? Color.dockMetadataText : Color.dockPrimaryText))
                         .frame(minWidth: 22, minHeight: 22)
                         .background { if isToday { Circle().fill(Color.dockAccent) } }
@@ -328,11 +328,11 @@ struct CalendarWorkspaceView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if !item.isAllDay {
                     Text(item.start.formatted(.dateTime.hour().minute()))
-                        .dockFont(size: 11).monospacedDigit()
+                        .dockFont(.metadata).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Text(item.title)
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(scope == .week ? 2 : 1)
             }
@@ -352,10 +352,10 @@ struct CalendarWorkspaceView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(selected.formatted(.dateTime.weekday(.wide)))
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(selected.formatted(.dateTime.month(.wide).day()))
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                     Text("\(dayItems.count) \(dayItems.count == 1 ? "item" : "items")")
                         .dockFont(.metadata)
@@ -376,10 +376,10 @@ struct CalendarWorkspaceView: View {
                     if dayItems.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Nothing scheduled")
-                                .dockFont(size: 12, weight: .semibold)
+                                .dockFont(.body, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
                             Text("Events, reminders, and Hermes runs for this day appear here.")
-                                .dockFont(size: 12)
+                                .dockFont(.body)
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                         .padding(.top, 4)
@@ -405,13 +405,13 @@ struct CalendarWorkspaceView: View {
             // hide that Calendar is not.
             VStack(alignment: .leading, spacing: 6) {
                 Text("Connect your Mac calendar")
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text("Calendar: \(accessLabel(system.eventAccess)) · Reminders: \(accessLabel(system.reminderAccess))")
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
                 Text("See your events and reminders beside agent runs. Read-only; nothing is changed.")
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if let error = system.requestError {
@@ -457,14 +457,14 @@ struct CalendarWorkspaceView: View {
             Button { selectedItemID = isSelected ? nil : item.id } label: {
                 HStack(alignment: .top, spacing: 12) {
                     Text(item.isAllDay ? "All day" : item.start.formatted(.dateTime.hour().minute()))
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .monospacedDigit()
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 66, alignment: .leading)
                         .padding(.top, 2)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(item.title)
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(isSelected ? nil : 2)
                             .multilineTextAlignment(.leading)
@@ -472,7 +472,7 @@ struct CalendarWorkspaceView: View {
                             DockIcon(icon(item), size: 11, color: tint(item))
                             Text(source(item)).lineLimit(1)
                         }
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                     }
                     Spacer(minLength: 0)
@@ -507,7 +507,7 @@ struct CalendarWorkspaceView: View {
                     if !attendees.isEmpty { detailLine(.users, attendees.joined(separator: ", ")) }
                 }
                 if let notes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                    Text(notes).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).lineLimit(4)
+                    Text(notes).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(4)
                 }
             }
             // One row when it fits; the open link drops below otherwise.
@@ -575,7 +575,7 @@ struct CalendarWorkspaceView: View {
             DockIcon(icon, size: 11, color: Color.dockMetadataText)
             Text(text).lineLimit(2)
         }
-        .dockFont(size: 12)
+        .dockFont(.body)
         .foregroundStyle(Color.dockSecondaryText)
     }
 
@@ -651,14 +651,14 @@ private struct CalendarPrepSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Schedule prep").dockFont(size: 16, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+            Text("Schedule prep").dockFont(.pageTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
             Text("Hermes runs this once before \(item.title). It appears under Automations.")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             DockTabBar(options: [15, 30, 60], selection: $lead, title: { "\($0) min before" })
             TextEditor(text: $prompt)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .frame(minHeight: 160)
                 .scrollContentBackground(.hidden)
                 .padding(6)

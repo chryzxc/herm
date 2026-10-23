@@ -19,10 +19,10 @@ struct GatewayConnectionSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if store.environmentOverride {
                         Text("This connection was set by HERMES_DESKTOP_REMOTE_URL. Restart Herm without that startup setting to change it here.")
-                            .dockFont(size: 12).foregroundStyle(Color.dockWarning)
+                            .dockFont(.body).foregroundStyle(Color.dockWarning)
                     }
                     Text("Choose the Hermes backend Herm uses for chat, profiles, and agent settings. Connection changes apply after restarting Herm.")
-                        .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     SettingsPreferenceRow(title: "Connection mode", detail: "") {
                         DockMenuPicker(title: modeTitle(model.draft.mode), selection: Binding(
                             get: { model.draft.mode },
@@ -43,19 +43,19 @@ struct GatewayConnectionSettingsView: View {
                     switch model.draft.mode {
                     case .local:
                         Text("Start a private Hermes backend on this Mac. No remote sign-in is needed.")
-                            .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     case .remote: remoteFields
                     case .ssh: sshFields
                     case .cloud: cloudFields
                     }
                     if model.draft.mode != .local {
                         Text("Repository tools, local terminals, agent updates, and General's messaging gateway controls still operate on this Mac.")
-                            .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
                     Divider().overlay(Color.dockBorderLight)
                     actions
                     Text(model.message.isEmpty ? " " : model.message)
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(model.isError ? Color.dockWarning : Color.dockSecondaryText)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
@@ -69,8 +69,8 @@ struct GatewayConnectionSettingsView: View {
                             Button { model.select(connection) } label: {
                                 HStack(spacing: 10) {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(connection.name).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                                        Text(modeTitle(connection.mode)).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                                        Text(connection.name).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                                        Text(modeTitle(connection.mode)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                                     }
                                     Spacer()
                                     if connection.id == model.draft.id { DockIcon(.check, size: 12, color: .dockAccent) }
@@ -84,7 +84,7 @@ struct GatewayConnectionSettingsView: View {
                         if store.connections.contains(where: { $0.id == model.draft.id }) {
                             Button("Remove saved connection", role: .destructive) { confirmsRemoval = true }
                         }
-                    }.buttonStyle(.dockPress).dockFont(size: 12, weight: .medium)
+                    }.buttonStyle(.dockPress).dockFont(.body, weight: .medium)
                 }.disabled(model.isBusy)
             }
         }
@@ -116,7 +116,7 @@ struct GatewayConnectionSettingsView: View {
             field("Remote URL", text: $model.draft.remoteURL, prompt: "https://host.example/hermes")
                 .disabled(store.environmentOverride)
             Text("Dashboard base URL; path prefixes are supported. Remote gateways require HTTPS; HTTP is allowed only on loopback. SSH connections use an encrypted tunnel.")
-                .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             SettingsPreferenceRow(title: "Authentication", detail: "") {
                 DockMenuPicker(title: model.draft.authentication == .token ? "Session token" : "Sign in", selection: $model.draft.authentication) {
                     DockMenuOption("Session token", value: GatewayConnectionSettings.Authentication.token)
@@ -125,15 +125,15 @@ struct GatewayConnectionSettingsView: View {
             }.disabled(store.environmentOverride)
             if model.draft.authentication == .token {
                 SecureField("Leave blank to keep this URL's saved token", text: $model.tokenDraft)
-                    .textFieldStyle(.dockGlass).dockFont(size: 12)
+                    .textFieldStyle(.dockGlass).dockFont(.body)
                     .accessibilityLabel("Gateway session token")
                     .disabled(store.environmentOverride)
                 Text("Session tokens are stored in macOS Keychain and used for HTTP and WebSocket authentication.")
-                    .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             } else {
                 signInActions(portal: false)
                 Text("OAuth opens your browser when the gateway supports native sign-in; username and password use the gateway's sign-in page. Tokens stay in Keychain and sessions renew through the gateway.")
-                    .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             }
         }
     }
@@ -141,43 +141,43 @@ struct GatewayConnectionSettingsView: View {
     private var sshFields: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Herm launches Hermes on the remote host and opens an SSH tunnel. Use a Host alias from ~/.ssh/config or user@host with key-based authentication. The first host key is pinned; changed keys are refused.")
-                .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             field("Host", text: $model.draft.sshHost, prompt: "user@host or SSH alias")
             field("User", text: $model.draft.sshUser, prompt: "Use SSH config")
             SettingsPreferenceRow(title: "Port", detail: "") {
                 TextField("22", value: $model.draft.sshPort, format: .number.grouping(.never))
-                    .textFieldStyle(.dockGlass).dockFont(size: 12).frame(width: 90)
+                    .textFieldStyle(.dockGlass).dockFont(.body).frame(width: 90)
                     .accessibilityLabel("SSH port")
             }
             field("Private key", text: $model.draft.sshKeyPath, prompt: "Use SSH agent or SSH config")
             field("Remote Hermes path", text: $model.draft.remoteHermesPath, prompt: "Discover automatically")
             field("Remote profile", text: $model.draft.remoteProfile, prompt: "Default")
             Text("Supports Linux, macOS, and Windows hosts with a current Hermes installation. Uses Hermes' bundled Node runtime or Node.js 20 or newer on this Mac.")
-                .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
         }
     }
 
     private var cloudFields: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Sign in to Hermes Cloud, choose an organization if needed, then select an agent on your account.")
-                .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             signInActions(portal: true)
             if model.portalSignedIn {
                 if !model.organizations.isEmpty {
-                    Text("Choose an organization").dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                    Text("Choose an organization").dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                     ForEach(model.organizations) { organization in
                         Button(organization.name) {
                             model.draft.cloudOrganization = organization.slug
                             Task { await model.refreshCloud() }
-                        }.buttonStyle(.dockPress).dockFont(size: 12)
+                        }.buttonStyle(.dockPress).dockFont(.body)
                     }
                 }
                 ForEach(model.agents) { agent in
                     Button { Task { await model.chooseAgent(agent) } } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(agent.name).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                                Text(agent.status).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                                Text(agent.name).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                                Text(agent.status).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                             }
                             Spacer()
                             if agent.dashboardURL == model.draft.remoteURL { DockIcon(.check, size: 12, color: .dockAccent) }
@@ -186,8 +186,8 @@ struct GatewayConnectionSettingsView: View {
                 }
             }
             if !model.draft.remoteURL.isEmpty {
-                Text("Selected agent: \(model.draft.name)").dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                Text(model.draft.remoteURL).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                Text("Selected agent: \(model.draft.name)").dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                Text(model.draft.remoteURL).dockFont(.body).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
             }
         }
     }
@@ -195,12 +195,12 @@ struct GatewayConnectionSettingsView: View {
     private func signInActions(portal: Bool) -> some View {
         HStack(spacing: 8) {
             let signedIn = portal ? model.portalSignedIn : model.signedIn
-            Text(signedIn ? "Signed in" : "Sign-in required").dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+            Text(signedIn ? "Signed in" : "Sign-in required").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             Spacer()
             if portal && signedIn { Button("Refresh agents") { Task { await model.refreshCloud() } } }
             Button(signedIn ? "Sign in again" : "Sign in") { Task { await model.signIn() } }
             if signedIn { Button("Sign out") { Task { await model.signOut() } } }
-        }.buttonStyle(.dockPress).dockFont(size: 12, weight: .medium)
+        }.buttonStyle(.dockPress).dockFont(.body, weight: .medium)
     }
 
     private var actions: some View {
@@ -222,8 +222,8 @@ struct GatewayConnectionSettingsView: View {
 
     private func field(_ title: String, text: Binding<String>, prompt: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-            TextField(prompt, text: text).textFieldStyle(.dockGlass).dockFont(size: 12)
+            Text(title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+            TextField(prompt, text: text).textFieldStyle(.dockGlass).dockFont(.body)
                 .accessibilityLabel(title)
         }
     }

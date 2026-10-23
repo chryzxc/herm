@@ -45,8 +45,8 @@ struct ReplyQuoteChip: View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 1.5).fill(Color.dockAccent).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
-                if showsAuthor { Text(quote.author).dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockAccent) }
-                Text(quote.snippet).dockFont(size: 12).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+                if showsAuthor { Text(quote.author).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent) }
+                Text(quote.snippet).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let onDismiss {

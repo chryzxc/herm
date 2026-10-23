@@ -5,20 +5,45 @@ import SwiftUI
 /// these semantic roles rather than introducing near-duplicate font sizes,
 /// row heights, and compact control treatments.
 enum DockTypography {
-    enum Role { case pageTitle, sectionLabel, rowTitle, body, control, metadata, machineMetadata, compactStatus, metric }
+    enum Role { case pageTitle, sectionLabel, rowTitle, body, control, metadata, machineMetadata, compactStatus, metric, navigation, conversation, code }
 
-    static func font(_ role: Role, scale: CGFloat = 1, weight: Font.Weight? = nil) -> Font {
-        switch role {
-        case .pageTitle: .system(size: DockWorkspaceScale.points(16, scale: scale), weight: weight ?? .semibold, design: DockThemeStyle.current.fontDesign)
-        case .sectionLabel: .system(size: DockWorkspaceScale.points(10, scale: scale), weight: weight ?? .semibold, design: .monospaced)
-        case .rowTitle: .system(size: DockWorkspaceScale.points(12, scale: scale), weight: weight ?? .medium, design: DockThemeStyle.current.fontDesign)
-        case .body: .system(size: DockWorkspaceScale.points(12, scale: scale), weight: weight ?? .regular, design: DockThemeStyle.current.fontDesign)
-        case .control: .system(size: DockWorkspaceScale.points(12, scale: scale), weight: weight ?? .medium, design: DockThemeStyle.current.fontDesign)
-        case .metadata: .system(size: DockWorkspaceScale.points(11, scale: scale), weight: weight ?? .regular, design: DockThemeStyle.current.fontDesign)
-        case .machineMetadata: .system(size: DockWorkspaceScale.points(11, scale: scale), weight: weight ?? .regular, design: .monospaced)
-        case .compactStatus: .system(size: DockWorkspaceScale.points(10, scale: scale), weight: weight ?? .semibold, design: .monospaced)
-        case .metric: .system(size: DockWorkspaceScale.points(20, scale: scale), weight: weight ?? .semibold, design: .rounded).monospacedDigit()
+    /// Compact point sizes. Window sizing is applied once by the caller's environment.
+    nonisolated static func size(_ role: Role, scale: CGFloat = 1) -> CGFloat {
+        let points: CGFloat = switch role {
+        case .pageTitle: 16
+        case .sectionLabel, .compactStatus: 10
+        case .rowTitle, .body, .control: 12
+        case .metadata, .machineMetadata: 11
+        case .metric: 20
+        case .navigation: 13
+        case .conversation: 14
+        case .code: 12.5
         }
+        return DockWorkspaceScale.points(points, scale: scale)
+    }
+
+    nonisolated static func markdownHeadingSize(_ level: Int) -> CGFloat {
+        switch level {
+        case 1: 18
+        case 2: size(.pageTitle)
+        case 3: 14.5
+        default: size(.conversation)
+        }
+    }
+
+    static func font(_ role: Role, scale: CGFloat = 1, weight: Font.Weight? = nil, design overrideDesign: Font.Design? = nil) -> Font {
+        let defaultWeight: Font.Weight = switch role {
+        case .pageTitle, .sectionLabel, .compactStatus: .semibold
+        case .rowTitle, .control: .medium
+        default: .regular
+        }
+        let design: Font.Design = switch role {
+        case .sectionLabel, .machineMetadata, .compactStatus, .code: .monospaced
+        case .metric: .rounded
+        default: DockThemeStyle.current.fontDesign
+        }
+        let font = Font.system(size: size(role, scale: scale), weight: weight ?? defaultWeight, design: overrideDesign ?? design)
+        return role == .metric ? font.monospacedDigit() : font
     }
 
     static var pageTitle: Font { font(.pageTitle) }
@@ -150,7 +175,7 @@ struct DockSectionLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .dockFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.dockSectionText)
             if let count {
                 Text("\(count)")
@@ -272,7 +297,7 @@ struct DockNavRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: isHovering)
+        .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -488,6 +513,11 @@ struct DockSectionHeader<Actions: View>: View {
     var count: Int?
     var isExpanded: Binding<Bool>?
     let style: DockThemePalette
+    var isContentHeader = false
+    var titleRole: DockTypography.Role = .body
+    /// A tinted lead icon marks a prominent, scannable group title.
+    var icon: Ph? = nil
+    var tint: Color = .dockAccent
     @ViewBuilder var actions: () -> Actions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
@@ -507,22 +537,32 @@ struct DockSectionHeader<Actions: View>: View {
             }
             actions()
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 2)
+        .padding(.leading, isContentHeader ? 0 : 8)
+        .padding(.trailing, isContentHeader ? 0 : 2)
         .frame(minHeight: 30)
         .onHover { isHovering = $0 }
     }
 
     private func label(isExpanded: Bool?) -> some View {
         HStack(spacing: 6) {
+            if let icon {
+                DockIcon(icon, size: 12, color: tint)
+            }
             // Sentence case, quiet weight: a label, not a banner.
             Text(title)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(titleRole, weight: isContentHeader || icon != nil ? .semibold : .medium)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
-                .foregroundStyle(isHovering && isExpanded != nil ? style.secondaryText : style.metadataText)
-            if let count {
+                .foregroundStyle(isContentHeader || icon != nil ? style.primaryText : (isHovering && isExpanded != nil ? style.secondaryText : style.metadataText))
+            if let count, icon != nil {
+                Text(count > 99 ? "99+" : "\(count)")
+                    .dockFont(size: 11, weight: .semibold).monospacedDigit()
+                    .foregroundStyle(style.secondaryText)
+                    .padding(.horizontal, 6)
+                    .frame(minHeight: 16)
+                    .background(Capsule().fill(tint.opacity(0.14)))
+            } else if let count {
                 Text(count > 99 ? "99+" : "\(count)")
                     .dockFont(size: 12).monospacedDigit()
                     .foregroundStyle(style.metadataText)
@@ -540,8 +580,8 @@ struct DockSectionHeader<Actions: View>: View {
 }
 
 extension DockSectionHeader where Actions == EmptyView {
-    init(title: String, count: Int? = nil, isExpanded: Binding<Bool>? = nil, style: DockThemePalette) {
-        self.init(title: title, count: count, isExpanded: isExpanded, style: style) { EmptyView() }
+    init(title: String, count: Int? = nil, isExpanded: Binding<Bool>? = nil, style: DockThemePalette, isContentHeader: Bool = false, icon: Ph? = nil, tint: Color = .dockAccent) {
+        self.init(title: title, count: count, isExpanded: isExpanded, style: style, isContentHeader: isContentHeader, icon: icon, tint: tint) { EmptyView() }
     }
 }
 

@@ -26,7 +26,7 @@ struct StartupAssistantView: View {
                 .dockFont(size: 17, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             Text("Ask a question, give it a task, or attach files and folders.")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
             HStack(spacing: 8) {
                 ForEach(Array(Self.suggestions.enumerated()), id: \.offset) { index, item in
@@ -58,7 +58,7 @@ private struct StartupSuggestionChip: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .dockFont(size: 11, weight: .medium)
+                    .dockFont(.metadata, weight: .medium)
                     .foregroundStyle(isHovering ? Color.dockAccent : Color.dockSecondaryText)
                     .scaleEffect(isHovering ? 1.12 : 1)
                 Text(text)
@@ -426,7 +426,7 @@ struct KanbanMutationEditor: View {
                     }
                 } label: {
                     DockIconLabel("Choose Hermes profile", icon: .caretDown)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                 }
                 .fixedSize()
@@ -434,7 +434,7 @@ struct KanbanMutationEditor: View {
             if request.kind == .reassign {
                 Toggle("Reclaim active worker first", isOn: $reclaimFirst)
                     .toggleStyle(.dockSwitch)
-                    .dockFont(size: 12)
+                    .dockFont(.body)
             }
         } footer: {
             modalActions(primaryTitle: request.kind.title, pendingTitle: "Saving…", isDisabled: value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending, isPending: isPending, onCancel: { dismiss() }) {
@@ -478,7 +478,7 @@ struct CronConfigurationFields: View {
             }.padding(.top, 8)
         }
         .disclosureGroupStyle(DockDisclosureGroupStyle())
-        .dockFont(size: 12)
+        .dockFont(.body)
         .foregroundStyle(Color.dockSecondaryText)
     }
 }
@@ -594,7 +594,7 @@ struct CronReportDetailSheet: View {
                     VStack(spacing: 10) {
                         ProgressView()
                         Text("Loading report…")
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -610,7 +610,7 @@ struct CronReportDetailSheet: View {
                             .dockFont(size: 22)
                             .foregroundStyle(Color.dockWarning)
                         Text(loadError ?? "The report could not be loaded.")
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                             .multilineTextAlignment(.center)
                         Button("Try Again") { load() }
@@ -672,25 +672,25 @@ struct RepositoryFleetRow: View {
                     .foregroundStyle(snapshot?.isGitRepository == true ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(URL(fileURLWithPath: path).lastPathComponent)
-                        .dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                        .dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                     Text(snapshot?.branch ?? "Inspecting…")
-                        .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer()
                 if isRefreshing { ProgressView().controlSize(.small) }
-                if path == activePath { Text("ACTIVE").dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockAccent) }
+                if path == activePath { Text("ACTIVE").dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent) }
             }
             if let snapshot, snapshot.isGitRepository {
                 Text("\(snapshot.changedFiles) changed · \(snapshot.aheadCount.map(String.init) ?? "—") ahead · \(snapshot.behindCount.map(String.init) ?? "—") behind")
-                    .dockFont(size: 11).foregroundStyle(Color.dockMetadataText)
-                if let operation = snapshot.operation { Text(operation.uppercased()).dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockWarning) }
+                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                if let operation = snapshot.operation { Text(operation.uppercased()).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockWarning) }
             }
             HStack(spacing: 12) {
                 Button("SELECT") { select(path) }
                 Button("REFRESH") { Task { await refresh() } }
             }
             .buttonStyle(.dockCompact)
-            .dockFont(size: 11, weight: .semibold)
+            .dockFont(.metadata, weight: .semibold)
             .foregroundStyle(Color.dockAccent)
         }
         .dockListRow()
@@ -733,12 +733,12 @@ struct DockActionPalette: View {
                             HStack(spacing: 9) {
                                 DockIcon(command.icon).frame(width: 16)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(command.title).dockFont(size: 13, weight: .medium)
+                                    Text(command.title).dockFont(.navigation, weight: .medium)
                                     Text(command.isAvailable ? command.subtitle : (command.unavailableReason ?? command.subtitle))
-                                        .dockFont(size: 11).lineLimit(1)
+                                        .dockFont(.metadata).lineLimit(1)
                                 }
                                 Spacer()
-                                Text(command.category.uppercased()).dockFont(size: 10)
+                                Text(command.category.uppercased()).dockFont(.compactStatus, weight: .regular)
                             }
                             .foregroundStyle(command.isAvailable ? Color.dockPrimaryText : Color.dockMetadataText)
                             .frame(maxWidth: .infinity, alignment: .leading)

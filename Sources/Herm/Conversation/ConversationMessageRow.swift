@@ -246,7 +246,7 @@ struct ConversationMessageRow: View, Equatable {
                     HStack(spacing: 6) {
                         if message.isSteering {
                             Text(steeringLabel)
-                                .dockFont(size: 11, weight: .medium)
+                                .dockFont(.metadata, weight: .medium)
                                 .foregroundStyle(Color.dockAccent)
                         }
                         ConversationRowHoverTimestamp(text: message.timeLabel, hover: hoverPresentation)
@@ -285,7 +285,7 @@ struct ConversationMessageRow: View, Equatable {
                                 + Text(requester.map { " replied to \($0.name)" } ?? "")
                                 .fontWeight(.regular)
                                 .foregroundStyle(Color.dockMetadataText))
-                                .dockFont(size: 11, weight: .medium)
+                                .dockFont(.metadata, weight: .medium)
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 4)
@@ -776,7 +776,7 @@ struct BotChip: View {
                 Text(displayName ?? id)
             }
         }
-        .dockFont(size: 12, weight: .medium)
+        .dockFont(.body, weight: .medium)
         .foregroundStyle(Color.dockSecondaryText)
         .lineLimit(1)
         .padding(.leading, 2).padding(.trailing, 6).padding(.vertical, 1)

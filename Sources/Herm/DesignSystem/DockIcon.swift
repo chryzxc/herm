@@ -6,7 +6,7 @@ import SwiftUI
 /// family; views never instantiate SF Symbols or other icon sets.
 ///
 /// Without `size`, the icon sizes like an SF Symbol: one em of the inherited
-/// `.font`, so `.dockFont(size: 13)` sizes it the way it sized symbols.
+/// `.font`, so `.dockFont(.navigation)` sizes it the way it sized symbols.
 struct DockIcon: View {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     enum Weight { case regular, fill }

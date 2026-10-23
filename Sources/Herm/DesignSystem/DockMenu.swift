@@ -77,7 +77,7 @@ struct DockMenuSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(title)
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
@@ -249,7 +249,7 @@ private struct DockMenuRowChrome<Content: View>: View {
 
     var body: some View {
         content()
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(tint ?? Color.dockPrimaryText)
             .frame(maxWidth: 340, alignment: .leading)
             .padding(.horizontal, 8)

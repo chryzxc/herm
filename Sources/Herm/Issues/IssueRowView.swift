@@ -48,7 +48,7 @@ struct IssueRowView: View {
                     if let updated = metadata.updated { Text(updated).foregroundStyle(Color.dockMetadataText) }
                 }.dockFont(.machineMetadata)
                 Text(issue.title)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2).multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)

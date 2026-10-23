@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Native layout sizes, never a transform of the rendered workspace.
 enum DockWorkspaceScale {
-    static let window: CGFloat = 1.15
+    static let window: CGFloat = 1
 
     static func points(_ value: CGFloat, scale: CGFloat) -> CGFloat {
         scale == 1 ? value : (value * scale).rounded()
@@ -42,14 +42,15 @@ private struct DockSemanticFont: ViewModifier {
     @Environment(\.dockWorkspaceScale) private var scale
     let role: DockTypography.Role
     let weight: Font.Weight?
+    let design: Font.Design?
 
     func body(content: Content) -> some View {
-        content.font(DockTypography.font(role, scale: scale, weight: weight))
+        content.font(DockTypography.font(role, scale: scale, weight: weight, design: design))
     }
 }
 
 extension View {
-    func dockFont(_ role: DockTypography.Role, weight: Font.Weight? = nil) -> some View {
-        modifier(DockSemanticFont(role: role, weight: weight))
+    func dockFont(_ role: DockTypography.Role, weight: Font.Weight? = nil, design: Font.Design? = nil) -> some View {
+        modifier(DockSemanticFont(role: role, weight: weight, design: design))
     }
 }
