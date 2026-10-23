@@ -6,15 +6,10 @@ struct ObservedRequestReview: View {
     @State private var selected: String?
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        VStack(spacing: 0) {
-            DockPageHeader(
-                title: "Local changes since request", subtitle: "Captured local changes · includes edits outside Hermes"
-            ) {
-                Button("Close") {
-                    closeAction?()
-                    if closeAction == nil { dismiss() }
-                }.buttonStyle(.dockCompact)
-            }
+        DockExpandedPage(
+            title: "Local changes since request", subtitle: "Captured local changes · includes edits outside Hermes",
+            close: { if let closeAction { closeAction() } else { dismiss() } }
+        ) {
             HSplitView {
                 List(comparison.patches, id: \.path, selection: $selected) { patch in
                     Text(patch.path).dockFont(.body).lineLimit(1).truncationMode(.middle).help(patch.path)

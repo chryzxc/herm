@@ -7,6 +7,102 @@ import Testing
 struct DiffReviewStateTests {
     private let document = DiffDocument(path: "main.swift", patch: "@@ -1 +1 @@\n-old\n+new")
 
+    @Test func gutterCommentsKeepOldAndNewLineAnchorsAndDisableWithTheAction() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
+        let document = DiffDocument(path: "file.swift", patch: "@@ -4,2 +7,2 @@\n-old\n+new\n context")
+        for split in [false, true] {
+            var comments: [DiffLine] = []
+            canvas.update(document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
+                reveal: nil, viewport: nil, onNote: { _ in }, onComment: { comments.append($0) })
+            canvas.layoutSubtreeIfNeeded()
+            let stack = try #require(canvas.subviews.first as? NSStackView)
+            for case let scroll as NSScrollView in stack.arrangedSubviews {
+                let ruler = try #require(scroll.verticalRulerView)
+                let image = NSImage(size: NSSize(width: 100, height: 400))
+                image.lockFocus()
+                ruler.drawHashMarksAndLabels(in: ruler.bounds)
+                image.unlockFocus()
+                let buttons = ruler.subviews.compactMap { $0 as? NSButton }
+                #expect(!buttons.isEmpty)
+                for button in buttons { button.performClick(nil) }
+            }
+            #expect(comments.contains { $0.oldLine == 4 && $0.newLine == nil })
+            #expect(comments.contains { $0.newLine == 7 && $0.oldLine == nil })
+            #expect(!comments.contains { $0.oldLine == nil && $0.newLine == nil })
+            canvas.update(document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
+                reveal: nil, viewport: nil, onNote: { _ in }, onComment: nil)
+            for case let scroll as NSScrollView in stack.arrangedSubviews {
+                let ruler = try #require(scroll.verticalRulerView)
+                let image = NSImage(size: NSSize(width: 100, height: 400))
+                image.lockFocus()
+                ruler.drawHashMarksAndLabels(in: ruler.bounds)
+                image.unlockFocus()
+                #expect(ruler.subviews.compactMap { $0 as? NSButton }.isEmpty)
+            }
+        }
+    }
+
+    @Test func commentingGutterStartsAtTheSourceEdgeAfterWindowLayout() async throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 352, height: 200))
+        let window = NSWindow(contentRect: canvas.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = canvas
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        canvas.update(DiffDocument(path: "file.swift", patch: "@@ -1 +1 @@\n-old\n+" + String(repeating: "source ", count: 60)),
+            split: false, wraps: false, wordDiffs: false, findRequest: 0,
+            reveal: nil, viewport: nil, onNote: { _ in }, onComment: { _ in })
+        for _ in 0..<4 {
+            canvas.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let stack = try #require(canvas.subviews.first as? NSStackView)
+        let scroll = try #require(stack.arrangedSubviews.first as? NSScrollView)
+        #expect(scroll.contentView.bounds.minX == -scroll.contentView.contentInsets.left)
+    }
+
+    @Test func longDiffStartsAtLeftEdge() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
+        let document = DiffDocument(
+            path: "long.swift", patch: "@@ -1 +1 @@\n-old\n+" + String(repeating: "source ", count: 100))
+        for split in [false, true] {
+            canvas.update(
+                document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
+                reveal: nil, viewport: nil, onNote: { _ in }, onComment: nil)
+            canvas.layoutSubtreeIfNeeded()
+            let stack = try #require(canvas.subviews.first as? NSStackView)
+            for case let scroll as NSScrollView in stack.arrangedSubviews {
+                #expect(scroll.contentView.bounds.minX == -scroll.contentView.contentInsets.left)
+            }
+        }
+    }
+
+    @Test func wrappedLongLinesFitThePaneAfterResizing() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
+        let longLine = String(repeating: "longIdentifier", count: 60)
+        let document = DiffDocument(path: "long.swift", patch: "@@ -1 +1 @@\n-old\n+" + longLine)
+        for split in [false, true] {
+            canvas.update(document, split: split, wraps: true, wordDiffs: false, findRequest: 0,
+                reveal: nil, viewport: nil, onNote: { _ in }, onComment: nil)
+            for width in [1000.0, 352.0, 800.0] {
+                canvas.setFrameSize(NSSize(width: width, height: 400))
+                canvas.layoutSubtreeIfNeeded()
+                let stack = try #require(canvas.subviews.first as? NSStackView)
+                for case let scroll as NSScrollView in stack.arrangedSubviews {
+                    let text = try #require(scroll.documentView as? NSTextView)
+                    let container = try #require(text.textContainer)
+                    let layout = try #require(text.layoutManager)
+                    layout.ensureLayout(for: container)
+                    #expect(!scroll.hasHorizontalScroller)
+                    #expect(!text.isHorizontallyResizable)
+                    #expect(container.widthTracksTextView)
+                    #expect(text.frame.width <= scroll.contentSize.width + 1)
+                    #expect(layout.usedRect(for: container).height > CGFloat(document.lines.count) * 21)
+                    #expect(text.string.contains(longLine))
+                }
+            }
+        }
+    }
+
     @Test func oneSidedSplitDiffUsesOneFullWidthPane() throws {
         let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
         for patch in ["@@ -0,0 +1 @@\n+added", "@@ -1 +0,0 @@\n-deleted"] {

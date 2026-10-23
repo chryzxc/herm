@@ -76,6 +76,63 @@ struct GitHubReviewDraftTests {
         model.inlineDrafts[target.id] = "Check this input"
         #expect(model.stageInline(target, record: record))
     }
+    @Test func editingALineDraftKeepsItPrivateAndPreservesUnfinishedEdits() async {
+        let transport = BatchReviewTransport(.accepted)
+        let model = PullRequestReviewModel(client: GitHubClient(transport: transport))
+        let record = record()
+        stage(model, record: record)
+        let target = model.pendingComments[0].target
+        #expect(model.beginInline(target, record: record))
+        #expect(model.inlineDrafts[target.id] == "Check this input")
+        model.inlineDrafts[target.id] = "Updated feedback"
+        #expect(model.beginInline(target, record: record))
+        #expect(model.inlineDrafts[target.id] == "Updated feedback")
+        #expect(model.pendingComments[0].body == "Check this input")
+        #expect(model.stageInline(target, record: record))
+        #expect(model.pendingComments.count == 1)
+        #expect(model.pendingComments[0].body == "Updated feedback")
+        #expect(await transport.posts == 0)
+    }
+
+    @Test func invalidAndStaleTargetsCannotStartOrSaveALineComment() {
+        let model = PullRequestReviewModel(client: GitHubClient(transport: BatchReviewTransport(.accepted)))
+        let record = record()
+        for target in [
+            GitHubInlineCommentTarget(path: "file.swift", line: 0, side: "RIGHT", revision: record.headRevision!),
+            GitHubInlineCommentTarget(path: "../file.swift", line: 1, side: "RIGHT", revision: record.headRevision!),
+            GitHubInlineCommentTarget(path: "file.swift", line: 1, side: "UNKNOWN", revision: record.headRevision!),
+            GitHubInlineCommentTarget(path: "file.swift", line: 1, side: "LEFT", revision: "old"),
+        ] {
+            #expect(!model.beginInline(target, record: record))
+            model.inlineDrafts[target.id] = "Keep this draft"
+            #expect(!model.stageInline(target, record: record))
+            #expect(model.inlineDrafts[target.id] == "Keep this draft")
+        }
+        #expect(model.pendingComments.isEmpty)
+    }
+
+    @Test func submissionPolicyExplainsMissingFeedbackAndStaleDrafts() {
+        let model = PullRequestReviewModel(client: GitHubClient(transport: BatchReviewTransport(.accepted)))
+        let record = record()
+        #expect(model.submissionUnavailableReason(record: record, viewer: "reviewer")?.contains("Add a summary") == true)
+        stage(model, record: record)
+        #expect(model.submissionUnavailableReason(record: record, viewer: "reviewer") == nil)
+        #expect(model.submissionUnavailableReason(record: record, viewer: nil) != nil)
+        model.pendingComments.append(PendingReviewComment(
+            target: GitHubInlineCommentTarget(path: "file.swift", line: 1, side: "RIGHT", revision: "old"), body: "Old draft"))
+        #expect(model.submissionUnavailableReason(record: record, viewer: "reviewer")?.contains("earlier revision") == true)
+    }
+
+    @Test func lineContextResolvesTheCorrectDiffSide() {
+        let document = DiffDocument(path: "file.swift", patch: "@@ -4,2 +7,2 @@\n-old\n+new\n context")
+        let left = GitHubInlineCommentTarget(path: "file.swift", line: 4, side: "LEFT", revision: "head")
+        let right = GitHubInlineCommentTarget(path: "file.swift", line: 7, side: "RIGHT", revision: "head")
+        #expect(left.source(in: document).map(DiffDocument.source) == "old")
+        #expect(right.source(in: document).map(DiffDocument.source) == "new")
+        let missing = GitHubInlineCommentTarget(path: "other.swift", line: 7, side: "RIGHT", revision: "head")
+        #expect(missing.source(in: document) == nil)
+    }
+
     @Test func commentsRemainPrivateUntilOneBatchSubmission() async throws {
         let transport = BatchReviewTransport(.accepted)
         let model = PullRequestReviewModel(client: GitHubClient(transport: transport))

@@ -60,16 +60,10 @@ struct LocalReviewWorkspace: View {
         selected = matches[searchIndex].path
     }
     var body: some View {
-        VStack(spacing: 0) {
-            DockPageHeader(
-                title: "Review changes", subtitle: "Local Git comparison", onRefresh: { requestID += 1 },
-                isRefreshing: review.loading
-            ) {
-                Button("Close") {
-                    closeAction?()
-                    if closeAction == nil { dismiss() }
-                }.buttonStyle(.dockCompact)
-            }
+        DockExpandedPage(
+            title: "Review changes", subtitle: "Local Git comparison", onRefresh: { requestID += 1 },
+            isRefreshing: review.loading, close: { if let closeAction { closeAction() } else { dismiss() } }
+        ) {
             HStack {
                 Picker("Comparison", selection: $scope) {
                     ForEach(RepositoryComparison.Scope.allCases) { Text($0.rawValue).tag($0) }
@@ -110,7 +104,7 @@ struct LocalReviewWorkspace: View {
                 trailing: ScrollView {
                     if let selected, let diff = review.patches[selected] {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(selected).dockFont(size: 12, weight: .semibold).textSelection(.enabled)
+                            Text(selected).dockFont(.body, weight: .semibold).textSelection(.enabled)
                             SharedDiffView(
                                 patch: diff.text, path: selected,
                                 contextLoader: { lines in
@@ -151,14 +145,13 @@ struct LocalReviewWorkspace: View {
                     review.error == nil ? Color.dockSecondaryText : Color.dockWarning
                 ).lineLimit(2)
                 Spacer()
-                if guide.session != nil { Button("Read guide") { readingGuide = true }.buttonStyle(.dockCompact) }
+                if guide.session != nil || guide.requesting { Button("Read guide") { readingGuide = true }.buttonStyle(.dockCompact) }
                 if let session = guide.session {
                     Button("Open review conversation") {
                         openConversation(session)
                     }.buttonStyle(.dockCompact)
                 }
-                Button(guide.requesting ? "Requesting guide…" : "Generate review guide") { requestGuide() }
-                    .buttonStyle(.dockPrimary).disabled(
+                ReviewGuideGenerateAction(requesting: guide.requesting) { requestGuide(reviewerProfileID: $0) }.disabled(
                         review.loading || guide.requesting || guide.uncertain || review.patches.isEmpty
                             || review.error != nil)
             }.padding(12)
@@ -233,12 +226,13 @@ struct LocalReviewWorkspace: View {
                 scope: scope.rawValue, reference: reference,
                 file: selected, navigatorWidth: Double(navigatorWidth)), identity: presentationIdentity)
     }
-    private func requestGuide() {
+    private func requestGuide(reviewerProfileID: String?) {
         guard let comparison = review.comparison else { return }
         guide.start(
-            model: model, owner: guideOwner, directory: path, identity: comparison.identity,
+            model: model, owner: guideOwner, reviewerProfileID: reviewerProfileID, directory: path, identity: comparison.identity,
             documents: review.patches.keys.sorted().compactMap {
                 review.patches[$0].map { DiffDocument(path: $0.path, patch: $0.text) }
             }, partial: review.partial)
+        readingGuide = true
     }
 }

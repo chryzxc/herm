@@ -13,12 +13,12 @@ struct PullRequestReadinessView: View {
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     var body: some View {
         Group {
-            if embedded { content } else { content.dockCard(padding: 12) }
+            if embedded { content } else { content.dockCard(padding: 20) }
         }
     }
     private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
-            DockSectionHeader(title: "Readiness", style: style) {
+            DockSectionHeader(title: "Readiness", style: style, isContentHeader: true) {
                 if let date = record.refreshedAt {
                     Text("Updated \(HumanDateFormatting.relative(date))")
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
@@ -64,7 +64,7 @@ struct PullRequestReadinessView: View {
                     Text("Local analysis · \(String(analysis.headRevision.prefix(7))) into \(String(analysis.baseRevision.prefix(7)))")
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     if analysis.hasConflicts {
-                        ForEach(analysis.files, id: \.self) { path in Text(path).dockFont(size: 12, design: .monospaced).textSelection(.enabled) }
+                        ForEach(analysis.files, id: \.self) { path in Text(path).dockFont(.body, weight: .regular, design: .monospaced).textSelection(.enabled) }
                         if !analysis.complete { Text("Git reported a conflict without a complete file list. Open on GitHub for details.").foregroundStyle(Color.dockWarning) }
                     } else { Text("No conflicts found for these revisions. GitHub readiness is shown separately.").foregroundStyle(Color.dockSecondaryText) }
                 }
@@ -79,7 +79,7 @@ struct PullRequestReadinessView: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title).foregroundStyle(Color.dockMetadataText).frame(width: 64, alignment: .leading)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if warning { DockIcon(.warningCircle, size: 13, color: Color.dockWarning).accessibilityHidden(true) }
+                if warning { DockIcon(.warningCircle, color: Color.dockWarning).dockFont(.navigation).accessibilityHidden(true) }
                 Text(value).fontWeight(.regular).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(warning ? Color.dockWarning : color)

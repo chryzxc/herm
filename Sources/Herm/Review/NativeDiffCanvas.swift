@@ -41,6 +41,7 @@ final class DiffCanvasContainer: NSView {
     override func layout() {
         super.layout()
         stack.frame = bounds
+        stack.layoutSubtreeIfNeeded()
         for case let scroll as NSScrollView in stack.arrangedSubviews {
             guard let text = scroll.documentView as? NSTextView else { continue }
             if !text.isHorizontallyResizable {
@@ -54,6 +55,7 @@ final class DiffCanvasContainer: NSView {
         if !pendingScroll.isEmpty {
             for (index, view) in stack.arrangedSubviews.enumerated() {
                 if pendingScroll.indices.contains(index), let scroll = view as? NSScrollView {
+                    scroll.layoutSubtreeIfNeeded()
                     scroll.contentView.scroll(to: pendingScroll[index])
                     scroll.reflectScrolledClipView(scroll.contentView)
                 }
@@ -113,6 +115,10 @@ final class DiffCanvasContainer: NSView {
                 guard let text = scroll.documentView as? DiffSelectableTextView else { continue }
                 text.onNote = onNote
                 text.onComment = onComment
+                if let ruler = scroll.verticalRulerView {
+                    ruler.ruleThickness = onComment == nil ? 76 : 100
+                    ruler.needsDisplay = true
+                }
             }
         }
         if fingerprint != key {
@@ -143,6 +149,9 @@ final class DiffCanvasContainer: NSView {
             }
             let columns: [[DiffLine?]] =
                 split ? [rows.map(\.left), rows.map(\.right)] : [document.lines.map(Optional.some)]
+            // Overlay rulers inset the document; zero would hide source underneath the gutter.
+            let leadingOrigin = NSPoint(x: onComment == nil ? -76 : -100, y: 0)
+            pendingScroll = columns.indices.map { pendingScroll.indices.contains($0) ? pendingScroll[$0] : leadingOrigin }
             for (columnIndex, column) in columns.enumerated() {
                 let scroll = NSScrollView()
                 let text = DiffSelectableTextView()
@@ -186,6 +195,7 @@ final class DiffCanvasContainer: NSView {
                 ruler.clientView = text
                 ruler.text = text
                 ruler.side = text.side
+                ruler.ruleThickness = onComment == nil ? 76 : 100
                 scroll.verticalRulerView = ruler
                 scroll.hasVerticalRuler = true
                 scroll.rulersVisible = true
@@ -323,10 +333,15 @@ private final class DiffSelectableTextView: NSTextView {
 private final class DiffLineRuler: NSRulerView {
     weak var text: DiffSelectableTextView?
     var side: String?
-    override var requiredThickness: CGFloat { 76 }
+    private var commentButtons: [Int: DiffLineCommentButton] = [:]
+    override var requiredThickness: CGFloat { text?.onComment == nil ? 76 : 100 }
     override func drawHashMarksAndLabels(in rect: NSRect) {
-        guard let text, let manager = text.layoutManager, let container = text.textContainer else { return }
-        guard manager.numberOfGlyphs > 0 else { return }
+        guard let text, let manager = text.layoutManager, let container = text.textContainer,
+              manager.numberOfGlyphs > 0 else {
+            commentButtons.values.forEach { $0.removeFromSuperview() }
+            commentButtons.removeAll()
+            return
+        }
         NSColor(Color.dockSurface2).setFill()
         bounds.fill()
         let attributes: [NSAttributedString.Key: Any] = [
@@ -334,12 +349,13 @@ private final class DiffLineRuler: NSRulerView {
             .foregroundColor: NSColor(Color.dockMetadataText),
         ]
         var offset = 0
+        var visibleComments = Set<Int>()
         for line in text.lines {
             let glyph = manager.glyphIndexForCharacter(at: min(offset, max(0, (text.string as NSString).length - 1)))
             let frame = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
             let y = frame.minY + text.textContainerInset.height - (scrollView?.contentView.bounds.minY ?? 0)
-            if y > rect.maxY { break }
-            if y + frame.height >= rect.minY {
+            if y > bounds.maxY { break }
+            if y + frame.height >= bounds.minY {
                 let sign = line?.kind == .addition ? "+" : line?.kind == .deletion ? "−" : " "
                 let numbers =
                     side == "LEFT"
@@ -349,11 +365,47 @@ private final class DiffLineRuler: NSRulerView {
                         : "\(line?.oldLine.map(String.init) ?? "")  \(line?.newLine.map(String.init) ?? "")"
                 let label = "\(sign) \(numbers)" as NSString
                 label.draw(at: NSPoint(x: 4, y: y), withAttributes: attributes)
+                if let line, text.onComment != nil, line.oldLine != nil || line.newLine != nil {
+                    visibleComments.insert(line.index)
+                    let button = commentButtons[line.index] ?? DiffLineCommentButton()
+                    if button.superview == nil { addSubview(button) }
+                    commentButtons[line.index] = button
+                    button.frame = NSRect(x: 77, y: y, width: 22, height: max(20, frame.height))
+                    var target = line
+                    if side == "LEFT" { target.newLine = nil }
+                    if side == "RIGHT" { target.oldLine = nil }
+                    let captured = target
+                    button.onPress = { [weak text] in text?.onComment?(captured) }
+                    let location = "\(target.newLine == nil ? "old" : "new") line \(target.newLine ?? target.oldLine ?? 0)"
+                    button.toolTip = "Add review comment on \(location)"
+                    button.setAccessibilityLabel("Add review comment on \(location)")
+                }
             }
             offset += ((line.map(DiffDocument.source) ?? "") as NSString).length + 1
         }
+        for key in Array(commentButtons.keys) where !visibleComments.contains(key) {
+            commentButtons.removeValue(forKey: key)?.removeFromSuperview()
+        }
         _ = container
     }
+}
+
+private final class DiffLineCommentButton: NSButton {
+    var onPress: (() -> Void)?
+
+    init() {
+        super.init(frame: .zero)
+        title = "+"
+        font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
+        isBordered = false
+        contentTintColor = NSColor(Color.dockAccent)
+        setButtonType(.momentaryPushIn)
+        target = self
+        action = #selector(press)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @objc private func press() { onPress?() }
 }
 
 private final class DiffSyncedClipView: NSClipView {

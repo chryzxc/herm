@@ -6,9 +6,10 @@ struct SharedDiffView: View {
     let patch: String
     let path: String
     var preferredSplit = false
-    var wraps = false
+    var wraps = true
     var wordDiffs = true
     var onComment: ((DiffLine) -> Void)?
+    var reviewAccessory: AnyView?
     var contextLoader: ((Int) async throws -> String)?
     var projectPath: String?
     var reveal: DiffSearchMatch?
@@ -20,11 +21,11 @@ struct SharedDiffView: View {
     @StateObject private var state: DiffReviewState
 
     init(
-        patch: String, path: String, preferredSplit: Bool = false, wraps: Bool = false, wordDiffs: Bool = true,
+        patch: String, path: String, preferredSplit: Bool = false, wraps: Bool = true, wordDiffs: Bool = true,
         onComment: ((DiffLine) -> Void)? = nil, contextLoader: ((Int) async throws -> String)? = nil,
         projectPath: String? = nil, reveal: DiffSearchMatch? = nil, expandedPresentation: Bool = false,
         owningSession: HermesSession? = nil, comparison: DiffComparisonIdentity? = nil,
-        revisionNotes: RevisionNoteStore? = nil, state: DiffReviewState? = nil
+        revisionNotes: RevisionNoteStore? = nil, state: DiffReviewState? = nil, reviewAccessory: AnyView? = nil
     ) {
         self.patch = patch
         self.path = path
@@ -32,6 +33,7 @@ struct SharedDiffView: View {
         self.wraps = wraps
         self.wordDiffs = wordDiffs
         self.onComment = onComment
+        self.reviewAccessory = reviewAccessory
         self.contextLoader = contextLoader
         self.projectPath = projectPath
         self.reveal = reveal
@@ -60,37 +62,16 @@ struct SharedDiffView: View {
         return session + ":diff:" + (projectPath ?? "") + ":" + path
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        Group {
             if expandedPresentation {
-                DockPageHeader(title: (path as NSString).lastPathComponent, subtitle: (path as NSString).deletingLastPathComponent) {
-                    Button("Close") {
-                        if let expandedRouter { expandedRouter.close() } else { dismiss() }
-                    }.buttonStyle(.dockCompact).keyboardShortcut(.cancelAction)
+                DockExpandedPage(title: (path as NSString).lastPathComponent, subtitle: (path as NSString).deletingLastPathComponent, help: path) {
+                    if let expandedRouter { expandedRouter.close() } else { dismiss() }
+                } content: {
+                    review
                 }
-                .help(path)
+            } else {
+                review
             }
-            toolbar(isExpanded: expandedPresentation)
-            if let notice = document.fileNotice {
-                Text(notice).dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(12)
-            }
-            canvas
-                .frame(
-                    minHeight: expandedPresentation ? 400 : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)),
-                    maxHeight: expandedPresentation
-                        ? .infinity : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)))
-            if document.isTruncated {
-                Text("Partial diff · search covers loaded content only").dockFont(.metadata).foregroundStyle(
-                    Color.dockWarning
-                ).padding(8)
-            }
-            if document.missingFinalNewline {
-                Text("Missing final newline").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-                    .padding(8)
-            }
-            if let contextError = state.contextError {
-                Text(contextError).dockFont(.body).foregroundStyle(Color.dockWarning).padding(8)
-            }
-            if !state.notes.isEmpty || state.revisionNotes.error != nil { noteTray }
         }
         .background(Color.dockCanvas)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
@@ -140,11 +121,48 @@ struct SharedDiffView: View {
         }
     }
 
+    private var review: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            toolbar(isExpanded: expandedPresentation)
+            if let notice = document.fileNotice {
+                Text(notice).dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(12)
+            }
+            canvas
+                .frame(
+                    minHeight: expandedPresentation ? (reviewAccessory == nil ? 400 : 120) : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)),
+                    maxHeight: expandedPresentation
+                        ? .infinity : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)))
+            if let reviewAccessory {
+                if expandedPresentation {
+                    ViewThatFits(in: .vertical) {
+                        reviewAccessory
+                        ScrollView { reviewAccessory }
+                    }.frame(maxHeight: 320).layoutPriority(1)
+                } else {
+                    reviewAccessory
+                }
+            }
+            if document.isTruncated {
+                Text("Partial diff · search covers loaded content only").dockFont(.metadata).foregroundStyle(
+                    Color.dockWarning
+                ).padding(8)
+            }
+            if document.missingFinalNewline {
+                Text("Missing final newline").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                    .padding(8)
+            }
+            if let contextError = state.contextError {
+                Text(contextError).dockFont(.body).foregroundStyle(Color.dockWarning).padding(8)
+            }
+            if !state.notes.isEmpty || state.revisionNotes.error != nil { noteTray }
+        }
+    }
+
     private var expandedContent: some View {
         SharedDiffView(
             patch: patch, path: path, preferredSplit: preferredSplit, wraps: wraps, wordDiffs: wordDiffs,
             onComment: onComment, contextLoader: contextLoader, projectPath: projectPath, reveal: reveal,
-            expandedPresentation: true, owningSession: owningSession, comparison: comparison, state: state)
+            expandedPresentation: true, owningSession: owningSession, comparison: comparison, state: state, reviewAccessory: reviewAccessory)
     }
     private var toolbarStyle: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
 
@@ -229,6 +247,14 @@ struct SharedDiffView: View {
         return { line in
             guard state.activeSourceIdentity == captured else {
                 state.contextError = "The comparison changed. Select a line in the refreshed diff before commenting."
+                return
+            }
+            let original = state.document(path: path, patch: patch)
+            guard original.lines.contains(where: { candidate in
+                (line.newLine != nil && candidate.newLine == line.newLine)
+                    || (line.newLine == nil && line.oldLine != nil && candidate.oldLine == line.oldLine)
+            }) else {
+                state.contextError = "Only lines in the captured diff can receive GitHub review comments."
                 return
             }
             onComment(line)

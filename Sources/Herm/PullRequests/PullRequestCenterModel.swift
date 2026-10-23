@@ -215,15 +215,18 @@ final class PullRequestCenterModel: ObservableObject {
         }
         async let viewerLookup = api.viewer()
         async let indexLookup = api.index(repository: remote, localPath: repositoryPath)
-        let (viewer, result) = await (viewerLookup, indexLookup)
+        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+        async let mergedLookup = try? api.searchPage("is:pr is:merged repo:\(remote.id) merged:>=\(since)", localPaths: [remote.id: repositoryPath])
+        let (viewer, result, merged) = await (viewerLookup, indexLookup, mergedLookup)
         guard token == generation, !Task.isCancelled else { return }
         viewerLogin = viewer
         switch result {
         case .success(let rows):
             hasLoaded = true
-            records = rows.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+            let unique = Dictionary((rows + (merged?.items ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            records = unique.values.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
             failedRepositories = []
-            errorMessage = nil
+            errorMessage = merged == nil ? "Open results loaded; recent merged history is unavailable." : (merged?.coverage.partial == true ? merged?.coverage.label : nil)
         case .failure:
             failedRepositories = [remote.id]
             if records.isEmpty { errorMessage = "GitHub could not load pull requests for \(remote.id). Check your sign-in and try again." }
@@ -231,17 +234,19 @@ final class PullRequestCenterModel: ObservableObject {
         repairSelection()
     }
 
-    func open(_ reference: GitHubItemReference) async {
-        guard reference.kind == .pullRequest else { return }
+    @discardableResult
+    func open(_ reference: GitHubItemReference) async -> Bool {
+        guard reference.kind == .pullRequest else { return false }
         cancelLoads()
         hasLoaded = true
         let token = generation
         do {
             let record = try await api.resolve(reference, localPath: records.first { $0.repository == reference.repository }?.localPath ?? "")
-            guard token == generation, !Task.isCancelled else { return }
+            guard token == generation, !Task.isCancelled else { return false }
             browsing.state = .all; filter = .all; query = ""
             records.removeAll { $0.id == record.id }; records.insert(record, at: 0); selectedID = record.id
-        } catch { errorMessage = error.localizedDescription }
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     func commentDraft(for id: String) -> Binding<String> {

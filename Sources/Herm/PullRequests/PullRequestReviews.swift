@@ -23,6 +23,12 @@ struct GitHubInlineCommentTarget: Identifiable {
     let side: String
     let revision: String
     var id: String { "\(revision):\(path):\(side):\(line)" }
+    var locationLabel: String { "\(path):\(line) · \(side == "LEFT" ? "old" : "new")" }
+
+    func source(in document: DiffDocument) -> DiffLine? {
+        guard document.path == path else { return nil }
+        return document.lines.first { side == "LEFT" ? $0.oldLine == line : side == "RIGHT" && $0.newLine == line }
+    }
 }
 
 struct GitHubReviewService: Sendable {
@@ -127,9 +133,40 @@ final class PullRequestReviewModel: ObservableObject {
     private var submittedComments: [PendingReviewComment] = []
     private var submissionDate: Date?
 
+    func beginInline(_ target: GitHubInlineCommentTarget, record: PullRequestRecord) -> Bool {
+        guard !busy, !uncertainSubmission, record.state == "open", target.revision == record.headRevision,
+              target.line > 0, ["LEFT", "RIGHT"].contains(target.side),
+              RepositoryService.isSafeRelativePath(target.path) else { return false }
+        if inlineDrafts[target.id] == nil {
+            inlineDrafts[target.id] = pendingComments.first { $0.target.id == target.id }?.body ?? ""
+        }
+        return true
+    }
+
+    func submissionUnavailableReason(record: PullRequestRecord, viewer: String?) -> String? {
+        if uncertainSubmission { return "Check the previous submission before submitting again." }
+        if busy { return "A review action is in progress." }
+        if viewer == nil { return "Your GitHub identity is unavailable. Refresh the pull request." }
+        if record.state != "open" { return "This pull request is closed." }
+        if record.headRevision == nil { return "Refresh the pull request to load its current revision." }
+        if pendingComments.contains(where: { $0.target.revision != record.headRevision }) {
+            return "Some draft comments refer to an earlier revision. Remove them or add them again on the current diff."
+        }
+        if pendingComments.count > 100 { return "A review can include up to 100 line comments." }
+        if draft.count > 10_000 { return "Shorten the summary to 10,000 characters or fewer." }
+        if event != .comment && viewer?.caseInsensitiveCompare(record.author) == .orderedSame {
+            return "You can comment on your own pull request; another reviewer must approve or request changes."
+        }
+        if event != .approve && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pendingComments.isEmpty {
+            return "Add a summary or a line comment to submit this review."
+        }
+        return nil
+    }
+
     func stageInline(_ target: GitHubInlineCommentTarget, record: PullRequestRecord) -> Bool {
         let body = inlineDrafts[target.id] ?? ""
-        guard !busy, !uncertainSubmission, target.revision == record.headRevision,
+        guard !busy, !uncertainSubmission, record.state == "open", target.revision == record.headRevision,
+              target.line > 0, ["LEFT", "RIGHT"].contains(target.side), RepositoryService.isSafeRelativePath(target.path),
               !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, body.count <= 10_000 else { return false }
         pendingComments.removeAll { $0.target.id == target.id }
         pendingComments.append(PendingReviewComment(target: target, body: body))
@@ -230,79 +267,90 @@ struct PullRequestReviewView: View {
     let record: PullRequestRecord
     let viewer: String?
     let onChanged: () -> Void
+    var horizontalPadding: CGFloat = 20
+    var onReviewCode: (() -> Void)? = nil
+    var onEditComment: ((GitHubInlineCommentTarget) -> Void)? = nil
     @State private var unresolvedOnly = true
     @State private var confirm = false
     @State private var confirmRetry = false
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Your review").dockFont(.body, weight: .semibold)
+                        Spacer()
+                        if let onReviewCode {
+                            Button("Review code", action: onReviewCode).buttonStyle(.dockCompact)
+                        }
+                    }
+                    DockChipFlow(spacing: 6) {
+                        ForEach(GitHubReviewEvent.allCases) { event in
+                            DockTabButton(title: event.title, isSelected: model.event == event) { model.event = event }
+                                .disabled(model.busy || model.uncertainSubmission)
+                        }
+                    }
+                    GitHubMarkdownDraft(text: $model.draft, placeholder: "Summarize your review…", minimumHeight: 104)
+                        .disabled(model.busy || model.uncertainSubmission)
+                    if !model.pendingComments.isEmpty {
+                        Text("\(model.pendingComments.count) draft line comment\(model.pendingComments.count == 1 ? "" : "s") · included on submission")
+                            .foregroundStyle(Color.dockSecondaryText)
+                        ForEach(model.pendingComments) { comment in
+                            PullRequestReviewDraftRow(model: model, record: record, comment: comment) {
+                                onEditComment?(comment.target)
+                            }
+                        }
+                    }
+                    if model.uncertainSubmission {
+                        DockChipFlow(spacing: 8) {
+                            Button("Check submission") { Task { await model.checkSubmission(record) } }
+                                .buttonStyle(.dockCompact).disabled(model.busy)
+                            Button("I checked on GitHub; allow retry…") { confirmRetry = true }
+                                .buttonStyle(.dockCompact).disabled(model.busy)
+                        }
+                    }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 12) {
+                            submissionHint
+                            Spacer(minLength: 0)
+                            submitButton
+                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            submissionHint
+                            HStack { Spacer(); submitButton }
+                        }
+                    }
+                }
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
                 VStack(alignment: .leading, spacing: 12) {
                     ViewThatFits(in: .horizontal) {
                         HStack {
-                            Text("Review threads").dockFont(size: 12, weight: .semibold)
+                            Text("Review threads").dockFont(.body, weight: .semibold)
                             Spacer(minLength: 12)
                             threadControls
                         }
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Review threads").dockFont(size: 12, weight: .semibold)
+                            Text("Review threads").dockFont(.body, weight: .semibold)
                             threadControls
                         }
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        if let error = model.error {
-                            Text(error).foregroundStyle(Color.dockWarning)
-                        }
+                        if let error = model.error { Text(error).foregroundStyle(Color.dockWarning) }
                         if model.revision == nil {
                             Text(model.loading ? "Loading review threads…" : "Review threads are unavailable.")
                                 .foregroundStyle(Color.dockSecondaryText)
                         } else if model.threads.filter({ !unresolvedOnly || !$0.resolved }).isEmpty {
                             Text(unresolvedOnly ? "No unresolved threads" : "No review threads")
-                                .dockFont(size: 12, weight: .semibold)
+                                .dockFont(.body, weight: .semibold)
                             Text(unresolvedOnly && !model.threads.isEmpty
                                 ? "Turn off Unresolved only to see resolved discussions."
-                                : "Comments on changed lines will appear here. Add one from the Code tab.")
+                                : "Use + beside a line in Code to add a comment to your review.")
                                 .foregroundStyle(Color.dockSecondaryText)
                         }
                         PullRequestThreadListView(model: model, record: record, path: nil, unresolvedOnly: unresolvedOnly)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
+                    }.frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
                 }
-                Color.dockBorderLight.frame(height: DockLayout.hairline)
-                HStack {
-                    Text("Your review").dockFont(size: 12, weight: .semibold)
-                    Spacer(minLength: 12)
-                    Picker("Review type", selection: $model.event) {
-                        ForEach(GitHubReviewEvent.allCases) { event in Text(event.title).tag(event) }
-                    }
-                    .labelsHidden().pickerStyle(.menu).fixedSize()
-                    .disabled(model.busy || model.uncertainSubmission)
-                }
-                ForEach(model.pendingComments) { comment in
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(comment.target.path):\(comment.target.line)").dockFont(size: 12, weight: .semibold)
-                            Text(comment.body).dockFont(.body).textSelection(.enabled)
-                            if comment.target.revision != record.headRevision { Text("Source revision changed").foregroundStyle(Color.dockWarning) }
-                        }
-                        Spacer()
-                        Button("Remove") { model.pendingComments.removeAll { $0.id == comment.id } }.buttonStyle(.dockCompact).disabled(model.busy || model.uncertainSubmission)
-                    }
-                }
-                if model.uncertainSubmission {
-                    HStack {
-                        Button("Check submission") { Task { await model.checkSubmission(record) } }.buttonStyle(.dockCompact).disabled(model.busy)
-                        Button("I checked on GitHub; allow retry…") { confirmRetry = true }.buttonStyle(.dockCompact).disabled(model.busy)
-                    }
-                }
-                GitHubMarkdownDraft(text: $model.draft, placeholder: "Leave feedback on these changes…", minimumHeight: 160)
-                    .disabled(model.busy || model.uncertainSubmission)
-                HStack {
-                    Text("Markdown supported").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                    Spacer(minLength: 12)
-                    Button { confirm = true } label: { GitHubActionLabel(title: model.pendingAction == .submit ? "Submitting…" : "Review and submit", isBusy: model.pendingAction == .submit) }.buttonStyle(.dockPrimary).controlSize(.small)
-                    .disabled(model.busy || model.uncertainSubmission || viewer == nil || record.state != "open" || record.headRevision == nil || model.draft.count > 10_000 || (model.event != .approve && model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingComments.isEmpty) || (model.event != .comment && viewer?.caseInsensitiveCompare(record.author) == .orderedSame))
-                }
-            }.padding(20)
+            }.padding(.horizontal, horizontalPadding).padding(.vertical, 20)
         }
         .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         .confirmationDialog("Allow a deliberate retry?", isPresented: $confirmRetry) {
@@ -313,7 +361,23 @@ struct PullRequestReviewView: View {
         .confirmationDialog("\(model.event.title) on \(record.reference.title)?", isPresented: $confirm, titleVisibility: .visible) {
             Button("Submit review") { Task { if await model.submit(record) { onChanged() } } }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("Revision \(record.headRevision ?? "unknown")\n\n\(model.draft)") }
+        } message: { Text("\(model.pendingComments.count) line comments and your summary will be published on revision \(record.headRevision ?? "unknown").\n\n\(model.draft)") }
+    }
+
+    private var submissionHint: some View {
+        Text(model.submissionUnavailableReason(record: record, viewer: viewer)
+            ?? "Your summary and draft comments will be published together.")
+            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var submitButton: some View {
+        Button { confirm = true } label: {
+            GitHubActionLabel(title: model.pendingAction == .submit ? "Submitting…" : "Submit review",
+                              isBusy: model.pendingAction == .submit)
+        }
+        .buttonStyle(.dockPrimary).controlSize(.small).fixedSize()
+        .disabled(model.submissionUnavailableReason(record: record, viewer: viewer) != nil)
     }
 
     private var threadControls: some View {
@@ -415,25 +479,5 @@ struct GitHubMarkdownDraft: View {
         .background { DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill() }
         .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
         .overlay { DockThemeShape(cornerRadius: DockLayout.controlRadius).stroke(Color.dockBorder, lineWidth: DockLayout.hairline) }
-    }
-}
-
-struct GitHubInlineCommentEditor: View {
-    @ObservedObject var model: PullRequestReviewModel
-    let record: PullRequestRecord
-    let target: GitHubInlineCommentTarget
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        let draft = Binding(get: { model.inlineDrafts[target.id] ?? "" }, set: { model.inlineDrafts[target.id] = $0 })
-        DockModal(title: "Comment on changed line", subtitle: "\(record.reference.title) · \(target.path):\(target.line)", width: 560) {
-            GitHubMarkdownDraft(text: draft)
-            if let error = model.error { Text(error).foregroundStyle(Color.dockWarning) }
-        } footer: {
-            Button("Cancel") { dismiss() }.buttonStyle(.dockSecondary).disabled(model.busy)
-            Spacer()
-            Button("Save review draft") { if model.stageInline(target, record: record) { dismiss() } }
-                .buttonStyle(.dockPrimary).disabled(model.busy || model.uncertainSubmission || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.wrappedValue.count > 10_000)
-        }
-        .interactiveDismissDisabled(model.busy)
     }
 }

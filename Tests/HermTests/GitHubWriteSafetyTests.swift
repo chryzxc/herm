@@ -5,9 +5,10 @@ import Testing
 private actor WriteSafetyTransport: GitHubIssueTransport {
     enum Mode { case denied, staleHead, queue, restrictedProjects, linking, unstable, blocked }
     let mode: Mode
+    let methods: [GitHubMergeMethod]
     var reads = 0
     var writes: [[String: String]] = []
-    init(_ mode: Mode) { self.mode = mode }
+    init(_ mode: Mode, methods: [GitHubMergeMethod] = [.merge]) { self.mode = mode; self.methods = methods }
     func mutations() -> [[String: String]] { writes }
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
@@ -20,12 +21,12 @@ private actor WriteSafetyTransport: GitHubIssueTransport {
             let input = variables["input"] as? [String: String] ?? [:]
             writes.append(input.merging(variables.compactMapValues { $0 as? String }, uniquingKeysWith: { a, _ in a }))
             if mode == .unstable {
-                payload = ["data": ["mergePullRequest": ["pullRequest": ["id": "PR", "headRefOid": String(repeating: "a", count: 40), "state": "MERGED", "isDraft": false, "mergedAt": "2026-10-18T00:01:00Z", "updatedAt": "2026-10-18T00:01:00Z", "repository": ["viewerPermission": "WRITE", "mergeCommitAllowed": true]]]]]
+                payload = ["data": ["mergePullRequest": ["pullRequest": ["id": "PR", "headRefOid": String(repeating: "a", count: 40), "state": "MERGED", "isDraft": false, "mergedAt": "2026-10-18T00:01:00Z", "updatedAt": "2026-10-18T00:01:00Z", "repository": ["viewerPermission": "WRITE", "mergeCommitAllowed": methods.contains(.merge), "squashMergeAllowed": methods.contains(.squash), "rebaseMergeAllowed": methods.contains(.rebase)]]]]]
             } else { payload = ["data": ["accepted": ["clientMutationId": NSNull()]]] }
         } else if mode == .staleHead || mode == .queue || mode == .unstable || mode == .blocked {
             reads += 1
             let head = mode == .staleHead && reads > 1 ? String(repeating: "b", count: 40) : String(repeating: "a", count: 40)
-            payload = ["data": ["node": ["id": "PR", "headRefOid": head, "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": mode == .unstable ? "UNSTABLE" : (mode == .blocked ? "BLOCKED" : "CLEAN"), "isMergeQueueEnabled": mode == .queue, "isInMergeQueue": !writes.isEmpty, "repository": ["viewerPermission": "WRITE", "mergeCommitAllowed": true]]]]
+            payload = ["data": ["node": ["id": "PR", "headRefOid": head, "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": mode == .unstable ? "UNSTABLE" : (mode == .blocked ? "BLOCKED" : "CLEAN"), "isMergeQueueEnabled": mode == .queue, "isInMergeQueue": !writes.isEmpty, "repository": ["viewerPermission": "WRITE", "mergeCommitAllowed": methods.contains(.merge), "squashMergeAllowed": methods.contains(.squash), "rebaseMergeAllowed": methods.contains(.rebase)]]]]
         } else if mode == .restrictedProjects {
             if query.contains("projectItems") { payload = ["errors": [["type": "FORBIDDEN", "message": "restricted"]]] }
             else if query.contains("closedByPullRequestsReferences") { payload = ["data": ["node": ["closedByPullRequestsReferences": ["nodes": [], "pageInfo": ["hasNextPage": false]]]]] }
@@ -75,6 +76,33 @@ struct GitHubWriteSafetyTests {
         #expect(merged.status == "Merged")
         #expect(await transport.mutations().first?["expectedHeadOid"] == pr.headRevision)
     }
+    @Test(arguments: GitHubMergeMethod.allCases)
+    func selectedMergeMethodReachesGitHubWithExpectedHead(method: GitHubMergeMethod) async throws {
+        let transport = WriteSafetyTransport(.unstable, methods: GitHubMergeMethod.allCases)
+        let service = GitHubLandingService(client: GitHubClient(transport: transport))
+        let pr = record()
+        let confirmed = try await service.snapshot(pr)
+        #expect(confirmed.methods == GitHubMergeMethod.allCases)
+        let updated = try await service.perform(.merge, method: method, record: pr, confirmed: confirmed)
+        #expect(updated.state == "MERGED")
+        let writes = await transport.mutations()
+        #expect(writes.count == 1)
+        #expect(writes.first?["mergeMethod"] == method.rawValue)
+        #expect(writes.first?["expectedHeadOid"] == pr.headRevision)
+    }
+
+    @Test func unavailableMergeMethodNeverWrites() async throws {
+        let transport = WriteSafetyTransport(.unstable, methods: [.squash])
+        let service = GitHubLandingService(client: GitHubClient(transport: transport))
+        let pr = record()
+        let confirmed = try await service.snapshot(pr)
+        #expect(confirmed.methods == [.squash])
+        await #expect(throws: GitHubRequestError.forbidden) {
+            try await service.perform(.merge, method: .merge, record: pr, confirmed: confirmed)
+        }
+        #expect(await transport.mutations().isEmpty)
+    }
+
     @Test func providerBlockedStateStillRejectsMergeWithFailingChecks() async throws {
         let transport = WriteSafetyTransport(.blocked)
         let service = GitHubLandingService(client: GitHubClient(transport: transport))

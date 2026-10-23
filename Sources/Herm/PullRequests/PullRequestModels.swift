@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum PullRequestFilter: String, CaseIterable, Identifiable {
-    case all = "All", reviewing = "Reviewing", authored = "Authored", merged = "Recently merged"
+    case all = "All", reviewing = "Reviewing", authored = "Authored", merged = "Merged"
     var id: Self { self }
 }
 

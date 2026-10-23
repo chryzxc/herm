@@ -13,6 +13,7 @@ final class PullRequestDetailStore: ObservableObject {
     @Published var events: [String: [PullRequestEvent]] = [:]
     @Published var drafts: [String: String] = [:]
     var reviews: [String: PullRequestReviewModel] = [:]
+    let chats = PullRequestChatStore()
 }
 
 extension PullRequestRecord {

@@ -3,6 +3,15 @@ import SwiftUI
 enum GitHubMergeMethod: String, CaseIterable, Identifiable, Sendable {
     case merge = "MERGE", squash = "SQUASH", rebase = "REBASE"
     var id: Self { self }
+    var actionTitle: String { self == .merge ? "Merge pull request" : title }
+    var detail: String {
+        switch self {
+        case .merge: "Add the branch commits to the base branch with a merge commit."
+        case .squash: "Combine the branch commits into one commit on the base branch."
+        case .rebase: "Replay the branch commits individually on the base branch."
+        }
+    }
+    func available(in methods: [Self]) -> Self? { methods.contains(self) ? self : methods.first }
     var title: String { switch self { case .merge: "Merge commit"; case .squash: "Squash and merge"; case .rebase: "Rebase and merge" } }
 }
 enum GitHubLandingAction: String, Identifiable, Sendable {
@@ -119,12 +128,15 @@ struct PullRequestLandingView: View {
     let record: PullRequestRecord
     let client: GitHubClient
     var embedded = false
+    var toolbar = false
     var onLanded: ((GitHubLandingSnapshot) -> Void)? = nil
     let onChanged: () -> Void
+    @State private var showsRequirements = false
     @State private var snapshot: GitHubLandingSnapshot?
     @State private var method: GitHubMergeMethod = .merge
     @State private var pending: GitHubLandingAction?
     @State private var confirmed: GitHubLandingSnapshot?
+    @State private var confirmedMethod: GitHubMergeMethod = .merge
     @State private var busy = false
     @State private var activeAction: GitHubLandingAction?
     @State private var loading = false
@@ -134,12 +146,54 @@ struct PullRequestLandingView: View {
     private var service: GitHubLandingService { GitHubLandingService(client: client) }
     var body: some View {
         Group {
-            if embedded { content } else { content.dockCard(padding: 12) }
+            if toolbar {
+                toolbarControl
+                    .popover(isPresented: $showsRequirements) {
+                        content.padding(16).frame(width: 360).background(Color.dockCanvas)
+                    }
+            } else if embedded { content }
+            else { content.dockCard(padding: 20) }
+        }
+        .task(id: "\(record.id):\(record.headRevision ?? ""): \(record.refreshedAt?.timeIntervalSince1970 ?? 0)") { await load() }
+        .confirmationDialog(pending == .merge ? confirmedMethod.actionTitle : pending?.rawValue ?? "Confirm GitHub action", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil; confirmed = nil } }), titleVisibility: .visible, presenting: confirmed.flatMap { snapshot in pending.map { ($0, snapshot, confirmedMethod) } }) { request in
+            Button(request.0 == .merge ? request.2.actionTitle : request.0.rawValue) {
+                pending = nil; confirmed = nil
+                Task { await perform(request.0, original: request.1, method: request.2) }
+            }
+            Button("Cancel", role: .cancel) { pending = nil; confirmed = nil }
+        } message: { request in Text("\(record.reference.title) · \(record.title)\nHead: \(record.headRevision ?? "unknown")\n\(request.2.title)\nGitHub enforces repository rules. Queued and auto-merge requests may wait before merging.\n\(request.1.checkWarnings(for: record).joined(separator: "\n"))") }
+    }
+
+    @ViewBuilder private var toolbarControl: some View {
+        if record.mergedAt != nil {
+            Button("Merged") { showsRequirements = true }.buttonStyle(.dockSecondary)
+        } else {
+            mergeControl(enabled: true) {
+                if snapshot?.canMergeNow == true, snapshot?.methods.contains(method) == true {
+                    request(.merge)
+                } else { showsRequirements = true }
+            }
         }
     }
+
+    private func mergeControl(enabled: Bool, action: @escaping () -> Void) -> some View {
+        PullRequestMergeButton(method: $method, methods: snapshot?.methods ?? [],
+            isBusy: loading || activeAction == .merge, enabled: enabled && !busy && !loading && pending == nil,
+            selectionEnabled: !busy && !loading && pending == nil,
+            onShowRequirements: toolbar && !showsRequirements ? { showsRequirements = true } : nil,
+            action: action)
+    }
+
+    private func request(_ action: GitHubLandingAction) {
+        guard pending == nil, !busy, !loading, let snapshot else { return }
+        confirmed = snapshot
+        confirmedMethod = method
+        pending = action
+    }
+
     private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
-            DockSectionHeader(title: record.mergedAt != nil ? "Pull request merged" : "Merge pull request", style: DockThemePalette(theme: DockThemeRuntime.current)) {
+            DockSectionHeader(title: record.mergedAt != nil ? "Pull request merged" : "Merge pull request", style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true) {
                 if record.mergedAt == nil {
                     DockIconButton(icon: .arrowsClockwise, label: "Refresh merge requirements", isBusy: busy || loading, size: 24, style: DockThemePalette(theme: DockThemeRuntime.current)) { Task { await load() } }
                 }
@@ -150,25 +204,10 @@ struct PullRequestLandingView: View {
                 if !snapshot.status.isEmpty { Text(snapshot.status).foregroundStyle(Color.dockSecondaryText) }
                 if snapshot.state == "OPEN" && !snapshot.draft && (snapshot.canMerge || snapshot.canAuto || snapshot.canDisableAuto) {
                     DockChipFlow(spacing: 8) {
-                        if !snapshot.methods.isEmpty && !snapshot.queueEnabled {
-                            DockMenu {
-                                ForEach(snapshot.methods) { option in
-                                    Button(option.title) { method = option }
-                                }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text(method.title).fontWeight(.regular)
-                                    DockIcon(.caretDown, size: 12, color: Color.dockSecondaryText)
-                                }
-                                .dockFont(.body).padding(.horizontal, 10).frame(height: 28)
-                                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
-                            }
-                            .disabled(busy || loading).help("Merge method").accessibilityLabel("Merge method: \(method.title)")
-                        }
                         if snapshot.queueEnabled {
                             actionButton(snapshot.queued ? .dequeue : .enqueue, enabled: snapshot.canMerge && (snapshot.queued || (snapshot.mergeable == "MERGEABLE" && snapshot.reviewDecision != "CHANGES_REQUESTED")))
                         } else {
-                            actionButton(.merge, enabled: snapshot.canMergeNow && snapshot.methods.contains(method))
+                            mergeControl(enabled: snapshot.canMergeNow && snapshot.methods.contains(method)) { request(.merge) }
                         }
                         if snapshot.canDisableAuto && snapshot.autoEnabled { actionButton(.disableAuto, enabled: true) }
                         else if snapshot.canAuto && !snapshot.queueEnabled { actionButton(.auto, enabled: !snapshot.methods.isEmpty) }
@@ -180,14 +219,14 @@ struct PullRequestLandingView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(blockers, id: \.self) { blocker in
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                DockIcon(.warningCircle, size: 13, color: Color.dockWarning)
+                                DockIcon(.warningCircle, color: Color.dockWarning).dockFont(.navigation)
                                     .accessibilityHidden(true)
                                 Text(blocker).textSelection(.enabled)
                             }
                         }
                         ForEach(warnings, id: \.self) { warning in
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                DockIcon(.warningCircle, size: 13, color: Color.dockWarning).accessibilityHidden(true)
+                                DockIcon(.warningCircle, color: Color.dockWarning).dockFont(.navigation).accessibilityHidden(true)
                                 Text(warning).textSelection(.enabled)
                             }
                         }
@@ -208,22 +247,13 @@ struct PullRequestLandingView: View {
             if record.mergedAt == nil, let result { Text(result).foregroundStyle(Color.dockSecondaryText) }
             if let error { Text(error).foregroundStyle(Color.dockWarning) }
         }.dockFont(.body).foregroundStyle(Color.dockPrimaryText)
-        .task(id: "\(record.id):\(record.headRevision ?? ""): \(record.refreshedAt?.timeIntervalSince1970 ?? 0)") { await load() }
-        .confirmationDialog(pending?.rawValue ?? "Confirm GitHub action", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil; confirmed = nil } }), titleVisibility: .visible, presenting: confirmed.flatMap { snapshot in pending.map { ($0, snapshot, method) } }) { request in
-            Button(request.0.rawValue) {
-                pending = nil; confirmed = nil
-                Task { await perform(request.0, original: request.1, method: request.2) }
-            }
-            Button("Cancel", role: .cancel) { pending = nil; confirmed = nil }
-        } message: { request in Text("\(record.reference.title) · \(record.title)\nHead: \(record.headRevision ?? "unknown")\n\(request.2.title)\nGitHub enforces repository rules. Queued and auto-merge requests may wait before merging.\n\(request.1.checkWarnings(for: record).joined(separator: "\n"))") }
     }
     @ViewBuilder
     private func actionButton(_ action: GitHubLandingAction, enabled: Bool) -> some View {
-        let button = Button { confirmed = snapshot; pending = action } label: {
+        Button { request(action) } label: {
             GitHubActionLabel(title: action.rawValue, isBusy: activeAction == action)
-        }.disabled(!enabled || busy || loading)
-        if action == .merge { button.buttonStyle(.dockPrimary).controlSize(.small) }
-        else { button.buttonStyle(.dockCompact) }
+        }.disabled(!enabled || busy || loading || pending != nil)
+            .buttonStyle(.dockCompact)
     }
     private func load() async {
         guard !busy, record.mergedAt == nil else { return }
@@ -234,7 +264,7 @@ struct PullRequestLandingView: View {
             try Task.checkCancellation()
             guard generation == loadGeneration else { return }
             snapshot = updated
-            if let first = updated.methods.first, !updated.methods.contains(method) { method = first }
+            if let available = method.available(in: updated.methods) { method = available }
             error = nil
         } catch {
             if generation == loadGeneration, !Task.isCancelled { self.error = error.localizedDescription; snapshot = nil }
@@ -246,6 +276,10 @@ struct PullRequestLandingView: View {
             let updated = try await service.perform(action, method: method, record: record, confirmed: original)
             onLanded?(updated)
             snapshot = updated; result = updated.status.isEmpty ? "Request accepted. Refreshing GitHub state…" : updated.status; error = nil; onChanged()
-        } catch { result = nil; self.error = error.localizedDescription; onChanged() }
+        } catch {
+            result = nil; self.error = error.localizedDescription
+            if toolbar { showsRequirements = true }
+            onChanged()
+        }
     }
 }

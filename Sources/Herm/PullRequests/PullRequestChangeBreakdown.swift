@@ -61,10 +61,15 @@ struct PullRequestChangeBreakdownView: View {
     let isCurrent: Bool
     let isLoading: Bool
     let onReviewFiles: () -> Void
+    var embedded = false
 
     var body: some View {
+        if embedded { content } else { content.dockCard(padding: 20) }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
-            DockSectionHeader(title: "Changes", style: DockThemePalette(theme: DockThemeRuntime.current)) {
+            DockSectionHeader(title: "Changes", style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true) {
                 Button("Review files", action: onReviewFiles).buttonStyle(.dockLink)
             }
             if isCurrent, let files {
@@ -107,7 +112,7 @@ struct PullRequestChangeBreakdownView: View {
                     .foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
             }
         }.dockFont(.body).foregroundStyle(Color.dockPrimaryText)
-            .frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
