@@ -40,7 +40,9 @@ struct EdgeQuickMessageView: View {
                     {
                         state.capacitySnapshots.removeValue(forKey: oldest)
                     }
-                } catch { /* Submission stays available when session model metadata cannot be read. */  }
+                } catch {
+                    // Submission stays available when session model metadata cannot be read.
+                }
             }
             .confirmationDialog("Have you checked the interrupted submission?", isPresented: $confirmingReview) {
                 Button("I checked; allow deliberate retry") { state.confirmQuickDraftReview() }
@@ -388,7 +390,7 @@ struct EdgeQuickMessageView: View {
         let board = NSPasteboard.general
         if let urls = board.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], !urls.isEmpty {
             state.stageQuickFiles(urls.filter(\.isFileURL))
-            urls.filter { !$0.isFileURL }.forEach { state.addQuickSource($0.absoluteString) }
+            for url in urls where !url.isFileURL { state.addQuickSource(url.absoluteString) }
         } else if let png = board.data(forType: NSPasteboard.PasteboardType(UTType.png.identifier)) {
             state.stageQuickImage(png)
         } else if let tiff = board.data(forType: .tiff) {
