@@ -236,19 +236,17 @@ struct PullRequestDetailView: View {
                         .background { if titleRow != nil { TitlebarDoubleClickArea() } }
                     detailActions(pr)
                 }
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        detailTabs(pr)
-                        Spacer(minLength: 0)
-                    }
-                    HStack {
-                        Spacer(minLength: 0)
-                        ViewThatFits(in: .horizontal) {
-                            detailActions(pr)
-                            detailActions(pr, compact: true)
-                        }
-                    }
+                HStack(spacing: 12) {
+                    detailTabs(pr, compact: true)
+                    Spacer(minLength: 4)
+                        .background { if titleRow != nil { TitlebarDoubleClickArea() } }
+                    detailActions(pr, compact: true)
                 }
+                VStack(alignment: .leading, spacing: 8) {
+                    detailTabs(pr, compact: true)
+                    detailActions(pr, compact: true, wraps: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, isInspector ? 12 : 16)
             .padding(.vertical, 12)
@@ -601,7 +599,7 @@ struct PullRequestDetailView: View {
         if seconds >= 3_600 { return "\(Int(seconds / 3_600))h" }
         return "\(max(1, Int(seconds / 60)))m"
     }
-    private func detailTabs(_ pr: PullRequestRecord) -> some View {
+    private func detailTabs(_ pr: PullRequestRecord, compact: Bool = false) -> some View {
         HStack(spacing: 4) {
             detailTabButton("Summary", selected: detailTab == 0) { detailTab = 0 }
             Button {
@@ -609,8 +607,10 @@ struct PullRequestDetailView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text("Changes")
-                    if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
-                    if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
+                    if !compact {
+                        if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
+                        if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
+                    }
                 }.dockFont(.metadata).monospacedDigit()
                     .padding(.horizontal, 10).frame(height: 28)
                     .background(Capsule().fill(detailTab == 1 ? Color.dockSurface4 : Color.clear))
@@ -623,15 +623,14 @@ struct PullRequestDetailView: View {
             .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func detailActions(_ pr: PullRequestRecord, compact: Bool = false) -> some View {
-        HStack(spacing: 6) {
-            if !compact {
-                DockIconButton(
-                    icon: watches.contains(pr) ? .pushPinSlash : .pushPin,
-                    label: watches.contains(pr) ? "Stop watching pull request" : "Watch pull request", size: 28,
-                    style: DockThemePalette(theme: DockThemeRuntime.current)
-                ) { watches.toggle(pr) }
-            }
+    private func detailActions(_ pr: PullRequestRecord, compact: Bool = false, wraps: Bool = false) -> some View {
+        let layout = wraps ? AnyLayout(DockChipFlow(spacing: 6)) : AnyLayout(HStackLayout(spacing: 6))
+        return layout {
+            DockIconButton(
+                icon: watches.contains(pr) ? .pushPinSlash : .pushPin,
+                label: watches.contains(pr) ? "Stop watching pull request" : "Watch pull request", size: 28,
+                style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) { watches.toggle(pr) }
             if let url = pr.webURL {
                 GitHubLinkButton(destination: url, accessibilityLabel: "Open pull request on GitHub")
             }
@@ -649,7 +648,7 @@ struct PullRequestDetailView: View {
                 Group {
                     if compact {
                         DockIconButton(
-                            icon: .sparkle, label: "Review with Hermes", size: 28,
+                            icon: .sparkle, label: hasCurrentGuide(pr) ? "Read review" : "Review with Hermes", size: 28,
                             style: DockThemePalette(theme: DockThemeRuntime.current)
                         ) { openReviewGuide(pr) }
                     } else {
@@ -676,7 +675,7 @@ struct PullRequestDetailView: View {
                 .id(pr.id)
             }
         }.controlSize(.small)
-            .fixedSize(horizontal: true, vertical: false)
+            .fixedSize(horizontal: !wraps, vertical: false)
     }
 
     private func hasCurrentGuide(_ pr: PullRequestRecord) -> Bool {

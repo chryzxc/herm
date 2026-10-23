@@ -16,7 +16,7 @@ private actor PullRequestDetailRenderTransport: GitHubIssueTransport {
                     "html_url": "https://github.com/owner/repo/pull/93",
                     "created_at": "2026-10-22T00:00:00Z", "updated_at": "2026-10-23T00:00:00Z",
                     "head": ["ref": "perf/release-baselines", "sha": "abc"], "base": ["ref": "main", "sha": "def"],
-                    "changed_files": 2, "additions": 55, "deletions": 7, "comments": 1,
+                    "changed_files": 2, "additions": 26037, "deletions": 7426, "comments": 1,
                     "labels": [], "assignees": [],
                     "body": """
                     ## Summary
@@ -96,7 +96,7 @@ struct PullRequestDetailRenderTests {
             DockThemeRuntime.revision &+= 1
             NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             let appearanceName = "\(theme.rawValue)-\(dark ? "dark" : "light")"
-            for width in [400.0, 1120.0] {
+            for width in [320.0, 400.0, 600.0, 1120.0] {
                 let view = PullRequestDetailView(center: center, onOpenChat: { _ in })
                     .environment(\.chatContextRouter, router)
                     .frame(width: width, height: 850)
