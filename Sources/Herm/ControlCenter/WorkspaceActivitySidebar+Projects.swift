@@ -1,7 +1,7 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
@@ -37,11 +37,19 @@ extension WorkspaceActivitySidebar {
                 let projectSessionsProjectionKey = control.projectSessionsProjectionKey(for: project.id)
                 if control.projectSessions.isEmpty {
                     if let refresh = control.refreshState(for: projectSessionsProjectionKey), refresh.isStale {
-                        emptyState(icon: .warning, title: "Sessions stale", detail: "The last project session snapshot could not be refreshed. Retry to update it.")
-                    } else if let refresh = control.refreshState(for: projectSessionsProjectionKey), refresh.error != nil {
-                        emptyState(icon: .warning, title: "Sessions unavailable", detail: "Hermes could not load this project's sessions. Retry to try again.")
+                        emptyState(
+                            icon: .warning, title: "Sessions stale",
+                            detail: "The last project session snapshot could not be refreshed. Retry to update it.")
+                    } else if let refresh = control.refreshState(for: projectSessionsProjectionKey),
+                        refresh.error != nil
+                    {
+                        emptyState(
+                            icon: .warning, title: "Sessions unavailable",
+                            detail: "Hermes could not load this project's sessions. Retry to try again.")
                     } else {
-                        emptyState(icon: .chats, title: "No sessions in this project", detail: "No grouped sessions were found for this project.")
+                        emptyState(
+                            icon: .chats, title: "No sessions in this project",
+                            detail: "No grouped sessions were found for this project.")
                     }
                 } else {
                     HStack {
@@ -52,7 +60,8 @@ extension WorkspaceActivitySidebar {
                             .foregroundStyle(Color.dockAccent)
                     }
                     ForEach(control.projectSessions) { session in
-                        let lifecycle = SessionLifecyclePresentation.status(for: session, refresh: control.refreshState(for: projectSessionsProjectionKey))
+                        let lifecycle = SessionLifecyclePresentation.status(
+                            for: session, refresh: control.refreshState(for: projectSessionsProjectionKey))
                         Button {
                             selectedProjectSessionID = session.id
                             openProjectSession(session)
@@ -84,7 +93,9 @@ extension WorkspaceActivitySidebar {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)
-                        .accessibilityLabel(SessionLifecyclePresentation.accessibilityLabel(for: session, refresh: control.refreshState(for: projectSessionsProjectionKey)))
+                        .accessibilityLabel(
+                            SessionLifecyclePresentation.accessibilityLabel(
+                                for: session, refresh: control.refreshState(for: projectSessionsProjectionKey)))
                     }
                 }
                 if selectedProjectSessionID != nil {
@@ -96,7 +107,9 @@ extension WorkspaceActivitySidebar {
                     Spacer()
                     projectDirectoryActions
                 }
-                emptyState(icon: .folder, title: "No projects", detail: "Projects will appear here when project contexts are available.")
+                emptyState(
+                    icon: .folder, title: "No projects",
+                    detail: "Projects will appear here when project contexts are available.")
             } else {
                 HStack {
                     sectionLabel("PROJECTS  ·  \(control.projects.count)")
@@ -144,9 +157,11 @@ extension WorkspaceActivitySidebar {
                     Button {
                         projectsDisplayLimit += Self.projectsPageSize
                     } label: {
-                        DockIconLabel("SHOW MORE (\(control.projects.count - projectsDisplayLimit) REMAINING)", icon: .caretDown)
-                            .dockFont(.compactStatus, weight: .semibold)
-                            .tracking(0.4)
+                        DockIconLabel(
+                            "SHOW MORE (\(control.projects.count - projectsDisplayLimit) REMAINING)", icon: .caretDown
+                        )
+                        .dockFont(.compactStatus, weight: .semibold)
+                        .tracking(0.4)
                     }
                     .buttonStyle(.dockCompact)
                     .foregroundStyle(Color.dockAccent)
@@ -290,7 +305,8 @@ extension WorkspaceActivitySidebar {
     func projectMutationMessage(_ mutation: ProjectMutation, project: ProjectSummary) -> String {
         switch mutation {
         case .activate: "Hermes will make \(projectDisplayName(project)) the active project."
-        case .archive: "Hermes will archive \(projectDisplayName(project)) and remove it from active project navigation."
+        case .archive:
+            "Hermes will archive \(projectDisplayName(project)) and remove it from active project navigation."
         case .delete: "Hermes will permanently delete \(projectDisplayName(project)) from Hermes project storage."
         }
     }
@@ -302,17 +318,19 @@ extension WorkspaceActivitySidebar {
 
     var selectedProjectFolderPath: String? {
         guard let project = control.selectedProject,
-              project.name != "__no_project__",
-              project.name.hasPrefix("/"),
-              FileManager.default.fileExists(atPath: project.name) else { return nil }
+            project.name != "__no_project__",
+            project.name.hasPrefix("/"),
+            FileManager.default.fileExists(atPath: project.name)
+        else { return nil }
         return project.name
     }
 
     func openProject(_ project: ProjectSummary) {
         control.openProject(project)
         guard project.name != "__no_project__",
-              project.name.hasPrefix("/"),
-              FileManager.default.fileExists(atPath: project.name) else { return }
+            project.name.hasPrefix("/"),
+            FileManager.default.fileExists(atPath: project.name)
+        else { return }
         store.attachProject(at: project.name)
     }
 
@@ -330,16 +348,27 @@ extension WorkspaceActivitySidebar {
             if workflow.repository.isGitRepository {
                 HStack(spacing: 8) {
                     todayMetric("STAGED", value: workflow.changes?.stagedCount ?? 0, color: .dockAccent)
-                    todayMetric("UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: DockCategoryTone.modified.color)
+                    todayMetric(
+                        "UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: DockCategoryTone.modified.color)
                     todayMetric("UNTRACKED", value: workflow.changes?.untrackedCount ?? 0, color: .dockSecondaryText)
-                    todayMetric("CONFLICTS", value: workflow.changes?.conflictedCount ?? 0, color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .dockDestructive : .dockSuccess)
+                    todayMetric(
+                        "CONFLICTS", value: workflow.changes?.conflictedCount ?? 0,
+                        color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .dockDestructive : .dockSuccess)
                 }
-                Text(workflow.repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S") · \(workflow.repository.branch)")
-                    .dockFont(.metadata, weight: .semibold)
-                    .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
+                Text(
+                    workflow.repository.changedFiles == 0
+                        ? "CLEAN WORKING TREE"
+                        : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S") · \(workflow.repository.branch)"
+                )
+                .dockFont(.metadata, weight: .semibold)
+                .foregroundStyle(
+                    workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
                 HStack(spacing: 10) {
                     Button("OPEN SOURCE CONTROL") { select(.changes) }
-                    Button(commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID) ? "STOP WATCHING" : "WATCH REPOSITORY") {
+                    Button(
+                        commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID)
+                            ? "STOP WATCHING" : "WATCH REPOSITORY"
+                    ) {
                         workflow.toggleWatching(preferences: commandCenterPreferences, control: control)
                     }
                     Button("REFRESH") { Task { await refreshRepository() } }

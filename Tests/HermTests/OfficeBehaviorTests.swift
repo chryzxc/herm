@@ -1,6 +1,7 @@
 import RealityKit
-import simd
 import Testing
+import simd
+
 @testable import Herm
 
 struct OfficeBehaviorTests {
@@ -30,8 +31,10 @@ struct OfficeBehaviorTests {
 
     private func agent(_ statuses: [String], step: String? = nil) -> OfficePreviewAgentPresentation {
         let tasks = statuses.enumerated().map { index, status in
-            OfficePreviewTaskData(KanbanTaskSummary(id: "task-\(index)", title: "Task", status: status,
-                detail: nil, priority: nil, assignee: "bot", currentStepKey: step))
+            OfficePreviewTaskData(
+                KanbanTaskSummary(
+                    id: "task-\(index)", title: "Task", status: status,
+                    detail: nil, priority: nil, assignee: "bot", currentStepKey: step))
         }
         return .init(id: "bot", name: "Bot", tasks: OfficePreviewResolver.ordered(tasks))
     }
@@ -81,7 +84,10 @@ struct OfficeBehaviorTests {
     @MainActor @Test func indoorLeisureSpotsAndSmallPatioHaveReachableCapacity() throws {
         let root = Entity()
         let authored = OfficeDesignSceneBuilder().build(in: root)
-        #expect(Set(authored.leisureSpots.map(\.action)) == [.coffee, .reading, .strolling, .socializing, .charging, .tinkering, .browsing, .arcade])
+        #expect(
+            Set(authored.leisureSpots.map(\.action)) == [
+                .coffee, .reading, .strolling, .socializing, .charging, .tinkering, .browsing, .arcade,
+            ])
         #expect(authored.stations[.lounge]?.count == 2)
         var layout = OfficePreviewLayout()
         layout.authored = authored
@@ -105,7 +111,8 @@ struct OfficeBehaviorTests {
         var pairs = 0
         var index = 0
         while index + 1 < spots.count {
-            let a = spots[index], b = spots[index + 1]
+            let a = spots[index]
+            let b = spots[index + 1]
             if a.action == .socializing, b.action == .socializing {
                 #expect(simd_distance(a.station.position, b.station.position) < 2)
                 // Each partner faces the other.
@@ -113,7 +120,9 @@ struct OfficeBehaviorTests {
                 #expect(abs(sin(a.station.yaw) * toward.x + cos(a.station.yaw) * toward.z) > 0.9)
                 pairs += 1
                 index += 2
-            } else { index += 1 }
+            } else {
+                index += 1
+            }
         }
         #expect(pairs >= 4)
     }
@@ -131,8 +140,12 @@ struct OfficeBehaviorTests {
             #expect(smooth.count <= route.count)
             // Every shortcut the smoother takes between grid nodes is walkable.
             for (a, b) in zip(smooth, smooth.dropFirst()) {
-                guard let from = route.firstIndex(of: a), let to = route.firstIndex(of: b), to > from + 1 else { continue }
-                #expect(layout.isClear(from: layout.position(a), to: layout.position(b)), "Blocked shortcut to spot \(index)")
+                guard let from = route.firstIndex(of: a), let to = route.firstIndex(of: b), to > from + 1 else {
+                    continue
+                }
+                #expect(
+                    layout.isClear(from: layout.position(a), to: layout.position(b)),
+                    "Blocked shortcut to spot \(index)")
             }
         }
     }

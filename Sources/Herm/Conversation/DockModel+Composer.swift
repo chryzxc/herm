@@ -13,16 +13,20 @@ extension DockModel {
         let attachedImages = queued?.images ?? pendingImages
         let attachedPDF = queued == nil ? pendingPDFURL : queued?.pdfURL
         let contexts = queued == nil ? attachedContexts : queued?.contexts ?? []
-        guard (!prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil || !contexts.isEmpty),
-              !isSending,
-              !isUpdatingSessionModel,
-              !isRestoringSession,
-              sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
+        guard !prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil || !contexts.isEmpty,
+            !isSending,
+            !isUpdatingSessionModel,
+            !isRestoringSession,
+            sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession)
+        else { return }
 
         if sessionID == nil, let path = newSessionProjectPath,
-           let preferred = ProjectPreferences.shared.modelID(path), sessionModelOptionID == nil,
-           !runtimeModelOptions.contains(where: { $0.id == preferred }) {
-            reportAttachmentError("The preferred project model is unavailable. Select an available model before sending. Your draft is kept.")
+            let preferred = ProjectPreferences.shared.modelID(path), sessionModelOptionID == nil,
+            !runtimeModelOptions.contains(where: { $0.id == preferred })
+        {
+            reportAttachmentError(
+                "The preferred project model is unavailable. Select an available model before sending. Your draft is kept."
+            )
             return
         }
 
@@ -32,7 +36,11 @@ extension DockModel {
         }
 
         if attachedImages.isEmpty, attachedPDF == nil, contexts.isEmpty, let command = ComposerSlashCommand(prompt) {
-            if queued == nil { draft = ""; replyQuote = nil; clearAttachmentErrors() }
+            if queued == nil {
+                draft = ""
+                replyQuote = nil
+                clearAttachmentErrors()
+            }
             runSlashCommand(command, echo: prompt)
             return
         }
@@ -48,7 +56,8 @@ extension DockModel {
         } else {
             text = "[image]"
         }
-        let submittedText = GenerativeUIIntegration.preparePrompt(ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles))
+        let submittedText = GenerativeUIIntegration.preparePrompt(
+            ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles))
         let sessionBeforeSend = sessionID
         let botActivityID = sessionBeforeSend.flatMap { eventSessionID in
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
@@ -63,7 +72,9 @@ extension DockModel {
             clearAttachmentErrors()
         }
         let visibleText = isAttachmentOnly ? "" : text
-        let transcriptText = attachedPDF.map { "[PDF: \($0.lastPathComponent)]" + (visibleText.isEmpty ? "" : "\n\(visibleText)") } ?? visibleText
+        let transcriptText =
+            attachedPDF.map { "[PDF: \($0.lastPathComponent)]" + (visibleText.isEmpty ? "" : "\n\(visibleText)") }
+            ?? visibleText
         messages.append(ChatMessage(role: .user, text: transcriptText, images: attachedImages.map(\.image)))
         submittedMessageIDForPin = messages.last?.id
         status = .working
@@ -78,12 +89,15 @@ extension DockModel {
         Task {
             var submissionReported = false
             defer {
-                if !submissionReported { onSubmission?("The selected conversation changed. Check Activity before retrying.") }
+                if !submissionReported {
+                    onSubmission?("The selected conversation changed. Check Activity before retrying.")
+                }
             }
             do {
                 try await sessionRPCClient.connect()
                 guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == sessionBeforeSend else { return }
+                    self.sessionID == sessionBeforeSend
+                else { return }
                 if sessionID == nil {
                     _ = try await createAuthorizedSession(source: "herm")
                 }
@@ -92,41 +106,60 @@ extension DockModel {
                 // late resume must not redirect a prompt into another chat.
                 let promptSessionID = sessionID
                 guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == promptSessionID else { return }
+                    self.sessionID == promptSessionID
+                else { return }
                 touchSession(sessionID: promptSessionID, at: Date(), preview: text)
 
                 var fileReferences: [String] = []
                 if contexts.contains(where: { $0.attachmentURL != nil }) {
-                    let capabilities = try await sessionRPCClient.request(HermesFeatureIDs.ID.gatewayCapabilities.rawValue, params: [:])
+                    let capabilities = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.gatewayCapabilities.rawValue, params: [:])
                     guard capabilities["per_session_exclusive_submit"] as? Bool == true else {
-                        throw QuickDraftError.message("This Hermes runtime cannot confirm protected file attachments. Your files are retained; text files can also be inserted using Paste as text.")
+                        throw QuickDraftError.message(
+                            "This Hermes runtime cannot confirm protected file attachments. Your files are retained; text files can also be inserted using Paste as text."
+                        )
                     }
                 }
                 for context in contexts {
                     guard let url = context.attachmentURL else { continue }
                     let encoded = try await AttachmentPayload.encoded(at: url, maximumBytes: 8 * 1024 * 1024)
-                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
-                    let attached = try await sessionRPCClient.request(HermesFeatureIDs.ID.fileAttach.rawValue,
-                        params: scopedSessionParams(["session_id": promptSessionID,
-                            "data_url": "data:application/octet-stream;base64," + encoded, "name": url.lastPathComponent]))
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
+                        return
+                    }
+                    let attached = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.fileAttach.rawValue,
+                        params: scopedSessionParams([
+                            "session_id": promptSessionID,
+                            "data_url": "data:application/octet-stream;base64," + encoded,
+                            "name": url.lastPathComponent,
+                        ]))
                     guard attached["attached"] as? Bool == true,
-                          let reference = attached["ref_text"] as? String, reference.hasPrefix("@file:"), !reference.contains("\n") else {
-                        throw QuickDraftError.message("Hermes could not attach the file. The draft context is retained for retry.")
+                        let reference = attached["ref_text"] as? String, reference.hasPrefix("@file:"),
+                        !reference.contains("\n")
+                    else {
+                        throw QuickDraftError.message(
+                            "Hermes could not attach the file. The draft context is retained for retry.")
                     }
                     fileReferences.append(reference)
                 }
-                let outgoingText = fileReferences.isEmpty ? submittedText : GenerativeUIIntegration.preparePrompt(
-                    ComposerMentionPresentation.annotatedPrompt(text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: composerMentionProfiles))
+                let outgoingText =
+                    fileReferences.isEmpty
+                    ? submittedText
+                    : GenerativeUIIntegration.preparePrompt(
+                        ComposerMentionPresentation.annotatedPrompt(
+                            text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: composerMentionProfiles)
+                    )
                 for attachedImage in attachedImages {
                     let base64 = try await AttachmentPayload.encoded(at: attachedImage.fileURL)
                     guard self.sessionResumeGeneration == sendGeneration,
-                          self.sessionID == promptSessionID else { return }
+                        self.sessionID == promptSessionID
+                    else { return }
                     let attachResult = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.imageAttachBytes.rawValue,
                         params: scopedSessionParams([
                             "session_id": promptSessionID,
                             "content_base64": base64,
-                            "filename": attachedImage.fileName
+                            "filename": attachedImage.fileName,
                         ])
                     )
                     let attached = (attachResult["attached"] as? Bool) ?? false
@@ -142,13 +175,14 @@ extension DockModel {
                 if let attachedPDF {
                     let base64 = try await AttachmentPayload.encoded(at: attachedPDF, maximumBytes: 25 * 1024 * 1024)
                     guard self.sessionResumeGeneration == sendGeneration,
-                          self.sessionID == promptSessionID else { return }
+                        self.sessionID == promptSessionID
+                    else { return }
                     let result = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.pdfAttach.rawValue,
                         params: scopedSessionParams([
                             "session_id": promptSessionID,
                             "content_base64": base64,
-                            "filename": attachedPDF.lastPathComponent
+                            "filename": attachedPDF.lastPathComponent,
                         ])
                     )
                     guard result["attached"] as? Bool == true else {
@@ -159,37 +193,60 @@ extension DockModel {
                 }
 
                 guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == promptSessionID else { return }
+                    self.sessionID == promptSessionID
+                else { return }
                 let baselineAttempt = UUID()
-                let baselineOrigin = QuickDestination(profileID: sessionProfileID, sessionID: navigationSessionID ?? promptSessionID, title: currentSessionTitle ?? "Session")
+                let baselineOrigin = QuickDestination(
+                    profileID: sessionProfileID, sessionID: navigationSessionID ?? promptSessionID,
+                    title: currentSessionTitle ?? "Session")
                 var baselineDirectory = createdSessionProjectPaths[promptSessionID]
                 if baselineDirectory == nil {
-                    let origin = HermesSession(id: navigationSessionID ?? promptSessionID, profileID: sessionProfileID,
-                        title: currentSessionTitle ?? "Session", preview: "", startedAt: nil, messageCount: 0, source: "herm")
-                    baselineDirectory = try? await HermesWorkflowRPC(client: controlRPCClient, profileID: sessionProfileID).sessionDirectory(origin)
-                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
+                    let origin = HermesSession(
+                        id: navigationSessionID ?? promptSessionID, profileID: sessionProfileID,
+                        title: currentSessionTitle ?? "Session", preview: "", startedAt: nil, messageCount: 0,
+                        source: "herm")
+                    baselineDirectory = try? await HermesWorkflowRPC(
+                        client: controlRPCClient, profileID: sessionProfileID
+                    ).sessionDirectory(origin)
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
+                        return
+                    }
                 }
                 if let directory = baselineDirectory {
-                    await DeveloperWorkflowModel.shared.captureTurnBaseline(origin: baselineOrigin, path: directory, attemptID: baselineAttempt)
-                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
+                    await DeveloperWorkflowModel.shared.captureTurnBaseline(
+                        origin: baselineOrigin, path: directory, attemptID: baselineAttempt)
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
+                        return
+                    }
                 }
-                let acknowledgment = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": outgoingText, "queued": queued != nil]))
-                if acknowledgment["status"] as? String == "streaming" { DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(origin: baselineOrigin, attemptID: baselineAttempt) }
+                let acknowledgment = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.promptSubmit.rawValue,
+                    params: scopedSessionParams([
+                        "session_id": promptSessionID, "text": outgoingText, "queued": queued != nil,
+                    ]))
+                if acknowledgment["status"] as? String == "streaming" {
+                    DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(
+                        origin: baselineOrigin, attemptID: baselineAttempt)
+                }
                 submissionReported = true
                 onSubmission?(nil)
                 guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == promptSessionID else { return }
+                    self.sessionID == promptSessionID
+                else { return }
                 if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
                 DebugLog.write("model: prompt submitted")
             } catch {
                 // A request from a previous session must not publish its error
                 // into whichever conversation the user opened meanwhile.
                 guard self.sessionResumeGeneration == sendGeneration,
-                      sessionBeforeSend == nil || self.sessionID == sessionBeforeSend else { return }
+                    sessionBeforeSend == nil || self.sessionID == sessionBeforeSend
+                else { return }
                 DebugLog.write("model: send failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 cleanupImageAttachments(attachedImages)
-                for context in contexts where context.attachmentURL != nil && !attachedContexts.contains(where: { $0.id == context.id }) {
-                    var retained = context; retained.inlineToken = nil
+                for context in contexts
+                where context.attachmentURL != nil && !attachedContexts.contains(where: { $0.id == context.id }) {
+                    var retained = context
+                    retained.inlineToken = nil
                     attachedContexts.append(retained)
                 }
                 let transportFailure: Bool
@@ -204,7 +261,8 @@ extension DockModel {
                     let nsError = error as NSError
                     transportFailure = nsError.domain == NSURLErrorDomain || nsError.domain == NSPOSIXErrorDomain
                 }
-                let message = transportFailure
+                let message =
+                    transportFailure
                     ? "I couldn’t connect to Hermes: \(Self.safeUserDiagnostic(error.localizedDescription))"
                     : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
                 messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
@@ -229,8 +287,9 @@ extension DockModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let sessionID, !sessionID.isEmpty else { return }
         guard !hasQueuedOrRedirectingPrompt,
-              pendingImages.isEmpty, pendingPDFURL == nil, attachedContexts.isEmpty, replyQuote == nil,
-              !text.isEmpty, status == .working, ComposerSlashCommand(text) == nil else {
+            pendingImages.isEmpty, pendingPDFURL == nil, attachedContexts.isEmpty, replyQuote == nil,
+            !text.isEmpty, status == .working, ComposerSlashCommand(text) == nil
+        else {
             queueDraft()
             return
         }
@@ -273,7 +332,8 @@ extension DockModel {
             // Redirect is refused between model requests (or on an agent without it)
             // while the turn is still live; steer lands on the next tool result.
             if redirectStatus != "redirected", redirectStatus != "queued",
-               self.sessionResumeGeneration == steeringGeneration, self.sessionID == sessionID, self.status == .working {
+                self.sessionResumeGeneration == steeringGeneration, self.sessionID == sessionID, self.status == .working
+            {
                 let steered = try? await sessionRPCClient.request(
                     HermesFeatureIDs.ID.sessionSteer.rawValue,
                     params: ["session_id": sessionID, "text": submittedText]
@@ -288,7 +348,8 @@ extension DockModel {
                 self.redirectingPrompts.removeValue(forKey: queueSessionID)
             }
             guard self.sessionResumeGeneration == steeringGeneration,
-                  self.sessionID == sessionID else { return }
+                self.sessionID == sessionID
+            else { return }
             switch redirectStatus {
             case "redirected":
                 DebugLog.write("model: turn redirected")
@@ -306,10 +367,12 @@ extension DockModel {
                 // Refused (turn ended first) or failed: keep the words as the next turn.
                 messages.removeAll {
                     $0.id == correction.id
-                        || ($0.id == resumedRowID && $0.id != streamingMessageID && $0.text.isEmpty && $0.activity.isEmpty)
+                        || ($0.id == resumedRowID && $0.id != streamingMessageID && $0.text.isEmpty
+                            && $0.activity.isEmpty)
                 }
                 let index = queuedPrompts.firstIndex { $0.sessionID == queueSessionID } ?? queuedPrompts.endIndex
-                queuedPrompts.insert(QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil), at: index)
+                queuedPrompts.insert(
+                    QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil), at: index)
                 drainQueuedPromptAfterRedirect(redirect)
             }
         }
@@ -338,7 +401,8 @@ extension DockModel {
     /// Delivers a queued prompt into the live turn. A refused redirect re-queues it.
     func steerQueuedPrompt(_ id: UUID) {
         guard let index = queuedPrompts.firstIndex(where: { $0.id == id }),
-              canSteerQueuedPrompt(queuedPrompts[index]), let sessionID else { return }
+            canSteerQueuedPrompt(queuedPrompts[index]), let sessionID
+        else { return }
         let text = queuedPrompts.remove(at: index).text.trimmingCharacters(in: .whitespacesAndNewlines)
         redirectTurn(with: text, sessionID: sessionID)
     }
@@ -352,7 +416,8 @@ extension DockModel {
 
     func sendQueuedPromptNow(_ id: UUID) {
         guard let index = queuedPrompts.firstIndex(where: { $0.id == id }),
-              canSendQueuedPromptNow(queuedPrompts[index]) else { return }
+            canSendQueuedPromptNow(queuedPrompts[index])
+        else { return }
         queuedPrompts.insert(queuedPrompts.remove(at: index), at: 0)
         sendQueuedPromptAfterInterrupt = stop() != nil
     }
@@ -361,9 +426,13 @@ extension DockModel {
     func queueDraft() {
         guard let sessionID = queuedPromptSessionID else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil || !attachedContexts.isEmpty else { return }
-        queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL,
-                                         contexts: attachedContexts, replyQuote: replyQuote))
+        guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil || !attachedContexts.isEmpty else {
+            return
+        }
+        queuedPrompts.append(
+            QueuedPrompt(
+                sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL,
+                contexts: attachedContexts, replyQuote: replyQuote))
         draft = ""
         pendingImages = []
         pendingPDFURL = nil
@@ -381,16 +450,18 @@ extension DockModel {
     /// Sends the oldest queued prompt of the open session, one per settled turn.
     func drainQueuedPromptIfIdle() {
         guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
-              !nativeVoiceCapture.isAwaitingPlaybackDrain,
-              sessionID != nil, let sessionID = queuedPromptSessionID,
-              redirectingPrompts[sessionID] == nil,
-              let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID }) else { return }
+            !nativeVoiceCapture.isAwaitingPlaybackDrain,
+            sessionID != nil, let sessionID = queuedPromptSessionID,
+            redirectingPrompts[sessionID] == nil,
+            let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID })
+        else { return }
         send(queuedPrompts.remove(at: index))
     }
 
     /// Appends outside text (Services menu) to the composer without sending it.
     func stageDraft(_ text: String) {
-        draft = [draft.trimmingCharacters(in: .whitespacesAndNewlines), text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        draft = [draft.trimmingCharacters(in: .whitespacesAndNewlines), text].filter { !$0.isEmpty }.joined(
+            separator: "\n\n")
     }
 
     func moveIntoComposer(_ prompt: QueuedPrompt) {
@@ -412,7 +483,8 @@ extension DockModel {
 
     func moveQueuedPrompt(_ id: UUID, offset: Int) {
         guard let index = queuedPrompts.firstIndex(where: { $0.id == id }),
-              let destination = queuedPromptSessionID, queuedPrompts[index].sessionID == destination else { return }
+            let destination = queuedPromptSessionID, queuedPrompts[index].sessionID == destination
+        else { return }
         let peers = queuedPrompts.indices.filter { queuedPrompts[$0].sessionID == destination }
         guard let position = peers.firstIndex(of: index), peers.indices.contains(position + offset) else { return }
         queuedPrompts.swapAt(index, peers[position + offset])
@@ -420,8 +492,9 @@ extension DockModel {
 
     func reorderQueuedPrompt(_ source: UUID, before target: UUID) {
         guard source != target, let from = queuedPrompts.firstIndex(where: { $0.id == source }),
-              let to = queuedPrompts.firstIndex(where: { $0.id == target }),
-              queuedPrompts[from].sessionID == queuedPrompts[to].sessionID else { return }
+            let to = queuedPrompts.firstIndex(where: { $0.id == target }),
+            queuedPrompts[from].sessionID == queuedPrompts[to].sessionID
+        else { return }
         let item = queuedPrompts.remove(at: from)
         queuedPrompts.insert(item, at: from < to ? to - 1 : to)
     }
@@ -432,7 +505,9 @@ extension DockModel {
             respondToClarification(draft)
         } else if isSending, sessionID != nil {
             steerDraft()
-        } else if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, pendingImages.isEmpty, pendingPDFURL == nil, attachedContexts.isEmpty {
+        } else if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, pendingImages.isEmpty,
+            pendingPDFURL == nil, attachedContexts.isEmpty
+        {
             drainQueuedPromptIfIdle()
         } else {
             send()

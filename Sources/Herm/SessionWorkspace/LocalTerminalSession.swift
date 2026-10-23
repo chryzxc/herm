@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 @MainActor
 final class LocalTerminalSession: ObservableObject, Identifiable {
@@ -123,7 +123,8 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         environment["TERM"] = "xterm-256color"
         let directoryPath = strdup(url.path)
         let arguments: [UnsafeMutablePointer<CChar>?] = [strdup("/bin/zsh"), strdup("-il"), nil]
-        let environmentPointers: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        let environmentPointers: [UnsafeMutablePointer<CChar>?] =
+            environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
             free(directoryPath)
             (arguments + environmentPointers).forEach { free($0) }
@@ -173,13 +174,18 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
 
     func resize(columns: Int, rows: Int) {
         guard masterFD >= 0 else { return }
-        var size = winsize(ws_row: UInt16(clamping: max(1, rows)), ws_col: UInt16(clamping: max(1, columns)), ws_xpixel: 0, ws_ypixel: 0)
+        var size = winsize(
+            ws_row: UInt16(clamping: max(1, rows)), ws_col: UInt16(clamping: max(1, columns)), ws_xpixel: 0,
+            ws_ypixel: 0)
         _ = ioctl(masterFD, TIOCSWINSZ, &size)
     }
 
     func sendInput(_ bytes: ArraySlice<UInt8>) {
         guard masterFD >= 0 else { return }
-        if bytes.elementsEqual([3]) { interrupt(); return }
+        if bytes.elementsEqual([3]) {
+            interrupt()
+            return
+        }
         guard verificationRun == nil else { return }
         if bytes.contains(13) || bytes.contains(10) { state = .running }
         try? handle?.write(contentsOf: Data(bytes))
@@ -197,7 +203,8 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     func runProjectCommand(_ command: String) -> Bool {
         let id = UUID()
         guard projectCommand?.isRunning != true, !hasForegroundJob,
-              let payload = LocalProjectCommand.payload(command: command, id: id), masterFD >= 0 else { return false }
+            let payload = LocalProjectCommand.payload(command: command, id: id), masterFD >= 0
+        else { return false }
         projectCommand = LocalProjectCommand(id: id, command: command)
         projectCommandTail = ""
         send(payload)
@@ -207,8 +214,12 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         guard let command = projectCommand, command.isRunning else { return }
         projectCommandTail += output
         if let code = LocalProjectCommand.exitCode(id: command.id, output: projectCommandTail) {
-            projectCommand?.exitCode = code; projectCommandTail = ""; state = .ready
-        } else { projectCommandTail = String(projectCommandTail.suffix(512)) }
+            projectCommand?.exitCode = code
+            projectCommandTail = ""
+            state = .ready
+        } else {
+            projectCommandTail = String(projectCommandTail.suffix(512))
+        }
     }
 
     private func send(_ text: String) {
@@ -236,7 +247,9 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         guard Self.acceptedVerificationRecipe(recipe) != nil, masterFD >= 0, state == .ready else { return }
         let id = UUID()
         let marker = "__HERMES_VERIFY_\(id.uuidString.replacingOccurrences(of: "-", with: ""))__"
-        let run = VerificationRun(id: id, recipeID: recipe.id, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint, command: recipe.command, startedAt: .now, finishedAt: nil, exitCode: nil, outputSummary: nil)
+        let run = VerificationRun(
+            id: id, recipeID: recipe.id, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint,
+            command: recipe.command, startedAt: .now, finishedAt: nil, exitCode: nil, outputSummary: nil)
         verificationMarker = marker
         verificationRun = run
         lastVerificationRun = run
@@ -276,7 +289,11 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         outputBuffer.append(before)
         let afterMarker = verificationTail[markerRange.upperBound...]
         guard let exitCode = Self.verificationExitCode(marker: marker, in: "\(marker):\(afterMarker)") else { return }
-        let completed = VerificationRun(id: pending.id, recipeID: pending.recipeID, repositoryID: pending.repositoryID, repositoryFingerprint: pending.repositoryFingerprint, command: pending.command, startedAt: pending.startedAt, finishedAt: .now, exitCode: exitCode, outputSummary: HermesDiagnosticsService.safeSummary(before))
+        let completed = VerificationRun(
+            id: pending.id, recipeID: pending.recipeID, repositoryID: pending.repositoryID,
+            repositoryFingerprint: pending.repositoryFingerprint, command: pending.command,
+            startedAt: pending.startedAt, finishedAt: .now, exitCode: exitCode,
+            outputSummary: HermesDiagnosticsService.safeSummary(before))
         verificationRun = nil
         verificationMarker = nil
         verificationTail = ""
@@ -286,7 +303,10 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
 
     private func cancelVerification() {
         guard let pending = verificationRun else { return }
-        lastVerificationRun = VerificationRun(id: pending.id, recipeID: pending.recipeID, repositoryID: pending.repositoryID, repositoryFingerprint: pending.repositoryFingerprint, command: pending.command, startedAt: pending.startedAt, finishedAt: .now, exitCode: 130, outputSummary: "Interrupted")
+        lastVerificationRun = VerificationRun(
+            id: pending.id, recipeID: pending.recipeID, repositoryID: pending.repositoryID,
+            repositoryFingerprint: pending.repositoryFingerprint, command: pending.command,
+            startedAt: pending.startedAt, finishedAt: .now, exitCode: 130, outputSummary: "Interrupted")
         verificationRun = nil
         verificationMarker = nil
         verificationTail = ""
@@ -297,7 +317,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         let patterns = [
             "\u{001B}\\][^\u{0007}]*(?:\u{0007}|\u{001B}\\\\)",
             "\u{001B}\\[[0-?]*[ -/]*[@-~]",
-            "\u{001B}[()][0-2]"
+            "\u{001B}[()][0-2]",
         ]
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern) {

@@ -21,7 +21,9 @@ struct AttentionRowPresentation: Identifiable, Equatable {
 enum AttentionPresentation {
     static func rows(_ items: [AttentionItem]) -> [AttentionRowPresentation] {
         items.map { item in
-            AttentionRowPresentation(item: item, group: group(for: item), sourceLabel: sourceLabel(for: item), isActionable: item.state == .open && !item.actions.isEmpty)
+            AttentionRowPresentation(
+                item: item, group: group(for: item), sourceLabel: sourceLabel(for: item),
+                isActionable: item.state == .open && !item.actions.isEmpty)
         }.sorted { lhs, rhs in
             let l = rank(lhs.item) * 1_000_000 - Int(lhs.item.createdAt.timeIntervalSince1970)
             let r = rank(rhs.item) * 1_000_000 - Int(rhs.item.createdAt.timeIntervalSince1970)
@@ -48,7 +50,8 @@ enum AttentionPresentation {
         guard item.state == .open else { return .history }
         switch item.kind {
         case .approval, .clarification: return .requiresDecision
-        case .failure: return item.detail.localizedCaseInsensitiveContains("blocked") ? .blockedOrFailed : .blockedOrFailed
+        case .failure:
+            return item.detail.localizedCaseInsensitiveContains("blocked") ? .blockedOrFailed : .blockedOrFailed
         case .reminder: return .waiting
         case .completed: return .history
         }
@@ -86,27 +89,116 @@ struct VerificationEvidencePresentation: Equatable {
     let rulesScopeDetail: String?
     let staleReason: String?
 
-    static func make(verification: VerificationSummary?, currentFingerprint: String?, evidenceFingerprint: String?, currentRepositoryIdentity: String? = nil, currentCommitFingerprint: String? = nil, currentTargetFingerprint: String? = nil, currentDiffFingerprint: String? = nil, openFailureCount: Int, repositoryDirty: Bool) -> Self {
-        guard let verification else { return Self(state: .unavailable, title: "Evidence unavailable", nextAction: "Run an observed verification through Hermes.", scope: nil, command: nil, fingerprint: currentFingerprint, adapter: nil, capturedAt: nil, repositoryIdentity: nil, commitFingerprint: nil, targetFingerprint: nil, diffFingerprint: nil, rulesScopeDetail: nil, staleReason: nil) }
+    static func make(
+        verification: VerificationSummary?, currentFingerprint: String?, evidenceFingerprint: String?,
+        currentRepositoryIdentity: String? = nil, currentCommitFingerprint: String? = nil,
+        currentTargetFingerprint: String? = nil, currentDiffFingerprint: String? = nil, openFailureCount: Int,
+        repositoryDirty: Bool
+    ) -> Self {
+        guard let verification else {
+            return Self(
+                state: .unavailable, title: "Evidence unavailable",
+                nextAction: "Run an observed verification through Hermes.", scope: nil, command: nil,
+                fingerprint: currentFingerprint, adapter: nil, capturedAt: nil, repositoryIdentity: nil,
+                commitFingerprint: nil, targetFingerprint: nil, diffFingerprint: nil, rulesScopeDetail: nil,
+                staleReason: nil)
+        }
         let evidence = verification.evidence
         let metadata = Self.metadata(evidence: evidence, fingerprint: evidenceFingerprint)
-        let staleBySnapshot = (evidence?.repositoryIdentity != nil && currentRepositoryIdentity != nil && evidence?.repositoryIdentity != currentRepositoryIdentity)
-            || (evidence?.commitFingerprint != nil && currentCommitFingerprint != nil && evidence?.commitFingerprint != currentCommitFingerprint)
-            || (evidence?.targetFingerprint != nil && currentTargetFingerprint != nil && evidence?.targetFingerprint != currentTargetFingerprint)
-            || (evidence?.diffFingerprint != nil && currentDiffFingerprint != nil && evidence?.diffFingerprint != currentDiffFingerprint)
-        if openFailureCount > 0 || verification.state == .failed { return Self(state: .blocked, title: "Verification blocked", nextAction: "Resolve the reported failure, then run verification again.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: metadata.adapter, capturedAt: metadata.capturedAt, repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint, targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint, rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason) }
-        if metadata.staleReason != nil || evidence?.hasInvalidStaleReason == true || staleBySnapshot || (currentFingerprint != nil && evidenceFingerprint != nil && currentFingerprint != evidenceFingerprint) { return Self(state: .stale, title: "Evidence is stale", nextAction: metadata.staleReason ?? "Refresh verification against the current repository state.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: metadata.adapter, capturedAt: metadata.capturedAt, repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint, targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint, rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason) }
-        if verification.state == .passed, evidence?.exitCode != 0 { return Self(state: .unavailable, title: "Evidence unavailable", nextAction: "Obtain a fresh observed verification result.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: metadata.adapter, capturedAt: metadata.capturedAt, repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint, targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint, rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason) }
+        let staleBySnapshot =
+            (evidence?.repositoryIdentity != nil && currentRepositoryIdentity != nil
+                && evidence?.repositoryIdentity != currentRepositoryIdentity)
+            || (evidence?.commitFingerprint != nil && currentCommitFingerprint != nil
+                && evidence?.commitFingerprint != currentCommitFingerprint)
+            || (evidence?.targetFingerprint != nil && currentTargetFingerprint != nil
+                && evidence?.targetFingerprint != currentTargetFingerprint)
+            || (evidence?.diffFingerprint != nil && currentDiffFingerprint != nil
+                && evidence?.diffFingerprint != currentDiffFingerprint)
+        if openFailureCount > 0 || verification.state == .failed {
+            return Self(
+                state: .blocked, title: "Verification blocked",
+                nextAction: "Resolve the reported failure, then run verification again.", scope: evidence?.scope,
+                command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint,
+                adapter: metadata.adapter, capturedAt: metadata.capturedAt,
+                repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint,
+                targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint,
+                rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason)
+        }
+        if metadata.staleReason != nil || evidence?.hasInvalidStaleReason == true || staleBySnapshot
+            || (currentFingerprint != nil && evidenceFingerprint != nil && currentFingerprint != evidenceFingerprint)
+        {
+            return Self(
+                state: .stale, title: "Evidence is stale",
+                nextAction: metadata.staleReason ?? "Refresh verification against the current repository state.",
+                scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command,
+                fingerprint: evidenceFingerprint, adapter: metadata.adapter, capturedAt: metadata.capturedAt,
+                repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint,
+                targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint,
+                rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason)
+        }
+        if verification.state == .passed, evidence?.exitCode != 0 {
+            return Self(
+                state: .unavailable, title: "Evidence unavailable",
+                nextAction: "Obtain a fresh observed verification result.", scope: evidence?.scope,
+                command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint,
+                adapter: metadata.adapter, capturedAt: metadata.capturedAt,
+                repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint,
+                targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint,
+                rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason)
+        }
         let scope = evidence?.scope?.lowercased() ?? ""
-        let common = (metadata.adapter, metadata.capturedAt, metadata.repositoryIdentity, metadata.commitFingerprint, metadata.targetFingerprint, metadata.diffFingerprint, metadata.rulesScopeDetail, metadata.staleReason)
-        if scope.contains("target") || scope.contains("file") { return Self(state: .targetedOnly, title: "Targeted evidence only", nextAction: "Run the repository-wide checks before claiming readiness.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7) }
-        if verification.state == .passed && repositoryDirty { return Self(state: .partial, title: "Passed, but repository changed", nextAction: "Re-run verification after the latest changes.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7) }
-        guard verification.state == .passed else { return Self(state: .unavailable, title: "Evidence unavailable", nextAction: "Obtain a fresh observed verification result.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7) }
-        return Self(state: .current, title: "Evidence current", nextAction: "Review the exact command and scope before delivery.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7)
+        let common = (
+            metadata.adapter, metadata.capturedAt, metadata.repositoryIdentity, metadata.commitFingerprint,
+            metadata.targetFingerprint, metadata.diffFingerprint, metadata.rulesScopeDetail, metadata.staleReason
+        )
+        if scope.contains("target") || scope.contains("file") {
+            return Self(
+                state: .targetedOnly, title: "Targeted evidence only",
+                nextAction: "Run the repository-wide checks before claiming readiness.", scope: evidence?.scope,
+                command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint,
+                adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3,
+                targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6,
+                staleReason: common.7)
+        }
+        if verification.state == .passed && repositoryDirty {
+            return Self(
+                state: .partial, title: "Passed, but repository changed",
+                nextAction: "Re-run verification after the latest changes.", scope: evidence?.scope,
+                command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint,
+                adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3,
+                targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6,
+                staleReason: common.7)
+        }
+        guard verification.state == .passed else {
+            return Self(
+                state: .unavailable, title: "Evidence unavailable",
+                nextAction: "Obtain a fresh observed verification result.", scope: evidence?.scope,
+                command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint,
+                adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3,
+                targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6,
+                staleReason: common.7)
+        }
+        return Self(
+            state: .current, title: "Evidence current",
+            nextAction: "Review the exact command and scope before delivery.", scope: evidence?.scope,
+            command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint,
+            adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3,
+            targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7)
     }
 
-    private static func metadata(evidence: VerificationEvidenceSummary?, fingerprint: String?) -> (adapter: String?, capturedAt: Date?, repositoryIdentity: String?, commitFingerprint: String?, targetFingerprint: String?, diffFingerprint: String?, rulesScopeDetail: String?, staleReason: String?) {
-        (VerificationEvidenceText.bounded(evidence?.adapter), evidence?.capturedAt, VerificationEvidenceText.bounded(evidence?.repositoryIdentity), VerificationEvidenceText.bounded(evidence?.commitFingerprint), VerificationEvidenceText.bounded(evidence?.targetFingerprint), VerificationEvidenceText.bounded(evidence?.diffFingerprint), VerificationEvidenceText.bounded(evidence?.rulesScopeDetail), VerificationEvidenceText.bounded(evidence?.staleReason))
+    private static func metadata(evidence: VerificationEvidenceSummary?, fingerprint: String?) -> (
+        adapter: String?, capturedAt: Date?, repositoryIdentity: String?, commitFingerprint: String?,
+        targetFingerprint: String?, diffFingerprint: String?, rulesScopeDetail: String?, staleReason: String?
+    ) {
+        (
+            VerificationEvidenceText.bounded(evidence?.adapter), evidence?.capturedAt,
+            VerificationEvidenceText.bounded(evidence?.repositoryIdentity),
+            VerificationEvidenceText.bounded(evidence?.commitFingerprint),
+            VerificationEvidenceText.bounded(evidence?.targetFingerprint),
+            VerificationEvidenceText.bounded(evidence?.diffFingerprint),
+            VerificationEvidenceText.bounded(evidence?.rulesScopeDetail),
+            VerificationEvidenceText.bounded(evidence?.staleReason)
+        )
     }
 }
 
@@ -120,15 +212,36 @@ struct AutomationHealthPresentation: Identifiable, Equatable {
     let detail: String
     let nextRun: String?
 
-    static func make(job: CronSummary, runs: [CronRunSummary], capabilityAvailable: Bool, mcpErrorObserved: Bool) -> Self {
-        guard capabilityAvailable else { return Self(id: job.id, name: job.name, state: .unavailable, detail: "Scheduling capability unavailable", nextRun: job.nextRun) }
-        if mcpErrorObserved { return Self(id: job.id, name: job.name, state: .degraded, detail: "MCP health degraded", nextRun: job.nextRun) }
+    static func make(job: CronSummary, runs: [CronRunSummary], capabilityAvailable: Bool, mcpErrorObserved: Bool)
+        -> Self
+    {
+        guard capabilityAvailable else {
+            return Self(
+                id: job.id, name: job.name, state: .unavailable, detail: "Scheduling capability unavailable",
+                nextRun: job.nextRun)
+        }
+        if mcpErrorObserved {
+            return Self(
+                id: job.id, name: job.name, state: .degraded, detail: "MCP health degraded", nextRun: job.nextRun)
+        }
         let relevant = runs.filter { $0.jobID == job.id }
-        guard let latest = relevant.first else { return Self(id: job.id, name: job.name, state: .unknown, detail: "No observed run history", nextRun: job.nextRun) }
+        guard let latest = relevant.first else {
+            return Self(
+                id: job.id, name: job.name, state: .unknown, detail: "No observed run history", nextRun: job.nextRun)
+        }
         let failed = latest.status.localizedCaseInsensitiveContains("fail") || latest.error != nil
-        if failed { return Self(id: job.id, name: job.name, state: .degraded, detail: latest.error ?? "Latest observed run failed", nextRun: job.nextRun) }
-        guard job.enabled, job.nextRun != nil else { return Self(id: job.id, name: job.name, state: .unknown, detail: "Schedule is not fully known", nextRun: job.nextRun) }
-        return Self(id: job.id, name: job.name, state: .healthy, detail: "Latest observed run succeeded", nextRun: job.nextRun)
+        if failed {
+            return Self(
+                id: job.id, name: job.name, state: .degraded, detail: latest.error ?? "Latest observed run failed",
+                nextRun: job.nextRun)
+        }
+        guard job.enabled, job.nextRun != nil else {
+            return Self(
+                id: job.id, name: job.name, state: .unknown, detail: "Schedule is not fully known", nextRun: job.nextRun
+            )
+        }
+        return Self(
+            id: job.id, name: job.name, state: .healthy, detail: "Latest observed run succeeded", nextRun: job.nextRun)
     }
 }
 
@@ -150,9 +263,13 @@ struct CapacityRunwayPresentation: Equatable {
     let detail: String
 
     static func make(usedPercent: Int?, hasQuotaData: Bool) -> Self {
-        guard hasQuotaData, let usedPercent else { return Self(state: .unknown, usedPercent: nil, detail: "Capacity data unavailable") }
+        guard hasQuotaData, let usedPercent else {
+            return Self(state: .unknown, usedPercent: nil, detail: "Capacity data unavailable")
+        }
         if usedPercent >= 100 { return Self(state: .exhausted, usedPercent: usedPercent, detail: "Capacity exhausted") }
-        if usedPercent >= 80 { return Self(state: .constrained, usedPercent: usedPercent, detail: "Capacity constrained") }
+        if usedPercent >= 80 {
+            return Self(state: .constrained, usedPercent: usedPercent, detail: "Capacity constrained")
+        }
         return Self(state: .available, usedPercent: usedPercent, detail: "Capacity available")
     }
 }

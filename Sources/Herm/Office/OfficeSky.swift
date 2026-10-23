@@ -43,12 +43,14 @@ final class OfficeSky {
     func apply(_ daylight: OfficeDaylight) {
         guard daylight != applied else { return }
         applied = daylight
-        let top = UnlitMaterial(color: daylight.cloudTop), base = UnlitMaterial(color: daylight.cloudBase)
+        let top = UnlitMaterial(color: daylight.cloudTop)
+        let base = UnlitMaterial(color: daylight.cloudBase)
         for cloud in cloudTops { cloud.model?.materials = [top] }
         for cloud in cloudBases { cloud.model?.materials = [base] }
         if let image = Self.gradient(daylight) {
-            if let domeTexture { try? domeTexture.replace(withImage: image, options: .init(semantic: .color)) }
-            else if let texture = try? TextureResource.generate(from: image, options: .init(semantic: .color)) {
+            if let domeTexture {
+                try? domeTexture.replace(withImage: image, options: .init(semantic: .color))
+            } else if let texture = try? TextureResource.generate(from: image, options: .init(semantic: .color)) {
                 domeTexture = texture
                 var material = UnlitMaterial()
                 material.color = .init(tint: .white, texture: .init(texture))
@@ -120,8 +122,11 @@ final class OfficeSky {
     @available(macOS 15.0, *)
     private func buildDome() {
         // Latitude rings from zenith to nadir; v runs down the gradient texture.
-        let rings = 48, segments = 48
-        var positions: [SIMD3<Float>] = [], uvs: [SIMD2<Float>] = [], indices: [UInt32] = []
+        let rings = 48
+        let segments = 48
+        var positions: [SIMD3<Float>] = []
+        var uvs: [SIMD2<Float>] = []
+        var indices: [UInt32] = []
         for ring in 0...rings {
             let v = Float(ring) / Float(rings)
             let polar = v * .pi
@@ -135,7 +140,10 @@ final class OfficeSky {
         let row = UInt32(segments + 1)
         for ring in 0..<UInt32(rings) {
             for segment in 0..<UInt32(segments) {
-                let a = ring * row + segment, b = a + 1, c = a + row + 1, d = a + row
+                let a = ring * row + segment
+                let b = a + 1
+                let c = a + row + 1
+                let d = a + row
                 indices += [a, b, c, a, c, d]
             }
         }
@@ -165,7 +173,9 @@ final class OfficeSky {
             seed = seed &* 1_664_525 &+ 1_013_904_223
             return Float(seed >> 8) / Float(1 << 24)
         }
-        var positions: [SIMD3<Float>] = [], normals: [SIMD3<Float>] = [], indices: [UInt32] = []
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var indices: [UInt32] = []
         let radius = Self.domeRadius - 10
         for _ in 0..<420 {
             let azimuth = random() * 2 * .pi
@@ -202,9 +212,13 @@ final class OfficeSky {
     private static func gradient(_ daylight: OfficeDaylight) -> CGImage? {
         let height = 128
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(data: nil, width: 1, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        let colors = [daylight.zenith, daylight.zenith, daylight.horizon, daylight.horizon, daylight.haze, daylight.haze].map(\.cgColor) as CFArray
+            let context = CGContext(
+                data: nil, width: 1, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        let colors =
+            [daylight.zenith, daylight.zenith, daylight.horizon, daylight.horizon, daylight.haze, daylight.haze].map(
+                \.cgColor) as CFArray
         let locations: [CGFloat] = [0, 0.12, 0.47, 0.5, 0.53, 1]
         guard let gradient = CGGradient(colorsSpace: space, colors: colors, locations: locations) else { return nil }
         // CoreGraphics draws bottom-up; row 0 of the image is the zenith.

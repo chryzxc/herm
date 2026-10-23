@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
@@ -12,11 +12,15 @@ extension ControlCenterModel {
             do {
                 switch action {
                 case .approve:
-                    guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
+                    guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else {
+                        return
+                    }
                     _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "once")
                     dockModel.resolveApproval(for: sessionID)
                 case .deny:
-                    guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
+                    guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else {
+                        return
+                    }
                     _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "deny")
                     dockModel.resolveApproval(for: sessionID)
                 case .respond:
@@ -94,12 +98,14 @@ extension ControlCenterModel {
     func ingestEvent(_ type: String, params: [String: Any]) {
         guard !HermesHighFrequencyEvent.includes(type) else { return }
         let payload = params["payload"] as? [String: Any] ?? [:]
-        let sessionID = (params["session_id"] as? String)
+        let sessionID =
+            (params["session_id"] as? String)
             ?? (payload["session_id"] as? String)
             ?? dockModel?.sessionID
         guard let sessionID, !sessionID.isEmpty else { return }
 
-        let detail = (payload["message"] as? String)
+        let detail =
+            (payload["message"] as? String)
             ?? (params["message"] as? String)
             ?? (payload["description"] as? String)
             ?? (params["description"] as? String)
@@ -111,52 +117,58 @@ extension ControlCenterModel {
         switch type {
         case "approval.request":
             let approval = ApprovalPresentation.from(payload: payload)
-            upsertAttention(AttentionItem(
-                id: "approval:\(sessionID)",
-                reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
-                kind: .approval,
-                title: approval.title,
-                detail: approval.detail,
-                createdAt: Date(),
-                state: .open,
-                actions: [.approve, .deny, .stop]
-            ))
+            upsertAttention(
+                AttentionItem(
+                    id: "approval:\(sessionID)",
+                    reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
+                    kind: .approval,
+                    title: approval.title,
+                    detail: approval.detail,
+                    createdAt: Date(),
+                    state: .open,
+                    actions: [.approve, .deny, .stop]
+                ))
         case "clarification.request", "clarify.request":
-            let choices = ((payload["choices"] as? [String])
+            let choices =
+                ((payload["choices"] as? [String])
                 ?? (params["choices"] as? [String])
-                ?? (payload["options"] as? [String])
-                ?? (params["options"] as? [String]))?.filter {
-                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-            let requestID = (payload["request_id"] as? String)
+                    ?? (payload["options"] as? [String])
+                        ?? (params["options"] as? [String]))
+                ?.filter {
+                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+            let requestID =
+                (payload["request_id"] as? String)
                 ?? (params["request_id"] as? String)
-            upsertAttention(AttentionItem(
-                id: "clarification:\(sessionID)",
-                reference: ControlReference(
-                    source: .hermesClarification,
-                    sourceID: sessionID,
-                    sessionID: sessionID,
-                    clarificationRequestID: requestID
-                ),
-                kind: .clarification,
-                title: "Hermes needs clarification",
-                detail: detail,
-                createdAt: Date(),
-                state: .open,
-                actions: [.respond, .open, .stop],
-                choices: choices
-            ))
+            upsertAttention(
+                AttentionItem(
+                    id: "clarification:\(sessionID)",
+                    reference: ControlReference(
+                        source: .hermesClarification,
+                        sourceID: sessionID,
+                        sessionID: sessionID,
+                        clarificationRequestID: requestID
+                    ),
+                    kind: .clarification,
+                    title: "Hermes needs clarification",
+                    detail: detail,
+                    createdAt: Date(),
+                    state: .open,
+                    actions: [.respond, .open, .stop],
+                    choices: choices
+                ))
         case "error":
-            upsertAttention(AttentionItem(
-                id: "failure:\(sessionID)",
-                reference: ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID),
-                kind: .failure,
-                title: "Hermes work failed",
-                detail: detail,
-                createdAt: Date(),
-                state: .open,
-                actions: [.resume, .stop]
-            ))
+            upsertAttention(
+                AttentionItem(
+                    id: "failure:\(sessionID)",
+                    reference: ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID),
+                    kind: .failure,
+                    title: "Hermes work failed",
+                    detail: detail,
+                    createdAt: Date(),
+                    state: .open,
+                    actions: [.resume, .stop]
+                ))
         case "message.complete":
             if let existing = knownAttention["failure:\(sessionID)"] {
                 var resolved = existing
@@ -204,8 +216,10 @@ extension ControlCenterModel {
             if item.actions.isEmpty {
                 enriched.actions = existing.actions
             }
-            let incomingRequestID = item.reference.clarificationRequestID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let existingRequestID = existing.reference.clarificationRequestID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let incomingRequestID =
+                item.reference.clarificationRequestID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let existingRequestID =
+                existing.reference.clarificationRequestID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if incomingRequestID.isEmpty, !existingRequestID.isEmpty {
                 enriched.reference.clarificationRequestID = existingRequestID
             }
@@ -217,7 +231,8 @@ extension ControlCenterModel {
 
     func persistPresentationState() {
         let values = knownAttention.reduce(into: [String: String]()) { result, entry in
-            guard entry.value.state == .dismissed || entry.value.state == .resolved || entry.value.state == .snoozed else { return }
+            guard entry.value.state == .dismissed || entry.value.state == .resolved || entry.value.state == .snoozed
+            else { return }
             result[entry.key] = entry.value.state.rawValue
         }
         presentationDefaults.set(values, forKey: presentationKey)
@@ -244,34 +259,38 @@ extension ControlCenterModel {
                 knownAttention.removeValue(forKey: "approval:\(sessionID)")
             }
             if let approval = dockModel.approvalText, let sessionID = dockModel.sessionID,
-               knownAttention["approval:\(sessionID)"]?.state != .resolved,
-               knownAttention["approval:\(sessionID)"]?.state != .dismissed {
-                upsertAttention(AttentionItem(
-                    id: "approval:\(sessionID)",
-                    reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
-                    kind: .approval,
-                    title: dockModel.approvalTitle ?? "Hermes needs approval",
-                    detail: approval,
-                    createdAt: Date(),
-                    state: .open,
-                    actions: [.approve, .deny, .stop]
-                ))
+                knownAttention["approval:\(sessionID)"]?.state != .resolved,
+                knownAttention["approval:\(sessionID)"]?.state != .dismissed
+            {
+                upsertAttention(
+                    AttentionItem(
+                        id: "approval:\(sessionID)",
+                        reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
+                        kind: .approval,
+                        title: dockModel.approvalTitle ?? "Hermes needs approval",
+                        detail: approval,
+                        createdAt: Date(),
+                        state: .open,
+                        actions: [.approve, .deny, .stop]
+                    ))
             }
             if dockModel.status == .offline {
-                upsertAttention(AttentionItem(
-                    id: "failure:hermes",
-                    reference: ControlReference(source: .hermesSession, sourceID: dockModel.sessionID ?? "hermes"),
-                    kind: .failure,
-                    title: "Hermes is offline",
-                    detail: "Reconnect Hermes to continue the active conversation.",
-                    createdAt: Date(),
-                    state: .open,
-                    actions: [.open]
-                ))
+                upsertAttention(
+                    AttentionItem(
+                        id: "failure:hermes",
+                        reference: ControlReference(source: .hermesSession, sourceID: dockModel.sessionID ?? "hermes"),
+                        kind: .failure,
+                        title: "Hermes is offline",
+                        detail: "Reconnect Hermes to continue the active conversation.",
+                        createdAt: Date(),
+                        state: .open,
+                        actions: [.open]
+                    ))
             }
         }
         next = knownAttention.values.filter { saved in
-            saved.state != .resolved && saved.state != .dismissed && saved.state != .snoozed && !next.contains(where: { $0.id == saved.id })
+            saved.state != .resolved && saved.state != .dismissed && saved.state != .snoozed
+                && !next.contains(where: { $0.id == saved.id })
         }
         let sorted = next.sorted { lhs, rhs in
             let lhsRank = Self.attentionRank(lhs)
@@ -334,12 +353,14 @@ extension ControlCenterModel {
             do {
                 let result = try await rpc.processes(sessionID: sessionID)
                 guard generation == self.sessionProcessesGeneration,
-                      self.currentFocus?.sessionID == sessionID else { return }
+                    self.currentFocus?.sessionID == sessionID
+                else { return }
                 self.processes = Self.parseProcesses(result)
                 self.recordProjectionSuccess("processes")
             } catch {
                 guard generation == self.sessionProcessesGeneration,
-                      self.currentFocus?.sessionID == sessionID else { return }
+                    self.currentFocus?.sessionID == sessionID
+                else { return }
                 self.processes = []
                 self.recordProjectionFailure("processes", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
@@ -380,10 +401,12 @@ extension ControlCenterModel {
     /// projection so session UI can always display its real owner.
     func resolveProjectMembership(for sessionID: String?) {
         guard let sessionID, !sessionID.isEmpty,
-              project(forSessionID: sessionID) == nil,
-              let rpc, !projects.isEmpty else { return }
+            project(forSessionID: sessionID) == nil,
+            let rpc, !projects.isEmpty
+        else { return }
         if let path = dockModel?.createdSessionProjectPaths[sessionID],
-           let project = projects.first(where: { $0.isRenderableProject && $0.name == path }) {
+            let project = projects.first(where: { $0.isRenderableProject && $0.name == path })
+        {
             projectIDBySessionID[sessionID] = project.id
             resolvedProjectIDBySessionID[sessionID] = project.id
             return
@@ -397,10 +420,14 @@ extension ControlCenterModel {
             guard let self else { return }
             for project in candidates {
                 guard generation == projectMembershipGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
-                guard let result = try? await rpc.projectSessions(projectID: project.id, profileID: self.projectProfileID) else { continue }
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
+                guard
+                    let result = try? await rpc.projectSessions(projectID: project.id, profileID: self.projectProfileID)
+                else { continue }
                 guard generation == projectMembershipGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 if Self.parseProjectSessions(result).contains(where: { $0.id == sessionID }) {
                     projectIDBySessionID[sessionID] = project.id
                     resolvedProjectIDBySessionID[sessionID] = project.id

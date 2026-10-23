@@ -29,8 +29,12 @@ struct RichReplyMessageScope<Content: View>: View {
     var body: some View {
         if let state {
             content
-                .environment(\.richReplyContext, RichReplyContext(
-                    model: model, message: message, destination: destination, reference: reference, state: state))
-        } else { content }
+                .environment(
+                    \.richReplyContext,
+                    RichReplyContext(
+                        model: model, message: message, destination: destination, reference: reference, state: state))
+        } else {
+            content
+        }
     }
 }

@@ -1,11 +1,13 @@
 import Combine
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct CommandCenterModelsTests {
     @Test func sessionPreviewFormatsTransportEnvelopesForNavigation() {
-        let preview = SessionPreviewPresentation.summary("{\"output\":\"\",\"exit_code\":-1,\"error\":\"BLOCKED: Command requires approval\"}")
+        let preview = SessionPreviewPresentation.summary(
+            "{\"output\":\"\",\"exit_code\":-1,\"error\":\"BLOCKED: Command requires approval\"}")
 
         #expect(preview == "Blocked — action needs approval")
         #expect(!preview!.contains("exit_code"))
@@ -13,25 +15,32 @@ struct CommandCenterModelsTests {
     }
 
     @Test func sessionPreviewKeepsPlainLanguageUpdatesReadable() {
-        #expect(SessionPreviewPresentation.summary("  Reviewing the latest changes.  ") == "Reviewing the latest changes.")
+        #expect(
+            SessionPreviewPresentation.summary("  Reviewing the latest changes.  ") == "Reviewing the latest changes.")
         #expect(SessionPreviewPresentation.summary("{\"payload\":{}}") == "Session activity updated")
     }
 
     @Test func sessionPreviewDropsHermRenderingContext() {
-        #expect(SessionPreviewPresentation.summary("Hello hello\n\n[Herm rendering context v1]\nWhen useful") == "Hello hello")
+        #expect(
+            SessionPreviewPresentation.summary("Hello hello\n\n[Herm rendering context v1]\nWhen useful")
+                == "Hello hello")
         #expect(SessionPreviewPresentation.summary("[Herm rendering context v1]\nWhen useful") == nil)
     }
 
     @MainActor @Test func sessionParsingUsesLastActivityForUpdatedTime() {
         let updated = Date(timeIntervalSince1970: 20_000)
-        let result = ControlCenterModel.parseSessions(["sessions": [[
-            "id": "session-1",
-            "title": "Conversation",
-            "state": "idle",
-            "preview": "Done",
-            "started_at": 10_000,
-            "updated_at": updated.timeIntervalSince1970
-        ]]])!
+        let result = ControlCenterModel.parseSessions([
+            "sessions": [
+                [
+                    "id": "session-1",
+                    "title": "Conversation",
+                    "state": "idle",
+                    "preview": "Done",
+                    "started_at": 10_000,
+                    "updated_at": updated.timeIntervalSince1970,
+                ]
+            ]
+        ])!
 
         #expect(result.first?.updatedAt == updated)
         #expect(result.first?.lastUpdatedAt == updated)
@@ -56,49 +65,71 @@ struct CommandCenterModelsTests {
         let reminder = attention("reminder", .reminder)
         let snapshot = MissionControlSnapshotBuilder.make(
             sessionTitle: "Work", repository: repository(changed: 0), model: "model", context: nil,
-            attention: [reminder, approval], sessions: [], activeSessionID: nil, agents: [], processes: [], backgroundTasks: [], activities: [], cronRuns: [],
-            verification: VerificationSummary(state: .passed, evidence: VerificationEvidenceSummary(command: nil, canonicalCommand: nil, kind: nil, scope: "targeted", status: "passed", exitCode: 0, outputSummary: nil))
+            attention: [reminder, approval], sessions: [], activeSessionID: nil, agents: [], processes: [],
+            backgroundTasks: [], activities: [], cronRuns: [],
+            verification: VerificationSummary(
+                state: .passed,
+                evidence: VerificationEvidenceSummary(
+                    command: nil, canonicalCommand: nil, kind: nil, scope: "targeted", status: "passed", exitCode: 0,
+                    outputSummary: nil))
         )
         #expect(snapshot.needsMe.first?.id == "attention:approval")
         #expect(snapshot.readiness.state == .needsReview)
     }
 
     @Test func missionBlocksFailuresAndRequiresCleanRepositoryForReady() {
-        let failed = MissionControlSnapshotBuilder.make(sessionTitle: nil, repository: repository(changed: 0), model: nil, context: nil, attention: [], sessions: [], activeSessionID: nil, agents: [], processes: [], backgroundTasks: [], activities: [], cronRuns: [], verification: VerificationSummary(state: .failed, evidence: nil))
+        let failed = MissionControlSnapshotBuilder.make(
+            sessionTitle: nil, repository: repository(changed: 0), model: nil, context: nil, attention: [],
+            sessions: [], activeSessionID: nil, agents: [], processes: [], backgroundTasks: [], activities: [],
+            cronRuns: [], verification: VerificationSummary(state: .failed, evidence: nil))
         #expect(failed.readiness.state == .blocked)
-        let ready = MissionControlSnapshotBuilder.make(sessionTitle: nil, repository: repository(changed: 0), model: nil, context: nil, attention: [], sessions: [], activeSessionID: nil, agents: [], processes: [], backgroundTasks: [], activities: [], cronRuns: [], verification: VerificationSummary(state: .passed, evidence: VerificationEvidenceSummary(command: nil, canonicalCommand: nil, kind: nil, scope: "repository", status: "passed", exitCode: 0, outputSummary: nil)))
+        let ready = MissionControlSnapshotBuilder.make(
+            sessionTitle: nil, repository: repository(changed: 0), model: nil, context: nil, attention: [],
+            sessions: [], activeSessionID: nil, agents: [], processes: [], backgroundTasks: [], activities: [],
+            cronRuns: [],
+            verification: VerificationSummary(
+                state: .passed,
+                evidence: VerificationEvidenceSummary(
+                    command: nil, canonicalCommand: nil, kind: nil, scope: "repository", status: "passed", exitCode: 0,
+                    outputSummary: nil)))
         #expect(ready.readiness.state == .ready)
     }
 
     @Test func workspaceOverviewCountsActiveSessionsAsRunningWork() {
         let sessions = [
             SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
-            SessionSummary(id: "session-2", title: "Second", state: "active", preview: nil)
+            SessionSummary(id: "session-2", title: "Second", state: "active", preview: nil),
         ]
         let agents = [AgentSummary(id: "agent-1", name: "Researcher", state: "running", sessionID: "session-1")]
         let processes = [ProcessSummary(id: "process-1", name: "Worker", state: "running", detail: nil)]
         let backgroundTasks = [
-            HermesBackgroundTask(id: "task-1", parentSessionID: "session-1", prompt: "Run checks", kind: .verification, status: .running, output: nil, startedAt: .now, completedAt: nil),
-            HermesBackgroundTask(id: "task-2", parentSessionID: "session-2", prompt: "Finished", kind: .verification, status: .completed, output: nil, startedAt: .now, completedAt: .now)
+            HermesBackgroundTask(
+                id: "task-1", parentSessionID: "session-1", prompt: "Run checks", kind: .verification, status: .running,
+                output: nil, startedAt: .now, completedAt: nil),
+            HermesBackgroundTask(
+                id: "task-2", parentSessionID: "session-2", prompt: "Finished", kind: .verification, status: .completed,
+                output: nil, startedAt: .now, completedAt: .now),
         ]
 
-        #expect(WorkspaceOverviewMetrics.runningCount(activeSessions: sessions, agents: agents, processes: processes, backgroundTasks: backgroundTasks) == 5)
+        #expect(
+            WorkspaceOverviewMetrics.runningCount(
+                activeSessions: sessions, agents: agents, processes: processes, backgroundTasks: backgroundTasks) == 5)
     }
 
     @Test func latestActivityFlattensAllSessionsSortsGloballyAndBoundsTheFeed() {
         let now = Date(timeIntervalSince1970: 10_000)
         let sessions = [
             SessionSummary(id: "session-1", title: "First", state: "idle", preview: "user prompt"),
-            SessionSummary(id: "session-2", title: "Second", state: "active", preview: nil)
+            SessionSummary(id: "session-2", title: "Second", state: "active", preview: nil),
         ]
         let steps: [String: [SessionActivityStep]] = [
             "session-1": [
                 SessionActivityStep(id: "a", name: "read_file", timestamp: now.addingTimeInterval(-1)),
-                SessionActivityStep(id: "b", name: "patch", timestamp: now.addingTimeInterval(-3))
+                SessionActivityStep(id: "b", name: "patch", timestamp: now.addingTimeInterval(-3)),
             ],
             "session-2": [
                 SessionActivityStep(id: "c", name: "swift_test", timestamp: now.addingTimeInterval(-2))
-            ]
+            ],
         ]
 
         let latest = SessionActivityPresentation.latestActivity(sessions, stepsBySessionID: steps, limit: 2)
@@ -112,11 +143,13 @@ struct CommandCenterModelsTests {
         let session = SessionSummary(id: "session", title: "Session", state: "idle", preview: "user prompt")
         let steps = [
             SessionActivityStep(id: "one", name: "first", timestamp: timestamp),
-            SessionActivityStep(id: "two", name: "second", timestamp: timestamp.addingTimeInterval(-1))
+            SessionActivityStep(id: "two", name: "second", timestamp: timestamp.addingTimeInterval(-1)),
         ]
 
         #expect(SessionActivityPresentation.latestActivity([session], stepsBySessionID: [session.id: steps]).count == 2)
-        #expect(SessionActivityPresentation.latestActivity([session], stepsBySessionID: [session.id: steps], limit: 0).isEmpty)
+        #expect(
+            SessionActivityPresentation.latestActivity([session], stepsBySessionID: [session.id: steps], limit: 0)
+                .isEmpty)
     }
 
     @Test func latestActivityDoesNotUseTheSessionPreviewAsTheActivityName() {
@@ -150,12 +183,15 @@ struct CommandCenterModelsTests {
         let files = [
             RepositoryFileChange(path: "Sources/App/App.swift", status: .modified, isStaged: false, renameSource: nil),
             RepositoryFileChange(path: "Sources/App/Theme.swift", status: .modified, isStaged: true, renameSource: nil),
-            RepositoryFileChange(path: "README.md", status: .untracked, isStaged: false, renameSource: nil)
+            RepositoryFileChange(path: "README.md", status: .untracked, isStaged: false, renameSource: nil),
         ]
 
         let entries = RepositoryService.explorerEntries(for: files)
 
-        #expect(entries.map(\.path) == ["README.md", "Sources", "Sources/App", "Sources/App/App.swift", "Sources/App/Theme.swift"])
+        #expect(
+            entries.map(\.path) == [
+                "README.md", "Sources", "Sources/App", "Sources/App/App.swift", "Sources/App/Theme.swift",
+            ])
         #expect(entries.map(\.depth) == [0, 0, 1, 2, 2])
         #expect(entries.filter(\.isDirectory).map(\.path) == ["Sources", "Sources/App"])
     }
@@ -172,41 +208,52 @@ struct CommandCenterModelsTests {
     }
 
     @Test func untrackedFilesUseReadOnlyNoIndexDiffAndAcceptDifferenceExitCode() {
-        let file = RepositoryFileChange(path: "Sources/New.swift", status: .untracked, isStaged: false, renameSource: nil)
+        let file = RepositoryFileChange(
+            path: "Sources/New.swift", status: .untracked, isStaged: false, renameSource: nil)
 
         let command = RepositoryService.diffCommand(for: file)
 
-        #expect(command.arguments == ["diff", "--no-index", "--no-ext-diff", "--unified=3", "--", "/dev/null", "Sources/New.swift"])
+        #expect(
+            command.arguments == [
+                "diff", "--no-index", "--no-ext-diff", "--unified=3", "--", "/dev/null", "Sources/New.swift",
+            ])
         #expect(command.successCodes == [0, 1])
     }
 
     @Test func localDiffAuditFlagsAddedPreCommitSignalsWithoutReturningSecretText() {
-        let diff = RepositoryDiff(path: "Sources/App.swift", text: """
-        diff --git a/Sources/App.swift b/Sources/App.swift
-        --- a/Sources/App.swift
-        +++ b/Sources/App.swift
-        @@ -8,2 +8,5 @@
-         let stable = true
-        +let api_key = "do-not-display"
-        +print("debug")
-        +// TODO: remove fallback
-        +<<<<<<< HEAD
-        """, isTruncated: false, isStaged: false)
+        let diff = RepositoryDiff(
+            path: "Sources/App.swift",
+            text: """
+                diff --git a/Sources/App.swift b/Sources/App.swift
+                --- a/Sources/App.swift
+                +++ b/Sources/App.swift
+                @@ -8,2 +8,5 @@
+                 let stable = true
+                +let api_key = "do-not-display"
+                +print("debug")
+                +// TODO: remove fallback
+                +<<<<<<< HEAD
+                """, isTruncated: false, isStaged: false)
 
         let findings = RepositoryDiffAuditor.audit(diff)
 
-        #expect(findings.map(\.ruleID) == ["credential-assignment", "debug-statement", "unfinished-marker", "conflict-marker"])
+        #expect(
+            findings.map(\.ruleID) == [
+                "credential-assignment", "debug-statement", "unfinished-marker", "conflict-marker",
+            ])
         #expect(findings.map(\.line) == [9, 10, 11, 12])
         #expect(!String(describing: findings).contains("do-not-display"))
     }
 
     @Test func localDiffAuditIgnoresRemovedSignalsAndFindsBareExcept() {
-        let diff = RepositoryDiff(path: "worker.py", text: """
-        @@ -4,3 +4,3 @@
-        -print("old debug")
-        +except:
-             pass
-        """, isTruncated: false, isStaged: true)
+        let diff = RepositoryDiff(
+            path: "worker.py",
+            text: """
+                @@ -4,3 +4,3 @@
+                -print("old debug")
+                +except:
+                     pass
+                """, isTruncated: false, isStaged: true)
 
         let findings = RepositoryDiffAuditor.audit(diff)
 
@@ -224,7 +271,9 @@ struct CommandCenterModelsTests {
     }
 
     @Test func reviewBaselinePersistsOnlyStableReferences() {
-        let baseline = RepositoryReviewBaseline(repositoryID: "repo-id", headRevision: "abc", fingerprint: "fingerprint", acknowledgedFindingIDs: Array(repeating: "finding", count: 600))
+        let baseline = RepositoryReviewBaseline(
+            repositoryID: "repo-id", headRevision: "abc", fingerprint: "fingerprint",
+            acknowledgedFindingIDs: Array(repeating: "finding", count: 600))
         let restored = RepositoryReviewBaseline(dictionary: baseline.dictionary)
 
         #expect(restored?.repositoryID == "repo-id")
@@ -235,24 +284,38 @@ struct CommandCenterModelsTests {
     }
 
     @Test func reviewBaselineIsStaleForAnyFingerprintChangeAndRequiresCompleteCoverage() {
-        let complete = RepositoryReviewBaseline(repositoryID: "repo", headRevision: "abc", fingerprint: "one", acknowledgedFindingIDs: [], completeness: .complete)
-        #expect(RepositoryReviewBaselineStatus.make(baseline: complete, fingerprint: "one") == .current(complete.reviewedAt))
-        #expect(RepositoryReviewBaselineStatus.make(baseline: complete, fingerprint: "two") == .stale(complete.reviewedAt))
+        let complete = RepositoryReviewBaseline(
+            repositoryID: "repo", headRevision: "abc", fingerprint: "one", acknowledgedFindingIDs: [],
+            completeness: .complete)
+        #expect(
+            RepositoryReviewBaselineStatus.make(baseline: complete, fingerprint: "one") == .current(complete.reviewedAt)
+        )
+        #expect(
+            RepositoryReviewBaselineStatus.make(baseline: complete, fingerprint: "two") == .stale(complete.reviewedAt))
 
-        let legacy = RepositoryReviewBaseline(repositoryID: "repo", headRevision: "abc", fingerprint: "one", acknowledgedFindingIDs: [])
-        #expect(RepositoryReviewBaselineStatus.make(baseline: legacy, fingerprint: "one") == .partial(legacy.reviewedAt))
+        let legacy = RepositoryReviewBaseline(
+            repositoryID: "repo", headRevision: "abc", fingerprint: "one", acknowledgedFindingIDs: [])
+        #expect(
+            RepositoryReviewBaselineStatus.make(baseline: legacy, fingerprint: "one") == .partial(legacy.reviewedAt))
         #expect(RepositoryReviewBaselineStatus.make(baseline: legacy, fingerprint: "two") == .stale(legacy.reviewedAt))
     }
 
     @Test func repositoryFingerprintIncludesFilesBeyondTheReviewDisplayLimit() {
-        let covered = (0..<RepositoryService.maxReviewFiles).map { "worktree:Sources/File\($0).swift|modified|hash-\($0)" }
+        let covered = (0..<RepositoryService.maxReviewFiles).map {
+            "worktree:Sources/File\($0).swift|modified|hash-\($0)"
+        }
         let fullState = covered + ["worktree:Sources/OutsideReviewLimit.swift|modified|outside-hash"]
 
-        let coveredFingerprint = RepositoryService.fingerprint(repositoryID: "repo", headRevision: "abc", identities: covered)
-        let fullFingerprint = RepositoryService.fingerprint(repositoryID: "repo", headRevision: "abc", identities: fullState)
+        let coveredFingerprint = RepositoryService.fingerprint(
+            repositoryID: "repo", headRevision: "abc", identities: covered)
+        let fullFingerprint = RepositoryService.fingerprint(
+            repositoryID: "repo", headRevision: "abc", identities: fullState)
 
         #expect(coveredFingerprint != fullFingerprint)
-        #expect(fullFingerprint == RepositoryService.fingerprint(repositoryID: "repo", headRevision: "abc", identities: Array(fullState.reversed())))
+        #expect(
+            fullFingerprint
+                == RepositoryService.fingerprint(
+                    repositoryID: "repo", headRevision: "abc", identities: Array(fullState.reversed())))
     }
 
     @Test func worktreeInspectionConcurrencyHasAnExplicitBound() {
@@ -261,9 +324,13 @@ struct CommandCenterModelsTests {
 
     @MainActor
     @Test func markingAReviewFilePublishesAndAllowsPartialAcknowledgement() {
-        let change = RepositoryFileChange(path: "Sources/App.swift", status: .modified, isStaged: false, renameSource: nil)
-        let file = RepositoryReviewFile(change: change, findings: [], isTruncated: true, isBinary: false, isReadable: true, contentIdentity: "hash")
-        let review = RepositoryReviewSnapshot(repositoryID: "repo", headRevision: "abc", fingerprint: "fingerprint", files: [file], completeness: .partial, refreshedAt: .now, omittedFileCount: 0)
+        let change = RepositoryFileChange(
+            path: "Sources/App.swift", status: .modified, isStaged: false, renameSource: nil)
+        let file = RepositoryReviewFile(
+            change: change, findings: [], isTruncated: true, isBinary: false, isReadable: true, contentIdentity: "hash")
+        let review = RepositoryReviewSnapshot(
+            repositoryID: "repo", headRevision: "abc", fingerprint: "fingerprint", files: [file],
+            completeness: .partial, refreshedAt: .now, omittedFileCount: 0)
         let model = DeveloperWorkflowModel()
         var publications = 0
         let cancellable = model.objectWillChange.sink { publications += 1 }
@@ -277,10 +344,14 @@ struct CommandCenterModelsTests {
     }
 
     private func repository(changed: Int) -> RepositorySnapshot {
-        RepositorySnapshot(path: "/work/project", branch: "main", changedFiles: changed, latestCommit: "abc test", isGitRepository: true)
+        RepositorySnapshot(
+            path: "/work/project", branch: "main", changedFiles: changed, latestCommit: "abc test",
+            isGitRepository: true)
     }
 
     private func attention(_ id: String, _ kind: AttentionKind) -> AttentionItem {
-        AttentionItem(id: id, reference: ControlReference(source: .hermesSession, sourceID: id), kind: kind, title: id, detail: id, createdAt: .now, state: .open, actions: [])
+        AttentionItem(
+            id: id, reference: ControlReference(source: .hermesSession, sourceID: id), kind: kind, title: id,
+            detail: id, createdAt: .now, state: .open, actions: [])
     }
 }

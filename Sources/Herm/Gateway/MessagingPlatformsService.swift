@@ -82,7 +82,8 @@ final class MessagingPlatformsModel: ObservableObject {
     static let qrPlatforms: Set<String> = ["telegram", "whatsapp"]
 
     private func query(_ profileID: String?) -> String {
-        guard let profileID, let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return "" }
+        guard let profileID, let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+        else { return "" }
         return "?profile=\(encoded)"
     }
 
@@ -97,7 +98,8 @@ final class MessagingPlatformsModel: ObservableObject {
     }
 
     /// Sends only what changed; blank secrets keep their saved value.
-    func save(_ platform: MessagingPlatform, enabled: Bool, drafts: [String: String], profileID: String?) async -> Bool {
+    func save(_ platform: MessagingPlatform, enabled: Bool, drafts: [String: String], profileID: String?) async -> Bool
+    {
         var body: [String: Any] = [:]
         if enabled != platform.enabled { body["enabled"] = enabled }
         let env = drafts.filter { key, value in
@@ -128,7 +130,8 @@ final class MessagingPlatformsModel: ObservableObject {
         busy = true
         defer { busy = false }
         do {
-            let result = try await client.sendHTTP("POST", path: "/api/messaging/platforms/\(platform.id)/test\(query(profileID))", body: [:])
+            let result = try await client.sendHTTP(
+                "POST", path: "/api/messaging/platforms/\(platform.id)/test\(query(profileID))", body: [:])
             testResult = (result["ok"] as? Bool ?? false, (result["message"] as? String) ?? "No result.")
         } catch {
             self.error = error.localizedDescription
@@ -139,7 +142,8 @@ final class MessagingPlatformsModel: ObservableObject {
     func restartGateway(start: Bool, profileID: String?) async {
         busy = true
         do {
-            _ = try await client.sendHTTP("POST", path: "/api/gateway/\(start ? "start" : "restart")\(query(profileID))", body: [:])
+            _ = try await client.sendHTTP(
+                "POST", path: "/api/gateway/\(start ? "start" : "restart")\(query(profileID))", body: [:])
             notice = start ? "Starting the gateway…" : "Restarting the gateway…"
         } catch {
             self.error = error.localizedDescription
@@ -162,7 +166,8 @@ final class MessagingPlatformsModel: ObservableObject {
         do {
             var body: [String: Any] = platform == "whatsapp" ? ["mode": whatsappMode] : [:]
             if platform == "whatsapp", let profileID { body["profile"] = profileID }
-            let result = try await client.sendHTTP("POST", path: "/api/messaging/\(platform)/onboarding/start", body: body)
+            let result = try await client.sendHTTP(
+                "POST", path: "/api/messaging/\(platform)/onboarding/start", body: body)
             guard let id = result["pairing_id"] as? String else { throw HermesGateway.GatewayError.malformedResponse }
             let deepLink = (result["deep_link"] as? String).flatMap(URL.init(string:))
             pairing = QRPairing(
@@ -178,7 +183,10 @@ final class MessagingPlatformsModel: ObservableObject {
         pollTask?.cancel()
         pollTask = nil
         if let pairing {
-            Task { _ = try? await client.sendHTTP("DELETE", path: "/api/messaging/\(pairing.platform)/onboarding/\(pairing.id)", body: [:]) }
+            Task {
+                _ = try? await client.sendHTTP(
+                    "DELETE", path: "/api/messaging/\(pairing.platform)/onboarding/\(pairing.id)", body: [:])
+            }
         }
         pairing = nil
     }
@@ -191,7 +199,9 @@ final class MessagingPlatformsModel: ObservableObject {
             do {
                 let status = try await client.fetchHTTP(base)
                 let state = status["status"] as? String
-                if state == "error" { throw HermesGateway.GatewayError.httpRefused(409, (status["error"] as? String) ?? "Pairing failed.") }
+                if state == "error" {
+                    throw HermesGateway.GatewayError.httpRefused(409, (status["error"] as? String) ?? "Pairing failed.")
+                }
                 // WhatsApp rotates its QR every ~20s.
                 if let qr = status["qr_payload"] as? String, !qr.isEmpty { pairing?.qrPayload = qr }
                 guard state == (platform == "telegram" ? "ready" : "connected") else { continue }
@@ -203,7 +213,8 @@ final class MessagingPlatformsModel: ObservableObject {
                 if let profileID { body["profile"] = profileID }
                 let applied = try await client.sendHTTP("POST", path: "\(base)/apply\(query(profileID))", body: body)
                 pairing = nil
-                let account = (applied["bot_username"] as? String).map { " as @\($0)" }
+                let account =
+                    (applied["bot_username"] as? String).map { " as @\($0)" }
                     ?? (status["account_name"] as? String).map { " as \($0)" } ?? ""
                 notice = "\(platform == "telegram" ? "Telegram" : "WhatsApp") connected\(account)."
                 await load(profileID: profileID)

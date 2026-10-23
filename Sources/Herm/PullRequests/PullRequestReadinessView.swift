@@ -25,10 +25,21 @@ struct PullRequestReadinessView: View {
                         .lineLimit(1).fixedSize()
                         .help(date.formatted(date: .abbreviated, time: .standard))
                 }
-                DockIconButton(icon: .arrowsClockwise, label: "Refresh readiness", isBusy: center.isLoadingDetail(for: record.id), size: 24, style: style) { Task { await center.refreshSelectedDetail() } }
+                DockIconButton(
+                    icon: .arrowsClockwise, label: "Refresh readiness", isBusy: center.isLoadingDetail(for: record.id),
+                    size: 24, style: style
+                ) { Task { await center.refreshSelectedDetail() } }
             }
-            fact("State", record.mergedAt != nil ? "Merged" : (record.state == "closed" ? "Closed" : (record.isDraft ? "Draft · not ready for review" : "Open")), color: record.presentationColor)
-            fact("Checks", record.checksSummary, color: record.checks.contains(where: \.isFailure) ? .dockDestructive : .dockPrimaryText)
+            fact(
+                "State",
+                record.mergedAt != nil
+                    ? "Merged"
+                    : (record.state == "closed"
+                        ? "Closed" : (record.isDraft ? "Draft · not ready for review" : "Open")),
+                color: record.presentationColor)
+            fact(
+                "Checks", record.checksSummary,
+                color: record.checks.contains(where: \.isFailure) ? .dockDestructive : .dockPrimaryText)
             fact("Review", reviewLabel, color: record.reviewColor)
             fact("Merge", mergeLabel, warning: record.isOpenForWork && record.mergeability == .conflicting)
             if let warning = record.detailWarning { Text(warning).foregroundStyle(Color.dockWarning) }
@@ -46,8 +57,14 @@ struct PullRequestReadinessView: View {
                         }.buttonStyle(.dockCompact)
                     }
                     if record.mergeability == .conflicting, chatRouter != nil {
-                        Button { Task { await prepareResolution() } } label: { GitHubActionLabel(title: preparingResolution ? "Preparing…" : "Prepare resolution in Hermes", isBusy: preparingResolution) }
-                            .buttonStyle(.dockCompact).disabled(preparingResolution)
+                        Button {
+                            Task { await prepareResolution() }
+                        } label: {
+                            GitHubActionLabel(
+                                title: preparingResolution ? "Preparing…" : "Prepare resolution in Hermes",
+                                isBusy: preparingResolution)
+                        }
+                        .buttonStyle(.dockCompact).disabled(preparingResolution)
                     }
                     Link(destination: record.reference.webURL) {
                         HStack(spacing: 6) {
@@ -59,27 +76,46 @@ struct PullRequestReadinessView: View {
             }
             if let analysis {
                 if !analysis.matches(record) {
-                    Text("Conflict analysis is outdated. Analyze the current revisions again.").foregroundStyle(Color.dockWarning)
+                    Text("Conflict analysis is outdated. Analyze the current revisions again.").foregroundStyle(
+                        Color.dockWarning)
                 } else {
-                    Text("Local analysis · \(String(analysis.headRevision.prefix(7))) into \(String(analysis.baseRevision.prefix(7)))")
-                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                    Text(
+                        "Local analysis · \(String(analysis.headRevision.prefix(7))) into \(String(analysis.baseRevision.prefix(7)))"
+                    )
+                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     if analysis.hasConflicts {
-                        ForEach(analysis.files, id: \.self) { path in Text(path).dockFont(.body, weight: .regular, design: .monospaced).textSelection(.enabled) }
-                        if !analysis.complete { Text("Git reported a conflict without a complete file list. Open on GitHub for details.").foregroundStyle(Color.dockWarning) }
-                    } else { Text("No conflicts found for these revisions. GitHub readiness is shown separately.").foregroundStyle(Color.dockSecondaryText) }
+                        ForEach(analysis.files, id: \.self) { path in
+                            Text(path).dockFont(.body, weight: .regular, design: .monospaced).textSelection(.enabled)
+                        }
+                        if !analysis.complete {
+                            Text("Git reported a conflict without a complete file list. Open on GitHub for details.")
+                                .foregroundStyle(Color.dockWarning)
+                        }
+                    } else {
+                        Text("No conflicts found for these revisions. GitHub readiness is shown separately.")
+                            .foregroundStyle(Color.dockSecondaryText)
+                    }
                 }
             }
             if let error { Text(error).foregroundStyle(Color.dockWarning) }
         }
         .dockFont(.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
-        .onChange(of: record.id) { _, _ in analysisTask?.cancel(); analysis = nil; error = nil }
+        .onChange(of: record.id) { _, _ in
+            analysisTask?.cancel()
+            analysis = nil
+            error = nil
+        }
         .onDisappear { analysisTask?.cancel() }
     }
-    private func fact(_ title: String, _ value: String, warning: Bool = false, color: Color = .dockPrimaryText) -> some View {
+    private func fact(_ title: String, _ value: String, warning: Bool = false, color: Color = .dockPrimaryText)
+        -> some View
+    {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title).foregroundStyle(Color.dockMetadataText).frame(width: 64, alignment: .leading)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if warning { DockIcon(.warningCircle, color: Color.dockWarning).dockFont(.navigation).accessibilityHidden(true) }
+                if warning {
+                    DockIcon(.warningCircle, color: Color.dockWarning).dockFont(.navigation).accessibilityHidden(true)
+                }
                 Text(value).fontWeight(.regular).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(warning ? Color.dockWarning : color)
@@ -106,7 +142,8 @@ struct PullRequestReadinessView: View {
     }
     private func analyze() {
         guard record.canAnalyzeConflicts else { return }
-        analyzing = true; error = nil
+        analyzing = true
+        error = nil
         let snapshot = record
         analysisTask = Task {
             defer { analyzing = false }
@@ -122,24 +159,35 @@ struct PullRequestReadinessView: View {
     }
     private func prepareResolution() async {
         guard record.isOpenForWork, record.mergeability == .conflicting, !preparingResolution else { return }
-        preparingResolution = true; defer { preparingResolution = false }
+        preparingResolution = true
+        defer { preparingResolution = false }
         var path = record.localPath
         if path.isEmpty {
-            let panel = NSOpenPanel(); panel.title = "Choose the local repository for this PR"; panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
-            guard panel.runAboveHerm() == .OK, let url = panel.url else { return }; path = url.path
+            let panel = NSOpenPanel()
+            panel.title = "Choose the local repository for this PR"
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.allowsMultipleSelection = false
+            guard panel.runAboveHerm() == .OK, let url = panel.url else { return }
+            path = url.path
         }
-        guard let remote = await RepositoryService.githubRemote(path: path), remote.id.caseInsensitiveCompare(record.repository.id) == .orderedSame else {
-            error = "Choose a local repository or worktree whose GitHub remote matches \(record.repository.id)."; return
+        guard let remote = await RepositoryService.githubRemote(path: path),
+            remote.id.caseInsensitiveCompare(record.repository.id) == .orderedSame
+        else {
+            error = "Choose a local repository or worktree whose GitHub remote matches \(record.repository.id)."
+            return
         }
         let files = analysis.flatMap { $0.matches(record) ? $0.files : nil } ?? []
-        let context = ChatContext(id: "conflicts:" + record.id, title: "Resolve conflicts in PR #\(record.displayNumber)", body: """
-        Prepare conflict resolution for \(record.reference.title): \(record.title).
-        PR: \(record.reference.webURL.absoluteString)
-        Head: \(record.headBranch) @ \(record.headRevision ?? "unknown")
-        Base: \(record.baseBranch) @ \(record.baseRevision ?? "unknown")
-        Conflict files from matching local analysis: \(files.isEmpty ? "Not available; inspect before resolving." : files.joined(separator: ", "))
-        Inspect this repository and the current revisions before making changes. Preserve existing work, resolve the conflicts, and run relevant verification. Do not commit, push, or merge unless I explicitly ask.
-        """, projectPath: path)
+        let context = ChatContext(
+            id: "conflicts:" + record.id, title: "Resolve conflicts in PR #\(record.displayNumber)",
+            body: """
+                Prepare conflict resolution for \(record.reference.title): \(record.title).
+                PR: \(record.reference.webURL.absoluteString)
+                Head: \(record.headBranch) @ \(record.headRevision ?? "unknown")
+                Base: \(record.baseBranch) @ \(record.baseRevision ?? "unknown")
+                Conflict files from matching local analysis: \(files.isEmpty ? "Not available; inspect before resolving." : files.joined(separator: ", "))
+                Inspect this repository and the current revisions before making changes. Preserve existing work, resolve the conflicts, and run relevant verification. Do not commit, push, or merge unless I explicitly ask.
+                """, projectPath: path)
         chatRouter?.attach(context, to: nil)
     }
 }

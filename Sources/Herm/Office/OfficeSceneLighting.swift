@@ -61,7 +61,9 @@ struct OfficeSceneLighting {
         guard #available(macOS 15.0, *) else { return nil }
         let step = Int((daylight.sunElevation / 2).rounded())
         if let cached = cache[step] { return cached }
-        guard let image = skyImage(daylight), let resource = try? EnvironmentResource(equirectangular: image) else { return nil }
+        guard let image = skyImage(daylight), let resource = try? EnvironmentResource(equirectangular: image) else {
+            return nil
+        }
         cache[step] = resource
         return resource
     }
@@ -77,12 +79,18 @@ struct OfficeSceneLighting {
             let day = color.blended(withFraction: CGFloat(0.5 * (1 - daylight.night)), of: white) ?? color
             return day.blended(withFraction: CGFloat(0.7 * daylight.night), of: moonlit) ?? day
         }
-        let width = 128, height = 64
+        let width = 128
+        let height = 64
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        let colors = [daylight.zenith, daylight.horizon, daylight.haze, daylight.haze].map { soft($0).cgColor } as CFArray
-        guard let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.5, 0.6, 1]) else { return nil }
+            let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        let colors =
+            [daylight.zenith, daylight.horizon, daylight.haze, daylight.haze].map { soft($0).cgColor } as CFArray
+        guard let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.5, 0.6, 1]) else {
+            return nil
+        }
         // CoreGraphics' origin is bottom-left; the equirect's first row is the zenith.
         context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: height), end: .zero, options: [])
         return context.makeImage()

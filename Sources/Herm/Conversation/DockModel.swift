@@ -4,6 +4,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
+
 /// A parsed session-resume transcript. Image attachment is deferred: only
 /// file references are parsed synchronously so session selection never
 /// performs disk reads or image decoding on the main actor.
@@ -33,7 +34,10 @@ final class DockModel: ObservableObject {
     @Published var status: HermesStatus = .idle
     @Published var isHermesConnected = false
     @Published var messages: [ChatMessage] = [] {
-        didSet { messagesRevision &+= 1; messageNavigatorNeedsRefresh = true }
+        didSet {
+            messagesRevision &+= 1
+            messageNavigatorNeedsRefresh = true
+        }
     }
     private(set) var messagesRevision: UInt64 = 0
     var cachedMessageNavigatorItems: (sessionID: String, snapshot: MessageNavigatorSnapshot)?
@@ -161,15 +165,19 @@ final class DockModel: ObservableObject {
     @Published var isCreatingSession = false
     @Published var currentSessionTitle: String?
     var autoTitleAttempts: Set<String> = []
-    var conversationActivityPhase: ConversationActivityPhase = .idle { didSet { if oldValue != conversationActivityPhase { scheduleActivityPresentation() } } }
+    var conversationActivityPhase: ConversationActivityPhase = .idle {
+        didSet { if oldValue != conversationActivityPhase { scheduleActivityPresentation() } }
+    }
     @Published var interruptState: InterruptState = .idle
     @Published var isShowingReasoning = false
     var activeToolCalls: [ActiveToolCall] = [] {
         didSet {
             guard oldValue != activeToolCalls else { return }
             if streamingMessageID != nil {
-                Self.upsert(splitOffCallIDs.isEmpty ? activeToolCalls : activeToolCalls.filter { !splitOffCallIDs.contains($0.id) },
-                            into: &streamingTurnActivity)
+                Self.upsert(
+                    splitOffCallIDs.isEmpty
+                        ? activeToolCalls : activeToolCalls.filter { !splitOffCallIDs.contains($0.id) },
+                    into: &streamingTurnActivity)
             }
             scheduleActivityPresentation()
         }
@@ -191,9 +199,15 @@ final class DockModel: ObservableObject {
     @Published var hasUnreadResponse = false
     @Published var completionNotificationsEnabled: Bool
     var recentEvents: [AgentEvent] = [] { didSet { if oldValue != recentEvents { scheduleActivityPresentation() } } }
-    var activeSubagents: [HermesSubagent] = [] { didSet { if oldValue != activeSubagents { scheduleActivityPresentation() } } }
-    var sessionAgents: [HermesSubagent] = [] { didSet { if oldValue != sessionAgents { scheduleActivityPresentation() } } }
-    var agentActivities: [AgentActivity] = [] { didSet { if oldValue != agentActivities { scheduleActivityPresentation() } } }
+    var activeSubagents: [HermesSubagent] = [] {
+        didSet { if oldValue != activeSubagents { scheduleActivityPresentation() } }
+    }
+    var sessionAgents: [HermesSubagent] = [] {
+        didSet { if oldValue != sessionAgents { scheduleActivityPresentation() } }
+    }
+    var agentActivities: [AgentActivity] = [] {
+        didSet { if oldValue != agentActivities { scheduleActivityPresentation() } }
+    }
     /// The sole UI invalidation signal for high-frequency agent activity.
     /// Canonical arrays above update immediately; this revision is coalesced.
     @Published var activityPresentationRevision = 0
@@ -268,7 +282,8 @@ final class DockModel: ObservableObject {
     @Published var sessionProfileID: String? {
         didSet {
             if voiceSessionID != nil,
-               (voiceProfileID ?? "default") != (sessionProfileID ?? profileScopeID ?? "default") {
+                (voiceProfileID ?? "default") != (sessionProfileID ?? profileScopeID ?? "default")
+            {
                 stopVoiceConversation()
             }
         }
@@ -369,7 +384,10 @@ final class DockModel: ObservableObject {
     var lastTranscriptPrepend: TranscriptHistoryPrepend? { didSet { transcriptPresentationChanges.send() } }
     /// Every stored prompt of the active paged transcript, oldest first.
     var transcriptTimeline: [TranscriptTimelineEntry] = [] {
-        didSet { messageNavigatorNeedsRefresh = true; transcriptPresentationChanges.send() }
+        didSet {
+            messageNavigatorNeedsRefresh = true
+            transcriptPresentationChanges.send()
+        }
     }
     var transcriptMessageIDsByRowID: [Int: UUID] = [:]
     /// True while search or a jump reads older history in one step.
@@ -457,8 +475,11 @@ final class DockModel: ObservableObject {
         gateway.onConnectionChange = { [weak self] connected in
             self?.isHermesConnected = connected
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
-            if connected { self?.replayTrackedGatewayEvents() }
-            else { DeveloperWorkflowModel.shared.turnBaselines.removeAll() }
+            if connected {
+                self?.replayTrackedGatewayEvents()
+            } else {
+                DeveloperWorkflowModel.shared.turnBaselines.removeAll()
+            }
         }
     }
 
@@ -503,7 +524,8 @@ final class DockModel: ObservableObject {
     /// Cap what we keep to a size that comfortably covers the UI preview.
     nonisolated static let toolPayloadPersistenceLimit = 4000
 
-    static let visionUnsupportedNotice = "This model can't read images. Use a vision-capable model in Hermes to analyze images."
+    static let visionUnsupportedNotice =
+        "This model can't read images. Use a vision-capable model in Hermes to analyze images."
     static let sessionDateFormatter = ISO8601DateFormatter()
 
     nonisolated(unsafe) static let kanbanNoticeHead = /([^\p{L}\p{N}\s\[@`*#>-]\S*) (.*\bt_[0-9a-f]{8}\b.*)/

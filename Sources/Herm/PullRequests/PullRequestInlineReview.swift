@@ -28,11 +28,13 @@ struct PullRequestInlineReview: View {
                         }.background(Color.dockSurface2)
                     }
                     GitHubMarkdownDraft(
-                        text: Binding(get: { model.inlineDrafts[activeTarget.id] ?? "" },
-                                      set: { model.inlineDrafts[activeTarget.id] = $0 }),
-                        placeholder: "Leave feedback on this line…", minimumHeight: 80)
-                        .frame(height: 128)
-                        .disabled(model.busy || model.uncertainSubmission)
+                        text: Binding(
+                            get: { model.inlineDrafts[activeTarget.id] ?? "" },
+                            set: { model.inlineDrafts[activeTarget.id] = $0 }),
+                        placeholder: "Leave feedback on this line…", minimumHeight: 80
+                    )
+                    .frame(height: 128)
+                    .disabled(model.busy || model.uncertainSubmission)
                     ViewThatFits(in: .horizontal) {
                         HStack {
                             draftHint
@@ -41,7 +43,10 @@ struct PullRequestInlineReview: View {
                         }
                         VStack(alignment: .leading, spacing: 8) {
                             draftHint
-                            HStack { Spacer(); editorActions(activeTarget) }
+                            HStack {
+                                Spacer()
+                                editorActions(activeTarget)
+                            }
                         }
                     }
                 }
@@ -71,9 +76,10 @@ struct PullRequestInlineReview: View {
                 if model.stageInline(target, record: record) { self.target = nil }
             }
             .buttonStyle(.dockPrimary)
-            .disabled(model.busy || model.uncertainSubmission
-                || (model.inlineDrafts[target.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || (model.inlineDrafts[target.id] ?? "").count > 10_000)
+            .disabled(
+                model.busy || model.uncertainSubmission
+                    || (model.inlineDrafts[target.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || (model.inlineDrafts[target.id] ?? "").count > 10_000)
         }.fixedSize()
     }
 }
@@ -90,9 +96,13 @@ struct PullRequestReviewDraftRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(comment.target.locationLabel).dockFont(.body, weight: .semibold)
                         .lineLimit(2).textSelection(.enabled)
-                    Text(comment.target.revision == record.headRevision ? "Draft · not published" : "Draft · source revision changed")
-                        .dockFont(.metadata)
-                        .foregroundStyle(comment.target.revision == record.headRevision ? Color.dockSecondaryText : Color.dockWarning)
+                    Text(
+                        comment.target.revision == record.headRevision
+                            ? "Draft · not published" : "Draft · source revision changed"
+                    )
+                    .dockFont(.metadata)
+                    .foregroundStyle(
+                        comment.target.revision == record.headRevision ? Color.dockSecondaryText : Color.dockWarning)
                 }
                 Spacer(minLength: 8)
                 HStack(spacing: 6) {

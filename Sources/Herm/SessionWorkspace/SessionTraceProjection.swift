@@ -157,7 +157,7 @@ enum SessionTraceProjection {
                 let placed =
                     agent.startedAt
                     ?? activities.first { $0.agentID == agent.id && $0.kind == "subagent.start" }?
-                        .timestamp
+                    .timestamp
                     ?? agent.completedAt
                 return referenced.contains(agent.id)
                     || (placed.map {
@@ -334,7 +334,8 @@ enum SessionTraceProjection {
 
     /// An unnamed delegate is known by its task: the goal's first line, shortened.
     static func taskTitle(_ goal: String) -> String {
-        let line = goal.split(whereSeparator: \.isNewline).first.map(String.init)?
+        let line =
+            goal.split(whereSeparator: \.isNewline).first.map(String.init)?
             .trimmingCharacters(in: .whitespaces) ?? ""
         guard !line.isEmpty else { return "Delegate" }
         return line.count > 80 ? String(line.prefix(79)) + "…" : line
@@ -348,7 +349,8 @@ enum SessionTraceProjection {
     static func detailMarkdown(_ value: String?, section: DetailSection, kind: SessionTraceRow.Kind) -> String? {
         guard var text = value?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         if section == .result, kind == .tool, let data = text.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        {
             if let error = json["error"] as? String, !error.isEmpty {
                 text = "Error: " + error
             } else if let output = json["output"] as? String {
@@ -360,8 +362,12 @@ enum SessionTraceProjection {
         if section != .diff, prose { return text }
         let patch = section == .diff || text.contains("*** Begin Patch") || text.hasPrefix("diff --git")
         // A fence longer than any backtick run inside keeps the block closed.
-        var longest = 0, run = 0
-        for character in text { run = character == "`" ? run + 1 : 0; longest = max(longest, run) }
+        var longest = 0
+        var run = 0
+        for character in text {
+            run = character == "`" ? run + 1 : 0
+            longest = max(longest, run)
+        }
         let fence = String(repeating: "`", count: max(3, longest + 1))
         return fence + (patch ? "diff" : "") + "\n" + text + "\n" + fence
     }

@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// One conversation in the session picker popover. Mirrors the rail row: a
@@ -160,7 +160,6 @@ struct SessionPickerRow: View {
     }
 }
 
-
 /// Rows sliding under a still pointer otherwise flip hover on every row they
 /// pass, each building and tearing down its action buttons. Like Finder, hover
 /// pauses while the list scrolls. `content` is stored, not a closure, so the
@@ -193,7 +192,8 @@ struct WorkingTitleShimmer: ViewModifier {
             content.overlay {
                 TimelineView(.dockMotion()) { context in
                     GeometryReader { geo in
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
+                        let phase =
+                            context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
                         let band = max(geo.size.width * 0.4, 40)
                         LinearGradient(colors: [.clear, color, .clear], startPoint: .leading, endPoint: .trailing)
                             .frame(width: band)

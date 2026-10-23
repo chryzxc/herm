@@ -41,10 +41,10 @@ enum ConfigurationService {
     ) throws -> ConfigurationHealth {
         let decoded = try JSONDecoder().decode(Contract.self, from: Data(output.utf8))
         guard decoded.schema == schema,
-              decoded.providers.allSatisfy({ safeIdentifier($0.id) }),
-              decoded.models.allSatisfy({ safeIdentifier($0.id) }),
-              decoded.credentials.allSatisfy({ safeIdentifier($0.provider) }),
-              decoded.routing.fallbackCount >= 0
+            decoded.providers.allSatisfy({ safeIdentifier($0.id) }),
+            decoded.models.allSatisfy({ safeIdentifier($0.id) }),
+            decoded.credentials.allSatisfy({ safeIdentifier($0.provider) }),
+            decoded.routing.fallbackCount >= 0
         else { throw ParseError.invalidContract }
 
         let isStale = now.timeIntervalSince(observedAt) > maxAge
@@ -69,7 +69,8 @@ enum ConfigurationService {
 
     private static func safeIdentifier(_ value: String) -> Bool {
         guard !value.isEmpty, value.count <= 128,
-              value.first?.isLetter == true || value.first?.isNumber == true else { return false }
+            value.first?.isLetter == true || value.first?.isNumber == true
+        else { return false }
         return value.allSatisfy { $0.isLetter || $0.isNumber || ".-_".contains($0) }
     }
 
@@ -82,7 +83,9 @@ enum ConfigurationService {
         let routing: RoutingHealth
         let credentials: [CredentialPresence]
 
-        private enum CodingKeys: String, CodingKey, CaseIterable { case schema, providers, models, routing, credentials }
+        private enum CodingKeys: String, CodingKey, CaseIterable {
+            case schema, providers, models, routing, credentials
+        }
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             schema = try container.decode(String.self, forKey: .schema)

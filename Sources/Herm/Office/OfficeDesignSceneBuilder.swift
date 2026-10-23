@@ -13,11 +13,23 @@ final class OfficeDesignSceneBuilder {
 
     init(palette: OfficeScenePalette = .current()) {
         self.palette = palette
-        plaster = palette.plaster; trim = palette.trim; floor = palette.floor; wood = palette.wood
-        oak = palette.frame; cork = palette.cork; paper = palette.paper; blue = palette.fabric
-        orange = palette.coral; green = palette.leaf; lawn = palette.lawn; steel = palette.steel
-        lilac = palette.roomFloor; signInk = palette.signInk; glow = palette.lamp
-        neon = palette.neon; violet = palette.neonAlt
+        plaster = palette.plaster
+        trim = palette.trim
+        floor = palette.floor
+        wood = palette.wood
+        oak = palette.frame
+        cork = palette.cork
+        paper = palette.paper
+        blue = palette.fabric
+        orange = palette.coral
+        green = palette.leaf
+        lawn = palette.lawn
+        steel = palette.steel
+        lilac = palette.roomFloor
+        signInk = palette.signInk
+        glow = palette.lamp
+        neon = palette.neon
+        violet = palette.neonAlt
     }
 
     private let caution = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.26, alpha: 1)
@@ -48,9 +60,15 @@ final class OfficeDesignSceneBuilder {
         wall(root, from: [8, 14], to: [8, 16], height: 0.65)
         wall(root, from: [-28, -12], to: [-28, 14])
         wall(root, from: [-28, 14], to: [-8, 14], height: 0.65)
-        for x in stride(from: Float(-25), through: -10, by: 3) { window(root, at: [x, 1.75, -11.84], yaw: 0, blinds: Int(x).isMultiple(of: 2)) }
-        for x in stride(from: Float(10), through: 26, by: 3) { window(root, at: [x, 1.75, -11.84], yaw: 0, blinds: Int(x).isMultiple(of: 2)) }
-        for x: Float in [-23.5, -20.5, -17.5, -14.5, -11.5, 11.5, 14.5, 17.5] { wallSconce(root, at: [x, 2.25, -11.86]) }
+        for x in stride(from: Float(-25), through: -10, by: 3) {
+            window(root, at: [x, 1.75, -11.84], yaw: 0, blinds: Int(x).isMultiple(of: 2))
+        }
+        for x in stride(from: Float(10), through: 26, by: 3) {
+            window(root, at: [x, 1.75, -11.84], yaw: 0, blinds: Int(x).isMultiple(of: 2))
+        }
+        for x: Float in [-23.5, -20.5, -17.5, -14.5, -11.5, 11.5, 14.5, 17.5] {
+            wallSconce(root, at: [x, 2.25, -11.86])
+        }
         // The server-room wall stays solid. East-wing windows are independent.
         for z in stride(from: Float(-8), through: 11, by: 4) {
             if z != 8 { window(root, at: [-27.84, 1.75, z], yaw: .pi / 2, blinds: false) }
@@ -70,7 +88,9 @@ final class OfficeDesignSceneBuilder {
         roomLabel(root, number: 2, title: "Assembly Bay", subtitle: "Builds & releases", at: [10.2, -12])
         assemblyCradle(root, at: [13.9, 0, -10.8])
         robotArm(root, at: [16.3, 0, -10.8], yaw: .pi)
-        for x: Float in [12.7, 15.1] { workStation(.assemblyBay, [x, 0, -9.6], approach: [x, 0, -9.0], yaw: .pi, seated: false) }
+        for x: Float in [12.7, 15.1] {
+            workStation(.assemblyBay, [x, 0, -9.6], approach: [x, 0, -9.0], yaw: .pi, seated: false)
+        }
         for x: Float in [-23, -17, 11, 17] { cabinet(root, at: [x, 0, x < 0 ? -11.2 : -10.0]) }
         printer(root, at: [-9.5, 0, -10.6])
 
@@ -119,7 +139,9 @@ final class OfficeDesignSceneBuilder {
         partsDepot(root)
         gameRoom(root)
         restrooms(root)
-        for p: SIMD3<Float> in [[-26.5, 0, -10.5], [-17.5, 0, 6.7], [-9, 0, 7], [27, 0, -3.8], [26.5, 0, 4.5]] { plant(root, at: p, height: 1.6) }
+        for p: SIMD3<Float> in [[-26.5, 0, -10.5], [-17.5, 0, 6.7], [-9, 0, 7], [27, 0, -3.8], [26.5, 0, 4.5]] {
+            plant(root, at: p, height: 1.6)
+        }
 
         // Preserve the outdoor hangout, connected directly to the main entrance.
         box(root, "entrance-path-floor", [3, 0.035, 2], [0, -0.0175, 15], steel)
@@ -136,30 +158,42 @@ final class OfficeDesignSceneBuilder {
             (SIMD3<Float>(-21, 0, 18), Float(0.72)),
             (SIMD3<Float>(-21, 0, 24.8), Float(0.58)),
             (SIMD3<Float>(20.5, 0, 24.8), Float(0.66)),
-            (SIMD3<Float>(21, 0, 20.5), Float(0.78))
+            (SIMD3<Float>(21, 0, 20.5), Float(0.78)),
         ] {
             gardenTree(landscape, at: position, scale: scale)
         }
         navigation.leisureSpots = [
-            .init(station: .init(position: [-14.5, 0, -1.2], approach: [-14.5, 0, -0.5], yaw: .pi, seated: false), action: .coffee),
+            .init(
+                station: .init(position: [-14.5, 0, -1.2], approach: [-14.5, 0, -0.5], yaw: .pi, seated: false),
+                action: .coffee),
             .init(station: .init(position: [-8.8, 0, 0], approach: [-10, 0, 0], yaw: -.pi / 2), action: .reading),
-            .init(station: .init(position: [-5, 0, 10], approach: [-5, 0, 9], yaw: 0, seated: false), action: .strolling),
-            .init(station: .init(position: [-0.65, 0, 4], approach: [-0.65, 0, 3], yaw: .pi / 2, seated: false), action: .socializing),
-            .init(station: .init(position: [0.65, 0, 4], approach: [0.65, 0, 3], yaw: -.pi / 2, seated: false), action: .socializing),
-            .init(station: .init(position: [0, 0, -5], approach: [0, 0, -5], yaw: 0, seated: false), action: .strolling),
-            .init(station: .init(position: [0, 0, 9], approach: [0, 0, 9], yaw: 0, seated: false), action: .strolling),
-            .init(station: .init(position: [0, 0, 12], approach: [0, 0, 12], yaw: .pi, seated: false), action: .strolling)
+            .init(
+                station: .init(position: [-5, 0, 10], approach: [-5, 0, 9], yaw: 0, seated: false), action: .strolling),
+            .init(
+                station: .init(position: [-0.65, 0, 4], approach: [-0.65, 0, 3], yaw: .pi / 2, seated: false),
+                action: .socializing),
+            .init(
+                station: .init(position: [0.65, 0, 4], approach: [0.65, 0, 3], yaw: -.pi / 2, seated: false),
+                action: .socializing),
+            .init(
+                station: .init(position: [0, 0, -5], approach: [0, 0, -5], yaw: 0, seated: false), action: .strolling),
+            .init(
+                station: .init(position: [0, 0, 9], approach: [0, 0, 9], yaw: 0, seated: false), action: .strolling),
+            .init(
+                station: .init(position: [0, 0, 12], approach: [0, 0, 12], yaw: .pi, seated: false), action: .strolling),
         ]
         outdoorLandscape(landscape)
         for slot in 0..<capacity {
             if slot < 12 {
                 // Two stand-up rows face the kanban wall in the planning room.
                 let p = SIMD3<Float>(10.25 + Float(slot % 6) * 1.5, 0, -0.75 + Float(slot / 6) * 1.25)
-                navigation.stations[.kanbanBoard, default: []].append(.init(position: p, approach: p, yaw: .pi, seated: false))
+                navigation.stations[.kanbanBoard, default: []].append(
+                    .init(position: p, approach: p, yaw: .pi, seated: false))
             }
             if slot < 8 {
                 let waiting = SIMD3<Float>(0, 0, 4 + Float(slot))
-                navigation.stations[.waitingArea, default: []].append(.init(position: waiting, approach: waiting, yaw: .pi / 2, seated: false))
+                navigation.stations[.waitingArea, default: []].append(
+                    .init(position: waiting, approach: waiting, yaw: .pi / 2, seated: false))
             }
         }
         interiorDetails(root)
@@ -186,14 +220,18 @@ final class OfficeDesignSceneBuilder {
         for index in 0..<4 {
             let x = Float(21 + index * 2)
             for segment in 0..<4 {
-                box(root, "caution-stripe", [0.2, 0.006, 0.1], [x - 0.3 + Float(segment) * 0.2, 0.012, 13.45], segment.isMultiple(of: 2) ? caution : signInk)
+                box(
+                    root, "caution-stripe", [0.2, 0.006, 0.1], [x - 0.3 + Float(segment) * 0.2, 0.012, 13.45],
+                    segment.isMultiple(of: 2) ? caution : signInk)
             }
         }
         fireExtinguisher(root, at: [27.3, 0, 6.12], yaw: 0)
         // Assembly Bay: painted safety line around the robot arm's reach.
-        for (size, p) in [(SIMD3<Float>(2.5, 0.006, 0.07), SIMD3<Float>(16.25, 0.012, -9.75)),
-                          ([0.07, 0.006, 1.9], [15.0, 0.012, -10.7]),
-                          ([0.07, 0.006, 1.9], [17.5, 0.012, -10.7])] {
+        for (size, p) in [
+            (SIMD3<Float>(2.5, 0.006, 0.07), SIMD3<Float>(16.25, 0.012, -9.75)),
+            ([0.07, 0.006, 1.9], [15.0, 0.012, -10.7]),
+            ([0.07, 0.006, 1.9], [17.5, 0.012, -10.7]),
+        ] {
             box(root, "safety-line", size, p, caution)
         }
         // QA Lab: a wall rail of small-parts bins beside the repair stand.
@@ -215,8 +253,11 @@ final class OfficeDesignSceneBuilder {
     }
 
     /// A seat or standing spot a running bot uses for its work kind.
-    private func workStation(_ location: OfficePreviewLocation, _ p: SIMD3<Float>, approach: SIMD3<Float>, yaw: Float, seated: Bool = true) {
-        navigation.stations[location, default: []].append(.init(position: p, approach: approach, yaw: yaw, seated: seated))
+    private func workStation(
+        _ location: OfficePreviewLocation, _ p: SIMD3<Float>, approach: SIMD3<Float>, yaw: Float, seated: Bool = true
+    ) {
+        navigation.stations[location, default: []].append(
+            .init(position: p, approach: approach, yaw: yaw, seated: seated))
     }
 
     private func fireExtinguisher(_ root: Entity, at p: SIMD3<Float>, yaw: Float) {
@@ -238,18 +279,26 @@ final class OfficeDesignSceneBuilder {
         box(cooler, "cooler-tap", [0.05, 0.05, 0.05], [-0.06, 0.76, 0.2], blue)
         box(cooler, "cooler-tap", [0.05, 0.05, 0.05], [0.06, 0.76, 0.2], orange)
         box(cooler, "cooler-drip-tray", [0.24, 0.03, 0.08], [0, 0.6, 0.2], steel)
-        let bottle = box(cooler, "cooler-bottle", [0.3, 0.42, 0.3], [0, 1.16, 0], palette.glass.withAlphaComponent(1), radius: 0.12)
-        bottle.model?.materials = [SimpleMaterial(color: palette.water.withAlphaComponent(0.55), roughness: 0.2, isMetallic: false)]
+        let bottle = box(
+            cooler, "cooler-bottle", [0.3, 0.42, 0.3], [0, 1.16, 0], palette.glass.withAlphaComponent(1), radius: 0.12)
+        bottle.model?.materials = [
+            SimpleMaterial(color: palette.water.withAlphaComponent(0.55), roughness: 0.2, isMetallic: false)
+        ]
         box(cooler, "cooler-bottle-neck", [0.12, 0.06, 0.12], [0, 0.96, 0], blue, radius: 0.03)
-        for i in 0..<2 { box(cooler, "paper-cup", [0.06, 0.08, 0.06], [0.24, 0.04 + Float(i) * 0.075, 0.1], paper, radius: 0.015) }
+        for i in 0..<2 {
+            box(cooler, "paper-cup", [0.06, 0.08, 0.06], [0.24, 0.04 + Float(i) * 0.075, 0.1], paper, radius: 0.015)
+        }
     }
 
     /// Idle bots use every room: charging bays, workbenches, shelves and
     /// extra chat corners. Appended after the original spots so existing
     /// indices stay stable. Coordinates are pre-shift, like the rooms.
     private func roomActivities() {
-        func spot(_ p: SIMD3<Float>, _ approach: SIMD3<Float>, _ yaw: Float, _ action: OfficeDesignNavigation.LeisureAction) {
-            navigation.leisureSpots.append(.init(station: .init(position: p, approach: approach, yaw: yaw, seated: false), action: action))
+        func spot(
+            _ p: SIMD3<Float>, _ approach: SIMD3<Float>, _ yaw: Float, _ action: OfficeDesignNavigation.LeisureAction
+        ) {
+            navigation.leisureSpots.append(
+                .init(station: .init(position: p, approach: approach, yaw: yaw, seated: false), action: action))
         }
         for index in 0..<4 {
             let x = Float(21 + index * 2)
@@ -261,27 +310,30 @@ final class OfficeDesignSceneBuilder {
         spot([9.2, 0, 11.6], [9.2, 0, 11.1], 0, .browsing)
         spot([13.2, 0, 11.6], [13.2, 0, 11.1], 0, .browsing)
         spot([-25, 0, 11.3], [-25, 0, 10.8], 0, .browsing)
-        for (a, b) in [(SIMD3<Float>(-0.65, 0, -8), SIMD3<Float>(0.65, 0, -8)),
-                       ([9.9, 0, 10.4], [11.1, 0, 10.4]),
-                       ([22.4, 0, 9.6], [23.6, 0, 9.6])] {
+        for (a, b) in [
+            (SIMD3<Float>(-0.65, 0, -8), SIMD3<Float>(0.65, 0, -8)),
+            ([9.9, 0, 10.4], [11.1, 0, 10.4]),
+            ([22.4, 0, 9.6], [23.6, 0, 9.6]),
+        ] {
             spot(a, a, .pi / 2, .socializing)
             spot(b, b, -.pi / 2, .socializing)
         }
         for z: Float in [9.7, 14.4] { spot([16.6, 0, z], [17.1, 0, z], -.pi / 2, .arcade) }
         // Library armchairs are seated reading spots.
         for (x, yaw) in [(Float(-16.2), Float.pi / 2), (-13.2, -.pi / 2)] {
-            navigation.leisureSpots.append(.init(station: .init(position: [x, 0, 11.4], approach: [x, 0, 12.5], yaw: yaw), action: .reading))
+            navigation.leisureSpots.append(
+                .init(station: .init(position: [x, 0, 11.4], approach: [x, 0, 12.5], yaw: yaw), action: .reading))
         }
     }
 
     /// Move intact furnished wings inward, rather than scaling chairs, doors or agents.
     private func bringWingsTogether(_ root: Entity) {
-        let west = Entity(), east = Entity()
+        let west = Entity()
+        let east = Entity()
         west.name = "west-wing"
         east.name = "east-wing"
         for child in Array(root.children) where child.name != "entrance-garden" && child.name != "exterior-landscape" {
-            if child.position.x <= -8 { west.addChild(child) }
-            else if child.position.x >= 8 { east.addChild(child) }
+            if child.position.x <= -8 { west.addChild(child) } else if child.position.x >= 8 { east.addChild(child) }
         }
         west.position.x = 6.5
         east.position.x = -6.5
@@ -297,7 +349,9 @@ final class OfficeDesignSceneBuilder {
         for location in OfficePreviewLocation.allCases where location != .lounge {
             navigation.stations[location] = navigation.stations[location]?.map(station)
         }
-        navigation.leisureSpots = navigation.leisureSpots.map { $0.isOutdoor ? $0 : .init(station: station($0.station), action: $0.action) }
+        navigation.leisureSpots = navigation.leisureSpots.map {
+            $0.isOutdoor ? $0 : .init(station: station($0.station), action: $0.action)
+        }
     }
 
     /// Static props share the builder's cached meshes/materials; no new update loops or lights.
@@ -312,7 +366,9 @@ final class OfficeDesignSceneBuilder {
         for x: Float in [9.5, 10.5] {
             let crates = group(root, "floor-detail", [x, 0, 9.2])
             for row in 0..<2 {
-                box(crates, "parts-crate", [0.7, 0.42, 0.6], [0, 0.21 + Float(row) * 0.43, 0], row == 0 ? orange : steel, radius: 0.03)
+                box(
+                    crates, "parts-crate", [0.7, 0.42, 0.6], [0, 0.21 + Float(row) * 0.43, 0],
+                    row == 0 ? orange : steel, radius: 0.03)
                 box(crates, "crate-label", [0.3, 0.12, 0.02], [0, 0.26 + Float(row) * 0.43, 0.305], paper)
             }
         }
@@ -340,7 +396,8 @@ final class OfficeDesignSceneBuilder {
             box(display, "monitor-neck", [0.055, 0.22, 0.06], [0, 0.13, 0], steel)
             box(display, "monitor-bezel", [0.94, 0.52, 0.055], [0, 0.43, 0], trim)
             box(display, "monitor-display", [0.89, 0.47, 0.012], [0, 0.43, 0.034], palette.idleScreen)
-            display.findEntity(named: "monitor-display")?.name = index == 0 ? "work-screen-22" : "main-office-extended-screen"
+            display.findEntity(named: "monitor-display")?.name =
+                index == 0 ? "work-screen-22" : "main-office-extended-screen"
         }
         detailedKeyboard(desk, at: [0, 0.98, 0.32])
         oval(desk, "main-office-mouse", [0.085, 0.045, 0.14], [0.52, 1, 0.32], trim)
@@ -359,7 +416,8 @@ final class OfficeDesignSceneBuilder {
         studioDeskAccessories(desk)
         studioCopier(root, at: [22.05, 0, -10.1])
         chair(root, at: [24.5, 0, -8], yaw: .pi, color: trim, highBack: true)
-        navigation.stations[.desk, default: []].append(.init(position: [24.5, 0, -8], approach: [23.25, 0, -8], yaw: .pi))
+        navigation.stations[.desk, default: []].append(
+            .init(position: [24.5, 0, -8], approach: [23.25, 0, -8], yaw: .pi))
         robotTrophy(root, at: [26.6, 0, -6.4])
         plant(root, at: [27, 0, -10.7], height: 1.6)
         floorLamp(root, at: [26.6, 0, -7.8])
@@ -371,7 +429,9 @@ final class OfficeDesignSceneBuilder {
         box(keyboard, "keyboard-case", [0.69, 0.035, 0.25], .zero, trim, radius: 0.012)
         for row in 0..<4 {
             for column in 0..<13 {
-                box(keyboard, "keycap", [0.039, 0.012, 0.038], [-0.3 + Float(column) * 0.05, 0.023, -0.09 + Float(row) * 0.05], steel, radius: 0.004)
+                box(
+                    keyboard, "keycap", [0.039, 0.012, 0.038],
+                    [-0.3 + Float(column) * 0.05, 0.023, -0.09 + Float(row) * 0.05], steel, radius: 0.004)
             }
         }
         box(keyboard, "spacebar", [0.25, 0.012, 0.035], [-0.025, 0.023, 0.103], steel, radius: 0.004)
@@ -439,18 +499,24 @@ final class OfficeDesignSceneBuilder {
         box(desk, "drafting-ruler", [0.85, 0.015, 0.06], [-0.45, 1.17, -0.28], steel)
         box(desk, "model-plinth", [0.55, 0.05, 0.45], [0.55, 1.17, -0.2], wood)
         // A hand-built prototype of the crew's robot sits on the plinth.
-        for x: Float in [-0.06, 0.06] { box(desk, "prototype-leg", [0.07, 0.1, 0.08], [0.55 + x, 1.25, -0.2], steel, radius: 0.02) }
+        for x: Float in [-0.06, 0.06] {
+            box(desk, "prototype-leg", [0.07, 0.1, 0.08], [0.55 + x, 1.25, -0.2], steel, radius: 0.02)
+        }
         box(desk, "prototype-body", [0.22, 0.2, 0.17], [0.55, 1.39, -0.2], paper, radius: 0.06)
         box(desk, "prototype-head", [0.28, 0.21, 0.23], [0.55, 1.6, -0.2], paper, radius: 0.08)
         box(desk, "prototype-visor", [0.21, 0.11, 0.02], [0.55, 1.6, -0.08], signInk, radius: 0.03)
-        for x: Float in [-0.155, 0.155] { box(desk, "prototype-headphone", [0.04, 0.13, 0.1], [0.55 + x, 1.61, -0.2], orange, radius: 0.015) }
+        for x: Float in [-0.155, 0.155] {
+            box(desk, "prototype-headphone", [0.04, 0.13, 0.1], [0.55 + x, 1.61, -0.2], orange, radius: 0.015)
+        }
         chair(root, at: [-25.8, 0, 1.05], yaw: .pi, color: orange)
         workStation(.designStudio, [-25.8, 0, 1.05], approach: [-25.8, 0, 1.9], yaw: .pi)
         let swatches = group(root, "material-sample-board", [-23.35, 1.6, -2.83])
         box(swatches, "sample-backing", [1.15, 1.5, 0.05], .zero, paper)
         let colors = [wood, orange, steel, blue, green, cork]
         for (i, color) in colors.enumerated() {
-            box(swatches, "material-swatch", [0.40, 0.34, 0.04], [-0.25 + Float(i % 2) * 0.5, 0.46 - Float(i / 2) * 0.46, 0.05], color)
+            box(
+                swatches, "material-swatch", [0.40, 0.34, 0.04],
+                [-0.25 + Float(i % 2) * 0.5, 0.46 - Float(i / 2) * 0.46, 0.05], color)
         }
         // Flat-file cabinet doubles as a print and prototype work surface.
         let cabinet = group(root, "floor-detail", [-23.2, 0, -1.4])
@@ -490,7 +556,9 @@ final class OfficeDesignSceneBuilder {
         box(tools, "tool-panel", [3.4, 0.7, 0.04], .zero, trim)
         for i in 0..<9 {
             box(tools, "tool-hook", [0.025, 0.05, 0.05], [-1.4 + Float(i) * 0.35, 0.16, 0.045], steel)
-            box(tools, "bench-tool", [0.055, 0.34, 0.055], [-1.4 + Float(i) * 0.35, -0.05, 0.08], i.isMultiple(of: 2) ? orange : steel)
+            box(
+                tools, "bench-tool", [0.055, 0.34, 0.055], [-1.4 + Float(i) * 0.35, -0.05, 0.08],
+                i.isMultiple(of: 2) ? orange : steel)
         }
     }
 
@@ -501,7 +569,9 @@ final class OfficeDesignSceneBuilder {
             box(root, "raised-tile-seam", [5.6, 0.004, 0.025], [-25, 0.029, 8.4 + Float(i) * 0.6], steel)
             box(root, "raised-tile-seam", [0.025, 0.004, 5.6], [-27.6 + Float(i) * 0.6, 0.029, 11], steel)
         }
-        for i in 0..<5 { box(root, "perforated-tile", [0.56, 0.005, 0.56], [-26.7 + Float(i) * 0.9, 0.03, 11.7], trim) }
+        for i in 0..<5 {
+            box(root, "perforated-tile", [0.56, 0.005, 0.56], [-26.7 + Float(i) * 0.9, 0.03, 11.7], trim)
+        }
         roomLabel(root, number: 6, title: "Server Room", subtitle: "Deploys & infrastructure", at: [-27.6, 8])
         for x: Float in [-26.8, -25.1, -23.4] {
             serverRack(root, at: [x, 0, 12.8], yaw: .pi)
@@ -512,20 +582,26 @@ final class OfficeDesignSceneBuilder {
                 box(root, "rack-handle", [0.035, 0.12, 0.04], [x + 0.45, y, 12.33], trim)
             }
             for i in 0..<4 {
-                box(root, "patch-lead", [0.025, 0.3, 0.025], [x - 0.32 + Float(i) * 0.18, 1.75, 12.31], i.isMultiple(of: 2) ? blue : orange)
+                box(
+                    root, "patch-lead", [0.025, 0.3, 0.025], [x - 0.32 + Float(i) * 0.18, 1.75, 12.31],
+                    i.isMultiple(of: 2) ? blue : orange)
             }
         }
         // Cable ladder is above the service aisle, never a floor obstacle.
         box(root, "overhead-cable-rail", [4.9, 0.06, 0.06], [-25.1, 2.5, 12.7], steel)
         box(root, "overhead-cable-rail", [4.9, 0.06, 0.06], [-25.1, 2.5, 13.1], steel)
-        for i in 0..<13 { box(root, "cable-ladder-rung", [0.04, 0.035, 0.46], [-27.4 + Float(i) * 0.38, 2.5, 12.9], steel) }
+        for i in 0..<13 {
+            box(root, "cable-ladder-rung", [0.04, 0.035, 0.46], [-27.4 + Float(i) * 0.38, 2.5, 12.9], steel)
+        }
         let power = group(root, "floor-detail", [-27, 0, 10.2])
         box(power, "backup-power-cabinet", [1.0, 1.3, 0.8], [0, 0.65, 0], steel)
         for y in stride(from: Float(0.2), through: 1.1, by: 0.13) {
             box(power, "power-vent", [0.75, 0.045, 0.025], [0, y, 0.42], trim)
         }
         box(root, "wall-cooling-unit", [0.25, 0.75, 1.25], [-27.7, 1.85, 11.2], paper)
-        for i in 0..<7 { box(root, "cooling-louvre", [0.025, 0.04, 1.1], [-27.55, 1.6 + Float(i) * 0.08, 11.2], steel) }
+        for i in 0..<7 {
+            box(root, "cooling-louvre", [0.025, 0.04, 1.1], [-27.55, 1.6 + Float(i) * 0.08, 11.2], steel)
+        }
         for z: Float in [10.5, 11.5, 12.5] {
             box(root, "service-aisle-inlay", [2.4, 0.004, 0.025], [-24.6, 0.03, z], steel)
         }
@@ -570,7 +646,8 @@ final class OfficeDesignSceneBuilder {
                 box(root, "console-keyboard", [0.46, 0.03, 0.18], [x, 0.85, z + 0.2], trim, radius: 0.01)
                 let seat = SIMD3<Float>(x, 0, z + 1)
                 chair(root, at: seat, yaw: .pi, color: blue)
-                navigation.stations[.reviewTable, default: []].append(.init(position: seat, approach: [x, 0, z < 0 ? -0.75 : 2.5], yaw: .pi))
+                navigation.stations[.reviewTable, default: []].append(
+                    .init(position: seat, approach: [x, 0, z < 0 ? -0.75 : 2.5], yaw: .pi))
             }
         }
         // A viewing sofa at the back of the room, facing the display wall.
@@ -592,7 +669,9 @@ final class OfficeDesignSceneBuilder {
         let titleMesh = MeshResource.generateText(title, extrusionDepth: 0.004, font: font(0.34, .bold))
         let subtitleMesh = MeshResource.generateText(subtitle, extrusionDepth: 0.004, font: font(0.17, .semibold))
         let numberMesh = MeshResource.generateText("\(number)", extrusionDepth: 0.004, font: font(0.34, .bold))
-        let height: Float = 0.92, badge: Float = 0.64, padding: Float = 0.14
+        let height: Float = 0.92
+        let badge: Float = 0.64
+        let padding: Float = 0.14
         let textWidth = max(titleMesh.bounds.extents.x, subtitleMesh.bounds.extents.x)
         let width = padding + badge + 0.24 + textWidth + 0.32
         let sign = group(root, "room-sign", [p.x, 3.3, p.y])
@@ -615,7 +694,9 @@ final class OfficeDesignSceneBuilder {
         caption.position = [textX - subtitleMesh.bounds.min.x, -0.2 - subtitleMesh.bounds.center.y, 0.05]
         face.addChild(caption)
         // Two slim hangers tie the sign to the wall cap below it.
-        for x in [width * 0.18, width * 0.82] { box(sign, "sign-hanger", [0.03, 0.42, 0.03], [x, -0.56, -0.08], trim) }
+        for x in [width * 0.18, width * 0.82] {
+            box(sign, "sign-hanger", [0.03, 0.42, 0.03], [x, -0.56, -0.08], trim)
+        }
     }
 
     /// Soft neon lettering on the back wall of the entrance hall.
@@ -627,8 +708,9 @@ final class OfficeDesignSceneBuilder {
         let letters = ModelEntity(mesh: mesh, materials: [unlit(neon)])
         letters.position = [-mesh.bounds.center.x, -mesh.bounds.center.y, 0.03]
         sign.addChild(letters)
-        glowBox(sign, "neon-halo", [mesh.bounds.extents.x + 0.5, mesh.bounds.extents.y + 0.35, 0.01], .zero,
-                signInk, radius: 0.12)
+        glowBox(
+            sign, "neon-halo", [mesh.bounds.extents.x + 0.5, mesh.bounds.extents.y + 0.35, 0.01], .zero,
+            signInk, radius: 0.12)
     }
 
     /// The campus sits in open countryside that runs to the horizon: meadow,
@@ -649,29 +731,43 @@ final class OfficeDesignSceneBuilder {
         box(land, "countryside-meadow", [1000, 0.1, 1000], [0, -0.17, 0], meadow)
         // A kerbed hedge frames the back and sides of the site.
         box(land, "site-hedge", [49.6, 0.9, 0.8], [0, 0.33, -14.6], green, radius: 0.3)
-        for x: Float in [-24.6, 24.6] { box(land, "site-hedge", [0.8, 0.9, 41.6], [x, 0.33, 6.6], green, radius: 0.3) }
+        for x: Float in [-24.6, 24.6] {
+            box(land, "site-hedge", [0.8, 0.9, 41.6], [x, 0.33, 6.6], green, radius: 0.3)
+        }
 
         // The access road leaves the sidewalk and meets a country road.
         box(land, "access-road", [6, 0.03, 13], [0, -0.1, 34], asphalt)
         box(land, "country-road", [700, 0.03, 8], [0, -0.1, 44.5], asphalt)
-        for z in stride(from: Float(29.5), through: 38.5, by: 3) { box(land, "road-marking", [0.16, 0.01, 1.5], [0, -0.08, z], paper) }
-        for x in stride(from: Float(-300), through: 300, by: 5) { box(land, "road-marking", [2.2, 0.01, 0.18], [x, -0.08, 44.5], paper) }
+        for z in stride(from: Float(29.5), through: 38.5, by: 3) {
+            box(land, "road-marking", [0.16, 0.01, 1.5], [0, -0.08, z], paper)
+        }
+        for x in stride(from: Float(-300), through: 300, by: 5) {
+            box(land, "road-marking", [2.2, 0.01, 0.18], [x, -0.08, 44.5], paper)
+        }
         for z: Float in [40.3, 48.7] { box(land, "road-verge", [700, 0.06, 0.4], [0, -0.09, z], palette.stone) }
 
         // Car park beside the access road, with parked cars in marked bays.
         box(land, "car-park", [16, 0.03, 9], [-12, -0.1, 34.4], asphalt)
-        for index in 0...8 { box(land, "bay-line", [0.12, 0.01, 4], [-19.5 + Float(index) * 1.9, -0.08, 32.4], paper) }
+        for index in 0...8 {
+            box(land, "bay-line", [0.12, 0.01, 4], [-19.5 + Float(index) * 1.9, -0.08, 32.4], paper)
+        }
         let carColors = [paper, orange, blue, steel, wood, paper]
         for (index, bay) in [0, 1, 3, 4, 6, 7].enumerated() {
-            parkedCar(land, at: [-18.55 + Float(bay) * 1.9, 0, 32.2], yaw: index.isMultiple(of: 2) ? 0 : .pi, color: carColors[index])
+            parkedCar(
+                land, at: [-18.55 + Float(bay) * 1.9, 0, 32.2], yaw: index.isMultiple(of: 2) ? 0 : .pi,
+                color: carColors[index])
         }
         // East of the road: a small lawn with a tree row screening the road.
-        for x in stride(from: Float(-40), through: 40, by: 8) where abs(x) > 5 { gardenTree(land, at: [x, 0, 39.6], scale: 0.62) }
+        for x in stride(from: Float(-40), through: 40, by: 8) where abs(x) > 5 {
+            gardenTree(land, at: [x, 0, 39.6], scale: 0.62)
+        }
 
         // Farm fields: striped crops with a soil border.
         let crops = [green, cork, lawn.blended(withFraction: 0.5, of: cork) ?? cork]
-        for (index, field) in [(SIMD2<Float>(-70, 80), SIMD2<Float>(46, 30)), ([20, 82], [52, 28]), ([88, 70], [40, 34]),
-                               ([-95, 10], [34, 44]), ([80, -10], [38, 40]), ([-60, -70], [50, 34]), ([40, -75], [44, 30])].enumerated() {
+        for (index, field) in [
+            (SIMD2<Float>(-70, 80), SIMD2<Float>(46, 30)), ([20, 82], [52, 28]), ([88, 70], [40, 34]),
+            ([-95, 10], [34, 44]), ([80, -10], [38, 40]), ([-60, -70], [50, 34]), ([40, -75], [44, 30]),
+        ].enumerated() {
             box(land, "field-soil", [field.1.x, 0.04, field.1.y], [field.0.x, -0.11, field.0.y], palette.soil)
             let crop = crops[index % crops.count]
             let rows = Int(field.1.y / 2.2)
@@ -693,9 +789,12 @@ final class OfficeDesignSceneBuilder {
             let p = SIMD3<Float>(cos(angle) * radius, 0, sin(angle) * radius)
             let nearRoad = abs(p.z - 44.5) < 8 || (abs(p.x) < 8 && p.z > 20)
             let onSite = p.x > -30 && p.x < 30 && p.z > -20 && p.z < 50
-            let inField = [(SIMD2<Float>(-70, 80), SIMD2<Float>(46, 30)), ([20, 82], [52, 28]), ([88, 70], [40, 34]),
-                           ([-95, 10], [34, 44]), ([80, -10], [38, 40]), ([-60, -70], [50, 34]), ([40, -75], [44, 30]), ([-48, -40], [34, 22])]
-                .contains { abs(p.x - $0.0.x) < $0.1.x / 2 + 3 && abs(p.z - $0.0.y) < $0.1.y / 2 + 3 }
+            let inField = [
+                (SIMD2<Float>(-70, 80), SIMD2<Float>(46, 30)), ([20, 82], [52, 28]), ([88, 70], [40, 34]),
+                ([-95, 10], [34, 44]), ([80, -10], [38, 40]), ([-60, -70], [50, 34]), ([40, -75], [44, 30]),
+                ([-48, -40], [34, 22]),
+            ]
+            .contains { abs(p.x - $0.0.x) < $0.1.x / 2 + 3 && abs(p.z - $0.0.y) < $0.1.y / 2 + 3 }
             guard !nearRoad, !onSite, !inField else { continue }
             countryTree(land, at: p, scale: 0.8 + random() * 0.9, conifer: random() < 0.35)
             placed += 1
@@ -709,7 +808,9 @@ final class OfficeDesignSceneBuilder {
             let width: Float = 90 + random() * 70
             let height: Float = (far ? 38 : 22) + random() * 18
             let tone = meadow.blended(withFraction: far ? 0.7 : 0.45, of: haze) ?? meadow
-            let hill = oval(land, "horizon-hill", [width, height * 2, width * 0.6], [cos(angle) * radius, -2, sin(angle) * radius], tone)
+            let hill = oval(
+                land, "horizon-hill", [width, height * 2, width * 0.6], [cos(angle) * radius, -2, sin(angle) * radius],
+                tone)
             hill.orientation = simd_quatf(angle: -angle + .pi / 2, axis: [0, 1, 0])
         }
     }
@@ -726,7 +827,9 @@ final class OfficeDesignSceneBuilder {
             }
         } else {
             oval(tree, "tree-crown", [3.6, 3.2, 3.6], [0, 3.6, 0], green)
-            oval(tree, "tree-crown", [2.4, 2.2, 2.4], [0.9, 4.6, 0.4], lawn.blended(withFraction: 0.5, of: green) ?? green)
+            oval(
+                tree, "tree-crown", [2.4, 2.2, 2.4], [0.9, 4.6, 0.4],
+                lawn.blended(withFraction: 0.5, of: green) ?? green)
         }
     }
 
@@ -735,9 +838,11 @@ final class OfficeDesignSceneBuilder {
         box(car, "car-body", [1.7, 0.55, 3.9], [0, 0.45, 0], color, radius: 0.2)
         box(car, "car-cabin", [1.5, 0.5, 2.1], [0, 0.95, -0.2], color, radius: 0.18)
         box(car, "car-glass", [1.54, 0.3, 2.0], [0, 0.98, -0.2], palette.windowView, radius: 0.1)
-        for x: Float in [-0.78, 0.78] { for z: Float in [-1.25, 1.25] {
-            box(car, "car-wheel", [0.24, 0.62, 0.62], [x, 0.31, z], trim, radius: 0.2)
-        } }
+        for x: Float in [-0.78, 0.78] {
+            for z: Float in [-1.25, 1.25] {
+                box(car, "car-wheel", [0.24, 0.62, 0.62], [x, 0.31, z], trim, radius: 0.2)
+            }
+        }
         glowBox(car, "car-lamp", [1.3, 0.1, 0.04], [0, 0.55, 1.95], glow)
     }
 
@@ -757,9 +862,13 @@ final class OfficeDesignSceneBuilder {
         box(root, "cafe-floor", [10.8, 0.025, 10.8], [-13.5, 0.014, 2.5], finish(0.97, 0.92, 0.84))
         let tiles = group(root, "cafe-tiles", [-13.5, 0, 2.5])
         let tile = finish(0.88, 0.62, 0.50)
-        for i in 0..<12 { for j in 0..<12 where (i + j).isMultiple(of: 2) {
-            box(tiles, "checker-tile", [0.88, 0.004, 0.88], [-4.95 + Float(i) * 0.9, 0.029, -4.95 + Float(j) * 0.9], tile)
-        } }
+        for i in 0..<12 {
+            for j in 0..<12 where (i + j).isMultiple(of: 2) {
+                box(
+                    tiles, "checker-tile", [0.88, 0.004, 0.88],
+                    [-4.95 + Float(i) * 0.9, 0.029, -4.95 + Float(j) * 0.9], tile)
+            }
+        }
         roomLabel(root, number: 3, title: "Café", subtitle: "Breaks & chats", at: [-18.4, -3])
         // Coffee bar along the north glass, slatted oak front and a pastry case.
         let bar = group(root, "coffee-counter", [-14.5, 0, -2.25])
@@ -775,9 +884,17 @@ final class OfficeDesignSceneBuilder {
         box(bar, "grinder-body", [0.22, 0.34, 0.24], [-0.55, 1.19, -0.12], trim, radius: 0.04)
         oval(bar, "grinder-hopper", [0.2, 0.22, 0.2], [-0.55, 1.45, -0.12], wood)
         let case_ = box(bar, "pastry-case", [1.0, 0.36, 0.5], [0.45, 1.2, 0], paper, radius: 0.03)
-        case_.model?.materials = [SimpleMaterial(color: palette.glass.withAlphaComponent(0.35), roughness: 0.2, isMetallic: false)]
-        for i in 0..<4 { oval(bar, "pastry", [0.18, 0.08, 0.14], [0.1 + Float(i) * 0.23, 1.07, 0.02], i.isMultiple(of: 2) ? orange : wood) }
-        for i in 0..<4 { box(bar, "cup-stack", [0.09, 0.07, 0.09], [1.3, 1.055 + Float(i) * 0.07, -0.15], paper, radius: 0.02) }
+        case_.model?.materials = [
+            SimpleMaterial(color: palette.glass.withAlphaComponent(0.35), roughness: 0.2, isMetallic: false)
+        ]
+        for i in 0..<4 {
+            oval(
+                bar, "pastry", [0.18, 0.08, 0.14], [0.1 + Float(i) * 0.23, 1.07, 0.02],
+                i.isMultiple(of: 2) ? orange : wood)
+        }
+        for i in 0..<4 {
+            box(bar, "cup-stack", [0.09, 0.07, 0.09], [1.3, 1.055 + Float(i) * 0.07, -0.15], paper, radius: 0.02)
+        }
         box(bar, "charging-shelf", [0.8, 0.06, 0.4], [1.95, 1.05, -0.08], steel)
         for i in 0..<3 { batteryPack(bar, at: [1.7 + Float(i) * 0.25, 1.09, -0.08], color: i == 1 ? orange : green) }
         for x: Float in [-16.2, -14.5, -12.8] { pendantLamp(root, at: [x, 2.15, -2.1]) }
@@ -787,7 +904,9 @@ final class OfficeDesignSceneBuilder {
         box(menu, "menu-slate", [1.55, 0.9, 0.02], [0, 0, 0.025], signInk)
         box(menu, "menu-heading", [0.7, 0.07, 0.006], [-0.3, 0.33, 0.038], paper)
         for row in 0..<5 {
-            box(menu, "menu-line", [0.55 + Float(row % 2) * 0.2, 0.03, 0.006], [-0.34 + Float(row % 2) * 0.1, 0.18 - Float(row) * 0.12, 0.038], paper)
+            box(
+                menu, "menu-line", [0.55 + Float(row % 2) * 0.2, 0.03, 0.006],
+                [-0.34 + Float(row % 2) * 0.1, 0.18 - Float(row) * 0.12, 0.038], paper)
             box(menu, "menu-price", [0.14, 0.03, 0.006], [0.55, 0.18 - Float(row) * 0.12, 0.038], caution)
         }
         oval(menu, "menu-doodle", [0.18, 0.14, 0.006], [0.52, 0.34, 0.038], orange)
@@ -822,7 +941,9 @@ final class OfficeDesignSceneBuilder {
         box(player, "music-cabinet", [1.0, 0.62, 0.44], [0, 0.31, 0], wood, radius: 0.03)
         box(player, "music-cabinet-shelf", [0.9, 0.42, 0.02], [0, 0.3, 0.215], trim)
         for i in 0..<6 {
-            box(player, "vinyl-sleeve", [0.03, 0.34, 0.3], [-0.36 + Float(i) * 0.05, 0.3, 0.05], [orange, blue, green, paper, violet, orange][i])
+            box(
+                player, "vinyl-sleeve", [0.03, 0.34, 0.3], [-0.36 + Float(i) * 0.05, 0.3, 0.05],
+                [orange, blue, green, paper, violet, orange][i])
         }
         box(player, "turntable-plinth", [0.56, 0.08, 0.4], [-0.12, 0.66, 0], signInk, radius: 0.02)
         let platter = group(player, "music-platter", [-0.16, 0.71, 0])
@@ -874,9 +995,10 @@ final class OfficeDesignSceneBuilder {
         var haloMaterial = UnlitMaterial(color: neon)
         haloMaterial.blending = .transparent(opacity: .init(floatLiteral: 0.22))
         halo.model?.materials = [haloMaterial]
-        player.components.set(CollisionComponent(shapes: [
-            ShapeResource.generateBox(size: [2.0, 1.8, 0.6]).offsetBy(translation: [0, 0.9, 0])
-        ]))
+        player.components.set(
+            CollisionComponent(shapes: [
+                ShapeResource.generateBox(size: [2.0, 1.8, 0.6]).offsetBy(translation: [0, 0.9, 0])
+            ]))
     }
 
     /// Room 9: the planning room. A kanban wall with two stand-up rows, a
@@ -889,18 +1011,24 @@ final class OfficeDesignSceneBuilder {
         planningBoard(root, at: [14, 1.6, -1.83], width: 8)
         for column in 0..<5 {
             for row in 0..<3 where (column + row) % 4 != 3 {
-                box(root, "board-sticky", [0.34, 0.3, 0.012], [10.2 + Float(column) * 1.7, 2.05 - Float(row) * 0.43, -1.745], stickyColors[(column + row) % 3])
+                box(
+                    root, "board-sticky", [0.34, 0.3, 0.012],
+                    [10.2 + Float(column) * 1.7, 2.05 - Float(row) * 0.43, -1.745], stickyColors[(column + row) % 3])
             }
         }
         box(root, "whiteboard-marker-tray", [3.2, 0.06, 0.22], [14, 0.72, -1.7], steel)
         for index in 0..<4 {
-            box(root, "whiteboard-marker", [0.18, 0.035, 0.035], [13 + Float(index) * 0.35, 0.77, -1.7], index.isMultiple(of: 2) ? blue : orange)
+            box(
+                root, "whiteboard-marker", [0.18, 0.035, 0.035], [13 + Float(index) * 0.35, 0.77, -1.7],
+                index.isMultiple(of: 2) ? blue : orange)
         }
         // Sticky-note wall on the south partition.
         let wallBoard = group(root, "sticky-wall", [10, 1.55, 7.87], yaw: .pi)
         box(wallBoard, "sticky-wall-cork", [3.4, 1.3, 0.04], .zero, cork)
         for i in 0..<18 {
-            let note = box(wallBoard, "sticky-note", [0.32, 0.3, 0.012], [-1.35 + Float(i % 6) * 0.54, 0.4 - Float(i / 6) * 0.4, 0.03], stickyColors[(i * 7) % 3])
+            let note = box(
+                wallBoard, "sticky-note", [0.32, 0.3, 0.012],
+                [-1.35 + Float(i % 6) * 0.54, 0.4 - Float(i / 6) * 0.4, 0.03], stickyColors[(i * 7) % 3])
             note.orientation = simd_quatf(angle: Float(i % 3 - 1) * 0.06, axis: [0, 0, 1])
         }
         // Roadmap strip on the west wall: swimlanes of coloured bars.
@@ -910,14 +1038,18 @@ final class OfficeDesignSceneBuilder {
             box(roadmap, "roadmap-lane", [4.0, 0.006, 0.01], [0, 0.34 - Float(lane) * 0.22, 0.02], steel)
             for bar in 0..<2 {
                 let start = -1.7 + Float((lane * 3 + bar * 5) % 7) * 0.42
-                box(roadmap, "roadmap-bar", [0.9 + Float(bar) * 0.3, 0.1, 0.012], [start + 0.45, 0.24 - Float(lane) * 0.22, 0.025],
+                box(
+                    roadmap, "roadmap-bar", [0.9 + Float(bar) * 0.3, 0.1, 0.012],
+                    [start + 0.45, 0.24 - Float(lane) * 0.22, 0.025],
                     [blue, orange, green, caution][(lane + bar) % 4], radius: 0.03)
             }
         }
         // Standing table for quick syncs; a round huddle table with chairs.
         let standing = group(root, "floor-detail", [11.2, 0, 5.2])
         table(standing, size: [2.2, 0.08, 0.9], at: .zero, height: 1.05, color: oak)
-        for x: Float in [-0.6, 0.1] { box(standing, "sticky-pad", [0.2, 0.03, 0.2], [x, 1.11, 0.1], stickyColors[x < 0 ? 0 : 1]) }
+        for x: Float in [-0.6, 0.1] {
+            box(standing, "sticky-pad", [0.2, 0.03, 0.2], [x, 1.11, 0.1], stickyColors[x < 0 ? 0 : 1])
+        }
         laptop(standing, at: [0.6, 1.11, 0])
         let huddle = group(root, "floor-detail", [17, 0, 5.3])
         oval(huddle, "huddle-top", [1.3, 0.06, 1.3], [0, 0.76, 0], paper)
@@ -943,7 +1075,9 @@ final class OfficeDesignSceneBuilder {
         for z: Float in [-0.4, -0.13, 0.13, 0.4] { box(pallet, "pallet-deck", [1.2, 0.04, 0.18], [0, 0.12, z], wood) }
         for i in 0..<5 {
             let x: Float = i < 3 ? -0.36 + Float(i) * 0.36 : -0.18 + Float(i - 3) * 0.36
-            box(pallet, "carton", [0.34, 0.3, 0.8], [x, i < 3 ? 0.29 : 0.59, 0], i.isMultiple(of: 2) ? cork : paper, radius: 0.015)
+            box(
+                pallet, "carton", [0.34, 0.3, 0.8], [x, i < 3 ? 0.29 : 0.59, 0], i.isMultiple(of: 2) ? cork : paper,
+                radius: 0.015)
         }
         let truck = group(root, "floor-detail", [11.1, 0, 15.3])
         strut(truck, "hand-truck-rail", from: [-0.18, 0.05, 0], to: [-0.18, 1.2, -0.12], width: 0.04, color: orange)
@@ -970,7 +1104,9 @@ final class OfficeDesignSceneBuilder {
         box(pong, "pong-edge-line", [1.46, 0.004, 0.02], [0, 0.792, 1.33], paper)
         box(pong, "pong-edge-line", [1.46, 0.004, 0.02], [0, 0.792, -1.33], paper)
         box(pong, "pong-net", [1.62, 0.15, 0.015], [0, 0.865, 0], paper)
-        for x: Float in [-0.62, 0.62] { for z: Float in [-1.1, 1.1] { box(pong, "pong-leg", [0.06, 0.73, 0.06], [x, 0.365, z], trim) } }
+        for x: Float in [-0.62, 0.62] {
+            for z: Float in [-1.1, 1.1] { box(pong, "pong-leg", [0.06, 0.73, 0.06], [x, 0.365, z], trim) }
+        }
         oval(pong, "pong-paddle", [0.16, 0.02, 0.2], [0.3, 0.8, 0.9], orange)
         oval(pong, "pong-paddle", [0.16, 0.02, 0.2], [-0.35, 0.8, -1.0], blue)
         oval(pong, "pong-ball", [0.04, 0.04, 0.04], [0.1, 0.81, 0.4], paper)
@@ -981,7 +1117,9 @@ final class OfficeDesignSceneBuilder {
         let dart = group(root, "dartboard", [19.89, 1.7, 14.0], yaw: -.pi / 2)
         box(dart, "dart-cabinet", [0.78, 0.78, 0.05], .zero, wood, radius: 0.03)
         for (i, size) in [Float(0.56), 0.4, 0.24, 0.08].enumerated() {
-            oval(dart, "dart-ring", [size, size, 0.02], [0, 0, 0.04 + Float(i) * 0.004], [signInk, orange, paper, orange][i])
+            oval(
+                dart, "dart-ring", [size, size, 0.02], [0, 0, 0.04 + Float(i) * 0.004],
+                [signInk, orange, paper, orange][i])
         }
     }
 
@@ -1010,14 +1148,18 @@ final class OfficeDesignSceneBuilder {
         for z: Float in [0.5, 6.5] { ceilingLight(root, at: [-20.5, z], yaw: .pi / 2) }
         for z: Float in [0.5, 7.5] { ceilingLight(root, at: [0, z], yaw: .pi / 2) }
         for x: Float in [11, 16] { ceilingLight(root, at: [x, -6.5], length: 2.2) }
-        for p: SIMD2<Float> in [[24, -8.5], [24, -2], [24, 3], [14, 3], [11.5, 12], [24, 9.5]] { ceilingLight(root, at: p) }
+        for p: SIMD2<Float> in [[24, -8.5], [24, -2], [24, 3], [14, 3], [11.5, 12], [24, 9.5]] {
+            ceilingLight(root, at: p)
+        }
     }
 
     /// A slim linear pendant. The whole bar glows so it reads from the high
     /// camera; the pool below stands in for its light.
     private func ceilingLight(_ root: Entity, at p: SIMD2<Float>, length: Float = 1.6, yaw: Float = 0) {
         let light = group(root, "ceiling-light", [p.x, 2.55, p.y], yaw: yaw)
-        for x in [-length * 0.4, length * 0.4] { box(light, "ceiling-light-cable", [0.012, 0.32, 0.012], [x, 0.19, 0], trim) }
+        for x in [-length * 0.4, length * 0.4] {
+            box(light, "ceiling-light-cable", [0.012, 0.32, 0.012], [x, 0.19, 0], trim)
+        }
         glowBox(light, "ceiling-light-diffuser", [length, 0.06, 0.14], .zero, glow, radius: 0.02)
         for x in [-length / 2, length / 2] { box(light, "ceiling-light-cap", [0.04, 0.08, 0.17], [x, 0, 0], trim) }
         lightPool(root, at: [p.x, 0, p.y], radius: 1.3 + length * 0.5)
@@ -1049,7 +1191,11 @@ final class OfficeDesignSceneBuilder {
             let seat = group(set, "cafe-chair", [side * 0.72, 0, 0], yaw: side < 0 ? .pi / 2 : -.pi / 2)
             box(seat, "cafe-chair-seat", [0.46, 0.06, 0.44], [0, 0.47, 0], oak, radius: 0.03)
             box(seat, "cafe-chair-back", [0.44, 0.36, 0.05], [0, 0.7, -0.2], oak, radius: 0.03)
-            for x: Float in [-0.18, 0.18] { for z: Float in [-0.17, 0.17] { box(seat, "cafe-chair-leg", [0.035, 0.45, 0.035], [x, 0.225, z], trim) } }
+            for x: Float in [-0.18, 0.18] {
+                for z: Float in [-0.17, 0.17] {
+                    box(seat, "cafe-chair-leg", [0.035, 0.45, 0.035], [x, 0.225, z], trim)
+                }
+            }
         }
     }
 
@@ -1071,8 +1217,12 @@ final class OfficeDesignSceneBuilder {
         box(chair, "armchair-base", [0.9, 0.3, 0.85], [0, 0.3, 0], color, radius: 0.08)
         box(chair, "armchair-cushion", [0.66, 0.14, 0.66], [0, 0.5, 0.06], color, radius: 0.06)
         box(chair, "armchair-back", [0.9, 0.62, 0.18], [0, 0.72, -0.34], color, radius: 0.08)
-        for x: Float in [-0.4, 0.4] { box(chair, "armchair-arm", [0.14, 0.34, 0.8], [x, 0.58, 0], color, radius: 0.06) }
-        for x: Float in [-0.36, 0.36] { for z: Float in [-0.34, 0.34] { box(chair, "armchair-leg", [0.05, 0.16, 0.05], [x, 0.08, z], oak) } }
+        for x: Float in [-0.4, 0.4] {
+            box(chair, "armchair-arm", [0.14, 0.34, 0.8], [x, 0.58, 0], color, radius: 0.06)
+        }
+        for x: Float in [-0.36, 0.36] {
+            for z: Float in [-0.34, 0.34] { box(chair, "armchair-leg", [0.05, 0.16, 0.05], [x, 0.08, z], oak) }
+        }
     }
 
     private func rollingWhiteboard(_ root: Entity, at p: SIMD3<Float>) {
@@ -1085,7 +1235,11 @@ final class OfficeDesignSceneBuilder {
             box(board, "rolling-board-foot", [0.06, 0.04, 0.55], [x, 0.06, 0], steel)
             for z: Float in [-0.24, 0.24] { oval(board, "caster", [0.07, 0.07, 0.07], [x, 0.035, z], trim) }
         }
-        for i in 0..<3 { box(board, "board-scribble", [0.5 - Float(i) * 0.1, 0.03, 0.006], [-0.3 + Float(i) * 0.05, 1.7 - Float(i) * 0.18, 0.025], [blue, orange, blue][i]) }
+        for i in 0..<3 {
+            box(
+                board, "board-scribble", [0.5 - Float(i) * 0.1, 0.03, 0.006],
+                [-0.3 + Float(i) * 0.05, 1.7 - Float(i) * 0.18, 0.025], [blue, orange, blue][i])
+        }
     }
 
     private func easel(_ root: Entity, at p: SIMD3<Float>) {
@@ -1104,7 +1258,9 @@ final class OfficeDesignSceneBuilder {
         let panel = group(root, "slat-panel", p, yaw: yaw)
         box(panel, "slat-backing", [width, height, 0.02], .zero, trim)
         let count = Int(width / 0.13)
-        for i in 0..<count { box(panel, "wood-slat", [0.08, height, 0.05], [-width / 2 + 0.07 + Float(i) * 0.13, 0, 0.035], oak) }
+        for i in 0..<count {
+            box(panel, "wood-slat", [0.08, height, 0.05], [-width / 2 + 0.07 + Float(i) * 0.13, 0, 0.035], oak)
+        }
     }
 
     /// A low-poly potted tree, like the ones in the reference studio.
@@ -1143,7 +1299,9 @@ final class OfficeDesignSceneBuilder {
         let red = NSColor(srgbRed: 0.82, green: 0.30, blue: 0.27, alpha: 1)
         box(chest, "chest-body", [0.95, 1.0, 0.5], [0, 0.56, 0], red, radius: 0.03)
         for i in 0..<5 {
-            box(chest, "chest-drawer", [0.86, 0.14, 0.02], [0, 0.2 + Float(i) * 0.17, 0.26], red.blended(withFraction: 0.2, of: .black) ?? red)
+            box(
+                chest, "chest-drawer", [0.86, 0.14, 0.02], [0, 0.2 + Float(i) * 0.17, 0.26],
+                red.blended(withFraction: 0.2, of: .black) ?? red)
             box(chest, "chest-pull", [0.5, 0.025, 0.03], [0, 0.24 + Float(i) * 0.17, 0.28], steel)
         }
         box(chest, "chest-top", [0.98, 0.04, 0.52], [0, 1.08, 0], trim)
@@ -1157,7 +1315,9 @@ final class OfficeDesignSceneBuilder {
 
     /// Two-metre floor tiles and painted walkway lines down the central hall.
     private func floorGrid(_ root: Entity) {
-        for (center, size) in [(SIMD2<Float>(-18, 1), SIMD2<Float>(20, 26)), (SIMD2<Float>(18, 2), SIMD2<Float>(20, 28))] {
+        for (center, size) in [
+            (SIMD2<Float>(-18, 1), SIMD2<Float>(20, 26)), (SIMD2<Float>(18, 2), SIMD2<Float>(20, 28)),
+        ] {
             for x in stride(from: center.x - size.x / 2 + 2, to: center.x + size.x / 2, by: 2) {
                 box(root, "floor-seam", [0.02, 0.004, size.y], [x, 0.002, center.y], trim)
             }
@@ -1176,13 +1336,17 @@ final class OfficeDesignSceneBuilder {
         box(cradle, "hoist-beam", [1.32, 0.08, 0.1], [0, 2.08, -0.4], steel)
         box(cradle, "hoist-boom", [0.08, 0.08, 0.5], [0, 2.0, -0.15], steel)
         box(cradle, "hoist-cable", [0.02, 0.32, 0.02], [0, 1.8, 0.05], trim)
-        for x: Float in [-0.12, 0.12] { box(cradle, "shell-leg", [0.13, 0.4, 0.15], [x, 0.36, 0.05], paper, radius: 0.05) }
+        for x: Float in [-0.12, 0.12] {
+            box(cradle, "shell-leg", [0.13, 0.4, 0.15], [x, 0.36, 0.05], paper, radius: 0.05)
+        }
         box(cradle, "shell-torso", [0.5, 0.46, 0.38], [0, 0.8, 0.05], paper, radius: 0.12)
         box(cradle, "open-hatch", [0.24, 0.2, 0.02], [0, 0.82, 0.245], trim)
         box(cradle, "hanging-head", [0.56, 0.42, 0.46], [0, 1.43, 0.05], paper, radius: 0.14)
         // Unpowered: the visor has no eyes yet.
         box(cradle, "hanging-visor", [0.44, 0.24, 0.02], [0, 1.43, 0.285], signInk, radius: 0.06)
-        for side: Float in [-1, 1] { box(cradle, "loose-arm", [0.36, 0.1, 0.1], [side * 0.42, 0.21, 0.42], paper, radius: 0.04) }
+        for side: Float in [-1, 1] {
+            box(cradle, "loose-arm", [0.36, 0.1, 0.1], [side * 0.42, 0.21, 0.42], paper, radius: 0.04)
+        }
     }
 
     /// A bolted-down industrial arm reaching toward the assembly platform.
@@ -1190,12 +1354,16 @@ final class OfficeDesignSceneBuilder {
         let arm = group(root, "floor-detail", p, yaw: yaw)
         oval(arm, "arm-base", [0.8, 0.2, 0.8], [0, 0.1, 0], trim)
         box(arm, "arm-turret", [0.5, 0.35, 0.5], [0, 0.37, 0], orange, radius: 0.1)
-        let shoulder = SIMD3<Float>(0, 0.62, 0), elbow = SIMD3<Float>(0.3, 1.55, 0), wrist = SIMD3<Float>(0.95, 1.3, 0)
+        let shoulder = SIMD3<Float>(0, 0.62, 0)
+        let elbow = SIMD3<Float>(0.3, 1.55, 0)
+        let wrist = SIMD3<Float>(0.95, 1.3, 0)
         strut(arm, "arm-upper", from: shoulder, to: elbow, width: 0.18, color: orange)
         strut(arm, "arm-fore", from: elbow, to: wrist, width: 0.14, color: orange)
         for joint in [shoulder, elbow, wrist] { oval(arm, "arm-joint", [0.26, 0.26, 0.26], joint, trim) }
         box(arm, "gripper-palm", [0.1, 0.08, 0.2], wrist + [0.1, -0.08, 0], steel)
-        for z: Float in [-0.07, 0.07] { box(arm, "gripper-finger", [0.04, 0.16, 0.035], wrist + [0.14, -0.18, z], steel) }
+        for z: Float in [-0.07, 0.07] {
+            box(arm, "gripper-finger", [0.04, 0.16, 0.035], wrist + [0.14, -0.18, z], steel)
+        }
         glowBox(arm, "arm-status-light", [0.12, 0.04, 0.02], [0, 0.45, 0.26], green)
     }
 
@@ -1224,7 +1392,9 @@ final class OfficeDesignSceneBuilder {
         for index in 0..<4 {
             let angle = Float.pi / 4 + Float(index) * .pi / 2
             let tip = SIMD3<Float>(cos(angle) * 0.5, 0.04, sin(angle) * 0.5)
-            strut(drone, "drone-arm", from: [cos(angle) * 0.15, 0.04, sin(angle) * 0.15], to: tip, width: 0.05, color: trim)
+            strut(
+                drone, "drone-arm", from: [cos(angle) * 0.15, 0.04, sin(angle) * 0.15], to: tip, width: 0.05,
+                color: trim)
             box(drone, "drone-motor", [0.08, 0.08, 0.08], tip + [0, 0.04, 0], trim, radius: 0.03)
             oval(drone, "drone-rotor", [0.34, 0.015, 0.34], tip + [0, 0.1, 0], steel)
         }
@@ -1249,12 +1419,18 @@ final class OfficeDesignSceneBuilder {
         let stand = group(root, "floor-detail", p)
         oval(stand, "turntable", [1.2, 0.12, 1.2], [0, 0.06, 0], trim)
         oval(stand, "turntable-top", [1.05, 0.03, 1.05], [0, 0.13, 0], steel)
-        for x: Float in [-0.11, 0.11] { box(stand, "patient-leg", [0.13, 0.36, 0.15], [x, 0.33, 0], paper, radius: 0.05) }
+        for x: Float in [-0.11, 0.11] {
+            box(stand, "patient-leg", [0.13, 0.36, 0.15], [x, 0.33, 0], paper, radius: 0.05)
+        }
         box(stand, "patient-body", [0.46, 0.42, 0.34], [0, 0.72, 0], paper, radius: 0.12)
         box(stand, "patient-head", [0.56, 0.42, 0.44], [0, 1.16, 0], paper, radius: 0.14)
         box(stand, "patient-visor", [0.44, 0.24, 0.02], [0, 1.17, 0.22], signInk, radius: 0.06)
-        for x: Float in [-0.09, 0.09] { glowBox(stand, "patient-eye", [0.06, 0.07, 0.01], [x, 1.18, 0.235], palette.activeScreen) }
-        for x: Float in [-0.3, 0.3] { box(stand, "patient-headphone", [0.07, 0.24, 0.2], [x, 1.17, 0], blue, radius: 0.03) }
+        for x: Float in [-0.09, 0.09] {
+            glowBox(stand, "patient-eye", [0.06, 0.07, 0.01], [x, 1.18, 0.235], palette.activeScreen)
+        }
+        for x: Float in [-0.3, 0.3] {
+            box(stand, "patient-headphone", [0.07, 0.24, 0.2], [x, 1.17, 0], blue, radius: 0.03)
+        }
         box(stand, "lamp-post", [0.06, 1.9, 0.06], [0.55, 0.95, -0.45], steel)
         accessoryArm(stand, from: [0.55, 1.9, -0.45], to: [0.15, 1.95, -0.1])
         box(stand, "task-lamp-shade", [0.25, 0.14, 0.2], [0.1, 1.9, -0.05], trim, radius: 0.035)
@@ -1275,21 +1451,29 @@ final class OfficeDesignSceneBuilder {
     private func radioMast(_ root: Entity, at p: SIMD3<Float>) {
         let mast = group(root, "radio-mast", p)
         box(mast, "mast-footing", [1.3, 0.2, 1.3], [0, 0.1, 0], trim, radius: 0.05)
-        let top: Float = 6, base: Float = 0.5, peak: Float = 0.12
+        let top: Float = 6
+        let base: Float = 0.5
+        let peak: Float = 0.12
         for (x, z) in [(Float(-1), Float(-1)), (1, -1), (1, 1), (-1, 1)] {
-            strut(mast, "mast-leg", from: [x * base, 0.2, z * base], to: [x * peak, top, z * peak], width: 0.06, color: steel)
+            strut(
+                mast, "mast-leg", from: [x * base, 0.2, z * base], to: [x * peak, top, z * peak], width: 0.06,
+                color: steel)
         }
         for level in 1..<6 {
             let y = 0.2 + Float(level) * (top - 0.2) / 6
             let w = base + (peak - base) * (y - 0.2) / (top - 0.2)
-            for (a, b) in [([-w, -w], [w, -w]), ([w, -w], [w, w]), ([w, w], [-w, w]), ([-w, w], [-w, -w])] as [(SIMD2<Float>, SIMD2<Float>)] {
+            for (a, b) in [([-w, -w], [w, -w]), ([w, -w], [w, w]), ([w, w], [-w, w]), ([-w, w], [-w, -w])]
+                as [(SIMD2<Float>, SIMD2<Float>)]
+            {
                 strut(mast, "mast-brace", from: [a.x, y, a.y], to: [b.x, y, b.y], width: 0.035, color: steel)
             }
         }
         let dish = oval(mast, "mast-dish", [0.9, 0.9, 0.16], [0, 4.6, 0.45], paper)
         dish.orientation = simd_quatf(angle: -0.5, axis: [1, 0, 0])
         box(mast, "mast-rod", [0.03, 0.9, 0.03], [0, top + 0.45, 0], steel)
-        glowOval(mast, "mast-warning-lamp", [0.14, 0.14, 0.14], [0, top + 0.95, 0], NSColor(srgbRed: 1, green: 0.32, blue: 0.28, alpha: 1))
+        glowOval(
+            mast, "mast-warning-lamp", [0.14, 0.14, 0.14], [0, top + 0.95, 0],
+            NSColor(srgbRed: 1, green: 0.32, blue: 0.28, alpha: 1))
     }
 
     private func bookStack(_ root: Entity, at p: SIMD3<Float>, count: Int) {
@@ -1302,7 +1486,11 @@ final class OfficeDesignSceneBuilder {
 
     private func penCup(_ root: Entity, at p: SIMD3<Float>) {
         box(root, "pencil-cup", [0.12, 0.15, 0.12], p + [0, 0.075, 0], steel)
-        for i in 0..<3 { box(root, "pencil", [0.018, 0.24, 0.018], p + [-0.035 + Float(i) * 0.035, 0.15, 0], i.isMultiple(of: 2) ? orange : blue) }
+        for i in 0..<3 {
+            box(
+                root, "pencil", [0.018, 0.24, 0.018], p + [-0.035 + Float(i) * 0.035, 0.15, 0],
+                i.isMultiple(of: 2) ? orange : blue)
+        }
     }
 
     private func wallArt(_ root: Entity, at p: SIMD3<Float>, yaw: Float, color: NSColor) {
@@ -1325,12 +1513,24 @@ final class OfficeDesignSceneBuilder {
         box(board, "investigation-board-inner-frame-left", [0.06, 2.18, 0.07], [-1.68, 0, 0.115], wood)
         box(board, "investigation-board-inner-frame-right", [0.06, 2.18, 0.07], [1.68, 0, 0.115], wood)
 
-        note(board, name: "investigation-note-a", position: [-1.06, 0.46, 0.125], size: [0.66, 0.82], color: paper, tilt: 0.12)
-        note(board, name: "investigation-note-b", position: [0.30, 0.17, 0.128], size: [0.58, 0.72], color: paper, tilt: -0.04)
-        note(board, name: "investigation-note-c", position: [1.04, -0.53, 0.13], size: [0.74, 0.86], color: paper, tilt: 0.13)
-        note(board, name: "investigation-note-d", position: [-0.62, -0.48, 0.132], size: [0.54, 0.70], color: paper, tilt: -0.12)
-        note(board, name: "investigation-sticky-a", position: [-0.94, -0.23, 0.142], size: [0.46, 0.42], color: NSColor(srgbRed: 0.80, green: 0.78, blue: 0.59, alpha: 1), tilt: 0.18)
-        note(board, name: "investigation-sticky-b", position: [1.10, 0.63, 0.142], size: [0.36, 0.36], color: NSColor(srgbRed: 0.48, green: 0.33, blue: 0.67, alpha: 1), tilt: -0.13)
+        note(
+            board, name: "investigation-note-a", position: [-1.06, 0.46, 0.125], size: [0.66, 0.82], color: paper,
+            tilt: 0.12)
+        note(
+            board, name: "investigation-note-b", position: [0.30, 0.17, 0.128], size: [0.58, 0.72], color: paper,
+            tilt: -0.04)
+        note(
+            board, name: "investigation-note-c", position: [1.04, -0.53, 0.13], size: [0.74, 0.86], color: paper,
+            tilt: 0.13)
+        note(
+            board, name: "investigation-note-d", position: [-0.62, -0.48, 0.132], size: [0.54, 0.70], color: paper,
+            tilt: -0.12)
+        note(
+            board, name: "investigation-sticky-a", position: [-0.94, -0.23, 0.142], size: [0.46, 0.42],
+            color: NSColor(srgbRed: 0.80, green: 0.78, blue: 0.59, alpha: 1), tilt: 0.18)
+        note(
+            board, name: "investigation-sticky-b", position: [1.10, 0.63, 0.142], size: [0.36, 0.36],
+            color: NSColor(srgbRed: 0.48, green: 0.33, blue: 0.67, alpha: 1), tilt: -0.13)
 
         thread(board, name: "investigation-thread-a", from: [-1.25, 0.83, 0.16], to: [0.20, 0.35, 0.16])
         thread(board, name: "investigation-thread-b", from: [0.20, 0.35, 0.16], to: [0.91, -0.25, 0.16])
@@ -1338,17 +1538,23 @@ final class OfficeDesignSceneBuilder {
         pin(board, name: "investigation-pin-a", at: [-1.25, 0.83, 0.17], color: blue)
         pin(board, name: "investigation-pin-b", at: [0.20, 0.35, 0.17], color: orange)
         pin(board, name: "investigation-pin-c", at: [0.91, -0.25, 0.17], color: orange)
-        pin(board, name: "investigation-pin-d", at: [1.25, -0.65, 0.17], color: NSColor(srgbRed: 0.55, green: 0.08, blue: 0.11, alpha: 1))
+        pin(
+            board, name: "investigation-pin-d", at: [1.25, -0.65, 0.17],
+            color: NSColor(srgbRed: 0.55, green: 0.08, blue: 0.11, alpha: 1))
     }
 
-    private func note(_ root: Entity, name: String, position: SIMD3<Float>, size: SIMD2<Float>, color: NSColor, tilt: Float) {
+    private func note(
+        _ root: Entity, name: String, position: SIMD3<Float>, size: SIMD2<Float>, color: NSColor, tilt: Float
+    ) {
         let page = box(root, name, [size.x, size.y, 0.018], position, color)
         page.orientation = simd_quatf(angle: tilt, axis: [0, 0, 1])
     }
 
     private func thread(_ root: Entity, name: String, from: SIMD3<Float>, to: SIMD3<Float>) {
         let delta = to - from
-        let strand = box(root, name, [simd_length(SIMD2<Float>(delta.x, delta.y)), 0.018, 0.012], (from + to) / 2, NSColor(srgbRed: 0.48, green: 0.05, blue: 0.08, alpha: 1), radius: 0.006)
+        let strand = box(
+            root, name, [simd_length(SIMD2<Float>(delta.x, delta.y)), 0.018, 0.012], (from + to) / 2,
+            NSColor(srgbRed: 0.48, green: 0.05, blue: 0.08, alpha: 1), radius: 0.006)
         strand.orientation = simd_quatf(angle: atan2(delta.y, delta.x), axis: [0, 0, 1])
     }
 
@@ -1392,15 +1598,22 @@ final class OfficeDesignSceneBuilder {
         // RGBA with explicit row bytes: a one-channel image's padded rows are
         // read with the wrong stride and the pool smears into diagonal stripes.
         let space = CGColorSpace(name: CGColorSpace.linearSRGB)!
-        guard let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
-                                      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
-              let gradient = CGGradient(colorsSpace: space,
-                                        colors: [CGColor(gray: 1, alpha: 1), CGColor(gray: 0.35, alpha: 1), CGColor(gray: 0, alpha: 1)] as CFArray,
-                                        locations: [0, 0.45, 1]) else { return nil }
+        guard
+            let context = CGContext(
+                data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
+                space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+            let gradient = CGGradient(
+                colorsSpace: space,
+                colors: [CGColor(gray: 1, alpha: 1), CGColor(gray: 0.35, alpha: 1), CGColor(gray: 0, alpha: 1)]
+                    as CFArray,
+                locations: [0, 0.45, 1])
+        else { return nil }
         let center = CGPoint(x: size / 2, y: size / 2)
-        context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: CGFloat(size / 2), options: [])
+        context.drawRadialGradient(
+            gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: CGFloat(size / 2), options: [])
         guard let image = context.makeImage(),
-              let texture = try? TextureResource(image: image, options: .init(semantic: .raw)) else { return nil }
+            let texture = try? TextureResource(image: image, options: .init(semantic: .raw))
+        else { return nil }
         var material = UnlitMaterial(color: palette.glowPool)
         material.blending = .transparent(opacity: .init(scale: palette.isDark ? 0.75 : 0.38, texture: .init(texture)))
         return material
@@ -1412,8 +1625,6 @@ final class OfficeDesignSceneBuilder {
         box(bin, "bin-lid", [0.48, 0.07, 0.48], [0, 0.69, 0], trim, radius: 0.04)
         box(bin, "bin-opening", [0.26, 0.015, 0.17], [0, 0.735, 0], steel)
     }
-
-
 
     private func planningBoard(_ root: Entity, at p: SIMD3<Float>, width: Float) {
         box(root, "planning-board-frame", [width, 1.7, 0.10], p, trim)
@@ -1438,13 +1649,15 @@ final class OfficeDesignSceneBuilder {
         for x: Float in [-0.7, 0.7] { box(shelf, "shelf-upright", [0.06, 2.2, 0.7], [x, 1.1, 0], steel) }
         for y: Float in [0.2, 0.85, 1.5, 2.15] {
             box(shelf, "shelf-deck", [1.45, 0.06, 0.7], [0, y, 0], steel)
-            if y < 2 { for x: Float in [-0.35, 0.35] {
-                box(shelf, "archive-box", [0.55, 0.42, 0.55], [x, y + 0.24, 0], x < 0 ? wood : orange, radius: 0.03)
-                box(shelf, "archive-label", [0.23, 0.12, 0.015], [x, y + 0.25, 0.285], paper)
-            } }
+            if y < 2 {
+                for x: Float in [-0.35, 0.35] {
+                    box(
+                        shelf, "archive-box", [0.55, 0.42, 0.55], [x, y + 0.24, 0], x < 0 ? wood : orange, radius: 0.03)
+                    box(shelf, "archive-label", [0.23, 0.12, 0.015], [x, y + 0.25, 0.285], paper)
+                }
+            }
         }
     }
-
 
     private func restrooms(_ root: Entity) {
         box(root, "restroom-floor", [7.7, 0.025, 8.8], [24, 0.014, 10.6], finish(0.70, 0.72, 0.75))
@@ -1464,7 +1677,11 @@ final class OfficeDesignSceneBuilder {
         box(root, "tool-bench-top", [4.1, 0.08, 0.85], [24, 0.94, 6.7], paper)
         for x: Float in [23, 25] {
             box(root, "tool-pegboard", [1.6, 1, 0.04], [x, 1.8, 6.15], cork)
-            for i in 0..<4 { box(root, "hanging-tool", [0.06, 0.34, 0.04], [x - 0.5 + Float(i) * 0.33, 1.78, 6.2], i.isMultiple(of: 2) ? orange : steel) }
+            for i in 0..<4 {
+                box(
+                    root, "hanging-tool", [0.06, 0.34, 0.04], [x - 0.5 + Float(i) * 0.33, 1.78, 6.2],
+                    i.isMultiple(of: 2) ? orange : steel)
+            }
         }
         box(root, "oil-can", [0.16, 0.24, 0.16], [22.6, 1.1, 6.8], orange, radius: 0.05)
         box(root, "oil-can-spout", [0.03, 0.03, 0.18], [22.6, 1.25, 6.9], steel)
@@ -1476,7 +1693,9 @@ final class OfficeDesignSceneBuilder {
         box(tree, "trunk", [0.4, 2.4, 0.4], [0, 1.2, 0], wood)
         for i in 0..<4 {
             let angle = Float(i) * .pi / 2
-            box(tree, "tree-crown", [2, 2, 2], [sin(angle) * 0.65, 2.8 + Float(i % 2) * 0.4, cos(angle) * 0.65], green, radius: 0.6)
+            box(
+                tree, "tree-crown", [2, 2, 2], [sin(angle) * 0.65, 2.8 + Float(i % 2) * 0.4, cos(angle) * 0.65], green,
+                radius: 0.6)
         }
     }
 
@@ -1575,8 +1794,11 @@ final class OfficeDesignSceneBuilder {
             box(bench, "bench-back-slat", [2.3, 0.13, 0.07], [0, y, -0.29], wood, radius: 0.015)
         }
         let rotation = simd_quatf(angle: yaw, axis: [0, 1, 0])
-        navigation.leisureSpots.append(.init(station: .init(position: position,
-            approach: position + rotation.act([0, 0, 1.1]), yaw: yaw), action: .reading, isOutdoor: true))
+        navigation.leisureSpots.append(
+            .init(
+                station: .init(
+                    position: position,
+                    approach: position + rotation.act([0, 0, 1.1]), yaw: yaw), action: .reading, isOutdoor: true))
     }
 
     private func pergola(_ root: Entity, at p: SIMD3<Float>) {
@@ -1592,9 +1814,12 @@ final class OfficeDesignSceneBuilder {
         let cells = palette.isDark ? palette.idleScreen : palette.fabric
         for row in 0..<4 {
             for side: Float in [-2.2, 2.2] {
-                let panel = box(shelter, "solar-panel", [4.2, 0.05, 1.12], [side, 3.08, -1.8 + Float(row) * 1.2], cells)
+                let panel = box(
+                    shelter, "solar-panel", [4.2, 0.05, 1.12], [side, 3.08, -1.8 + Float(row) * 1.2], cells)
                 panel.orientation = simd_quatf(angle: -0.16, axis: [1, 0, 0])
-                for x: Float in [-1.4, -0.7, 0, 0.7, 1.4] { box(panel, "solar-cell-line", [0.015, 0.012, 1.12], [x, 0.03, 0], steel) }
+                for x: Float in [-1.4, -0.7, 0, 0.7, 1.4] {
+                    box(panel, "solar-cell-line", [0.015, 0.012, 1.12], [x, 0.03, 0], steel)
+                }
                 box(panel, "solar-cell-line", [4.2, 0.012, 0.015], [0, 0.03, 0], steel)
             }
         }
@@ -1611,9 +1836,13 @@ final class OfficeDesignSceneBuilder {
         box(fountain, "mascot-neck", [0.22, 0.14, 0.22], [0, 1.56, 0], steel)
         box(fountain, "mascot-head", [1.0, 0.76, 0.84], [0, 2.0, 0], paper, radius: 0.24)
         box(fountain, "mascot-visor", [0.8, 0.44, 0.02], [0, 2.02, 0.42], signInk, radius: 0.12)
-        for x: Float in [-0.17, 0.17] { glowBox(fountain, "mascot-eye", [0.1, 0.13, 0.01], [x, 2.04, 0.435], palette.activeScreen, radius: 0.03) }
+        for x: Float in [-0.17, 0.17] {
+            glowBox(fountain, "mascot-eye", [0.1, 0.13, 0.01], [x, 2.04, 0.435], palette.activeScreen, radius: 0.03)
+        }
         box(fountain, "mascot-headband", [1.12, 0.08, 0.16], [0, 2.42, 0], orange, radius: 0.03)
-        for x: Float in [-0.54, 0.54] { box(fountain, "mascot-earcup", [0.14, 0.4, 0.34], [x, 2.02, 0], orange, radius: 0.06) }
+        for x: Float in [-0.54, 0.54] {
+            box(fountain, "mascot-earcup", [0.14, 0.4, 0.34], [x, 2.02, 0], orange, radius: 0.06)
+        }
     }
 
     /// A sidewalk delivery robot, parked where the bicycles used to be.
@@ -1622,7 +1851,9 @@ final class OfficeDesignSceneBuilder {
         box(rover, "rover-chassis", [0.95, 0.34, 0.66], [0, 0.4, 0], paper, radius: 0.1)
         box(rover, "rover-lid", [0.8, 0.22, 0.58], [-0.04, 0.66, 0], color, radius: 0.08)
         box(rover, "rover-face", [0.02, 0.14, 0.4], [0.48, 0.44, 0], signInk)
-        for z: Float in [-0.09, 0.09] { glowBox(rover, "rover-eye", [0.012, 0.05, 0.05], [0.495, 0.45, z], palette.activeScreen) }
+        for z: Float in [-0.09, 0.09] {
+            glowBox(rover, "rover-eye", [0.012, 0.05, 0.05], [0.495, 0.45, z], palette.activeScreen)
+        }
         for x: Float in [-0.32, 0, 0.32] {
             for z: Float in [-0.35, 0.35] { oval(rover, "rover-wheel", [0.24, 0.24, 0.1], [x, 0.13, z], trim) }
         }
@@ -1656,7 +1887,9 @@ final class OfficeDesignSceneBuilder {
         box(sign, "directory-post", [0.08, 1.2, 0.08], [0, 0.65, 0], steel)
         box(sign, "directory-panel", [0.75, 0.52, 0.07], [0, 1.28, 0], trim, radius: 0.025)
         box(sign, "directory-face", [0.63, 0.40, 0.012], [0, 1.28, 0.046], paper)
-        for y: Float in [-0.11, 0, 0.11] { box(sign, "directory-line", [0.44, 0.025, 0.01], [0, 1.28 + y, 0.055], steel) }
+        for y: Float in [-0.11, 0, 0.11] {
+            box(sign, "directory-line", [0.44, 0.025, 0.01], [0, 1.28 + y, 0.055], steel)
+        }
     }
 
     private func bollardLight(_ root: Entity, at p: SIMD3<Float>) {
@@ -1700,8 +1933,12 @@ final class OfficeDesignSceneBuilder {
         let depth: Float = 6
         box(root, "patio-floor", [4.4, 0.035, depth], [11.5, -0.0175, 2 + depth / 2], steel)
         // The patio meets the office at z = 2; no overlapping path slab is needed.
-        for z in stride(from: Float(3), through: 2 + depth, by: 1) { box(root, "paving-joint", [4.4, 0.003, 0.018], [11.5, 0.0015, z], plaster) }
-        for x in stride(from: Float(9.5), through: 13.5, by: 1) { box(root, "paving-joint", [0.018, 0.003, depth], [x, 0.0015, 2 + depth / 2], plaster) }
+        for z in stride(from: Float(3), through: 2 + depth, by: 1) {
+            box(root, "paving-joint", [4.4, 0.003, 0.018], [11.5, 0.0015, z], plaster)
+        }
+        for x in stride(from: Float(9.5), through: 13.5, by: 1) {
+            box(root, "paving-joint", [0.018, 0.003, depth], [x, 0.0015, 2 + depth / 2], plaster)
+        }
         let tableCenter = SIMD3<Float>(11.5, 0, 5)
         table(root, size: [1.25, 0.10, 0.95], at: tableCenter, height: 0.75, color: wood)
         mug(root, at: tableCenter + [0.2, 0.82, 0], color: paper)
@@ -1709,31 +1946,56 @@ final class OfficeDesignSceneBuilder {
             let seat = tableCenter + [side * 1.15, 0, 0]
             let yaw: Float = side < 0 ? .pi / 2 : -.pi / 2
             gardenChair(root, at: seat, yaw: yaw)
-            navigation.stations[.lounge, default: []].append(.init(position: seat, approach: seat + [0, 0, 0.85], yaw: yaw))
+            navigation.stations[.lounge, default: []].append(
+                .init(position: seat, approach: seat + [0, 0, 0.85], yaw: yaw))
         }
     }
 
     private func gardenChair(_ root: Entity, at p: SIMD3<Float>, yaw: Float) {
         let chair = group(root, "garden-chair", p, yaw: yaw)
-        for i in 0..<4 { box(chair, "seat-slat", [0.62, 0.06, 0.11], [0, 0.5, -0.19 + Float(i) * 0.13], wood, radius: 0.01) }
-        for y: Float in [0.76, 0.94] { box(chair, "back-slat", [0.62, 0.12, 0.05], [0, y, -0.29], wood, radius: 0.01) }
+        for i in 0..<4 {
+            box(chair, "seat-slat", [0.62, 0.06, 0.11], [0, 0.5, -0.19 + Float(i) * 0.13], wood, radius: 0.01)
+        }
+        for y: Float in [0.76, 0.94] {
+            box(chair, "back-slat", [0.62, 0.12, 0.05], [0, y, -0.29], wood, radius: 0.01)
+        }
         for x: Float in [-0.27, 0.27] {
-            for z: Float in [-0.25, 0.25] { box(chair, "chair-leg", [0.05, z < 0 ? 1 : 0.5, 0.05], [x, z < 0 ? 0.5 : 0.25, z], trim) }
+            for z: Float in [-0.25, 0.25] {
+                box(chair, "chair-leg", [0.05, z < 0 ? 1 : 0.5, 0.05], [x, z < 0 ? 0.5 : 0.25, z], trim)
+            }
         }
     }
 
     private func captureObstacles(in root: Entity) {
-        let groups: Set<String> = ["wall", "glazed-partition", "open-door", "task-chair", "garden-chair", "garden-bench", "garden-tree", "raised-planter", "garden-light", "broad-leaf-plant", "filing-cabinet", "bookcase", "office-printer", "arcade-cabinet", "games-sofa", "visitor-armchair", "coffee-counter", "music-player", "landscape-planter", "landscape-shrub", "landscape-light", "entry-directory", "bike-rack", "parked-bicycle", "campus-bench", "courtyard-fountain", "campus-planting-bed", "water-cooler", "waste-bin", "cleaning-cart", "staircase", "charging-cradle", "radio-mast"]
-        let parts: Set<String> = ["tabletop", "beanbag", "beanbag-back", "stall-partition", "vanity", "toilet-tank", "toilet-bowl", "coat-stand", "pergola-post", "post-footing", "cross-divider-x", "cross-divider-z"]
+        let groups: Set<String> = [
+            "wall", "glazed-partition", "open-door", "task-chair", "garden-chair", "garden-bench", "garden-tree",
+            "raised-planter", "garden-light", "broad-leaf-plant", "filing-cabinet", "bookcase", "office-printer",
+            "arcade-cabinet", "games-sofa", "visitor-armchair", "coffee-counter", "music-player", "landscape-planter",
+            "landscape-shrub", "landscape-light", "entry-directory", "bike-rack", "parked-bicycle", "campus-bench",
+            "courtyard-fountain", "campus-planting-bed", "water-cooler", "waste-bin", "cleaning-cart", "staircase",
+            "charging-cradle", "radio-mast",
+        ]
+        let parts: Set<String> = [
+            "tabletop", "beanbag", "beanbag-back", "stall-partition", "vanity", "toilet-tank", "toilet-bowl",
+            "coat-stand", "pergola-post", "post-footing", "cross-divider-x", "cross-divider-z",
+        ]
         func visit(_ node: Entity) {
             if ["server-rack", "storage-shelf", "refrigerator", "reception-desk", "floor-detail"].contains(node.name) {
                 let bounds = node.visualBounds(relativeTo: root)
-                navigation.obstacles.append(.init(name: node.name, center: [bounds.center.x, bounds.center.z], size: [bounds.extents.x, bounds.extents.z]))
+                navigation.obstacles.append(
+                    .init(
+                        name: node.name, center: [bounds.center.x, bounds.center.z],
+                        size: [bounds.extents.x, bounds.extents.z]))
                 return
             }
             if groups.contains(node.name) || parts.contains(node.name) {
                 let bounds = node.visualBounds(relativeTo: root)
-                if bounds.min.y < 1.6 { navigation.obstacles.append(.init(name: node.name, center: [bounds.center.x, bounds.center.z], size: [bounds.extents.x, bounds.extents.z])) }
+                if bounds.min.y < 1.6 {
+                    navigation.obstacles.append(
+                        .init(
+                            name: node.name, center: [bounds.center.x, bounds.center.z],
+                            size: [bounds.extents.x, bounds.extents.z]))
+                }
                 return
             }
             for child in node.children { visit(child) }
@@ -1785,19 +2047,29 @@ final class OfficeDesignSceneBuilder {
             }
             let screen = group(station, "angled-monitor", [0.12, 0.94, -0.16], yaw: x * 0.22)
             monitor(screen)
-            screen.findEntity(named: "monitor-display")?.name = "work-screen-\(navigation.stations[.desk, default: []].count)"
+            screen.findEntity(named: "monitor-display")?.name =
+                "work-screen-\(navigation.stations[.desk, default: []].count)"
             box(station, "keyboard", [0.49, 0.035, 0.20], [0.12, 0.96, 0.25], trim)
             for row in 0..<3 {
-                for key in 0..<9 { box(station, "key", [0.035, 0.01, 0.038], [-0.065 + Float(key) * 0.046, 0.983, 0.19 + Float(row) * 0.05], steel) }
+                for key in 0..<9 {
+                    box(
+                        station, "key", [0.035, 0.01, 0.038],
+                        [-0.065 + Float(key) * 0.046, 0.983, 0.19 + Float(row) * 0.05], steel)
+                }
             }
             box(station, "mouse-pad", [0.25, 0.015, 0.26], [0.56, 0.95, 0.23], trim)
             oval(station, "mouse", [0.08, 0.045, 0.12], [0.56, 0.98, 0.23], paper)
-            if !isWorkshop { box(station, "cubicle-tackboard", [0.62, 0.5, 0.02], [-0.6, 1.2, -0.58], cork, radius: 0.01) }
-            personalize(station, monitor: screen, persona: navigation.stations[.desk, default: []].count % 6, pinboard: !isWorkshop)
+            if !isWorkshop {
+                box(station, "cubicle-tackboard", [0.62, 0.5, 0.02], [-0.6, 1.2, -0.58], cork, radius: 0.01)
+            }
+            personalize(
+                station, monitor: screen, persona: navigation.stations[.desk, default: []].count % 6,
+                pinboard: !isWorkshop)
             let colors = [trim, blue, NSColor(srgbRed: 0.59, green: 0.56, blue: 0.37, alpha: 1), blue]
             chair(station, at: [0, 0, 1.125], yaw: .pi, color: colors[(index + variant) % 4])
             let seat = p + SIMD3<Float>(x, 0, side * 1.75)
-            navigation.stations[.desk, default: []].append(.init(position: seat, approach: seat + [seat.x < p.x ? -1 : 1, 0, 0], yaw: side < 0 ? 0 : .pi))
+            navigation.stations[.desk, default: []].append(
+                .init(position: seat, approach: seat + [seat.x < p.x ? -1 : 1, 0, 0], yaw: side < 0 ? 0 : .pi))
         }
     }
 
@@ -1813,7 +2085,9 @@ final class OfficeDesignSceneBuilder {
         for x: Float in [-1.6, 1.6] { box(unit, "credenza-leg", [0.05, 0.06, 0.4], [x, 0.03, 0], trim) }
         plant(unit, at: [-1.3, 0.78, 0], height: 0.45)
         for i in 0..<5 {
-            box(unit, "binder", [0.07, 0.3, 0.26], [-0.25 + Float(i) * 0.08, 0.93, -0.05], [blue, orange, green, paper, blue][i], radius: 0.01)
+            box(
+                unit, "binder", [0.07, 0.3, 0.26], [-0.25 + Float(i) * 0.08, 0.93, -0.05],
+                [blue, orange, green, paper, blue][i], radius: 0.01)
         }
         bookStack(unit, at: [0.55, 0.78, 0], count: 3)
         succulent(unit, at: [1.35, 0.78, 0])
@@ -1827,29 +2101,29 @@ final class OfficeDesignSceneBuilder {
         let top: Float = 0.94
         let pin: Float = -0.565
         switch persona {
-        case 0: // Plant lover
+        case 0:  // Plant lover
             succulent(s, at: [-0.62, top, -0.3])
             cactus(s, at: [0.76, top, -0.34])
             mug(s, at: [-0.55, top, 0.28], color: green)
             if pinboard { botanicalPrint(s, at: [-0.6, 1.2, pin]) }
-        case 1: // Gamer
+        case 1:  // Gamer
             headphoneStand(s, at: [-0.62, top, -0.28])
             figurine(s, at: [0.74, top, -0.3])
             box(s, "soda-can", [0.07, 0.13, 0.07], [-0.52, top + 0.065, 0.3], orange, radius: 0.03)
             box(s, "soda-can-lid", [0.06, 0.01, 0.06], [-0.52, top + 0.135, 0.3], steel, radius: 0.02)
             if pinboard { pixelPoster(s, at: [-0.6, 1.2, pin]) }
-        case 2: // Organizer
+        case 2:  // Organizer
             inboxTray(s, at: [-0.6, top, -0.24])
             penCup(s, at: [0.76, top, -0.34])
             mug(s, at: [-0.55, top, 0.28], color: paper)
             stickyNotes(monitor)
             if pinboard { calendar(s, at: [-0.6, 1.2, pin]) }
-        case 3: // Traveler
+        case 3:  // Traveler
             globe(s, at: [-0.62, top, -0.28])
             waterBottle(s, at: [0.74, top, -0.32])
             backpack(s, at: [0.78, 0, 0.66])
             if pinboard { postcards(s, at: [-0.6, 1.2, pin]) }
-        case 4: // Maker
+        case 4:  // Maker
             box(s, "phone", [0.25, 0.07, 0.28], [-0.56, 0.98, -0.10], paper)
             box(s, "phone-display", [0.16, 0.015, 0.1], [-0.56, 1.025, -0.15], steel)
             box(s, "handset", [0.07, 0.06, 0.29], [-0.68, 1.04, -0.1], trim)
@@ -1857,7 +2131,7 @@ final class OfficeDesignSceneBuilder {
             puzzleCube(s, at: [-0.5, top, 0.3])
             stickyNotes(monitor)
             if pinboard { blueprint(s, at: [-0.6, 1.2, pin]) }
-        default: // Reader
+        default:  // Reader
             deskLamp(s, at: [-0.66, top, -0.3])
             bookStack(s, at: [-0.52, top, 0.3], count: 3)
             mug(s, at: [0.68, top, -0.3], color: orange)
@@ -1866,8 +2140,11 @@ final class OfficeDesignSceneBuilder {
     }
 
     private var stickyColors: [NSColor] {
-        [NSColor(srgbRed: 1, green: 0.86, blue: 0.42, alpha: 1), NSColor(srgbRed: 0.98, green: 0.66, blue: 0.72, alpha: 1),
-         NSColor(srgbRed: 0.62, green: 0.88, blue: 0.76, alpha: 1)]
+        [
+            NSColor(srgbRed: 1, green: 0.86, blue: 0.42, alpha: 1),
+            NSColor(srgbRed: 0.98, green: 0.66, blue: 0.72, alpha: 1),
+            NSColor(srgbRed: 0.62, green: 0.88, blue: 0.76, alpha: 1),
+        ]
     }
 
     private func succulent(_ root: Entity, at p: SIMD3<Float>) {
@@ -1909,7 +2186,9 @@ final class OfficeDesignSceneBuilder {
         box(bot, "figurine-head", [0.15, 0.11, 0.12], [0, 0.17, 0], paper, radius: 0.04)
         box(bot, "figurine-visor", [0.11, 0.06, 0.01], [0, 0.17, 0.06], signInk, radius: 0.02)
         for x: Float in [-0.026, 0.026] {
-            glowBox(bot, "figurine-eye", [0.02, 0.018, 0.005], [x, 0.172, 0.066], NSColor(srgbRed: 0.45, green: 0.93, blue: 1, alpha: 1))
+            glowBox(
+                bot, "figurine-eye", [0.02, 0.018, 0.005], [x, 0.172, 0.066],
+                NSColor(srgbRed: 0.45, green: 0.93, blue: 1, alpha: 1))
         }
         box(bot, "figurine-antenna", [0.01, 0.05, 0.01], [0, 0.245, 0], steel)
         oval(bot, "figurine-antenna-tip", [0.025, 0.025, 0.025], [0, 0.275, 0], orange)
@@ -1928,7 +2207,8 @@ final class OfficeDesignSceneBuilder {
     private func stickyNotes(_ monitor: Entity) {
         let colors = stickyColors
         for i in 0..<3 {
-            let note = box(monitor, "sticky-note", [0.07, 0.07, 0.004], [0.385, 0.56 - Float(i) * 0.085, 0.04], colors[i])
+            let note = box(
+                monitor, "sticky-note", [0.07, 0.07, 0.004], [0.385, 0.56 - Float(i) * 0.085, 0.04], colors[i])
             note.orientation = simd_quatf(angle: Float(i - 1) * 0.12, axis: [0, 0, 1])
         }
     }
@@ -1937,8 +2217,12 @@ final class OfficeDesignSceneBuilder {
         let sheet = group(root, "wall-calendar", p)
         box(sheet, "calendar-page", [0.36, 0.42, 0.008], .zero, paper)
         box(sheet, "calendar-header", [0.36, 0.08, 0.01], [0, 0.17, 0.001], orange)
-        for row in 0..<5 { box(sheet, "calendar-rule", [0.32, 0.006, 0.01], [0, 0.1 - Float(row) * 0.065, 0.002], steel) }
-        for column in 0..<6 { box(sheet, "calendar-rule", [0.006, 0.26, 0.01], [-0.135 + Float(column) * 0.054, -0.03, 0.002], steel) }
+        for row in 0..<5 {
+            box(sheet, "calendar-rule", [0.32, 0.006, 0.01], [0, 0.1 - Float(row) * 0.065, 0.002], steel)
+        }
+        for column in 0..<6 {
+            box(sheet, "calendar-rule", [0.006, 0.26, 0.01], [-0.135 + Float(column) * 0.054, -0.03, 0.002], steel)
+        }
         oval(sheet, "calendar-circled-day", [0.045, 0.045, 0.012], [0.055, 0.001, 0.004], orange)
         oval(sheet, "push-pin", [0.03, 0.03, 0.02], [0, 0.2, 0.01], orange)
     }
@@ -1950,7 +2234,9 @@ final class OfficeDesignSceneBuilder {
         let rows = ["01110", "11111", "10101", "11111", "01010"]
         for (row, pattern) in rows.enumerated() {
             for (column, pixel) in pattern.enumerated() where pixel == "1" {
-                box(poster, "poster-pixel", [0.052, 0.052, 0.006], [-0.12 + Float(column) * 0.06, 0.12 - Float(row) * 0.06, 0.006], row == 2 ? green : neon)
+                box(
+                    poster, "poster-pixel", [0.052, 0.052, 0.006],
+                    [-0.12 + Float(column) * 0.06, 0.12 - Float(row) * 0.06, 0.006], row == 2 ? green : neon)
             }
         }
         box(poster, "poster-caption", [0.26, 0.03, 0.006], [0, -0.17, 0.006], paper)
@@ -1963,7 +2249,8 @@ final class OfficeDesignSceneBuilder {
         strut(print, "print-stem", from: [0, -0.16, 0.013], to: [0.02, 0.14, 0.013], width: 0.008, color: green)
         for i in 0..<4 {
             let side: Float = i.isMultiple(of: 2) ? -1 : 1
-            let leaf = oval(print, "print-leaf", [0.1, 0.045, 0.006], [side * 0.05, -0.09 + Float(i) * 0.065, 0.014], green)
+            let leaf = oval(
+                print, "print-leaf", [0.1, 0.045, 0.006], [side * 0.05, -0.09 + Float(i) * 0.065, 0.014], green)
             leaf.orientation = simd_quatf(angle: side * 0.5, axis: [0, 0, 1])
         }
     }
@@ -1993,7 +2280,9 @@ final class OfficeDesignSceneBuilder {
         box(bag, "backpack-pocket", [0.26, 0.16, 0.06], [0, 0.14, 0.11], orange, radius: 0.03)
         box(bag, "backpack-zip", [0.22, 0.012, 0.012], [0, 0.22, 0.14], trim)
         box(bag, "backpack-handle", [0.1, 0.035, 0.03], [0, 0.44, 0], trim, radius: 0.012)
-        for x: Float in [-0.09, 0.09] { box(bag, "backpack-strap", [0.05, 0.34, 0.03], [x, 0.22, -0.11], trim, radius: 0.012) }
+        for x: Float in [-0.09, 0.09] {
+            box(bag, "backpack-strap", [0.05, 0.34, 0.03], [x, 0.22, -0.11], trim, radius: 0.012)
+        }
     }
 
     private func postcards(_ root: Entity, at p: SIMD3<Float>) {
@@ -2027,8 +2316,12 @@ final class OfficeDesignSceneBuilder {
         let cube = group(root, "puzzle-cube", p, yaw: 0.5)
         let faces = [orange, blue, green, stickyColors[0], paper, stickyColors[1]]
         for i in 0..<8 {
-            let x = Float(i & 1) - 0.5, y = Float((i >> 1) & 1), z = Float((i >> 2) & 1) - 0.5
-            box(cube, "cube-piece", [0.036, 0.036, 0.036], [x * 0.038, 0.019 + y * 0.038, z * 0.038], faces[i % faces.count], radius: 0.005)
+            let x = Float(i & 1) - 0.5
+            let y = Float((i >> 1) & 1)
+            let z = Float((i >> 2) & 1) - 0.5
+            box(
+                cube, "cube-piece", [0.036, 0.036, 0.036], [x * 0.038, 0.019 + y * 0.038, z * 0.038],
+                faces[i % faces.count], radius: 0.005)
         }
     }
 
@@ -2069,7 +2362,8 @@ final class OfficeDesignSceneBuilder {
     private func chair(_ root: Entity, at p: SIMD3<Float>, yaw: Float, color: NSColor, highBack: Bool = false) {
         let chair = group(root, "task-chair", p, yaw: yaw)
         box(chair, "seat", [0.61, 0.13, 0.58], [0, 0.5, 0], color, radius: 0.06)
-        box(chair, "back", [0.59, highBack ? 0.82 : 0.48, 0.12], [0, highBack ? 1.0 : 0.83, -0.25], color, radius: 0.05)
+        box(
+            chair, "back", [0.59, highBack ? 0.82 : 0.48, 0.12], [0, highBack ? 1.0 : 0.83, -0.25], color, radius: 0.05)
         box(chair, "lift", [0.07, 0.38, 0.07], [0, 0.26, 0], steel)
         for x: Float in [-0.35, 0.35] {
             box(chair, "arm-support", [0.05, 0.20, 0.05], [x, 0.59, -0.05], trim)
@@ -2092,7 +2386,9 @@ final class OfficeDesignSceneBuilder {
             box(root, "seat-cushion", [cushionWidth - 0.035, 0.2, 0.66], [x, 0.55, 0.05], color, radius: 0.06)
             box(root, "back-cushion", [cushionWidth - 0.035, 0.46, 0.15], [x, 0.79, -0.24], color, radius: 0.055)
         }
-        for x in [-width / 2 + 0.075, width / 2 - 0.075] { box(root, "sofa-arm", [0.15, 0.46, 0.92], [x, 0.55, 0], color, radius: 0.04) }
+        for x in [-width / 2 + 0.075, width / 2 - 0.075] {
+            box(root, "sofa-arm", [0.15, 0.46, 0.92], [x, 0.55, 0], color, radius: 0.04)
+        }
     }
 
     private func plant(_ root: Entity, at p: SIMD3<Float>, height: Float) {
@@ -2104,9 +2400,12 @@ final class OfficeDesignSceneBuilder {
             let stem = group(plant, "leaf-stem", [0, 0.35, 0], yaw: Float(i) * 2.4)
             let stalk = box(stem, "stalk", [0.025, 1.05, 0.025], [0, 0.52, 0.15], green)
             stalk.orientation = simd_quatf(angle: 0.28, axis: [1, 0, 0])
-            let leaf = box(stem, "broad-leaf", [0.25, 0.025, 0.75], [0, 0.9 + Float(i % 3) * 0.2, 0.34], green, radius: 0.01)
+            let leaf = box(
+                stem, "broad-leaf", [0.25, 0.025, 0.75], [0, 0.9 + Float(i % 3) * 0.2, 0.34], green, radius: 0.01)
             leaf.orientation = simd_quatf(angle: -0.7 + Float(i % 3) * 0.18, axis: [1, 0, 0])
-            box(stem, "leaf-vein", [0.012, 0.013, 0.57], [0, 1.03 + Float(i % 3) * 0.15, 0.38], NSColor(srgbRed: 0.49, green: 0.57, blue: 0.24, alpha: 1))
+            box(
+                stem, "leaf-vein", [0.012, 0.013, 0.57], [0, 1.03 + Float(i % 3) * 0.15, 0.38],
+                NSColor(srgbRed: 0.49, green: 0.57, blue: 0.24, alpha: 1))
         }
     }
 
@@ -2118,7 +2417,11 @@ final class OfficeDesignSceneBuilder {
             box(cabinet, "drawer", [0.88, 0.31, 0.035], [0, y, 0.345], wood)
             box(cabinet, "handle", [0.24, 0.035, 0.035], [0, y + 0.035, 0.38], steel)
         }
-        for i in 0..<5 { box(cabinet, "binder", [0.10, 0.3, 0.3], [-0.34 + Float(i) * 0.13, 1.71, 0], i.isMultiple(of: 2) ? blue : paper) }
+        for i in 0..<5 {
+            box(
+                cabinet, "binder", [0.10, 0.3, 0.3], [-0.34 + Float(i) * 0.13, 1.71, 0],
+                i.isMultiple(of: 2) ? blue : paper)
+        }
     }
 
     private func bookcase(_ root: Entity, at p: SIMD3<Float>, yaw: Float) {
@@ -2130,7 +2433,9 @@ final class OfficeDesignSceneBuilder {
             box(shelf, "shelf", [1.4, 0.06, 0.5], [0, y, 0], trim)
             for i in 0..<8 {
                 let colors = [blue, orange, green, paper]
-                box(shelf, "book", [0.105, 0.29 + Float(i % 3) * 0.035, 0.3], [-0.56 + Float(i) * 0.15, y + 0.2, 0], colors[(i + row) % 4])
+                box(
+                    shelf, "book", [0.105, 0.29 + Float(i % 3) * 0.035, 0.3], [-0.56 + Float(i) * 0.15, y + 0.2, 0],
+                    colors[(i + row) % 4])
             }
         }
     }
@@ -2183,7 +2488,9 @@ final class OfficeDesignSceneBuilder {
     private func table(_ root: Entity, size: SIMD3<Float>, at p: SIMD3<Float>, height: Float, color: NSColor) {
         box(root, "tabletop", size, p + [0, height, 0], color, radius: 0.025)
         for x in [-size.x / 2 + 0.13, size.x / 2 - 0.13] {
-            for z in [-size.z / 2 + 0.13, size.z / 2 - 0.13] { box(root, "table-leg", [0.075, height, 0.075], p + [x, height / 2, z], trim) }
+            for z in [-size.z / 2 + 0.13, size.z / 2 - 0.13] {
+                box(root, "table-leg", [0.075, height, 0.075], p + [x, height / 2, z], trim)
+            }
         }
     }
 
@@ -2199,8 +2506,10 @@ final class OfficeDesignSceneBuilder {
             for index in 0..<count {
                 let start = a + d * (Float(index) / Float(count))
                 let end = a + d * (Float(index + 1) / Float(count))
-                navigation.obstacles.append(.init(name: "angled-wall", center: (start + end) / 2,
-                    size: [abs(end.x - start.x) + 0.24, abs(end.y - start.y) + 0.24]))
+                navigation.obstacles.append(
+                    .init(
+                        name: "angled-wall", center: (start + end) / 2,
+                        size: [abs(end.x - start.x) + 0.24, abs(end.y - start.y) + 0.24]))
             }
         }
         let length = simd_length(d)
@@ -2217,7 +2526,9 @@ final class OfficeDesignSceneBuilder {
         let length = simd_length(d)
         let frame = group(root, "glazed-partition", [center.x, 0, center.y], yaw: -atan2(d.y, d.x))
         // Honey-oak rails and a waist-height handrail, like a studio mezzanine.
-        for y: Float in [0.1, 1.05] { box(frame, "frame-rail", [length, y == 1.05 ? 0.09 : 0.07, 0.08], [0, y, 0], oak) }
+        for y: Float in [0.1, 1.05] {
+            box(frame, "frame-rail", [length, y == 1.05 ? 0.09 : 0.07, 0.08], [0, y, 0], oak)
+        }
         glowBox(frame, "frame-rail", [length, 0.06, 0.08], [0, 2.9, 0], violet)
         let panels = Int(ceil(length / 1.5))
         for i in 0...panels {
@@ -2238,7 +2549,9 @@ final class OfficeDesignSceneBuilder {
         box(window, "crossbar", [1.76, 0.04, 0.03], [0, -0.12, 0.08], paper)
         box(window, "sill", [2.04, 0.08, 0.23], [0, -0.7, 0.1], paper)
         let slats = blinds ? 13 : 3
-        for row in 0..<slats { box(window, "blind-slat", [1.82, 0.065, 0.06], [0, 0.58 - Float(row) * 0.078, 0.12], paper) }
+        for row in 0..<slats {
+            box(window, "blind-slat", [1.82, 0.065, 0.06], [0, 0.58 - Float(row) * 0.078, 0.12], paper)
+        }
         box(window, "blind-rail", [2.03, 0.10, 0.15], [0, 0.75, 0.1], oak)
     }
 
@@ -2260,14 +2573,24 @@ final class OfficeDesignSceneBuilder {
     }
 
     @discardableResult
-    private func box(_ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor, radius: Float = 0) -> ModelEntity {
+    private func box(
+        _ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor, radius: Float = 0
+    ) -> ModelEntity {
         let key = "\(size)-\(radius)"
         let mesh: MeshResource
-        if let cached = meshes[key] { mesh = cached }
-        else { mesh = OfficeLowPolyMesh.box(size: size, cornerRadius: radius); meshes[key] = mesh }
+        if let cached = meshes[key] {
+            mesh = cached
+        } else {
+            mesh = OfficeLowPolyMesh.box(size: size, cornerRadius: radius)
+            meshes[key] = mesh
+        }
         let material: SimpleMaterial
-        if let cached = materials[color] { material = cached }
-        else { material = SimpleMaterial(color: color, roughness: 1, isMetallic: false); materials[color] = material }
+        if let cached = materials[color] {
+            material = cached
+        } else {
+            material = SimpleMaterial(color: color, roughness: 1, isMetallic: false)
+            materials[color] = material
+        }
         let entity = ModelEntity(mesh: mesh, materials: [material])
         entity.name = name
         entity.position = p
@@ -2278,7 +2601,9 @@ final class OfficeDesignSceneBuilder {
 
     /// Unlit geometry for light sources, screens and signage.
     @discardableResult
-    private func glowBox(_ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor, radius: Float = 0) -> ModelEntity {
+    private func glowBox(
+        _ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor, radius: Float = 0
+    ) -> ModelEntity {
         let entity = box(root, name, size, p, color, radius: radius)
         entity.model?.materials = [unlit(color)]
         return entity
@@ -2293,13 +2618,19 @@ final class OfficeDesignSceneBuilder {
     }
 
     @discardableResult
-    private func oval(_ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor) -> ModelEntity {
+    private func oval(_ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor)
+        -> ModelEntity
+    {
         let key = "sphere"
         let mesh = meshes[key] ?? OfficeLowPolyMesh.sphere(radius: 0.5)
         meshes[key] = mesh
         let material: SimpleMaterial
-        if let cached = materials[color] { material = cached }
-        else { material = SimpleMaterial(color: color, roughness: 1, isMetallic: false); materials[color] = material }
+        if let cached = materials[color] {
+            material = cached
+        } else {
+            material = SimpleMaterial(color: color, roughness: 1, isMetallic: false)
+            materials[color] = material
+        }
         let entity = ModelEntity(mesh: mesh, materials: [material])
         entity.name = name
         entity.scale = size
@@ -2309,7 +2640,9 @@ final class OfficeDesignSceneBuilder {
     }
 
     @discardableResult
-    private func glowOval(_ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor) -> ModelEntity {
+    private func glowOval(_ root: Entity, _ name: String, _ size: SIMD3<Float>, _ p: SIMD3<Float>, _ color: NSColor)
+        -> ModelEntity
+    {
         let entity = oval(root, name, size, p, color)
         entity.model?.materials = [unlit(color)]
         return entity
@@ -2317,7 +2650,9 @@ final class OfficeDesignSceneBuilder {
 
     /// A straight bar between two points, for lattices, arms and frames.
     @discardableResult
-    private func strut(_ root: Entity, _ name: String, from a: SIMD3<Float>, to b: SIMD3<Float>, width: Float, color: NSColor) -> ModelEntity {
+    private func strut(
+        _ root: Entity, _ name: String, from a: SIMD3<Float>, to b: SIMD3<Float>, width: Float, color: NSColor
+    ) -> ModelEntity {
         let bar = box(root, name, [width, simd_length(b - a), width], (a + b) / 2, color)
         bar.orientation = simd_quatf(from: [0, 1, 0], to: simd_normalize(b - a))
         return bar

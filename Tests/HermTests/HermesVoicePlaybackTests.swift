@@ -11,8 +11,7 @@ private final class VoiceAudioClient: HermesRPCClientProtocol {
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
-    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any]
-    {
+    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
         self.path = path
         return await withCheckedContinuation { continuation = $0 }
     }

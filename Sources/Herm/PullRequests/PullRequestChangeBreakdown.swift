@@ -3,22 +3,49 @@ import SwiftUI
 
 /// Path-based grouping, not a claim about the meaning of a diff's contents.
 enum PullRequestChangeCategory: String, CaseIterable, Identifiable, Sendable {
-    case code = "Code", tests = "Tests", mocks = "Mocks & fixtures", docs = "Docs", config = "Configuration", other = "Other"
+    case code = "Code"
+    case tests = "Tests"
+    case mocks = "Mocks & fixtures"
+    case docs = "Docs"
+    case config = "Configuration"
+    case other = "Other"
     var id: String { rawValue }
 
     static func classify(_ path: String) -> Self {
         let parts = path.lowercased().split(separator: "/").map(String.init)
         let name = parts.last ?? ""
         let ext = (name as NSString).pathExtension
-        if parts.contains(where: { ["mocks", "mock", "__mocks__", "fixtures", "__fixtures__", "stubs", "testdata"].contains($0) })
-            || name.hasPrefix("mock") || name.contains(".mock.") || name.hasSuffix("mock.swift") { return .mocks }
-        if parts.contains(where: { ["tests", "test", "__tests__", "spec", "specs", "e2e"].contains($0) || $0.hasSuffix("tests") })
+        if parts.contains(where: {
+            ["mocks", "mock", "__mocks__", "fixtures", "__fixtures__", "stubs", "testdata"].contains($0)
+        })
+            || name.hasPrefix("mock") || name.contains(".mock.") || name.hasSuffix("mock.swift")
+        {
+            return .mocks
+        }
+        if parts.contains(where: {
+            ["tests", "test", "__tests__", "spec", "specs", "e2e"].contains($0) || $0.hasSuffix("tests")
+        })
             || name.hasPrefix("test_") || name.contains(".test.") || name.contains(".spec.")
-            || name.hasSuffix("tests.swift") || name.hasSuffix("test.swift") || name.hasSuffix("_test.go") { return .tests }
-        if parts.contains("docs") || ["md", "mdx", "rst", "adoc"].contains(ext) || ["readme", "license", "changelog"].contains(name) { return .docs }
+            || name.hasSuffix("tests.swift") || name.hasSuffix("test.swift") || name.hasSuffix("_test.go")
+        {
+            return .tests
+        }
+        if parts.contains("docs") || ["md", "mdx", "rst", "adoc"].contains(ext)
+            || ["readme", "license", "changelog"].contains(name)
+        {
+            return .docs
+        }
         if parts.contains(".github") || ["json", "yaml", "yml", "toml", "ini", "cfg", "lock", "xcconfig"].contains(ext)
-            || ["package.swift", "makefile", "dockerfile", ".gitignore", ".editorconfig"].contains(name) { return .config }
-        if ["swift", "m", "mm", "h", "c", "cpp", "rs", "go", "py", "js", "jsx", "ts", "tsx", "vue", "svelte", "html", "css", "scss", "rb", "java", "kt", "sh", "sql", "php", "cs", "dart"].contains(ext) { return .code }
+            || ["package.swift", "makefile", "dockerfile", ".gitignore", ".editorconfig"].contains(name)
+        {
+            return .config
+        }
+        if [
+            "swift", "m", "mm", "h", "c", "cpp", "rs", "go", "py", "js", "jsx", "ts", "tsx", "vue", "svelte", "html",
+            "css", "scss", "rb", "java", "kt", "sh", "sql", "php", "cs", "dart",
+        ].contains(ext) {
+            return .code
+        }
         return .other
     }
 
@@ -69,7 +96,9 @@ struct PullRequestChangeBreakdownView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
-            DockSectionHeader(title: "Changes", style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true) {
+            DockSectionHeader(
+                title: "Changes", style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true
+            ) {
                 Button("Review files", action: onReviewFiles).buttonStyle(.dockLink)
             }
             if isCurrent, let files {
@@ -79,7 +108,9 @@ struct PullRequestChangeBreakdownView: View {
                 } else {
                     let groups = PullRequestChangeGroup.summarize(files)
                     HStack(spacing: 8) {
-                        Text("\(files.count) \(files.count == 1 ? "file" : "files")\(expectedCount == files.count ? "" : " loaded")")
+                        Text(
+                            "\(files.count) \(files.count == 1 ? "file" : "files")\(expectedCount == files.count ? "" : " loaded")"
+                        )
                         Spacer(minLength: 0)
                         Text("+\(groups.reduce(0) { $0 + $1.additions })").foregroundStyle(Color.dockSuccess)
                         Text("−\(groups.reduce(0) { $0 + $1.deletions })").foregroundStyle(Color.dockDestructive)
@@ -103,13 +134,19 @@ struct PullRequestChangeBreakdownView: View {
                     }.monospacedDigit()
                     Text("Grouped by file path").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     if expectedCount != files.count {
-                        Text(expectedCount.map { "Showing \(files.count) of \($0) files. Totals cover loaded files only." } ?? "File coverage is unknown. Totals cover loaded files only.")
-                            .foregroundStyle(Color.dockWarning).fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            expectedCount.map {
+                                "Showing \(files.count) of \($0) files. Totals cover loaded files only."
+                            } ?? "File coverage is unknown. Totals cover loaded files only."
+                        )
+                        .foregroundStyle(Color.dockWarning).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             } else {
-                Text(isLoading ? "Loading file breakdown…" : "File breakdown unavailable or outdated. Refresh to retry.")
-                    .foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
+                Text(
+                    isLoading ? "Loading file breakdown…" : "File breakdown unavailable or outdated. Refresh to retry."
+                )
+                .foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
             }
         }.dockFont(.body).foregroundStyle(Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading)

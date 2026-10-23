@@ -21,7 +21,8 @@ enum MarkdownWebsiteIcon {
 
     static func host(for url: URL) -> String? {
         guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
-              let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+            let host = url.host?.lowercased(), !host.isEmpty
+        else { return nil }
         return host
     }
 
@@ -56,7 +57,8 @@ enum MarkdownWebsiteIcon {
                 request.timeoutInterval = 5
                 request.httpShouldHandleCookies = false
                 guard let (bytes, response) = try? await session.bytes(for: request),
-                      (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+                    (response as? HTTPURLResponse)?.statusCode == 200
+                else { return nil }
                 var data = Data()
                 do {
                     for try await byte in bytes {
@@ -81,19 +83,23 @@ enum MarkdownWebsiteIcon {
     static func faviconURL(for url: URL) -> URL? {
         // shortcut: Use /favicon.ico; add HTML icon discovery when alternate icon paths are needed.
         guard let host = host(for: url), host.contains("."),
-              !host.hasSuffix(".local"), !host.hasSuffix(".localhost"),
-              !host.hasSuffix(".internal"),
-              host.split(separator: ".").last?.contains(where: \.isLetter) == true,
-              host.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789.-").contains($0) })
+            !host.hasSuffix(".local"), !host.hasSuffix(".localhost"),
+            !host.hasSuffix(".internal"),
+            host.split(separator: ".").last?.contains(where: \.isLetter) == true,
+            host.unicodeScalars.allSatisfy({
+                CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789.-").contains($0)
+            })
         else { return nil }
         // Only the origin is sent; private paths, query strings and credentials stay local.
         return URL(string: "https://\(host)/favicon.ico")
     }
 
     private final class NoRedirects: NSObject, URLSessionTaskDelegate {
-        func urlSession(_ session: URLSession, task: URLSessionTask,
-                        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
-                        completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+            completionHandler: @escaping @Sendable (URLRequest?) -> Void
+        ) {
             completionHandler(nil)
         }
     }

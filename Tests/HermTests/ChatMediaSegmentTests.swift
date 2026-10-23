@@ -1,10 +1,12 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct ChatMediaSegmentTests {
     @Test @MainActor func openingAttachmentDiffReplacesFilePreviewAndKeepsItsOwnWorktree() {
-        let center = FilePreviewCenter(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let center = FilePreviewCenter(
+            fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         center.url = URL(fileURLWithPath: "/tmp/report.md")
         let files = [
             RepositoryFileChange(path: "src/main.swift", status: .modified, isStaged: true, renameSource: nil),
@@ -60,29 +62,33 @@ struct ChatMediaSegmentTests {
     }
 
     @Test func standaloneMarkdownImageBecomesMedia() {
-        #expect(ChatMediaSegment.split("Here:\n![dog](/tmp/dog.png)\nDone") == [
-            .markdown("Here:"), .media("/tmp/dog.png"), .markdown("Done"),
-        ])
+        #expect(
+            ChatMediaSegment.split("Here:\n![dog](/tmp/dog.png)\nDone") == [
+                .markdown("Here:"), .media("/tmp/dog.png"), .markdown("Done"),
+            ])
     }
 
     @Test func producerToolResultsDeliverFiles() {
         func call(_ name: String, _ result: String) -> ActiveToolCall {
-            ActiveToolCall(id: name, name: name, input: "", context: "", startedAt: .now, result: result, isComplete: true)
+            ActiveToolCall(
+                id: name, name: name, input: "", context: "", startedAt: .now, result: result, isComplete: true)
         }
-        #expect(ArtifactService.deliveredFiles(in: [
-            call("image_generate", #"{"success": true, "image": "https://x.test/dog.png"}"#),
-            call("text_to_speech", "MEDIA:/tmp/a.mp3"),
-            call("read_file", #"{"path": "/tmp/src.swift"}"#),
-        ]) == ["https://x.test/dog.png", "/tmp/a.mp3"])
+        #expect(
+            ArtifactService.deliveredFiles(in: [
+                call("image_generate", #"{"success": true, "image": "https://x.test/dog.png"}"#),
+                call("text_to_speech", "MEDIA:/tmp/a.mp3"),
+                call("read_file", #"{"path": "/tmp/src.swift"}"#),
+            ]) == ["https://x.test/dog.png", "/tmp/a.mp3"])
     }
 
     @Test func splitsMediaLinesIntoAttachments() {
         let text = "The file is here:\nMEDIA:/Users/me/report.docx\nTap the attachment above to download it."
-        #expect(ChatMediaSegment.split(text) == [
-            .markdown("The file is here:"),
-            .media("/Users/me/report.docx"),
-            .markdown("Tap the attachment above to download it."),
-        ])
+        #expect(
+            ChatMediaSegment.split(text) == [
+                .markdown("The file is here:"),
+                .media("/Users/me/report.docx"),
+                .markdown("Tap the attachment above to download it."),
+            ])
     }
 
     @Test func leavesInlineMentionsAndPlainTextAlone() {

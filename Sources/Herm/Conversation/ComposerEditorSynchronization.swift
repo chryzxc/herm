@@ -32,8 +32,10 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
         contexts = nil
     }
 
-    func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
-                     range editedRange: NSRange, changeInLength delta: Int) {
+    func textStorage(
+        _ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
+        range editedRange: NSRange, changeInLength delta: Int
+    ) {
         // Attribute-only edits include attachment replacement and undo/redo.
         generation &+= 1
     }
@@ -48,12 +50,16 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
         return serialized
     }
 
-    func synchronize(_ textView: NSTextView, markdown: String, contexts: [ChatContext], inset: NSSize, bodySize: CGFloat = DockTypography.size(.conversation)) {
+    func synchronize(
+        _ textView: NSTextView, markdown: String, contexts: [ChatContext], inset: NSSize,
+        bodySize: CGFloat = DockTypography.size(.conversation)
+    ) {
         observe(textView)
         // Do not replace the native marked range while the input method owns it.
         if !textView.hasMarkedText(), self.contexts != contexts || self.markdown(in: textView) != markdown {
             let selection = textView.selectedRange()
-            textView.textStorage?.setAttributedString(InlineContextCodec.render(markdown.displayBullets, contexts: contexts))
+            textView.textStorage?.setAttributedString(
+                InlineContextCodec.render(markdown.displayBullets, contexts: contexts))
             self.contexts = contexts
             serialized = markdown
             serializedGeneration = generation
@@ -88,9 +94,11 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
             highlightedAccent = accent
             highlightCount += 1
         }
-        guard measuredGeneration != generation || measuredWidth != textView.bounds.width
-            || measuredContainerSize != container.containerSize || measuredPadding != container.lineFragmentPadding
-            || measuredInset != textView.textContainerInset || measuredFont != textView.font else { return }
+        guard
+            measuredGeneration != generation || measuredWidth != textView.bounds.width
+                || measuredContainerSize != container.containerSize || measuredPadding != container.lineFragmentPadding
+                || measuredInset != textView.textContainerInset || measuredFont != textView.font
+        else { return }
         layout.ensureLayout(for: container)
         layoutCount += 1
         measuredGeneration = generation
@@ -99,7 +107,8 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
         measuredPadding = container.lineFragmentPadding
         measuredInset = textView.textContainerInset
         measuredFont = textView.font
-        let height = max(ComposerLayout.minHeight, layout.usedRect(for: container).height + textView.textContainerInset.height * 2)
+        let height = max(
+            ComposerLayout.minHeight, layout.usedRect(for: container).height + textView.textContainerInset.height * 2)
         if publishedHeight != height {
             publishedHeight = height
             publishHeight(height)
@@ -113,7 +122,8 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
             guard let self else { return }
             self.revealPending = false
             guard let textView, self.storage === textView.textStorage,
-                  isFocused(), textView.isEditable, textView.window?.firstResponder === textView else { return }
+                isFocused(), textView.isEditable, textView.window?.firstResponder === textView
+            else { return }
             textView.scrollRangeToVisible(textView.selectedRange())
         }
     }

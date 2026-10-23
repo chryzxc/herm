@@ -9,38 +9,43 @@ private actor PullRequestDetailRenderTransport: GitHubIssueTransport {
         let path = request.url!.path
         let payload: Any
         if path.hasSuffix("/pulls/93") || path.hasSuffix("/issues/93") {
-            payload = [
-                "number": 93, "node_id": "PR_fixture", "title": "Add bounded synthetic measurement tooling",
-                "state": "open", "draft": true, "user": ["login": "author"],
-                "html_url": "https://github.com/owner/repo/pull/93",
-                "created_at": "2026-10-22T00:00:00Z", "updated_at": "2026-10-23T00:00:00Z",
-                "head": ["ref": "perf/release-baselines", "sha": "abc"], "base": ["ref": "main", "sha": "def"],
-                "changed_files": 2, "additions": 55, "deletions": 7, "comments": 1,
-                "labels": [], "assignees": [],
-                "body": """
-                ## Summary
-                Add bounded measurement tooling for the release performance baseline.
+            payload =
+                [
+                    "number": 93, "node_id": "PR_fixture", "title": "Add bounded synthetic measurement tooling",
+                    "state": "open", "draft": true, "user": ["login": "author"],
+                    "html_url": "https://github.com/owner/repo/pull/93",
+                    "created_at": "2026-10-22T00:00:00Z", "updated_at": "2026-10-23T00:00:00Z",
+                    "head": ["ref": "perf/release-baselines", "sha": "abc"], "base": ["ref": "main", "sha": "def"],
+                    "changed_files": 2, "additions": 55, "deletions": 7, "comments": 1,
+                    "labels": [], "assignees": [],
+                    "body": """
+                    ## Summary
+                    Add bounded measurement tooling for the release performance baseline.
 
-                ## Changes
-                - Capture synchronous Markdown preparation and diff parsing.
-                - Export samples and explicit unavailable-measurement reasons.
-                - Bound command execution and preserve existing output.
+                    ## Changes
+                    - Capture synchronous Markdown preparation and diff parsing.
+                    - Export samples and explicit unavailable-measurement reasons.
+                    - Bound command execution and preserve existing output.
 
-                ## Behavior
-                Measurements run only when explicitly requested. Production behavior is unchanged.
+                    ## Behavior
+                    Measurements run only when explicitly requested. Production behavior is unchanged.
 
-                ## Tests
-                - Focused measurement fixtures pass.
-                - Invalid output paths preserve existing data.
-                """,
-            ] as [String: Any]
+                    ## Tests
+                    - Focused measurement fixtures pass.
+                    - Invalid output paths preserve existing data.
+                    """,
+                ] as [String: Any]
         } else if path == "/graphql" {
             payload = ["data": ["node": ["projectItems": ["nodes": [], "pageInfo": ["hasNextPage": false]]]]]
         } else if path == "/repos/owner/repo" {
             payload = ["permissions": ["push": false, "triage": false]]
-        } else { payload = [] as [String] }
-        return (try JSONSerialization.data(withJSONObject: payload),
-            HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        } else {
+            payload = [] as [String]
+        }
+        return (
+            try JSONSerialization.data(withJSONObject: payload),
+            HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
     }
 }
 
@@ -60,8 +65,10 @@ struct PullRequestDetailRenderTests {
         let suite = "PullRequestDetailUI.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let runtime = DockModel(sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
-            defaults: defaults, initialSessionID: "selected-workspace", botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: PullRequestChatRPC())
+        let runtime = DockModel(
+            sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
+            defaults: defaults, initialSessionID: "selected-workspace",
+            botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: PullRequestChatRPC())
         defer { runtime.shutdown() }
         let router = ChatContextRouter()
         router.model = runtime
@@ -69,10 +76,17 @@ struct PullRequestDetailRenderTests {
         let repository = try #require(GitHubReferenceParser.repository("owner/repo"))
         #expect(await center.open(GitHubItemReference(repository: repository, number: 93, kind: .pullRequest)))
         let record = try #require(center.selected)
-        center.filesByID[record.id] = [PullRequestFile(path: "Tests/Measurements.swift", status: "modified", additions: 55, deletions: 7,
-            patch: "@@ -1 +1 @@\n-old\n+new", webURL: nil)]
+        center.filesByID[record.id] = [
+            PullRequestFile(
+                path: "Tests/Measurements.swift", status: "modified", additions: 55, deletions: 7,
+                patch: "@@ -1 +1 @@\n-old\n+new", webURL: nil)
+        ]
         center.details.fileRevisions[record.id] = record.diffRevision
-        center.commitsByID[record.id] = [PullRequestCommit(id: "abc", message: "Bound measurements and preserve existing output", author: "author", authorAvatarURL: nil, committedAt: .now, webURL: nil)]
+        center.commitsByID[record.id] = [
+            PullRequestCommit(
+                id: "abc", message: "Bound measurements and preserve existing output", author: "author",
+                authorAvatarURL: nil, committedAt: .now, webURL: nil)
+        ]
         let appearances = DockThemeID.allCases.flatMap { theme -> [(DockThemeID, Bool)] in
             let modes = theme.appearance == .system ? [false, true] : [theme.appearance == .dark]
             return modes.map { (theme, $0) }
@@ -89,7 +103,8 @@ struct PullRequestDetailRenderTests {
                     .background(Color.dockOpaqueCanvas).dockThemedRoot()
                 let host = NSHostingView(rootView: view)
                 host.frame = NSRect(x: 0, y: 0, width: width, height: 850)
-                let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                let window = NSWindow(
+                    contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
                 window.contentView = host
                 window.orderFrontRegardless()
                 defer { window.orderOut(nil) }
@@ -106,20 +121,28 @@ struct PullRequestDetailRenderTests {
                 }
             }
             let rpc = PullRequestChatRPC()
-            rpc.history = ["messages": [
-                ["role": "user", "content": "What should I review first?"],
-                ["role": "assistant", "content": "Start with **timeout handling**, then check that existing output is preserved.\n\n- Verify process termination.\n- Check invalid output paths.\n- Run the focused measurement suite."],
-            ]]
+            rpc.history = [
+                "messages": [
+                    ["role": "user", "content": "What should I review first?"],
+                    [
+                        "role": "assistant",
+                        "content":
+                            "Start with **timeout handling**, then check that existing output is preserved.\n\n- Verify process termination.\n- Check invalid output paths.\n- Run the focused measurement suite.",
+                    ],
+                ]
+            ]
             let chat = PullRequestChatModel()
             chat.text = "What should I review first?"
             await chat.submit(record, client: rpc, drafts: QuickDraftStore(directory: nil))
             await chat.refresh(client: rpc)
             chat.text = "Explain the timeout tests"
-            let chatHost = NSHostingView(rootView: PullRequestFloatingChatView(chat: chat, runtime: runtime, record: record, expanded: true)
-                .padding(20).frame(width: 400, height: 440)
-                .background(Color.dockOpaqueCanvas).dockThemedRoot())
+            let chatHost = NSHostingView(
+                rootView: PullRequestFloatingChatView(chat: chat, runtime: runtime, record: record, expanded: true)
+                    .padding(20).frame(width: 400, height: 440)
+                    .background(Color.dockOpaqueCanvas).dockThemedRoot())
             chatHost.frame = NSRect(x: 0, y: 0, width: 400, height: 440)
-            let chatWindow = NSWindow(contentRect: chatHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let chatWindow = NSWindow(
+                contentRect: chatHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             chatWindow.contentView = chatHost
             chatWindow.orderFrontRegardless()
             defer { chatWindow.orderOut(nil) }

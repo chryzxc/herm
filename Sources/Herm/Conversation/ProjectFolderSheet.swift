@@ -18,12 +18,17 @@ struct ProjectFolderSheet: View {
     }
 
     var body: some View {
-        DockModal(icon: .folderPlus, title: "New Project", subtitle: "Choose a source folder and name your project.", width: 440) {
+        DockModal(
+            icon: .folderPlus, title: "New Project", subtitle: "Choose a source folder and name your project.",
+            width: 440
+        ) {
             labeledField("Name") { DockTextField("Project name", text: $name).textFieldStyle(.dockGlass) }
             labeledField("Source folder") { folderCard }
             if let failure { ModalNote(text: failure, icon: .warning, tone: .dockDestructive) }
         } footer: {
-            modalActions(primaryTitle: "Create", pendingTitle: "Creating…", isDisabled: !canSubmit, isPending: isWorking, onCancel: { dismiss() }, onPrimary: submit)
+            modalActions(
+                primaryTitle: "Create", pendingTitle: "Creating…", isDisabled: !canSubmit, isPending: isWorking,
+                onCancel: { dismiss() }, onPrimary: submit)
         }
     }
 
@@ -33,16 +38,19 @@ struct ProjectFolderSheet: View {
                 HStack(spacing: 10) {
                     Image(systemName: "folder.fill").dockFont(size: 17).foregroundStyle(Color.dockAccent)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(folder.lastPathComponent).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
+                        Text(folder.lastPathComponent).dockFont(.body, weight: .medium).foregroundStyle(
+                            Color.dockPrimaryText)
                         Text((folder.path as NSString).abbreviatingWithTildeInPath)
-                            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(.middle)
+                            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(
+                                .middle)
                     }
                     Spacer(minLength: 8)
                     Button("Change…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
                 }
             } else {
                 VStack(spacing: 6) {
-                    Image(systemName: "arrow.down.to.line").dockFont(size: 17).foregroundStyle(isDropTargeted ? Color.dockAccent : Color.dockMetadataText)
+                    Image(systemName: "arrow.down.to.line").dockFont(size: 17).foregroundStyle(
+                        isDropTargeted ? Color.dockAccent : Color.dockMetadataText)
                     Text("Drop a folder here").dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
                     Button("Choose…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
                 }
@@ -54,13 +62,21 @@ struct ProjectFolderSheet: View {
         .background(isDropTargeted ? Color.dockAccentMuted : Color.dockSurface4, in: DockThemeShape(cornerRadius: 10))
         .overlay(
             DockThemeShape(cornerRadius: 10)
-                .stroke(isDropTargeted ? Color.dockAccent : Color.dockBorder, style: StrokeStyle(lineWidth: 1, dash: folder == nil ? [5, 4] : []))
+                .stroke(
+                    isDropTargeted ? Color.dockAccent : Color.dockBorder,
+                    style: StrokeStyle(lineWidth: 1, dash: folder == nil ? [5, 4] : []))
         )
         .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first(where: { $0.isFileURL && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }) else { return false }
+            guard
+                let url = urls.first(where: {
+                    $0.isFileURL && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+                })
+            else { return false }
             setFolder(url)
             return true
-        } isTargeted: { isDropTargeted = $0 }
+        } isTargeted: {
+            isDropTargeted = $0
+        }
     }
 
     private func setFolder(_ url: URL) {

@@ -1,7 +1,7 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
@@ -34,7 +34,8 @@ extension WorkspaceActivitySidebar {
         let activeCount = control.cronJobs.filter(\.enabled).count
         let successfulRuns = control.cronRuns.filter(cronRunIsSuccessful).count
         let failedRuns = control.cronRuns.count - successfulRuns
-        let successText = control.cronRuns.isEmpty
+        let successText =
+            control.cronRuns.isEmpty
             ? "No run history"
             : "\(Int((Double(successfulRuns) / Double(control.cronRuns.count)) * 100))% success"
         let nextRun = control.cronJobs.first(where: { $0.nextRun != nil })?.nextRun.map(HumanDateFormatting.dateAndTime)
@@ -76,7 +77,9 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 10) {
             cronSectionHeading("Schedules", count: control.cronJobs.count, icon: .calendarDots)
             if control.cronJobs.isEmpty {
-                emptyState(icon: .clock, title: "No schedules", detail: "Create an automation when work needs to run without you.")
+                emptyState(
+                    icon: .clock, title: "No schedules",
+                    detail: "Create an automation when work needs to run without you.")
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -93,11 +96,14 @@ extension WorkspaceActivitySidebar {
     var cronDetailColumn: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let selectedCronJobID,
-               let job = control.cronJobs.first(where: { $0.id == selectedCronJobID }) {
+                let job = control.cronJobs.first(where: { $0.id == selectedCronJobID })
+            {
                 cronDetailSummary(job)
                 cronHistorySection
             } else {
-                emptyState(icon: .cursorClick, title: "Select a schedule", detail: "Choose a schedule to inspect its cadence, latest result, and run history.")
+                emptyState(
+                    icon: .cursorClick, title: "Select a schedule",
+                    detail: "Choose a schedule to inspect its cadence, latest result, and run history.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -121,7 +127,10 @@ extension WorkspaceActivitySidebar {
                 Spacer(minLength: 8)
                 Text(health.state.rawValue.uppercased())
                     .dockFont(.compactStatus, weight: .bold)
-                    .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText)
+                    .foregroundStyle(
+                        health.state == .healthy
+                            ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText
+                    )
             }
             Text(job.enabled ? "Enabled and scheduled" : "Paused")
                 .dockFont(.metadata, weight: .medium)
@@ -130,7 +139,8 @@ extension WorkspaceActivitySidebar {
             Divider().overlay(Color.dockBorderLight)
             cronDetailRow("Schedule", value: CronScheduleFormatting.humanReadable(job.schedule))
             cronDetailRow("Expression", value: job.schedule, monospaced: true)
-            cronDetailRow("Next run", value: job.nextRun.map(HumanDateFormatting.dateAndTime) ?? "Not reported by Hermes")
+            cronDetailRow(
+                "Next run", value: job.nextRun.map(HumanDateFormatting.dateAndTime) ?? "Not reported by Hermes")
             cronDetailRow("Job ID", value: job.id, monospaced: true)
             if let delivery = job.delivery, !delivery.isEmpty {
                 cronDetailRow("Delivery", value: delivery.uppercased())
@@ -139,9 +149,11 @@ extension WorkspaceActivitySidebar {
                 cronDetailRow("Request", value: prompt)
             }
             if let latestRun {
-                cronDetailRow("Last run", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
+                cronDetailRow(
+                    "Last run", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
                 HStack(spacing: 6) {
-                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccessFill : Color.dockWarningFill).frame(width: 5, height: 5)
+                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccessFill : Color.dockWarningFill).frame(
+                        width: 5, height: 5)
                     Text("Last status")
                     Text(latestRun.status.uppercased())
                 }
@@ -208,15 +220,20 @@ extension WorkspaceActivitySidebar {
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             } else if filteredCronRuns.isEmpty {
-                Text(automationHistoryScope == .selected ? "No runs recorded for this schedule." : "No automation runs recorded.")
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockMetadataText)
+                Text(
+                    automationHistoryScope == .selected
+                        ? "No runs recorded for this schedule." : "No automation runs recorded."
+                )
+                .dockFont(.body)
+                .foregroundStyle(Color.dockMetadataText)
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(filteredCronRuns) { run in
                             if let request = control.cronReportRequest(for: run) {
-                                Button { cronReportRequest = request } label: {
+                                Button {
+                                    cronReportRequest = request
+                                } label: {
                                     cronRunRow(run, canViewReport: true)
                                 }
                                 .buttonStyle(.dockHover)
@@ -300,7 +317,10 @@ extension WorkspaceActivitySidebar {
     }
 
     var automationComposer: some View {
-        DockModal(icon: .magicWand, title: "New Automation", subtitle: "Set the intent once; Hermes will keep the cadence.", width: 520) {
+        DockModal(
+            icon: .magicWand, title: "New Automation", subtitle: "Set the intent once; Hermes will keep the cadence.",
+            width: 520
+        ) {
             HStack(alignment: .top, spacing: 10) {
                 labeledField("Name") {
                     DockTextField("Morning review", text: $automationName).textFieldStyle(.dockGlass)
@@ -376,7 +396,10 @@ extension WorkspaceActivitySidebar {
 
             Text(health.state.rawValue.uppercased())
                 .dockFont(size: 9, weight: .bold)
-                .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText)
+                .foregroundStyle(
+                    health.state == .healthy
+                        ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText
+                )
                 .lineLimit(1)
 
             if control.capabilityAvailable("cron.runNow") {
@@ -402,7 +425,9 @@ extension WorkspaceActivitySidebar {
                 .accessibilityLabel("Run \(job.name) now")
             }
 
-            DockMenu { cronContextActions(job) } label: {
+            DockMenu {
+                cronContextActions(job)
+            } label: {
                 DockIcon(.dotsThree)
                     .dockFont(.conversation, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -447,7 +472,9 @@ extension WorkspaceActivitySidebar {
                     cronRunRequest = job
                     isShowingCronRunConfirmation = true
                 } label: {
-                    DockActionLabel(title: "RUN NOW", pendingTitle: "RUNNING…", isPending: control.isActionPending(control.cronActionID("run", job: job)))
+                    DockActionLabel(
+                        title: "RUN NOW", pendingTitle: "RUNNING…",
+                        isPending: control.isActionPending(control.cronActionID("run", job: job)))
                 }
                 .disabled(control.isActionPending(control.cronActionID("run", job: job)))
             } else {
@@ -457,8 +484,12 @@ extension WorkspaceActivitySidebar {
                     .help("The installed Hermes CLI does not advertise the run-now automation capability.")
             }
             if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
-                Button { cronEditJob = job } label: {
-                    DockActionLabel(title: "EDIT", pendingTitle: "SAVING…", isPending: control.isActionPending(control.cronActionID("edit", job: job)))
+                Button {
+                    cronEditJob = job
+                } label: {
+                    DockActionLabel(
+                        title: "EDIT", pendingTitle: "SAVING…",
+                        isPending: control.isActionPending(control.cronActionID("edit", job: job)))
                 }
                 .disabled(control.isActionPending(control.cronActionID("edit", job: job)))
             }
@@ -467,7 +498,10 @@ extension WorkspaceActivitySidebar {
                     cronRemovalRequest = job
                     isShowingCronRemovalConfirmation = true
                 } label: {
-                    DockActionLabel(title: "REMOVE", pendingTitle: "REMOVING…", isPending: control.isActionPending(control.cronActionID("remove", job: job)), tint: Color.dockWarning)
+                    DockActionLabel(
+                        title: "REMOVE", pendingTitle: "REMOVING…",
+                        isPending: control.isActionPending(control.cronActionID("remove", job: job)),
+                        tint: Color.dockWarning)
                 }
                 .foregroundStyle(Color.dockWarning)
                 .disabled(control.isActionPending(control.cronActionID("remove", job: job)))
@@ -516,7 +550,8 @@ extension WorkspaceActivitySidebar {
             if let latestRun {
                 reportRow("LAST RUN", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
                 HStack(spacing: 6) {
-                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccessFill : Color.dockWarningFill).frame(width: 5, height: 5)
+                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccessFill : Color.dockWarningFill).frame(
+                        width: 5, height: 5)
                     Text("LAST STATUS")
                     Text(latestRun.status.uppercased())
                 }
@@ -554,7 +589,10 @@ extension WorkspaceActivitySidebar {
                 if expandedCronReportIDs.contains(job.id) {
                     MarkdownMessageView(markdown: report)
                         .padding(10)
-                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.72)))
+                        .background(
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                .dockSurfaceFill(Color.dockSurface2.opacity(0.72))
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -583,10 +621,14 @@ extension WorkspaceActivitySidebar {
                     Text("REPORT BODY UNAVAILABLE")
                         .dockFont(.metadata, weight: .semibold)
                         .foregroundStyle(Color.dockMetadataText)
-                    Text("Hermes recorded this run, but the installed CLI only provides execution status and delivery metadata—not the response body. " + (job.delivery?.lowercased() == "origin" ? "This job delivers its result to its origin chat." : ""))
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Hermes recorded this run, but the installed CLI only provides execution status and delivery metadata—not the response body. "
+                            + (job.delivery?.lowercased() == "origin"
+                                ? "This job delivers its result to its origin chat." : "")
+                    )
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
                     Button("RETURN TO CHAT") {
                         onClose()
                         model.requestComposerFocus()
@@ -692,7 +734,8 @@ extension WorkspaceActivitySidebar {
 
     var tabBadges: ControlTabBadgeState {
         ControlTabBadgeState.make(
-            changeCount: workflow.repository.conflictedFiles > 0 ? workflow.repository.conflictedFiles : workflow.repository.changedFiles
+            changeCount: workflow.repository.conflictedFiles > 0
+                ? workflow.repository.conflictedFiles : workflow.repository.changedFiles
         )
     }
 

@@ -27,23 +27,35 @@ struct GitHubIssueRecord: Identifiable, Equatable, Sendable {
     var id: String { "github:\(repository.id)#\(number)" }
     var displayNumber: String { String(number) }
 
-    init(repository: GitHubRepositoryReference, localPath: String, number: Int, title: String, body: String, state: String, author: String, assignee: String?, assignees: [String] = [], updatedAt: Date?, webURL: URL?) {
-        self.repository = repository; self.localPath = localPath; self.number = number; self.title = title; self.body = body; self.state = state; self.author = author; self.assignee = assignee
+    init(
+        repository: GitHubRepositoryReference, localPath: String, number: Int, title: String, body: String,
+        state: String, author: String, assignee: String?, assignees: [String] = [], updatedAt: Date?, webURL: URL?
+    ) {
+        self.repository = repository
+        self.localPath = localPath
+        self.number = number
+        self.title = title
+        self.body = body
+        self.state = state
+        self.author = author
+        self.assignee = assignee
         self.assignees = assignees.isEmpty ? (assignee.map { [$0] } ?? []) : assignees
-        self.updatedAt = updatedAt; self.webURL = webURL
+        self.updatedAt = updatedAt
+        self.webURL = webURL
     }
 }
 
 enum GitHubIssueParser {
     static func parse(_ payload: [String: Any], localPaths: [String: String] = [:]) -> GitHubIssueRecord? {
         guard let number = payload["number"] as? Int,
-              number > 0,
-              let title = bounded(payload["title"] as? String),
-              let state = bounded(payload["state"] as? String),
-              let repository = repositoryReference(from: payload) else { return nil }
+            number > 0,
+            let title = bounded(payload["title"] as? String),
+            let state = bounded(payload["state"] as? String),
+            let repository = repositoryReference(from: payload)
+        else { return nil }
         let user = payload["user"] as? [String: Any]
         let primaryAssignee = ((payload["assignee"] as? [String: Any])?["login"] as? String).flatMap(bounded)
-        let assignees = (payload["assignees"] as? [[String: Any] ])?.compactMap { bounded($0["login"] as? String) } ?? []
+        let assignees = (payload["assignees"] as? [[String: Any]])?.compactMap { bounded($0["login"] as? String) } ?? []
         let allAssignees = assignees.isEmpty ? (primaryAssignee.map { [$0] } ?? []) : assignees
         var record = GitHubIssueRecord(
             repository: repository,
@@ -65,12 +77,16 @@ enum GitHubIssueParser {
     }
 
     private static func repositoryReference(from payload: [String: Any]) -> GitHubRepositoryReference? {
-        let fullName = ((payload["repository"] as? [String: Any])?["full_name"] as? String)
-            ?? (payload["repository_url"] as? String).flatMap { URL(string: $0)?.pathComponents.dropFirst().dropFirst().joined(separator: "/") }
+        let fullName =
+            ((payload["repository"] as? [String: Any])?["full_name"] as? String)
+            ?? (payload["repository_url"] as? String).flatMap {
+                URL(string: $0)?.pathComponents.dropFirst().dropFirst().joined(separator: "/")
+            }
         guard let fullName else { return nil }
         let parts = fullName.split(separator: "/", omittingEmptySubsequences: true)
         guard parts.count == 2 else { return nil }
-        let owner = String(parts[0]); let name = String(parts[1])
+        let owner = String(parts[0])
+        let name = String(parts[1])
         guard let webURL = URL(string: "https://github.com/\(owner)/\(name)") else { return nil }
         return GitHubRepositoryReference(owner: owner, name: name, webURL: webURL)
     }
@@ -78,7 +94,9 @@ enum GitHubIssueParser {
     private static func bounded(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= 240, trimmed.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        guard !trimmed.isEmpty, trimmed.count <= 240, trimmed.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
         return trimmed
     }
 }
@@ -99,11 +117,16 @@ struct IssueContext: Equatable, Sendable {
     }
 
     init(issue: GitHubIssueRecord) {
-        repositoryID = issue.repository.id; number = issue.number; title = issue.title; webURL = issue.webURL
+        repositoryID = issue.repository.id
+        number = issue.number
+        title = issue.title
+        webURL = issue.webURL
     }
 
     init(repositoryID: String, number: Int, title: String, webURL: URL?) {
-        self.repositoryID = repositoryID; self.number = number; self.title = title; self.webURL = webURL
+        self.repositoryID = repositoryID
+        self.number = number
+        self.title = title
+        self.webURL = webURL
     }
 }
-

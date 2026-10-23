@@ -28,7 +28,8 @@ enum EdgeDockMotion {
         view.alphaValue = 1
         cancel(view)
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              let layer = view.layer else { return }
+            let layer = view.layer
+        else { return }
 
         let opacity = CAKeyframeAnimation(keyPath: "opacity")
         opacity.values = [0, 0.15, 1]
@@ -67,8 +68,10 @@ struct EdgeSurfaceReveal: ViewModifier {
             content.mask {
                 GeometryReader { geometry in
                     EdgeNotchShape(side: side).fill(.black)
-                        .frame(width: revealed ? geometry.size.width : min(collapsed.width, geometry.size.width),
-                               height: revealed ? geometry.size.height : min(collapsed.height, geometry.size.height))
+                        .frame(
+                            width: revealed ? geometry.size.width : min(collapsed.width, geometry.size.width),
+                            height: revealed ? geometry.size.height : min(collapsed.height, geometry.size.height)
+                        )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: side.alignment)
                 }
             }

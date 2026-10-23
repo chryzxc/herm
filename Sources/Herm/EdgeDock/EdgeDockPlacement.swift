@@ -13,8 +13,9 @@ enum EdgeDockLayout {
     static func insets(for side: EdgeDockSide, menuBarHeight: CGFloat = 0) -> EdgeInsets {
         side == .top
             ? EdgeInsets(top: menuBarHeight + 8, leading: islandSideInset, bottom: 6, trailing: islandSideInset)
-            : EdgeInsets(top: workspaceVerticalInset, leading: workspaceHorizontalInset,
-                         bottom: workspaceVerticalInset, trailing: workspaceHorizontalInset)
+            : EdgeInsets(
+                top: workspaceVerticalInset, leading: workspaceHorizontalInset,
+                bottom: workspaceVerticalInset, trailing: workspaceHorizontalInset)
     }
 }
 
@@ -60,8 +61,9 @@ struct EdgeDockPlacement: Equatable {
         let height = min(height, visibleFrame.height)
         let center = visibleFrame.minY + visibleFrame.height * min(1, max(0, fraction))
         let y = min(max(center - height / 2, visibleFrame.minY), visibleFrame.maxY - height)
-        return NSRect(x: side == .right ? screenFrame.maxX - width : screenFrame.minX,
-                      y: y, width: width, height: height)
+        return NSRect(
+            x: side == .right ? screenFrame.maxX - width : screenFrame.minX,
+            y: y, width: width, height: height)
     }
 
     /// `allowsTop` is false off the primary display: the island only hangs from the main screen.
@@ -70,8 +72,9 @@ struct EdgeDockPlacement: Equatable {
         if allowsTop, point.y >= visibleFrame.maxY - 24, abs(point.x - screenFrame.midX) < screenFrame.width / 4 {
             return Self(side: .top, fraction: fraction, screenFrame: screenFrame, visibleFrame: visibleFrame)
         }
-        return Self(side: point.x < screenFrame.midX ? .left : .right, fraction: fraction,
-                    screenFrame: screenFrame, visibleFrame: visibleFrame)
+        return Self(
+            side: point.x < screenFrame.midX ? .left : .right, fraction: fraction,
+            screenFrame: screenFrame, visibleFrame: visibleFrame)
     }
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -78,10 +79,12 @@ struct BotServiceTests {
     }
 
     @Test func populatePreservesExistingAndCustomAvatarsEvenWhenAssetsCannotLoad() async {
-        let client = BotFixtureClient(result: ["profiles": [
-            ["name": "uploaded", "has_avatar": true],
-            ["name": "custom", "has_avatar": false, "ui_meta": ["hermes-bots": ["custom": true]]]
-        ]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                ["name": "uploaded", "has_avatar": true],
+                ["name": "custom", "has_avatar": false, "ui_meta": ["hermes-bots": ["custom": true]]],
+            ]
+        ])
         let model = BotModeModel()
         model.bind(to: client, capabilityAvailable: true)
         await model.refreshNow(force: true)
@@ -90,10 +93,12 @@ struct BotServiceTests {
     }
 
     @Test func regenerateAllRerendersEveryAvatarIncludingUploads() async {
-        let client = BotFixtureClient(result: ["profiles": [
-            ["name": "uploaded", "has_avatar": true],
-            ["name": "custom", "has_avatar": true, "ui_meta": ["hermes-bots": ["custom": true]]]
-        ]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                ["name": "uploaded", "has_avatar": true],
+                ["name": "custom", "has_avatar": true, "ui_meta": ["hermes-bots": ["custom": true]]],
+            ]
+        ])
         let model = BotModeModel()
         model.bind(to: client, capabilityAvailable: true)
         await model.refreshNow(force: true)
@@ -104,7 +109,9 @@ struct BotServiceTests {
     @Test func parsesRuntimeConfigFallbackChain() {
         let runtime = BotService.parseRuntimeConfig([
             "model": ["default": "gpt-6.1-sol", "provider": "openai-codex", "context_length": 200000],
-            "fallback_providers": [["provider": "anthropic", "model": "claude-opus-5-5"], ["provider": "", "model": "x"]],
+            "fallback_providers": [
+                ["provider": "anthropic", "model": "claude-opus-5-5"], ["provider": "", "model": "x"],
+            ],
             "fallback_model": ["provider": "anthropic", "model": "claude-opus-5-5"],
             "agent": ["reasoning_effort": "high"],
             "compression": ["threshold_tokens": 150000],
@@ -118,10 +125,12 @@ struct BotServiceTests {
 
     @Test func fallbackEditWritesProfileScopedChainAndBlanksLegacyKey() async throws {
         let client = BotFixtureClient(result: [:])
-        try await BotService(client: client).setFallbacks(profileID: "aegis", [
-            .init(provider: "anthropic", model: "claude-opus-5-5", baseURL: "process://x"),
-            .init(provider: "openrouter", model: "gpt-6"),
-        ])
+        try await BotService(client: client).setFallbacks(
+            profileID: "aegis",
+            [
+                .init(provider: "anthropic", model: "claude-opus-5-5", baseURL: "process://x"),
+                .init(provider: "openrouter", model: "gpt-6"),
+            ])
         #expect(client.methods == ["PUT /api/config"])
         #expect(client.lastHTTPBody?["profile"] as? String == "aegis")
         let config = try #require(client.lastHTTPBody?["config"] as? [String: Any])
@@ -132,10 +141,15 @@ struct BotServiceTests {
     }
 
     @Test func parsesAndSortsSafeBotRoster() async {
-        let client = BotFixtureClient(result: ["profiles": [
-            ["id": "research", "name": "Research", "title": "Researcher", "is_active": true, "chat": ["session_id": "chat-research"]],
-            ["id": "default", "name": "Default", "model": "gpt-5", "is_active": false]
-        ]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                [
+                    "id": "research", "name": "Research", "title": "Researcher", "is_active": true,
+                    "chat": ["session_id": "chat-research"],
+                ],
+                ["id": "default", "name": "Default", "model": "gpt-5", "is_active": false],
+            ]
+        ])
         let inventory = await BotService(client: client).list()
         #expect(inventory.availability == .ready)
         #expect(inventory.bots.map(\.id) == ["default", "research"])
@@ -143,16 +157,20 @@ struct BotServiceTests {
     }
 
     @Test func parsesHermesProfileListShapeAndCanonicalSession() async {
-        let client = BotFixtureClient(result: ["profiles": [[
-            "name": "research", "path": "/Users/private/.hermes/profiles/research",
-            "display_name": "Research Buddy", "description": "Find papers",
-            "model": "gpt-5", "provider": "openai", "is_default": false,
-            "skill_count": 3, "canonical_session": ["id": "root", "resolved_id": "tip", "title": "Bot Chat"],
-            "last_session": ["id": "last", "title": "Scratch", "preview": "older preview"],
-            "worker_session": ["id": "worker", "source": "kanban"],
-            "ui_meta": ["hermes-bots": ["title": "Paper Finder"]],
-            "ui_meta_revisions": ["hermes-bots": 2], "has_avatar": true
-        ]], "bot_mode_protocol": true])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                [
+                    "name": "research", "path": "/Users/private/.hermes/profiles/research",
+                    "display_name": "Research Buddy", "description": "Find papers",
+                    "model": "gpt-5", "provider": "openai", "is_default": false,
+                    "skill_count": 3, "canonical_session": ["id": "root", "resolved_id": "tip", "title": "Bot Chat"],
+                    "last_session": ["id": "last", "title": "Scratch", "preview": "older preview"],
+                    "worker_session": ["id": "worker", "source": "kanban"],
+                    "ui_meta": ["hermes-bots": ["title": "Paper Finder"]],
+                    "ui_meta_revisions": ["hermes-bots": 2], "has_avatar": true,
+                ]
+            ], "bot_mode_protocol": true,
+        ])
         let inventory = await BotService(client: client).list()
         #expect(inventory.availability == .ready)
         #expect(inventory.bots.first?.id == "research")
@@ -169,14 +187,18 @@ struct BotServiceTests {
     }
 
     @Test func acceptsNullCanonicalSessionForNewProfile() async {
-        let client = BotFixtureClient(result: ["profiles": [[
-            "name": "default",
-            "display_name": "",
-            "model": "gpt-5.6-luna",
-            "canonical_session": NSNull(),
-            "last_session": NSNull(),
-            "worker_session": NSNull()
-        ]]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                [
+                    "name": "default",
+                    "display_name": "",
+                    "model": "gpt-5.6-luna",
+                    "canonical_session": NSNull(),
+                    "last_session": NSNull(),
+                    "worker_session": NSNull(),
+                ]
+            ]
+        ])
         let inventory = await BotService(client: client).list()
         #expect(inventory.availability == .ready)
         #expect(inventory.bots.count == 1)
@@ -184,11 +206,15 @@ struct BotServiceTests {
     }
 
     @Test func ignoresUnknownRosterKeysWithoutStoringPath() async {
-        let client = BotFixtureClient(result: ["profiles": [[
-            "name": "research",
-            "path": "/Users/private/.hermes/profiles/research",
-            "future_field": ["anything": true]
-        ]]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                [
+                    "name": "research",
+                    "path": "/Users/private/.hermes/profiles/research",
+                    "future_field": ["anything": true],
+                ]
+            ]
+        ])
         let inventory = await BotService(client: client).list()
         #expect(inventory.availability == .ready)
         #expect(inventory.bots.map(\.id) == ["research"])
@@ -198,16 +224,20 @@ struct BotServiceTests {
         let noIdentity = BotFixtureClient(result: ["profiles": [["description": "no identity"]]])
         #expect(await BotService(client: noIdentity).list().availability == .malformed)
 
-        let badChat = BotFixtureClient(result: ["profiles": [["name": "research", "canonical_session": ["session_id": ""]]]])
+        let badChat = BotFixtureClient(result: [
+            "profiles": [["name": "research", "canonical_session": ["session_id": ""]]]
+        ])
         #expect(await BotService(client: badChat).list().availability == .malformed)
     }
 
     @Test func avatarDegradesInsteadOfFailingRoster() async {
-        let client = BotFixtureClient(result: ["profiles": [
-            ["name": "remote", "avatar_url": "https://example.com/a.png"],
-            ["name": "local", "avatar_url": "data:image/png;base64,AAAA"],
-            ["name": "broken", "avatar_url": "ftp://example.com/a.png"]
-        ]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                ["name": "remote", "avatar_url": "https://example.com/a.png"],
+                ["name": "local", "avatar_url": "data:image/png;base64,AAAA"],
+                ["name": "broken", "avatar_url": "ftp://example.com/a.png"],
+            ]
+        ])
         let inventory = await BotService(client: client).list()
         #expect(inventory.availability == .ready)
         #expect(inventory.bots.first { $0.id == "remote" }?.avatarURL?.scheme == "https")
@@ -216,9 +246,13 @@ struct BotServiceTests {
     }
 
     @Test func rosterRefreshDoesNotGenerateOrPersistMissingAvatars() async {
-        let client = BotFixtureClient(result: ["profiles": [[
-            "name": "research", "is_default": false, "has_avatar": false
-        ]]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                [
+                    "name": "research", "is_default": false, "has_avatar": false,
+                ]
+            ]
+        ])
         let model = BotModeModel()
         model.bind(to: client, capabilityAvailable: true)
 
@@ -241,14 +275,18 @@ struct BotServiceTests {
 
         await model.refreshNow()
         #expect(model.rosterRevision == afterFirst, "An unchanged roster should not invalidate transcript rows")
-        let changedClient = BotFixtureClient(result: ["profiles": [["name": "research", "has_avatar": false], ["name": "coding", "has_avatar": false]]])
+        let changedClient = BotFixtureClient(result: [
+            "profiles": [["name": "research", "has_avatar": false], ["name": "coding", "has_avatar": false]]
+        ])
         model.bind(to: changedClient, capabilityAvailable: true)
         await model.refreshNow()
         #expect(model.rosterRevision > afterFirst)
     }
 
     @Test func createParsesHermesCreateResultWithoutTitleParam() async throws {
-        let client = BotFixtureClient(result: ["ok": true, "name": "writer", "path": "/private", "mirrored": ["env": true]])
+        let client = BotFixtureClient(result: [
+            "ok": true, "name": "writer", "path": "/private", "mirrored": ["env": true],
+        ])
         let details = try await BotService(client: client).create(name: "writer", title: nil, description: nil)
         #expect(client.methods == ["profiles.create"])
         #expect(client.paramsList.first?["name"] as? String == "writer")
@@ -279,15 +317,17 @@ struct BotServiceTests {
 
     @Test func createFailsClosedWhenHermesRejects() async {
         let client = BotFixtureClient(result: ["ok": false, "name": "writer"])
-        do { _ = try await BotService(client: client).create(name: "writer", title: nil, description: nil); Issue.record("expected rejection") }
-        catch { }
+        do {
+            _ = try await BotService(client: client).create(name: "writer", title: nil, description: nil)
+            Issue.record("expected rejection")
+        } catch {}
     }
 
     @Test func describeParsesConfigurationSnapshotShape() async throws {
         let client = BotFixtureClient(result: [
             "name": "research", "description": "Find papers",
             "soul": "raw instructions", "model": ["provider": "openai", "default": "gpt-5"],
-            "skills": [["name": "search", "enabled": true]], "toolsets": [], "mcp_servers": []
+            "skills": [["name": "search", "enabled": true]], "toolsets": [], "mcp_servers": [],
         ])
         let details = try await BotService(client: client).describe(profileID: "research")
         #expect(client.lastParams?["name"] as? String == "research")
@@ -298,11 +338,16 @@ struct BotServiceTests {
 
     @Test func configureAddressesProfileByNameAndRejectsSensitiveFields() async {
         let rejected = BotFixtureClient(result: [:])
-        do { _ = try await BotService(client: rejected).configure(profileID: "writer", fields: ["token": "secret"]); Issue.record("expected rejection") }
-        catch { #expect(rejected.lastMethod == nil) }
+        do {
+            _ = try await BotService(client: rejected).configure(profileID: "writer", fields: ["token": "secret"])
+            Issue.record("expected rejection")
+        } catch { #expect(rejected.lastMethod == nil) }
 
         let client = BotFixtureClient(result: [:])
-        client.stubNextResult = ["name": "writer", "description": "Words", "model": ["provider": "openai", "default": "gpt-5"], "skills": [], "toolsets": [], "mcp_servers": []]
+        client.stubNextResult = [
+            "name": "writer", "description": "Words", "model": ["provider": "openai", "default": "gpt-5"], "skills": [],
+            "toolsets": [], "mcp_servers": [],
+        ]
         _ = try? await BotService(client: client).configure(profileID: "writer", fields: ["description": "Words"])
         #expect(client.methods.first == "profiles.configure")
         #expect(client.paramsList.first?["name"] as? String == "writer")
@@ -324,13 +369,17 @@ struct BotServiceTests {
 
     @Test func rosterReadsBotModeMetaAndPresence() async {
         let now = Date().timeIntervalSince1970
-        let client = BotFixtureClient(result: ["profiles": [[
-            "name": "research",
-            "canonical_session": NSNull(),
-            "ui_meta": ["hermes-bots": ["title": "Paper Finder", "hidden": true]],
-            "has_avatar": true, "is_default": false,
-            "worker_session": ["id": "w1", "last_active": now - 10]
-        ]]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                [
+                    "name": "research",
+                    "canonical_session": NSNull(),
+                    "ui_meta": ["hermes-bots": ["title": "Paper Finder", "hidden": true]],
+                    "has_avatar": true, "is_default": false,
+                    "worker_session": ["id": "w1", "last_active": now - 10],
+                ]
+            ]
+        ])
         let inventory = await BotService(client: client).list()
         #expect(inventory.availability == .ready)
         let bot = inventory.bots.first
@@ -343,10 +392,16 @@ struct BotServiceTests {
     }
 
     @Test func staleWorkerSessionDoesNotKeepBotWorkingForever() async throws {
-        let client = BotFixtureClient(result: ["profiles": [[
-            "name": "forge",
-            "worker_session": ["id": "worker-old", "source": "kanban", "last_active": Date().timeIntervalSince1970 - 360]
-        ]]])
+        let client = BotFixtureClient(result: [
+            "profiles": [
+                [
+                    "name": "forge",
+                    "worker_session": [
+                        "id": "worker-old", "source": "kanban", "last_active": Date().timeIntervalSince1970 - 360,
+                    ],
+                ]
+            ]
+        ])
         let inventory = await BotService(client: client).list()
         let bot = try #require(inventory.bots.first)
         #expect(bot.isActive == false)
@@ -370,7 +425,8 @@ struct BotServiceTests {
 
     @Test func rosterMetaWriteSendsCompleteBotModeBlock() async throws {
         let client = BotFixtureClient(result: [:])
-        _ = try await BotService(client: client).setRosterMeta(profileID: "research", title: "Paper Finder", hidden: false)
+        _ = try await BotService(client: client).setRosterMeta(
+            profileID: "research", title: "Paper Finder", hidden: false)
         let params = client.paramsList.first
         #expect(params?["name"] as? String == "research")
         let meta = (params?["ui_meta"] as? [String: Any])?["hermes-bots"] as? [String: Any]
@@ -380,7 +436,9 @@ struct BotServiceTests {
 
     @Test func profileEditSurfacesGuardedModelConfirmation() async throws {
         let client = BotFixtureClient(result: [:])
-        client.stubNextResult = ["ok": false, "applied": ["model": false], "confirm_required": true, "confirm_message": "Expensive model"]
+        client.stubNextResult = [
+            "ok": false, "applied": ["model": false], "confirm_required": true, "confirm_message": "Expensive model",
+        ]
         let outcome = try await BotService(client: client).applyProfileEdit(
             profileID: "research", title: "T", description: "D", soul: "S",
             provider: "openai", model: "gpt-expensive",
@@ -424,7 +482,9 @@ struct BotServiceTests {
     }
 
     @Test func encodeDataURLLabelsImageTypesByMagicBytes() {
-        #expect(BotService.encodeDataURL(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]))?.hasPrefix("data:image/png;base64,") == true)
+        #expect(
+            BotService.encodeDataURL(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]))?.hasPrefix("data:image/png;base64,")
+                == true)
         #expect(BotService.encodeDataURL(Data([0xFF, 0xD8, 0xFF, 0xE0]))?.hasPrefix("data:image/jpeg;base64,") == true)
         #expect(BotService.encodeDataURL(Data("RIFF1234WEBPVP8 ".utf8))?.hasPrefix("data:image/webp;base64,") == true)
         #expect(BotService.encodeDataURL(Data("not an image".utf8)) == nil)
@@ -439,7 +499,8 @@ struct BotServiceTests {
 
     @Test func createPassesCloneAndNoSkillsOptions() async throws {
         let client = BotFixtureClient(result: ["ok": true, "name": "writer"])
-        _ = try await BotService(client: client).create(name: "writer", title: nil, description: nil, cloneFrom: "research", skipsSkills: true)
+        _ = try await BotService(client: client).create(
+            name: "writer", title: nil, description: nil, cloneFrom: "research", skipsSkills: true)
         #expect(client.paramsList.first?["clone_from"] as? String == "research")
         #expect(client.paramsList.first?["no_skills"] as? Bool == true)
     }
@@ -459,10 +520,12 @@ struct BotServiceTests {
     }
 
     @Test func routinesListFiltersThroughCronManage() async {
-        let client = BotFixtureClient(result: ["jobs": [
-            ["name": "[bot:research] Digest", "schedule": "every day 9am", "prompt": "Digest."],
-            ["name": "system backup", "schedule": "every day 5am"]
-        ]])
+        let client = BotFixtureClient(result: [
+            "jobs": [
+                ["name": "[bot:research] Digest", "schedule": "every day 9am", "prompt": "Digest."],
+                ["name": "system backup", "schedule": "every day 5am"],
+            ]
+        ])
         let routines = await BotService(client: client).listRoutines()
         #expect(routines.count == 1)
         #expect(routines.first?.profileID == "research")
@@ -519,16 +582,20 @@ struct BotServiceTests {
 
         #expect(BotRosterPresentation.role(for: bot) == "Security Reviewer")
         #expect(BotRosterPresentation.activity(for: bot) == "Reviewed authentication boundary")
-        #expect(BotRosterPresentation.activity(for: BotSummary(
-            id: "new", name: "New", title: nil, description: nil, model: nil,
-            isActive: false, chat: nil, avatarURL: nil, preview: nil,
-            lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false
-        )) == "No recent activity")
-        #expect(BotRosterPresentation.activity(for: BotSummary(
-            id: "worker-active", name: "Forge", title: nil, description: nil, model: nil,
-            isActive: true, chat: nil, avatarURL: nil, preview: nil,
-            lastActive: .now, isHidden: false, hasAvatar: false, isDefault: false
-        )) == "Active in Bot work.")
+        #expect(
+            BotRosterPresentation.activity(
+                for: BotSummary(
+                    id: "new", name: "New", title: nil, description: nil, model: nil,
+                    isActive: false, chat: nil, avatarURL: nil, preview: nil,
+                    lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false
+                )) == "No recent activity")
+        #expect(
+            BotRosterPresentation.activity(
+                for: BotSummary(
+                    id: "worker-active", name: "Forge", title: nil, description: nil, model: nil,
+                    isActive: true, chat: nil, avatarURL: nil, preview: nil,
+                    lastActive: .now, isHidden: false, hasAvatar: false, isDefault: false
+                )) == "Active in Bot work.")
     }
 
     @Test func futureLastActiveTimestampIsNotRecentlyActive() {
@@ -575,9 +642,10 @@ struct BotServiceTests {
     }
 
     @Test func savedGlossyHermFacesAreRecognized() throws {
-        let renderer = ImageRenderer(content: Canvas { context, _ in
-            BotFaceMark.draw(in: &context, id: "nexus", size: 160, mood: .idle, pose: .rest, theme: .glass)
-        }.frame(width: 160, height: 160))
+        let renderer = ImageRenderer(
+            content: Canvas { context, _ in
+                BotFaceMark.draw(in: &context, id: "nexus", size: 160, mood: .idle, pose: .rest, theme: .glass)
+            }.frame(width: 160, height: 160))
         renderer.scale = 1
         let tiff = try #require(renderer.nsImage?.tiffRepresentation)
         let png = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))

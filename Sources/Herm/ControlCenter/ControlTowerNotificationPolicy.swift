@@ -8,9 +8,12 @@ struct ControlTowerNotification: Identifiable, Equatable {
 }
 
 enum ControlTowerNotificationPolicy {
-    static func newlyNotifiableAttention(_ items: [AttentionItem], previouslyNotified: Set<String>) -> [ControlTowerNotification] {
+    static func newlyNotifiableAttention(_ items: [AttentionItem], previouslyNotified: Set<String>)
+        -> [ControlTowerNotification]
+    {
         items.filter { item in
-            item.state == .open && [.approval, .clarification, .failure].contains(item.kind) && !previouslyNotified.contains(key(for: item))
+            item.state == .open && [.approval, .clarification, .failure].contains(item.kind)
+                && !previouslyNotified.contains(key(for: item))
         }.map { item in
             let title: String
             switch item.kind {
@@ -19,27 +22,39 @@ enum ControlTowerNotificationPolicy {
             case .failure: title = "Hermes reported a failure"
             default: title = "Hermes attention"
             }
-            return ControlTowerNotification(id: key(for: item), title: title, body: genericBody(for: item.kind), referenceID: item.id)
+            return ControlTowerNotification(
+                id: key(for: item), title: title, body: genericBody(for: item.kind), referenceID: item.id)
         }
     }
 
-    static func terminalBackgroundResult(id: String, succeeded: Bool, previouslyNotified: Set<String>) -> ControlTowerNotification? {
+    static func terminalBackgroundResult(id: String, succeeded: Bool, previouslyNotified: Set<String>)
+        -> ControlTowerNotification?
+    {
         let key = "background:\(id):\(succeeded ? "success" : "failure")"
         guard !previouslyNotified.contains(key) else { return nil }
-        return ControlTowerNotification(id: key, title: succeeded ? "Background task completed" : "Background task failed", body: succeeded ? "A background Hermes task completed." : "A background Hermes task requires review.", referenceID: id)
+        return ControlTowerNotification(
+            id: key, title: succeeded ? "Background task completed" : "Background task failed",
+            body: succeeded ? "A background Hermes task completed." : "A background Hermes task requires review.",
+            referenceID: id)
     }
 
     static func cronFailure(id: String, previouslyNotified: Set<String>) -> ControlTowerNotification? {
         let key = "cron:\(id):failure"
         guard !previouslyNotified.contains(key) else { return nil }
-        return ControlTowerNotification(id: key, title: "Automation failed", body: "A scheduled Hermes automation requires review.", referenceID: id)
+        return ControlTowerNotification(
+            id: key, title: "Automation failed", body: "A scheduled Hermes automation requires review.", referenceID: id
+        )
     }
 
-    static func capabilityDegraded(id: String, available: Bool, previouslyNotified: Set<String>) -> ControlTowerNotification? {
+    static func capabilityDegraded(id: String, available: Bool, previouslyNotified: Set<String>)
+        -> ControlTowerNotification?
+    {
         guard !available else { return nil }
         let key = "capability:\(id):unavailable"
         guard !previouslyNotified.contains(key) else { return nil }
-        return ControlTowerNotification(id: key, title: "Herm capability unavailable", body: "A live Hermes capability is unavailable; no health state was inferred.", referenceID: id)
+        return ControlTowerNotification(
+            id: key, title: "Herm capability unavailable",
+            body: "A live Hermes capability is unavailable; no health state was inferred.", referenceID: id)
     }
 
     private static func key(for item: AttentionItem) -> String { "attention:\(item.id):\(item.kind.rawValue)" }

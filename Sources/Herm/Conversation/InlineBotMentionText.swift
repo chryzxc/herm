@@ -26,8 +26,9 @@ struct InlineBotMentionText: NSViewRepresentable {
     }
 
     private func apply(to view: NativeMarkdownTextView, colorScheme: ColorScheme) {
-        let renderer = ImageRenderer(content:
-            BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages, displayName: displayName)
+        let renderer = ImageRenderer(
+            content:
+                BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages, displayName: displayName)
                 .environment(\.colorScheme, colorScheme)
         )
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2

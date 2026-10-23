@@ -8,7 +8,9 @@ struct UsageHeatmap: View {
     @State private var selected: Date?
 
     enum Metric: String, CaseIterable, Identifiable {
-        case tokens = "Tokens", cost = "Cost", calls = "API calls"
+        case tokens = "Tokens"
+        case cost = "Cost"
+        case calls = "API calls"
         var id: String { rawValue }
         func value(_ day: TokenUsageReport.Day) -> Double {
             switch self {
@@ -20,7 +22,7 @@ struct UsageHeatmap: View {
     }
 
     private static let weeks = 53
-    private static let gap = 0.2 // fraction of a cell left as spacing
+    private static let gap = 0.2  // fraction of a cell left as spacing
     private static let labelRows = 1.4
 
     private var calendar: Calendar { .current }
@@ -68,17 +70,24 @@ struct UsageHeatmap: View {
             var lastMonth = -1
             for week in 0..<Self.weeks {
                 for row in 0..<7 {
-                    guard let date = calendar.date(byAdding: .day, value: week * 7 + row, to: start), date <= today else { continue }
+                    guard let date = calendar.date(byAdding: .day, value: week * 7 + row, to: start), date <= today
+                    else { continue }
                     if row == 0, calendar.component(.month, from: date) != lastMonth {
                         lastMonth = calendar.component(.month, from: date)
                         context.draw(
-                            Text(date, format: .dateTime.month(.abbreviated)).font(DockTypography.font(.machineMetadata, scale: workspaceScale)).foregroundStyle(Color.dockMetadataText),
+                            Text(date, format: .dateTime.month(.abbreviated)).font(
+                                DockTypography.font(.machineMetadata, scale: workspaceScale)
+                            ).foregroundStyle(Color.dockMetadataText),
                             at: CGPoint(x: Double(week) * pitch, y: 0), anchor: .topLeading)
                     }
                     let rect = CGRect(x: Double(week) * pitch, y: top + Double(row) * pitch, width: cell, height: cell)
-                    context.fill(Path(roundedRect: rect, cornerRadius: cell * 0.25), with: .color(color(values[date].map(metric.value) ?? 0, peak: peak)))
+                    context.fill(
+                        Path(roundedRect: rect, cornerRadius: cell * 0.25),
+                        with: .color(color(values[date].map(metric.value) ?? 0, peak: peak)))
                     if date == selected {
-                        context.stroke(Path(roundedRect: rect, cornerRadius: cell * 0.25), with: .color(Color.dockPrimaryText), lineWidth: 1)
+                        context.stroke(
+                            Path(roundedRect: rect, cornerRadius: cell * 0.25), with: .color(Color.dockPrimaryText),
+                            lineWidth: 1)
                     }
                 }
             }
@@ -89,7 +98,11 @@ struct UsageHeatmap: View {
             case .ended: selected = nil
             }
         }
-        .overlay { GeometryReader { geo in Color.clear.onAppear { width = geo.size.width }.onChange(of: geo.size.width) { _, new in width = new } } }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear.onAppear { width = geo.size.width }.onChange(of: geo.size.width) { _, new in width = new }
+            }
+        }
     }
 
     @State private var width: Double = 0
@@ -101,17 +114,19 @@ struct UsageHeatmap: View {
         guard point.x >= 0, point.y >= pitch * Self.labelRows else { return nil }
         let row = Int((point.y - pitch * Self.labelRows) / pitch)
         guard (0..<Self.weeks).contains(week), (0..<7).contains(row),
-              let date = calendar.date(byAdding: .day, value: week * 7 + row, to: start),
-              date <= calendar.startOfDay(for: Date()) else { return nil }
+            let date = calendar.date(byAdding: .day, value: week * 7 + row, to: start),
+            date <= calendar.startOfDay(for: Date())
+        else { return nil }
         return date
     }
 
     private func color(_ value: Double, peak: Double) -> Color {
         guard value > 0, peak > 0 else { return Color.dockBorderLight }
-        let tint: Color = switch metric {
-        case .tokens, .calls: .dockInfoFill
-        case .cost: .dockReviewFill
-        }
+        let tint: Color =
+            switch metric {
+            case .tokens, .calls: .dockInfoFill
+            case .cost: .dockReviewFill
+            }
         // Four steps of the metric's color, brightest at the peak.
         let level = min(3, Int(value / peak * 4))
         return tint.opacity(0.3 + 0.23 * Double(level))
@@ -127,7 +142,10 @@ struct UsageHeatmap: View {
             Color.clear
                 .frame(width: cell, height: cell)
                 .popover(isPresented: .constant(true), arrowEdge: .bottom) { stats(selected, values[selected]) }
-                .position(x: Double(offset / 7) * pitch + cell / 2, y: pitch * Self.labelRows + Double(offset % 7) * pitch + cell / 2)
+                .position(
+                    x: Double(offset / 7) * pitch + cell / 2,
+                    y: pitch * Self.labelRows + Double(offset % 7) * pitch + cell / 2
+                )
                 .id(selected)
                 .allowsHitTesting(false)
         }
@@ -140,9 +158,15 @@ struct UsageHeatmap: View {
                 .foregroundStyle(Color.dockPrimaryText)
             if let day {
                 Group {
-                    Text("\(UsageWorkspaceView.tokens(day.inputTokens)) in · \(UsageWorkspaceView.tokens(day.outputTokens)) out")
-                    Text("\(UsageWorkspaceView.tokens(day.cacheReadTokens)) cache · \(UsageWorkspaceView.tokens(day.reasoningTokens)) reasoning")
-                    Text("\(day.sessions) sessions · \(day.apiCalls) calls · \(UsageWorkspaceView.cost(day.estimatedCost))")
+                    Text(
+                        "\(UsageWorkspaceView.tokens(day.inputTokens)) in · \(UsageWorkspaceView.tokens(day.outputTokens)) out"
+                    )
+                    Text(
+                        "\(UsageWorkspaceView.tokens(day.cacheReadTokens)) cache · \(UsageWorkspaceView.tokens(day.reasoningTokens)) reasoning"
+                    )
+                    Text(
+                        "\(day.sessions) sessions · \(day.apiCalls) calls · \(UsageWorkspaceView.cost(day.estimatedCost))"
+                    )
                 }
                 .dockFont(.machineMetadata)
                 .foregroundStyle(Color.dockSecondaryText)

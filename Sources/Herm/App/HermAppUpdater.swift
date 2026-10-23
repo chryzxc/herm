@@ -28,11 +28,12 @@ enum HermUpdateParsing {
 
     static func release(from payload: [String: Any]) -> HermRelease? {
         guard let tag = payload["tag_name"] as? String,
-              payload["draft"] as? Bool != true, payload["prerelease"] as? Bool != true,
-              let assets = payload["assets"] as? [[String: Any]],
-              let asset = assets.first(where: { $0["name"] as? String == assetName }),
-              let assetURL = (asset["url"] as? String).flatMap(URL.init(string:)),
-              assetURL.scheme == "https", assetURL.host == "api.github.com" else { return nil }
+            payload["draft"] as? Bool != true, payload["prerelease"] as? Bool != true,
+            let assets = payload["assets"] as? [[String: Any]],
+            let asset = assets.first(where: { $0["name"] as? String == assetName }),
+            let assetURL = (asset["url"] as? String).flatMap(URL.init(string:)),
+            assetURL.scheme == "https", assetURL.host == "api.github.com"
+        else { return nil }
         return HermRelease(
             version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag,
             pageURL: (payload["html_url"] as? String).flatMap(URL.init(string:)),
@@ -98,7 +99,8 @@ final class HermAppUpdater: ObservableObject {
         guard bundleURL.pathExtension == "app" else { return "Updates are available only in the installed app." }
         guard let version, !version.isEmpty else { return "Development builds don't update automatically." }
         guard FileManager.default.isWritableFile(atPath: bundleURL.deletingLastPathComponent().path) else {
-            return "Herm can't write to \(bundleURL.deletingLastPathComponent().path). Move it to Applications to enable updates."
+            return
+                "Herm can't write to \(bundleURL.deletingLastPathComponent().path). Move it to Applications to enable updates."
         }
         return nil
     }
@@ -130,7 +132,9 @@ final class HermAppUpdater: ObservableObject {
     func installWhenIdle() {
         guard case .readyToInstall = phase else { return }
         guard !isBusy() else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.idleRetryInterval) { [weak self] in self?.installWhenIdle() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.idleRetryInterval) { [weak self] in
+                self?.installWhenIdle()
+            }
             return
         }
         installNow()
@@ -166,15 +170,18 @@ final class HermAppUpdater: ObservableObject {
 
     nonisolated private static func fetchLatestRelease(token: String?) async throws -> HermRelease {
         let url = URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!
-        let (data, response) = try await URLSession.shared.data(for: request(url, token: token, accept: "application/vnd.github+json"))
+        let (data, response) = try await URLSession.shared.data(
+            for: request(url, token: token, accept: "application/vnd.github+json"))
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else {
-            throw UpdateError(status == 404
-                ? "No release found. A private repository needs `gh auth login` on this Mac."
-                : "GitHub returned status \(status) while checking for updates.")
+            throw UpdateError(
+                status == 404
+                    ? "No release found. A private repository needs `gh auth login` on this Mac."
+                    : "GitHub returned status \(status) while checking for updates.")
         }
         guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let release = HermUpdateParsing.release(from: payload) else {
+            let release = HermUpdateParsing.release(from: payload)
+        else {
             throw UpdateError("The latest release has no \(HermUpdateParsing.assetName).")
         }
         return release
@@ -182,8 +189,10 @@ final class HermAppUpdater: ObservableObject {
 
     /// Strips the GitHub token when the asset redirects to its storage host.
     private final class RedirectAuthStripper: NSObject, URLSessionTaskDelegate {
-        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+        ) {
             var request = request
             if request.url?.host != "api.github.com" { request.setValue(nil, forHTTPHeaderField: "Authorization") }
             completionHandler(request)
@@ -206,14 +215,18 @@ final class HermAppUpdater: ObservableObject {
         try FileManager.default.moveItem(at: downloaded, to: dmg)
 
         if let digest = release.digest, digest.hasPrefix("sha256:") {
-            let actual = SHA256.hash(data: try Data(contentsOf: dmg, options: .mappedIfSafe)).map { String(format: "%02x", $0) }.joined()
+            let actual = SHA256.hash(data: try Data(contentsOf: dmg, options: .mappedIfSafe)).map {
+                String(format: "%02x", $0)
+            }.joined()
             guard actual == digest.dropFirst("sha256:".count).lowercased() else {
                 throw UpdateError("The downloaded update failed its checksum.")
             }
         }
 
         let mount = work.appendingPathComponent("mnt")
-        try run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", mount.path, dmg.path])
+        try run(
+            "/usr/bin/hdiutil",
+            ["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", mount.path, dmg.path])
         defer { _ = try? run("/usr/bin/hdiutil", ["detach", "-force", mount.path]) }
 
         let mountedApp = mount.appendingPathComponent("Herm.app")
@@ -246,7 +259,9 @@ final class HermAppUpdater: ObservableObject {
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            throw UpdateError("\(URL(fileURLWithPath: executable).lastPathComponent) failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+            throw UpdateError(
+                "\(URL(fileURLWithPath: executable).lastPathComponent) failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
         }
         return output
     }
@@ -256,22 +271,25 @@ final class HermAppUpdater: ObservableObject {
     /// Waits for Herm to exit, swaps bundles, relaunches, and restores the
     /// previous bundle if the move or the new version's launch fails.
     nonisolated static let swapScript = #"""
-    pid="$1"; app="$2"; staged="$3"; backup="$(dirname "$app")/.Herm-previous.app"
-    i=0; while kill -0 "$pid" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 600 ] && exit 1; sleep 0.1; done
-    rm -rf "$backup"
-    mv "$app" "$backup" || { open "$app"; exit 1; }
-    if ! mv "$staged" "$app"; then mv "$backup" "$app"; open "$app"; exit 1; fi
-    open "$app"; sleep 8
-    if ! pgrep -f "$app/Contents/MacOS/Herm" >/dev/null; then
-      rm -rf "$app"; mv "$backup" "$app"; open "$app"; exit 1
-    fi
-    rm -rf "$backup"
-    """#
+        pid="$1"; app="$2"; staged="$3"; backup="$(dirname "$app")/.Herm-previous.app"
+        i=0; while kill -0 "$pid" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 600 ] && exit 1; sleep 0.1; done
+        rm -rf "$backup"
+        mv "$app" "$backup" || { open "$app"; exit 1; }
+        if ! mv "$staged" "$app"; then mv "$backup" "$app"; open "$app"; exit 1; fi
+        open "$app"; sleep 8
+        if ! pgrep -f "$app/Contents/MacOS/Herm" >/dev/null; then
+          rm -rf "$app"; mv "$backup" "$app"; open "$app"; exit 1
+        fi
+        rm -rf "$backup"
+        """#
 
     nonisolated private static func launchSwapHelper(appURL: URL, stagedURL: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", swapScript, "herm-update", String(ProcessInfo.processInfo.processIdentifier), appURL.path, stagedURL.path]
+        process.arguments = [
+            "-c", swapScript, "herm-update", String(ProcessInfo.processInfo.processIdentifier), appURL.path,
+            stagedURL.path,
+        ]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()

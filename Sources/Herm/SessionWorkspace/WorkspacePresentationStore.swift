@@ -35,7 +35,9 @@ final class WorkspacePresentationStore {
     func defaultsData(_ identity: String) -> Data? { defaults.data(forKey: key(identity) + ".references") }
     func saveData(_ data: Data, identity: String) { defaults.set(data, forKey: key(identity) + ".references") }
     func load(_ identity: String) -> InspectorPresentation? {
-        defaults.data(forKey: key(identity)).flatMap { (try? JSONDecoder().decode(InspectorPresentation.self, from: $0))?.migratingActivity }
+        defaults.data(forKey: key(identity)).flatMap {
+            (try? JSONDecoder().decode(InspectorPresentation.self, from: $0))?.migratingActivity
+        }
     }
     func save(_ value: InspectorPresentation, identity: String) {
         if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: key(identity)) }

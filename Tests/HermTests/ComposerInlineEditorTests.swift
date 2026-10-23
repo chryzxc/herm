@@ -11,8 +11,9 @@ struct ComposerInlineEditorTests {
         _ = NSApplication.shared
         let pendingCaret = ForwardComposerCaretFixture()
         let host = NSHostingView(rootView: ForwardComposerTypingFixture(pendingCaret: pendingCaret))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 180),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 180),
+            styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
@@ -35,7 +36,8 @@ struct ComposerInlineEditorTests {
             await Task.yield()
             host.layoutSubtreeIfNeeded()
             try #require(text.string == expected)
-            try #require(text.selectedRange() == NSRange(location: location + (insertion as NSString).length, length: 0))
+            try #require(
+                text.selectedRange() == NSRange(location: location + (insertion as NSString).length, length: 0))
         }
     }
 
@@ -106,7 +108,7 @@ struct ComposerInlineEditorTests {
         #expect(sync.serializationCount == serializations + 1)
         #expect(sync.highlightCount == highlights + 1)
         #expect(sync.layoutCount == layouts + 1)
-        update("/goal") // External same-length replacement must not reuse the old draft.
+        update("/goal")  // External same-length replacement must not reuse the old draft.
         #expect(sync.markdown(in: text) == "/goal")
         #expect(sync.highlightCount == highlights + 2)
         let beforeResize = sync.layoutCount
@@ -130,11 +132,13 @@ struct ComposerInlineEditorTests {
         #expect(sync.markdown(in: text) == "- \u{E001}")
         sync.synchronize(text, markdown: "- \u{E000}", contexts: [first], inset: .zero)
         #expect(sync.markdown(in: text) == "- \u{E000}")
-        let old = try #require(text.textStorage?.attribute(.attachment, at: 2, effectiveRange: nil) as? InlineContextAttachment)
+        let old = try #require(
+            text.textStorage?.attribute(.attachment, at: 2, effectiveRange: nil) as? InlineContextAttachment)
         first = ChatContext(id: "first", title: "Renamed", body: "one")
         first.inlineToken = "\u{E000}"
         sync.synchronize(text, markdown: "- \u{E000}", contexts: [first], inset: .zero)
-        let new = try #require(text.textStorage?.attribute(.attachment, at: 2, effectiveRange: nil) as? InlineContextAttachment)
+        let new = try #require(
+            text.textStorage?.attribute(.attachment, at: 2, effectiveRange: nil) as? InlineContextAttachment)
         #expect(old !== new)
         #expect(sync.markdown(in: text) == "- \u{E000}")
     }
@@ -183,12 +187,17 @@ private struct ForwardComposerTypingFixture: View {
     var body: some View {
         VStack {
             if showsCompletions { Text("Completion results") }
-            ComposerInputEditor(text: $note, isFocused: true, onSubmit: {}, onCompletionKey: { _ in false },
+            ComposerInputEditor(
+                text: $note, isFocused: true, onSubmit: {}, onCompletionKey: { _ in false },
                 onFocusChanged: { _ in }, onCaretMoved: { _, _ in },
-                takePendingCaret: { defer { pendingCaret.value = nil }; return pendingCaret.value },
+                takePendingCaret: {
+                    defer { pendingCaret.value = nil }
+                    return pendingCaret.value
+                },
                 onTextChanged: { text, _ in showsCompletions = text.contains("/") },
-                onContentHeightChanged: { height = ComposerLayout.height(for: $0) }, inset: NSSize(width: 10, height: 8))
-                .frame(height: height)
+                onContentHeightChanged: { height = ComposerLayout.height(for: $0) }, inset: NSSize(width: 10, height: 8)
+            )
+            .frame(height: height)
         }
         .frame(width: 340)
     }

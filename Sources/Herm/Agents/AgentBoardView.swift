@@ -99,9 +99,13 @@ struct AgentBoardView: View {
         VStack(alignment: .leading, spacing: 16) {
             activeAgentsHeading
             agentSectionContent
-            sectionHeading("ACTIVE PIPELINE", detail: totalPipelineItemCount > pipelineItems.count ? "LATEST \(pipelineItems.count) / \(totalPipelineItemCount)" : "\(totalPipelineItemCount) ITEMS")
+            sectionHeading(
+                "ACTIVE PIPELINE",
+                detail: totalPipelineItemCount > pipelineItems.count
+                    ? "LATEST \(pipelineItems.count) / \(totalPipelineItemCount)" : "\(totalPipelineItemCount) ITEMS")
             if pipelineItems.isEmpty {
-                emptyState(title: "No live activity", detail: "The pipeline will populate when a Hermes subagent starts work.")
+                emptyState(
+                    title: "No live activity", detail: "The pipeline will populate when a Hermes subagent starts work.")
             } else {
                 pipelineList(pipelineItems)
             }
@@ -124,16 +128,20 @@ struct AgentBoardView: View {
     private func glow(opacity: Double, radius: CGFloat) -> some View {
         let reach = radius + 80
         return Circle()
-            .fill(RadialGradient(
-                colors: [Color.dockAccent.opacity(opacity), Color.dockAccent.opacity(opacity * 0.5), .clear],
-                center: .center, startRadius: 0, endRadius: reach))
+            .fill(
+                RadialGradient(
+                    colors: [Color.dockAccent.opacity(opacity), Color.dockAccent.opacity(opacity * 0.5), .clear],
+                    center: .center, startRadius: 0, endRadius: reach)
+            )
             .frame(width: reach * 2, height: reach * 2)
     }
 
     @ViewBuilder
     private var agentSectionContent: some View {
         if mapAgents.isEmpty {
-            emptyState(title: "No active Hermes subagents", detail: "Delegate work from Hermes to see named agents and live activity here.")
+            emptyState(
+                title: "No active Hermes subagents",
+                detail: "Delegate work from Hermes to see named agents and live activity here.")
         } else {
             agentList
         }
@@ -170,9 +178,15 @@ struct AgentBoardView: View {
                 }
             }
             .padding(2)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                    Color.dockSurface4)
+            )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                    Color.dockBorderLight, lineWidth: 0.5)
+            )
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Active agents scope")
         }
@@ -203,7 +217,9 @@ struct AgentBoardView: View {
                 .background(Color.dockSurface4.opacity(expandedAgentID == subagent.id ? 1 : 0.72))
                 .overlay {
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .stroke(expandedAgentID == subagent.id ? Color.dockAccent.opacity(0.55) : Color.dockBorderLight, lineWidth: 0.5)
+                        .stroke(
+                            expandedAgentID == subagent.id ? Color.dockAccent.opacity(0.55) : Color.dockBorderLight,
+                            lineWidth: 0.5)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -342,12 +358,15 @@ struct AgentBoardView: View {
         // The node inspector and the pipeline intentionally share the same
         // projection. A tool call already attributed to Architect/Security in
         // the pipeline must also appear in that worker's node history.
-        let activities = pipeline
+        let activities =
+            pipeline
             .filter { $0.agentID == agent.id }
             .sorted { $0.timestamp > $1.timestamp }
         let pending = activities.filter { $0.status.localizedCaseInsensitiveContains("pending") }
         let running = activities.filter { isInProgress($0.status) }
-        let completed = activities.filter { !$0.status.localizedCaseInsensitiveContains("pending") && !isInProgress($0.status) }
+        let completed = activities.filter {
+            !$0.status.localizedCaseInsensitiveContains("pending") && !isInProgress($0.status)
+        }
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -459,7 +478,8 @@ struct AgentBoardView: View {
                                 pipelineMetadata(item)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading).lineLimit(1)
+                            Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading)
+                                .lineLimit(1)
                             DockIcon(expandedPipelineItemID == item.id ? .caretUp : .caretDown)
                                 .dockFont(size: 9, weight: .semibold)
                                 .foregroundStyle(Color.dockMetadataText)
@@ -526,8 +546,13 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface4))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
+                Color.dockSurface4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(
+                Color.dockBorder, lineWidth: 0.5))
     }
 
     @ViewBuilder
@@ -541,7 +566,8 @@ struct AgentBoardView: View {
                 if !item.agent.isEmpty {
                     contentField("AGENT", item.agent, accent: Color.dockAccent)
                 }
-                let durationStr = elapsedDuration(for: item, at: Date()).map(Self.formatDuration) ?? (item.isActive ? "RUNNING" : "—")
+                let durationStr =
+                    elapsedDuration(for: item, at: Date()).map(Self.formatDuration) ?? (item.isActive ? "RUNNING" : "—")
                 contentField("DURATION", durationStr, accent: Color.dockPrimaryText)
                 contentField("STATUS", item.status.uppercased(), accent: item.color)
             }
@@ -562,8 +588,13 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface4))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
+                Color.dockSurface4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(
+                Color.dockBorder, lineWidth: 0.5))
     }
 
     private func contentField(_ label: String, _ value: String, accent: Color) -> some View {
@@ -585,10 +616,12 @@ struct AgentBoardView: View {
         let lines = Array(allLines.prefix(4))
 
         return VStack(alignment: .leading, spacing: 2) {
-            Text(allLines.count > lines.count ? "DIFF PREVIEW · \(lines.count)/\(allLines.count) LINES" : "DIFF PREVIEW")
-                .dockFont(.compactStatus, weight: .semibold)
-                .tracking(0.7)
-                .foregroundStyle(Color.dockMetadataText)
+            Text(
+                allLines.count > lines.count ? "DIFF PREVIEW · \(lines.count)/\(allLines.count) LINES" : "DIFF PREVIEW"
+            )
+            .dockFont(.compactStatus, weight: .semibold)
+            .tracking(0.7)
+            .foregroundStyle(Color.dockMetadataText)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line.isEmpty ? " " : line)
                     .dockFont(.compactStatus, weight: .regular)
@@ -681,7 +714,7 @@ struct AgentBoardView: View {
         return [
             hours > 0 ? "\(hours) hours" : nil,
             minutes > 0 ? "\(minutes) minutes" : nil,
-            remainder > 0 || seconds == 0 ? "\(remainder) seconds" : nil
+            remainder > 0 || seconds == 0 ? "\(remainder) seconds" : nil,
         ]
         .compactMap { $0 }
         .joined(separator: " ")
@@ -702,7 +735,8 @@ struct AgentBoardView: View {
     }
 
     private func isInProgress(_ status: String) -> Bool {
-        let normalized = status
+        let normalized =
+            status
             .lowercased()
             .replacingOccurrences(of: "-", with: "_")
             .replacingOccurrences(of: " ", with: "_")
@@ -777,6 +811,5 @@ struct AgentBoardView: View {
     private func agentColor(for id: String) -> Color {
         DockAccentColor.identity(for: id).fill
     }
-
 
 }

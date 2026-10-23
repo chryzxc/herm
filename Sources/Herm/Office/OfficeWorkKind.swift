@@ -58,25 +58,66 @@ enum OfficeWorkKind: String, CaseIterable, Sendable {
     /// Whole-word vocabulary. Earlier kinds win when one signal names several,
     /// so "write tests" is testing and "write migration plan" is infrastructure.
     fileprivate static let vocabulary: [(OfficeWorkKind, Set<String>)] = [
-        (.security, ["security", "pentest", "pentesting", "penetration", "audit", "vuln", "vulns", "vulnerability",
-                     "vulnerabilities", "cve", "threat", "exploit", "secrets", "owasp", "hardening", "sast", "dast"]),
-        (.testing, ["test", "tests", "testing", "qa", "verify", "verification", "validate", "validation", "e2e",
-                    "regression", "smoke", "unittest", "pytest", "xctest"]),
-        (.infrastructure, ["deploy", "deployment", "deploying", "infra", "infrastructure", "docker", "kubernetes", "k8s",
-                           "ci", "migrate", "migration", "migrations", "database", "db", "monitoring", "devops",
-                           "terraform", "helm", "server", "servers", "provision", "rollout"]),
-        (.research, ["research", "researching", "investigate", "investigation", "explore", "exploration", "browse",
-                     "browser", "web", "search", "read", "reading", "inspect", "inspecting", "analyze", "analyse", "analysis", "study",
-                     "survey", "summarize", "summarise", "compare", "benchmark"]),
-        (.design, ["design", "ui", "ux", "mockup", "mockups", "figma", "icon", "icons", "image", "images",
-                   "illustration", "logo", "wireframe", "wireframes", "prototype", "vision", "branding"]),
+        (
+            .security,
+            [
+                "security", "pentest", "pentesting", "penetration", "audit", "vuln", "vulns", "vulnerability",
+                "vulnerabilities", "cve", "threat", "exploit", "secrets", "owasp", "hardening", "sast", "dast",
+            ]
+        ),
+        (
+            .testing,
+            [
+                "test", "tests", "testing", "qa", "verify", "verification", "validate", "validation", "e2e",
+                "regression", "smoke", "unittest", "pytest", "xctest",
+            ]
+        ),
+        (
+            .infrastructure,
+            [
+                "deploy", "deployment", "deploying", "infra", "infrastructure", "docker", "kubernetes", "k8s",
+                "ci", "migrate", "migration", "migrations", "database", "db", "monitoring", "devops",
+                "terraform", "helm", "server", "servers", "provision", "rollout",
+            ]
+        ),
+        (
+            .research,
+            [
+                "research", "researching", "investigate", "investigation", "explore", "exploration", "browse",
+                "browser", "web", "search", "read", "reading", "inspect", "inspecting", "analyze", "analyse",
+                "analysis", "study",
+                "survey", "summarize", "summarise", "compare", "benchmark",
+            ]
+        ),
+        (
+            .design,
+            [
+                "design", "ui", "ux", "mockup", "mockups", "figma", "icon", "icons", "image", "images",
+                "illustration", "logo", "wireframe", "wireframes", "prototype", "vision", "branding",
+            ]
+        ),
         (.build, ["build", "builds", "package", "packaging", "release", "bundle", "compile", "notarize", "archive"]),
-        (.writing, ["docs", "documentation", "document", "readme", "changelog", "write", "writeup", "copy",
-                    "copywriting", "blog", "article", "draft", "notes", "announcement"]),
-        (.orchestration, ["plan", "planning", "delegate", "delegation", "coordinate", "orchestrate", "breakdown",
-                          "decompose", "roadmap"]),
-        (.coding, ["implement", "implementation", "code", "coding", "refactor", "fix", "bugfix", "patch", "develop",
-                   "feature", "edit", "terminal"])
+        (
+            .writing,
+            [
+                "docs", "documentation", "document", "readme", "changelog", "write", "writeup", "copy",
+                "copywriting", "blog", "article", "draft", "notes", "announcement",
+            ]
+        ),
+        (
+            .orchestration,
+            [
+                "plan", "planning", "delegate", "delegation", "coordinate", "orchestrate", "breakdown",
+                "decompose", "roadmap",
+            ]
+        ),
+        (
+            .coding,
+            [
+                "implement", "implementation", "code", "coding", "refactor", "fix", "bugfix", "patch", "develop",
+                "feature", "edit", "terminal",
+            ]
+        ),
     ]
 
     static func matching(_ text: String) -> OfficeWorkKind? {
@@ -87,13 +128,15 @@ enum OfficeWorkKind: String, CaseIterable, Sendable {
 
     /// Hermes tool names, checked before the general vocabulary.
     static func matching(tool name: String) -> OfficeWorkKind? {
-        let tool = name.lowercased().replacingOccurrences(of: "-", with: "_")
+        let tool =
+            name.lowercased().replacingOccurrences(of: "-", with: "_")
             .split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
         switch tool {
         case "web_search", "web_extract", "web_fetch", "web_crawl", "session_search": return .research
         case _ where tool.hasPrefix("browser_"): return .research
         case "terminal", "shell", "exec", "exec_command", "patch", "apply_patch", "edit_file", "write_file",
-             "read_file", "search_files", "execute_code", "process": return .coding
+            "read_file", "search_files", "execute_code", "process":
+            return .coding
         case "delegate_task", "todo", "mixture_of_agents": return .orchestration
         case "vision_analyze", "image_generate", "view_image": return .design
         default: return matching(name)
@@ -144,7 +187,9 @@ enum OfficeWorkClassifier {
         for event in [task.latestEventNote, task.latestEventKind].compactMap(nonEmpty) {
             if let kind = OfficeWorkKind.matching(event) { return .init(kind: kind, source: .event, signal: event) }
         }
-        if let kind = OfficeWorkKind.matching(task.title) { return .init(kind: kind, source: .title, signal: task.title) }
+        if let kind = OfficeWorkKind.matching(task.title) {
+            return .init(kind: kind, source: .title, signal: task.title)
+        }
         return .fallback
     }
 
@@ -178,8 +223,12 @@ struct OfficeWorkStabilizer {
     }
     private var entries: [String: Entry] = [:]
 
-    mutating func stabilize(key: String, lane: OfficePreviewLane, proposed: OfficeWorkClassification, now: Date) -> OfficeWorkClassification {
-        guard var entry = entries[key], entry.lane == lane, !proposed.source.isExplicit, entry.settled.kind != proposed.kind else {
+    mutating func stabilize(key: String, lane: OfficePreviewLane, proposed: OfficeWorkClassification, now: Date)
+        -> OfficeWorkClassification
+    {
+        guard var entry = entries[key], entry.lane == lane, !proposed.source.isExplicit,
+            entry.settled.kind != proposed.kind
+        else {
             entries[key] = Entry(settled: proposed, lane: lane)
             return proposed
         }

@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 @MainActor
 final class ControlCenterModel: ObservableObject {
@@ -77,7 +77,11 @@ final class ControlCenterModel: ObservableObject {
     @Published var workCalendar: WorkCalendarIndex?
     /// Fetched sessions/commits/usage per month start; Kanban and cron runs are
     /// folded in from the live projections at build time.
-    var workCalendarSources: [Date: (sessions: [SessionSummary], commits: [WorkCommit], pullRequests: [WorkPullRequest], usage: [TokenUsageReport.Day])] = [:]
+    var workCalendarSources:
+        [Date: (
+            sessions: [SessionSummary], commits: [WorkCommit], pullRequests: [WorkPullRequest],
+            usage: [TokenUsageReport.Day]
+        )] = [:]
     var workCalendarMonth: Date?
     /// Paths each cached month's git read covered, so newly seen worktrees trigger one re-read.
     var workCalendarPaths: [Date: Set<String>] = [:]
@@ -253,7 +257,8 @@ final class ControlCenterModel: ObservableObject {
         for (id, rawState) in stored {
             if let state = AttentionState(rawValue: rawState) {
                 let snoozedUntil = storedSnoozes[id].map(Date.init(timeIntervalSince1970:))
-                let effectiveState: AttentionState = state == .snoozed && (snoozedUntil ?? .distantPast) <= .now ? .open : state
+                let effectiveState: AttentionState =
+                    state == .snoozed && (snoozedUntil ?? .distantPast) <= .now ? .open : state
                 knownAttention[id] = AttentionItem(
                     id: id,
                     reference: Self.restoredAttentionReference(for: id),
@@ -278,7 +283,7 @@ final class ControlCenterModel: ObservableObject {
         ("kimi", KimiQuotaService.read),
         ("openrouter", OpenRouterQuotaService.read),
         ("claude", ClaudeQuotaService.read),
-        ("antigravity", AntigravityQuotaService.read)
+        ("antigravity", AntigravityQuotaService.read),
     ]
 
     /// The reader that last reported each snapshot's provider id.

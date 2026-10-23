@@ -1,5 +1,5 @@
-import Foundation
 import AppKit
+import Foundation
 import SwiftUI
 
 /// Stable identity for a transcript location. The session component prevents a
@@ -44,7 +44,9 @@ enum MessageNavigator {
     static let minimumPreviewLimit = 2
     static let minimumMessagesToShowNavigator = 24
 
-    static func items(messages: [ChatMessage], sessionID: String, previewLimit: Int = defaultPreviewLimit) -> [MessageNavigatorItem] {
+    static func items(messages: [ChatMessage], sessionID: String, previewLimit: Int = defaultPreviewLimit)
+        -> [MessageNavigatorItem]
+    {
         let limit = max(minimumPreviewLimit, previewLimit)
         // Reuse previews when callers outside DockModel request the same projection.
         let fingerprint = projectionFingerprint(messages: messages, sessionID: sessionID, previewLimit: limit)
@@ -80,7 +82,8 @@ enum MessageNavigator {
         let limit = max(minimumPreviewLimit, previewLimit)
         let prompts = earlierPrompts.enumerated().map { index, entry in
             MessageNavigatorItem(
-                target: MessageNavigatorTarget(sessionID: sessionID, messageID: placeholderMessageID(forRowID: entry.rowID)),
+                target: MessageNavigatorTarget(
+                    sessionID: sessionID, messageID: placeholderMessageID(forRowID: entry.rowID)),
                 ordinal: index + 1,
                 roleLabel: "You",
                 preview: boundedPreview(entry.preview, limit: limit),
@@ -91,22 +94,25 @@ enum MessageNavigator {
             )
         }
         let offset = prompts.count
-        return prompts + loaded.map { item in
-            MessageNavigatorItem(
-                target: item.target,
-                ordinal: item.ordinal + offset,
-                roleLabel: item.roleLabel,
-                preview: item.preview,
-                contentRevision: item.contentRevision,
-                hasImages: item.hasImages,
-                searchText: item.searchText
-            )
-        }
+        return prompts
+            + loaded.map { item in
+                MessageNavigatorItem(
+                    target: item.target,
+                    ordinal: item.ordinal + offset,
+                    roleLabel: item.roleLabel,
+                    preview: item.preview,
+                    contentRevision: item.contentRevision,
+                    hasImages: item.hasImages,
+                    searchText: item.searchText
+                )
+            }
     }
 
     /// Deterministic identity for a stored prompt that has no loaded message.
     static func placeholderMessageID(forRowID rowID: Int) -> UUID {
-        UUID(uuidString: String(format: "00000000-0000-4000-8000-%012llx", UInt64(truncatingIfNeeded: rowID) & 0xFFFF_FFFF_FFFF))!
+        UUID(
+            uuidString: String(
+                format: "00000000-0000-4000-8000-%012llx", UInt64(truncatingIfNeeded: rowID) & 0xFFFF_FFFF_FFFF))!
     }
 
     static func search(items: [MessageNavigatorItem], query: String) -> [MessageNavigatorItem] {
@@ -172,13 +178,17 @@ enum MessageNavigator {
         return value
     }
 
-    static func target(for messageID: UUID, sessionID: String, visibleIn visibleTargets: [MessageNavigatorTarget]? = nil) -> MessageNavigatorTarget? {
+    static func target(
+        for messageID: UUID, sessionID: String, visibleIn visibleTargets: [MessageNavigatorTarget]? = nil
+    ) -> MessageNavigatorTarget? {
         let target = MessageNavigatorTarget(sessionID: sessionID, messageID: messageID)
         guard let visibleTargets else { return target }
         return visibleTargets.contains(target) ? target : nil
     }
 
-    static func nearestVisibleTarget(to requestedTarget: MessageNavigatorTarget, visibleTargets: [MessageNavigatorTarget]) -> MessageNavigatorTarget? {
+    static func nearestVisibleTarget(
+        to requestedTarget: MessageNavigatorTarget, visibleTargets: [MessageNavigatorTarget]
+    ) -> MessageNavigatorTarget? {
         guard visibleTargets.contains(requestedTarget) else { return nil }
         return requestedTarget
     }
@@ -341,11 +351,13 @@ struct MessageNavigatorView: View {
         .onMoveCommand { direction in
             guard hoveredTarget != nil, !items.isEmpty else { return }
             let currentIndex = items.firstIndex { $0.target == selectedTarget }
-            guard let nextIndex = Self.nextSelectionIndex(
-                direction: direction,
-                currentIndex: currentIndex,
-                count: items.count
-            ) else { return }
+            guard
+                let nextIndex = Self.nextSelectionIndex(
+                    direction: direction,
+                    currentIndex: currentIndex,
+                    count: items.count
+                )
+            else { return }
             let item = items[nextIndex]
             selectedTarget = item.target
             Self.dispatchSelection(item, onSelect: onSelect)
@@ -369,7 +381,9 @@ struct MessageNavigatorView: View {
                         .dockFont(.metadata, weight: .medium).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
-                Button { isSearchPresented = false } label: {
+                Button {
+                    isSearchPresented = false
+                } label: {
                     DockIcon(.x, size: 11, color: Color.dockSecondaryText)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -404,7 +418,8 @@ struct MessageNavigatorView: View {
                                         HStack(spacing: 6) {
                                             Text(item.roleLabel)
                                                 .dockFont(.metadata, weight: .semibold)
-                                                .foregroundStyle(item.roleLabel == "You" ? Color.dockAccent : Color.dockPrimaryText)
+                                                .foregroundStyle(
+                                                    item.roleLabel == "You" ? Color.dockAccent : Color.dockPrimaryText)
                                             Text("#\(item.ordinal)")
                                                 .dockFont(.compactStatus, weight: .regular).monospacedDigit()
                                                 .foregroundStyle(Color.dockMetadataText)
@@ -419,10 +434,14 @@ struct MessageNavigatorView: View {
                                     .padding(.vertical, 6)
                                     .background(
                                         item.target == hoveredResult ? Color.dockSurface4 : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
+                                        in: RoundedRectangle(
+                                            cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                                     )
                                     .contentShape(Rectangle())
-                                    .onHover { hoveredResult = $0 ? item.target : (hoveredResult == item.target ? nil : hoveredResult) }
+                                    .onHover {
+                                        hoveredResult =
+                                            $0 ? item.target : (hoveredResult == item.target ? nil : hoveredResult)
+                                    }
                                 }
                                 .buttonStyle(.dockHover)
                             }
@@ -456,10 +475,14 @@ struct MessageNavigatorView: View {
         let activeTarget = self.activeTarget
         let activeIndex = markers.firstIndex { $0.target == hoveredTarget }
         let previewItem = items.first { $0.target == hoveredTarget }
-        let previewY = previewItem.flatMap { item in
-            markers.firstIndex(where: { $0.target == item.target }).map { markerY(at: $0, count: markers.count, in: size.height) }
-        } ?? size.height / 2
-        let hoverZoneHeight = markers.count > 1
+        let previewY =
+            previewItem.flatMap { item in
+                markers.firstIndex(where: { $0.target == item.target }).map {
+                    markerY(at: $0, count: markers.count, in: size.height)
+                }
+            } ?? size.height / 2
+        let hoverZoneHeight =
+            markers.count > 1
             ? markerTrackHeight(in: size.height) / CGFloat(markers.count - 1) + 2
             : 12
 
@@ -517,7 +540,7 @@ struct MessageNavigatorView: View {
             // The whole rail block, not just the bars: SwiftUI's hit area for
             // the bars sat left of their drawing, so cover a wide band too.
             .frame(width: 120, height: markerTrackHeight(in: size.height) + hoverZoneHeight + 24)
-                .position(x: size.width - 60, y: size.height / 2)
+            .position(x: size.width - 60, y: size.height / 2)
 
             if let previewItem {
                 VStack(alignment: .leading, spacing: 4) {
@@ -532,7 +555,9 @@ struct MessageNavigatorView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .frame(width: 160, alignment: .leading)
-                .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), lineWidth: 0.5)
+                .dockFloatingSurface(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), lineWidth: 0.5
+                )
                 .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.18), radius: 8, y: 3)
                 .position(x: size.width - 107, y: min(max(previewY, 52), max(52, size.height - 40)))
                 .transition(.opacity)
@@ -584,7 +609,9 @@ struct MessageNavigatorView: View {
         }
     }
 
-    private func markerColor(for item: MessageNavigatorItem, activeTarget: MessageNavigatorTarget?, distanceFromHover: Int?) -> Color {
+    private func markerColor(
+        for item: MessageNavigatorItem, activeTarget: MessageNavigatorTarget?, distanceFromHover: Int?
+    ) -> Color {
         if item.target == activeTarget { return Color.dockAccent }
         if let distanceFromHover, distanceFromHover <= 3 {
             return Color.dockAccent.opacity(0.72 - Double(distanceFromHover) * 0.16)
@@ -656,7 +683,7 @@ private struct RailPointerStrip: NSViewRepresentable {
             let local = convert(inWindow, from: nil)
             // Most timer ticks are outside the rail; avoid a WindowServer query there.
             guard bounds.contains(local),
-                  NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0) == window.windowNumber
+                NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0) == window.windowNumber
             else { return nil }
             return local.y
         }

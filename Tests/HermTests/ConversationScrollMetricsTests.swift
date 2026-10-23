@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Herm
 
 final class ConversationScrollMetricsTests: XCTestCase {
@@ -53,12 +54,13 @@ final class ConversationScrollMetricsTests: XCTestCase {
 
     func testRepinningCompactsExpandedHistory() {
         let expandedTail = ConversationMessageWindow.tailRange(totalCount: 500, limit: 120)
-        XCTAssertTrue(ConversationMessageWindow.shouldCompactAfterRepinning(
-            wasAtBottom: false,
-            isAtBottom: true,
-            range: expandedTail,
-            totalCount: 500
-        ))
+        XCTAssertTrue(
+            ConversationMessageWindow.shouldCompactAfterRepinning(
+                wasAtBottom: false,
+                isAtBottom: true,
+                range: expandedTail,
+                totalCount: 500
+            ))
         XCTAssertEqual(
             ConversationMessageWindow.compactedRange(totalCount: 500),
             ConversationMessageWindow.tailRange(totalCount: 500)
@@ -70,30 +72,34 @@ final class ConversationScrollMetricsTests: XCTestCase {
         let narrowTail = ConversationMessageWindow.tailRange(totalCount: 500)
         let historyWindow = ConversationMessageWindow.jumpWindow(aroundIndex: 200, totalCount: 500)
 
-        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
-            wasAtBottom: true,
-            isAtBottom: true,
-            range: expandedTail,
-            totalCount: 500
-        ))
-        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
-            wasAtBottom: false,
-            isAtBottom: true,
-            range: narrowTail,
-            totalCount: 500
-        ))
-        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
-            wasAtBottom: false,
-            isAtBottom: false,
-            range: expandedTail,
-            totalCount: 500
-        ))
-        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
-            wasAtBottom: false,
-            isAtBottom: true,
-            range: historyWindow,
-            totalCount: 500
-        ))
+        XCTAssertFalse(
+            ConversationMessageWindow.shouldCompactAfterRepinning(
+                wasAtBottom: true,
+                isAtBottom: true,
+                range: expandedTail,
+                totalCount: 500
+            ))
+        XCTAssertFalse(
+            ConversationMessageWindow.shouldCompactAfterRepinning(
+                wasAtBottom: false,
+                isAtBottom: true,
+                range: narrowTail,
+                totalCount: 500
+            ))
+        XCTAssertFalse(
+            ConversationMessageWindow.shouldCompactAfterRepinning(
+                wasAtBottom: false,
+                isAtBottom: false,
+                range: expandedTail,
+                totalCount: 500
+            ))
+        XCTAssertFalse(
+            ConversationMessageWindow.shouldCompactAfterRepinning(
+                wasAtBottom: false,
+                isAtBottom: true,
+                range: historyWindow,
+                totalCount: 500
+            ))
     }
 
     func testCompactedRangeDoesNotExceedShortTranscript() {
@@ -209,18 +215,20 @@ final class ConversationScrollMetricsTests: XCTestCase {
     }
 
     func testSmallUpwardScrollDoesNotRepinAfterSettling() {
-        XCTAssertFalse(ConversationScrollMetrics.isAtBottom(
-            topMinY: -120,
-            bottomMaxY: 732,
-            viewportHeight: 720,
-            tolerance: ConversationScrollMetrics.pastEndTolerance
-        ))
-        XCTAssertTrue(ConversationScrollMetrics.isAtBottom(
-            topMinY: -132,
-            bottomMaxY: 720,
-            viewportHeight: 720,
-            tolerance: ConversationScrollMetrics.pastEndTolerance
-        ))
+        XCTAssertFalse(
+            ConversationScrollMetrics.isAtBottom(
+                topMinY: -120,
+                bottomMaxY: 732,
+                viewportHeight: 720,
+                tolerance: ConversationScrollMetrics.pastEndTolerance
+            ))
+        XCTAssertTrue(
+            ConversationScrollMetrics.isAtBottom(
+                topMinY: -132,
+                bottomMaxY: 720,
+                viewportHeight: 720,
+                tolerance: ConversationScrollMetrics.pastEndTolerance
+            ))
     }
 
     func testPastEndBlankTailIsNotAtBottom() {
@@ -228,43 +236,48 @@ final class ConversationScrollMetricsTests: XCTestCase {
     }
 
     func testShortTranscriptAtTheOnlyLegalOriginCountsAsAtBottom() {
-        XCTAssertTrue(ConversationScrollMetrics.isAtBottom(
-            topMinY: 0,
-            bottomMaxY: 600,
-            viewportHeight: 720
-        ))
+        XCTAssertTrue(
+            ConversationScrollMetrics.isAtBottom(
+                topMinY: 0,
+                bottomMaxY: 600,
+                viewportHeight: 720
+            ))
     }
 
     func testBlankTailAfterARealScrollDoesNotCountAsAtBottom() {
-        XCTAssertFalse(ConversationScrollMetrics.isAtBottom(
-            topMinY: -120,
-            bottomMaxY: 600,
-            viewportHeight: 720
-        ))
+        XCTAssertFalse(
+            ConversationScrollMetrics.isAtBottom(
+                topMinY: -120,
+                bottomMaxY: 600,
+                viewportHeight: 720
+            ))
     }
 
     func testBlankTailAfterComposerAndApprovalResizeRequiresEndClamp() {
-        XCTAssertTrue(ConversationScrollMetrics.isPastEnd(
-            topMinY: -120,
-            bottomMaxY: 600,
-            viewportHeight: 720
-        ))
+        XCTAssertTrue(
+            ConversationScrollMetrics.isPastEnd(
+                topMinY: -120,
+                bottomMaxY: 600,
+                viewportHeight: 720
+            ))
     }
 
     func testShortTranscriptDoesNotTriggerEndClamp() {
-        XCTAssertFalse(ConversationScrollMetrics.isPastEnd(
-            topMinY: 0,
-            bottomMaxY: 600,
-            viewportHeight: 720
-        ))
+        XCTAssertFalse(
+            ConversationScrollMetrics.isPastEnd(
+                topMinY: 0,
+                bottomMaxY: 600,
+                viewportHeight: 720
+            ))
     }
 
     func testContentStillReachingViewportBottomDoesNotTriggerEndClamp() {
-        XCTAssertFalse(ConversationScrollMetrics.isPastEnd(
-            topMinY: -120,
-            bottomMaxY: 780,
-            viewportHeight: 720
-        ))
+        XCTAssertFalse(
+            ConversationScrollMetrics.isPastEnd(
+                topMinY: -120,
+                bottomMaxY: 780,
+                viewportHeight: 720
+            ))
     }
 
     func testStreamingPresentationCadenceBacksOffForLongResponses() {
@@ -287,7 +300,9 @@ final class ConversationScrollMetricsTests: XCTestCase {
     }
 
     func testScrolledUpPastToleranceIsNotAtBottom() {
-        XCTAssertFalse(ConversationScrollMetrics.isAtBottom(bottomMaxY: 720 + ConversationScrollMetrics.atBottomTolerance + 1, viewportHeight: 720))
+        XCTAssertFalse(
+            ConversationScrollMetrics.isAtBottom(
+                bottomMaxY: 720 + ConversationScrollMetrics.atBottomTolerance + 1, viewportHeight: 720))
     }
 
 }

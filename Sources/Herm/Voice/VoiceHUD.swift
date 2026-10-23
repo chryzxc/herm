@@ -8,7 +8,9 @@ enum ToolStep {
         describe(name: call.name, args: call.args ?? [:], isComplete: call.isComplete)
     }
 
-    static func describe(name: String, args a: [String: String], isComplete: Bool = false) -> (icon: Ph, title: String, detail: String?) {
+    static func describe(name: String, args a: [String: String], isComplete: Bool = false) -> (
+        icon: Ph, title: String, detail: String?
+    ) {
         let file = a["path"].map { ($0 as NSString).lastPathComponent }
         func quoted(_ text: String?) -> String? { text.map { "“\($0.prefix(80))”" } }
         let lower = name.lowercased()
@@ -36,9 +38,14 @@ enum ToolStep {
         case "memory":
             let forgets = a["action"]?.lowercased().contains("remove") == true
             let title = forgets ? (isComplete ? "Forgot" : "Forgetting") : (isComplete ? "Remembered" : "Remembering")
-            return (.bookmarkSimple, title, (a["content"] ?? a["new_text"] ?? a["old_text"]).map { String($0.prefix(100)) })
+            return (
+                .bookmarkSimple, title, (a["content"] ?? a["new_text"] ?? a["old_text"]).map { String($0.prefix(100)) }
+            )
         case "skill_view": return (.sparkle, "Using skill \(a["name"] ?? "")".trimmingCharacters(in: .whitespaces), nil)
-        case "image_generate": return (.image, isComplete ? "Image ready" : "Generating an image", a["prompt"].map { String($0.prefix(90)) })
+        case "image_generate":
+            return (
+                .image, isComplete ? "Image ready" : "Generating an image", a["prompt"].map { String($0.prefix(90)) }
+            )
         case "vision_analyze": return (.eye, "Looking at an image", a["question"])
         case "delegate_task": return (.robot, "Delegating", nil)
         case "todo", "todo_list", "todo_write": return (.listChecks, "Updating the plan", nil)
@@ -51,7 +58,9 @@ enum ToolStep {
                 let to = a["to"] ?? a["target"] ?? a["recipient"] ?? a["chat_id"] ?? a["channel"] ?? a["user"]
                 let text = a["message"] ?? a["text"] ?? a["content"]
                 let detail = [to, text.map { "“\($0.prefix(70))”" }].compactMap { $0 }.joined(separator: " · ")
-                return (.paperPlaneTilt, isComplete ? "Message sent" : "Sending a message", detail.isEmpty ? nil : detail)
+                return (
+                    .paperPlaneTilt, isComplete ? "Message sent" : "Sending a message", detail.isEmpty ? nil : detail
+                )
             }
             return (.wrench, name.replacingOccurrences(of: "_", with: " ").capitalized, nil)
         }
@@ -75,7 +84,8 @@ enum ToolText {
     static func field(_ key: String, in text: String?) -> String? { fields(key, in: text).first }
 
     static func fields(_ key: String, in text: String?) -> [String] {
-        guard let text, let regex = try? NSRegularExpression(pattern: #"""# + key + #""\s*:\s*"((?:[^"\\]|\\.)*)""#) else { return [] }
+        guard let text, let regex = try? NSRegularExpression(pattern: #"""# + key + #""\s*:\s*"((?:[^"\\]|\\.)*)""#)
+        else { return [] }
         return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in
             Range(match.range(at: 1), in: text).map { unescape(String(text[$0])) }
         }
@@ -83,8 +93,9 @@ enum ToolText {
 
     static func number(_ key: String, in text: String?) -> Int? {
         guard let text, let regex = try? NSRegularExpression(pattern: #"""# + key + #""\s*:\s*(-?\d+)"#),
-              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              let range = Range(match.range(at: 1), in: text) else { return nil }
+            let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+            let range = Range(match.range(at: 1), in: text)
+        else { return nil }
         return Int(text[range])
     }
 
@@ -112,7 +123,9 @@ struct BrowserSession: Equatable {
         var elements: [String: String] = [:]
         for step in steps {
             let args = step.args ?? [:]
-            let element = args["ref"].map { ref in elements[ref.trimmingCharacters(in: CharacterSet(charactersIn: "@"))] ?? "an element" }
+            let element = args["ref"].map { ref in
+                elements[ref.trimmingCharacters(in: CharacterSet(charactersIn: "@"))] ?? "an element"
+            }
             switch step.name.lowercased() {
             case "browser_navigate":
                 url = ToolText.field("url", in: step.result) ?? args["url"] ?? url
@@ -152,12 +165,17 @@ struct BrowserSession: Equatable {
 
     /// `- link "More" [ref=e2]` lines of a page snapshot, as ref → “More” link.
     static func elements(in text: String?) -> [(ref: String, label: String)] {
-        guard let text, let regex = try? NSRegularExpression(pattern: #"(\w+) \\?"([^"\\]*)\\?" \[ref=(e\d+)\]"#) else { return [] }
+        guard let text, let regex = try? NSRegularExpression(pattern: #"(\w+) \\?"([^"\\]*)\\?" \[ref=(e\d+)\]"#) else {
+            return []
+        }
         return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in
             guard let kind = Range(match.range(at: 1), in: text), let name = Range(match.range(at: 2), in: text),
-                  let ref = Range(match.range(at: 3), in: text) else { return nil }
+                let ref = Range(match.range(at: 3), in: text)
+            else { return nil }
             let role = String(text[kind])
-            let label = "“\(text[name].prefix(40))”" + (["link", "button", "textbox", "checkbox", "combobox"].contains(role) ? " \(role)" : "")
+            let label =
+                "“\(text[name].prefix(40))”"
+                + (["link", "button", "textbox", "checkbox", "combobox"].contains(role) ? " \(role)" : "")
             return (String(text[ref]), label)
         }
     }
@@ -221,8 +239,11 @@ struct TestSummary: Equatable {
     init?(_ output: String) {
         func count(_ pattern: String) -> [Int]? {
             guard let regex = try? NSRegularExpression(pattern: pattern),
-                  let match = regex.matches(in: output, range: NSRange(output.startIndex..., in: output)).last else { return nil }
-            return (1..<match.numberOfRanges).map { Range(match.range(at: $0), in: output).flatMap { Int(output[$0]) } ?? 0 }
+                let match = regex.matches(in: output, range: NSRange(output.startIndex..., in: output)).last
+            else { return nil }
+            return (1..<match.numberOfRanges).map {
+                Range(match.range(at: $0), in: output).flatMap { Int(output[$0]) } ?? 0
+            }
         }
         if let xc = count(#"Executed (\d+) tests?, with (\d+) failures?"#) {
             self.init(passed: xc[0] - xc[1], failed: xc[1])
@@ -247,15 +268,20 @@ struct GeneratedMedia: Equatable {
 
     init?(calls: [ActiveToolCall]) {
         guard let call = calls.last(where: { $0.name.lowercased() == "image_generate" && $0.isComplete }),
-              let source = ToolText.field("image", in: call.result) ?? ToolText.field("url", in: call.result)
-                ?? ToolText.field("path", in: call.result) ?? call.result.flatMap(VoicePillQueue.target(in:)) else { return nil }
+            let source = ToolText.field("image", in: call.result) ?? ToolText.field("url", in: call.result)
+                ?? ToolText.field("path", in: call.result) ?? call.result.flatMap(VoicePillQueue.target(in:))
+        else { return nil }
         self.source = source
         prompt = call.args?["prompt"]
         updatedAt = call.completedAt ?? call.startedAt
     }
 
     var fileURL: URL? {
-        source.hasPrefix("http") ? nil : URL(fileURLWithPath: (source.replacingOccurrences(of: "file://", with: "") as NSString).expandingTildeInPath)
+        source.hasPrefix("http")
+            ? nil
+            : URL(
+                fileURLWithPath: (source.replacingOccurrences(of: "file://", with: "") as NSString).expandingTildeInPath
+            )
     }
 }
 
@@ -306,7 +332,7 @@ struct VoiceHUDState: Equatable {
             BrowserSession(calls: calls).map(Card.browser),
             SearchFan(calls: calls).map(Card.search),
             TerminalTicker(calls: calls).map(Card.terminal),
-            GeneratedMedia(calls: calls).map(Card.media)
+            GeneratedMedia(calls: calls).map(Card.media),
         ]
         cards = Array(all.compactMap { $0 }.sorted { $0.updatedAt > $1.updatedAt }.prefix(Self.limit))
     }
@@ -318,12 +344,14 @@ struct VoiceHUDState: Equatable {
 
 // MARK: - Views
 
-private extension View {
-    func hudCard(tint: Color = .dockAccent) -> some View {
+extension View {
+    fileprivate func hudCard(tint: Color = .dockAccent) -> some View {
         padding(12)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                    .dockSurfaceFill(Color.dockSurface6.opacity(0.94), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
+                    .dockSurfaceFill(
+                        Color.dockSurface6.opacity(0.94), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true
+                    )
             )
             .shadow(color: tint.opacity(0.18), radius: 16)
     }
@@ -394,9 +422,12 @@ private struct BrowserCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Button { browser.url.map(ArtifactOpener.open) } label: {
-                HUDHeader(icon: .globe, title: browser.title ?? "Browser", detail: ToolStep.host(browser.url),
-                          isBusy: browser.isBusy, opens: browser.url != nil)
+            Button {
+                browser.url.map(ArtifactOpener.open)
+            } label: {
+                HUDHeader(
+                    icon: .globe, title: browser.title ?? "Browser", detail: ToolStep.host(browser.url),
+                    isBusy: browser.isBusy, opens: browser.url != nil)
             }
             .buttonStyle(.dockHover)
             .help(browser.url ?? "")
@@ -456,7 +487,9 @@ private struct SearchCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HUDHeader(icon: .magnifyingGlass, title: "Searching", detail: "“\(search.query)”", isBusy: search.isBusy)
             ForEach(Array(search.hits.enumerated()), id: \.offset) { index, hit in
-                Button { ArtifactOpener.open(hit.url) } label: {
+                Button {
+                    ArtifactOpener.open(hit.url)
+                } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(hit.title)
                             .dockFont(size: 11.5, weight: .medium)
@@ -503,8 +536,9 @@ private struct TerminalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HUDHeader(icon: .terminalWindow, title: terminal.isBusy ? "Running" : "Command finished",
-                      detail: status, isBusy: terminal.isBusy, tint: tint)
+            HUDHeader(
+                icon: .terminalWindow, title: terminal.isBusy ? "Running" : "Command finished",
+                detail: status, isBusy: terminal.isBusy, tint: tint)
             Text("$ " + terminal.command)
                 .dockFont(.metadata, weight: .regular, design: .monospaced)
                 .foregroundStyle(Color.dockPrimaryText)
@@ -536,7 +570,9 @@ private struct MediaCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { ArtifactOpener.open(media.source) } label: {
+            Button {
+                ArtifactOpener.open(media.source)
+            } label: {
                 HUDHeader(icon: .image, title: "Image ready", detail: media.prompt, opens: true, tint: .dockSuccess)
             }
             .buttonStyle(.dockHover)
@@ -544,13 +580,20 @@ private struct MediaCard: View {
                 if let url = media.fileURL {
                     AttachmentThumbnailView(url: url)
                 } else if let url = URL(string: media.source), media.source.hasPrefix("http") {
-                    AsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fit) } placeholder: { ProgressView() }
+                    AsyncImage(url: url) {
+                        $0.resizable().aspectRatio(contentMode: .fit)
+                    } placeholder: {
+                        ProgressView()
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: 180)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             // Drag the image straight into another app.
-            .onDrag { media.fileURL.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider(object: media.source as NSString) }
+            .onDrag {
+                media.fileURL.map { NSItemProvider(object: $0 as NSURL) }
+                    ?? NSItemProvider(object: media.source as NSString)
+            }
         }
         .hudCard(tint: .dockSuccess)
     }
@@ -565,18 +608,27 @@ struct VoiceStatusStrip: View {
     var body: some View {
         HStack(spacing: 8) {
             if let repositoryPath {
-                chip(icon: .gitBranch, text: ([(repositoryPath as NSString).lastPathComponent, branch].compactMap { $0 }).joined(separator: " · "))
-                    .help(repositoryPath)
+                chip(
+                    icon: .gitBranch,
+                    text: ([(repositoryPath as NSString).lastPathComponent, branch].compactMap { $0 }).joined(
+                        separator: " · ")
+                )
+                .help(repositoryPath)
             }
             if model.status == .working, let start = turnStart {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let elapsed = Int(context.date.timeIntervalSince(start))
                     let steps = model.activeToolCalls.filter { !$0.name.hasPrefix("__") }.count
-                    chip(icon: .timer, text: String(format: "%d:%02d", elapsed / 60, elapsed % 60) + (steps > 0 ? " · \(steps) step\(steps == 1 ? "" : "s")" : ""),
-                         tint: elapsed >= 120 ? .dockWarning : .dockAccent)
+                    chip(
+                        icon: .timer,
+                        text: String(format: "%d:%02d", elapsed / 60, elapsed % 60)
+                            + (steps > 0 ? " · \(steps) step\(steps == 1 ? "" : "s")" : ""),
+                        tint: elapsed >= 120 ? .dockWarning : .dockAccent)
                 }
             }
-            if let plan = model.todoPlan, plan.sessionID == model.sessionID, plan.done < plan.items.count, model.status == .working {
+            if let plan = model.todoPlan, plan.sessionID == model.sessionID, plan.done < plan.items.count,
+                model.status == .working
+            {
                 HStack(spacing: 6) {
                     ZStack {
                         Circle().stroke(Color.dockAccent.opacity(0.2), lineWidth: 2.5)
@@ -592,7 +644,8 @@ struct VoiceStatusStrip: View {
                 }
                 .modifier(ChipStyle(tint: .dockAccent))
                 .frame(maxWidth: 320)
-                .help(plan.items.map { "\($0.status == "completed" ? "✓" : "○") \($0.content)" }.joined(separator: "\n"))
+                .help(
+                    plan.items.map { "\($0.status == "completed" ? "✓" : "○") \($0.content)" }.joined(separator: "\n"))
             }
         }
         .task(id: repositoryPath) { branch = repositoryPath.flatMap(Self.branch(in:)) }
@@ -638,15 +691,23 @@ struct VoiceSubagentOrbs: View {
     var body: some View {
         HStack(spacing: 14) {
             ForEach(agents.prefix(6), id: \.id) { agent in
-                let running = !["completed", "complete", "done", "failed", "error", "cancelled"].contains(agent.status.lowercased())
-                let tint: Color = agent.status.lowercased().contains("fail") || agent.status == "error" ? .dockDestructive
+                let running = !["completed", "complete", "done", "failed", "error", "cancelled"].contains(
+                    agent.status.lowercased())
+                let tint: Color =
+                    agent.status.lowercased().contains("fail") || agent.status == "error"
+                    ? .dockDestructive
                     : running ? .dockAccent : .dockSuccess
                 VStack(spacing: 4) {
                     Circle()
-                        .fill(RadialGradient(colors: [tint, tint.opacity(0.2)], center: .center, startRadius: 1, endRadius: 11))
+                        .fill(
+                            RadialGradient(
+                                colors: [tint, tint.opacity(0.2)], center: .center, startRadius: 1, endRadius: 11)
+                        )
                         .frame(width: 18, height: 18)
                         .shadow(color: tint.opacity(0.6), radius: running ? 8 : 3)
-                        .phaseAnimator(running ? [false, true] : [false]) { orb, pulse in orb.scaleEffect(pulse ? 1.15 : 0.9) }
+                        .phaseAnimator(running ? [false, true] : [false]) { orb, pulse in
+                            orb.scaleEffect(pulse ? 1.15 : 0.9)
+                        }
                     Text(agent.name ?? "Agent")
                         .dockFont(size: 9.5, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)

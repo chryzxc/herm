@@ -64,7 +64,9 @@ struct CalendarItem: Identifiable, Equatable {
 enum CalendarAgenda {
     /// Items keyed by local start-of-day. Multi-day items appear on every day
     /// they cover inside `range`; each day lists all-day items first, then by start.
-    static func build(_ items: [CalendarItem], in range: DateInterval, calendar: Calendar = .current) -> [Date: [CalendarItem]] {
+    static func build(_ items: [CalendarItem], in range: DateInterval, calendar: Calendar = .current) -> [Date:
+        [CalendarItem]]
+    {
         var days: [Date: [CalendarItem]] = [:]
         for item in items {
             // An end exactly at midnight belongs to the day before.
@@ -87,23 +89,31 @@ enum CalendarAgenda {
     static func automationItems(_ jobs: [CronSummary]) -> [CalendarItem] {
         jobs.compactMap { job in
             guard job.enabled, let next = job.nextRun.flatMap(HumanDateFormatting.date) else { return nil }
-            return CalendarItem(id: "cron:\(job.id)", kind: .automation(cronID: job.id), title: job.name, start: next, notes: job.prompt)
+            return CalendarItem(
+                id: "cron:\(job.id)", kind: .automation(cronID: job.id), title: job.name, start: next, notes: job.prompt
+            )
         }
     }
 
     static let inProgressStatuses: Set<String> = ["running", "in_progress", "claimed"]
 
     /// Tasks Hermes is working on right now sit on today as all-day items.
-    static func taskItems(_ tasks: [KanbanTaskSummary], now: Date = .now, calendar: Calendar = .current) -> [CalendarItem] {
+    static func taskItems(_ tasks: [KanbanTaskSummary], now: Date = .now, calendar: Calendar = .current)
+        -> [CalendarItem]
+    {
         tasks.filter { inProgressStatuses.contains($0.status.lowercased()) }.map { task in
-            CalendarItem(id: "kanban:\(task.id)", kind: .task(task), title: task.title, start: calendar.startOfDay(for: now), isAllDay: true)
+            CalendarItem(
+                id: "kanban:\(task.id)", kind: .task(task), title: task.title, start: calendar.startOfDay(for: now),
+                isAllDay: true)
         }
     }
 
     /// A one-shot Hermes schedule `leadMinutes` before `start`, as an ISO 8601
     /// timestamp with offset (Hermes reads an ISO timestamp as "run once").
     /// Nil once that moment has passed.
-    static func prepSchedule(before start: Date, leadMinutes: Int, now: Date = .now, timeZone: TimeZone = .current) -> String? {
+    static func prepSchedule(before start: Date, leadMinutes: Int, now: Date = .now, timeZone: TimeZone = .current)
+        -> String?
+    {
         let runAt = start.addingTimeInterval(-Double(leadMinutes) * 60)
         guard runAt > now else { return nil }
         let formatter = ISO8601DateFormatter()

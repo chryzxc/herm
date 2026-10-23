@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+
 @testable import Herm
 
 /// Records every RPC request and returns scripted responses. `onEvent` fires
@@ -23,7 +24,8 @@ private final class SessionIsolationRPCClient: HermesRPCClientProtocol {
         case "session.resume":
             duringResume?()
             let index = requests.filter { $0.method == "session.resume" }.count - 1
-            return index < resumeResponses.count ? resumeResponses[index] : ["session_id": params["session_id"] as? String ?? "", "messages": []]
+            return index < resumeResponses.count
+                ? resumeResponses[index] : ["session_id": params["session_id"] as? String ?? "", "messages": []]
         default:
             return [:]
         }
@@ -42,12 +44,14 @@ private struct Fixtures {
             "session_id": sessionA,
             "messages": [
                 ["role": "user", "content": "question in session A"],
-                ["role": "assistant", "content": "answer in session A"]
-            ]
+                ["role": "assistant", "content": "answer in session A"],
+            ],
         ]
     }
 
-    static func messageEvent(_ type: String, sessionID: String?, delta: String? = nil, text: String? = nil) -> (String, [String: Any]) {
+    static func messageEvent(_ type: String, sessionID: String?, delta: String? = nil, text: String? = nil) -> (
+        String, [String: Any]
+    ) {
         var params: [String: Any] = [:]
         if let sessionID { params["session_id"] = sessionID }
         var payload: [String: Any] = [:]
@@ -65,11 +69,13 @@ struct SessionConversationIsolationTests {
         rpc.resumeResponses = [
             ["session_id": "runtime-a-1", "session_key": Fixtures.sessionA, "messages": []],
             ["session_id": "runtime-b", "session_key": Fixtures.sessionB, "messages": []],
-            ["session_id": "runtime-a-2", "session_key": Fixtures.sessionA, "messages": [], "running": true]
+            ["session_id": "runtime-a-2", "session_key": Fixtures.sessionA, "messages": [], "running": true],
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == "runtime-a-1" && model.status == .idle }
         model.status = .working
@@ -92,9 +98,11 @@ struct SessionConversationIsolationTests {
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == "runtime-a-2" && model.isSending }
         #expect(model.currentSessionQueuedPrompts.map(\.id) == [queuedID])
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "runtime-a-2", "payload": ["text": "Done"]
-        ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "runtime-a-2", "payload": ["text": "Done"],
+            ])
         try await waitUntil { rpc.requests.contains { $0.method == "prompt.submit" } }
         let submission = try #require(rpc.requests.first { $0.method == "prompt.submit" })
         #expect(submission.params["session_id"] as? String == "runtime-a-2")
@@ -106,10 +114,11 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [
             ["session_id": "runtime-a-1", "session_key": Fixtures.sessionA, "messages": []],
-            ["session_id": "runtime-a-2", "session_key": Fixtures.sessionA, "messages": []]
+            ["session_id": "runtime-a-2", "session_key": Fixtures.sessionA, "messages": []],
         ]
         let model = DockModel(rpcClient: rpc)
-        let session = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let session = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
         model.resumeSession(session)
         try await waitUntil { model.sessionID == "runtime-a-1" && model.status == .idle }
         let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queued-\(UUID().uuidString).png")
@@ -153,18 +162,22 @@ struct SessionConversationIsolationTests {
         rpc.resumeResponses = [
             Fixtures.sessionAResponse,
             ["session_id": Fixtures.sessionB, "messages": []],
-            Fixtures.sessionAResponse
+            Fixtures.sessionAResponse,
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
-        model.receiveGatewayEvent("approval.request", params: [
-            "session_id": Fixtures.sessionA,
-            "payload": ["title": "Approve push", "command": "git push"]
-        ])
+        model.receiveGatewayEvent(
+            "approval.request",
+            params: [
+                "session_id": Fixtures.sessionA,
+                "payload": ["title": "Approve push", "command": "git push"],
+            ])
 
         model.resumeSession(sessionB)
         try await waitUntil { model.sessionID == Fixtures.sessionB && model.status == .idle }
@@ -180,18 +193,22 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [
             Fixtures.sessionAResponse,
-            ["session_id": Fixtures.sessionB, "messages": []]
+            ["session_id": Fixtures.sessionB, "messages": []],
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
-        model.receiveGatewayEvent("approval.request", params: [
-            "session_id": Fixtures.sessionB,
-            "payload": ["title": "Approve install", "command": "npm install"]
-        ])
+        model.receiveGatewayEvent(
+            "approval.request",
+            params: [
+                "session_id": Fixtures.sessionB,
+                "payload": ["title": "Approve install", "command": "npm install"],
+            ])
         #expect(model.approvalText == nil)
 
         model.resumeSession(sessionB)
@@ -205,18 +222,22 @@ struct SessionConversationIsolationTests {
         rpc.resumeResponses = [
             ["session_id": "runtime-b", "session_key": Fixtures.sessionB, "messages": []],
             Fixtures.sessionAResponse,
-            ["session_id": "runtime-b", "session_key": Fixtures.sessionB, "messages": []]
+            ["session_id": "runtime-b", "session_key": Fixtures.sessionB, "messages": []],
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(sessionB)
         try await waitUntil { model.sessionID == "runtime-b" && model.status == .idle }
-        model.receiveGatewayEvent("approval.request", params: [
-            "session_id": "runtime-b",
-            "payload": ["command": "git push"]
-        ])
+        model.receiveGatewayEvent(
+            "approval.request",
+            params: [
+                "session_id": "runtime-b",
+                "payload": ["command": "git push"],
+            ])
 
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
@@ -232,22 +253,26 @@ struct SessionConversationIsolationTests {
         rpc.resumeResponses = [
             Fixtures.sessionAResponse,
             ["session_id": Fixtures.sessionB, "messages": []],
-            Fixtures.sessionAResponse
+            Fixtures.sessionAResponse,
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
-        model.receiveGatewayEvent("clarification.request", params: [
-            "session_id": Fixtures.sessionA,
-            "payload": [
-                "request_id": "clarify-a",
-                "question": "Which environment?",
-                "choices": ["Staging", "Production"]
-            ]
-        ])
+        model.receiveGatewayEvent(
+            "clarification.request",
+            params: [
+                "session_id": Fixtures.sessionA,
+                "payload": [
+                    "request_id": "clarify-a",
+                    "question": "Which environment?",
+                    "choices": ["Staging", "Production"],
+                ],
+            ])
 
         model.resumeSession(sessionB)
         try await waitUntil { model.sessionID == Fixtures.sessionB && model.status == .idle }
@@ -265,18 +290,22 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [
             Fixtures.sessionAResponse,
-            ["session_id": Fixtures.sessionB, "messages": []]
+            ["session_id": Fixtures.sessionB, "messages": []],
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
-        model.receiveGatewayEvent("clarification.request", params: [
-            "session_id": Fixtures.sessionB,
-            "payload": ["request_id": "clarify-b", "question": "Continue deployment?"]
-        ])
+        model.receiveGatewayEvent(
+            "clarification.request",
+            params: [
+                "session_id": Fixtures.sessionB,
+                "payload": ["request_id": "clarify-b", "question": "Continue deployment?"],
+            ])
         #expect(model.clarificationQuestion == nil)
 
         model.resumeSession(sessionB)
@@ -289,22 +318,28 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [
             Fixtures.sessionAResponse,
-            ["session_id": Fixtures.sessionB, "messages": []]
+            ["session_id": Fixtures.sessionB, "messages": []],
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
-        model.receiveGatewayEvent("clarification.request", params: [
-            "session_id": Fixtures.sessionB,
-            "payload": ["request_id": "expired-b", "question": "Choose a target"]
-        ])
-        model.receiveGatewayEvent("clarification.expire", params: [
-            "session_id": Fixtures.sessionB,
-            "payload": ["request_id": "expired-b"]
-        ])
+        model.receiveGatewayEvent(
+            "clarification.request",
+            params: [
+                "session_id": Fixtures.sessionB,
+                "payload": ["request_id": "expired-b", "question": "Choose a target"],
+            ])
+        model.receiveGatewayEvent(
+            "clarification.expire",
+            params: [
+                "session_id": Fixtures.sessionB,
+                "payload": ["request_id": "expired-b"],
+            ])
 
         model.resumeSession(sessionB)
         try await waitUntil { model.sessionID == Fixtures.sessionB && model.status == .idle }
@@ -317,14 +352,16 @@ struct SessionConversationIsolationTests {
         rpc.resumeResponses = [
             Fixtures.sessionAResponse,
             ["session_id": Fixtures.sessionB, "messages": []],
-            Fixtures.sessionAResponse
+            Fixtures.sessionAResponse,
         ]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
-        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(
+            id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
         let request: [String: Any] = [
             "session_id": Fixtures.sessionA,
-            "payload": ["request_id": "answered-a", "question": "Which environment?"]
+            "payload": ["request_id": "answered-a", "question": "Which environment?"],
         ]
 
         model.resumeSession(sessionA)
@@ -348,14 +385,17 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [Fixtures.sessionAResponse, Fixtures.sessionAResponse]
         let model = DockModel(rpcClient: rpc)
-        let session = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let session = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(session)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
         model.draft = "Keep this unsent message"
 
         model.resumeSession(session)
-        try await waitUntil { rpc.requests.filter { $0.method == "session.resume" }.count == 2 && model.status == .idle }
+        try await waitUntil {
+            rpc.requests.filter { $0.method == "session.resume" }.count == 2 && model.status == .idle
+        }
 
         #expect(model.draft == "Keep this unsent message")
     }
@@ -364,17 +404,20 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [
             ["session_id": "runtime-a", "session_key": Fixtures.sessionA, "messages": []],
-            ["session_id": "runtime-a", "session_key": Fixtures.sessionA, "messages": []]
+            ["session_id": "runtime-a", "session_key": Fixtures.sessionA, "messages": []],
         ]
         let model = DockModel(rpcClient: rpc)
-        let session = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let session = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
 
         model.resumeSession(session)
         try await waitUntil { model.sessionID == "runtime-a" && model.status == .idle }
         model.draft = "Keep this aliased session draft"
 
         model.resumeSession(session)
-        try await waitUntil { rpc.requests.filter { $0.method == "session.resume" }.count == 2 && model.status == .idle }
+        try await waitUntil {
+            rpc.requests.filter { $0.method == "session.resume" }.count == 2 && model.status == .idle
+        }
 
         #expect(model.draft == "Keep this aliased session draft")
     }
@@ -383,7 +426,9 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [["session_id": "runtime-a", "session_key": Fixtures.sessionA, "messages": []]]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { model.sessionID == "runtime-a" && model.status == .idle }
 
         model.receiveGatewayEvent("message.start", params: ["session_id": "runtime-a", "payload": [:]])
@@ -396,11 +441,14 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [Fixtures.sessionAResponse]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
 
         model.receiveGatewayEvent("message.start", params: ["session_id": Fixtures.sessionB, "payload": [:]])
-        model.receiveGatewayEvent("message.delta", params: ["session_id": Fixtures.sessionB, "payload": ["delta": "secret from session B"]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": Fixtures.sessionB, "payload": ["delta": "secret from session B"]])
         model.receiveGatewayEvent("message.complete", params: ["session_id": Fixtures.sessionB, "payload": [:]])
 
         #expect(model.messages.allSatisfy { !$0.text.contains("session B") })
@@ -411,7 +459,9 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [Fixtures.sessionAResponse]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
 
         model.receiveGatewayEvent("message.start", params: ["payload": [:]])
@@ -428,9 +478,13 @@ struct SessionConversationIsolationTests {
         let model = DockModel(rpcClient: rpc)
         rpc.duringResume = {
             model.receiveGatewayEvent("message.start", params: ["session_id": Fixtures.sessionB, "payload": [:]])
-            model.receiveGatewayEvent("message.delta", params: ["session_id": Fixtures.sessionB, "payload": ["delta": "secret from session B"]])
+            model.receiveGatewayEvent(
+                "message.delta",
+                params: ["session_id": Fixtures.sessionB, "payload": ["delta": "secret from session B"]])
         }
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
 
         #expect(model.sessionID == Fixtures.sessionA)
@@ -447,12 +501,14 @@ struct SessionConversationIsolationTests {
                 "session_id": Fixtures.sessionB,
                 "messages": [
                     ["role": "user", "content": "question in session B"],
-                    ["role": "assistant", "content": "answer in session B"]
-                ]
+                    ["role": "assistant", "content": "answer in session B"],
+                ],
             ]
         ]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
 
         #expect(model.sessionID == Fixtures.sessionA)
@@ -467,12 +523,14 @@ struct SessionConversationIsolationTests {
                 "session_key": Fixtures.sessionA,
                 "messages": [
                     ["role": "user", "content": "question in session A"],
-                    ["role": "assistant", "content": "answer in session A"]
-                ]
+                    ["role": "assistant", "content": "answer in session A"],
+                ],
             ]
         ]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
 
         #expect(model.sessionID == "runtime-fork")
@@ -485,7 +543,7 @@ struct SessionConversationIsolationTests {
             [
                 "session_id": "sentry-session",
                 "session_key": BotService.canonicalBotChatTitle,
-                "messages": []
+                "messages": [],
             ]
         ]
         let model = DockModel(rpcClient: rpc)
@@ -514,18 +572,24 @@ struct SessionConversationIsolationTests {
         let model = DockModel(initialSessionID: Fixtures.sessionA)
         let errorText = "The runtime approval prompt timed out."
 
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": Fixtures.sessionA,
-            "payload": [:]
-        ])
-        model.receiveGatewayEvent("error", params: [
-            "session_id": Fixtures.sessionA,
-            "payload": ["message": errorText]
-        ])
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": Fixtures.sessionA,
-            "payload": ["error": errorText]
-        ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": Fixtures.sessionA,
+                "payload": [:],
+            ])
+        model.receiveGatewayEvent(
+            "error",
+            params: [
+                "session_id": Fixtures.sessionA,
+                "payload": ["message": errorText],
+            ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": Fixtures.sessionA,
+                "payload": ["error": errorText],
+            ])
 
         let errors = model.messages.filter { $0.role == .hermes && $0.isError }
         #expect(errors.count == 1)
@@ -537,14 +601,18 @@ struct SessionConversationIsolationTests {
         let errorText = "The runtime approval prompt timed out."
 
         for _ in 0..<2 {
-            model.receiveGatewayEvent("message.start", params: [
-                "session_id": Fixtures.sessionA,
-                "payload": [:]
-            ])
-            model.receiveGatewayEvent("error", params: [
-                "session_id": Fixtures.sessionA,
-                "payload": ["message": errorText]
-            ])
+            model.receiveGatewayEvent(
+                "message.start",
+                params: [
+                    "session_id": Fixtures.sessionA,
+                    "payload": [:],
+                ])
+            model.receiveGatewayEvent(
+                "error",
+                params: [
+                    "session_id": Fixtures.sessionA,
+                    "payload": ["message": errorText],
+                ])
         }
 
         let errors = model.messages.filter { $0.role == .hermes && $0.isError }
@@ -558,7 +626,8 @@ struct SessionConversationIsolationTests {
         NSRect(x: 0, y: 0, width: 2, height: 2).fill()
         sourceImage.unlockFocus()
         let imageData = sourceImage.tiffRepresentation!
-        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("persisted-image-\(UUID().uuidString).tiff")
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "persisted-image-\(UUID().uuidString).tiff")
         try imageData.write(to: imageURL)
         defer { try? FileManager.default.removeItem(at: imageURL) }
 
@@ -592,10 +661,14 @@ struct SessionConversationIsolationTests {
 
     @Test func pendingImageRehydrationDropsPayloadForSessionMismatch() async {
         let model = DockModel(rpcClient: SessionIsolationRPCClient())
-        let pending = [RestoredTranscript.PendingImages(
-            messageID: UUID(),
-            fileURLs: [FileManager.default.temporaryDirectory.appendingPathComponent("missing-\(UUID().uuidString).png")]
-        )]
+        let pending = [
+            RestoredTranscript.PendingImages(
+                messageID: UUID(),
+                fileURLs: [
+                    FileManager.default.temporaryDirectory.appendingPathComponent("missing-\(UUID().uuidString).png")
+                ]
+            )
+        ]
 
         await model.rehydratePendingTranscriptImages(
             pending,
@@ -608,11 +681,11 @@ struct SessionConversationIsolationTests {
 
     @Test func restoredAssistantMarkdownPreservesLineBreaksForTheTranscriptRenderer() {
         let markdown = """
-        ## Completed
+            ## Completed
 
-        - First verified item
-        - Second verified item
-        """
+            - First verified item
+            - Second verified item
+            """
 
         let parsed = DockModel.parseMessages([
             ["role": "assistant", "content": markdown, "timestamp": 1.0]
@@ -626,10 +699,14 @@ struct SessionConversationIsolationTests {
     @Test func restoredTurnAttachesItsThinkingAndToolCallsToTheReply() {
         let parsed = DockModel.parseMessages([
             ["role": "user", "content": "fix it", "timestamp": 100.0],
-            ["role": "assistant", "content": "", "reasoning": "look first", "timestamp": 101.0,
-             "tool_calls": [["id": "t1", "function": ["name": "read_file", "arguments": "{\"path\": \"a.swift\"}"]]]],
+            [
+                "role": "assistant", "content": "", "reasoning": "look first", "timestamp": 101.0,
+                "tool_calls": [
+                    ["id": "t1", "function": ["name": "read_file", "arguments": "{\"path\": \"a.swift\"}"]]
+                ],
+            ],
             ["role": "tool", "tool_call_id": "t1", "content": "ok", "timestamp": 102.0],
-            ["role": "assistant", "content": "Done.", "timestamp": 160.0]
+            ["role": "assistant", "content": "Done.", "timestamp": 160.0],
         ])
 
         #expect(parsed.messages.count == 2)
@@ -646,7 +723,9 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [Fixtures.sessionAResponse]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
         func send(_ type: String, _ payload: [String: Any] = [:]) {
             model.receiveGatewayEvent(type, params: ["session_id": Fixtures.sessionA, "payload": payload])
@@ -671,7 +750,9 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [Fixtures.sessionAResponse]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
         func send(_ type: String, _ payload: [String: Any] = [:]) {
             model.receiveGatewayEvent(type, params: ["session_id": Fixtures.sessionA, "payload": payload])
@@ -706,7 +787,9 @@ struct SessionConversationIsolationTests {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [Fixtures.sessionAResponse]
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
         func send(_ type: String, _ payload: [String: Any] = [:]) {
             model.receiveGatewayEvent(type, params: ["session_id": Fixtures.sessionA, "payload": payload])
@@ -735,7 +818,8 @@ struct SessionConversationIsolationTests {
         running["inflight"] = ["user": "fix the build", "assistant": "Half", "streaming": true]
         rpc.resumeResponses = [Fixtures.sessionAResponse, ["session_id": Fixtures.sessionB, "messages": []], running]
         let model = DockModel(rpcClient: rpc)
-        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionA = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
         func send(_ type: String, _ payload: [String: Any] = [:]) {
@@ -744,10 +828,15 @@ struct SessionConversationIsolationTests {
         send("message.start")
         send("tool.start", ["id": "t1", "name": "terminal", "context": "swift build"])
 
-        model.resumeSession(HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test"))
         try await waitUntil { model.sessionID == Fixtures.sessionB && model.status == .idle }
         model.resumeSession(sessionA)
-        try await waitUntil { rpc.requests.filter { $0.method == "session.resume" }.count == 3 && model.sessionID == Fixtures.sessionA && model.status == .working && model.messages.contains { $0.text == "fix the build" } }
+        try await waitUntil {
+            rpc.requests.filter { $0.method == "session.resume" }.count == 3 && model.sessionID == Fixtures.sessionA
+                && model.status == .working && model.messages.contains { $0.text == "fix the build" }
+        }
 
         #expect(model.messages.map(\.text).suffix(2).first == "fix the build")
         #expect(model.streamingTurnActivity.map(\.id) == ["t1"])
@@ -765,7 +854,7 @@ struct SessionConversationIsolationTests {
             ["role": "user", "content": "check", "timestamp": 10.0],
             ["role": "assistant", "text": "", "reasoning_content": "plan", "timestamp": 11.0],
             ["role": "tool", "name": "terminal", "context": "swift test", "tool_call_id": "c1", "timestamp": 12.0],
-            ["role": "assistant", "text": "All green.", "timestamp": 40.0]
+            ["role": "assistant", "text": "All green.", "timestamp": 40.0],
         ])
 
         #expect(parsed.messages.map(\.text) == ["check", "All green."])
@@ -780,7 +869,7 @@ struct SessionConversationIsolationTests {
                 "session_id": Fixtures.sessionB,
                 "messages": [
                     ["role": "assistant", "content": "answer in session B"]
-                ]
+                ],
             ]
         ]
         let model = DockModel(rpcClient: rpc)

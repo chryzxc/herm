@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func openProject(_ project: ProjectSummary) {
@@ -22,8 +22,9 @@ extension ControlCenterModel {
             do {
                 let result = try await rpc.projectSessions(projectID: project.id, profileID: profileID)
                 guard generation == projectSessionsGeneration,
-                      selectedProjectID == project.id,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    selectedProjectID == project.id,
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 projectSessions = Self.parseProjectSessions(result)
                 projectSessionsByProjectID[project.id] = projectSessions
                 recordProjectionSuccess(projectionKey, count: projectSessions.count)
@@ -33,8 +34,9 @@ extension ControlCenterModel {
                 }
             } catch {
                 guard generation == projectSessionsGeneration,
-                      selectedProjectID == project.id,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    selectedProjectID == project.id,
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 recordProjectionFailure(projectionKey, error: error.localizedDescription)
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
@@ -103,7 +105,8 @@ extension ControlCenterModel {
             Task { @MainActor [weak self] in
                 let sessions = try? await rpc.projectSessions(projectID: projectID, profileID: profileID)
                 guard let self,
-                      self.projectNavigationRefreshGeneration == generation else { return }
+                    self.projectNavigationRefreshGeneration == generation
+                else { return }
                 if let sessions {
                     self.pendingProjectNavigationSessions[projectID] = Self.parseProjectSessions(sessions)
                 }
@@ -123,7 +126,8 @@ extension ControlCenterModel {
             return
         }
         guard !didLoadInitialProjectNavigation,
-              initialProjectNavigationTask == nil else { return }
+            initialProjectNavigationTask == nil
+        else { return }
         initialProjectNavigationTask = Task { @MainActor [weak self] in
             for _ in 0..<120 {
                 guard let self, !Task.isCancelled else { return }
@@ -146,9 +150,12 @@ extension ControlCenterModel {
 
         // Publish one complete snapshot after every request has finished. This
         // prevents the visible list from being rebuilt once per project.
-        projectSessionsByProjectID = projectSessionsByProjectID.merging(pendingProjectNavigationSessions) { _, new in new }
+        projectSessionsByProjectID = projectSessionsByProjectID.merging(pendingProjectNavigationSessions) { _, new in
+            new
+        }
         if let selectedProjectID,
-           let refreshedSessions = projectSessionsByProjectID[selectedProjectID] {
+            let refreshedSessions = projectSessionsByProjectID[selectedProjectID]
+        {
             projectSessions = refreshedSessions
         }
         pendingProjectNavigationSessions = [:]
@@ -178,7 +185,10 @@ extension ControlCenterModel {
     }
 
     func createProject(name: String, folder: String) async -> Bool {
-        guard let rpc else { lastError = "Hermes is not connected."; return false }
+        guard let rpc else {
+            lastError = "Hermes is not connected."
+            return false
+        }
         guard !name.isEmpty, !folder.isEmpty else { return false }
         do {
             _ = try await rpc.createProject(name: name, folders: [folder], profileID: projectProfileID)
@@ -194,7 +204,10 @@ extension ControlCenterModel {
     }
 
     func addProjectFolder(_ project: ProjectSummary, folder: String) async -> Bool {
-        guard let rpc else { lastError = "Hermes is not connected."; return false }
+        guard let rpc else {
+            lastError = "Hermes is not connected."
+            return false
+        }
         guard !folder.isEmpty else { return false }
         do {
             _ = try await rpc.addProjectFolder(id: project.id, path: folder, profileID: projectProfileID)
@@ -252,7 +265,8 @@ extension ControlCenterModel {
             guard let self else { return }
             var sessions = localSessions
             if let rpc = self.rpc, let result = try? await rpc.sessions(limit: 100),
-               let parsedSessions = Self.parseSessions(result) {
+                let parsedSessions = Self.parseSessions(result)
+            {
                 sessions = parsedSessions
             }
             guard !Task.isCancelled, self.searchGeneration == generation else { return }
@@ -277,7 +291,8 @@ extension ControlCenterModel {
                     currentFocus = result.reference
                     dockModel?.requestComposerFocus()
                 } catch {
-                    lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                    lastError = HermesDiagnosticsService.safeSummary(
+                        Self.safeUserDiagnostic(error.localizedDescription))
                 }
             }
         case .hermesProject:
@@ -291,14 +306,15 @@ extension ControlCenterModel {
 
     func openProjectSession(_ session: SessionSummary) {
         guard let dockModel else { return }
-        dockModel.resumeSession(HermesSession(
-            id: session.id,
-            title: session.title,
-            preview: session.displayPreview ?? "",
-            startedAt: nil,
-            messageCount: 0,
-            source: "project"
-        ))
+        dockModel.resumeSession(
+            HermesSession(
+                id: session.id,
+                title: session.title,
+                preview: session.displayPreview ?? "",
+                startedAt: nil,
+                messageCount: 0,
+                source: "project"
+            ))
         focus(sessionID: session.id)
         dockModel.requestComposerFocus()
     }
@@ -310,7 +326,8 @@ extension ControlCenterModel {
         guard let dockModel else { return }
         Task {
             do {
-                _ = try await dockModel.requestControl(HermesFeatureIDs.ID.sessionActivate, params: ["session_id": session.id])
+                _ = try await dockModel.requestControl(
+                    HermesFeatureIDs.ID.sessionActivate, params: ["session_id": session.id])
                 focus(sessionID: session.id)
                 dockModel.updateCurrentSessionTitle(session.title)
                 dockModel.requestComposerFocus()
@@ -321,11 +338,12 @@ extension ControlCenterModel {
     }
 
     func openLatestActivitySession(_ activity: LatestActivityItem) {
-        openLatestActivitySession(SessionSummary(
-            id: activity.sessionID,
-            title: activity.sessionTitle,
-            state: activity.state,
-            preview: nil
-        ))
+        openLatestActivitySession(
+            SessionSummary(
+                id: activity.sessionID,
+                title: activity.sessionTitle,
+                state: activity.state,
+                preview: nil
+            ))
     }
 }

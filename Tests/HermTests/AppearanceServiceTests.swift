@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct AppearanceServiceTests {
@@ -34,7 +35,9 @@ struct AppearanceServiceTests {
 
     @Test func parsesStrictReadOnlyAppearanceInventory() throws {
         let service = AppearanceService()
-        let inventory = try service.parseFixture(#"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"solarized","skins":[{"id":"solarized","name":"Solarized","active":true},{"id":"plain","name":"Plain","active":false}],"pets":[{"id":"cat","name":"Cat","active":true}],"desktopPlugins":[{"id":"clock","name":"Clock","mode":"standalone","status":"enabled"}]}"#)
+        let inventory = try service.parseFixture(
+            #"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"solarized","skins":[{"id":"solarized","name":"Solarized","active":true},{"id":"plain","name":"Plain","active":false}],"pets":[{"id":"cat","name":"Cat","active":true}],"desktopPlugins":[{"id":"clock","name":"Clock","mode":"standalone","status":"enabled"}]}"#
+        )
         #expect(inventory.state == .ready)
         #expect(inventory.activeSkinID == "solarized")
         #expect(inventory.skins.count == 2)
@@ -48,43 +51,64 @@ struct AppearanceServiceTests {
             try service.parseFixture("Skin: Solarized\nPet: Cat")
         }
         #expect(throws: AppearanceParseError.unsupportedInput) {
-            try service.parseFixture(#"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[],"pets":[],"desktopPlugins":[],"token":"secret"}"#)
+            try service.parseFixture(
+                #"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[],"pets":[],"desktopPlugins":[],"token":"secret"}"#
+            )
         }
         #expect(throws: AppearanceParseError.malformedFixture) {
-            try service.parseFixture(#"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[{"id":"x","name":"X","active":true,"unexpected":1}],"pets":[],"desktopPlugins":[]}"#)
+            try service.parseFixture(
+                #"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[{"id":"x","name":"X","active":true,"unexpected":1}],"pets":[],"desktopPlugins":[]}"#
+            )
         }
         #expect(throws: AppearanceParseError.malformedFixture) {
-            try service.parseFixture(#"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[],"pets":[{"id":"cat","name":"Cat","unexpected":true}],"desktopPlugins":[]}"#)
+            try service.parseFixture(
+                #"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[],"pets":[{"id":"cat","name":"Cat","unexpected":true}],"desktopPlugins":[]}"#
+            )
         }
         #expect(throws: AppearanceParseError.malformedFixture) {
-            try service.parseFixture(#"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[],"pets":[],"desktopPlugins":[{"id":"clock","name":"Clock","mode":"standalone","unexpected":"enabled"}]}"#)
+            try service.parseFixture(
+                #"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[],"pets":[],"desktopPlugins":[{"id":"clock","name":"Clock","mode":"standalone","unexpected":"enabled"}]}"#
+            )
         }
     }
 
     @Test func supportsEveryBoundedInventoryState() throws {
         let service = AppearanceService()
         for state in AppearanceInventoryState.allCases {
-            let input = "{\"schema\":\"hermes.appearance.inventory.fixture.v1\",\"state\":\"\(state.rawValue)\",\"activeSkinID\":null,\"skins\":[],\"pets\":[],\"desktopPlugins\":[]}"
+            let input =
+                "{\"schema\":\"hermes.appearance.inventory.fixture.v1\",\"state\":\"\(state.rawValue)\",\"activeSkinID\":null,\"skins\":[],\"pets\":[],\"desktopPlugins\":[]}"
             #expect(try service.parseFixture(input).state == state)
         }
     }
 
     @Test func appearanceMutationsFailClosedWithoutVerifiedHermesCommandContract() {
         let service = AppearanceService()
-        #expect(service.operation(.selectSkin, identifier: "solarized", confirmed: true) == .unavailable(.unverifiedContract))
+        #expect(
+            service.operation(.selectSkin, identifier: "solarized", confirmed: true)
+                == .unavailable(.unverifiedContract))
         #expect(service.operation(.selectPet, identifier: "cat", confirmed: true) == .unavailable(.unverifiedContract))
-        #expect(service.operation(.selectSkin, identifier: "solarized", confirmed: false) == .unavailable(.confirmationRequired))
-        #expect(service.operation(.enableDesktopPlugin, identifier: "clock", confirmed: true) == .unavailable(.unverifiedContract))
-        #expect(service.operation(.reloadDesktopPlugin, identifier: "clock", confirmed: true) == .unavailable(.unsupportedCommand))
+        #expect(
+            service.operation(.selectSkin, identifier: "solarized", confirmed: false)
+                == .unavailable(.confirmationRequired))
+        #expect(
+            service.operation(.enableDesktopPlugin, identifier: "clock", confirmed: true)
+                == .unavailable(.unverifiedContract))
+        #expect(
+            service.operation(.reloadDesktopPlugin, identifier: "clock", confirmed: true)
+                == .unavailable(.unsupportedCommand))
     }
 
     @Test func rejectsUnsafeLabelsAndPluginModes() {
         let service = AppearanceService()
         #expect(throws: AppearanceParseError.unsupportedInput) {
-            try service.parseFixture(#"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[{"id":"x","name":"password=hunter2","active":true}],"pets":[],"desktopPlugins":[]}"#)
+            try service.parseFixture(
+                #"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":"x","skins":[{"id":"x","name":"password=hunter2","active":true}],"pets":[],"desktopPlugins":[]}"#
+            )
         }
         #expect(throws: AppearanceParseError.malformedFixture) {
-            try service.parseFixture(#"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":null,"skins":[],"pets":[],"desktopPlugins":[{"id":"x","name":"X","mode":"unknown","status":"enabled"}]}"#)
+            try service.parseFixture(
+                #"{"schema":"hermes.appearance.inventory.fixture.v1","state":"ready","activeSkinID":null,"skins":[],"pets":[],"desktopPlugins":[{"id":"x","name":"X","mode":"unknown","status":"enabled"}]}"#
+            )
         }
     }
 }

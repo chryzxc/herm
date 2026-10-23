@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -22,9 +23,10 @@ struct YearActivityTests {
         let second = control.refreshSpend(force: true)
         await first.value
         await second.value
-        #expect(client.paths.filter { $0.contains("/usage?") } == [
-            "/api/analytics/usage?days=30", "/api/analytics/usage?days=365"
-        ])
+        #expect(
+            client.paths.filter { $0.contains("/usage?") } == [
+                "/api/analytics/usage?days=30", "/api/analytics/usage?days=365",
+            ])
         #expect(client.timeouts == [60, 60])
         #expect(control.tokenUsage != nil)
         #expect(control.yearActivity != nil)

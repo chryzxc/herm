@@ -28,7 +28,12 @@ struct DockMenu<Label: View, Content: View>: View {
             .popover(isPresented: $isOpen, arrowEdge: depth > 0 ? .trailing : .bottom) {
                 DockMenuPanel(content: content)
                     .environment(\.dockMenuDepth, depth + 1)
-                    .environment(\.dockMenuDismiss, { isOpen = false; dismissParent() })
+                    .environment(
+                        \.dockMenuDismiss,
+                        {
+                            isOpen = false
+                            dismissParent()
+                        })
             }
     }
 
@@ -46,8 +51,12 @@ struct DockMenu<Label: View, Content: View>: View {
             .onTapGesture { if isEnabled { isOpen.toggle() } }
             .accessibilityAddTraits(.isButton)
         } else {
-            Button { isOpen.toggle() } label: { label.contentShape(Rectangle()) }
-                .buttonStyle(.dockHover)
+            Button {
+                isOpen.toggle()
+            } label: {
+                label.contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
         }
     }
 }
@@ -163,10 +172,12 @@ struct DockMenuChoices<Value: Hashable, Content: View>: View {
     }
 
     var body: some View {
-        content.environment(\.dockMenuSelection, DockMenuSelection(
-            isSelected: { $0 == AnyHashable(selection) },
-            select: { if let value = $0.base as? Value { selection = value } }
-        ))
+        content.environment(
+            \.dockMenuSelection,
+            DockMenuSelection(
+                isSelected: { $0 == AnyHashable(selection) },
+                select: { if let value = $0.base as? Value { selection = value } }
+            ))
     }
 }
 
@@ -193,7 +204,9 @@ struct DockMenuSelection {
 
 private struct DockMenuDismissKey: EnvironmentKey { nonisolated(unsafe) static var defaultValue: () -> Void = {} }
 private struct DockMenuDepthKey: EnvironmentKey { static let defaultValue = 0 }
-private struct DockMenuSelectionKey: EnvironmentKey { nonisolated(unsafe) static var defaultValue: DockMenuSelection? = nil }
+private struct DockMenuSelectionKey: EnvironmentKey {
+    nonisolated(unsafe) static var defaultValue: DockMenuSelection? = nil
+}
 
 extension EnvironmentValues {
     fileprivate var dockMenuDismiss: () -> Void {
@@ -228,7 +241,8 @@ private struct DockMenuPanel<Content: View>: View {
                 .frame(minWidth: 190, maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: true, vertical: false)
                 .padding(6)
-                .background(GeometryReader { Color.clear.preference(key: DockMenuHeightKey.self, value: $0.size.height) })
+                .background(
+                    GeometryReader { Color.clear.preference(key: DockMenuHeightKey.self, value: $0.size.height) })
         }
         .onPreferenceChange(DockMenuHeightKey.self) { contentHeight = $0 }
         .frame(height: contentHeight > 0 ? min(contentHeight, 440) : nil)
@@ -236,7 +250,8 @@ private struct DockMenuPanel<Content: View>: View {
             if DockThemeStyle.current.material == .glass {
                 Color.clear.dockLiquidGlass(Rectangle(), elevated: true)
             } else {
-                Color.dockOpaqueCanvas; Color.dockSurface
+                Color.dockOpaqueCanvas
+                Color.dockSurface
             }
         }
     }
@@ -278,25 +293,28 @@ private struct DockMenuRowButton: View {
             isHovered: (isHovered || configuration.isPressed) && isEnabled,
             tint: configuration.role == .destructive ? Color.dockDestructive : nil
         ) { configuration.label }
-            .opacity(isEnabled ? 1 : 0.4)
-            .onHover { isHovered = $0 }
-            // A gesture on the label competes with the Button's own click and can
-            // swallow its action, so dismiss from the pressed -> released
-            // transition instead, a turn later so the action has already run.
-            .onChange(of: configuration.isPressed) { wasPressed, pressed in
-                if wasPressed, !pressed, isEnabled, isHovered { DispatchQueue.main.async { dismiss() } }
-            }
+        .opacity(isEnabled ? 1 : 0.4)
+        .onHover { isHovered = $0 }
+        // A gesture on the label competes with the Button's own click and can
+        // swallow its action, so dismiss from the pressed -> released
+        // transition instead, a turn later so the action has already run.
+        .onChange(of: configuration.isPressed) { wasPressed, pressed in
+            if wasPressed, !pressed, isEnabled, isHovered { DispatchQueue.main.async { dismiss() } }
+        }
     }
 }
 
 private struct DockMenuToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Button { configuration.isOn.toggle() } label: {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
             HStack(spacing: 12) {
                 configuration.label
                 Spacer(minLength: 0)
-                DockIcon(configuration.isOn ? .checkSquare : .square, size: 14,
-                         color: configuration.isOn ? Color.dockPrimaryText : Color.dockSecondaryText)
+                DockIcon(
+                    configuration.isOn ? .checkSquare : .square, size: 14,
+                    color: configuration.isOn ? Color.dockPrimaryText : Color.dockSecondaryText)
             }
         }
         .buttonStyle(DockMenuRowStyle())
@@ -355,7 +373,8 @@ private struct SecondaryClickCatcher: NSViewRepresentable {
 
         private static func isSecondary(_ event: NSEvent?) -> Bool {
             guard let event else { return false }
-            return event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+            return event.type == .rightMouseDown
+                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? {

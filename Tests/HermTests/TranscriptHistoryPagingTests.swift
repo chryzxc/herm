@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 /// Serves a deferred `session.resume` and pages a stored transcript over the
@@ -45,7 +46,10 @@ private final class PagedTranscriptRPCClient: HermesRPCClientProtocol {
         let upper = max(0, storedRows.count - offset)
         let lower = max(0, upper - limit)
         let page = Array(storedRows[lower..<upper])
-        return ["messages": page, "pagination": ["limit": limit, "offset": offset, "order": "latest", "returned": page.count]]
+        return [
+            "messages": page,
+            "pagination": ["limit": limit, "offset": offset, "order": "latest", "returned": page.count],
+        ]
     }
 
     func close() {}
@@ -77,9 +81,14 @@ private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval 
 @MainActor
 struct TranscriptHistoryPagingTests {
     @Test func pagePathRequestsLatestDisplayPageForProfile() throws {
-        let path = try #require(TranscriptHistoryPaging.pagePath(sessionID: "a/b c", profileID: "forge", limit: 120, offset: 240))
-        #expect(path == "/api/sessions/a%2Fb%20c/messages?limit=120&offset=240&order=latest&include_compacted=true&profile=forge")
-        let unscoped = try #require(TranscriptHistoryPaging.pagePath(sessionID: "s1", profileID: nil, limit: 120, offset: 0))
+        let path = try #require(
+            TranscriptHistoryPaging.pagePath(sessionID: "a/b c", profileID: "forge", limit: 120, offset: 240))
+        #expect(
+            path
+                == "/api/sessions/a%2Fb%20c/messages?limit=120&offset=240&order=latest&include_compacted=true&profile=forge"
+        )
+        let unscoped = try #require(
+            TranscriptHistoryPaging.pagePath(sessionID: "s1", profileID: nil, limit: 120, offset: 0))
         #expect(!unscoped.contains("profile="))
     }
 
@@ -87,7 +96,10 @@ struct TranscriptHistoryPagingTests {
         #expect(TranscriptHistoryPaging.resumeResponseDefersTranscript(["messages": [], "hydrating": true]))
         #expect(TranscriptHistoryPaging.resumeResponseDefersTranscript(["messages": [], "messages_omitted": true]))
         // Older Hermes builds ignore the flags and inline the transcript.
-        #expect(!TranscriptHistoryPaging.resumeResponseDefersTranscript(["messages": [["role": "user", "text": "hi"]], "hydrating": true]))
+        #expect(
+            !TranscriptHistoryPaging.resumeResponseDefersTranscript([
+                "messages": [["role": "user", "text": "hi"]], "hydrating": true,
+            ]))
         #expect(!TranscriptHistoryPaging.resumeResponseDefersTranscript(["messages": []]))
     }
 
@@ -100,12 +112,14 @@ struct TranscriptHistoryPagingTests {
         _ = TranscriptHistoryPaging.advance(&cursor, with: short, limit: 2)
         #expect(!cursor.hasMore)
         var legacy = TranscriptHistoryCursor(storageSessionID: "s", profileID: nil)
-        _ = TranscriptHistoryPaging.advance(&legacy, with: .init(rows: [["id": 1]], returned: 1, isPaginated: false), limit: 1)
+        _ = TranscriptHistoryPaging.advance(
+            &legacy, with: .init(rows: [["id": 1]], returned: 1, isPaginated: false), limit: 1)
         #expect(!legacy.hasMore)
     }
 
     @Test func storedRowsUseGatewayDisplayRules() {
-        let skill = "[IMPORTANT: The user has invoked the \"work\" skill. The full skill content is loaded below.]\n\nBODY\n\n"
+        let skill =
+            "[IMPORTANT: The user has invoked the \"work\" skill. The full skill content is loaded below.]\n\nBODY\n\n"
             + "The user has provided the following instruction alongside the skill invocation: fix  the leak\n\n[Runtime note: x]"
         let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
             ["role": "user", "content": "[System: switched model]"],
@@ -117,7 +131,10 @@ struct TranscriptHistoryPagingTests {
             ["role": "assistant", "content": "  "],
         ])
         let visible = rows.filter { $0["role"] as? String != "tool" }
-        #expect(visible.map { $0["text"] as? String } == ["[System: switched model]", "Earlier turns were compacted.", "/work fix the leak", "parts"])
+        #expect(
+            visible.map { $0["text"] as? String } == [
+                "[System: switched model]", "Earlier turns were compacted.", "/work fix the leak", "parts",
+            ])
         #expect(visible[2]["timestamp"] as? Double == 12.0)
     }
 
@@ -129,12 +146,17 @@ struct TranscriptHistoryPagingTests {
             ["role": "user", "content": "[REMOTE DIGEST: nightly]"],
             ["role": "user", "content": "done", "display_kind": "process_complete"],
             ["role": "user", "content": "go faster", "display_kind": "steer"],
-            ["role": "user", "content": "[Triggering message id: `1` — use as `message_id` for reply/react/pin via the discord tools.]\nhi"],
+            [
+                "role": "user",
+                "content":
+                    "[Triggering message id: `1` — use as `message_id` for reply/react/pin via the discord tools.]\nhi",
+            ],
         ])
         let messages = DockModel.parseMessages(rows).messages
-        #expect(messages.map { $0.systemEvent?.label } == [
-            "System", "Model switch", "Delegation complete", "Remote digest", "Process complete", nil, nil,
-        ])
+        #expect(
+            messages.map { $0.systemEvent?.label } == [
+                "System", "Model switch", "Delegation complete", "Remote digest", "Process complete", nil, nil,
+            ])
         #expect(messages[5].role == .user)
         #expect(messages[6].text == "hi")
     }
@@ -144,7 +166,10 @@ struct TranscriptHistoryPagingTests {
         let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
             ["id": 1, "role": "user", "content": "fix it", "timestamp": 100.0],
             ["id": 2, "role": "assistant", "content": "", "tool_calls": call, "timestamp": 110.0],
-            ["id": 3, "role": "tool", "content": "{}", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
+            [
+                "id": 3, "role": "tool", "content": "{}", "tool_call_id": "c1", "tool_name": "terminal",
+                "timestamp": 120.0,
+            ],
             ["id": 4, "role": "user", "content": "also add tests", "display_kind": "steer", "timestamp": 125.0],
             ["id": 5, "role": "assistant", "content": "Done.", "timestamp": 160.0],
         ])
@@ -167,14 +192,25 @@ struct TranscriptHistoryPagingTests {
     }
 
     @Test func codexCommentaryRestoresAsMidTurnReplies() {
-        let call = { (id: String) in #"[{"id": "\#(id)", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}]"# }
+        let call = { (id: String) in
+            #"[{"id": "\#(id)", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}]"#
+        }
         let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
             ["id": 1, "role": "user", "content": "fix it", "timestamp": 100.0],
             ["id": 2, "role": "assistant", "content": "", "tool_calls": call("c1"), "timestamp": 110.0],
-            ["id": 3, "role": "tool", "content": "{}", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
-            ["id": 4, "role": "assistant", "content": "", "tool_calls": call("c2"), "reasoning": "Plan\n\nTracing it.",
-             "display_reasoning": "Plan", "display_commentary": ["Tracing it."], "timestamp": 155.0],
-            ["id": 5, "role": "tool", "content": "{}", "tool_call_id": "c2", "tool_name": "terminal", "timestamp": 160.0],
+            [
+                "id": 3, "role": "tool", "content": "{}", "tool_call_id": "c1", "tool_name": "terminal",
+                "timestamp": 120.0,
+            ],
+            [
+                "id": 4, "role": "assistant", "content": "", "tool_calls": call("c2"),
+                "reasoning": "Plan\n\nTracing it.",
+                "display_reasoning": "Plan", "display_commentary": ["Tracing it."], "timestamp": 155.0,
+            ],
+            [
+                "id": 5, "role": "tool", "content": "{}", "tool_call_id": "c2", "tool_name": "terminal",
+                "timestamp": 160.0,
+            ],
         ])
         let restored = DockModel.parseMessages(rows)
         #expect(restored.messages.map(\.text) == ["fix it", "Tracing it."])
@@ -186,12 +222,22 @@ struct TranscriptHistoryPagingTests {
     }
 
     @Test func storedToolRowsBecomeTheReplyActivity() {
-        let calls = #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{\"command\": \"gh pr view\"}"}}]"#
+        let calls =
+            #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{\"command\": \"gh pr view\"}"}}]"#
         let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
             ["id": 1, "role": "user", "content": "update the PR", "timestamp": 100.0],
-            ["id": 2, "role": "assistant", "content": "", "tool_calls": calls, "reasoning": "Checking the PR", "timestamp": 110.0],
-            ["id": 3, "role": "tool", "content": "{\"output\": \"ok\"}", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
-            ["id": 4, "role": "tool", "content": "{}", "tool_call_id": "c2", "tool_name": "search_files", "timestamp": 125.0],
+            [
+                "id": 2, "role": "assistant", "content": "", "tool_calls": calls, "reasoning": "Checking the PR",
+                "timestamp": 110.0,
+            ],
+            [
+                "id": 3, "role": "tool", "content": "{\"output\": \"ok\"}", "tool_call_id": "c1",
+                "tool_name": "terminal", "timestamp": 120.0,
+            ],
+            [
+                "id": 4, "role": "tool", "content": "{}", "tool_call_id": "c2", "tool_name": "search_files",
+                "timestamp": 125.0,
+            ],
             ["id": 5, "role": "assistant", "content": "Updated PR", "timestamp": 160.0],
         ])
         let messages = DockModel.parseMessages(rows).messages
@@ -204,12 +250,17 @@ struct TranscriptHistoryPagingTests {
     }
 
     @Test func unansweredToolRowsSurviveAsTrailingActivity() {
-        let calls = #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{\"command\": \"ls\"}"}}]"#
-        let restored = DockModel.parseMessages(TranscriptHistoryPaging.displayRows(fromStoredRows: [
-            ["id": 1, "role": "user", "content": "scan the repo", "timestamp": 100.0],
-            ["id": 2, "role": "assistant", "content": "", "tool_calls": calls, "timestamp": 110.0],
-            ["id": 3, "role": "tool", "content": "ok", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
-        ]))
+        let calls =
+            #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{\"command\": \"ls\"}"}}]"#
+        let restored = DockModel.parseMessages(
+            TranscriptHistoryPaging.displayRows(fromStoredRows: [
+                ["id": 1, "role": "user", "content": "scan the repo", "timestamp": 100.0],
+                ["id": 2, "role": "assistant", "content": "", "tool_calls": calls, "timestamp": 110.0],
+                [
+                    "id": 3, "role": "tool", "content": "ok", "tool_call_id": "c1", "tool_name": "terminal",
+                    "timestamp": 120.0,
+                ],
+            ]))
         #expect(restored.messages.map(\.text) == ["scan the repo"])
         #expect(restored.trailingActivity.map(\.name) == ["terminal"])
         #expect(restored.trailingActivity.first?.result == "ok")
@@ -219,7 +270,8 @@ struct TranscriptHistoryPagingTests {
         let rpc = PagedTranscriptRPCClient()
         rpc.storedRows = storedTranscript(turns: 200)
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 600, source: "test"))
+        model.resumeSession(
+            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 600, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
 
         let resume = try #require(rpc.requests.first { $0.method == "session.resume" })
@@ -256,15 +308,17 @@ struct TranscriptHistoryPagingTests {
     @Test func timelinePageReadsEntriesAndCursor() throws {
         let path = try #require(TranscriptHistoryPaging.timelinePath(sessionID: "s1", profileID: nil, afterRowID: 42))
         #expect(path == "/api/sessions/s1/timeline?limit=500&after_row_id=42")
-        let page = try #require(TranscriptHistoryPaging.timelinePage(from: [
-            "entries": [["row_id": 7, "preview": "hi", "timestamp": 3.0]],
-            "pagination": ["has_more": true, "next_cursor": 9],
-        ]))
+        let page = try #require(
+            TranscriptHistoryPaging.timelinePage(from: [
+                "entries": [["row_id": 7, "preview": "hi", "timestamp": 3.0]],
+                "pagination": ["has_more": true, "next_cursor": 9],
+            ]))
         #expect(page.entries == [TranscriptTimelineEntry(rowID: 7, preview: "hi", timestamp: 3.0)])
         #expect(page.nextCursor == 9)
-        let last = try #require(TranscriptHistoryPaging.timelinePage(from: [
-            "entries": [], "pagination": ["has_more": false, "next_cursor": NSNull()],
-        ]))
+        let last = try #require(
+            TranscriptHistoryPaging.timelinePage(from: [
+                "entries": [], "pagination": ["has_more": false, "next_cursor": NSNull()],
+            ]))
         #expect(last.nextCursor == nil)
     }
 
@@ -273,7 +327,8 @@ struct TranscriptHistoryPagingTests {
         rpc.storedRows = storedTranscript(turns: 200)
         rpc.timelinePageSize = 64
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 600, source: "test"))
+        model.resumeSession(
+            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 600, source: "test"))
         try await waitUntil { !model.isRestoringSession && model.unloadedTranscriptPrompts.count == 160 }
 
         #expect(rpc.fetchedPaths.filter { $0.contains("/timeline") }.count == 4)
@@ -286,14 +341,19 @@ struct TranscriptHistoryPagingTests {
         #expect(items[160].messageID == model.messages.first?.id)
         #expect(items.map(\.ordinal) == Array(1...240))
         // Loaded messages are matched on their full text, not the preview.
-        #expect(MessageNavigator.search(items: items, query: "question 17").map(\.preview) == ["question 17", "question 170", "question 171", "question 172", "question 173", "question 174", "question 175", "question 176", "question 177", "question 178", "question 179"])
+        #expect(
+            MessageNavigator.search(items: items, query: "question 17").map(\.preview) == [
+                "question 17", "question 170", "question 171", "question 172", "question 173", "question 174",
+                "question 175", "question 176", "question 177", "question 178", "question 179",
+            ])
     }
 
     @Test func jumpingToAnUnloadedPromptLoadsHistoryThroughIt() async throws {
         let rpc = PagedTranscriptRPCClient()
         rpc.storedRows = storedTranscript(turns: 400)
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 1200, source: "test"))
+        model.resumeSession(
+            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 1200, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.unloadedTranscriptPrompts.isEmpty }
 
         let target = try #require(model.messageNavigatorItems.first { $0.preview == "question 150" })
@@ -320,7 +380,8 @@ struct TranscriptHistoryPagingTests {
         let rpc = PagedTranscriptRPCClient()
         rpc.storedRows = storedTranscript(turns: 400)
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 1200, source: "test"))
+        model.resumeSession(
+            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 1200, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
 
         #expect(await model.loadTranscriptHistory(through: nil) == nil)
@@ -335,7 +396,8 @@ struct TranscriptHistoryPagingTests {
         rpc.storedRows = storedTranscript(turns: 3)
         rpc.failHTTP = true
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(HermesSession(id: "s", title: "S", preview: "", startedAt: nil, messageCount: 9, source: "test"))
+        model.resumeSession(
+            HermesSession(id: "s", title: "S", preview: "", startedAt: nil, messageCount: 9, source: "test"))
         try await waitUntil { !model.isRestoringSession && model.messages.count == 6 }
 
         let resumes = rpc.requests.filter { $0.method == "session.resume" }

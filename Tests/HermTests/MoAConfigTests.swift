@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct MoAConfigTests {
@@ -11,13 +12,13 @@ struct MoAConfigTests {
                 "default": [
                     "reference_models": [
                         ["provider": "openai-codex", "model": "gpt-5.5", "enabled": true, "reasoning_effort": "high"],
-                        ["provider": "", "model": "dropped"]
+                        ["provider": "", "model": "dropped"],
                     ],
                     "aggregator": ["provider": "openrouter", "model": "anthropic/claude-opus-4.8"],
                     "fanout": "every_n:3",
-                    "enabled": true
+                    "enabled": true,
                 ]
-            ]
+            ],
         ])
     }
 
@@ -49,9 +50,14 @@ struct MoAConfigTests {
     }
 
     @Test func moaEventsRenderAsReasoningLines() {
-        #expect(DockModel.moaReasoningLine(type: "moa.progress", payload: ["refs_done": 1, "refs_total": 2]) == "◇ MoA refs 1/2\n")
-        #expect(DockModel.moaReasoningLine(type: "moa.phase", payload: ["phase": "aggregator"]) == "◇ MoA aggregating…\n")
-        #expect(DockModel.moaReasoningLine(type: "moa.reference", payload: ["label": "gpt-5.5", "text": "Use a map."]) == "◇ gpt-5.5\nUse a map.\n")
+        #expect(
+            DockModel.moaReasoningLine(type: "moa.progress", payload: ["refs_done": 1, "refs_total": 2])
+                == "◇ MoA refs 1/2\n")
+        #expect(
+            DockModel.moaReasoningLine(type: "moa.phase", payload: ["phase": "aggregator"]) == "◇ MoA aggregating…\n")
+        #expect(
+            DockModel.moaReasoningLine(type: "moa.reference", payload: ["label": "gpt-5.5", "text": "Use a map."])
+                == "◇ gpt-5.5\nUse a map.\n")
         #expect(DockModel.moaReasoningLine(type: "moa.progress", payload: [:]) == nil)
     }
 }

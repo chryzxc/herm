@@ -63,17 +63,19 @@ enum HermesRuntimeInspector {
         let plugins = parsePlugins(pluginsOutput ?? "")
         let validSkills: Bool
         if case .supported = skills { validSkills = true } else { validSkills = false }
-        let validMCP = mcpOutput.map {
-            $0.localizedCaseInsensitiveContains("No MCP servers configured") || !parseMCPServers($0).isEmpty
-        } ?? false
-        let validPlugins = pluginsOutput.flatMap { $0.data(using: .utf8) }.flatMap {
-            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]]
-        }.map { rows in
-            rows.allSatisfy {
-                ($0["name"] as? String)?.isEmpty == false
-                    && ($0["status"] as? String)?.lowercased() == "enabled"
-            }
-        } ?? false
+        let validMCP =
+            mcpOutput.map {
+                $0.localizedCaseInsensitiveContains("No MCP servers configured") || !parseMCPServers($0).isEmpty
+            } ?? false
+        let validPlugins =
+            pluginsOutput.flatMap { $0.data(using: .utf8) }.flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]]
+            }.map { rows in
+                rows.allSatisfy {
+                    ($0["name"] as? String)?.isEmpty == false
+                        && ($0["status"] as? String)?.lowercased() == "enabled"
+                }
+            } ?? false
         let configuration = HermesRuntimeConfiguration(
             agentName: name,
             model: nonEmpty(model),
@@ -86,7 +88,8 @@ enum HermesRuntimeInspector {
             mcpServers: mcpServers,
             plugins: plugins
         )
-        return HermesRuntimeInspection(configuration: configuration,
+        return HermesRuntimeInspection(
+            configuration: configuration,
             isComplete: [model, provider, configPath, maxTurns, terminalTimeout].allSatisfy { $0 != nil }
                 && validSkills && validMCP && validPlugins,
             initialSignature: initialSignature)
@@ -104,7 +107,8 @@ enum HermesRuntimeInspector {
             // SOUL.md headings can add a role after an em dash, for example
             // `# Nexus — Coordinator`. The menu bar should show the agent's
             // identity, not its descriptive role.
-            let name = heading
+            let name =
+                heading
                 .split(separator: "—", maxSplits: 1)
                 .first
                 .map(String.init)?
@@ -169,14 +173,16 @@ enum HermesRuntimeInspector {
         // Keep compatibility with complete machine-readable records when a
         // caller already has them, but do not infer a new CLI JSON contract.
         if let data = trimmed.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data) {
+            let object = try? JSONSerialization.jsonObject(with: data)
+        {
             let rows: [[String: Any]]
             let recognized: Bool
             if let array = object as? [[String: Any]] {
                 rows = array
                 recognized = true
             } else if let envelope = object as? [String: Any],
-                      let array = envelope["skills"] as? [[String: Any]] {
+                let array = envelope["skills"] as? [[String: Any]]
+            {
                 rows = array
                 recognized = true
             } else {
@@ -186,9 +192,10 @@ enum HermesRuntimeInspector {
             if recognized {
                 let names = rows.compactMap { row -> String? in
                     guard let name = row["name"] as? String,
-                          let status = row["status"] as? String,
-                          status.lowercased() == "enabled",
-                          !name.isEmpty else { return nil }
+                        let status = row["status"] as? String,
+                        status.lowercased() == "enabled",
+                        !name.isEmpty
+                    else { return nil }
                     return name
                 }
                 return names.count == rows.count
@@ -203,7 +210,8 @@ enum HermesRuntimeInspector {
         // disappear. Keep complete enabled names and ignore headers/borders
         // and shortened rows.
         let names = trimmed.split(separator: "\n").compactMap { line -> String? in
-            let columns = line
+            let columns =
+                line
                 .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "│" || $0 == "┃" })
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             let fields = columns.filter { !$0.isEmpty }
@@ -211,10 +219,11 @@ enum HermesRuntimeInspector {
             let name = fields[0]
             let status = fields.last?.lowercased() ?? ""
             guard !name.isEmpty,
-                  name.lowercased() != "name",
-                  status == "enabled",
-                  !name.contains("…"),
-                  !name.contains("...") else { return nil }
+                name.lowercased() != "name",
+                status == "enabled",
+                !name.contains("…"),
+                !name.contains("...")
+            else { return nil }
             return name
         }
 
@@ -233,19 +242,21 @@ enum HermesRuntimeInspector {
             // because local paths and URLs may contain punctuation.
             let columns = text.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
             guard columns.count >= 4,
-                  columns[0].lowercased() != "name",
-                  let toolsIndex = columns.firstIndex(where: {
-                      ["all", "selected", "excluded"].contains($0.lowercased())
-                  }),
-                  toolsIndex > 1,
-                  toolsIndex + 1 < columns.count else { return nil }
+                columns[0].lowercased() != "name",
+                let toolsIndex = columns.firstIndex(where: {
+                    ["all", "selected", "excluded"].contains($0.lowercased())
+                }),
+                toolsIndex > 1,
+                toolsIndex + 1 < columns.count
+            else { return nil }
             return columns[0]
         }
     }
 
     private static func parsePlugins(_ output: String) -> [String] {
         guard let data = output.data(using: .utf8),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+            let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else { return [] }
         return rows.compactMap { row in
             let status = (row["status"] as? String)?.lowercased() ?? ""
             return status == "enabled" ? row["name"] as? String : nil

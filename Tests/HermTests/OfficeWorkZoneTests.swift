@@ -1,13 +1,16 @@
 import Foundation
 import RealityKit
 import Testing
+
 @testable import Herm
 
 struct OfficeWorkZoneTests {
     @Test func strongestSignalChoosesTheRoomAndRecordsEvidence() {
-        let step = OfficePreviewTaskData(task("a", title: "Write docs", step: "verify", skills: ["security-audit"], note: "deploy"))
+        let step = OfficePreviewTaskData(
+            task("a", title: "Write docs", step: "verify", skills: ["security-audit"], note: "deploy"))
         #expect(step.work == OfficeWorkClassification(kind: .testing, source: .step, signal: "verify"))
-        let skill = OfficePreviewTaskData(task("b", title: "Write docs", step: "step_3", skills: ["notes-helper", "security-audit"]))
+        let skill = OfficePreviewTaskData(
+            task("b", title: "Write docs", step: "step_3", skills: ["notes-helper", "security-audit"]))
         #expect(skill.work.kind == .writing && skill.work.source == .skill && skill.work.signal == "notes-helper")
         let workflow = OfficePreviewTaskData(task("c", workflow: "web-research", note: "swift test"))
         #expect(workflow.work.kind == .research && workflow.work.source == .workflow)
@@ -35,10 +38,12 @@ struct OfficeWorkZoneTests {
         #expect(OfficeWorkKind.matching(tool: "delegate_task") == .orchestration)
         #expect(OfficeWorkKind.matching(tool: "image_generate") == .design)
         let now = Date()
-        let session = OfficeMainSession(id: "s", title: "Chat", state: "working", isCurrent: true, activities: [
-            .init(id: "1", name: "terminal", timestamp: now.addingTimeInterval(-60)),
-            .init(id: "2", name: "web_search", timestamp: now)
-        ])
+        let session = OfficeMainSession(
+            id: "s", title: "Chat", state: "working", isCurrent: true,
+            activities: [
+                .init(id: "1", name: "terminal", timestamp: now.addingTimeInterval(-60)),
+                .init(id: "2", name: "web_search", timestamp: now),
+            ])
         let agent = OfficePreviewAgentPresentation(id: "main-session:s", name: "Nexus", tasks: [], mainSession: session)
         #expect(agent.work == .init(kind: .research, source: .tool, signal: "web_search"))
         // Room travel for the main agent is a later phase; it keeps its office.
@@ -46,43 +51,56 @@ struct OfficeWorkZoneTests {
     }
 
     @Test func laneStillDecidesWhetherTheWorkRoomIsUsed() {
-        for (status, location) in [("running", OfficePreviewLocation.qaLab), ("review", .reviewTable), ("blocked", .desk),
-                                   ("ready", .kanbanBoard), ("todo", .lounge), ("done", .lounge)] {
-            let agent = OfficePreviewAgentPresentation(id: "bot", name: "Bot", tasks: [OfficePreviewTaskData(task("t", status: status, step: "qa"))])
+        for (status, location) in [
+            ("running", OfficePreviewLocation.qaLab), ("review", .reviewTable), ("blocked", .desk),
+            ("ready", .kanbanBoard), ("todo", .lounge), ("done", .lounge),
+        ] {
+            let agent = OfficePreviewAgentPresentation(
+                id: "bot", name: "Bot", tasks: [OfficePreviewTaskData(task("t", status: status, step: "qa"))])
             #expect(agent.location == location, "\(status)")
             #expect((agent.work != nil) == (status == "running"))
         }
-        let running = OfficePreviewAgentPresentation(id: "bot", name: "Bot", tasks: [OfficePreviewTaskData(task("t", step: "pentest"))])
+        let running = OfficePreviewAgentPresentation(
+            id: "bot", name: "Bot", tasks: [OfficePreviewTaskData(task("t", step: "pentest"))])
         #expect(running.activitySymbol == .shieldCheck)
     }
 
     @MainActor @Test func noisySignalsSettleBeforeTheBotChangesRooms() {
         let bots = [bot("bot")]
         let start = Date(timeIntervalSince1970: 1_000)
-        let simulation = OfficePreviewSimulation(bots: bots, tasks: [task("t", assignee: "bot", note: "running swift test")])
+        let simulation = OfficePreviewSimulation(
+            bots: bots, tasks: [task("t", assignee: "bot", note: "running swift test")])
         #expect(simulation.agents.first?.location == .qaLab)
         simulation.update(bots: bots, tasks: [task("t", assignee: "bot", note: "reading the docs")], now: start)
         #expect(simulation.agents.first?.location == .qaLab)
-        simulation.update(bots: bots, tasks: [task("t", assignee: "bot", note: "reading the docs")], now: start.addingTimeInterval(OfficeWorkStabilizer.settle))
+        simulation.update(
+            bots: bots, tasks: [task("t", assignee: "bot", note: "reading the docs")],
+            now: start.addingTimeInterval(OfficeWorkStabilizer.settle))
         #expect(simulation.agents.first?.location == .library)
         // An explicit step moves the bot at once.
-        simulation.update(bots: bots, tasks: [task("t", assignee: "bot", step: "deploy")], now: start.addingTimeInterval(21))
+        simulation.update(
+            bots: bots, tasks: [task("t", assignee: "bot", step: "deploy")], now: start.addingTimeInterval(21))
         #expect(simulation.agents.first?.location == .serverRoom)
         // A lane change resets the smoothing.
-        simulation.update(bots: bots, tasks: [task("t", status: "review", assignee: "bot")], now: start.addingTimeInterval(22))
-        simulation.update(bots: bots, tasks: [task("t", assignee: "bot", note: "docker build")], now: start.addingTimeInterval(23))
+        simulation.update(
+            bots: bots, tasks: [task("t", status: "review", assignee: "bot")], now: start.addingTimeInterval(22))
+        simulation.update(
+            bots: bots, tasks: [task("t", assignee: "bot", note: "docker build")], now: start.addingTimeInterval(23))
         #expect(simulation.agents.first?.location == .serverRoom)
     }
 
     @Test func workRoomSeatsAreStableExclusiveAndOverflowToDesks() {
         let agents = (0..<5).map {
-            OfficePreviewAgentPresentation(id: "bot-\($0)", name: "Bot", tasks: [OfficePreviewTaskData(task("t\($0)", step: "verify"))])
+            OfficePreviewAgentPresentation(
+                id: "bot-\($0)", name: "Bot", tasks: [OfficePreviewTaskData(task("t\($0)", step: "verify"))])
         }
         let plan = OfficePreviewInteractionPlan.make(agents: agents, zoneCapacity: [.qaLab: 3])
         let seats = agents.compactMap { plan.stations[$0.id] }
         #expect(seats.count == 3)
         #expect(Set(seats) == [0, 1, 2])
-        #expect(OfficePreviewInteractionPlan.make(agents: agents.reversed(), zoneCapacity: [.qaLab: 3]).stations == plan.stations)
+        #expect(
+            OfficePreviewInteractionPlan.make(agents: agents.reversed(), zoneCapacity: [.qaLab: 3]).stations
+                == plan.stations)
         // Seats already held do not move when an unseated colleague leaves.
         let seated = agents.filter { plan.stations[$0.id] != nil }
         #expect(OfficePreviewInteractionPlan.make(agents: seated, zoneCapacity: [.qaLab: 3]).stations == plan.stations)
@@ -118,14 +136,18 @@ struct OfficeWorkZoneTests {
     }
 
     private func bot(_ id: String) -> BotSummary {
-        BotSummary(id: id, name: id, title: nil, description: nil, model: nil, isActive: false,
-                   chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false,
-                   hasAvatar: false, isDefault: false)
+        BotSummary(
+            id: id, name: id, title: nil, description: nil, model: nil, isActive: false,
+            chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false,
+            hasAvatar: false, isDefault: false)
     }
 
-    private func task(_ id: String, title: String? = nil, status: String = "running", assignee: String? = nil,
-                      step: String? = nil, skills: [String] = [], workflow: String? = nil, note: String? = nil) -> KanbanTaskSummary {
-        KanbanTaskSummary(id: id, title: title ?? "Task \(id)", status: status, detail: nil, priority: nil, assignee: assignee,
-                          currentStepKey: step, latestEventNote: note, skills: skills, workflowTemplateID: workflow)
+    private func task(
+        _ id: String, title: String? = nil, status: String = "running", assignee: String? = nil,
+        step: String? = nil, skills: [String] = [], workflow: String? = nil, note: String? = nil
+    ) -> KanbanTaskSummary {
+        KanbanTaskSummary(
+            id: id, title: title ?? "Task \(id)", status: status, detail: nil, priority: nil, assignee: assignee,
+            currentStepKey: step, latestEventNote: note, skills: skills, workflowTemplateID: workflow)
     }
 }

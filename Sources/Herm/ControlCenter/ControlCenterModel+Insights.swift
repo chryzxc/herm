@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func refreshReadOnlyHealth() {
@@ -11,19 +11,22 @@ extension ControlCenterModel {
         journeyGeneration = generation
         Task {
             if capabilityAvailable("journey.timeline"),
-               let result = try? await cli.journey(), result.succeeded,
-               generation == journeyGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) {
+                let result = try? await cli.journey(), result.succeeded,
+                generation == journeyGeneration,
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+            {
                 journeyNodes = Self.parseJourneyNodes(result.stdout)
             }
             if capabilityAvailable("sessions.stats"),
-               let result = try? await cli.sessionStats(), generation == journeyGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) {
+                let result = try? await cli.sessionStats(), generation == journeyGeneration,
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+            {
                 sessionStoreStatus = Self.readOnlyStatus(id: "sessions.stats", title: "Session store", result: result)
             }
             if capabilityAvailable("memory.status"),
-               let result = try? await cli.memoryStatus(), generation == journeyGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) {
+                let result = try? await cli.memoryStatus(), generation == journeyGeneration,
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+            {
                 memoryHealthStatus = Self.readOnlyStatus(id: "memory.status", title: "Memory health", result: result)
             }
         }
@@ -40,13 +43,15 @@ extension ControlCenterModel {
             }
             let usageState = refreshState(for: "token.usage")
             if force || tokenUsage == nil || usageState?.isStale == true
-                || (usageState?.lastSuccess?.timeIntervalSinceNow ?? -.infinity) < -60 {
+                || (usageState?.lastSuccess?.timeIntervalSinceNow ?? -.infinity) < -60
+            {
                 await refreshTokenUsage(days: UsageWorkspaceView.reportDays)?.value
             }
             guard !Task.isCancelled, bindingGeneration == clientBindingGeneration else { return }
             let yearState = refreshState(for: "usage.year")
             if force || yearActivity == nil || yearState?.isStale == true
-                || (yearState?.lastSuccess?.timeIntervalSinceNow ?? -.infinity) < -60 {
+                || (yearState?.lastSuccess?.timeIntervalSinceNow ?? -.infinity) < -60
+            {
                 await refreshYearActivity()
             }
         }
@@ -73,21 +78,24 @@ extension ControlCenterModel {
             do {
                 let result = try await rpc.usageAnalytics(days: days)
                 guard generation == tokenUsageGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 tokenUsage = Self.parseTokenUsage(result, models: tokenUsageModelRows)
                 recordProjectionSuccess("token.usage", count: tokenUsage?.sessions ?? 0)
                 // Models is slower (models.dev lookups) and only adds provider
                 // pills, so it lands after the dashboard is already drawn.
                 Task { @MainActor in
                     guard let modelRows = try? await rpc.modelAnalytics(days: days),
-                          generation == tokenUsageGeneration,
-                          isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                        generation == tokenUsageGeneration,
+                        isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                    else { return }
                     tokenUsageModelRows = modelRows
                     tokenUsage = Self.parseTokenUsage(result, models: modelRows)
                 }
             } catch {
                 guard generation == tokenUsageGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 recordProjectionFailure("token.usage", error: error.localizedDescription)
             }
         }
@@ -108,13 +116,15 @@ extension ControlCenterModel {
         do {
             let result = try await rpc.usageAnalytics(days: 365)
             guard generation == yearActivityGeneration,
-                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+            else { return }
             guard result["daily"] is [[String: Any]] else { throw HermesGateway.GatewayError.malformedResponse }
             yearActivity = Self.parseTokenUsage(result).daily
             recordProjectionSuccess("usage.year", count: yearActivity?.count ?? 0)
         } catch {
             guard generation == yearActivityGeneration,
-                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+            else { return }
             recordProjectionFailure("usage.year", error: error.localizedDescription)
         }
     }
@@ -155,9 +165,12 @@ extension ControlCenterModel {
                 if (1...365).contains(usageDays), let result = try? await rpc.usageAnalytics(days: usageDays) {
                     usage = Self.parseTokenUsage(result).daily
                 }
-                let fetched = (sessions: sessions, commits: await commits, pullRequests: await pullRequests, usage: usage)
+                let fetched = (
+                    sessions: sessions, commits: await commits, pullRequests: await pullRequests, usage: usage
+                )
                 guard generation == workCalendarGeneration,
-                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 workCalendarSources[monthStart] = fetched
                 rebuildWorkCalendar()
                 recordProjectionSuccess("work.calendar", count: workCalendar?.activeDays ?? 0)
@@ -175,7 +188,9 @@ extension ControlCenterModel {
             guard let at = task.completedAt ?? task.startedAt, at >= monthStart, at < monthEnd else { return nil }
             return task.workspacePath
         }
-        return Set(workCalendarRepoPaths + projects.filter(\.isRenderableProject).map(\.name) + taskPaths).filter { !$0.isEmpty }
+        return Set(workCalendarRepoPaths + projects.filter(\.isRenderableProject).map(\.name) + taskPaths).filter {
+            !$0.isEmpty
+        }
     }
 
     /// Re-folds the live Kanban and cron projections into the cached month.
@@ -205,17 +220,25 @@ extension ControlCenterModel {
         var offset = 0
         for _ in 0..<50 {
             let page = try await rpc.sessionPages(limit: 100, offset: offset, order: "recent")
-            guard let rows = page["data"] as? [[String: Any]] else { throw HermesGateway.GatewayError.malformedResponse }
+            guard let rows = page["data"] as? [[String: Any]] else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
             var reachedPast = false
             for row in rows {
                 guard let id = row["id"] as? String else { continue }
-                let date = activityDate(row["last_activity_at"]) ?? activityDate(row["updated_at"])
+                let date =
+                    activityDate(row["last_activity_at"]) ?? activityDate(row["updated_at"])
                     ?? activityDate(row["last_active"]) ?? activityDate(row["started_at"])
                 guard let date else { continue }
-                if date < since { reachedPast = true; continue }
+                if date < since {
+                    reachedPast = true
+                    continue
+                }
                 let title = (row["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled chat"
-                sessions.append(SessionSummary(id: id, title: title, state: row["state"] as? String ?? "idle",
-                                               preview: row["preview"] as? String, updatedAt: date))
+                sessions.append(
+                    SessionSummary(
+                        id: id, title: title, state: row["state"] as? String ?? "idle",
+                        preview: row["preview"] as? String, updatedAt: date))
             }
             offset += rows.count
             if rows.isEmpty || reachedPast || parseHasMore(page) != true { break }
@@ -248,9 +271,10 @@ extension ControlCenterModel {
             let usage = try? await rpc.sessionUsage(sessionID: sessionID)
             let context = try? await rpc.sessionContextBreakdown(sessionID: sessionID)
             guard generation == sessionCockpitGeneration,
-                  sessionCockpitSessionID == sessionID,
-                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
-                  (requestedSessionID != nil || dockModel?.sessionID == sessionID) else { return }
+                sessionCockpitSessionID == sessionID,
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                requestedSessionID != nil || dockModel?.sessionID == sessionID
+            else { return }
             if let usage { sessionUsage = Self.parseSessionUsage(usage) }
             if let context { sessionContext = Self.parseSessionContext(context) }
             if usage != nil || context != nil {
@@ -282,9 +306,10 @@ extension ControlCenterModel {
                 if generation == checkpointsGeneration { isLoadingCheckpoints = false }
             }
             guard let result = try? await rpc.listRestoreCheckpoints(sessionID: resolvedSessionID),
-                  generation == checkpointsGeneration,
-                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
-                  (sessionID != nil || dockModel?.sessionID == resolvedSessionID) else { return }
+                generation == checkpointsGeneration,
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                sessionID != nil || dockModel?.sessionID == resolvedSessionID
+            else { return }
             checkpoints = Self.parseCheckpoints(result)
             let projectID = requestedProjectID ?? projectIDBySessionID[resolvedSessionID]
             let selectionID = requestedSelectionID ?? currentFocus?.sourceID
@@ -312,19 +337,23 @@ extension ControlCenterModel {
         let generation = checkpointsGeneration
         Task {
             guard let result = try? await rpc.rollbackDiff(sessionID: sessionID, hash: checkpoint.hash),
-                  generation == checkpointsGeneration,
-                  let diff = result["diff"] as? String, diff.utf8.count <= 4_096 else { return }
+                generation == checkpointsGeneration,
+                let diff = result["diff"] as? String, diff.utf8.count <= 4_096
+            else { return }
             checkpointDiff = diff
         }
     }
 
     func loadCheckpointDiff(_ checkpoint: RestoreCheckpoint) {
-        guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty else { return }
+        guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty else {
+            return
+        }
         let generation = checkpointsGeneration
         Task {
             guard let result = try? await rpc.rollbackDiff(sessionID: sessionID, hash: checkpoint.hash),
-                  generation == checkpointsGeneration,
-                  let diff = result["diff"] as? String, diff.utf8.count <= 4_096 else { return }
+                generation == checkpointsGeneration,
+                let diff = result["diff"] as? String, diff.utf8.count <= 4_096
+            else { return }
             checkpointDiff = diff
         }
     }
@@ -335,19 +364,21 @@ extension ControlCenterModel {
         selectionID requestedSelectionID: String? = nil
     ) async -> Bool {
         guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty,
-              dockModel?.status != .working,
-              RestoreCheckpointEligibility.isEligible(
-                  checkpoint,
-                  sessionID: sessionID,
-                  projectID: requestedProjectID ?? projectIDBySessionID[sessionID],
-                  selectionID: requestedSelectionID ?? currentFocus?.sourceID
-              ),
-              restoreCheckpointCoordinator.begin(checkpoint) else { return false }
+            dockModel?.status != .working,
+            RestoreCheckpointEligibility.isEligible(
+                checkpoint,
+                sessionID: sessionID,
+                projectID: requestedProjectID ?? projectIDBySessionID[sessionID],
+                selectionID: requestedSelectionID ?? currentFocus?.sourceID
+            ),
+            restoreCheckpointCoordinator.begin(checkpoint)
+        else { return false }
         restoreCheckpointState = restoreCheckpointCoordinator.state
         do {
             let result = try await rpc.restoreCheckpoint(sessionID: sessionID, hash: checkpoint.hash)
             if result["success"] as? Bool == false {
-                let message = Self.safeUserDiagnostic(result["error"] as? String ?? "Hermes rejected the checkpoint restore.")
+                let message = Self.safeUserDiagnostic(
+                    result["error"] as? String ?? "Hermes rejected the checkpoint restore.")
                 restoreCheckpointCoordinator.fail(message)
                 restoreCheckpointState = restoreCheckpointCoordinator.state
                 lastError = message
@@ -377,11 +408,12 @@ extension ControlCenterModel {
 
     func steerActiveSession(_ text: String) async -> SessionTextActionResult? {
         guard let dockModel,
-              dockModel.status == .working,
-              capabilityAvailable("rpc-sessions"),
-              let rpc,
-              let sessionID = dockModel.sessionID,
-              !sessionID.isEmpty else { return nil }
+            dockModel.status == .working,
+            capabilityAvailable("rpc-sessions"),
+            let rpc,
+            let sessionID = dockModel.sessionID,
+            !sessionID.isEmpty
+        else { return nil }
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty else { return nil }
         let actionID = sessionSteerActionID(sessionID)
@@ -391,7 +423,8 @@ extension ControlCenterModel {
             let result = try await rpc.steer(sessionID: sessionID, text: cleanText)
             guard dockModel.sessionID == sessionID else { return nil }
             guard let rawStatus = result["status"] as? String,
-                  let status = SessionTextActionStatus(rawValue: rawStatus.lowercased()) else {
+                let status = SessionTextActionStatus(rawValue: rawStatus.lowercased())
+            else {
                 lastError = "Hermes returned an invalid steering response."
                 return nil
             }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 extension AgentUpdateVisibilityTests {
@@ -14,8 +15,10 @@ extension AgentUpdateVisibilityTests {
                 return (true, "Hermes Agent v0.20.5 (2026.8.19)")
             },
             readRelease: {
-                .success(HermesLatestRelease(tag: "v2026.8.19", marketing: "0.20.5",
-                    name: nil, publishedAt: nil, pageURL: nil))
+                .success(
+                    HermesLatestRelease(
+                        tag: "v2026.8.19", marketing: "0.20.5",
+                        name: nil, publishedAt: nil, pageURL: nil))
             },
             launchUpdate: { process in
                 launches += 1
@@ -33,7 +36,10 @@ extension AgentUpdateVisibilityTests {
             projections.append(first.railActivity)
         }
         let secondObservation = second.observeAgentUpdates(from: owner) {}
-        defer { firstObservation.cancel(); secondObservation.cancel() }
+        defer {
+            firstObservation.cancel()
+            secondObservation.cancel()
+        }
         owner.performUpdate()
         try await waitUntil { projections.count == 3 && second.agentUpdatePhase == owner.phase }
         #expect(launches == 1)
@@ -46,7 +52,8 @@ extension AgentUpdateVisibilityTests {
 
         let unrelated = HermesUpdateService(launchUpdate: { _ in throw LaunchFailure.mocked })
         unrelated.performUpdate()
-        NotificationCenter.default.post(name: .hermAgentUpdatePhase, object: nil,
+        NotificationCenter.default.post(
+            name: .hermAgentUpdatePhase, object: nil,
             userInfo: ["phase": HermesUpdatePhase.upToDate])
         try await Task.sleep(for: .milliseconds(20))
         #expect(projections.count == 3)

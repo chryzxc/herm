@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct ControlTabBadgeStateTests {
@@ -8,7 +9,8 @@ struct ControlTabBadgeStateTests {
         #expect(ControlTab.sessionNavigation == [.changes])
         #expect(ControlTab.workspaceNavigation == [.projects])
         #expect(ControlTab.toolsNavigation == [.automations, .search, .officePreview, .core])
-        #expect(ControlTab.globalNavigation == [.kanban, .projects, .capabilities, .messaging, .quota, .usage, .calendar])
+        #expect(
+            ControlTab.globalNavigation == [.kanban, .projects, .capabilities, .messaging, .quota, .usage, .calendar])
         #expect(Set(ControlTab.globalNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
     }
 

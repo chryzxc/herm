@@ -1,6 +1,8 @@
 import Foundation
 
-enum HermesGatewaySnapshotState: String, Codable, Equatable, Sendable { case ready, unavailable, unsupported, malformed, stale, disconnected, unpaired }
+enum HermesGatewaySnapshotState: String, Codable, Equatable, Sendable {
+    case ready, unavailable, unsupported, malformed, stale, disconnected, unpaired
+}
 enum HermesGatewayInputFormat: Sendable { case json, humanTable }
 
 enum HermesGatewayOperationResult: Equatable, Sendable { case performed, confirmationRequired, unavailable }
@@ -38,9 +40,12 @@ struct HermesGatewaySnapshot: Equatable, Sendable {
 enum HermesGatewaySafety {
     static func safe(_ value: String, max: Int = 160) -> Bool {
         guard value.count <= max, !value.isEmpty,
-              !value.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) else { return false }
+            !value.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
+        else { return false }
         let lower = value.lowercased()
-        return !["token", "secret", "credential", "password", "bearer", "private message", "phone"].contains(where: { lower.contains($0) })
+        return !["token", "secret", "credential", "password", "bearer", "private message", "phone"].contains(where: {
+            lower.contains($0)
+        })
             && !value.contains("/") && !value.contains("\\")
     }
     static func state(_ value: String) -> HermesGatewaySnapshotState {

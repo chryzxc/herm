@@ -15,7 +15,9 @@ private final class ReviewGuideRPC: HermesRPCClientProtocol {
 
     func connect() async throws {}
     func close() {}
-    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { ["sessions": [["session_key": "review", "status": status]]] }
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        ["sessions": [["session_key": "review", "status": status]]]
+    }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         paths.append(path)
         if missingHistory { throw HermesGateway.GatewayError.httpError(404) }
@@ -27,7 +29,8 @@ private final class ReviewGuideRPC: HermesRPCClientProtocol {
 @MainActor
 struct ReviewGuideReplyTests {
     private func session(_ profile: String? = nil) -> HermesSession {
-        HermesSession(id: "review", profileID: profile, title: "Review guide", preview: "",
+        HermesSession(
+            id: "review", profileID: profile, title: "Review guide", preview: "",
             startedAt: nil, messageCount: 0, source: "herm")
     }
 
@@ -114,7 +117,9 @@ struct ReviewGuideReplyTests {
         let client = ReviewGuideRPC()
         let model = ReviewGuideReplyModel()
         for owner in [["session_id": "other"], ["profile": "other"]] as [[String: Any]] {
-            client.response = owner.merging(["messages": [["role": "assistant", "content": "Wrong guide"]]] as [String: Any]) { _, new in new }
+            client.response = owner.merging(
+                ["messages": [["role": "assistant", "content": "Wrong guide"]]] as [String: Any]
+            ) { _, new in new }
             await model.refresh(session: session("reviewer"), client: client)
             #expect(model.reply == nil)
             #expect(model.error != nil)

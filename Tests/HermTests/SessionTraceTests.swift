@@ -165,11 +165,13 @@ struct SessionTraceTests {
         let rows = SessionTraceProjection.make(
             turns: [.init(id: "t", title: "", start: origin)], live: [], agents: [done, running],
             working: true, connected: true,
-            activities: [started, skill,
+            activities: [
+                started, skill,
                 AgentActivity(
                     id: UUID(), timestamp: origin.addingTimeInterval(5), agentID: "b",
                     kind: "subagent.start", text: "", toolName: nil, handoffTarget: nil,
-                    traceTiming: .observed)])[0].rows
+                    traceTiming: .observed),
+            ])[0].rows
         let agent = try #require(rows.first { $0.id == "agent:a" })
         #expect(agent.title == "Write the parser tests")
         #expect(agent.activity == nil)
@@ -324,20 +326,22 @@ struct SessionTraceTests {
 
     /// session.resume drops the requesting row, so only the result's stamp survives.
     @Test func resumedToolRowsArePlacedAtTheirFinishStamp() {
-        let activity = DockModel.parseMessages([
-            ["role": "user", "content": "Fix it", "timestamp": 1_000],
-            ["role": "tool", "name": "terminal", "context": "ls", "timestamp": 1_007],
-            ["role": "assistant", "content": "Done", "reasoning": "Look first", "timestamp": 1_009],
-        ]).messages.last?.activity ?? []
+        let activity =
+            DockModel.parseMessages([
+                ["role": "user", "content": "Fix it", "timestamp": 1_000],
+                ["role": "tool", "name": "terminal", "context": "ls", "timestamp": 1_007],
+                ["role": "assistant", "content": "Done", "reasoning": "Look first", "timestamp": 1_009],
+            ]).messages.last?.activity ?? []
         let tool = activity.first { $0.name == "terminal" }
         #expect(tool?.traceTiming == .runtime)
         #expect(tool?.startedAt == Date(timeIntervalSince1970: 1_007))
         #expect(tool?.completedAt == Date(timeIntervalSince1970: 1_007))
         #expect(activity.first { $0.name == ActiveToolCall.thinkingName }?.traceTiming == .runtime)
-        #expect(DockModel.parseMessages([
-            ["role": "user", "content": "Fix it"], ["role": "tool", "name": "terminal"],
-            ["role": "assistant", "content": "Done"],
-        ]).messages.last?.activity.first?.traceTiming == .unavailable)
+        #expect(
+            DockModel.parseMessages([
+                ["role": "user", "content": "Fix it"], ["role": "tool", "name": "terminal"],
+                ["role": "assistant", "content": "Done"],
+            ]).messages.last?.activity.first?.traceTiming == .unavailable)
     }
 
     @Test func modelSpansFillRuntimeGapsBetweenToolBatches() {
@@ -426,8 +430,9 @@ struct SessionTraceTests {
         #expect(md("  ", .input, .tool) == nil)
         #expect(md("Fix the **tests**", .input, .agent) == "Fix the **tests**")
         #expect(md("ls -la", .input, .tool) == "```\nls -la\n```")
-        #expect(md("mode: patch, patch: *** Begin Patch\n+a", .input, .tool)
-            == "```diff\nmode: patch, patch: *** Begin Patch\n+a\n```")
+        #expect(
+            md("mode: patch, patch: *** Begin Patch\n+a", .input, .tool)
+                == "```diff\nmode: patch, patch: *** Begin Patch\n+a\n```")
         #expect(md(#"{"output": "ok\n"}"#, .result, .tool) == "```\nok\n```")
         #expect(md(#"{"error": "denied"}"#, .result, .tool) == "```\nError: denied\n```")
         #expect(md("a ``` b", .result, .tool) == "````\na ``` b\n````")

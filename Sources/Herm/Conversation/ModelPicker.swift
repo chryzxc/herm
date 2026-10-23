@@ -19,19 +19,26 @@ struct ModelPickerCatalog: Equatable {
         groups(matching: query, disabledIDs: [], activeID: nil)
     }
 
-    func groups(matching query: String = "", disabledIDs: Set<String>, activeID: String?) -> [ModelPickerProviderGroup] {
+    func groups(matching query: String = "", disabledIDs: Set<String>, activeID: String?) -> [ModelPickerProviderGroup]
+    {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = normalizedQuery.isEmpty
+        let filtered =
+            normalizedQuery.isEmpty
             ? options
             : options.filter {
                 $0.provider.localizedCaseInsensitiveContains(normalizedQuery)
                     || $0.model.localizedCaseInsensitiveContains(normalizedQuery)
             }
-        let grouped = Dictionary(grouping: filtered.filter {
-            Self.isEnabled($0.id, disabledIDs: disabledIDs, activeID: activeID)
-        }, by: \.provider)
+        let grouped = Dictionary(
+            grouping: filtered.filter {
+                Self.isEnabled($0.id, disabledIDs: disabledIDs, activeID: activeID)
+            }, by: \.provider)
         return grouped.keys.sorted().compactMap { provider in
-            guard let models = grouped[provider]?.sorted(by: { $0.model.localizedStandardCompare($1.model) == .orderedAscending }) else { return nil }
+            guard
+                let models = grouped[provider]?.sorted(by: {
+                    $0.model.localizedStandardCompare($1.model) == .orderedAscending
+                })
+            else { return nil }
             return ModelPickerProviderGroup(provider: provider, models: models)
         }
     }
@@ -114,7 +121,9 @@ struct ModelPickerView: View {
     @State private var disabledModelIDs = ModelPickerPreferences().disabledIDs
 
     private var catalog: ModelPickerCatalog { ModelPickerCatalog(options: options) }
-    nonisolated static func refreshState(isRefreshing: Bool, error: String?, optionCount: Int) -> ModelPickerRefreshState {
+    nonisolated static func refreshState(isRefreshing: Bool, error: String?, optionCount: Int)
+        -> ModelPickerRefreshState
+    {
         if isRefreshing { return .pending }
         if error != nil { return optionCount == 0 ? .unavailable : .stale }
         return optionCount == 0 ? .empty : .success
@@ -189,36 +198,38 @@ struct ModelPickerView: View {
     @ViewBuilder
     private var modelRows: some View {
         let groups = catalog.groups(matching: query, disabledIDs: disabledModelIDs, activeID: selectedID)
-            if groups.isEmpty {
-                Label("No matching models", icon: .magnifyingGlass)
-            } else {
-                ForEach(groups) { group in
-                    DockMenuSection(group.provider) {
-                        if let notice = ProviderPeakSchedule.quotaID(forProvider: group.provider)
-                            .flatMap({ ProviderPeakSchedule.notice(forQuotaID: $0) }) {
-                            let color = notice.isPeak ? Color.dockWarning : Color.dockSuccess
-                            HStack(spacing: 6) {
-                                DockIcon(notice.isPeak ? .warning : .checkCircle, size: 12, color: color)
-                                Text(notice.text).foregroundStyle(color)
-                            }
+        if groups.isEmpty {
+            Label("No matching models", icon: .magnifyingGlass)
+        } else {
+            ForEach(groups) { group in
+                DockMenuSection(group.provider) {
+                    if let notice = ProviderPeakSchedule.quotaID(forProvider: group.provider)
+                        .flatMap({ ProviderPeakSchedule.notice(forQuotaID: $0) })
+                    {
+                        let color = notice.isPeak ? Color.dockWarning : Color.dockSuccess
+                        HStack(spacing: 6) {
+                            DockIcon(notice.isPeak ? .warning : .checkCircle, size: 12, color: color)
+                            Text(notice.text).foregroundStyle(color)
                         }
-                        ForEach(group.models) { option in
-                            Button {
-                                onSelect(option)
-                            } label: {
-                                HStack {
-                                    Text(option.model)
-                                    if option.id == selectedID {
-                                        Spacer()
-                                        DockIcon(.check)
-                                    }
+                    }
+                    ForEach(group.models) { option in
+                        Button {
+                            onSelect(option)
+                        } label: {
+                            HStack {
+                                Text(option.model)
+                                if option.id == selectedID {
+                                    Spacer()
+                                    DockIcon(.check)
                                 }
                             }
-                            .accessibilityLabel("\(group.provider), \(option.model)\(option.id == selectedID ? ", selected" : "")")
                         }
+                        .accessibilityLabel(
+                            "\(group.provider), \(option.model)\(option.id == selectedID ? ", selected" : "")")
                     }
                 }
             }
+        }
     }
 
     private var selectedPeakNotice: ProviderPeakSchedule.Notice? {
@@ -230,8 +241,9 @@ struct ModelPickerView: View {
         if let match = options.first(where: { $0.id == selectedID }) { return match }
         // Hermes' default may sit outside the explicit catalog; still name it.
         guard let selectedID, let bar = selectedID.firstIndex(of: "|") else { return nil }
-        return HermesModelOption(provider: String(selectedID[..<bar]),
-                                 model: String(selectedID[selectedID.index(after: bar)...]))
+        return HermesModelOption(
+            provider: String(selectedID[..<bar]),
+            model: String(selectedID[selectedID.index(after: bar)...]))
     }
 
     private func reconcileActiveModelPreference() {
@@ -251,19 +263,33 @@ private struct ModelPickerEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        DockModal(icon: .cpu, title: "Available Models", subtitle: "Disabled models stay hidden from the picker. Hermes remains the source of truth for the catalog.", width: 400, contentPadding: 0) {
+        DockModal(
+            icon: .cpu, title: "Available Models",
+            subtitle:
+                "Disabled models stay hidden from the picker. Hermes remains the source of truth for the catalog.",
+            width: 400, contentPadding: 0
+        ) {
             List {
                 ForEach(ModelPickerCatalog(options: options).groups()) { group in
                     Section(group.provider) {
                         ForEach(group.models) { option in
-                            Toggle(isOn: Binding(
-                                get: { ModelPickerCatalog.isEnabled(option.id, disabledIDs: disabledIDs, activeID: activeID) },
-                                set: { enabled in
-                                    guard option.id != activeID else { return }
-                                    if enabled { disabledIDs.remove(option.id) } else { disabledIDs.insert(option.id) }
-                                    ModelPickerPreferences().setEnabled(enabled, for: option.id)
-                                }
-                            )) {
+                            Toggle(
+                                isOn: Binding(
+                                    get: {
+                                        ModelPickerCatalog.isEnabled(
+                                            option.id, disabledIDs: disabledIDs, activeID: activeID)
+                                    },
+                                    set: { enabled in
+                                        guard option.id != activeID else { return }
+                                        if enabled {
+                                            disabledIDs.remove(option.id)
+                                        } else {
+                                            disabledIDs.insert(option.id)
+                                        }
+                                        ModelPickerPreferences().setEnabled(enabled, for: option.id)
+                                    }
+                                )
+                            ) {
                                 Text(option.id == activeID ? "\(option.model) (active)" : option.model)
                             }
                             .accessibilityLabel("Enable \(group.provider) \(option.model)")

@@ -47,7 +47,10 @@ struct BotProfileEditorSheet: View {
                 editorForm
             }
         } footer: {
-            modalActions(primaryTitle: "Save Changes", isDisabled: detail == nil || isSaving, isPending: isSaving, onCancel: { dismiss() }) {
+            modalActions(
+                primaryTitle: "Save Changes", isDisabled: detail == nil || isSaving, isPending: isSaving,
+                onCancel: { dismiss() }
+            ) {
                 Task { await save(confirm: false) }
             }
         }
@@ -58,7 +61,10 @@ struct BotProfileEditorSheet: View {
                 WorkflowIntegrationView(destination: IntegrationDestination(profileID: bot.id), client: client)
             }
         }
-        .alert("Confirm Model", isPresented: Binding(get: { pendingConfirmMessage != nil }, set: { if !$0 { pendingConfirmMessage = nil } })) {
+        .alert(
+            "Confirm Model",
+            isPresented: Binding(get: { pendingConfirmMessage != nil }, set: { if !$0 { pendingConfirmMessage = nil } })
+        ) {
             Button("Cancel", role: .cancel) { pendingConfirmMessage = nil }
             Button("Use This Model") { Task { await save(confirm: true) } }
         } message: {
@@ -72,13 +78,19 @@ struct BotProfileEditorSheet: View {
                 modalSection("IDENTITY") {
                     avatarRow
                     labeledField("Title") {
-                        DockTextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
-                            .textFieldStyle(.dockGlass)
+                        DockTextField(
+                            "Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 })
+                        )
+                        .textFieldStyle(.dockGlass)
                     }
                     labeledField("Description") {
-                        DockTextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }), axis: .vertical)
-                            .lineLimit(2...5)
-                            .textFieldStyle(.dockGlass)
+                        DockTextField(
+                            "What this Bot does",
+                            text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }),
+                            axis: .vertical
+                        )
+                        .lineLimit(2...5)
+                        .textFieldStyle(.dockGlass)
                     }
                 }
                 modalSection("MODELS") { modelCard }
@@ -89,19 +101,25 @@ struct BotProfileEditorSheet: View {
                         DisclosureGroup(isExpanded: $showsSkills) {
                             toggleSection(items: skillBinding)
                         } label: {
-                            capabilityLabel("Skills", enabled: detail?.skills.filter(\.enabled).count ?? 0, total: detail?.skills.count ?? 0)
+                            capabilityLabel(
+                                "Skills", enabled: detail?.skills.filter(\.enabled).count ?? 0,
+                                total: detail?.skills.count ?? 0)
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                         DisclosureGroup(isExpanded: $showsToolsets) {
                             toolsetSection
                         } label: {
-                            capabilityLabel("Toolsets", enabled: detail?.toolsets.filter(\.enabled).count ?? 0, total: detail?.toolsets.count ?? 0)
+                            capabilityLabel(
+                                "Toolsets", enabled: detail?.toolsets.filter(\.enabled).count ?? 0,
+                                total: detail?.toolsets.count ?? 0)
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                         DisclosureGroup(isExpanded: $showsMCPServers) {
                             toggleSection(items: mcpBinding)
                         } label: {
-                            capabilityLabel("MCP Servers", enabled: detail?.mcpServers.filter(\.enabled).count ?? 0, total: detail?.mcpServers.count ?? 0)
+                            capabilityLabel(
+                                "MCP Servers", enabled: detail?.mcpServers.filter(\.enabled).count ?? 0,
+                                total: detail?.mcpServers.count ?? 0)
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                     }
@@ -126,7 +144,8 @@ struct BotProfileEditorSheet: View {
         HStack {
             Text(title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
             Spacer()
-            Text("\(enabled) of \(total) on").dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText)
+            Text("\(enabled) of \(total) on").dockFont(.metadata, weight: .regular, design: .monospaced)
+                .foregroundStyle(Color.dockMetadataText)
         }
     }
 
@@ -135,10 +154,13 @@ struct BotProfileEditorSheet: View {
             avatarButtons
             if !clearsAvatar, !BotAvatarView.showsHermFace(avatarPreview ?? model.avatarImages[bot.id], id: bot.id) {
                 HStack(spacing: 8) {
-                    Label("This image won't animate. Blinking, spinning and reactions only work on Herm faces.", icon: .info)
-                        .dockFont(.compactStatus, weight: .regular)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Label(
+                        "This image won't animate. Blinking, spinning and reactions only work on Herm faces.",
+                        icon: .info
+                    )
+                    .dockFont(.compactStatus, weight: .regular)
+                    .foregroundStyle(Color.dockMetadataText)
+                    .fixedSize(horizontal: false, vertical: true)
                     Button("Use Herm Face") { BotFaceMark.png(id: bot.id).map(applyPendingAvatar) }
                         .buttonStyle(.dockSecondary)
                         .controlSize(.small)
@@ -171,7 +193,10 @@ struct BotProfileEditorSheet: View {
                 .buttonStyle(.dockSecondary)
                 .controlSize(.small)
             }
-            if clearsAvatar { Text("avatar will be removed").dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockMetadataText) }
+            if clearsAvatar {
+                Text("avatar will be removed").dockFont(.compactStatus, weight: .regular).foregroundStyle(
+                    Color.dockMetadataText)
+            }
             Spacer()
         }
     }
@@ -193,7 +218,9 @@ struct BotProfileEditorSheet: View {
             }
             if isChangingModel {
                 HStack(spacing: 8) {
-                    DockMenuPicker(title: selectedProvider.isEmpty ? "Provider…" : selectedProvider, selection: $selectedProvider) {
+                    DockMenuPicker(
+                        title: selectedProvider.isEmpty ? "Provider…" : selectedProvider, selection: $selectedProvider
+                    ) {
                         DockMenuOption("Provider…", value: "")
                         ForEach(modelChoices, id: \.provider) { choice in
                             DockMenuOption(choice.provider, value: choice.provider)
@@ -232,7 +259,9 @@ struct BotProfileEditorSheet: View {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(fallbacks.enumerated()), id: \.offset) { index, ref in
                                 HStack(spacing: 6) {
-                                    Text("\(index + 1).").dockFont(.compactStatus, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText)
+                                    Text("\(index + 1).").dockFont(
+                                        .compactStatus, weight: .regular, design: .monospaced
+                                    ).foregroundStyle(Color.dockMetadataText)
                                     modelText(ref.model, provider: ref.provider)
                                     Spacer()
                                     if fallbackDraft != nil {
@@ -254,17 +283,23 @@ struct BotProfileEditorSheet: View {
             }
             if fallbackDraft != nil {
                 HStack(spacing: 8) {
-                    DockMenuPicker(title: fallbackProvider.isEmpty ? "Provider…" : fallbackProvider, selection: $fallbackProvider) {
+                    DockMenuPicker(
+                        title: fallbackProvider.isEmpty ? "Provider…" : fallbackProvider, selection: $fallbackProvider
+                    ) {
                         DockMenuOption("Provider…", value: "")
                         ForEach(modelChoices, id: \.provider) { DockMenuOption($0.provider, value: $0.provider) }
                     }
                     DockMenuPicker(title: fallbackModel.isEmpty ? "Model…" : fallbackModel, selection: $fallbackModel) {
                         DockMenuOption("Model…", value: "")
-                        ForEach(modelChoices.first { $0.provider == fallbackProvider }?.models ?? [], id: \.self) { DockMenuOption($0, value: $0) }
+                        ForEach(modelChoices.first { $0.provider == fallbackProvider }?.models ?? [], id: \.self) {
+                            DockMenuOption($0, value: $0)
+                        }
                     }
                     Button("Add") {
                         let ref = BotRuntimeConfig.ModelRef(provider: fallbackProvider, model: fallbackModel)
-                        if !fallbacks.contains(where: { $0.provider == ref.provider && $0.model == ref.model }) { fallbackDraft?.append(ref) }
+                        if !fallbacks.contains(where: { $0.provider == ref.provider && $0.model == ref.model }) {
+                            fallbackDraft?.append(ref)
+                        }
                         fallbackModel = ""
                     }
                     .buttonStyle(.dockSecondary)
@@ -290,7 +325,8 @@ struct BotProfileEditorSheet: View {
         HStack(spacing: 6) {
             Text(model).dockFont(.body, weight: .semibold, design: .monospaced)
             if let provider, !provider.isEmpty {
-                Text(provider).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockMetadataText).lineLimit(1).truncationMode(.middle)
+                Text(provider).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1).truncationMode(.middle)
             }
         }
     }
@@ -351,10 +387,13 @@ struct BotProfileEditorSheet: View {
                 Text("None reported by Hermes").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             } else {
                 ForEach(Array(items.wrappedValue.enumerated()), id: \.element.id) { index, item in
-                    Toggle(item.label, isOn: Binding(
-                        get: { items.wrappedValue[index].enabled },
-                        set: { items.wrappedValue[index].enabled = $0 }
-                    ))
+                    Toggle(
+                        item.label,
+                        isOn: Binding(
+                            get: { items.wrappedValue[index].enabled },
+                            set: { items.wrappedValue[index].enabled = $0 }
+                        )
+                    )
                     .controlSize(.small)
                     .padding(.horizontal, 4)
                 }
@@ -377,7 +416,8 @@ struct BotProfileEditorSheet: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("\(item.label) (\(item.toolCount))").dockFont(.body)
                                 if !item.detail.isEmpty {
-                                    Text(item.detail).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockMetadataText)
+                                    Text(item.detail).dockFont(.compactStatus, weight: .regular).foregroundStyle(
+                                        Color.dockMetadataText)
                                 }
                             }
                         }
@@ -412,9 +452,11 @@ struct BotProfileEditorSheet: View {
     private func generateAvatar() async {
         isGeneratingAvatar = true
         defer { isGeneratingAvatar = false }
-        let prompt = "Friendly avatar portrait for an AI assistant named \(bot.title ?? bot.name), simple, clean, centered"
+        let prompt =
+            "Friendly avatar portrait for an AI assistant named \(bot.title ?? bot.name), simple, clean, centered"
         guard let dataURL = try? await model.generateAvatar(prompt: prompt),
-              let data = BotService.decodeDataURL(dataURL) else { return }
+            let data = BotService.decodeDataURL(dataURL)
+        else { return }
         applyPendingAvatar(data)
     }
 
@@ -518,7 +560,10 @@ struct BotDuplicateSheet: View {
     @State private var isDuplicating = false
 
     var body: some View {
-        DockModal(icon: .copy, title: "Duplicate \(bot.name)", subtitle: "Clones config, skills, SOUL, and memory into a new profile.", width: 400) {
+        DockModal(
+            icon: .copy, title: "Duplicate \(bot.name)",
+            subtitle: "Clones config, skills, SOUL, and memory into a new profile.", width: 400
+        ) {
             labeledField("New profile name", hint: "Lowercase letters, numbers, dashes, or underscores") {
                 DockTextField("e.g. \(bot.name)-copy", text: $newName)
                     .textFieldStyle(.dockGlass)
@@ -527,7 +572,11 @@ struct BotDuplicateSheet: View {
                 ModalNote(text: error, icon: .warning, tone: .dockWarning)
             }
         } footer: {
-            modalActions(primaryTitle: "Duplicate", pendingTitle: "Duplicating…", isDisabled: !BotCreationSheet.isValidProfileName(trimmedName) || isDuplicating, isPending: isDuplicating, onCancel: { dismiss() }) {
+            modalActions(
+                primaryTitle: "Duplicate", pendingTitle: "Duplicating…",
+                isDisabled: !BotCreationSheet.isValidProfileName(trimmedName) || isDuplicating,
+                isPending: isDuplicating, onCancel: { dismiss() }
+            ) {
                 Task {
                     isDuplicating = true
                     if await model.duplicateBot(bot, newName: trimmedName) { dismiss() }
@@ -552,10 +601,14 @@ struct BotRoutineFormSheet: View {
     @State private var isSaving = false
 
     var body: some View {
-        DockModal(icon: .calendarBlank, title: "New Routine", subtitle: "Recurring work a Bot runs on a schedule.", width: 440) {
+        DockModal(
+            icon: .calendarBlank, title: "New Routine", subtitle: "Recurring work a Bot runs on a schedule.", width: 440
+        ) {
             modalSection("ASSIGNMENT") {
                 labeledField("Bot", hint: "The profile that owns this routine") {
-                    DockMenuPicker(title: bots.first { $0.id == selectedProfile }?.name ?? "Choose…", selection: $selectedProfile) {
+                    DockMenuPicker(
+                        title: bots.first { $0.id == selectedProfile }?.name ?? "Choose…", selection: $selectedProfile
+                    ) {
                         ForEach(bots) { bot in DockMenuOption(bot.name, value: bot.id) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -587,7 +640,10 @@ struct BotRoutineFormSheet: View {
                 ModalNote(text: error, icon: .warning, tone: .dockWarning)
             }
         } footer: {
-            modalActions(primaryTitle: "Add Routine", isDisabled: !isValid || isSaving, isPending: isSaving, onCancel: { dismiss() }) {
+            modalActions(
+                primaryTitle: "Add Routine", isDisabled: !isValid || isSaving, isPending: isSaving,
+                onCancel: { dismiss() }
+            ) {
                 Task {
                     guard let bot = bots.first(where: { $0.id == selectedProfile }) else { return }
                     isSaving = true

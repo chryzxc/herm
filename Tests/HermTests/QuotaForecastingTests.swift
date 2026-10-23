@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct QuotaForecastingTests {
@@ -32,27 +33,31 @@ struct QuotaForecastingTests {
     }
 
     @Test func forecastHiddenWhenPaceOutlastsReset() {
-        #expect(QuotaForecasting.limitForecast(
-            for: window(label: "Weekly", remaining: 50, resetAfter: 3.5 * 86_400)
-        ) == nil)
+        #expect(
+            QuotaForecasting.limitForecast(
+                for: window(label: "Weekly", remaining: 50, resetAfter: 3.5 * 86_400)
+            ) == nil)
     }
 
     @Test func forecastRequiresKnownCycleDuration() {
-        #expect(QuotaForecasting.limitForecast(
-            for: window(label: "Web searches", remaining: 25, resetAfter: 3.5 * 86_400)
-        ) == nil)
+        #expect(
+            QuotaForecasting.limitForecast(
+                for: window(label: "Web searches", remaining: 25, resetAfter: 3.5 * 86_400)
+            ) == nil)
     }
 
     @Test func forecastRequiresElapsedCycleTime() {
-        #expect(QuotaForecasting.limitForecast(
-            for: window(label: "Weekly", remaining: 25, resetAfter: 7 * 86_400 - 5 * 60)
-        ) == nil)
+        #expect(
+            QuotaForecasting.limitForecast(
+                for: window(label: "Weekly", remaining: 25, resetAfter: 7 * 86_400 - 5 * 60)
+            ) == nil)
     }
 
     @Test func dailyAllowanceStopsOverBudgetUsage() {
-        #expect(QuotaForecasting.dailyAllowance(
-            for: window(label: "Weekly", remaining: 70, resetAfter: 7 * 86_400)
-        ) == 0)
+        #expect(
+            QuotaForecasting.dailyAllowance(
+                for: window(label: "Weekly", remaining: 70, resetAfter: 7 * 86_400)
+            ) == 0)
     }
 
     @Test func dailyAllowanceCarriesUnusedBudgetForward() {
@@ -75,9 +80,10 @@ struct QuotaForecastingTests {
     }
 
     @Test func dailyAllowanceHiddenForShortWindows() {
-        #expect(QuotaForecasting.dailyAllowance(
-            for: window(label: "Session", remaining: 70, resetAfter: 12 * 3_600)
-        ) == nil)
+        #expect(
+            QuotaForecasting.dailyAllowance(
+                for: window(label: "Session", remaining: 70, resetAfter: 12 * 3_600)
+            ) == nil)
     }
 
     @Test func markerTracksEvenConsumptionBaseline() {

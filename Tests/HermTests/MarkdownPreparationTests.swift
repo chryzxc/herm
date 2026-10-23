@@ -103,7 +103,8 @@ struct MarkdownPreparationTests {
         let messages = (0..<40).map { ChatMessage(role: .hermes, text: "# Adjacent \(UUID())\n\nBody \($0)") }
         let prefetch = ConversationMarkdownPrefetch()
         defer { prefetch.cancel() }
-        prefetch.update(messages: messages, range: 12..<24, sessionID: "adjacent", streamingID: nil,
+        prefetch.update(
+            messages: messages, range: 12..<24, sessionID: "adjacent", streamingID: nil,
             isCurrent: { _, _ in true })
         let deadline = Date().addingTimeInterval(5)
         while prefetch.committedDocuments < 16 && Date() < deadline {

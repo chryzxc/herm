@@ -1,7 +1,8 @@
-import Combine
 import AppKit
+import Combine
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -26,14 +27,16 @@ struct StreamingPerformanceTests {
     @Test func midTurnTextRedirectsAndLandsAsPlainUserMessageBelowStreamedOutput() async throws {
         let client = StreamingAttachmentRPCClient()
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("redirect-\(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "redirect-\(UUID().uuidString).json"),
             initialSessionID: "redirect-session",
             rpcClient: client
         )
         model.status = .working
         model.isSending = true
         model.receiveGatewayEvent("message.start", params: ["session_id": "redirect-session", "payload": [:]])
-        model.receiveGatewayEvent("message.delta", params: ["session_id": "redirect-session", "payload": ["delta": "Before"]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "redirect-session", "payload": ["delta": "Before"]])
         model.draft = "Check the logs instead"
 
         model.submitComposerInput()
@@ -59,7 +62,8 @@ struct StreamingPerformanceTests {
         let client = StreamingAttachmentRPCClient()
         client.redirectStatus = "rejected"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("redirect-\(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "redirect-\(UUID().uuidString).json"),
             initialSessionID: "redirect-reject-session",
             rpcClient: client
         )
@@ -75,7 +79,8 @@ struct StreamingPerformanceTests {
         #expect(model.queuedPrompts.map(\.text) == ["Also update the docs"])
         #expect(!model.messages.contains { $0.text == "Also update the docs" })
 
-        model.receiveGatewayEvent("message.complete", params: ["session_id": "redirect-reject-session", "payload": ["text": "Done"]])
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "redirect-reject-session", "payload": ["text": "Done"]])
 
         #expect(model.queuedPrompts.isEmpty)
         #expect(model.isSending)
@@ -84,7 +89,8 @@ struct StreamingPerformanceTests {
 
     @Test func attachmentsDuringATurnStayWithTheirQueuedTextAndCanBeRemoved() {
         let model = DockModel(initialSessionID: "queue-image-session")
-        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queue-image-\(UUID().uuidString).png")
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "queue-image-\(UUID().uuidString).png")
         model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
         model.draft = "Use this image"
         model.status = .working
@@ -106,10 +112,12 @@ struct StreamingPerformanceTests {
     @Test func toolEventOfATurnAlreadyRunningAtAttachOpensTheLiveRow() {
         let model = DockModel(initialSessionID: "attached-mid-turn")
         model.messages = [ChatMessage(role: .user, text: "commit it")]
-        model.receiveGatewayEvent("tool.start", params: [
-            "session_id": "attached-mid-turn",
-            "payload": ["id": "t1", "name": "patch"]
-        ])
+        model.receiveGatewayEvent(
+            "tool.start",
+            params: [
+                "session_id": "attached-mid-turn",
+                "payload": ["id": "t1", "name": "patch"],
+            ])
 
         #expect(model.status == .working)
         #expect(model.messages.last?.role == .hermes)
@@ -123,19 +131,25 @@ struct StreamingPerformanceTests {
         let model = DockModel(initialSessionID: "steering-boundary-session")
         let image = NSImage(size: NSSize(width: 2, height: 2))
         model.messages = [ChatMessage(role: .hermes, text: "Earlier response")]
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "steering-boundary-session",
-            "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "steering-boundary-session",
+                "payload": [:],
+            ])
         model.messages.append(ChatMessage(role: .user, text: "Use this image", image: image))
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "steering-boundary-session",
-            "payload": [:]
-        ])
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "steering-boundary-session",
-            "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "steering-boundary-session",
+                "payload": [:],
+            ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "steering-boundary-session",
+                "payload": [:],
+            ])
 
         #expect(model.messages.last?.role == .hermes)
         #expect(model.messages.dropLast().last?.images.count == 1)
@@ -146,23 +160,28 @@ struct StreamingPerformanceTests {
         let model = DockModel(initialSessionID: "steering-duplicate-start-session")
         model.messages = [ChatMessage(role: .hermes, text: "Earlier response")]
 
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "steering-duplicate-start-session",
-            "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "steering-duplicate-start-session",
+                "payload": [:],
+            ])
         let activeResponseID = model.streamingMessageIDForPresentation
-        model.messages.append(ChatMessage(
-            role: .user,
-            text: "Use this image",
-            image: NSImage(size: NSSize(width: 2, height: 2)),
-            isSteering: true,
-            steeringStatus: "QUEUED"
-        ))
+        model.messages.append(
+            ChatMessage(
+                role: .user,
+                text: "Use this image",
+                image: NSImage(size: NSSize(width: 2, height: 2)),
+                isSteering: true,
+                steeringStatus: "QUEUED"
+            ))
 
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "steering-duplicate-start-session",
-            "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "steering-duplicate-start-session",
+                "payload": [:],
+            ])
 
         #expect(model.streamingMessageIDForPresentation == activeResponseID)
         #expect(model.messages.filter { $0.role == .hermes }.count == 2)
@@ -170,14 +189,18 @@ struct StreamingPerformanceTests {
         #expect(model.messages.last?.steeringStatus == "QUEUED")
         #expect(model.messages.firstIndex(where: { $0.id == activeResponseID }) ?? -1 < model.messages.count - 1)
 
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "steering-duplicate-start-session",
-            "payload": [:]
-        ])
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "steering-duplicate-start-session",
-            "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "steering-duplicate-start-session",
+                "payload": [:],
+            ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "steering-duplicate-start-session",
+                "payload": [:],
+            ])
 
         #expect(model.messages.filter { $0.role == .hermes }.count == 3)
         #expect(model.streamingMessageIDForPresentation != activeResponseID)
@@ -188,7 +211,9 @@ struct StreamingPerformanceTests {
     }
 
     @Test func sendingWithoutAnExplicitNewChatDoesNotCreateOrMutateASession() {
-        let model = DockModel(sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("session-creation-(UUID().uuidString).json"))
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "session-creation-(UUID().uuidString).json"))
         model.draft = "This must not implicitly create a session"
 
         model.send()
@@ -202,7 +227,8 @@ struct StreamingPerformanceTests {
     @Test func streamedDeltasDoNotPublishDockModelChanges() {
         let sessionID = "stream-silence"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("stream-silence-(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "stream-silence-(UUID().uuidString).json"),
             initialSessionID: sessionID
         )
         var publishes = 0
@@ -211,16 +237,19 @@ struct StreamingPerformanceTests {
         let publishesAfterStart = publishes
 
         for index in 0..<1_000 {
-            model.receiveGatewayEvent("message.delta", params: ["session_id": sessionID, "payload": ["delta": " \(index)"]])
+            model.receiveGatewayEvent(
+                "message.delta", params: ["session_id": sessionID, "payload": ["delta": " \(index)"]])
         }
 
         #expect(publishes == publishesAfterStart)
         withExtendedLifetime(cancellable) {}
     }
 
-    @Test func streamedDeltasPublishExactTextOnlyAtCompletionBoundary() {        let sessionID = "stream-session"
+    @Test func streamedDeltasPublishExactTextOnlyAtCompletionBoundary() {
+        let sessionID = "stream-session"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("stream-(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "stream-(UUID().uuidString).json"),
             initialSessionID: sessionID
         )
         model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": ["model": "test"]])
@@ -239,14 +268,17 @@ struct StreamingPerformanceTests {
     @Test func completionErrorAppearsInTranscriptAndReleasesSendingState() {
         let sessionID = "quota-session"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("quota-(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "quota-(UUID().uuidString).json"),
             initialSessionID: sessionID
         )
         model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": sessionID,
-            "payload": ["error": "HTTP 429: The usage limit has been reached"]
-        ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": sessionID,
+                "payload": ["error": "HTTP 429: The usage limit has been reached"],
+            ])
 
         #expect(model.messages.count == 1)
         #expect(model.messages.last?.isError == true)
@@ -256,15 +288,17 @@ struct StreamingPerformanceTests {
     }
 
     @Test func structuredCompletionErrorUsesNestedMessage() {
-        #expect(DockModel.messageCompletionError(from: [
-            "error": ["message": "The usage limit has been reached", "code": "rate_limit"]
-        ]) == "The usage limit has been reached")
+        #expect(
+            DockModel.messageCompletionError(from: [
+                "error": ["message": "The usage limit has been reached", "code": "rate_limit"]
+            ]) == "The usage limit has been reached")
     }
 
     @Test func staleScheduledStreamingFlushCannotChangeAReplacedConversation() async {
         let sessionID = "stream-session"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("stream-(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "stream-(UUID().uuidString).json"),
             initialSessionID: sessionID
         )
         model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
@@ -277,7 +311,8 @@ struct StreamingPerformanceTests {
     @Test func streamedDeltasDoNotMutateTheTranscriptArrayBeforeCompletion() async {
         let sessionID = "stream-isolated"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("stream-(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "stream-(UUID().uuidString).json"),
             initialSessionID: sessionID
         )
         model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
@@ -304,7 +339,8 @@ struct StreamingPerformanceTests {
     @Test func reasoningDeltasCoalesceIntoTheReasoningState() async {
         let sessionID = "reason-session"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("reason-(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "reason-(UUID().uuidString).json"),
             initialSessionID: sessionID
         )
         model.receiveGatewayEvent("reasoning.start", params: ["session_id": sessionID, "payload": [:]])
@@ -326,7 +362,8 @@ struct StreamingPerformanceTests {
     @Test func reasoningFlushesLeaveTheThinkingStepUnchangedUntilItCompletes() async {
         let sessionID = "thinking-step"
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("thinking-\(UUID().uuidString).json"),
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "thinking-\(UUID().uuidString).json"),
             initialSessionID: sessionID
         )
         model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
@@ -351,7 +388,9 @@ struct StreamingPerformanceTests {
     }
 
     @Test func agentPresentationSnapshotIsSharedAndStableAcrossConsumers() {
-        let model = DockModel(sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("agents-\(UUID().uuidString).json"))
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "agents-\(UUID().uuidString).json"))
         model.activeSubagents = (0..<8).map { index in
             HermesSubagent(
                 id: "agent-\(index)",
@@ -370,7 +409,8 @@ struct StreamingPerformanceTests {
 
     @Test func markdownBlocksMatchAcrossStreamingBoundaries() {
         let streaming = StreamingText()
-        let source = "# Heading\n\n" + String(repeating: "**bold** and `code` words. ", count: 200)
+        let source =
+            "# Heading\n\n" + String(repeating: "**bold** and `code` words. ", count: 200)
             + "\n\n```swift\nlet value = 1\n\n" + String(repeating: "// code\n", count: 700)
             + "```\n\n> Quote\n\n- Item with *emphasis*"
         var remainder = source[...]
@@ -390,13 +430,14 @@ struct StreamingPerformanceTests {
             let source = marker + "swift\n" + String(repeating: "let x = 1\n\n", count: 1_000)
             streaming.appendPresentation(source)
             #expect(streaming.chunks.count > 1)
-            #expect(streaming.chunks.dropFirst().allSatisfy { chunk in
-                if case .fencedCode(let chunkMarker, let length, let language) = chunk.context {
-                    return String(repeating: String(chunkMarker), count: length) == String(marker.prefix(length))
-                        && language == "swift"
-                }
-                return false
-            })
+            #expect(
+                streaming.chunks.dropFirst().allSatisfy { chunk in
+                    if case .fencedCode(let chunkMarker, let length, let language) = chunk.context {
+                        return String(repeating: String(chunkMarker), count: length) == String(marker.prefix(length))
+                            && language == "swift"
+                    }
+                    return false
+                })
             #expect(MarkdownMessageView.codeBlockLanguages(in: source).first == "swift")
             streaming.appendPresentation("\n" + marker + "\n\nDone")
             #expect(streaming.chunks.count == 2)
@@ -406,16 +447,18 @@ struct StreamingPerformanceTests {
 
     @Test func shorterFenceAndBackticksWithTextRemainCode() {
         let source = "````swift\n```\n```not a closing fence\nlet value = 1\n````"
-        #expect(MarkdownMessageView.renderBlocks(for: source) == [
-            .code("```\n```not a closing fence\nlet value = 1", language: "swift")
-        ])
+        #expect(
+            MarkdownMessageView.renderBlocks(for: source) == [
+                .code("```\n```not a closing fence\nlet value = 1", language: "swift")
+            ])
     }
 
     @Test func incompleteMarkdownIsRenderedWithoutChangingSource() {
         let streaming = StreamingText()
         streaming.appendPresentation("# Title\n\n**complete** and **partial")
-        #expect(MarkdownMessageView.renderBlocks(for: streaming.chunks[0].text) ==
-            MarkdownMessageView.renderBlocks(for: streaming.text))
+        #expect(
+            MarkdownMessageView.renderBlocks(for: streaming.chunks[0].text)
+                == MarkdownMessageView.renderBlocks(for: streaming.text))
         streaming.appendPresentation(" bold**")
         guard case .paragraph(let text) = MarkdownMessageView.renderBlocks(for: streaming.text).last else {
             Issue.record("Expected a Markdown paragraph")
@@ -485,7 +528,8 @@ struct StreamingPerformanceTests {
 
     @Test func promotedContinuationKeepsTheOriginalFenceMarker() {
         let streaming = StreamingText()
-        let prefix = "````swift\n"
+        let prefix =
+            "````swift\n"
             + String(repeating: "``` literal code\nlet value = 1\n", count: 500)
         let source = prefix + "````\n"
         streaming.appendPresentation(prefix)
@@ -493,12 +537,13 @@ struct StreamingPerformanceTests {
 
         #expect(streaming.text == source)
         #expect(streaming.chunks.map(\.text).joined() == source)
-        #expect(streaming.chunks.contains { chunk in
-            if case .fencedCode(let marker, let length, let language) = chunk.context {
-                return marker == "`" && length == 4 && language == "swift"
-            }
-            return false
-        })
+        #expect(
+            streaming.chunks.contains { chunk in
+                if case .fencedCode(let marker, let length, let language) = chunk.context {
+                    return marker == "`" && length == 4 && language == "swift"
+                }
+                return false
+            })
     }
 
     @Test func replacementAndClearNeverReuseRenderedChunkRevisions() {

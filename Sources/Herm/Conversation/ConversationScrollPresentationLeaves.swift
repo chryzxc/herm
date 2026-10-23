@@ -9,13 +9,16 @@ struct ConversationLatestMessageControl: View {
             Button(action: onSelect) {
                 HStack(spacing: 7) {
                     DockIcon(.arrowDown, size: 11, color: Color.dockPrimaryText)
-                    Text("\(presentation.unseenMessageCount) new \(presentation.unseenMessageCount == 1 ? "message" : "messages")")
-                        .dockFont(.body, weight: .semibold)
+                    Text(
+                        "\(presentation.unseenMessageCount) new \(presentation.unseenMessageCount == 1 ? "message" : "messages")"
+                    )
+                    .dockFont(.body, weight: .semibold)
                 }
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 14)
                 .frame(height: 34)
-                .background(Capsule().fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+                .background(
+                    Capsule().fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
             }
             .buttonStyle(.dockHover)
             .padding(.bottom, 12)

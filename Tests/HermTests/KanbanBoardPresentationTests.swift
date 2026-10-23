@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct KanbanBoardPresentationTests {
@@ -11,11 +12,15 @@ struct KanbanBoardPresentationTests {
     }
 
     @Test func snapshotBucketsTasksAndCountsInOneProjection() {
-        let snapshot = KanbanBoardPresentation.makeSnapshot(tasks: [
-            KanbanTaskSummary(id: "1", title: "Running", status: "running", detail: nil, priority: nil, assignee: nil),
-            KanbanTaskSummary(id: "2", title: "Blocked", status: "blocked", detail: nil, priority: nil, assignee: nil),
-            KanbanTaskSummary(id: "3", title: "Done", status: "completed", detail: nil, priority: nil, assignee: nil)
-        ], bots: [])
+        let snapshot = KanbanBoardPresentation.makeSnapshot(
+            tasks: [
+                KanbanTaskSummary(
+                    id: "1", title: "Running", status: "running", detail: nil, priority: nil, assignee: nil),
+                KanbanTaskSummary(
+                    id: "2", title: "Blocked", status: "blocked", detail: nil, priority: nil, assignee: nil),
+                KanbanTaskSummary(
+                    id: "3", title: "Done", status: "completed", detail: nil, priority: nil, assignee: nil),
+            ], bots: [])
 
         #expect(snapshot.totalCount == 3)
         #expect(snapshot.tasks(in: .running).map(\.id) == ["1"])

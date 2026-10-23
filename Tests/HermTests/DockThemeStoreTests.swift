@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -10,18 +11,22 @@ struct DockThemeStoreTests {
         let store = DockThemeStore.shared
         let savedTheme = store.selectedThemeID
         let savedAppearance = NSApp.appearance
-        defer { store.selectedThemeID = savedTheme; NSApp.appearance = savedAppearance }
+        defer {
+            store.selectedThemeID = savedTheme
+            NSApp.appearance = savedAppearance
+        }
 
         for systemScheme in [ColorScheme.light, .dark] {
             store.selectedThemeID = .clean
             var selection: Binding<SettingsCategory>?
             var renderedCategory: SettingsCategory?
             var renderedScheme: ColorScheme?
-            let host = NSHostingView(rootView: ThemeRootSelectionProbe { category, scheme in
-                selection = category
-                renderedCategory = category.wrappedValue
-                renderedScheme = scheme
-            }.dockThemedRoot().environment(\.colorScheme, systemScheme))
+            let host = NSHostingView(
+                rootView: ThemeRootSelectionProbe { category, scheme in
+                    selection = category
+                    renderedCategory = category.wrappedValue
+                    renderedScheme = scheme
+                }.dockThemedRoot().environment(\.colorScheme, systemScheme))
             host.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -40,11 +45,12 @@ struct DockThemeStoreTests {
                 try await Task.sleep(for: .milliseconds(100))
                 host.layoutSubtreeIfNeeded()
                 #expect(renderedCategory == .appearance, "Settings selection reset for \(theme)")
-                let expectedScheme: ColorScheme = switch theme.appearance {
-                case .light: .light
-                case .dark: .dark
-                case .system: systemScheme
-                }
+                let expectedScheme: ColorScheme =
+                    switch theme.appearance {
+                    case .light: .light
+                    case .dark: .dark
+                    case .system: systemScheme
+                    }
                 #expect(renderedScheme == expectedScheme, "Wrong color scheme for \(theme)")
             }
         }
@@ -55,20 +61,26 @@ struct DockThemeStoreTests {
         let store = DockThemeStore.shared
         let savedTheme = store.selectedThemeID
         let savedAppearance = NSApp.appearance
-        defer { store.selectedThemeID = savedTheme; NSApp.appearance = savedAppearance }
+        defer {
+            store.selectedThemeID = savedTheme
+            NSApp.appearance = savedAppearance
+        }
         store.selectedThemeID = .clean
-        let bot = BotSummary(id: "nexus", name: "Nexus", title: nil, description: nil, model: nil,
-                             isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
-                             isHidden: false, hasAvatar: true, isDefault: true)
-        let tiff = try #require(BotFaceMark.still(id: bot.id, theme: .glass, originalColors: true).nsImage?.tiffRepresentation)
+        let bot = BotSummary(
+            id: "nexus", name: "Nexus", title: nil, description: nil, model: nil,
+            isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: true, isDefault: true)
+        let tiff = try #require(
+            BotFaceMark.still(id: bot.id, theme: .glass, originalColors: true).nsImage?.tiffRepresentation)
         let savedFace = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
         let faces = [
             AnyView(BotFaceMark(id: "nexus", size: 80)),
             AnyView(DockBotOrbitCanvas(id: "nexus", image: nil, size: 80, mood: .idle, pose: .rest)),
             AnyView(BotAvatarView(bot: bot, imageData: savedFace, size: 80, animated: false)),
-            AnyView(BotAvatarView(bot: bot, imageData: savedFace, size: 80, animated: false)
-                .environment(\.dockBotIndicatorFrame, DockBotIndicatorFrame(date: .distantPast, moves: false))),
-            AnyView(BotFaceMark(id: "nexus", size: 80, theme: .cartoon))
+            AnyView(
+                BotAvatarView(bot: bot, imageData: savedFace, size: 80, animated: false)
+                    .environment(\.dockBotIndicatorFrame, DockBotIndicatorFrame(date: .distantPast, moves: false))),
+            AnyView(BotFaceMark(id: "nexus", size: 80, theme: .cartoon)),
         ]
         let hosts = faces.map { NSHostingView(rootView: $0.frame(width: 120, height: 120)) }
         let windows = hosts.map { host in
@@ -104,13 +116,17 @@ struct DockThemeStoreTests {
         let store = DockThemeStore.shared
         let savedTheme = store.selectedThemeID
         let savedAppearance = NSApp.appearance
-        defer { store.selectedThemeID = savedTheme; NSApp.appearance = savedAppearance }
+        defer {
+            store.selectedThemeID = savedTheme
+            NSApp.appearance = savedAppearance
+        }
         for expanded in [false, true] {
             store.selectedThemeID = .retro
             let state = EdgeNotchState()
             state.side = .right
             state.expanded = expanded
-            let host = NSHostingView(rootView: EdgeNotchView(state: state, controlCenter: ControlCenterModel(), openDock: {}))
+            let host = NSHostingView(
+                rootView: EdgeNotchView(state: state, controlCenter: ControlCenterModel(), openDock: {}))
             host.frame = NSRect(origin: .zero, size: expanded ? state.openSize : state.collapsedSize)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -127,7 +143,8 @@ struct DockThemeStoreTests {
                 host.layoutSubtreeIfNeeded()
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
-                let actual = try #require(bitmap.colorAt(x: bitmap.pixelsWide - 8, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+                let actual = try #require(
+                    bitmap.colorAt(x: bitmap.pixelsWide - 8, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
                 var expectedColor: NSColor?
                 window.effectiveAppearance.performAsCurrentDrawingAppearance {
                     expectedColor = NSColor(DockThemePalette(theme: theme).background).usingColorSpace(.sRGB)
@@ -178,10 +195,15 @@ struct DockThemeStoreTests {
     }
 
     @Test func nativeMarkdownRecolorsUnchangedTextWhenThemeChanges() {
-        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
-        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let savedTheme = DockThemeRuntime.current
+        let savedRevision = DockThemeRuntime.revision
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision = savedRevision
+        }
         func textColor(_ view: NativeMarkdownTextSectionView) -> NSColor? {
-            (view.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)?.usingColorSpace(.sRGB)
+            (view.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)?.usingColorSpace(
+                .sRGB)
         }
         let view = NativeMarkdownTextSectionView()
         DockThemeRuntime.current = .warmLight
@@ -216,12 +238,24 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.warmLight.appearance == .light)
         #expect(DockThemeID.slate.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.glass, .clean, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .storm, .island])
-        #expect(DockThemeID.hermesClassic.style.motion == .snap && DockThemeID.cartoon.style.motion == .bouncy && DockThemeID.glass.style.motion == .float && DockThemeID.hud.style.motion == .mechanical)
+        #expect(
+            DockThemeID.hermOnly == [
+                .glass, .clean, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel,
+                .notebook, .hud, .storm, .island,
+            ])
+        #expect(
+            DockThemeID.hermesClassic.style.motion == .snap && DockThemeID.cartoon.style.motion == .bouncy
+                && DockThemeID.glass.style.motion == .float && DockThemeID.hud.style.motion == .mechanical)
         #expect(DockThemeID.notebook.style.motion == .glide)
-        #expect(DockThemeID.storm.appearance == .dark && DockThemeID.storm.style.backdrop == .rain && DockThemeID.storm.style.glow > 0)
-        #expect(DockThemeID.storm.style.selection == .neon && DockThemePalette(theme: .storm).neonHues.count == 3 && DockThemePalette(theme: .dusk).neonHues.isEmpty)
-        #expect(DockThemeID.hermesClassic.appearance == .system && DockThemeID.hermesClassic.style.backdrop == .etching && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
+        #expect(
+            DockThemeID.storm.appearance == .dark && DockThemeID.storm.style.backdrop == .rain
+                && DockThemeID.storm.style.glow > 0)
+        #expect(
+            DockThemeID.storm.style.selection == .neon && DockThemePalette(theme: .storm).neonHues.count == 3
+                && DockThemePalette(theme: .dusk).neonHues.isEmpty)
+        #expect(
+            DockThemeID.hermesClassic.appearance == .system && DockThemeID.hermesClassic.style.backdrop == .etching
+                && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
         #expect(DockThemeID.terminal.style.glow > 0 && DockThemeID.terminal.style.selection == .invert)
         #expect(DockThemeID.dusk.style.accentGradient && DockThemeID.warmLight.style.cardShadow > 0)
         #expect(DockThemeID.pixel.style.geometry == .pixel && !DockThemeID.pixel.style.animates)
@@ -233,7 +267,9 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.eInk.style.selection == .invert && !DockThemeID.eInk.style.animates)
         #expect(DockThemeID.swiss.style.chrome == .open && DockThemeID.swiss.presentation.composer == .line)
         #expect(DockThemeID.terminal.appearance == .dark && DockThemeID.terminal.style.fontDesign == .monospaced)
-        #expect(DockThemeID.glass.appearance == .system && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
+        #expect(
+            DockThemeID.glass.appearance == .system
+                && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
         #expect(DockThemeID.cartoon.appearance == .light)
         #expect(DockThemeID.cartoon.style.stickerShadow > 0 && DockThemeID.cartoon.style.fontDesign == .rounded)
         #expect(DockThemeID.origami.appearance == .light && DockThemeID.origami.style.geometry == .folded)
@@ -245,14 +281,19 @@ struct DockThemeStoreTests {
         let option = DockAppearanceCatalog.options(installedSkins: []).first { $0.themeID == .retro }
         #expect(option != nil && option?.isHermesInstalled == false)
         #expect(DockThemeID.retro.appearance == .light && DockThemeID.retro.style.bevel)
-        for theme in DockThemeID.allCases where ![.retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .storm].contains(theme) {
+        for theme in DockThemeID.allCases
+        where ![.retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .storm].contains(theme) {
             #expect(theme.presentation == DockSkinPresentation())
         }
     }
 
     @Test func switchingSkinRestylesUnchangedNativeTextAndRestoresDefaults() {
-        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
-        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let savedTheme = DockThemeRuntime.current
+        let savedRevision = DockThemeRuntime.revision
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision = savedRevision
+        }
         let view = NativeMarkdownTextSectionView()
         func apply(_ theme: DockThemeID) -> NSFont? {
             DockThemeRuntime.current = theme
@@ -294,8 +335,12 @@ struct DockThemeStoreTests {
         let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
-        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let savedTheme = DockThemeRuntime.current
+        let savedRevision = DockThemeRuntime.revision
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision = savedRevision
+        }
         let store = DockThemeStore(defaults: defaults, appliesToApplication: true)
         var runtimeSeenBySubscriber: DockThemeID?
         let observation = store.$selectedThemeID.dropFirst().sink { _ in
@@ -312,15 +357,23 @@ struct DockThemeStoreTests {
         let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
-        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let savedTheme = DockThemeRuntime.current
+        let savedRevision = DockThemeRuntime.revision
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision = savedRevision
+        }
         let store = DockThemeStore(defaults: defaults, appliesToApplication: true)
         store.selectedThemeID = .clean
         final class Flag: @unchecked Sendable { var isSet = false }
         let invalidated = Flag()
         // SwiftUI tracks view bodies the same way, so a view that only reads a
         // token (and whose inputs are unchanged) still re-renders.
-        withObservationTracking { _ = Color.dockSurface } onChange: { invalidated.isSet = true }
+        withObservationTracking {
+            _ = Color.dockSurface
+        } onChange: {
+            invalidated.isSet = true
+        }
 
         store.selectedThemeID = .terminal
 
@@ -331,7 +384,7 @@ struct DockThemeStoreTests {
         let skins = [
             AppearanceSkin(id: "slate", name: "Cool Blue", isActive: true),
             AppearanceSkin(id: "custom", name: "Custom local skin", isActive: false),
-            AppearanceSkin(id: "custom", name: "Duplicate custom skin", isActive: false)
+            AppearanceSkin(id: "custom", name: "Duplicate custom skin", isActive: false),
         ]
         let options = DockAppearanceCatalog.options(installedSkins: skins)
         #expect(options.count == DockThemeID.allCases.count)
@@ -363,11 +416,19 @@ struct DockThemeStoreTests {
             let s = t.style
             if t.title.isEmpty || t.detail.isEmpty { problems.append("\(t): missing title/detail") }
             if t.signature.isEmpty { problems.append("\(t): missing material signature") }
-            if DockThemeID.allCases.filter({ $0.title == t.title }).count > 1 { problems.append("\(t): duplicate title") }
-            if t.usesNativeMaterial && t.appearance != .system { problems.append("\(t): native material must follow the system appearance") }
-            if s.material == .glass && !t.usesNativeMaterial { problems.append("\(t): glass material requires native material") }
+            if DockThemeID.allCases.filter({ $0.title == t.title }).count > 1 {
+                problems.append("\(t): duplicate title")
+            }
+            if t.usesNativeMaterial && t.appearance != .system {
+                problems.append("\(t): native material must follow the system appearance")
+            }
+            if s.material == .glass && !t.usesNativeMaterial {
+                problems.append("\(t): glass material requires native material")
+            }
             if !(0.85...1).contains(s.pressScale) { problems.append("\(t): pressScale out of range") }
-            if s.controlRadius < 0 || s.paneRadius < 0 || s.outlineWidth < 0 { problems.append("\(t): negative geometry") }
+            if s.controlRadius < 0 || s.paneRadius < 0 || s.outlineWidth < 0 {
+                problems.append("\(t): negative geometry")
+            }
         }
         #expect(problems.isEmpty, Comment(rawValue: problems.joined(separator: "\n")))
     }
@@ -377,7 +438,8 @@ struct DockThemeStoreTests {
         defer { DockThemeRuntime.current = savedTheme }
         let rect = CGRect(x: 0, y: 0, width: 120, height: 60)
         for theme in DockThemeID.allCases {
-            let shape = DockThemeShape(cornerRadius: theme.style.paneRadius, role: .pane, geometry: theme.style.geometry)
+            let shape = DockThemeShape(
+                cornerRadius: theme.style.paneRadius, role: .pane, geometry: theme.style.geometry)
             DockThemeRuntime.current = .notebook
             let lightPath = shape.path(in: rect)
             DockThemeRuntime.current = .terminal

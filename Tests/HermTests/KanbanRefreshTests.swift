@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -13,10 +14,11 @@ struct KanbanRefreshTests {
         try await waitUntil { client.inventoryStarted }
 
         for board in ["other", "latest"] {
-            control.revealKanbanTask(KanbanTaskSummary(
-                id: "ready-task", boardSlug: board, title: "Work", status: "ready",
-                detail: nil, priority: nil, assignee: nil
-            ))
+            control.revealKanbanTask(
+                KanbanTaskSummary(
+                    id: "ready-task", boardSlug: board, title: "Work", status: "ready",
+                    detail: nil, priority: nil, assignee: nil
+                ))
         }
         client.holdInventory = false
         try await waitUntil { !control.isKanbanRefreshPending }
@@ -78,9 +80,15 @@ private final class SuspendedKanbanClient: HermesRPCClientProtocol {
             }
             return ["boards": [["slug": "old", "archived": false]]]
         }
-        return ["columns": [["tasks": [
-            ["id": "ready-task", "title": "Ready", "status": "ready"],
-            ["id": "done-task", "title": "Done", "status": "done"]
-        ]]]]
+        return [
+            "columns": [
+                [
+                    "tasks": [
+                        ["id": "ready-task", "title": "Ready", "status": "ready"],
+                        ["id": "done-task", "title": "Done", "status": "done"],
+                    ]
+                ]
+            ]
+        ]
     }
 }

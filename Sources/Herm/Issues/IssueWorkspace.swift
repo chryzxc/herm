@@ -14,7 +14,10 @@ struct IssueWorkspace: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        AdaptiveSplit(primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, hidesPrimary: hidesList, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
+        AdaptiveSplit(
+            primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, hidesPrimary: hidesList,
+            showsSecondary: showsDetail, onBack: { showsDetail = false }
+        ) {
             listPane.frame(idealWidth: 390, maxWidth: 460)
         } secondary: {
             IssueDetailView(center: center, onOpenChat: onOpenChat)
@@ -31,7 +34,10 @@ struct IssueWorkspace: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
-                if scenePhase == .active && center.errorMessage == nil { await center.refresh(projects: projects); await center.refreshSelectedDetail() }
+                if scenePhase == .active && center.errorMessage == nil {
+                    await center.refresh(projects: projects)
+                    await center.refreshSelectedDetail()
+                }
             }
         }
         .onDisappear { center.cancelLoads() }
@@ -50,15 +56,21 @@ struct IssueWorkspace: View {
                     } else if !center.hasLoaded && center.errorMessage != nil {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Issues unavailable").dockFont(.body, weight: .semibold)
-                            Text("Check your GitHub sign-in and try again.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
-                            Button("Try again") { refresh() }.buttonStyle(.dockCompact).foregroundStyle(Color.dockAccent)
+                            Text("Check your GitHub sign-in and try again.").dockFont(.body).foregroundStyle(
+                                Color.dockMetadataText)
+                            Button("Try again") { refresh() }.buttonStyle(.dockCompact).foregroundStyle(
+                                Color.dockAccent)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     } else if center.visible.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(center.hasActiveFilters ? "No issues match this view" : "No open issues")
                                 .dockFont(.body, weight: .semibold)
-                            Text(center.hasActiveFilters ? "Try another filter or search term." : "Issues from your repositories will appear here.")
-                                .dockFont(.body).foregroundStyle(Color.dockMetadataText)
+                            Text(
+                                center.hasActiveFilters
+                                    ? "Try another filter or search term."
+                                    : "Issues from your repositories will appear here."
+                            )
+                            .dockFont(.body).foregroundStyle(Color.dockMetadataText)
                             if center.hasActiveFilters {
                                 Button("Clear filters") { center.resetFilters() }
                                     .buttonStyle(.dockCompact)
@@ -76,8 +88,20 @@ struct IssueWorkspace: View {
                             .padding(.top, 6)
                             if !collapsedRepositories.contains(group.repository) {
                                 ForEach(group.issues) { issue in
-                                    Button { center.selectedIssueID = issue.id; showsDetail = true } label: {
-                                        HStack(spacing: 4) { IssueRowView(issue: issue, isSelected: center.selectedIssueID == issue.id, viewer: center.viewerLogin); if center.changedIDs.contains(issue.id) { Circle().fill(Color.dockAccent).frame(width: 6, height: 6).accessibilityLabel("Changed since last viewed").help("Changed on GitHub since last viewed") } }
+                                    Button {
+                                        center.selectedIssueID = issue.id
+                                        showsDetail = true
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            IssueRowView(
+                                                issue: issue, isSelected: center.selectedIssueID == issue.id,
+                                                viewer: center.viewerLogin)
+                                            if center.changedIDs.contains(issue.id) {
+                                                Circle().fill(Color.dockAccent).frame(width: 6, height: 6)
+                                                    .accessibilityLabel("Changed since last viewed").help(
+                                                        "Changed on GitHub since last viewed")
+                                            }
+                                        }
                                     }
                                     .buttonStyle(.dockHover)
                                 }
@@ -98,7 +122,9 @@ struct IssueWorkspace: View {
 
     private var issueToolbar: some View {
         VStack(spacing: 8) {
-            GitHubBrowseControls(kind: .issue, client: center.api.client, repositories: center.repositories, options: $center.browsing, refresh: refresh, onCreated: { openItem($0) }, isLoading: center.isRefreshing)
+            GitHubBrowseControls(
+                kind: .issue, client: center.api.client, repositories: center.repositories, options: $center.browsing,
+                refresh: refresh, onCreated: { openItem($0) }, isLoading: center.isRefreshing)
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
                 TextField("Search issues", text: $center.query)
@@ -106,19 +132,33 @@ struct IssueWorkspace: View {
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                    Color.dockControlSurface)
+            )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { filterTabs; Spacer(minLength: 8); repositoryPicker }
-                VStack(alignment: .leading, spacing: 8) { filterTabs; repositoryPicker }
+                HStack(spacing: 8) {
+                    filterTabs
+                    Spacer(minLength: 8)
+                    repositoryPicker
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    filterTabs
+                    repositoryPicker
+                }
             }.frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 6) {
-                    if center.errorMessage != nil { DockIcon(.warning, size: 12, color: Color.dockWarning) }
-                    Text(center.isRefreshing ? "Loading \(center.browsing.state.rawValue.lowercased()) issues…" : (center.errorMessage ?? center.coverage ?? "\(center.visible.count) issues")).foregroundStyle(center.errorMessage == nil ? Color.dockMetadataText : Color.dockWarning)
-                    Spacer(minLength: 0)
-                }.dockFont(.metadata).lineLimit(2).frame(height: 28, alignment: .leading)
+                if center.errorMessage != nil { DockIcon(.warning, size: 12, color: Color.dockWarning) }
+                Text(
+                    center.isRefreshing
+                        ? "Loading \(center.browsing.state.rawValue.lowercased()) issues…"
+                        : (center.errorMessage ?? center.coverage ?? "\(center.visible.count) issues")
+                ).foregroundStyle(center.errorMessage == nil ? Color.dockMetadataText : Color.dockWarning)
+                Spacer(minLength: 0)
+            }.dockFont(.metadata).lineLimit(2).frame(height: 28, alignment: .leading)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -129,7 +169,10 @@ struct IssueWorkspace: View {
     private var filterTabs: some View {
         HStack(spacing: 4) {
             ForEach(GitHubIssueFilter.allCases) { filter in
-                DockTabButton(title: center.hasLoaded ? "\(filter.rawValue)  \(center.count(for: filter))" : filter.rawValue, isSelected: center.filter == filter) {
+                DockTabButton(
+                    title: center.hasLoaded ? "\(filter.rawValue)  \(center.count(for: filter))" : filter.rawValue,
+                    isSelected: center.filter == filter
+                ) {
                     center.filter = filter
                 }
             }
@@ -151,14 +194,18 @@ struct IssueWorkspace: View {
             }
             .foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, 8).frame(height: 28)
-            .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
+            .background(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
+                    Color.dockControlSurface.opacity(0.6)))
         }.help("Filter loaded issues by repository")
     }
 
     private var issueLoadingRow: some View {
         VStack(alignment: .leading, spacing: 7) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.dockSurface4.opacity(0.6)).frame(height: 13)
-            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.dockSurface4.opacity(0.35)).frame(width: 190, height: 10)
+            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.dockSurface4.opacity(0.6)).frame(
+                height: 13)
+            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.dockSurface4.opacity(0.35)).frame(
+                width: 190, height: 10)
         }
         .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
         .padding(.horizontal, 14)
@@ -168,7 +215,11 @@ struct IssueWorkspace: View {
         Binding(
             get: { !collapsedRepositories.contains(repository) },
             set: { expanded in
-                if expanded { collapsedRepositories.remove(repository) } else { collapsedRepositories.insert(repository) }
+                if expanded {
+                    collapsedRepositories.remove(repository)
+                } else {
+                    collapsedRepositories.insert(repository)
+                }
             }
         )
     }
@@ -184,7 +235,10 @@ struct IssueWorkspacePage: View {
     let onOpenChat: (GitHubIssueRecord) -> Void
     @AppStorage("herm.repositoryListCollapsed") private var collapsed = false
     private var header: some View {
-        DockPageHeader(title: "Issues", subtitle: "Triage your GitHub work", onRefresh: { Task { await center.refresh(projects: projects) } }, isRefreshing: center.isRefreshing, sidebarCollapsed: $collapsed)
+        DockPageHeader(
+            title: "Issues", subtitle: "Triage your GitHub work",
+            onRefresh: { Task { await center.refresh(projects: projects) } }, isRefreshing: center.isRefreshing,
+            sidebarCollapsed: $collapsed)
     }
     var body: some View {
         VStack(spacing: 0) {

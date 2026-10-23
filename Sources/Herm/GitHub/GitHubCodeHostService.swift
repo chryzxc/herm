@@ -23,9 +23,15 @@ extension GitHubCodeHostError: CustomStringConvertible {
 }
 
 protocol GitHubCodeHostClient: Sendable {
-    func pullRequests(for repository: GitHubRepositoryReference) async -> Result<[GitHubPullRequestSummary], GitHubCodeHostError>
-    func createDraftPullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<GitHubPullRequestSummary, GitHubCodeHostError>
-    func updatePullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<GitHubPullRequestSummary, GitHubCodeHostError>
+    func pullRequests(for repository: GitHubRepositoryReference) async -> Result<
+        [GitHubPullRequestSummary], GitHubCodeHostError
+    >
+    func createDraftPullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<
+        GitHubPullRequestSummary, GitHubCodeHostError
+    >
+    func updatePullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<
+        GitHubPullRequestSummary, GitHubCodeHostError
+    >
 }
 
 struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
@@ -33,8 +39,14 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
     private let session: URLSession
     private let apiClient: GitHubClient
 
-    init(session: URLSession = .init(configuration: .ephemeral)) { self.session = session; self.apiClient = GitHubClient(transport: session) }
-    init(client: GitHubClient) { self.session = URLSession(configuration: .ephemeral); self.apiClient = client }
+    init(session: URLSession = .init(configuration: .ephemeral)) {
+        self.session = session
+        self.apiClient = GitHubClient(transport: session)
+    }
+    init(client: GitHubClient) {
+        self.session = URLSession(configuration: .ephemeral)
+        self.apiClient = client
+    }
 
     /// Shared by the read-only pull-request center. Tokens are never stored
     /// by Dock; this only consults the launch environment or `gh` keychain.
@@ -47,7 +59,8 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         let environment = ProcessInfo.processInfo.environment
         if let token = [environment["GH_TOKEN"], environment["GITHUB_TOKEN"]]
             .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
-            .first(where: { !$0.isEmpty }) {
+            .first(where: { !$0.isEmpty })
+        {
             return token
         }
         return await GitHubTokenCache.shared.token { resolveGHCLIToken() }
@@ -61,7 +74,9 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         for executable in candidates {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable == "gh" ? "/usr/bin/env" : executable)
-            process.arguments = executable == "gh" ? ["gh", "auth", "token", "--hostname", "github.com"] : ["auth", "token", "--hostname", "github.com"]
+            process.arguments =
+                executable == "gh"
+                ? ["gh", "auth", "token", "--hostname", "github.com"] : ["auth", "token", "--hostname", "github.com"]
             // GUI-launched apps may not inherit the shell's HOME. Pin gh to
             // the signed-in user's standard config directory so Dock and the
             // terminal consult the same hosts.yml.
@@ -100,8 +115,12 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         let iso = ISO8601DateFormatter()
         var components = URLComponents(string: "https://api.github.com/search/issues")!
         components.queryItems = [
-            URLQueryItem(name: "q", value: "is:pr is:merged author:@me merged:\(iso.string(from: since))..\(iso.string(from: until.addingTimeInterval(-1)))"),
-            URLQueryItem(name: "per_page", value: "100")
+            URLQueryItem(
+                name: "q",
+                value:
+                    "is:pr is:merged author:@me merged:\(iso.string(from: since))..\(iso.string(from: until.addingTimeInterval(-1)))"
+            ),
+            URLQueryItem(name: "per_page", value: "100"),
         ]
         guard let url = components.url else { return [] }
         var request = URLRequest(url: url)
@@ -110,25 +129,35 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (data, response) = try? await session.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let items = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["items"] as? [[String: Any]] else { return [] }
+            (response as? HTTPURLResponse)?.statusCode == 200,
+            let items = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["items"] as? [[String: Any]]
+        else { return [] }
         return items.compactMap { item in
             guard let number = item["number"] as? Int, let title = item["title"] as? String,
-                  let repoURL = item["repository_url"] as? String,
-                  let merged = ((item["pull_request"] as? [String: Any])?["merged_at"] as? String) ?? (item["closed_at"] as? String),
-                  let date = WorkCalendarIndex.parseDate(merged) else { return nil }
-            return WorkPullRequest(repo: String(repoURL.split(separator: "/").last ?? ""), number: number, title: title,
-                                   url: (item["html_url"] as? String).flatMap(URL.init), mergedAt: date)
+                let repoURL = item["repository_url"] as? String,
+                let merged = ((item["pull_request"] as? [String: Any])?["merged_at"] as? String)
+                    ?? (item["closed_at"] as? String),
+                let date = WorkCalendarIndex.parseDate(merged)
+            else { return nil }
+            return WorkPullRequest(
+                repo: String(repoURL.split(separator: "/").last ?? ""), number: number, title: title,
+                url: (item["html_url"] as? String).flatMap(URL.init), mergedAt: date)
         }
     }
 
-    func pullRequests(for repository: GitHubRepositoryReference) async -> Result<[GitHubPullRequestSummary], GitHubCodeHostError> {
+    func pullRequests(for repository: GitHubRepositoryReference) async -> Result<
+        [GitHubPullRequestSummary], GitHubCodeHostError
+    > {
         let rows: [[String: Any]]
         do {
-            guard let response = try await requestJSON(repository: repository, suffix: "/pulls", query: [URLQueryItem(name: "state", value: "open"), URLQueryItem(name: "per_page", value: "20")]) as? [[String: Any]] else { return .failure(.malformedResponse) }
+            guard
+                let response = try await requestJSON(
+                    repository: repository, suffix: "/pulls",
+                    query: [URLQueryItem(name: "state", value: "open"), URLQueryItem(name: "per_page", value: "20")])
+                    as? [[String: Any]]
+            else { return .failure(.malformedResponse) }
             rows = response
-        } catch let error as GitHubCodeHostError { return .failure(error) }
-        catch { return .failure(.unavailable) }
+        } catch let error as GitHubCodeHostError { return .failure(error) } catch { return .failure(.unavailable) }
         guard !rows.isEmpty else { return .success([]) }
         var result: [GitHubPullRequestSummary] = []
         for row in rows {
@@ -138,49 +167,82 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         return .success(result)
     }
 
-    func createDraftPullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<GitHubPullRequestSummary, GitHubCodeHostError> {
+    func createDraftPullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<
+        GitHubPullRequestSummary, GitHubCodeHostError
+    > {
         guard mutation.kind == .createDraft,
-              mutation.headBranch != nil,
-              mutation.baseBranch != nil else { return .failure(.malformedResponse) }
-        return await mutate(repository: mutation.repository, suffix: GitHubPullRequestMutationWire.path(for: mutation), method: GitHubPullRequestMutationWire.method(for: mutation), payload: GitHubPullRequestMutationWire.payload(for: mutation))
+            mutation.headBranch != nil,
+            mutation.baseBranch != nil
+        else { return .failure(.malformedResponse) }
+        return await mutate(
+            repository: mutation.repository, suffix: GitHubPullRequestMutationWire.path(for: mutation),
+            method: GitHubPullRequestMutationWire.method(for: mutation),
+            payload: GitHubPullRequestMutationWire.payload(for: mutation))
     }
 
-    func updatePullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<GitHubPullRequestSummary, GitHubCodeHostError> {
+    func updatePullRequest(_ mutation: GitHubPullRequestMutation) async -> Result<
+        GitHubPullRequestSummary, GitHubCodeHostError
+    > {
         guard mutation.kind == .updateTitleAndBody, mutation.number != nil else { return .failure(.malformedResponse) }
-        return await mutate(repository: mutation.repository, suffix: GitHubPullRequestMutationWire.path(for: mutation), method: GitHubPullRequestMutationWire.method(for: mutation), payload: GitHubPullRequestMutationWire.payload(for: mutation))
+        return await mutate(
+            repository: mutation.repository, suffix: GitHubPullRequestMutationWire.path(for: mutation),
+            method: GitHubPullRequestMutationWire.method(for: mutation),
+            payload: GitHubPullRequestMutationWire.payload(for: mutation))
     }
 
-    private func mutate(repository: GitHubRepositoryReference, suffix: String, method: String, payload: [String: Any]) async -> Result<GitHubPullRequestSummary, GitHubCodeHostError> {
+    private func mutate(repository: GitHubRepositoryReference, suffix: String, method: String, payload: [String: Any])
+        async -> Result<GitHubPullRequestSummary, GitHubCodeHostError>
+    {
         do {
-            guard let response = try await requestJSON(repository: repository, suffix: suffix, method: method, body: payload) as? [String: Any],
-                  let summary = GitHubPullRequestParser.parse(response) else { return .failure(.malformedResponse) }
+            guard
+                let response = try await requestJSON(
+                    repository: repository, suffix: suffix, method: method, body: payload) as? [String: Any],
+                let summary = GitHubPullRequestParser.parse(response)
+            else { return .failure(.malformedResponse) }
             return .success(summary)
-        } catch let error as GitHubCodeHostError { return .failure(error) }
-        catch { return .failure(.unavailable) }
+        } catch let error as GitHubCodeHostError { return .failure(error) } catch { return .failure(.unavailable) }
     }
 
-    private func enrich(_ summary: GitHubPullRequestSummary, repository: GitHubRepositoryReference) async -> GitHubPullRequestSummary {
-        guard let detail = try? await requestJSON(repository: repository, suffix: "/pulls/\(summary.number)") as? [String: Any] else { return summary }
+    private func enrich(_ summary: GitHubPullRequestSummary, repository: GitHubRepositoryReference) async
+        -> GitHubPullRequestSummary
+    {
+        guard
+            let detail = try? await requestJSON(repository: repository, suffix: "/pulls/\(summary.number)")
+                as? [String: Any]
+        else { return summary }
         var payload = detail
         if let sha = (detail["head"] as? [String: Any])?["sha"] as? String {
-            if let checks = try? await requestJSON(repository: repository, suffix: "/commits/\(sha)/check-runs", query: [URLQueryItem(name: "per_page", value: "50")]) as? [String: Any], let rows = checks["check_runs"] as? [[String: Any]] {
+            if let checks = try? await requestJSON(
+                repository: repository, suffix: "/commits/\(sha)/check-runs",
+                query: [URLQueryItem(name: "per_page", value: "50")]) as? [String: Any],
+                let rows = checks["check_runs"] as? [[String: Any]]
+            {
                 payload["checks"] = rows
             }
         }
-        if let reviews = try? await requestJSON(repository: repository, suffix: "/pulls/\(summary.number)/reviews", query: [URLQueryItem(name: "per_page", value: "50")]) as? [[String: Any]] {
+        if let reviews = try? await requestJSON(
+            repository: repository, suffix: "/pulls/\(summary.number)/reviews",
+            query: [URLQueryItem(name: "per_page", value: "50")]) as? [[String: Any]]
+        {
             payload["reviews"] = reviews
         }
         return GitHubPullRequestParser.parse(payload) ?? summary
     }
 
-    private func requestJSON(repository: GitHubRepositoryReference, suffix: String, method: String = "GET", query: [URLQueryItem] = [], body: [String: Any]? = nil) async throws -> Any {
+    private func requestJSON(
+        repository: GitHubRepositoryReference, suffix: String, method: String = "GET", query: [URLQueryItem] = [],
+        body: [String: Any]? = nil
+    ) async throws -> Any {
         var parameters: [String: String] = [:]
         for item in query { parameters[item.name] = item.value }
-        do { return try await apiClient.request(repository.apiRepositoryPath + suffix, query: parameters, method: method, body: body) }
-        catch GitHubRequestError.unauthorized { throw GitHubCodeHostError.unauthorized }
-        catch GitHubRequestError.forbidden { throw GitHubCodeHostError.forbidden }
-        catch GitHubRequestError.notFound { throw GitHubCodeHostError.repositoryNotFound }
-        catch { throw GitHubCodeHostError.unavailable }
+        do {
+            return try await apiClient.request(
+                repository.apiRepositoryPath + suffix, query: parameters, method: method, body: body)
+        } catch GitHubRequestError.unauthorized { throw GitHubCodeHostError.unauthorized } catch GitHubRequestError
+            .forbidden
+        { throw GitHubCodeHostError.forbidden } catch GitHubRequestError.notFound {
+            throw GitHubCodeHostError.repositoryNotFound
+        } catch { throw GitHubCodeHostError.unavailable }
     }
 
     /// Only an HTTP 401 is proof that the credential itself needs attention.

@@ -1,159 +1,180 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
     var kanbanContent: some View {
         VStack(spacing: 0) {
-        pageHeader
-        AdaptiveSplit(breakpoint: 940, primaryMinWidth: 560, showsSecondary: selectedKanbanTask != nil, onBack: nil) {
-            // Header and toolbar stay fixed; the board takes the remaining
-            // height so each lane scrolls its own cards.
-            VStack(alignment: .leading, spacing: 0) {
+            pageHeader
+            AdaptiveSplit(breakpoint: 940, primaryMinWidth: 560, showsSecondary: selectedKanbanTask != nil, onBack: nil)
+            {
+                // Header and toolbar stay fixed; the board takes the remaining
+                // height so each lane scrolls its own cards.
+                VStack(alignment: .leading, spacing: 0) {
 
-                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                         if titleRow == nil { kanbanToolbar }
 
-                        if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly, isShowingKanbanComposer {
+                        if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly,
+                            isShowingKanbanComposer
+                        {
                             createKanbanTaskForm
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         } else if kanbanCurrentSessionOnly {
-                            DockIconLabel("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", icon: .link)
-                                .dockFont(.compactStatus, weight: .regular)
-                                .foregroundStyle(Color.dockMetadataText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-            if !control.kanbanDiagnostics.isEmpty {
-                DisclosureGroup(isExpanded: $isKanbanHealthExpanded) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(control.kanbanDiagnostics) { diagnostic in
-                            Button {
-                                if let taskID = diagnostic.taskID,
-                                   let task = control.kanbanTasks.first(where: { $0.id == taskID }) {
-                                    selectKanbanTask(task)
-                                }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text(diagnostic.severity.uppercased())
-                                        .foregroundStyle(diagnostic.severity.lowercased() == "error" ? Color.dockDestructive : Color.dockWarning)
-                                    Text(diagnostic.title)
-                                        .foregroundStyle(Color.dockSecondaryText)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    if diagnostic.taskID != nil { DockIcon(.caretRight) }
-                                }
-                                .dockFont(.metadata)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 5)
-                            }
-                            .buttonStyle(.dockHover)
-                            .disabled(diagnostic.taskID == nil)
-                        }
-                    }
-                    .padding(.top, 5)
-                } label: {
-                    HStack(spacing: 7) {
-                        DockIcon(.stethoscope)
-                            .foregroundStyle(Color.dockWarning)
-                        Text("Kanban health")
-                            .dockFont(.metadata, weight: .semibold)
-                        Text("\(control.kanbanDiagnostics.count)")
-                            .dockFont(.compactStatus, weight: .regular, design: .monospaced)
+                            DockIconLabel(
+                                "Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.",
+                                icon: .link
+                            )
+                            .dockFont(.compactStatus, weight: .regular)
                             .foregroundStyle(Color.dockMetadataText)
-                        Spacer()
-                        DockMenu(kanbanDiagnosticSeverity) {
-                            ForEach(["ALL", "ERROR", "WARNING", "INFO"], id: \.self) { severity in
-                                Button(severity) {
-                                    kanbanDiagnosticSeverity = severity
-                                    control.refreshKanbanDiagnostics(severity: severity == "ALL" ? nil : severity.lowercased())
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if !control.kanbanDiagnostics.isEmpty {
+                            DisclosureGroup(isExpanded: $isKanbanHealthExpanded) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(control.kanbanDiagnostics) { diagnostic in
+                                        Button {
+                                            if let taskID = diagnostic.taskID,
+                                                let task = control.kanbanTasks.first(where: { $0.id == taskID })
+                                            {
+                                                selectKanbanTask(task)
+                                            }
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Text(diagnostic.severity.uppercased())
+                                                    .foregroundStyle(
+                                                        diagnostic.severity.lowercased() == "error"
+                                                            ? Color.dockDestructive : Color.dockWarning)
+                                                Text(diagnostic.title)
+                                                    .foregroundStyle(Color.dockSecondaryText)
+                                                    .lineLimit(1)
+                                                Spacer()
+                                                if diagnostic.taskID != nil { DockIcon(.caretRight) }
+                                            }
+                                            .dockFont(.metadata)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.vertical, 5)
+                                        }
+                                        .buttonStyle(.dockHover)
+                                        .disabled(diagnostic.taskID == nil)
+                                    }
+                                }
+                                .padding(.top, 5)
+                            } label: {
+                                HStack(spacing: 7) {
+                                    DockIcon(.stethoscope)
+                                        .foregroundStyle(Color.dockWarning)
+                                    Text("Kanban health")
+                                        .dockFont(.metadata, weight: .semibold)
+                                    Text("\(control.kanbanDiagnostics.count)")
+                                        .dockFont(.compactStatus, weight: .regular, design: .monospaced)
+                                        .foregroundStyle(Color.dockMetadataText)
+                                    Spacer()
+                                    DockMenu(kanbanDiagnosticSeverity) {
+                                        ForEach(["ALL", "ERROR", "WARNING", "INFO"], id: \.self) { severity in
+                                            Button(severity) {
+                                                kanbanDiagnosticSeverity = severity
+                                                control.refreshKanbanDiagnostics(
+                                                    severity: severity == "ALL" ? nil : severity.lowercased())
+                                            }
+                                        }
+                                    }
+                                    .dockFont(.compactStatus, weight: .regular)
+                                    Button {
+                                        control.refreshKanbanDiagnostics(
+                                            severity: kanbanDiagnosticSeverity == "ALL"
+                                                ? nil : kanbanDiagnosticSeverity.lowercased())
+                                    } label: {
+                                        DockIcon(.arrowsClockwise)
+                                    }
+                                    .buttonStyle(.dockHover)
+                                    .foregroundStyle(Color.dockAccent)
                                 }
                             }
+                            .disclosureGroupStyle(DockDisclosureGroupStyle())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(Color.dockWarning.opacity(0.06))
+                            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                         }
-                        .dockFont(.compactStatus, weight: .regular)
-                        Button {
-                            control.refreshKanbanDiagnostics(severity: kanbanDiagnosticSeverity == "ALL" ? nil : kanbanDiagnosticSeverity.lowercased())
-                        } label: {
-                            DockIcon(.arrowsClockwise)
+
+                        if control.kanbanTasks.isEmpty, control.refreshState(for: "kanban.board")?.lastSuccess == nil,
+                            control.isKanbanRefreshPending
+                                || control.refreshState(for: "kanban.board")?.isRefreshing == true
+                        {
+                            DockLoadingState(title: "Loading board…", detail: "Reading Kanban tasks from Hermes.")
+                        } else {
+                            kanbanBoard
+                                .frame(maxHeight: .infinity)
                         }
-                        .buttonStyle(.dockHover)
-                        .foregroundStyle(Color.dockAccent)
+                        if let state = control.refreshState(for: "kanban.board"), let error = state.error {
+                            HStack(alignment: .top, spacing: 8) {
+                                DockIcon(.warning)
+                                    .dockFont(.body, weight: .medium)
+                                Text(state.isStale ? "Showing the last successful board. \(error)" : error)
+                                    .dockFont(.navigation)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .foregroundStyle(Color.dockWarning)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 9)
+                            .background(Color.dockWarning.opacity(0.07))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                                    Color.dockWarning.opacity(0.34), lineWidth: 0.5)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onChange(of: control.requestedKanbanTask, initial: true) { _, task in
+                    guard let task else { return }
+                    control.requestedKanbanTask = nil
+                    kanbanStatusFilter = "All"
+                    kanbanAssigneeFilter = "All"
+                    kanbanMineOnly = false
+                    kanbanCurrentSessionOnly = false
+                    applyKanbanFilters()
+                    selectKanbanTask(task)
+                }
+                .onChange(of: control.kanbanTasks.map(\.id)) { _, ids in
+                    // Board navigation clears the old list while fetching the new
+                    // board. Keep a notch-selected card through that transition.
+                    if ids.isEmpty, control.isKanbanRefreshPending { return }
+                    if let selectedKanbanTask, !ids.contains(selectedKanbanTask.id) {
+                        self.selectedKanbanTask = nil
                     }
                 }
-                .disclosureGroupStyle(DockDisclosureGroupStyle())
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color.dockWarning.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            }
 
-            if control.kanbanTasks.isEmpty, control.refreshState(for: "kanban.board")?.lastSuccess == nil,
-               control.isKanbanRefreshPending || control.refreshState(for: "kanban.board")?.isRefreshing == true {
-                DockLoadingState(title: "Loading board…", detail: "Reading Kanban tasks from Hermes.")
-            } else {
-                kanbanBoard
-                    .frame(maxHeight: .infinity)
-            }
-            if let state = control.refreshState(for: "kanban.board"), let error = state.error {
-                HStack(alignment: .top, spacing: 8) {
-                    DockIcon(.warning)
-                        .dockFont(.body, weight: .medium)
-                    Text(state.isStale ? "Showing the last successful board. \(error)" : error)
-                        .dockFont(.navigation)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(Color.dockWarning)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .background(Color.dockWarning.opacity(0.07))
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockWarning.opacity(0.34), lineWidth: 0.5))
-                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                .frame(maxHeight: .infinity, alignment: .top)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onChange(of: control.requestedKanbanTask, initial: true) { _, task in
-                guard let task else { return }
-                control.requestedKanbanTask = nil
-                kanbanStatusFilter = "All"
-                kanbanAssigneeFilter = "All"
-                kanbanMineOnly = false
-                kanbanCurrentSessionOnly = false
-                applyKanbanFilters()
-                selectKanbanTask(task)
-            }
-            .onChange(of: control.kanbanTasks.map(\.id)) { _, ids in
-                // Board navigation clears the old list while fetching the new
-                // board. Keep a notch-selected card through that transition.
-                if ids.isEmpty, control.isKanbanRefreshPending { return }
-                if let selectedKanbanTask, !ids.contains(selectedKanbanTask.id) {
-                    self.selectedKanbanTask = nil
-                }
-            }
-
-        } secondary: {
-            if let task = selectedKanbanTask {
-                // Bot lookup only; card details are not needed by the inspector.
-                kanbanDetailPanel(task, presentation: KanbanBoardPresentation.makeSnapshot(
-                    tasks: [],
-                    bots: botMode.bots,
-                    visibleBots: botMode.visibleBots
-                ))
+            } secondary: {
+                if let task = selectedKanbanTask {
+                    // Bot lookup only; card details are not needed by the inspector.
+                    kanbanDetailPanel(
+                        task,
+                        presentation: KanbanBoardPresentation.makeSnapshot(
+                            tasks: [],
+                            bots: botMode.bots,
+                            visibleBots: botMode.visibleBots
+                        )
+                    )
                     .animation(.dockEase(duration: 0.2), value: selectedKanbanTask?.id)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
-        }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: selectedMode == .kanban) {
             guard selectedMode == .kanban else { return }
             while !Task.isCancelled {
                 let hasLiveCards = control.kanbanTasks.contains {
-                    ["running", "claimed", "in_progress", "blocked", "review", "waiting"].contains($0.status.lowercased())
+                    ["running", "claimed", "in_progress", "blocked", "review", "waiting"].contains(
+                        $0.status.lowercased())
                 }
                 try? await Task.sleep(for: hasLiveCards ? .seconds(5) : .seconds(15))
                 guard !Task.isCancelled, selectedMode == .kanban else { return }
@@ -261,7 +282,8 @@ extension WorkspaceActivitySidebar {
                         isShowingKanbanComposer.toggle()
                     }
                 } label: {
-                    DockIconLabel(isShowingKanbanComposer ? "Close" : "Add task", icon: isShowingKanbanComposer ? .x : .plus)
+                    DockIconLabel(
+                        isShowingKanbanComposer ? "Close" : "Add task", icon: isShowingKanbanComposer ? .x : .plus)
                 }
                 .buttonStyle(.dockPrimary)
                 .dockFont(.metadata, weight: .semibold)
@@ -317,7 +339,10 @@ extension WorkspaceActivitySidebar {
             }
             DockMenu {
                 ForEach(["updated", "created-desc", "priority-desc", "title"], id: \.self) { value in
-                    Button(kanbanSortLabel(value)) { kanbanSort = value; applyKanbanFilters() }
+                    Button(kanbanSortLabel(value)) {
+                        kanbanSort = value
+                        applyKanbanFilters()
+                    }
                 }
             } label: {
                 kanbanFilterChip(kanbanSort == "updated" ? "Sort" : kanbanSortLabel(kanbanSort), icon: .arrowsDownUp)
@@ -330,10 +355,15 @@ extension WorkspaceActivitySidebar {
     }
 
     var kanbanAssigneeOptions: [String] {
-        Set(control.kanbanAssignees + control.kanbanTasks.compactMap { task in
-            guard let assignee = task.assignee?.trimmingCharacters(in: .whitespacesAndNewlines), !assignee.isEmpty else { return nil }
-            return assignee
-        }).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        Set(
+            control.kanbanAssignees
+                + control.kanbanTasks.compactMap { task in
+                    guard let assignee = task.assignee?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        !assignee.isEmpty
+                    else { return nil }
+                    return assignee
+                }
+        ).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     func kanbanSortLabel(_ value: String) -> String {
@@ -520,13 +550,14 @@ extension WorkspaceActivitySidebar {
     func applyKanbanFilters(
         trigger: ControlCenterModel.KanbanRefreshTrigger = .user
     ) {
-        control.refreshVisibleKanban(filter: KanbanListFilter(
-            status: kanbanStatusFilter == "All" ? nil : kanbanStatusFilter.lowercased(),
-            assignee: kanbanAssigneeFilter == "All" ? nil : kanbanAssigneeFilter,
-            mine: kanbanMineOnly,
-            sessionID: kanbanCurrentSessionOnly ? model.kanbanSessionID : nil,
-            sort: kanbanSort
-        ), trigger: trigger)
+        control.refreshVisibleKanban(
+            filter: KanbanListFilter(
+                status: kanbanStatusFilter == "All" ? nil : kanbanStatusFilter.lowercased(),
+                assignee: kanbanAssigneeFilter == "All" ? nil : kanbanAssigneeFilter,
+                mine: kanbanMineOnly,
+                sessionID: kanbanCurrentSessionOnly ? model.kanbanSessionID : nil,
+                sort: kanbanSort
+            ), trigger: trigger)
     }
 
     var createKanbanTaskForm: some View {
@@ -567,13 +598,21 @@ extension WorkspaceActivitySidebar {
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                        Color.dockSurface)
+                )
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2)
+        )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).stroke(
+                Color.dockBorder, lineWidth: 0.5))
     }
 
     func selectKanbanTask(_ task: KanbanTaskSummary) {
@@ -649,7 +688,8 @@ extension WorkspaceActivitySidebar {
     }
 
     func isRedundantKanbanStatus(_ event: String, for lane: KanbanLane) -> Bool {
-        let normalizedEvent = event
+        let normalizedEvent =
+            event
             .lowercased()
             .replacingOccurrences(of: "_", with: "")
             .replacingOccurrences(of: " ", with: "")
@@ -666,7 +706,8 @@ extension WorkspaceActivitySidebar {
         let lane = KanbanBoardPresentation.lane(for: task.status)
         let laneColor = lane.color
 
-        let detail = control.kanbanDetail ?? ControlCenterModel.fallbackKanbanTaskDetail(task, boardSlug: task.boardSlug)
+        let detail =
+            control.kanbanDetail ?? ControlCenterModel.fallbackKanbanTaskDetail(task, boardSlug: task.boardSlug)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -751,14 +792,19 @@ extension WorkspaceActivitySidebar {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack(spacing: 7) {
                                 kanbanMetadataPill(detail.status.capitalized, tint: laneColor)
-                                if let priority = detail.priority { kanbanMetadataPill("P\(priority)", tint: .dockSecondaryText) }
-                                if let assignee = detail.assignee { kanbanAssigneePill(assignee, presentation: presentation) }
+                                if let priority = detail.priority {
+                                    kanbanMetadataPill("P\(priority)", tint: .dockSecondaryText)
+                                }
+                                if let assignee = detail.assignee {
+                                    kanbanAssigneePill(assignee, presentation: presentation)
+                                }
                             }
-                            kanbanModelMetadataRow(KanbanModelMetadataPresentation.make(
-                                taskModel: detail.modelOverride ?? task.modelOverride,
-                                taskProvider: detail.providerOverride ?? task.providerOverride,
-                                bot: presentation.bot(for: detail.assignee ?? task.assignee)
-                            ))
+                            kanbanModelMetadataRow(
+                                KanbanModelMetadataPresentation.make(
+                                    taskModel: detail.modelOverride ?? task.modelOverride,
+                                    taskProvider: detail.providerOverride ?? task.providerOverride,
+                                    bot: presentation.bot(for: detail.assignee ?? task.assignee)
+                                ))
                             if let why = detail.blockExplanation { kanbanBlockExplanation(why) }
                             if let body = detail.body, !body.isEmpty {
                                 MarkdownMessageView(markdown: body)
@@ -829,7 +875,9 @@ extension WorkspaceActivitySidebar {
     /// Events and comments merged, newest first, capped so a long run stays light.
     func kanbanTimeline(_ detail: KanbanTaskDetail) -> [KanbanTimelineRow] {
         let events = detail.events.map {
-            KanbanTimelineRow(id: "e-\($0.id)", title: $0.kind.replacingOccurrences(of: "_", with: " ").capitalized, text: $0.note, date: $0.createdAt)
+            KanbanTimelineRow(
+                id: "e-\($0.id)", title: $0.kind.replacingOccurrences(of: "_", with: " ").capitalized, text: $0.note,
+                date: $0.createdAt)
         }
         let comments = detail.comments.map {
             KanbanTimelineRow(id: "c-\($0.id)", title: "\($0.author) commented", text: $0.body, date: $0.createdAt)
@@ -871,11 +919,13 @@ extension WorkspaceActivitySidebar {
                                 Spacer()
                                 if let date = row.date {
                                     Text(date.formatted(date: .omitted, time: .standard))
-                                        .dockFont(.compactStatus, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText)
+                                        .dockFont(.compactStatus, weight: .regular, design: .monospaced)
+                                        .foregroundStyle(Color.dockMetadataText)
                                 }
                             }
                             if let text = row.text {
-                                Text(text).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                                Text(text).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).textSelection(
+                                    .enabled)
                             }
                         }
                         .padding(.vertical, 6)
@@ -899,8 +949,13 @@ extension WorkspaceActivitySidebar {
                             }
                             .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
-                            if let profile = run.profile { Text(profile).dockFont(.compactStatus, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText) }
-                            if let summary = run.summary { Text(summary).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText) }
+                            if let profile = run.profile {
+                                Text(profile).dockFont(.compactStatus, weight: .regular, design: .monospaced)
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
+                            if let summary = run.summary {
+                                Text(summary).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                            }
                         }
                         .padding(.vertical, 7)
                         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -911,7 +966,9 @@ extension WorkspaceActivitySidebar {
     }
 
     func kanbanBlockExplanation(_ why: KanbanTaskDetail.BlockExplanation) -> some View {
-        kanbanInspectorSection("WHY BLOCKED" + (why.kind.map { " · \($0.replacingOccurrences(of: "_", with: " "))" } ?? "")) {
+        kanbanInspectorSection(
+            "WHY BLOCKED" + (why.kind.map { " · \($0.replacingOccurrences(of: "_", with: " "))" } ?? "")
+        ) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(why.reason ?? "No reason was recorded.")
                     .dockFont(.body, weight: .medium)
@@ -947,18 +1004,22 @@ extension WorkspaceActivitySidebar {
             .dockFont(.body, weight: .semibold)
             .foregroundStyle(Color.dockSecondaryText)
             .frame(width: 28, height: 28)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.6)))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
+                    Color.dockSurface2.opacity(0.6))
+            )
             .contentShape(Rectangle())
     }
 
     /// Same lane rules as the card menu, plus the edit-style mutations.
     @ViewBuilder
     func kanbanDetailActions(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
-        let statusActions: [KanbanTaskAction] = switch lane {
-        case .done: [.archive]
-        case .blocked: [.unblock, .archive]
-        default: [.complete, .block, .archive]
-        }
+        let statusActions: [KanbanTaskAction] =
+            switch lane {
+            case .done: [.archive]
+            case .blocked: [.unblock, .archive]
+            default: [.complete, .block, .archive]
+            }
         let available = statusActions.filter { control.capabilityAvailable("kanban.\($0.rawValue)") }
         let mutations = KanbanMutationKind.allCases.filter { control.capabilityAvailable($0.capabilityID) }
         ForEach(available, id: \.self) { action in

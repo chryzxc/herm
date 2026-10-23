@@ -1,11 +1,15 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct VerificationRecipesTests {
     @Test func recipesAcceptKnownVerificationCommandsAndDeduplicate() {
-        let facts = ProjectFactsSummary(root: "/workspace/project", manifests: ["Package.swift"], packageManagers: ["swift"], verifyCommands: ["swift test", "swift test", "rm -rf .", "swift build -c release"], contextFiles: [])
-        let repository = RepositorySnapshot(path: "/workspace/project", branch: "main", changedFiles: 0, latestCommit: "abc", isGitRepository: true)
+        let facts = ProjectFactsSummary(
+            root: "/workspace/project", manifests: ["Package.swift"], packageManagers: ["swift"],
+            verifyCommands: ["swift test", "swift test", "rm -rf .", "swift build -c release"], contextFiles: [])
+        let repository = RepositorySnapshot(
+            path: "/workspace/project", branch: "main", changedFiles: 0, latestCommit: "abc", isGitRepository: true)
 
         let recipes = VerificationRecipeBuilder.make(facts: facts, repository: repository)
 
@@ -25,7 +29,9 @@ struct VerificationRecipesTests {
     }
 
     @Test func recipeRunsBecomeStaleWhenRepositoryIdentityOrFingerprintChanges() {
-        let run = VerificationRun(id: UUID(), recipeID: "test:swift test", repositoryID: "/repo", repositoryFingerprint: "abc", command: "swift test", startedAt: .now, finishedAt: .now, exitCode: 0, outputSummary: "passed")
+        let run = VerificationRun(
+            id: UUID(), recipeID: "test:swift test", repositoryID: "/repo", repositoryFingerprint: "abc",
+            command: "swift test", startedAt: .now, finishedAt: .now, exitCode: 0, outputSummary: "passed")
 
         #expect(run.isCurrent(repositoryFingerprint: "abc", repositoryID: "/repo"))
         #expect(!run.isCurrent(repositoryFingerprint: "def", repositoryID: "/repo"))
@@ -34,7 +40,10 @@ struct VerificationRecipesTests {
 
     @Test func verificationRunReportsBoundedDurationLabel() {
         let start = Date(timeIntervalSince1970: 100)
-        let complete = VerificationRun(id: UUID(), recipeID: "test:swift test", repositoryID: "repo", repositoryFingerprint: "fp", command: "swift test", startedAt: start, finishedAt: start.addingTimeInterval(2.26), exitCode: 0, outputSummary: "ok")
+        let complete = VerificationRun(
+            id: UUID(), recipeID: "test:swift test", repositoryID: "repo", repositoryFingerprint: "fp",
+            command: "swift test", startedAt: start, finishedAt: start.addingTimeInterval(2.26), exitCode: 0,
+            outputSummary: "ok")
         #expect(abs((complete.duration ?? 0) - 2.26) < 0.001)
         #expect(complete.durationLabel == "2.3s")
     }

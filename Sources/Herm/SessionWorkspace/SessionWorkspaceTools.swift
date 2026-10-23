@@ -14,11 +14,16 @@ struct SessionTerminalView: View {
     @Environment(\.chatContextRouter) private var contextRouter
     @State private var confirmingClose = false
 
-    init(projectPath: String?, recipes: [VerificationRecipe], repositoryID: String?, repositoryFingerprint: String?,
-         workspaceKey: String = "local", newShellRequest: Int = 0, discoveryActive: Bool = true) {
+    init(
+        projectPath: String?, recipes: [VerificationRecipe], repositoryID: String?, repositoryFingerprint: String?,
+        workspaceKey: String = "local", newShellRequest: Int = 0, discoveryActive: Bool = true
+    ) {
         self.discoveryActive = discoveryActive
-        self.projectPath = projectPath; self.recipes = recipes; self.repositoryID = repositoryID
-        self.repositoryFingerprint = repositoryFingerprint; self.newShellRequest = newShellRequest
+        self.projectPath = projectPath
+        self.recipes = recipes
+        self.repositoryID = repositoryID
+        self.repositoryFingerprint = repositoryFingerprint
+        self.newShellRequest = newShellRequest
         self.terminalTabs = TerminalWorkspaceStore.shared.workspace(key: workspaceKey + ":" + (projectPath ?? "home"))
     }
     @State private var isHoveringNewShell = false
@@ -49,19 +54,25 @@ struct SessionTerminalView: View {
                     } else {
                         VSplitView { ForEach(visibleSessions) { pane($0).frame(minHeight: 100) } }
                     }
-                } else { pane(terminal) }
+                } else {
+                    pane(terminal)
+                }
             }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(.top, 8)
 
         }
         .background(Color.dockCanvas)
         .task(id: terminal.id) {
-            for session in visibleSessions + [terminal] where session.workingDirectory == nil { session.start(directory: directory) }
+            for session in visibleSessions + [terminal] where session.workingDirectory == nil {
+                session.start(directory: directory)
+            }
         }
         .onChange(of: newShellRequest) { _, _ in terminalTabs.add(directory: directory) }
         .confirmationDialog("Close the running terminal?", isPresented: $confirmingClose) {
             Button("Close terminal", role: .destructive) { terminalTabs.closeSelected() }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("The foreground command will stop. Other terminals stay open.") }
+        } message: {
+            Text("The foreground command will stop. Other terminals stay open.")
+        }
     }
 
     private var visibleSessions: [LocalTerminalSession] {
@@ -78,8 +89,12 @@ struct SessionTerminalView: View {
             let bytes = Array(excerpt.utf8.prefix(32 * 1024))
             let content = String(decoding: bytes, as: UTF8.self)
             let label = "Terminal lines \(start)–\(end)"
-            contextRouter?.model?.attachedContexts.append(ChatContext(id: UUID().uuidString, title: label,
-                body: "\(label) (\(session.workingDirectory.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Home"))\n```\n\(content)\n```" + (bytes.count < excerpt.utf8.count ? "\nExcerpt truncated at 32 KiB." : "")))
+            contextRouter?.model?.attachedContexts.append(
+                ChatContext(
+                    id: UUID().uuidString, title: label,
+                    body:
+                        "\(label) (\(session.workingDirectory.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Home"))\n```\n\(content)\n```"
+                        + (bytes.count < excerpt.utf8.count ? "\nExcerpt truncated at 32 KiB." : "")))
         }.id(session.id)
     }
 
@@ -180,8 +195,12 @@ struct SessionTerminalView: View {
                     .buttonStyle(.dockCompact)
             }
             if let command = terminal.projectCommand {
-                Text(command.isRunning ? "Running action…" : command.exitCode.map { "Action exited \($0)" } ?? "Action interrupted")
-                    .dockFont(.metadata).foregroundStyle(command.exitCode.map { $0 == 0 ? Color.dockSuccess : Color.dockWarning } ?? Color.dockSecondaryText)
+                Text(
+                    command.isRunning
+                        ? "Running action…" : command.exitCode.map { "Action exited \($0)" } ?? "Action interrupted"
+                )
+                .dockFont(.metadata).foregroundStyle(
+                    command.exitCode.map { $0 == 0 ? Color.dockSuccess : Color.dockWarning } ?? Color.dockSecondaryText)
             }
             Spacer(minLength: 8)
 
@@ -190,7 +209,8 @@ struct SessionTerminalView: View {
                     ForEach(recipes) { recipe in
                         Button(recipe.title) {
                             guard let repositoryID, let repositoryFingerprint else { return }
-                            terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
+                            terminal.runVerification(
+                                recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
                         }
                         Button("Copy \(recipe.title.lowercased()) command") {
                             NSPasteboard.general.clearContents()
@@ -218,14 +238,19 @@ struct SessionTerminalView: View {
 
     private func verificationRunBanner(_ run: VerificationRun) -> some View {
         HStack(spacing: 8) {
-            Text(run.isComplete ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")" : "Running \(run.command)…")
-                .dockFont(.compactStatus, weight: .regular, design: .monospaced)
-                .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
-                .lineLimit(1)
+            Text(
+                run.isComplete
+                    ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")"
+                    : "Running \(run.command)…"
+            )
+            .dockFont(.compactStatus, weight: .regular, design: .monospaced)
+            .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
+            .lineLimit(1)
             if let recipe = recipes.first(where: { $0.id == run.recipeID }), run.isComplete {
                 Button("Rerun") {
                     guard let repositoryID, let repositoryFingerprint else { return }
-                    terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
+                    terminal.runVerification(
+                        recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
                 }
                 .buttonStyle(.dockCompact)
                 .foregroundStyle(Color.dockAccent)
@@ -234,6 +259,7 @@ struct SessionTerminalView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
-        .accessibilityLabel(run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
+        .accessibilityLabel(
+            run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
     }
 }

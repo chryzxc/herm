@@ -1,13 +1,18 @@
 import Testing
+
 @testable import Herm
 
 struct SessionKanbanActivityPresentationTests {
     @Test func activeWorkIsSortedBeforeCompletedHistory() {
         let snapshot = SessionKanbanActivityPresentation.makeSnapshot(tasks: [
             KanbanTaskSummary(id: "done", title: "Finished", status: "done", detail: nil, priority: nil, assignee: nil),
-            KanbanTaskSummary(id: "ready", title: "Prepare", status: "ready", detail: nil, priority: nil, assignee: nil),
-            KanbanTaskSummary(id: "blocked", title: "Blocked", status: "blocked", detail: "Waiting on API", priority: nil, assignee: "Terra"),
-            KanbanTaskSummary(id: "running", title: "Running", status: "running", detail: nil, priority: nil, assignee: "Luna")
+            KanbanTaskSummary(
+                id: "ready", title: "Prepare", status: "ready", detail: nil, priority: nil, assignee: nil),
+            KanbanTaskSummary(
+                id: "blocked", title: "Blocked", status: "blocked", detail: "Waiting on API", priority: nil,
+                assignee: "Terra"),
+            KanbanTaskSummary(
+                id: "running", title: "Running", status: "running", detail: nil, priority: nil, assignee: "Luna"),
         ])
 
         #expect(snapshot.activeRows.map(\.id) == ["running", "blocked", "ready"])
@@ -37,9 +42,15 @@ struct SessionKanbanActivityPresentationTests {
 
     @Test func botWorkIncludesOnlySessionTasksAssignedToKnownBots() {
         let tasks = [
-            KanbanTaskSummary(id: "t1", title: "Implement fix", status: "running", detail: nil, priority: nil, assignee: "forge", sessionID: "session-1"),
-            KanbanTaskSummary(id: "t2", title: "Other session", status: "running", detail: nil, priority: nil, assignee: "cypher", sessionID: "session-2"),
-            KanbanTaskSummary(id: "t3", title: "Generic task", status: "running", detail: nil, priority: nil, assignee: "delegate", sessionID: "session-1")
+            KanbanTaskSummary(
+                id: "t1", title: "Implement fix", status: "running", detail: nil, priority: nil, assignee: "forge",
+                sessionID: "session-1"),
+            KanbanTaskSummary(
+                id: "t2", title: "Other session", status: "running", detail: nil, priority: nil, assignee: "cypher",
+                sessionID: "session-2"),
+            KanbanTaskSummary(
+                id: "t3", title: "Generic task", status: "running", detail: nil, priority: nil, assignee: "delegate",
+                sessionID: "session-1"),
         ]
         let bots = [bot(id: "forge", name: "Forge"), bot(id: "cypher", name: "Cypher")]
 

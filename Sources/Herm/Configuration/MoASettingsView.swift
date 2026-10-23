@@ -14,10 +14,12 @@ struct MoASettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Reference models advise once per turn; the aggregator runs the tool loop and is billed for the run. Choose a Mixture of Agents preset from a model picker to use it.")
-                .dockFont(.body)
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Reference models advise once per turn; the aggregator runs the tool loop and is billed for the run. Choose a Mixture of Agents preset from a model picker to use it."
+            )
+            .dockFont(.body)
+            .foregroundStyle(Color.dockMetadataText)
+            .fixedSize(horizontal: false, vertical: true)
 
             if let config {
                 presetEditor(config)
@@ -65,10 +67,13 @@ struct MoASettingsView: View {
             }
             Spacer(minLength: 8)
             if isSaving { ProgressView().controlSize(.small) }
-            Toggle("Enabled", isOn: Binding(
-                get: { isListed(preset, config) },
-                set: { enabled in save { $0.update(preset, enabled: enabled) } }
-            ))
+            Toggle(
+                "Enabled",
+                isOn: Binding(
+                    get: { isListed(preset, config) },
+                    set: { enabled in save { $0.update(preset, enabled: enabled) } }
+                )
+            )
             .toggleStyle(.switch)
             .controlSize(.small)
             .dockFont(.body)
@@ -82,14 +87,17 @@ struct MoASettingsView: View {
                 updated[index].model = picked.model
                 save { $0.update(preset, references: updated) }
             } trailing: {
-                Toggle("", isOn: Binding(
-                    get: { slot.enabled },
-                    set: { enabled in
-                        var updated = references
-                        updated[index].enabled = enabled
-                        save { $0.update(preset, references: updated) }
-                    }
-                ))
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { slot.enabled },
+                        set: { enabled in
+                            var updated = references
+                            updated[index].enabled = enabled
+                            save { $0.update(preset, references: updated) }
+                        }
+                    )
+                )
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.mini)
@@ -109,7 +117,9 @@ struct MoASettingsView: View {
 
         Button("Add reference model") {
             guard let seed = config.aggregator(preset) ?? references.last else { return }
-            save { $0.update(preset, references: references + [HermesMoASlot(provider: seed.provider, model: seed.model)]) }
+            save {
+                $0.update(preset, references: references + [HermesMoASlot(provider: seed.provider, model: seed.model)])
+            }
         }
         .buttonStyle(.dockCompact)
 
@@ -119,7 +129,9 @@ struct MoASettingsView: View {
                 updated.provider = picked.provider
                 updated.model = picked.model
                 save { $0.update(preset, aggregator: updated) }
-            } trailing: { EmptyView() }
+            } trailing: {
+                EmptyView()
+            }
         }
     }
 
@@ -151,8 +163,14 @@ struct MoASettingsView: View {
                 }
                 .padding(.horizontal, 8)
                 .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                        Color.dockControlSurface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                        Color.dockBorder, lineWidth: 0.5)
+                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
@@ -178,7 +196,8 @@ struct MoASettingsView: View {
             config = loaded
             if selectedPreset.isEmpty { selectedPreset = loaded.defaultPreset }
         } catch {
-            self.error = "Hermes could not load Mixture of Agents presets: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+            self.error =
+                "Hermes could not load Mixture of Agents presets: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
     }
 
@@ -193,7 +212,8 @@ struct MoASettingsView: View {
                 config = try await service.saveMoAConfig(draft)
                 model.refreshRuntimeModelOptions()
             } catch {
-                self.error = "Hermes did not save the preset: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+                self.error =
+                    "Hermes did not save the preset: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
             }
         }
     }

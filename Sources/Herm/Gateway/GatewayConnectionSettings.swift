@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 import Security
 
 struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
@@ -23,10 +23,11 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
         let hasScheme = text.contains("://")
         if !hasScheme { text = "https://" + text }
         guard var parts = URLComponents(string: text),
-              ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
-              let host = parts.host, !host.isEmpty,
-              parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
-              parts.port.map({ (1...65535).contains($0) }) ?? true else {
+            ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
+            let host = parts.host, !host.isEmpty,
+            parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
+            parts.port.map({ (1...65535).contains($0) }) ?? true
+        else {
             throw GatewayConnectionError.invalidURL
         }
         parts.scheme = parts.scheme?.lowercased()
@@ -42,7 +43,8 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
     static func endpoint(_ base: URL, _ path: String) throws -> URL {
         let base = try normalizedURL(base.absoluteString)
         guard path.hasPrefix("/"), !path.hasPrefix("//"),
-              let url = URL(string: base.absoluteString + path), url.host == base.host else {
+            let url = URL(string: base.absoluteString + path), url.host == base.host
+        else {
             throw GatewayConnectionError.invalidURL
         }
         return url
@@ -59,11 +61,16 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
             if mode == .cloud { copy.authentication = .signIn }
         case .ssh:
             copy.sshHost = sshHost.trimmingCharacters(in: .whitespacesAndNewlines)
-            let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-:@[]")
-            guard !copy.sshHost.isEmpty, !copy.sshHost.hasPrefix("-"), copy.sshHost.unicodeScalars.allSatisfy(allowed.contains),
-                  !sshUser.hasPrefix("-"), sshUser.unicodeScalars.allSatisfy(allowed.contains), (1...65535).contains(sshPort),
-                  remoteProfile.isEmpty || remoteProfile.range(of: #"^[a-zA-Z0-9][a-zA-Z0-9_-]*$"#, options: .regularExpression) != nil,
-                  !sshKeyPath.contains("\n"), !remoteHermesPath.contains("\n") else {
+            let allowed = CharacterSet(
+                charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-:@[]")
+            guard !copy.sshHost.isEmpty, !copy.sshHost.hasPrefix("-"),
+                copy.sshHost.unicodeScalars.allSatisfy(allowed.contains),
+                !sshUser.hasPrefix("-"), sshUser.unicodeScalars.allSatisfy(allowed.contains),
+                (1...65535).contains(sshPort),
+                remoteProfile.isEmpty
+                    || remoteProfile.range(of: #"^[a-zA-Z0-9][a-zA-Z0-9_-]*$"#, options: .regularExpression) != nil,
+                !sshKeyPath.contains("\n"), !remoteHermesPath.contains("\n")
+            else {
                 throw GatewayConnectionError.invalidSSH
             }
         }
@@ -72,11 +79,14 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
 }
 
 enum GatewayConnectionError: LocalizedError {
-    case invalidURL, insecureURL, invalidSSH, missingToken, storage(Int32), unavailable(String)
+    case invalidURL, insecureURL, invalidSSH, missingToken
+    case storage(Int32)
+    case unavailable(String)
     var errorDescription: String? {
         switch self {
         case .invalidURL: "Enter an HTTP or HTTPS gateway URL without credentials, query parameters, or a fragment."
-        case .insecureURL: "Remote gateways require HTTPS to protect credentials. Use HTTPS or an SSH connection; HTTP is allowed only on localhost, 127.0.0.1, or [::1]."
+        case .insecureURL:
+            "Remote gateways require HTTPS to protect credentials. Use HTTPS or an SSH connection; HTTP is allowed only on localhost, 127.0.0.1, or [::1]."
         case .invalidSSH: "Enter a valid SSH host, user, port, and profile. Use key-based SSH authentication."
         case .missingToken: "Enter a session token, or choose Sign in for a hosted gateway."
         case .storage(let status): "Could not access the gateway token in Keychain (\(status))."
@@ -113,11 +123,16 @@ enum GatewayTokenStore {
 
     static func remove(_ account: String) throws {
         let status = SecItemDelete(query(account) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw GatewayConnectionError.storage(status) }
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw GatewayConnectionError.storage(status)
+        }
     }
 
     private static func query(_ account: String) -> [CFString: Any] {
-        [kSecClass: kSecClassGenericPassword, kSecAttrService: "io.github.chryzxc.Herm.gateway", kSecAttrAccount: account]
+        [
+            kSecClass: kSecClassGenericPassword, kSecAttrService: "io.github.chryzxc.Herm.gateway",
+            kSecAttrAccount: account,
+        ]
     }
 }
 
@@ -136,10 +151,12 @@ final class GatewayConnectionStore: ObservableObject {
     private static let settingsKey = "gateway.connection"
     private static let connectionsKey = "gateway.savedConnections"
 
-    init(defaults: UserDefaults = .standard,
-         environment: [String: String] = ProcessInfo.processInfo.environment,
-         readToken: @escaping (String) throws -> String? = GatewayTokenStore.read,
-         writeToken: @escaping (String, String) throws -> Void = GatewayTokenStore.write) {
+    init(
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        readToken: @escaping (String) throws -> String? = GatewayTokenStore.read,
+        writeToken: @escaping (String, String) throws -> Void = GatewayTokenStore.write
+    ) {
         self.defaults = defaults
         self.readToken = readToken
         self.writeToken = writeToken
@@ -148,16 +165,19 @@ final class GatewayConnectionStore: ObservableObject {
         var settings = GatewayConnectionSettings()
         var loadError: String?
         if let data = defaults.data(forKey: Self.settingsKey) {
-            do { settings = try JSONDecoder().decode(GatewayConnectionSettings.self, from: data).validated() }
-            catch { loadError = "Saved gateway settings could not be read. Save a valid connection to recover." }
+            do { settings = try JSONDecoder().decode(GatewayConnectionSettings.self, from: data).validated() } catch {
+                loadError = "Saved gateway settings could not be read. Save a valid connection to recover."
+            }
         }
         if environmentOverride {
             settings.mode = .remote
             settings.name = "Startup override"
             settings.remoteURL = environment["HERMES_DESKTOP_REMOTE_URL"] ?? ""
             settings.authentication = .token
-            do { settings = try settings.validated(); loadError = nil }
-            catch { loadError = error.localizedDescription }
+            do {
+                settings = try settings.validated()
+                loadError = nil
+            } catch { loadError = error.localizedDescription }
         }
         launchSettings = settings
         selected = settings
@@ -169,13 +189,20 @@ final class GatewayConnectionStore: ObservableObject {
 
     func token(for settings: GatewayConnectionSettings, draft: String = "") throws -> String {
         let token = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = try token.isEmpty ? readToken(GatewayConnectionSettings.normalizedURL(settings.remoteURL).absoluteString) ?? "" : token
-        guard !value.isEmpty, !value.contains("\r"), !value.contains("\n") else { throw GatewayConnectionError.missingToken }
+        let value =
+            try token.isEmpty
+            ? readToken(GatewayConnectionSettings.normalizedURL(settings.remoteURL).absoluteString) ?? "" : token
+        guard !value.isEmpty, !value.contains("\r"), !value.contains("\n") else {
+            throw GatewayConnectionError.missingToken
+        }
         return value
     }
 
     func save(_ settings: GatewayConnectionSettings, token: String) throws {
-        guard !environmentOverride else { throw GatewayConnectionError.unavailable("The gateway connection is controlled by startup environment settings.") }
+        guard !environmentOverride else {
+            throw GatewayConnectionError.unavailable(
+                "The gateway connection is controlled by startup environment settings.")
+        }
         let settings = try settings.validated()
         if settings.mode == .remote && settings.authentication == .token {
             let resolved = try self.token(for: settings, draft: token)

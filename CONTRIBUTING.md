@@ -18,17 +18,24 @@ Run the complete required check from the repository root:
 make check
 ```
 
-The formatter currently reports the repository's pre-existing style debt as
-diagnostics while the mechanical formatting pass is kept separate from feature
-changes. A future formatting-only PR can promote this to a strict failure gate
-without mixing thousands of whitespace changes into behavior work.
+Start iteration with `make guard`. It runs strict Swift syntax/style lint, the
+color contract and its self-tests, and Git's conflict-marker/whitespace check.
+It needs no model calls, network, app launch, or Swift build. Fix its file/line
+diagnostics before asking for AI review; reserve review for behavior, ownership,
+concurrency, and UI decisions. These checks do not replace focused tests.
+
+The shared `.swift-format` configuration uses four-space indentation and a
+120-column line length. `make format` fixes mechanical formatting; remaining
+lint findings need source changes. Lint warnings fail locally and in CI; there
+is no legacy lint baseline to grow.
 
 Individual commands are available when iterating:
 
 ```sh
 make test          # unit/model/transport tests
 make build-release # production compilation
-make lint          # formatter check, no edits
+make guard         # strict lint + color contract + conflict/whitespace checks
+make lint          # strict formatter check, no edits
 make format        # explicitly rewrite Swift formatting
 make smoke-contract # launcher syntax + UI accessibility contract
 make run           # build/sign/launch the debug app bundle

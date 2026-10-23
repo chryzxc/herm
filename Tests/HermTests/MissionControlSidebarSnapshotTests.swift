@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -82,14 +83,15 @@ struct MissionControlSidebarSnapshotTests {
 
     @Test func renderableProjectsOwnGroupsAndSyntheticBucketsFallThroughToUnlinked() {
         let date = Date(timeIntervalSince1970: 100)
-        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
-            sessions: [session("s1", updatedAt: date), session("s2", updatedAt: date)],
-            projects: [
-                project("p1", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 1),
-                project("p_0badc0de", name: "tmp", sessionIDs: ["s2"], sessionCount: 1)
-            ],
-            projectSessionsByProjectID: ["p_0badc0de": [summary("s2")]]
-        ))
+        let snapshot = MissionControlSidebarSnapshot(
+            inputs: inputs(
+                sessions: [session("s1", updatedAt: date), session("s2", updatedAt: date)],
+                projects: [
+                    project("p1", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 1),
+                    project("p_0badc0de", name: "tmp", sessionIDs: ["s2"], sessionCount: 1),
+                ],
+                projectSessionsByProjectID: ["p_0badc0de": [summary("s2")]]
+            ))
 
         #expect(snapshot.linkedProjectGroups.map(\.id) == ["project:p1"])
         #expect(snapshot.linkedProjectGroups.first?.title == "Alpha")
@@ -102,14 +104,17 @@ struct MissionControlSidebarSnapshotTests {
     @Test func gatewaySummariesFillProjectsAndNewerSavedSessionsKeepTheirTitle() {
         let newer = Date(timeIntervalSince1970: 500)
         let older = Date(timeIntervalSince1970: 100)
-        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
-            sessions: [session("s1", title: "Saved newer", updatedAt: newer)],
-            projects: [project("p1", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 2)],
-            projectSessionsByProjectID: ["p1": [
-                summary("s1", title: "Stale summary", updatedAt: older),
-                summary("s9", title: "Gateway only")
-            ]]
-        ))
+        let snapshot = MissionControlSidebarSnapshot(
+            inputs: inputs(
+                sessions: [session("s1", title: "Saved newer", updatedAt: newer)],
+                projects: [project("p1", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 2)],
+                projectSessionsByProjectID: [
+                    "p1": [
+                        summary("s1", title: "Stale summary", updatedAt: older),
+                        summary("s9", title: "Gateway only"),
+                    ]
+                ]
+            ))
 
         let group = snapshot.linkedProjectGroups.first
         #expect(group?.sessions.map(\.id).sorted() == ["s1", "s9"])
@@ -121,11 +126,12 @@ struct MissionControlSidebarSnapshotTests {
     }
 
     @Test func projectMembershipAlsoComesFromTheSessionIndex() {
-        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
-            sessions: [session("s1", updatedAt: Date(timeIntervalSince1970: 10))],
-            projects: [project("p1", name: "/repos/Alpha")],
-            projectIDBySessionID: ["s1": "p1"]
-        ))
+        let snapshot = MissionControlSidebarSnapshot(
+            inputs: inputs(
+                sessions: [session("s1", updatedAt: Date(timeIntervalSince1970: 10))],
+                projects: [project("p1", name: "/repos/Alpha")],
+                projectIDBySessionID: ["s1": "p1"]
+            ))
 
         #expect(snapshot.linkedProjectGroups.first?.sessions.map(\.id) == ["s1"])
         #expect(snapshot.linkedSessionIDs == ["s1"])
@@ -135,14 +141,15 @@ struct MissionControlSidebarSnapshotTests {
     @Test func conversationsDeduplicateByIDAndSortNewestFirstWithStableTiebreak() {
         let early = Date(timeIntervalSince1970: 10)
         let late = Date(timeIntervalSince1970: 20)
-        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
-            sessions: [
-                session("b", updatedAt: early),
-                session("a", updatedAt: early),
-                session("z", updatedAt: late)
-            ],
-            projects: [project("p1", name: "/repos/Alpha", sessionIDs: ["z", "b"])]
-        ))
+        let snapshot = MissionControlSidebarSnapshot(
+            inputs: inputs(
+                sessions: [
+                    session("b", updatedAt: early),
+                    session("a", updatedAt: early),
+                    session("z", updatedAt: late),
+                ],
+                projects: [project("p1", name: "/repos/Alpha", sessionIDs: ["z", "b"])]
+            ))
 
         #expect(snapshot.conversations.map(\.id) == ["z", "a", "b"])
     }
@@ -161,8 +168,12 @@ struct MissionControlSidebarSnapshotTests {
             )
         ]
         let activities = [
-            LatestActivityItem(id: "l1", sessionID: "s2", sessionTitle: "T", state: "failed", activityName: "tool", timestamp: Date(timeIntervalSince1970: 5)),
-            LatestActivityItem(id: "l2", sessionID: "s3", sessionTitle: "T", state: "running", activityName: "permission request", timestamp: Date(timeIntervalSince1970: 6))
+            LatestActivityItem(
+                id: "l1", sessionID: "s2", sessionTitle: "T", state: "failed", activityName: "tool",
+                timestamp: Date(timeIntervalSince1970: 5)),
+            LatestActivityItem(
+                id: "l2", sessionID: "s3", sessionTitle: "T", state: "running", activityName: "permission request",
+                timestamp: Date(timeIntervalSince1970: 6)),
         ]
         let snapshot = MissionControlSidebarSnapshot(inputs: inputs(attention: attention, latestActivities: activities))
 
@@ -185,17 +196,18 @@ struct MissionControlSidebarSnapshotTests {
 
     @Test func emptyProjectsStayVisibleAndProjectsFollowLatestActivity() {
         let now = Date()
-        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
-            sessions: [
-                session("old", updatedAt: now.addingTimeInterval(-600)),
-                session("new", updatedAt: now)
-            ],
-            projects: [
-                project("a", name: "/repo/alpha", sessionIDs: ["old"], sessionCount: 1),
-                project("b", name: "/repo/beta", sessionIDs: ["new"], sessionCount: 1),
-                project("c", name: "/repo/empty")
-            ]
-        ))
+        let snapshot = MissionControlSidebarSnapshot(
+            inputs: inputs(
+                sessions: [
+                    session("old", updatedAt: now.addingTimeInterval(-600)),
+                    session("new", updatedAt: now),
+                ],
+                projects: [
+                    project("a", name: "/repo/alpha", sessionIDs: ["old"], sessionCount: 1),
+                    project("b", name: "/repo/beta", sessionIDs: ["new"], sessionCount: 1),
+                    project("c", name: "/repo/empty"),
+                ]
+            ))
 
         #expect(snapshot.linkedProjectGroups.map(\.title) == ["beta", "alpha", "empty"])
     }

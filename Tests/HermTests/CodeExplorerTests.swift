@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -15,9 +16,10 @@ struct CodeExplorerTests {
             ProjectFileEntry(path: "Sources/App/a.swift", depth: 2, isDirectory: false),
             ProjectFileEntry(path: "package.json", depth: 0, isDirectory: false),
         ]
-        #expect(SessionFilesView.foldersFirst(entries).map(\.path) == [
-            "Sources", "Sources/App", "Sources/App/a.swift", "Sources/b.swift", "package.json", "README.md",
-        ])
+        #expect(
+            SessionFilesView.foldersFirst(entries).map(\.path) == [
+                "Sources", "Sources/App", "Sources/App/a.swift", "Sources/b.swift", "package.json", "README.md",
+            ])
     }
 
     @Test func gitStatusIsProjectRelativeAndPrefersWorktree() {
@@ -57,7 +59,8 @@ struct CodeExplorerTests {
         let storage = try #require(editor.textView.textStorage)
         let deadline = Date().addingTimeInterval(3)
         while storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor != CodeToken.number.color,
-              Date() < deadline {
+            Date() < deadline
+        {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(editor.textView.string == "123")

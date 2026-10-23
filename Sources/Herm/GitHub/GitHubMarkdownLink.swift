@@ -4,20 +4,27 @@ import SwiftUI
 enum GitHubMarkdownLink {
     static func reference(for url: URL, defaults: UserDefaults = .standard) -> GitHubItemReference? {
         guard url.scheme == "https", url.host?.lowercased() == "github.com",
-              url.user == nil, url.password == nil, url.port == nil,
-              url.query == nil, url.fragment == nil else { return nil }
+            url.user == nil, url.password == nil, url.port == nil,
+            url.query == nil, url.fragment == nil
+        else { return nil }
         let parts = url.path.split(separator: "/").map(String.init)
         guard parts.count == 4, let number = Int(parts[3]), number > 0 else { return nil }
         let kind: GitHubItemKind
         let key: String
         switch parts[2] {
-        case "pull": kind = .pullRequest; key = SidebarVisibilityKey.pullRequests
-        case "issues": kind = .issue; key = SidebarVisibilityKey.issues
+        case "pull":
+            kind = .pullRequest
+            key = SidebarVisibilityKey.pullRequests
+        case "issues":
+            kind = .issue
+            key = SidebarVisibilityKey.issues
         default: return nil
         }
         guard defaults.object(forKey: key) == nil || defaults.bool(forKey: key) else { return nil }
-        let repository = GitHubRepositoryReference(owner: parts[0], name: parts[1],
-            webURL: URL(string: "https://github.com")!.appendingPathComponent(parts[0]).appendingPathComponent(parts[1]))
+        let repository = GitHubRepositoryReference(
+            owner: parts[0], name: parts[1],
+            webURL: URL(string: "https://github.com")!.appendingPathComponent(parts[0]).appendingPathComponent(parts[1])
+        )
         return GitHubItemReference(repository: repository, number: number, kind: kind)
     }
 }
@@ -47,7 +54,13 @@ private struct MarkdownOpenURLKey: EnvironmentKey {
 
 extension EnvironmentValues {
     @MainActor var markdownOpenURL: OpenURLAction {
-        get { self[MarkdownOpenURLKey.self] ?? OpenURLAction { InAppBrowser.open($0); return .handled } }
+        get {
+            self[MarkdownOpenURLKey.self]
+                ?? OpenURLAction {
+                    InAppBrowser.open($0)
+                    return .handled
+                }
+        }
         set { self[MarkdownOpenURLKey.self] = newValue }
     }
 }

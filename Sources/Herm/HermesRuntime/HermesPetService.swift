@@ -37,12 +37,15 @@ struct HermesPetInfo: Decodable, Equatable, Sendable {
     static func decode(_ raw: [String: Any]) throws -> Self {
         let value = try JSONDecoder().decode(Self.self, from: JSONSerialization.data(withJSONObject: raw))
         guard [value.slug, value.displayName].compactMap({ $0 }).allSatisfy(HermesPetGallery.safeLabel),
-              !value.enabled || (value.slug != nil && value.displayName != nil),
-              value.scale.map({ $0.isFinite && (0.1...3).contains($0) }) ?? true else { throw HermesPetError.invalidResponse }
+            !value.enabled || (value.slug != nil && value.displayName != nil),
+            value.scale.map({ $0.isFinite && (0.1...3).contains($0) }) ?? true
+        else { throw HermesPetError.invalidResponse }
         return value
     }
 
-    static let defaultRows = ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"]
+    static let defaultRows = [
+        "idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review",
+    ]
 
     func frame(for pose: String) -> (row: Int, count: Int) {
         let rows = stateRows ?? Self.defaultRows
@@ -71,24 +74,34 @@ struct HermesPetGallery: Decodable, Equatable, Sendable {
     let pets: [Entry]
 
     static func safeLabel(_ value: String) -> Bool {
-        !value.isEmpty && value.utf8.count <= 256 && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+        !value.isEmpty && value.utf8.count <= 256
+            && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }
 
     static func decode(_ raw: [String: Any]) throws -> Self {
         let data = try JSONSerialization.data(withJSONObject: raw)
         guard data.count <= 8 * 1024 * 1024 else { throw HermesPetError.invalidResponse }
         let value = try JSONDecoder().decode(Self.self, from: data)
-        guard value.pets.count <= 20_000, Set(value.pets.map(\.slug)).count == value.pets.count else { throw HermesPetError.invalidResponse }
+        guard value.pets.count <= 20_000, Set(value.pets.map(\.slug)).count == value.pets.count else {
+            throw HermesPetError.invalidResponse
+        }
         // One malformed community label must not hide every selectable pet.
-        return Self(enabled: value.enabled, active: value.active,
-                    pets: value.pets.filter { safeLabel($0.slug) && safeLabel($0.displayName) })
+        return Self(
+            enabled: value.enabled, active: value.active,
+            pets: value.pets.filter { safeLabel($0.slug) && safeLabel($0.displayName) })
     }
 
     func matches(_ query: String) -> [Entry] {
-        pets.filter { query.isEmpty || $0.displayName.localizedCaseInsensitiveContains(query) || $0.slug.localizedCaseInsensitiveContains(query) }
-            .sorted {
-                func rank(_ entry: Entry) -> Int { (enabled && entry.slug == active ? 4 : 0) + (entry.installed ? 2 : 0) + (entry.curated == true ? 1 : 0) }
-                return rank($0) == rank($1) ? $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending : rank($0) > rank($1)
+        pets.filter {
+            query.isEmpty || $0.displayName.localizedCaseInsensitiveContains(query)
+                || $0.slug.localizedCaseInsensitiveContains(query)
+        }
+        .sorted {
+            func rank(_ entry: Entry) -> Int {
+                (enabled && entry.slug == active ? 4 : 0) + (entry.installed ? 2 : 0) + (entry.curated == true ? 1 : 0)
             }
+            return rank($0) == rank($1)
+                ? $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending : rank($0) > rank($1)
+        }
     }
 }

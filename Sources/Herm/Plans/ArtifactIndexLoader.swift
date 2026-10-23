@@ -14,9 +14,9 @@ enum ArtifactIndexLoader {
         let records: [ArtifactRecord]
 
         func matches(_ current: HermesSession) -> Bool {
-            session.scopedID == current.scopedID && current.lastUpdatedAt != nil &&
-                session.lastUpdatedAt == current.lastUpdatedAt && session.messageCount == current.messageCount &&
-                session.displayTitle == current.displayTitle
+            session.scopedID == current.scopedID && current.lastUpdatedAt != nil
+                && session.lastUpdatedAt == current.lastUpdatedAt && session.messageCount == current.messageCount
+                && session.displayTitle == current.displayTitle
         }
     }
 
@@ -37,7 +37,10 @@ enum ArtifactIndexLoader {
             }
             var results: [SessionResult] = []
             while let result = await group.next() {
-                guard !Task.isCancelled else { group.cancelAll(); return [] }
+                guard !Task.isCancelled else {
+                    group.cancelAll()
+                    return []
+                }
                 results.append(result)
                 if let session = remaining.next() { add(session) }
             }
@@ -54,7 +57,8 @@ enum ArtifactIndexLoader {
         do {
             try Task.checkCancellation()
             if let cached, cached.matches(session) {
-                return SessionResult(sessionID: session.id, profileID: session.profileID, records: cached.records, error: nil)
+                return SessionResult(
+                    sessionID: session.id, profileID: session.profileID, records: cached.records, error: nil)
             }
             var found: [String: ArtifactRecord] = [:]
             var offset = 0
@@ -68,9 +72,12 @@ enum ArtifactIndexLoader {
                 guard extracted.hasMore else { break }
                 offset += extracted.messageCount
             }
-            return SessionResult(sessionID: session.id, profileID: session.profileID, records: Array(found.values), error: nil)
+            return SessionResult(
+                sessionID: session.id, profileID: session.profileID, records: Array(found.values), error: nil)
         } catch {
-            return SessionResult(sessionID: session.id, profileID: session.profileID, records: [], error: HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            return SessionResult(
+                sessionID: session.id, profileID: session.profileID, records: [],
+                error: HermesDiagnosticsService.safeSummary(error.localizedDescription))
         }
     }
 }

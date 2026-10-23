@@ -1,4 +1,5 @@
 import Testing
+
 @testable import Herm
 
 struct HermesRuntimeInspectorTests {
@@ -33,12 +34,13 @@ struct HermesRuntimeInspectorTests {
         )
         #expect(calls.filter { $0 == ["config", "path"] }.count == 1)
         #expect(calls.count == 8)
-        #expect(calls == [
-            ["config", "path"], ["config", "get", "model.default"],
-            ["config", "get", "model.provider"], ["config", "get", "agent.max_turns"],
-            ["config", "get", "terminal.timeout"], ["skills", "list", "--enabled-only"],
-            ["mcp", "list"], ["plugins", "list", "--enabled", "--json"]
-        ])
+        #expect(
+            calls == [
+                ["config", "path"], ["config", "get", "model.default"],
+                ["config", "get", "model.provider"], ["config", "get", "agent.max_turns"],
+                ["config", "get", "terminal.timeout"], ["skills", "list", "--enabled-only"],
+                ["mcp", "list"], ["plugins", "list", "--enabled", "--json"],
+            ])
         #expect(outcome.isComplete)
         #expect(outcome.configuration.agentName == "Fixture")
         #expect(outcome.initialSignature == "before")
@@ -46,15 +48,16 @@ struct HermesRuntimeInspectorTests {
 
     @Test func partialAndMalformedInspectionCannotCertifyFreshness() {
         for failure in ["missing", "malformed"] {
-            let outcome = HermesRuntimeInspector.inspect(runner: { arguments in
-                if arguments == ["config", "path"] { return "/fixture/config.yaml" }
-                if arguments == ["skills", "list", "--enabled-only"] { return "[]" }
-                if arguments == ["mcp", "list"] { return "No MCP servers configured" }
-                if arguments == ["plugins", "list", "--enabled", "--json"] {
-                    return failure == "missing" ? nil : "not json"
-                }
-                return "value"
-            }, identityReader: { _ in "Fixture" })
+            let outcome = HermesRuntimeInspector.inspect(
+                runner: { arguments in
+                    if arguments == ["config", "path"] { return "/fixture/config.yaml" }
+                    if arguments == ["skills", "list", "--enabled-only"] { return "[]" }
+                    if arguments == ["mcp", "list"] { return "No MCP servers configured" }
+                    if arguments == ["plugins", "list", "--enabled", "--json"] {
+                        return failure == "missing" ? nil : "not json"
+                    }
+                    return "value"
+                }, identityReader: { _ in "Fixture" })
             #expect(!outcome.isComplete)
             #expect(outcome.configuration.agentName == "Fixture")
         }
@@ -63,29 +66,31 @@ struct HermesRuntimeInspectorTests {
     @Test func everyMissingCommandOutputIsIncomplete() {
         for missing in 0..<8 {
             var index = 0
-            let outcome = HermesRuntimeInspector.inspect(runner: { arguments in
-                defer { index += 1 }
-                if index == missing { return nil }
-                if arguments == ["config", "path"] { return "/fixture/config.yaml" }
-                if arguments == ["skills", "list", "--enabled-only"] { return "[]" }
-                if arguments == ["mcp", "list"] { return "No MCP servers configured" }
-                if arguments == ["plugins", "list", "--enabled", "--json"] { return "[]" }
-                return "value"
-            }, identityReader: { _ in "Fixture" })
+            let outcome = HermesRuntimeInspector.inspect(
+                runner: { arguments in
+                    defer { index += 1 }
+                    if index == missing { return nil }
+                    if arguments == ["config", "path"] { return "/fixture/config.yaml" }
+                    if arguments == ["skills", "list", "--enabled-only"] { return "[]" }
+                    if arguments == ["mcp", "list"] { return "No MCP servers configured" }
+                    if arguments == ["plugins", "list", "--enabled", "--json"] { return "[]" }
+                    return "value"
+                }, identityReader: { _ in "Fixture" })
             #expect(!outcome.isComplete)
         }
     }
 
     @Test func preservesInventoryParsingWithInjectedCommands() {
-        let outcome = HermesRuntimeInspector.inspect(runner: { arguments in
-            if arguments == ["config", "path"] { return "/fixture/config.yaml" }
-            if arguments == ["skills", "list", "--enabled-only"] { return "│ fixture-skill │ enabled │" }
-            if arguments == ["mcp", "list"] { return "fixture-server stdio all connected" }
-            if arguments == ["plugins", "list", "--enabled", "--json"] {
-                return #"[{"name":"fixture-plugin","status":"enabled"}]"#
-            }
-            return "value"
-        }, identityReader: { _ in nil })
+        let outcome = HermesRuntimeInspector.inspect(
+            runner: { arguments in
+                if arguments == ["config", "path"] { return "/fixture/config.yaml" }
+                if arguments == ["skills", "list", "--enabled-only"] { return "│ fixture-skill │ enabled │" }
+                if arguments == ["mcp", "list"] { return "fixture-server stdio all connected" }
+                if arguments == ["plugins", "list", "--enabled", "--json"] {
+                    return #"[{"name":"fixture-plugin","status":"enabled"}]"#
+                }
+                return "value"
+            }, identityReader: { _ in nil })
         #expect(outcome.isComplete)
         #expect(outcome.configuration.skills == ["fixture-skill"])
         #expect(outcome.configuration.mcpServers == ["fixture-server"])
@@ -99,17 +104,18 @@ struct HermesRuntimeInspectorTests {
     }
 
     @Test func rejectsUnrecognizedNonemptySkillOutputAsUnavailable() {
-        #expect(HermesRuntimeInspector.parseEnabledSkills("skills loaded successfully") == .unavailable(.unsupportedOutput))
+        #expect(
+            HermesRuntimeInspector.parseEnabledSkills("skills loaded successfully") == .unavailable(.unsupportedOutput))
     }
 
     @Test func acceptsCompleteHumanTableSkillNames() {
         let output = """
-        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
-        ┃ Name                                 ┃ Status    ┃
-        ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╋━━━━━━━━━━━┫
-        ┃ my-dev-team-orchestrator             ┃ enabled   ┃
-        ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━┛
-        """
+            ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+            ┃ Name                                 ┃ Status    ┃
+            ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╋━━━━━━━━━━━┫
+            ┃ my-dev-team-orchestrator             ┃ enabled   ┃
+            ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━┛
+            """
 
         #expect(HermesRuntimeInspector.parseEnabledSkills(output) == .supported(["my-dev-team-orchestrator"]))
     }
@@ -121,9 +127,10 @@ struct HermesRuntimeInspectorTests {
     }
 
     @Test func reasoningVariantsMatchHermesSupportedLevels() {
-        #expect(HermesReasoningVariant.allCases.map(\.rawValue) == [
-            "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"
-        ])
+        #expect(
+            HermesReasoningVariant.allCases.map(\.rawValue) == [
+                "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+            ])
     }
 
     @Test func stripsANSIControlSequences() {
@@ -151,10 +158,12 @@ struct HermesRuntimeInspectorTests {
 
         let request = DockModel.globalRuntimeModelSwitchRequest(option: option, sessionID: "draft")
 
-        #expect(request == HermesRuntimeModelSwitchRequest(
-            sessionID: "draft",
-            value: "gpt-5.6 --provider opencode-zen --global"
-        ))
+        #expect(
+            request
+                == HermesRuntimeModelSwitchRequest(
+                    sessionID: "draft",
+                    value: "gpt-5.6 --provider opencode-zen --global"
+                ))
         #expect(request.parameters["confirm_expensive_model"] as? Bool == true)
     }
 
@@ -164,10 +173,12 @@ struct HermesRuntimeInspectorTests {
             sessionID: "session-42"
         )
 
-        #expect(request == HermesRuntimeModelSwitchRequest(
-            sessionID: "session-42",
-            value: "claude-sonnet-4-6 --provider anthropic --session"
-        ))
+        #expect(
+            request
+                == HermesRuntimeModelSwitchRequest(
+                    sessionID: "session-42",
+                    value: "claude-sonnet-4-6 --provider anthropic --session"
+                ))
         #expect(request.parameters["confirm_expensive_model"] as? Bool == true)
     }
 

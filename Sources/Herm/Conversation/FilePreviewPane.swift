@@ -15,10 +15,15 @@ enum FilePreviewKind {
     init?(url: URL) {
         guard url.isFileURL else { return nil }
         let ext = url.pathExtension.lowercased()
-        if Self.markdownExtensions.contains(ext) { self = .markdown }
-        else if Self.textExtensions.contains(ext) { self = .text }
-        else if ArtifactService.kind(for: url.path) == .image { self = .image }
-        else { return nil }
+        if Self.markdownExtensions.contains(ext) {
+            self = .markdown
+        } else if Self.textExtensions.contains(ext) {
+            self = .text
+        } else if ArtifactService.kind(for: url.path) == .image {
+            self = .image
+        } else {
+            return nil
+        }
     }
 }
 
@@ -111,10 +116,13 @@ struct FilePreviewPane: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
-            DockIconButton(icon: .arrowSquareOut, label: "Open in default app",
-                           style: DockThemePalette(theme: DockThemeRuntime.current)) { ArtifactOpener.open(path) }
-            DockIconButton(icon: .x, label: "Close preview",
-                           style: DockThemePalette(theme: DockThemeRuntime.current), action: onClose)
+            DockIconButton(
+                icon: .arrowSquareOut, label: "Open in default app",
+                style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) { ArtifactOpener.open(path) }
+            DockIconButton(
+                icon: .x, label: "Close preview",
+                style: DockThemePalette(theme: DockThemeRuntime.current), action: onClose)
         }
         .padding(.horizontal, 16)
         .frame(height: 48)
@@ -163,7 +171,8 @@ struct FilePreviewPane: View {
             case .missing:
                 SessionSurfacePreviewPlaceholder(icon: .warning, title: "File not found", detail: path)
             case .binary:
-                SessionSurfacePreviewPlaceholder(icon: .file, title: "No inline preview", detail: "Open it in its default app.")
+                SessionSurfacePreviewPlaceholder(
+                    icon: .file, title: "No inline preview", detail: "Open it in its default app.")
             case nil:
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -183,12 +192,15 @@ struct FilePreviewPane: View {
 
     private var highlights: [AnnotationHighlight] {
         var result = numbered.enumerated().map { index, item in
-            AnnotationHighlight(id: item.annotation.id, range: item.range,
-                                style: item.annotation.id == composing?.id ? .active : .draft, number: index + 1)
+            AnnotationHighlight(
+                id: item.annotation.id, range: item.range,
+                style: item.annotation.id == composing?.id ? .active : .draft, number: index + 1)
         }
         for annotation in sent where !annotation.resolved {
             guard let range = range(of: annotation) else { continue }
-            result.append(AnnotationHighlight(id: annotation.id, range: range, style: annotation.id == composing?.id ? .active : .sent))
+            result.append(
+                AnnotationHighlight(
+                    id: annotation.id, range: range, style: annotation.id == composing?.id ? .active : .sent))
         }
         // A fresh selection being written has no saved range yet.
         if let composing, !isSaved(composing), let anchor {
@@ -289,9 +301,13 @@ struct FilePreviewPane: View {
 
     private var reviewBar: some View {
         HStack(spacing: 8) {
-            Button { showsNotes.toggle() } label: {
+            Button {
+                showsNotes.toggle()
+            } label: {
                 HStack(spacing: 6) {
-                    DockIcon(.chatCircleText, size: 14, color: review.annotations.isEmpty ? Color.dockMetadataText : Color.dockAccent)
+                    DockIcon(
+                        .chatCircleText, size: 14,
+                        color: review.annotations.isEmpty ? Color.dockMetadataText : Color.dockAccent)
                     Text(barSummary)
                         .dockFont(.metadata, weight: .medium)
                         .foregroundStyle(review.annotations.isEmpty ? Color.dockMetadataText : Color.dockSecondaryText)
@@ -338,11 +354,13 @@ struct FilePreviewPane: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     if review.annotations.isEmpty {
-                        Text("Select any text in the document to leave a note on it. Notes collect here until you send them to the chat.")
-                            .dockFont(.metadata)
-                            .foregroundStyle(Color.dockMetadataText)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(8)
+                        Text(
+                            "Select any text in the document to leave a note on it. Notes collect here until you send them to the chat."
+                        )
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(8)
                     }
                     if !drafts.isEmpty {
                         sectionLabel("NOT SENT")
@@ -400,9 +418,11 @@ struct FilePreviewPane: View {
                         .frame(width: 18, height: 16)
                         .background(Color.dockAccent.opacity(0.22), in: Capsule())
                 } else if annotation.sentAt != nil {
-                    DockIcon(annotation.resolved ? .checkCircle : .clock, size: 13,
-                             color: annotation.resolved ? Color.dockAccent : Color.dockMetadataText)
-                        .help(annotation.resolved ? "Addressed: the quoted text changed" : "Sent, still in the file")
+                    DockIcon(
+                        annotation.resolved ? .checkCircle : .clock, size: 13,
+                        color: annotation.resolved ? Color.dockAccent : Color.dockMetadataText
+                    )
+                    .help(annotation.resolved ? "Addressed: the quoted text changed" : "Sent, still in the file")
                 } else {
                     DockIcon(.notePencil, size: 13, color: Color.dockMetadataText)
                 }
@@ -421,7 +441,9 @@ struct FilePreviewPane: View {
             }
             Spacer(minLength: 4)
             if annotation.sentAt == nil {
-                Button { center.remove(annotation.id, from: path) } label: {
+                Button {
+                    center.remove(annotation.id, from: path)
+                } label: {
                     DockIcon(.trash, size: 11, color: Color.dockMetadataText)
                 }
                 .buttonStyle(.dockHover)
@@ -475,26 +497,29 @@ struct FilePreviewPane: View {
         keepComposingDraft()
         cancelNote()
         guard let text, !drafts.isEmpty else { return }
-        attach(ChatContext(
-            id: "review:\(path):\(UUID().uuidString)",
-            title: "\(drafts.count) note\(drafts.count == 1 ? "" : "s") · \(url.lastPathComponent)",
-            body: FileAnnotationText.prompt(path: path, annotations: drafts)
-        ))
+        attach(
+            ChatContext(
+                id: "review:\(path):\(UUID().uuidString)",
+                title: "\(drafts.count) note\(drafts.count == 1 ? "" : "s") · \(url.lastPathComponent)",
+                body: FileAnnotationText.prompt(path: path, annotations: drafts)
+            ))
         center.markSent(path, baseline: text)
     }
 
     private func addToChat() {
-        attach(ChatContext(
-            id: "file:\(path)",
-            title: url.lastPathComponent,
-            body: "Regarding `\(path)`:"
-        ))
+        attach(
+            ChatContext(
+                id: "file:\(path)",
+                title: url.lastPathComponent,
+                body: "Regarding `\(path)`:"
+            ))
     }
 
     /// Back to the session the preview came from; the current chat otherwise.
     private func attach(_ context: ChatContext) {
         if let origin = center.sessionID, origin != model.sessionID,
-           let session = model.sessions.first(where: { $0.id == origin }) {
+            let session = model.sessions.first(where: { $0.id == origin })
+        {
             Task { await model.attachContext(context, to: session) }
             return
         }
@@ -575,7 +600,9 @@ private struct AnnotationEditor: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(10)
-            .background(Color.dockAccent.opacity(0.07), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .background(
+                Color.dockAccent.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         } else {
             Text("GENERAL NOTE").dockFont(.sectionLabel).foregroundStyle(Color.dockMetadataText)
         }
@@ -610,7 +637,9 @@ private struct AnnotationEditor: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .dockSurfaceFill(Color.dockSurface2, stroke: isFocused ? Color.dockAccent.opacity(0.45) : Color.dockBorderLight, lineWidth: 1)
+                    .dockSurfaceFill(
+                        Color.dockSurface2, stroke: isFocused ? Color.dockAccent.opacity(0.45) : Color.dockBorderLight,
+                        lineWidth: 1)
             )
     }
 

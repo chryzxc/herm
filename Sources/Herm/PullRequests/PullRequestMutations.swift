@@ -9,8 +9,8 @@ enum PullRequestMutationRequest: Identifiable, Equatable {
 
     var id: String {
         switch self {
-        case let .comment(record, body): return "comment:\(record.id):\(body)"
-        case let .status(record, status): return "status:\(record.id):\(status.rawValue)"
+        case .comment(let record, let body): return "comment:\(record.id):\(body)"
+        case .status(let record, let status): return "status:\(record.id):\(status.rawValue)"
         }
     }
 }
@@ -41,11 +41,10 @@ final class PullRequestMutationCoordinator: ObservableObject {
     func confirm(_ request: PullRequestMutationRequest, using center: PullRequestCenterModel) async -> Bool {
         pending = nil
         switch request {
-        case let .comment(record, body):
+        case .comment(let record, let body):
             return await center.addComment(body, to: record)
-        case let .status(record, status):
+        case .status(let record, let status):
             return await center.updateStatus(status, for: record)
         }
     }
 }
-

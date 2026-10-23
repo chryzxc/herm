@@ -1,5 +1,6 @@
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -28,10 +29,11 @@ struct ComposerTextTests {
     @Test func markdownRenderPathPreservesLinkIdentityAndAffordances() throws {
         let markdown = "Read [the guide](https://example.com) for details."
         let blocks = MarkdownMessageView.renderBlocks(for: markdown)
-        let paragraph = try #require(blocks.compactMap { block in
-            if case .paragraph(let text) = block { return text }
-            return nil
-        }.first)
+        let paragraph = try #require(
+            blocks.compactMap { block in
+                if case .paragraph(let text) = block { return text }
+                return nil
+            }.first)
         let styled = MarkdownMessageView.linkAffordances(in: paragraph)
         let linkRun = try #require(styled.runs.first { $0.link != nil })
 
@@ -45,15 +47,18 @@ struct ComposerTextTests {
     }
 
     @Test func markdownOrderedListsPreserveMarkersAcrossParagraphs() {
-        #expect(MarkdownMessageView.orderedListMarkers(in: "1. First\n\nContext paragraph.\n\n4. Fourth\n\n5. Fifth") == ["1.", "4.", "5."])
+        #expect(
+            MarkdownMessageView.orderedListMarkers(in: "1. First\n\nContext paragraph.\n\n4. Fourth\n\n5. Fifth") == [
+                "1.", "4.", "5.",
+            ])
     }
 
     @Test func markdownRendersEmbeddedRuntimeJSONAsACodeBlock() {
         let message = """
-        Worker completed.
+            Worker completed.
 
-        {"verdict":"REQUEST_CHANGES","findings":["retry required"]}
-        """
+            {"verdict":"REQUEST_CHANGES","findings":["retry required"]}
+            """
 
         #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
     }
@@ -70,14 +75,14 @@ struct ComposerTextTests {
 
     @Test func latestActivityMarkdownPreservesCommandsListsAndJSONSafely() {
         let source = """
-        Run `swift test`
+            Run `swift test`
 
-        - **Build** completed
+            - **Build** completed
 
-        {"state":"done","command":"rm -rf -- .cache"}
+            {"state":"done","command":"rm -rf -- .cache"}
 
-        <script>alert('unsafe')</script>
-        """
+            <script>alert('unsafe')</script>
+            """
 
         let blocks = MarkdownMessageView.renderBlocks(for: LatestActivityPresentation.boundedMarkdown(source))
 
@@ -96,16 +101,17 @@ struct ComposerTextTests {
         }.joined(separator: "\n")
 
         #expect(renderedText.contains("<script>alert('unsafe')</script>"))
-        #expect(blocks.flatMap { block -> [AttributedString.Runs.Run] in
-            switch block {
-            case .heading(_, let text), .paragraph(let text), .listItem(let text, _), .quote(let text):
-                return Array(text.runs)
-            case .tableRow(let columns):
-                return columns.flatMap { Array($0.runs) }
-            case .code:
-                return []
-            }
-        }.allSatisfy { $0.link == nil })
+        #expect(
+            blocks.flatMap { block -> [AttributedString.Runs.Run] in
+                switch block {
+                case .heading(_, let text), .paragraph(let text), .listItem(let text, _), .quote(let text):
+                    return Array(text.runs)
+                case .tableRow(let columns):
+                    return columns.flatMap { Array($0.runs) }
+                case .code:
+                    return []
+                }
+            }.allSatisfy { $0.link == nil })
     }
 
     @Test func multiLineJSONObjectWithinBudgetStillBecomesACodeBlock() {
@@ -136,15 +142,15 @@ struct ComposerTextTests {
 
     @Test func nestedMultiLineJSONWithBracesInsideStringsBecomesACodeBlock() {
         let message = """
-        Worker finished.
+            Worker finished.
 
-        {
-          "note": "braces } and { inside a string",
-          "nested": {
-            "inner": true
-          }
-        }
-        """
+            {
+              "note": "braces } and { inside a string",
+              "nested": {
+                "inner": true
+              }
+            }
+            """
 
         #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
     }
@@ -157,10 +163,10 @@ struct ComposerTextTests {
 
     @Test func unmatchedClosingBraceKeepsStatusTextAsProse() {
         let message = """
-        Summary text.
+            Summary text.
 
-        { "a": 1 } }
-        """
+            { "a": 1 } }
+            """
 
         #expect(MarkdownMessageView.codeBlockLanguages(in: message).isEmpty)
     }

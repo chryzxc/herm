@@ -92,10 +92,12 @@ enum SessionKanbanActivityPresentation {
                 boardSlug: task.boardSlug
             )
         }
-        let completedRows = rows
+        let completedRows =
+            rows
             .filter { $0.status.isCompleted }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        let activeRows = rows
+        let activeRows =
+            rows
             .filter { !$0.status.isCompleted }
             .sorted { lhs, rhs in
                 if lhs.status != rhs.status {
@@ -111,9 +113,10 @@ enum SessionKanbanActivityPresentation {
         let botByID = Dictionary(uniqueKeysWithValues: bots.map { ($0.id, $0) })
         return tasks.compactMap { task in
             guard task.sessionID == sessionID,
-                  let assignee = trimmed(task.assignee),
-                  let bot = botByID[assignee],
-                  !bot.isHidden else { return nil }
+                let assignee = trimmed(task.assignee),
+                let bot = botByID[assignee],
+                !bot.isHidden
+            else { return nil }
             return BotWorkRow(
                 taskID: task.id,
                 botID: bot.id,

@@ -30,8 +30,10 @@ struct VoicePillQueue: Equatable {
 
     /// Re-pushing an existing `key` updates that card in place and extends it.
     /// `slots` limits where a new card may sit, e.g. to keep a side free.
-    mutating func push(key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
-                       tone: Tone = .accent, target: String? = nil, slots: [Int] = Array(0..<slotCount), now: Date = .now) {
+    mutating func push(
+        key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
+        tone: Tone = .accent, target: String? = nil, slots: [Int] = Array(0..<slotCount), now: Date = .now
+    ) {
         let slots = Array(Set(slots.filter { (0..<Self.slotCount).contains($0) })).sorted()
         expire(now: now)
         restrict(to: slots)
@@ -49,11 +51,14 @@ struct VoicePillQueue: Equatable {
         }
         if pills.count >= min(Self.capacity, slots.count) { pills.removeFirst() }
         let used = Set(pills.map(\.slot))
-        let slot = (0..<Self.slotCount).map { (nextSlot + $0) % Self.slotCount }
+        let slot =
+            (0..<Self.slotCount).map { (nextSlot + $0) % Self.slotCount }
             .first { slots.contains($0) && !used.contains($0) } ?? slots.first ?? nextSlot
         nextSlot = (slot + 1) % Self.slotCount
-        pills.append(Pill(id: key, icon: icon, title: title, detail: detail, isRunning: isRunning,
-                          tone: tone, target: target, slot: slot, expiresAt: expiresAt))
+        pills.append(
+            Pill(
+                id: key, icon: icon, title: title, detail: detail, isRunning: isRunning,
+                tone: tone, target: target, slot: slot, expiresAt: expiresAt))
     }
 
     mutating func expire(now: Date = .now) {
@@ -77,8 +82,9 @@ struct VoicePillQueue: Equatable {
     static func target(in text: String) -> String? {
         let range = NSRange(text.startIndex..., in: text)
         if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
-           let link = detector.matches(in: text, range: range).compactMap(\.url)
-               .first(where: { ["http", "https"].contains($0.scheme?.lowercased() ?? "") }) {
+            let link = detector.matches(in: text, range: range).compactMap(\.url)
+                .first(where: { ["http", "https"].contains($0.scheme?.lowercased() ?? "") })
+        {
             return link.absoluteString
         }
         guard let regex = try? NSRegularExpression(pattern: #"(?:~|/)[^\s"'`,;:()\[\]{}<>]+"#) else { return nil }
@@ -127,73 +133,96 @@ struct VoiceActivityPillsLayer: View {
         }
         .onChange(of: cronJobs) { old, new in
             for job in new {
-                guard let ran = job.lastRunAt, let before = old.first(where: { $0.id == job.id }), before.lastRunAt != ran else { continue }
+                guard let ran = job.lastRunAt, let before = old.first(where: { $0.id == job.id }),
+                    before.lastRunAt != ran
+                else { continue }
                 let failed = job.lastError != nil || ["failed", "error"].contains(job.lastStatus?.lowercased() ?? "")
-                push(key: "cron-\(job.id)-\(ran)", icon: .calendarCheck, title: failed ? "\(job.name) failed" : "\(job.name) ran",
-                     detail: job.lastError ?? job.schedule, tone: failed ? .danger : .success)
+                push(
+                    key: "cron-\(job.id)-\(ran)", icon: .calendarCheck,
+                    title: failed ? "\(job.name) failed" : "\(job.name) ran",
+                    detail: job.lastError ?? job.schedule, tone: failed ? .danger : .success)
             }
         }
         .onChange(of: model.activeSubagents) { old, new in
             for agent in new where !old.contains(where: { $0.id == agent.id }) {
-                push(key: "agent-\(agent.id)", icon: .robot, title: agent.name ?? "Subagent",
-                     detail: String(agent.goal.prefix(90)), isRunning: true)
+                push(
+                    key: "agent-\(agent.id)", icon: .robot, title: agent.name ?? "Subagent",
+                    detail: String(agent.goal.prefix(90)), isRunning: true)
             }
         }
         .onChange(of: model.reasoningState?.isComplete) { _, isComplete in
             guard isComplete == true,
-                  let text = model.reasoningState?.text.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !text.isEmpty else { return }
+                let text = model.reasoningState?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                !text.isEmpty
+            else { return }
             push(key: "reasoning-\(text.count)", icon: .brain, title: "Reasoning", detail: String(text.prefix(110)))
         }
         .onChange(of: model.queuedPrompts.map(\.id)) { old, new in
             for prompt in model.queuedPrompts where !old.contains(prompt.id) {
-                push(key: "queued-\(prompt.id)", icon: .queue, title: "Queued",
-                     detail: String(prompt.text.prefix(90)), isRunning: true)
+                push(
+                    key: "queued-\(prompt.id)", icon: .queue, title: "Queued",
+                    detail: String(prompt.text.prefix(90)), isRunning: true)
             }
         }
         .onChange(of: model.backgroundTasks) { old, new in
-            for task in new where task.status == .completed
-                && old.first(where: { $0.id == task.id })?.status != .completed {
-                push(key: "task-\(task.id)", icon: .checkCircle, title: "Background task done",
-                     detail: String(task.prompt.prefix(90)), tone: .success,
-                     target: task.output.flatMap(VoicePillQueue.target(in:)))
+            for task in new
+            where task.status == .completed
+                && old.first(where: { $0.id == task.id })?.status != .completed
+            {
+                push(
+                    key: "task-\(task.id)", icon: .checkCircle, title: "Background task done",
+                    detail: String(task.prompt.prefix(90)), tone: .success,
+                    target: task.output.flatMap(VoicePillQueue.target(in:)))
             }
         }
         .onChange(of: model.messages.last(where: \.isError)?.id) { _, id in
             guard let id, let message = model.messages.first(where: { $0.id == id }) else { return }
-            push(key: "error-\(id)", icon: .warningCircle, title: "Something went wrong",
-                 detail: String(message.text.prefix(110)), tone: .danger)
+            push(
+                key: "error-\(id)", icon: .warningCircle, title: "Something went wrong",
+                detail: String(message.text.prefix(110)), tone: .danger)
         }
         .onChange(of: model.isHermesConnected) { _, isConnected in
-            push(key: "connection", icon: isConnected ? .plugs : .wifiSlash,
-                 title: isConnected ? "Hermes reconnected" : "Hermes disconnected",
-                 detail: nil, tone: isConnected ? .success : .danger)
+            push(
+                key: "connection", icon: isConnected ? .plugs : .wifiSlash,
+                title: isConnected ? "Hermes reconnected" : "Hermes disconnected",
+                detail: nil, tone: isConnected ? .success : .danger)
         }
         .onChange(of: contextBand) { old, new in
             // One warning per 5% step past 80%, not one per token.
             guard let new, new > (old ?? 0) else { return }
-            push(key: "context", icon: .gauge, title: "Context \(new)% full",
-                 detail: "Compact or start a new session soon.", tone: .warning)
+            push(
+                key: "context", icon: .gauge, title: "Context \(new)% full",
+                detail: "Compact or start a new session soon.", tone: .warning)
         }
         .onChange(of: model.voiceTelemetry.completedAt) { _, completedAt in
             let telemetry = model.voiceTelemetry
-            guard let completedAt, !telemetry.wasInterrupted, let submitted = telemetry.requestSubmittedAt else { return }
+            guard let completedAt, !telemetry.wasInterrupted, let submitted = telemetry.requestSubmittedAt else {
+                return
+            }
             var parts: [String] = []
             if let first = telemetry.firstResponseAt {
                 parts.append(String(format: "First reply %.1fs", first.timeIntervalSince(submitted)))
             }
             parts.append(String(format: "done %.1fs", completedAt.timeIntervalSince(submitted)))
             push(key: "speed", icon: .timer, title: "Turn speed", detail: parts.joined(separator: " · "))
-            let edited = Set(model.activeToolCalls.filter { ["write_file", "patch"].contains($0.name.lowercased()) }.compactMap { $0.args?["path"] })
+            let edited = Set(
+                model.activeToolCalls.filter { ["write_file", "patch"].contains($0.name.lowercased()) }.compactMap {
+                    $0.args?["path"]
+                })
             if edited.count > 1 {
-                push(key: "files-\(completedAt.timeIntervalSince1970)", icon: .files, title: "\(edited.count) files changed",
-                     detail: edited.map { ($0 as NSString).lastPathComponent }.sorted().joined(separator: ", "), tone: .success)
+                push(
+                    key: "files-\(completedAt.timeIntervalSince1970)", icon: .files,
+                    title: "\(edited.count) files changed",
+                    detail: edited.map { ($0 as NSString).lastPathComponent }.sorted().joined(separator: ", "),
+                    tone: .success)
             }
             // The answer's link or file, one click away.
             if let reply = model.messages.last(where: { $0.role == .hermes && !$0.isError }),
-               let target = VoicePillQueue.target(in: reply.text) {
-                push(key: "result-\(reply.id)", icon: target.hasPrefix("http") ? .link : .file, title: "Result",
-                     detail: VoicePillQueue.label(for: target), tone: .success, target: target)
+                let target = VoicePillQueue.target(in: reply.text)
+            {
+                push(
+                    key: "result-\(reply.id)", icon: target.hasPrefix("http") ? .link : .file, title: "Result",
+                    detail: VoicePillQueue.label(for: target), tone: .success, target: target)
             }
         }
     }
@@ -220,10 +249,14 @@ struct VoiceActivityPillsLayer: View {
     private func pushStep(_ call: ActiveToolCall) {
         let key = "tool-\(call.id)"
         let name = call.name.lowercased()
-        if name == "terminal", call.isComplete, let tests = TestSummary(ToolText.field("output", in: call.result) ?? call.result ?? "") {
-            return push(key: key, icon: tests.failed > 0 ? .warningCircle : .checkCircle,
-                        title: tests.failed > 0 ? "\(tests.failed) test\(tests.failed == 1 ? "" : "s") failed" : "All \(tests.passed) tests passed",
-                        detail: tests.failed > 0 ? "\(tests.passed) passed" : nil, tone: tests.failed > 0 ? .danger : .success)
+        if name == "terminal", call.isComplete,
+            let tests = TestSummary(ToolText.field("output", in: call.result) ?? call.result ?? "")
+        {
+            return push(
+                key: key, icon: tests.failed > 0 ? .warningCircle : .checkCircle,
+                title: tests.failed > 0
+                    ? "\(tests.failed) test\(tests.failed == 1 ? "" : "s") failed" : "All \(tests.passed) tests passed",
+                detail: tests.failed > 0 ? "\(tests.passed) passed" : nil, tone: tests.failed > 0 ? .danger : .success)
         }
         guard !ToolStep.hasCard(call.name) else { return }
         let step = ToolStep.describe(call)
@@ -231,37 +264,48 @@ struct VoiceActivityPillsLayer: View {
             let target = call.args?["urls"].flatMap(VoicePillQueue.target(in:))
             let excerpt = (ToolText.field("content", in: call.result) ?? ToolText.field("text", in: call.result))
                 .map { String($0.split(whereSeparator: \.isNewline).joined(separator: " ").prefix(120)) }
-            return push(key: key, icon: .fileText, title: step.title, detail: excerpt ?? target.map(VoicePillQueue.label(for:)),
-                        tone: .success, target: target)
+            return push(
+                key: key, icon: .fileText, title: step.title, detail: excerpt ?? target.map(VoicePillQueue.label(for:)),
+                tone: .success, target: target)
         }
-        let target = call.isComplete
-            ? VoicePillQueue.target(in: [call.input, call.context, call.result ?? "", call.args?["path"] ?? ""].joined(separator: "\n"))
+        let target =
+            call.isComplete
+            ? VoicePillQueue.target(
+                in: [call.input, call.context, call.result ?? "", call.args?["path"] ?? ""].joined(separator: "\n"))
             : nil
         if let stats = call.isComplete ? call.diffStats : nil {
             let file = target.map(VoicePillQueue.label(for:))
-            push(key: key, icon: .pencilSimple, title: file.map { "Edited \($0)" } ?? step.title,
-                 detail: "+\(stats.added) −\(stats.removed) lines", tone: .success, target: target)
+            push(
+                key: key, icon: .pencilSimple, title: file.map { "Edited \($0)" } ?? step.title,
+                detail: "+\(stats.added) −\(stats.removed) lines", tone: .success, target: target)
         } else if let target {
-            push(key: key, icon: step.icon, title: step.title,
-                 detail: step.detail ?? VoicePillQueue.label(for: target), tone: .success, target: target)
+            push(
+                key: key, icon: step.icon, title: step.title,
+                detail: step.detail ?? VoicePillQueue.label(for: target), tone: .success, target: target)
         } else {
             let detail = step.detail ?? [call.context, call.input].first { !$0.isEmpty }.map { String($0.prefix(90)) }
-            push(key: key, icon: step.icon, title: step.title, detail: detail, isRunning: !call.isComplete,
-                 tone: call.isComplete ? .success : .accent)
+            push(
+                key: key, icon: step.icon, title: step.title, detail: detail, isRunning: !call.isComplete,
+                tone: call.isComplete ? .success : .accent)
         }
     }
 
     /// Context use rounded down to 5%, or nil below 80%.
     private var contextBand: Int? {
-        guard let usage = model.sessionContextUsage, usage.sessionID == model.sessionID, usage.max > 0 else { return nil }
+        guard let usage = model.sessionContextUsage, usage.sessionID == model.sessionID, usage.max > 0 else {
+            return nil
+        }
         let percent = usage.used * 100 / usage.max
         return percent >= 80 ? percent / 5 * 5 : nil
     }
 
-    private func push(key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
-                      tone: VoicePillQueue.Tone = .accent, target: String? = nil) {
-        queue.push(key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target,
-                   slots: allowedSlots)
+    private func push(
+        key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
+        tone: VoicePillQueue.Tone = .accent, target: String? = nil
+    ) {
+        queue.push(
+            key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target,
+            slots: allowedSlots)
         let lifetime = target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(lifetime + 0.05))
@@ -285,9 +329,13 @@ private struct VoicePillCard: View {
 
     var body: some View {
         if let target = pill.target {
-            Button { ArtifactOpener.open(target) } label: { card }
-                .buttonStyle(.dockHover)
-                .help(target)
+            Button {
+                ArtifactOpener.open(target)
+            } label: {
+                card
+            }
+            .buttonStyle(.dockHover)
+            .help(target)
         } else {
             card
         }
@@ -323,7 +371,8 @@ private struct VoicePillCard: View {
         .frame(maxWidth: maxWidth, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                .dockSurfaceFill(Color.dockSurface6.opacity(0.92), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
+                .dockSurfaceFill(
+                    Color.dockSurface6.opacity(0.92), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
         )
         .shadow(color: tint.opacity(0.18), radius: 16)
         .fixedSize(horizontal: false, vertical: true)
@@ -363,11 +412,11 @@ struct VoiceRecentTranscript: View {
                                 .equatable()
                             }
                         }
-                            .lineLimit(5)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-                            .multilineTextAlignment(isUser ? .trailing : .leading)
-                            .id(message.id)
+                        .lineLimit(5)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+                        .multilineTextAlignment(isUser ? .trailing : .leading)
+                        .id(message.id)
                     }
                 }
                 .padding(14)
@@ -379,15 +428,18 @@ struct VoiceRecentTranscript: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                .dockSurfaceFill(Color.dockSurface6.opacity(0.95), stroke: Color.dockAccent.opacity(0.25), lineWidth: 0.6, strokeOnGlass: true)
+                .dockSurfaceFill(
+                    Color.dockSurface6.opacity(0.95), stroke: Color.dockAccent.opacity(0.25), lineWidth: 0.6,
+                    strokeOnGlass: true)
         )
         .shadow(color: Color.dockAccent.opacity(0.15), radius: 16)
     }
 
     static func recent(_ messages: [ChatMessage]) -> [ChatMessage] {
-        Array(messages.filter {
-            ($0.role == .user || $0.role == .hermes) && !$0.isError
-                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }.suffix(limit))
+        Array(
+            messages.filter {
+                ($0.role == .user || $0.role == .hermes) && !$0.isError
+                    && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }.suffix(limit))
     }
 }

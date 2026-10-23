@@ -96,16 +96,17 @@ enum AgentActivityPresentation {
     /// `subagent.start` and tool records for the board, but must not keep the
     /// conversation's animated activity row on screen.
     static func hasActiveWork(toolCalls: [ActiveToolCall], subagents: [HermesSubagent]) -> Bool {
-        toolCalls.contains(where: { !$0.isComplete }) ||
-            subagents.contains(where: { isActiveStatus($0.status) })
+        toolCalls.contains(where: { !$0.isComplete }) || subagents.contains(where: { isActiveStatus($0.status) })
     }
 
     static func isActiveStatus(_ status: String) -> Bool {
-        let normalized = status
+        let normalized =
+            status
             .lowercased()
             .replacingOccurrences(of: "-", with: "_")
             .replacingOccurrences(of: " ", with: "_")
-        return ["running", "working", "in_progress", "inprogress", "pending", "queued", "starting", "active"].contains(normalized)
+        return ["running", "working", "in_progress", "inprogress", "pending", "queued", "starting", "active"].contains(
+            normalized)
     }
 
     /// Canonical projection shared by the Agent Board pipeline and the chat's
@@ -130,8 +131,9 @@ enum AgentActivityPresentation {
             // worker completes.
             let status: String
             if activityPhase == .running,
-               let currentAgentStatus,
-               !isActiveStatus(currentAgentStatus) {
+                let currentAgentStatus,
+                !isActiveStatus(currentAgentStatus)
+            {
                 status = currentAgentStatus
             } else {
                 status = displayStatus(for: activityPhase)
@@ -144,7 +146,8 @@ enum AgentActivityPresentation {
                 timestamp: activity.timestamp,
                 status: status,
                 task: activityTitle(for: activity),
-                agent: activity.agentID.flatMap { agentByID[$0].map { agentLabel(name: $0.name, role: $0.role) } } ?? "Hermes",
+                agent: activity.agentID.flatMap { agentByID[$0].map { agentLabel(name: $0.name, role: $0.role) } }
+                    ?? "Hermes",
                 agentID: activity.agentID,
                 parentAgentID: activity.parentAgentID,
                 childSessionID: activity.childSessionID,
@@ -155,30 +158,33 @@ enum AgentActivityPresentation {
             )
         }
 
-        rows.append(contentsOf: toolCalls.map { call in
-            var details = [call.input.isEmpty ? call.name : "Input: \(call.input)"]
-            if let result = call.result, !result.isEmpty { details.append("Result: \(result)") }
-            return PipelineActivity(
-                id: "tool:\(call.id)",
-                timestamp: call.completedAt ?? call.startedAt,
-                status: call.isComplete ? "Complete" : "Running",
-                task: toolActivityTitle(name: call.name, context: call.context),
-                agent: call.agentID.flatMap { agentByID[$0].map { agentLabel(name: $0.name, role: $0.role) } } ?? "Orchestrator",
-                agentID: call.agentID,
-                parentAgentID: call.parentAgentID,
-                childSessionID: call.childSessionID,
-                detail: details.joined(separator: "\n"),
-                diffPreview: call.diffPreview,
-                startedAt: call.startedAt,
-                completedAt: call.completedAt
-            )
-        })
+        rows.append(
+            contentsOf: toolCalls.map { call in
+                var details = [call.input.isEmpty ? call.name : "Input: \(call.input)"]
+                if let result = call.result, !result.isEmpty { details.append("Result: \(result)") }
+                return PipelineActivity(
+                    id: "tool:\(call.id)",
+                    timestamp: call.completedAt ?? call.startedAt,
+                    status: call.isComplete ? "Complete" : "Running",
+                    task: toolActivityTitle(name: call.name, context: call.context),
+                    agent: call.agentID.flatMap { agentByID[$0].map { agentLabel(name: $0.name, role: $0.role) } }
+                        ?? "Orchestrator",
+                    agentID: call.agentID,
+                    parentAgentID: call.parentAgentID,
+                    childSessionID: call.childSessionID,
+                    detail: details.joined(separator: "\n"),
+                    diffPreview: call.diffPreview,
+                    startedAt: call.startedAt,
+                    completedAt: call.completedAt
+                )
+            })
 
         if !rows.isEmpty {
             // ForEach and the expand toggles key on row id; duplicate ids crash
             // SwiftUI diffing, so later duplicates get a disambiguated id.
             var seen = Set<String>()
-            return rows
+            return
+                rows
                 .map { row -> PipelineActivity in
                     guard !seen.insert(row.id).inserted else { return row }
                     var occurrence = 2
@@ -196,29 +202,31 @@ enum AgentActivityPresentation {
         }
 
         var seenAgents = Set<String>()
-        return subagents
+        return
+            subagents
             .filter { seenAgents.insert($0.id).inserted }
             .map { agent in
-            PipelineActivity(
-                id: "agent:\(agent.id)",
-                timestamp: agent.startedAt ?? .distantPast,
-                status: agent.status,
-                task: agent.goal,
-                agent: agentLabel(name: agent.name, role: agent.role),
-                agentID: agent.id,
-                parentAgentID: agent.parentID,
-                childSessionID: agent.childSessionID,
-                detail: agent.summary ?? agent.latestActivity ?? agent.goal,
-                diffPreview: activities
-                    .filter { $0.agentID == agent.id && $0.diffPreview != nil }
-                    .sorted { $0.timestamp > $1.timestamp }
-                    .first?.diffPreview,
-                startedAt: agent.startedAt,
-                completedAt: agent.completedAt,
-                durationSeconds: agent.durationSeconds
-            )
-        }
-        .sorted { $0.timestamp > $1.timestamp }
+                PipelineActivity(
+                    id: "agent:\(agent.id)",
+                    timestamp: agent.startedAt ?? .distantPast,
+                    status: agent.status,
+                    task: agent.goal,
+                    agent: agentLabel(name: agent.name, role: agent.role),
+                    agentID: agent.id,
+                    parentAgentID: agent.parentID,
+                    childSessionID: agent.childSessionID,
+                    detail: agent.summary ?? agent.latestActivity ?? agent.goal,
+                    diffPreview:
+                        activities
+                        .filter { $0.agentID == agent.id && $0.diffPreview != nil }
+                        .sorted { $0.timestamp > $1.timestamp }
+                        .first?.diffPreview,
+                    startedAt: agent.startedAt,
+                    completedAt: agent.completedAt,
+                    durationSeconds: agent.durationSeconds
+                )
+            }
+            .sorted { $0.timestamp > $1.timestamp }
     }
 
     /// Role inference is helpful for generic delegates, but it is not a Bot
@@ -227,9 +235,11 @@ enum AgentActivityPresentation {
     private static func agentLabel(name: String?, role: String?) -> String {
         let cleanName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanRole = role?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasMeaningfulName = cleanName.map { !$0.isEmpty && $0.caseInsensitiveCompare("agent") != .orderedSame } ?? false
+        let hasMeaningfulName =
+            cleanName.map { !$0.isEmpty && $0.caseInsensitiveCompare("agent") != .orderedSame } ?? false
         if hasMeaningfulName,
-           cleanName?.caseInsensitiveCompare(cleanRole ?? "") != .orderedSame {
+            cleanName?.caseInsensitiveCompare(cleanRole ?? "") != .orderedSame
+        {
             return cleanName!
         }
         if let cleanRole, !cleanRole.isEmpty {
@@ -261,13 +271,15 @@ enum AgentActivityPresentation {
         let pipelineTimestamp = latestPipelineActivity?.timestamp ?? .distantPast
 
         if let latestStatusEvent,
-           latestStatusEvent.timestamp > pipelineTimestamp,
-           ["reasoning.delta", "thinking.delta"].contains(latestStatusEvent.type.lowercased()) {
+            latestStatusEvent.timestamp > pipelineTimestamp,
+            ["reasoning.delta", "thinking.delta"].contains(latestStatusEvent.type.lowercased())
+        {
             return "Thinking"
         }
 
         if let task = latestPipelineActivity?.task.trimmingCharacters(in: .whitespacesAndNewlines),
-           !task.isEmpty {
+            !task.isEmpty
+        {
             return task
         }
 
@@ -287,14 +299,8 @@ enum AgentActivityPresentation {
 
     private static func isConversationStatusEvent(_ event: AgentEvent) -> Bool {
         let type = event.type.lowercased()
-        return type.hasPrefix("tool.") ||
-            type == "tool_use" ||
-            type == "tool_result" ||
-            type.contains("reason") ||
-            type.contains("think") ||
-            type.hasPrefix("message.") ||
-            type.hasPrefix("approval.") ||
-            type == "error"
+        return type.hasPrefix("tool.") || type == "tool_use" || type == "tool_result" || type.contains("reason")
+            || type.contains("think") || type.hasPrefix("message.") || type.hasPrefix("approval.") || type == "error"
     }
 
     static func toolActivityTitle(name: String, context: String) -> String {
@@ -314,7 +320,8 @@ enum AgentActivityPresentation {
         case "view_image":
             return cleanContext.isEmpty ? "Inspect image" : "Inspect \(cleanContext)"
         default:
-            let label = normalizedName
+            let label =
+                normalizedName
                 .split(separator: "_")
                 .map { $0.capitalized }
                 .joined(separator: " ")
@@ -323,7 +330,8 @@ enum AgentActivityPresentation {
     }
 
     private static func compact(_ value: String) -> String {
-        let singleLine = value
+        let singleLine =
+            value
             .split(whereSeparator: { $0.isWhitespace })
             .joined(separator: " ")
         return String(singleLine.prefix(140))

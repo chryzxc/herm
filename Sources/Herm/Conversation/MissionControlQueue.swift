@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct MissionControlQueue: View {
@@ -102,7 +102,8 @@ struct MissionControlQueue: View {
         self.agentUpdateService = agentUpdateService
         self.navigationState = navigationState
         self.dockThemeStore = dockThemeStore
-        _sidebar = StateObject(wrappedValue: MissionControlSidebarModel(model: model, control: controlCenter, store: workspaceStore))
+        _sidebar = StateObject(
+            wrappedValue: MissionControlSidebarModel(model: model, control: controlCenter, store: workspaceStore))
         self._sessionPendingDeletion = sessionPendingDeletion
         self.activeSessionID = activeSessionID
         self.activeGlobalTab = activeGlobalTab
@@ -196,47 +197,49 @@ struct MissionControlQueue: View {
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         listPanel(style: style)
-        .background(style.sidebarBackground)
-        // This queue can move between AppKit split-view hosts as the center
-        // destination changes. Loading the index is an initial-popover task,
-        // not a navigation side effect; otherwise selecting a project or
-        // conversation remounts the rail and reissues a full list refresh.
-        .task {
-            if ScrollPerformanceFixture.isRequested {
-                let fixture = ScrollPerformanceFixture.standard
-                if let fixtureSession = fixture.sessions.first {
-                    model.prepareScrollPerformanceFixtureSession(fixtureSession)
+            .background(style.sidebarBackground)
+            // This queue can move between AppKit split-view hosts as the center
+            // destination changes. Loading the index is an initial-popover task,
+            // not a navigation side effect; otherwise selecting a project or
+            // conversation remounts the rail and reissues a full list refresh.
+            .task {
+                if ScrollPerformanceFixture.isRequested {
+                    let fixture = ScrollPerformanceFixture.standard
+                    if let fixtureSession = fixture.sessions.first {
+                        model.prepareScrollPerformanceFixtureSession(fixtureSession)
+                    }
+                    model.sessions = fixture.sessions
+                    let scenario = ScrollPerformanceFixture.requestedScenario ?? .idleLongMarkdown
+                    model.messages =
+                        (scenario == .shortControl || scenario == .streamingLongMarkdown)
+                        ? Array(fixture.messages.prefix(6))
+                        : fixture.messages
+                    controlCenter.installScrollPerformanceFixture(fixture)
+                    navigationState.hasRequestedSessionIndex = true
+                    DebugLog.writePerformance(
+                        "scroll_fixture scenario=\(scenario.rawValue) streaming_bytes=\(fixture.streamingBytes) streaming_cadence_ms=\(fixture.streamingCadenceMilliseconds) activity_visible=0"
+                    )
+                    if scenario == .streamingLongMarkdown {
+                        await fixture.runStreaming(on: model)
+                    }
+                    return
                 }
-                model.sessions = fixture.sessions
-                let scenario = ScrollPerformanceFixture.requestedScenario ?? .idleLongMarkdown
-                model.messages = (scenario == .shortControl || scenario == .streamingLongMarkdown)
-                    ? Array(fixture.messages.prefix(6))
-                    : fixture.messages
-                controlCenter.installScrollPerformanceFixture(fixture)
+                guard !navigationState.hasRequestedSessionIndex else { return }
                 navigationState.hasRequestedSessionIndex = true
-                DebugLog.writePerformance(
-                    "scroll_fixture scenario=\(scenario.rawValue) streaming_bytes=\(fixture.streamingBytes) streaming_cadence_ms=\(fixture.streamingCadenceMilliseconds) activity_visible=0"
-                )
-                if scenario == .streamingLongMarkdown {
-                    await fixture.runStreaming(on: model)
+                model.loadSessions()
+            }
+            .onChange(of: sidebar.snapshot.inputs.sessionProjectionState) { _, _ in
+                baselineSidebarSessionsIfAuthoritative()
+            }
+            .onChange(of: sidebar.snapshot.inputs.activeSessionID) { _, _ in
+                if let id = sidebar.snapshot.inputs.activeSessionID,
+                    let session = sidebar.snapshot.conversations.first(where: { $0.id == id })
+                {
+                    markSessionSeen(session)
                 }
-                return
             }
-            guard !navigationState.hasRequestedSessionIndex else { return }
-            navigationState.hasRequestedSessionIndex = true
-            model.loadSessions()
-        }
-        .onChange(of: sidebar.snapshot.inputs.sessionProjectionState) { _, _ in
-            baselineSidebarSessionsIfAuthoritative()
-        }
-        .onChange(of: sidebar.snapshot.inputs.activeSessionID) { _, _ in
-            if let id = sidebar.snapshot.inputs.activeSessionID,
-               let session = sidebar.snapshot.conversations.first(where: { $0.id == id }) {
-                markSessionSeen(session)
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Hermes control queue")
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Hermes control queue")
     }
 
     /// Secondary panel: identity, new conversation, and the session lists.
@@ -305,7 +308,8 @@ struct MissionControlQueue: View {
     private var selectedBot: BotSummary? {
         let visible = botMode.bots.filter { !$0.isHidden }
         if let id = botMode.selectedProfileID,
-           let selected = visible.first(where: { $0.id == id }) {
+            let selected = visible.first(where: { $0.id == id })
+        {
             return selected
         }
         return visible.first(where: \.isDefault) ?? visible.first
@@ -331,7 +335,8 @@ struct MissionControlQueue: View {
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28)
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(style.selectedFill)
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(
+                        style.selectedFill)
                     DockIcon(.ghost, size: 15, color: style.secondaryText)
                 }
                 .frame(width: 28, height: 28)
@@ -359,7 +364,9 @@ struct MissionControlQueue: View {
         .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                .fill(isSwitchable && (isProfileHovering || isProfileSelectorPresented) ? style.surface4.opacity(0.6) : .clear)
+                .fill(
+                    isSwitchable && (isProfileHovering || isProfileSelectorPresented)
+                        ? style.surface4.opacity(0.6) : .clear)
         )
         .contentShape(Rectangle())
 
@@ -390,28 +397,30 @@ struct MissionControlQueue: View {
         // Working is time-based (heartbeat age), so re-evaluate on a slow
         // local tick; the roster itself republishes only when it changes.
         TimelineView(.periodic(from: .now, by: 15)) { _ in
-        let workingBots = bots.filter { $0.isWorkingNow || $0.isRecentlyActive }
-        let doneBots = bots.filter { !($0.isWorkingNow || $0.isRecentlyActive) && botMode.hasUnread($0) }
-        let working = workingBots.count, done = doneBots.count
-        let summary = (workingBots.map { "\($0.name) is running" } + doneBots.map { "\($0.name) is done" }).joined(separator: "\n")
-        HStack(spacing: 6) {
-            if working > 0 {
-                HStack(spacing: 4) {
-                    DockActivityIndicator(state: .running, size: 12)
-                    if bots.count > 1 { Text("\(working)").dockFont(.compactStatus, weight: .bold) }
+            let workingBots = bots.filter { $0.isWorkingNow || $0.isRecentlyActive }
+            let doneBots = bots.filter { !($0.isWorkingNow || $0.isRecentlyActive) && botMode.hasUnread($0) }
+            let working = workingBots.count
+            let done = doneBots.count
+            let summary = (workingBots.map { "\($0.name) is running" } + doneBots.map { "\($0.name) is done" }).joined(
+                separator: "\n")
+            HStack(spacing: 6) {
+                if working > 0 {
+                    HStack(spacing: 4) {
+                        DockActivityIndicator(state: .running, size: 12)
+                        if bots.count > 1 { Text("\(working)").dockFont(.compactStatus, weight: .bold) }
+                    }
+                    .foregroundStyle(DockActivityState.running.color)
                 }
-                .foregroundStyle(DockActivityState.running.color)
-            }
-            if done > 0 {
-                HStack(spacing: 3) {
-                    DockActivityIndicator(state: .done, size: 12, unreadDot: true)
-                    if bots.count > 1 { Text("\(done)").dockFont(.compactStatus, weight: .bold) }
+                if done > 0 {
+                    HStack(spacing: 3) {
+                        DockActivityIndicator(state: .done, size: 12, unreadDot: true)
+                        if bots.count > 1 { Text("\(done)").dockFont(.compactStatus, weight: .bold) }
+                    }
+                    .foregroundStyle(DockActivityState.done.color)
                 }
-                .foregroundStyle(DockActivityState.done.color)
             }
-        }
-        .help(summary)
-        .accessibilityLabel(summary.replacingOccurrences(of: "\n", with: ", "))
+            .help(summary)
+            .accessibilityLabel(summary.replacingOccurrences(of: "\n", with: ", "))
         }
     }
 
@@ -492,7 +501,10 @@ struct MissionControlQueue: View {
             GroupChatSidebarSection(
                 store: botMode.groupChats,
                 botMode: botMode,
-                selectedRoomID: { if case .groupChat(let id) = navigationState.selection.selection { return id }; return nil }(),
+                selectedRoomID: {
+                    if case .groupChat(let id) = navigationState.selection.selection { return id }
+                    return nil
+                }(),
                 style: style,
                 onOpen: onOpenGroupChat,
                 onCreate: { isShowingNewGroupChat = true }
@@ -562,7 +574,8 @@ struct MissionControlQueue: View {
             }
         }
         .sheet(isPresented: $isShowingNewGroupChat) {
-            NewGroupChatSheet(store: botMode.groupChats, bots: botMode.bots.filter { !$0.isHidden }, onCreated: onOpenGroupChat)
+            NewGroupChatSheet(
+                store: botMode.groupChats, bots: botMode.bots.filter { !$0.isHidden }, onCreated: onOpenGroupChat)
         }
         .sheet(isPresented: $isShowingProjectSheet) {
             ProjectFolderSheet(
@@ -573,7 +586,9 @@ struct MissionControlQueue: View {
                     var created = controlCenter.projects.contains { $0.name == folder }
                     if !created {
                         created = await controlCenter.createProject(name: name, folder: folder)
-                        if !created, controlCenter.lastError?.contains("already belongs to project") == true { created = true }
+                        if !created, controlCenter.lastError?.contains("already belongs to project") == true {
+                            created = true
+                        }
                     }
                     if created { startNewChat(inProject: folder) }
                     return created
@@ -609,7 +624,8 @@ struct MissionControlQueue: View {
     }
 
     @ViewBuilder
-    private func queueOverflowButton(total: Int, visible: Int, title: String, action: @escaping () -> Void) -> some View {
+    private func queueOverflowButton(total: Int, visible: Int, title: String, action: @escaping () -> Void) -> some View
+    {
         if total > visible {
             Button(action: action) {
                 HStack(spacing: 6) {
@@ -626,7 +642,9 @@ struct MissionControlQueue: View {
     }
 
     private func conversationExpansionButton(style: DockThemePalette) -> some View {
-        Button { navigationState.showsAllConversations.toggle() } label: {
+        Button {
+            navigationState.showsAllConversations.toggle()
+        } label: {
             HStack(spacing: 6) {
                 Text(navigationState.showsAllConversations ? "Show recent conversations" : "Show more conversations")
                 DockIcon(navigationState.showsAllConversations ? .caretUp : .caretDown)
@@ -657,7 +675,9 @@ struct MissionControlQueue: View {
     }
 
     @ViewBuilder
-    private func conversationSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+    private func conversationSessionRow(
+        _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         if let bot = botForSession(session) {
             MissionControlBotSessionRow(
                 session: session,
@@ -676,7 +696,9 @@ struct MissionControlQueue: View {
         }
     }
 
-    private func plainConversationSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+    private func plainConversationSessionRow(
+        _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         MissionControlSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
@@ -705,9 +727,10 @@ struct MissionControlQueue: View {
                 return succeeded
             },
             onRequestDelete: { selected in
-            sessionPendingDeletion = selected
+                sessionPendingDeletion = selected
             },
-            projectTargets: sidebarSnapshot.projectNameBySessionID[session.id] == nil ? sidebarSnapshot.projectTargets : [],
+            projectTargets: sidebarSnapshot.projectNameBySessionID[session.id] == nil
+                ? sidebarSnapshot.projectTargets : [],
             onAddToProject: { selected, target in
                 workspaceStore.ensureTask(title: selected.displayTitle, sessionID: selected.id)
                 workspaceStore.attachProject(at: target.path, toSessionID: selected.id)
@@ -718,7 +741,9 @@ struct MissionControlQueue: View {
 
     /// Emits header and rows as siblings so the rail's LazyVStack owns them.
     @ViewBuilder
-    private func pinnedOutline(_ pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+    private func pinnedOutline(
+        _ pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         DockSectionHeader(
             title: "Pinned",
             count: pinned.count,
@@ -750,7 +775,9 @@ struct MissionControlQueue: View {
         }
     }
 
-    private func pinnedSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+    private func pinnedSessionRow(
+        _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         MissionControlSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
@@ -785,7 +812,9 @@ struct MissionControlQueue: View {
 
     /// Emits header and rows as siblings so the rail's LazyVStack owns them.
     @ViewBuilder
-    private func conversationOutline(_ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+    private func conversationOutline(
+        _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         DockSectionHeader(
             title: "Recents",
             count: conversations.count,
@@ -808,10 +837,14 @@ struct MissionControlQueue: View {
 
         if navigationState.areConversationsExpanded {
             if conversations.isEmpty {
-                queueEmpty(sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No saved conversations", style: style)
-                    .padding(.leading, 20)
+                queueEmpty(
+                    sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No saved conversations",
+                    style: style
+                )
+                .padding(.leading, 20)
             } else {
-                let visibleSessions = navigationState.showsAllConversations
+                let visibleSessions =
+                    navigationState.showsAllConversations
                     ? conversations
                     : Array(conversations.prefix(10))
                 ForEach(visibleSessions, id: \.[sidebarSection: "conversations"]) { session in
@@ -836,9 +869,9 @@ struct MissionControlQueue: View {
                         .fill(taskColor(task.status))
                         .frame(width: 6, height: 6)
                     Text(taskDisplayTitle(task))
-                    .dockFont(.body, weight: .medium)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
+                        .dockFont(.body, weight: .medium)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
                     Spacer(minLength: 0)
                     if duplicateCount > 1 {
                         Text("×\(duplicateCount)")
@@ -912,15 +945,17 @@ struct MissionControlQueue: View {
 
     private func taskDisplayTitle(_ task: WorkspaceTask) -> String {
         guard task.title == "Untitled chat",
-              let sessionID = task.sessionID,
-              let session = model.sessions.first(where: { $0.id == sessionID }) else { return task.title }
+            let sessionID = task.sessionID,
+            let session = model.sessions.first(where: { $0.id == sessionID })
+        else { return task.title }
         return session.displayTitle
     }
 
     private func taskDisplayDetail(_ task: WorkspaceTask) -> String? {
         if !task.summary.isEmpty { return task.summary }
         guard let sessionID = task.sessionID,
-              let session = model.sessions.first(where: { $0.id == sessionID }) else { return nil }
+            let session = model.sessions.first(where: { $0.id == sessionID })
+        else { return nil }
         return session.displayPreview
     }
 

@@ -12,7 +12,8 @@ struct DiffReviewStateTests {
         let document = DiffDocument(path: "file.swift", patch: "@@ -4,2 +7,2 @@\n-old\n+new\n context")
         for split in [false, true] {
             var comments: [DiffLine] = []
-            canvas.update(document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
+            canvas.update(
+                document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
                 reveal: nil, viewport: nil, onNote: { _ in }, onComment: { comments.append($0) })
             canvas.layoutSubtreeIfNeeded()
             let stack = try #require(canvas.subviews.first as? NSStackView)
@@ -29,7 +30,8 @@ struct DiffReviewStateTests {
             #expect(comments.contains { $0.oldLine == 4 && $0.newLine == nil })
             #expect(comments.contains { $0.newLine == 7 && $0.oldLine == nil })
             #expect(!comments.contains { $0.oldLine == nil && $0.newLine == nil })
-            canvas.update(document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
+            canvas.update(
+                document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
                 reveal: nil, viewport: nil, onNote: { _ in }, onComment: nil)
             for case let scroll as NSScrollView in stack.arrangedSubviews {
                 let ruler = try #require(scroll.verticalRulerView)
@@ -48,7 +50,8 @@ struct DiffReviewStateTests {
         window.contentView = canvas
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        canvas.update(DiffDocument(path: "file.swift", patch: "@@ -1 +1 @@\n-old\n+" + String(repeating: "source ", count: 60)),
+        canvas.update(
+            DiffDocument(path: "file.swift", patch: "@@ -1 +1 @@\n-old\n+" + String(repeating: "source ", count: 60)),
             split: false, wraps: false, wordDiffs: false, findRequest: 0,
             reveal: nil, viewport: nil, onNote: { _ in }, onComment: { _ in })
         for _ in 0..<4 {
@@ -81,7 +84,8 @@ struct DiffReviewStateTests {
         let longLine = String(repeating: "longIdentifier", count: 60)
         let document = DiffDocument(path: "long.swift", patch: "@@ -1 +1 @@\n-old\n+" + longLine)
         for split in [false, true] {
-            canvas.update(document, split: split, wraps: true, wordDiffs: false, findRequest: 0,
+            canvas.update(
+                document, split: split, wraps: true, wordDiffs: false, findRequest: 0,
                 reveal: nil, viewport: nil, onNote: { _ in }, onComment: nil)
             for width in [1000.0, 352.0, 800.0] {
                 canvas.setFrameSize(NSSize(width: width, height: 400))

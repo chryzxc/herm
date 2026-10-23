@@ -64,7 +64,10 @@ struct SharedDiffView: View {
     var body: some View {
         Group {
             if expandedPresentation {
-                DockExpandedPage(title: (path as NSString).lastPathComponent, subtitle: (path as NSString).deletingLastPathComponent, help: path) {
+                DockExpandedPage(
+                    title: (path as NSString).lastPathComponent, subtitle: (path as NSString).deletingLastPathComponent,
+                    help: path
+                ) {
                     if let expandedRouter { expandedRouter.close() } else { dismiss() }
                 } content: {
                     review
@@ -74,7 +77,11 @@ struct SharedDiffView: View {
             }
         }
         .background(Color.dockCanvas)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+        } action: {
+            availableWidth = $0
+        }
         .onAppear {
             if state.owner == nil { state.owner = owningSession ?? router?.model?.workflowSession }
             state.activeSourceIdentity = sourceIdentity
@@ -129,7 +136,9 @@ struct SharedDiffView: View {
             }
             canvas
                 .frame(
-                    minHeight: expandedPresentation ? (reviewAccessory == nil ? 400 : 120) : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)),
+                    minHeight: expandedPresentation
+                        ? (reviewAccessory == nil ? 400 : 120)
+                        : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)),
                     maxHeight: expandedPresentation
                         ? .infinity : min(520, max(100, CGFloat(document.lines.count) * 21 + 20)))
             if let reviewAccessory {
@@ -162,7 +171,8 @@ struct SharedDiffView: View {
         SharedDiffView(
             patch: patch, path: path, preferredSplit: preferredSplit, wraps: wraps, wordDiffs: wordDiffs,
             onComment: onComment, contextLoader: contextLoader, projectPath: projectPath, reveal: reveal,
-            expandedPresentation: true, owningSession: owningSession, comparison: comparison, state: state, reviewAccessory: reviewAccessory)
+            expandedPresentation: true, owningSession: owningSession, comparison: comparison, state: state,
+            reviewAccessory: reviewAccessory)
     }
     private var toolbarStyle: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
 
@@ -190,11 +200,17 @@ struct SharedDiffView: View {
                 state.splitOverride = true
             }
             .disabled(!canSplit)
-            .help(!document.supportsSplitView ? "This diff has only one side to display" : canSplit ? "Compare before and after side by side" : "Widen the review to compare side by side")
+            .help(
+                !document.supportsSplitView
+                    ? "This diff has only one side to display"
+                    : canSplit ? "Compare before and after side by side" : "Widen the review to compare side by side")
         }
         .accessibilityElement(children: .contain).accessibilityLabel("Diff layout")
         Color.dockBorderLight.frame(width: DockLayout.hairline, height: 18)
-        DockIconButton(icon: .textAlignLeft, label: "Wrap long lines", isProminent: state.wrapsOverride ?? wraps, style: toolbarStyle) {
+        DockIconButton(
+            icon: .textAlignLeft, label: "Wrap long lines", isProminent: state.wrapsOverride ?? wraps,
+            style: toolbarStyle
+        ) {
             state.wrapsOverride = !(state.wrapsOverride ?? wraps)
         }
         .accessibilityValue((state.wrapsOverride ?? wraps) ? "On" : "Off")
@@ -202,7 +218,10 @@ struct SharedDiffView: View {
             state.findRequest += 1
         }
         if let contextLoader {
-            DockIconButton(icon: .rowsPlusTop, label: state.contextLines >= 200 ? "Context limit reached" : "Load more context", isBusy: state.loadingContext, style: toolbarStyle) {
+            DockIconButton(
+                icon: .rowsPlusTop, label: state.contextLines >= 200 ? "Context limit reached" : "Load more context",
+                isBusy: state.loadingContext, style: toolbarStyle
+            ) {
                 state.loadingContext = true
                 let count = min(200, state.contextLines + 20)
                 let captured = sourceIdentity
@@ -250,10 +269,12 @@ struct SharedDiffView: View {
                 return
             }
             let original = state.document(path: path, patch: patch)
-            guard original.lines.contains(where: { candidate in
-                (line.newLine != nil && candidate.newLine == line.newLine)
-                    || (line.newLine == nil && line.oldLine != nil && candidate.oldLine == line.oldLine)
-            }) else {
+            guard
+                original.lines.contains(where: { candidate in
+                    (line.newLine != nil && candidate.newLine == line.newLine)
+                        || (line.newLine == nil && line.oldLine != nil && candidate.oldLine == line.oldLine)
+                })
+            else {
                 state.contextError = "Only lines in the captured diff can receive GitHub review comments."
                 return
             }

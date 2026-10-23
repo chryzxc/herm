@@ -24,7 +24,11 @@ struct BotActivityRecord: Identifiable, Equatable, Sendable, Codable {
     /// notice carries the Bot's reply and session.
     var processID: String?
 
-    init(id: String = UUID().uuidString, originSessionID: String, botID: String, botName: String, summary: String, state: BotActivityState = .queued, createdAt: Date = Date(), updatedAt: Date = Date(), result: String? = nil, linkedCardID: String? = nil, botChatSessionID: String? = nil) {
+    init(
+        id: String = UUID().uuidString, originSessionID: String, botID: String, botName: String, summary: String,
+        state: BotActivityState = .queued, createdAt: Date = Date(), updatedAt: Date = Date(), result: String? = nil,
+        linkedCardID: String? = nil, botChatSessionID: String? = nil
+    ) {
         self.id = id
         self.originSessionID = originSessionID
         self.botID = botID
@@ -59,17 +63,22 @@ struct BotActivityStore {
     let fileURL: URL
 
     init(fileURL: URL? = nil) {
-        let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        self.fileURL = fileURL ?? supportRoot
+        let supportRoot =
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support", isDirectory: true)
+        self.fileURL =
+            fileURL
+            ?? supportRoot
             .appendingPathComponent("Herm", isDirectory: true)
             .appendingPathComponent("session-bot-activity-v1.json")
     }
 
     func load() -> [String: [BotActivityRecord]] {
         guard let data = try? Data(contentsOf: fileURL),
-              let archive = try? Self.decoder.decode(BotActivityArchive.self, from: data),
-              archive.schemaVersion == 1 else { return [:] }
+            let archive = try? Self.decoder.decode(BotActivityArchive.self, from: data),
+            archive.schemaVersion == 1
+        else { return [:] }
         return archive.recordsBySessionID.filter { !$0.key.isEmpty }
     }
 
@@ -79,7 +88,8 @@ struct BotActivityStore {
 
     func saveEncoded(_ data: Data) {
         do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch {
@@ -151,7 +161,8 @@ enum SessionBotActivityPresentation {
 
     static func snapshot(records: [BotActivityRecord], sessionIDs: [String?]) -> Snapshot {
         let ids = Set(sessionIDs.compactMap { $0 }.filter { !$0.isEmpty })
-        let scoped = records
+        let scoped =
+            records
             .filter { ids.contains($0.originSessionID) && !$0.isKanbanReference }
             .sorted {
                 if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }

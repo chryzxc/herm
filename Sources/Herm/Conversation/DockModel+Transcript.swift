@@ -28,7 +28,9 @@ extension DockModel {
             )
             return (loaded.rows, loaded.cursor)
         } catch {
-            DebugLog.write("model: transcript page read failed, resuming inline: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            DebugLog.write(
+                "model: transcript page read failed, resuming inline: \(Self.safeUserDiagnostic(error.localizedDescription))"
+            )
             var params = fallbackResumeParams
             params.removeValue(forKey: "defer_history")
             params.removeValue(forKey: "omit_messages")
@@ -54,12 +56,14 @@ extension DockModel {
         var collected: [[String: Any]] = []
         var pagesRead = 0
         while cursor.hasMore, pagesRead < maximumPages {
-            guard let path = TranscriptHistoryPaging.pagePath(
-                sessionID: cursor.storageSessionID,
-                profileID: cursor.profileID,
-                limit: limit,
-                offset: cursor.nextOffset
-            ) else { throw HermesGateway.GatewayError.malformedResponse }
+            guard
+                let path = TranscriptHistoryPaging.pagePath(
+                    sessionID: cursor.storageSessionID,
+                    profileID: cursor.profileID,
+                    limit: limit,
+                    offset: cursor.nextOffset
+                )
+            else { throw HermesGateway.GatewayError.malformedResponse }
             guard let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path)) else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
@@ -85,7 +89,10 @@ extension DockModel {
         let idleLimit: TimeInterval = 15 * 60
         guard let latest = activity.map(\.startedAt).max(), Date().timeIntervalSince(latest) < idleLimit else {
             // Long dead: keep what it did visible instead of dropping it.
-            messages.append(ChatMessage(role: .hermes, text: "", timestamp: activity.first?.startedAt ?? Date(), botProfileID: activeBotProfileID, botDisplayName: activeBotDisplayName, activity: activity))
+            messages.append(
+                ChatMessage(
+                    role: .hermes, text: "", timestamp: activity.first?.startedAt ?? Date(),
+                    botProfileID: activeBotProfileID, botDisplayName: activeBotDisplayName, activity: activity))
             return
         }
         adoptRunningTurn(inflight: nil, activity: activity)
@@ -97,30 +104,41 @@ extension DockModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 guard let self, generation == self.sessionResumeGeneration,
-                      self.streamingMessageID != nil,
-                      let storageID = self.sessionStorageID else { return }
+                    self.streamingMessageID != nil,
+                    let storageID = self.sessionStorageID
+                else { return }
                 let limit = min(
                     TranscriptHistoryPaging.maximumPageRowLimit,
                     max(TranscriptHistoryPaging.pageRowLimit, self.transcriptHistoryCursor?.nextOffset ?? 0)
                 )
-                guard let loaded = try? await self.fetchEarlierTranscriptRows(
-                    from: TranscriptHistoryCursor(storageSessionID: storageID, profileID: self.sessionProfileID),
-                    limit: limit,
-                    minimumDisplayRows: ConversationMessageWindow.initialLimit
-                ), generation == self.sessionResumeGeneration, self.streamingMessageID != nil else { continue }
+                guard
+                    let loaded = try? await self.fetchEarlierTranscriptRows(
+                        from: TranscriptHistoryCursor(storageSessionID: storageID, profileID: self.sessionProfileID),
+                        limit: limit,
+                        minimumDisplayRows: ConversationMessageWindow.initialLimit
+                    ), generation == self.sessionResumeGeneration, self.streamingMessageID != nil
+                else { continue }
                 // Stored rows only append, so an unchanged tail means nothing to re-parse on the main actor.
                 let tail = loaded.rows.last
                 let tailID = tail.flatMap { TranscriptHistoryPaging.rowID($0, key: "row_id") } ?? -1
                 let nextRows = "\(loaded.rows.count)|\(tailID)|\(Self.messageText(tail?["content"]).utf8.count)"
                 guard nextRows != rowsSignature else {
-                    if Date().timeIntervalSince(lastChange) > idleLimit { self.endExternalTurn(commit: true); return }
+                    if Date().timeIntervalSince(lastChange) > idleLimit {
+                        self.endExternalTurn(commit: true)
+                        return
+                    }
                     continue
                 }
                 rowsSignature = nextRows
-                let restored = Self.parseMessages(loaded.rows, defaultBotProfileID: self.activeBotProfileID, defaultBotDisplayName: self.activeBotDisplayName)
+                let restored = Self.parseMessages(
+                    loaded.rows, defaultBotProfileID: self.activeBotProfileID,
+                    defaultBotDisplayName: self.activeBotDisplayName)
                 let next = Self.externalTurnSignature(restored.trailingActivity) + "|\(restored.messages.count)"
                 guard next != signature else {
-                    if Date().timeIntervalSince(lastChange) > idleLimit { self.endExternalTurn(commit: true); return }
+                    if Date().timeIntervalSince(lastChange) > idleLimit {
+                        self.endExternalTurn(commit: true)
+                        return
+                    }
                     continue
                 }
                 signature = next
@@ -129,7 +147,8 @@ extension DockModel {
                 let stable = Self.keepingMessageIDs(restored, previous: self.transcriptMessageIDsByRowID)
                 self.transcriptHistoryCursor = loaded.cursor
                 self.transcriptMessageIDsByRowID = stable.rowIDs
-                self.storedMessageReferences = StoredMessageReference.references(rows: loaded.rows, rowIDs: stable.rowIDs)
+                self.storedMessageReferences = StoredMessageReference.references(
+                    rows: loaded.rows, rowIDs: stable.rowIDs)
                 self.messages = stable.messages + [liveRow].compactMap { $0 }
                 if restored.trailingActivity.isEmpty {
                     self.endExternalTurn(commit: false)
@@ -144,7 +163,9 @@ extension DockModel {
     /// A re-read transcript keeps the IDs its stored rows already had, so
     /// SwiftUI updates rows in place instead of rebuilding and re-measuring
     /// every message on each 3s poll of a running Bot turn.
-    static func keepingMessageIDs(_ restored: RestoredTranscript, previous: [Int: UUID]) -> (messages: [ChatMessage], rowIDs: [Int: UUID]) {
+    static func keepingMessageIDs(_ restored: RestoredTranscript, previous: [Int: UUID]) -> (
+        messages: [ChatMessage], rowIDs: [Int: UUID]
+    ) {
         var renamed: [UUID: UUID] = [:]
         var taken = Set<UUID>()
         for (rowID, id) in restored.rowIDs.sorted(by: { $0.key < $1.key }) where renamed[id] == nil {
@@ -198,7 +219,8 @@ extension DockModel {
                     minimumDisplayRows: 1
                 )
                 guard generation == sessionResumeGeneration,
-                      sessionStorageID == cursor.storageSessionID else { return }
+                    sessionStorageID == cursor.storageSessionID
+                else { return }
                 earlierTranscriptRetryAfter = nil
                 prependEarlierTranscript(loaded.rows, cursor: loaded.cursor)
             } catch {
@@ -206,7 +228,8 @@ extension DockModel {
                 // Scroll events call this continuously at the top edge; back
                 // off instead of re-requesting a failing page on every frame.
                 earlierTranscriptRetryAfter = Date().addingTimeInterval(5)
-                DebugLog.write("model: earlier transcript page failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                DebugLog.write(
+                    "model: earlier transcript page failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -222,7 +245,9 @@ extension DockModel {
         )
         guard !restored.messages.isEmpty else { return }
         transcriptMessageIDsByRowID.merge(restored.rowIDs) { current, _ in current }
-        storedMessageReferences.merge(StoredMessageReference.references(rows: rows, rowIDs: restored.rowIDs)) { current, _ in current }
+        storedMessageReferences.merge(StoredMessageReference.references(rows: rows, rowIDs: restored.rowIDs)) {
+            current, _ in current
+        }
         transcriptPrependGeneration &+= 1
         lastTranscriptPrepend = TranscriptHistoryPrepend(
             generation: transcriptPrependGeneration,
@@ -239,7 +264,8 @@ extension DockModel {
     /// Stored prompts older than the loaded transcript, oldest first.
     var unloadedTranscriptPrompts: [TranscriptTimelineEntry] {
         guard let cursor = transcriptHistoryCursor, cursor.hasMore,
-              cursor.storageSessionID == sessionStorageID else { return [] }
+            cursor.storageSessionID == sessionStorageID
+        else { return [] }
         return transcriptTimeline.filter { !cursor.seenRowIDs.contains($0.rowID) }
     }
 
@@ -259,22 +285,27 @@ extension DockModel {
             var after = 0
             do {
                 for _ in 0..<TranscriptHistoryPaging.maximumTimelinePages {
-                    guard let path = TranscriptHistoryPaging.timelinePath(
-                        sessionID: cursor.storageSessionID,
-                        profileID: cursor.profileID,
-                        afterRowID: after
-                    ), let page = TranscriptHistoryPaging.timelinePage(
-                        from: try await sessionRPCClient.fetchHTTP(path)
-                    ) else { break }
+                    guard
+                        let path = TranscriptHistoryPaging.timelinePath(
+                            sessionID: cursor.storageSessionID,
+                            profileID: cursor.profileID,
+                            afterRowID: after
+                        ),
+                        let page = TranscriptHistoryPaging.timelinePage(
+                            from: try await sessionRPCClient.fetchHTTP(path)
+                        )
+                    else { break }
                     entries += page.entries
                     guard let next = page.nextCursor, next > after else { break }
                     after = next
                 }
             } catch {
-                DebugLog.write("model: transcript timeline read failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                DebugLog.write(
+                    "model: transcript timeline read failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
             guard generation == sessionResumeGeneration,
-                  sessionStorageID == cursor.storageSessionID else { return }
+                sessionStorageID == cursor.storageSessionID
+            else { return }
             transcriptTimeline = entries
         }
     }
@@ -310,12 +341,14 @@ extension DockModel {
                 through: rowID
             )
             guard generation == sessionResumeGeneration,
-                  sessionStorageID == cursor.storageSessionID else { return nil }
+                sessionStorageID == cursor.storageSessionID
+            else { return nil }
             earlierTranscriptRetryAfter = nil
             prependEarlierTranscript(loaded.rows, cursor: loaded.cursor)
         } catch {
             guard generation == sessionResumeGeneration else { return nil }
-            DebugLog.write("model: transcript history read failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            DebugLog.write(
+                "model: transcript history read failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return nil
         }
         return rowID.flatMap(loadedMessageID(forRowID:))

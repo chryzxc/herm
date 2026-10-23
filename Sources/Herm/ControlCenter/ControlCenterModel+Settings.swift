@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func refreshCommandAllowlist() {
@@ -18,7 +18,8 @@ extension ControlCenterModel {
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != "[]", trimmed != "null" else { return [] }
         if let data = trimmed.data(using: .utf8),
-           let array = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            let array = try? JSONSerialization.jsonObject(with: data) as? [String]
+        {
             return array
         }
         return trimmed.split(separator: "\n").compactMap { line in
@@ -80,7 +81,10 @@ extension ControlCenterModel {
                 let result = try await cli.emergencyStop(reason: reason)
                 guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 guard result.succeeded else {
-                    emergencyStopMessage = HermesDiagnosticsService.safeSummary(result.stderr).isEmpty ? "Hermes could not engage the emergency stop." : HermesDiagnosticsService.safeSummary(result.stderr)
+                    emergencyStopMessage =
+                        HermesDiagnosticsService.safeSummary(result.stderr).isEmpty
+                        ? "Hermes could not engage the emergency stop."
+                        : HermesDiagnosticsService.safeSummary(result.stderr)
                     return
                 }
                 emergencyStopActive = true
@@ -104,7 +108,9 @@ extension ControlCenterModel {
                 let result = try await cli.resumeEmergencyStop()
                 guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 guard result.succeeded else {
-                    emergencyStopMessage = HermesDiagnosticsService.safeSummary(result.stderr).isEmpty ? "Hermes could not resume dispatch." : HermesDiagnosticsService.safeSummary(result.stderr)
+                    emergencyStopMessage =
+                        HermesDiagnosticsService.safeSummary(result.stderr).isEmpty
+                        ? "Hermes could not resume dispatch." : HermesDiagnosticsService.safeSummary(result.stderr)
                     return
                 }
                 emergencyStopActive = false
@@ -124,9 +130,14 @@ extension ControlCenterModel {
         Task {
             do {
                 let result = try await rpc.insights(days: 30)
-                guard refreshGeneration.map({ self.isCurrentRefresh($0, clientIdentity: resolved) }) ?? self.isCurrentClient(resolved, bindingGeneration: binding) else { return }
-                guard let days = result["days"] as? Int, let sessions = result["sessions"] as? Int, let messages = result["messages"] as? Int,
-                      (1...90).contains(days), sessions >= 0, messages >= 0 else { return }
+                guard
+                    refreshGeneration.map({ self.isCurrentRefresh($0, clientIdentity: resolved) })
+                        ?? self.isCurrentClient(resolved, bindingGeneration: binding)
+                else { return }
+                guard let days = result["days"] as? Int, let sessions = result["sessions"] as? Int,
+                    let messages = result["messages"] as? Int,
+                    (1...90).contains(days), sessions >= 0, messages >= 0
+                else { return }
                 insightsSummary = HermesInsightsSummary(days: days, sessions: sessions, messages: messages)
             } catch {
                 return
@@ -154,7 +165,9 @@ extension ControlCenterModel {
                 guard generation == mcpInventoryGeneration, isCurrent() else { return }
                 mcpInventoryAvailable = result.succeeded
                 guard mcpInventoryAvailable else {
-                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes MCP inventory is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
+                    let message =
+                        Self.safeUserDiagnostic(result.stderr).isEmpty
+                        ? "Hermes MCP inventory is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("mcp.inventory", error: message)
                     lastError = message
                     return
@@ -183,8 +196,10 @@ extension ControlCenterModel {
             defer { finishAction(actionID) }
             do {
                 let result = try await cli.mcpTest(name: server.name)
-                let output = HermesDiagnosticsService.safeSummary(result.succeeded ? result.stdout : Self.safeUserDiagnostic(result.stderr))
-                mcpTestResults[server.id] = result.succeeded
+                let output = HermesDiagnosticsService.safeSummary(
+                    result.succeeded ? result.stdout : Self.safeUserDiagnostic(result.stderr))
+                mcpTestResults[server.id] =
+                    result.succeeded
                     ? (output.isEmpty ? "Connection succeeded." : output)
                     : (output.isEmpty ? "Connection failed." : output)
             } catch {

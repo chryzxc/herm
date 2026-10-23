@@ -1,9 +1,9 @@
 import AppKit
 import Combine
 import Foundation
+import LocalAuthentication
 import SwiftUI
 import UniformTypeIdentifiers
-import LocalAuthentication
 import UserNotifications
 
 extension DockModel {
@@ -11,14 +11,18 @@ extension DockModel {
         guard let sessionID else { return }
         guard !isRespondingToApproval else { return }
         if let request = sessionAttention[sessionID]?.responseTarget,
-           attentionAnswers[request]?.blocksSubmission == true { return }
+            attentionAnswers[request]?.blocksSubmission == true
+        {
+            return
+        }
         let responseGeneration = sessionResumeGeneration
         let requestID = approvalDetails?.requestID
         isRespondingToApproval = true
         Task {
             defer {
                 if self.sessionResumeGeneration == responseGeneration,
-                   self.sessionID == sessionID {
+                    self.sessionID == sessionID
+                {
                     self.isRespondingToApproval = false
                 }
             }
@@ -28,10 +32,12 @@ extension DockModel {
                 if let requestID { params["request_id"] = requestID }
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
                 guard self.sessionResumeGeneration == responseGeneration,
-                      self.sessionID == sessionID else { return }
+                    self.sessionID == sessionID
+                else { return }
                 resolveApproval(for: sessionID, requestID: requestID)
             } catch {
-                DebugLog.write("model: approval response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                DebugLog.write(
+                    "model: approval response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -40,8 +46,9 @@ extension DockModel {
     /// `freeText` lets a typed reply (notification quick-reply) answer a clarify question outside its listed choices.
     func answerAttention(_ request: AttentionRequest, choice: String, freeText: Bool = false) {
         guard let attention = sessionAttention[request.sessionID], attention.responseTarget == request,
-              freeText ? attention.status == .needsClarification : attention.choices.contains(choice),
-              attentionAnswers[request]?.blocksSubmission != true else { return }
+            freeText ? attention.status == .needsClarification : attention.choices.contains(choice),
+            attentionAnswers[request]?.blocksSubmission != true
+        else { return }
         if currentSessionIDs.contains(request.sessionID) {
             guard !isRespondingToApproval, !isRespondingToClarification else { return }
         }
@@ -73,14 +80,16 @@ extension DockModel {
                     expired = resolved == 0
                     resolveApproval(for: request.sessionID, requestID: request.requestID, resumesWork: !expired)
                 } else {
-                    guard let answerStatus = result["status"] as? String, ["ok", "expired"].contains(answerStatus) else {
+                    guard let answerStatus = result["status"] as? String, ["ok", "expired"].contains(answerStatus)
+                    else {
                         throw HermesGateway.GatewayError.malformedResponse
                     }
                     expired = answerStatus == "expired"
                     markClarificationResolved(request.requestID)
                     _ = removePendingClarification(for: request.sessionID, requestID: request.requestID)
                     guard sessionResumeGeneration == responseGeneration,
-                          currentSessionIDs.contains(request.sessionID), clarificationRequestID == request.requestID else { return }
+                        currentSessionIDs.contains(request.sessionID), clarificationRequestID == request.requestID
+                    else { return }
                     showClarification(nil)
                     if !expired {
                         messages.append(ChatMessage(role: .user, text: choice))
@@ -106,7 +115,8 @@ extension DockModel {
     /// Only a fresh authoritative pending-request read permits retry after a lost acknowledgment.
     func recheckAttention(_ request: AttentionRequest) {
         guard let attention = sessionAttention[request.sessionID], attention.responseTarget == request,
-              let previous = attentionAnswers[request], case .uncertain = previous else { return }
+            let previous = attentionAnswers[request], case .uncertain = previous
+        else { return }
         attentionAnswers[request] = .checking(previous.choice)
         let responseGeneration = sessionResumeGeneration
         Task {
@@ -121,16 +131,23 @@ extension DockModel {
                 let stillPending: Bool
                 if isApproval {
                     guard let pending = result["approvals"] as? [[String: Any]],
-                          pending.allSatisfy({ ($0["request_id"] as? String)?.isEmpty == false }) else {
+                        pending.allSatisfy({ ($0["request_id"] as? String)?.isEmpty == false })
+                    else {
                         throw HermesGateway.GatewayError.malformedResponse
                     }
                     stillPending = pending.contains { $0["request_id"] as? String == request.requestID }
                 } else {
                     guard let pending = result["open_requests"] as? [[String: Any]],
-                          pending.allSatisfy({ ($0["id"] as? String)?.isEmpty == false && $0["method"] is String && $0["params"] is [String: Any] }) else {
+                        pending.allSatisfy({
+                            ($0["id"] as? String)?.isEmpty == false && $0["method"] is String
+                                && $0["params"] is [String: Any]
+                        })
+                    else {
                         throw HermesGateway.GatewayError.malformedResponse
                     }
-                    stillPending = pending.contains { $0["id"] as? String == request.requestID && $0["method"] as? String == "clarify" }
+                    stillPending = pending.contains {
+                        $0["id"] as? String == request.requestID && $0["method"] as? String == "clarify"
+                    }
                 }
                 if stillPending {
                     attentionAnswers.removeValue(forKey: request)
@@ -140,11 +157,13 @@ extension DockModel {
                     markClarificationResolved(request.requestID)
                     _ = removePendingClarification(for: request.sessionID, requestID: request.requestID)
                     guard sessionResumeGeneration == responseGeneration,
-                          currentSessionIDs.contains(request.sessionID), clarificationRequestID == request.requestID else { return }
+                        currentSessionIDs.contains(request.sessionID), clarificationRequestID == request.requestID
+                    else { return }
                     showClarification(nil)
                     status = .idle
                     isSending = false
-                    clarificationResponseError = "This question is no longer pending. Open the session to review the result."
+                    clarificationResponseError =
+                        "This question is no longer pending. Open the session to review the result."
                 }
             } catch {
                 guard sessionAttention[request.sessionID]?.responseTarget == request else { return }
@@ -159,7 +178,10 @@ extension DockModel {
         guard !trimmed.isEmpty || !images.isEmpty, !isRespondingToClarification else { return }
         guard let responseSessionID = sessionID, !responseSessionID.isEmpty else { return }
         if let request = sessionAttention[responseSessionID]?.responseTarget,
-           attentionAnswers[request]?.blocksSubmission == true { return }
+            attentionAnswers[request]?.blocksSubmission == true
+        {
+            return
+        }
         let responseGeneration = sessionResumeGeneration
         guard let requestID = clarificationRequestID, !requestID.isEmpty else {
             clarificationResponseError = "Hermes did not provide an ID for this question. Please ask it again."
@@ -176,17 +198,25 @@ extension DockModel {
             Task {
                 defer {
                     if self.sessionResumeGeneration == responseGeneration,
-                       self.sessionID == responseSessionID {
+                        self.sessionID == responseSessionID
+                    {
                         self.isRespondingToClarification = false
                     }
                 }
                 do {
-                    let answerText = try await clarificationAnswer(trimmed, images: images, sessionID: responseSessionID)
-                    let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyLock.rawValue, params: [
-                        "request_id": requestID, "question_id": batchQuestion.id, "answer": answerText
-                    ])
+                    let answerText = try await clarificationAnswer(
+                        trimmed, images: images, sessionID: responseSessionID)
+                    let result = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.clarifyLock.rawValue,
+                        params: [
+                            "request_id": requestID, "question_id": batchQuestion.id, "answer": answerText,
+                        ])
                     if result["status"] as? String == "expired" {
-                        throw NSError(domain: "Hermes", code: 410, userInfo: [NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."])
+                        throw NSError(
+                            domain: "Hermes", code: 410,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."
+                            ])
                     }
                     cleanupImageAttachments(images)
                     batch.lockedAnswers[batchQuestion.id] = answerText
@@ -195,12 +225,14 @@ extension DockModel {
                         pendingClarificationsBySessionID[alias] = batch
                     }
                     guard self.sessionResumeGeneration == responseGeneration,
-                          self.sessionID == responseSessionID else { return }
+                        self.sessionID == responseSessionID
+                    else { return }
                     showClarification(batch)
                     messages.append(ChatMessage(role: .hermes, text: batch.transcriptText, modelName: currentModelName))
                 } catch {
                     guard self.sessionResumeGeneration == responseGeneration,
-                          self.sessionID == responseSessionID else { return }
+                        self.sessionID == responseSessionID
+                    else { return }
                     pendingImages.insert(contentsOf: images, at: 0)
                     let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
                     clarificationResponseError = diagnostic
@@ -219,7 +251,8 @@ extension DockModel {
         Task {
             defer {
                 if self.sessionResumeGeneration == responseGeneration,
-                   self.sessionID == responseSessionID {
+                    self.sessionID == responseSessionID
+                {
                     self.isRespondingToClarification = false
                 }
             }
@@ -228,28 +261,37 @@ extension DockModel {
                 let answer: [String: Any]
                 if let batchQuestion {
                     // The last batch lock resolves the whole request with every answer.
-                    answer = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyLock.rawValue, params: [
-                        "request_id": requestID, "question_id": batchQuestion.id, "answer": answerText
-                    ])
+                    answer = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.clarifyLock.rawValue,
+                        params: [
+                            "request_id": requestID, "question_id": batchQuestion.id, "answer": answerText,
+                        ])
                 } else {
-                    answer = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
-                        "id": requestID,
-                        "result": ["answer": answerText]
-                    ])
+                    answer = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.clarifyRespond.rawValue,
+                        params: [
+                            "id": requestID,
+                            "result": ["answer": answerText],
+                        ])
                 }
                 if answer["status"] as? String == "expired" {
-                    throw NSError(domain: "Hermes", code: 410, userInfo: [NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."])
+                    throw NSError(
+                        domain: "Hermes", code: 410,
+                        userInfo: [NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."]
+                    )
                 }
                 cleanupImageAttachments(images)
                 markClarificationResolved(requestID)
                 _ = removePendingClarification(for: responseSessionID, requestID: requestID)
                 guard self.sessionResumeGeneration == responseGeneration,
-                      self.sessionID == responseSessionID else { return }
+                    self.sessionID == responseSessionID
+                else { return }
                 showClarification(nil)
                 setInFlightBotActivityWorking(for: responseSessionID)
             } catch {
                 guard self.sessionResumeGeneration == responseGeneration,
-                      self.sessionID == responseSessionID else { return }
+                    self.sessionID == responseSessionID
+                else { return }
                 removePendingClarificationResumeMessage()
                 pendingImages.insert(contentsOf: images, at: 0)
                 status = .needsClarification
@@ -274,7 +316,7 @@ extension DockModel {
                 params: scopedSessionParams([
                     "session_id": sessionID,
                     "content_base64": base64,
-                    "filename": image.fileName
+                    "filename": image.fileName,
                 ])
             )
             guard result["attached"] as? Bool == true, let path = result["path"] as? String else {
@@ -300,9 +342,11 @@ extension DockModel {
         Task {
             defer { self.isRespondingToValuePrompt = false }
             do {
-                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
-                    "id": prompt.requestID, "result": ["value": value]
-                ])
+                let result = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.clarifyRespond.rawValue,
+                    params: [
+                        "id": prompt.requestID, "result": ["value": value],
+                    ])
                 if valuePrompt?.requestID == prompt.requestID { valuePrompt = nil }
                 if result["status"] as? String == "expired" {
                     DebugLog.write("model: value prompt expired before the answer arrived")
@@ -321,7 +365,8 @@ extension DockModel {
     func resolveApproval(for resolvedSessionID: String, requestID: String? = nil, resumesWork: Bool = true) {
         if let requestID {
             guard let pending = pendingApprovalsBySessionID[resolvedSessionID],
-                  pending.presentation.requestID == requestID || pending.serverRequestID == requestID else { return }
+                pending.presentation.requestID == requestID || pending.serverRequestID == requestID
+            else { return }
         }
         // A direct Bot relay can pause in its own Bot Chat session while the
         // foreground conversation remains selected. Resolve that activity by
@@ -359,6 +404,8 @@ enum ApprovalAuthGate {
         var policyError: NSError?
         // No biometrics or password configured: fail closed rather than silently skipping the check.
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &policyError) else { return false }
-        return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Allow Hermes to run this without asking again")) == true
+        return
+            (try? await context.evaluatePolicy(
+                .deviceOwnerAuthentication, localizedReason: "Allow Hermes to run this without asking again")) == true
     }
 }

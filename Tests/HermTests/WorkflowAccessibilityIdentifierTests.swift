@@ -1,4 +1,5 @@
 import Testing
+
 @testable import Herm
 
 struct WorkflowAccessibilityIdentifierTests {
@@ -9,7 +10,7 @@ struct WorkflowAccessibilityIdentifierTests {
             WorkflowAccessibilityIdentifier.terminalRunVerification,
             WorkflowAccessibilityIdentifier.terminalInterrupt,
             WorkflowAccessibilityIdentifier.terminalClearOutput,
-            WorkflowAccessibilityIdentifier.changesRefreshGitHub
+            WorkflowAccessibilityIdentifier.changesRefreshGitHub,
         ]
         #expect(Set(identifiers).count == identifiers.count)
         #expect(identifiers.allSatisfy { $0.contains(".") })

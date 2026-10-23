@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -22,7 +23,11 @@ private final class MessagePinRPCClient: HermesRPCClientProtocol {
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         if method == "session.resume" {
-            if deferHistory { return ["session_id": params["session_id"]!, "messages": [], "hydrating": true, "message_count": rows.count] }
+            if deferHistory {
+                return [
+                    "session_id": params["session_id"]!, "messages": [], "hydrating": true, "message_count": rows.count,
+                ]
+            }
             return ["session_id": params["session_id"]!, "messages": rows]
         }
         return [:]
@@ -37,7 +42,10 @@ private final class MessagePinRPCClient: HermesRPCClientProtocol {
             let upper = max(0, rows.count - offset)
             let lower = max(0, upper - limit)
             let page = rows[lower..<upper].map { row in
-                ["id": row["row_id"]!, "role": row["role"]!, "content": row["text"]!, "message_uid": row["message_uid"]!]
+                [
+                    "id": row["row_id"]!, "role": row["role"]!, "content": row["text"]!,
+                    "message_uid": row["message_uid"]!,
+                ]
             }
             return ["messages": page, "pagination": ["returned": page.count]]
         }
@@ -51,9 +59,19 @@ private final class MessagePinRPCClient: HermesRPCClientProtocol {
         let parts = path.components(separatedBy: "/")
         let rowID = Int(parts.last!.components(separatedBy: "?")[0])!
         if body["pinned"] as? Bool == true {
-            pins = [["row_id": rowID, "message_uid": rowID == 1 ? "ask" : "reply", "role": rowID == 1 ? "user" : "assistant", "preview": "saved"]]
-        } else { pins = [] }
-        return ["requested_session_id": parts[3], "row_id": rowID, "message_uid": rowID == 1 ? "ask" : "reply", "pinned": body["pinned"]!]
+            pins = [
+                [
+                    "row_id": rowID, "message_uid": rowID == 1 ? "ask" : "reply",
+                    "role": rowID == 1 ? "user" : "assistant", "preview": "saved",
+                ]
+            ]
+        } else {
+            pins = []
+        }
+        return [
+            "requested_session_id": parts[3], "row_id": rowID, "message_uid": rowID == 1 ? "ask" : "reply",
+            "pinned": body["pinned"]!,
+        ]
     }
 }
 
@@ -61,10 +79,12 @@ private final class MessagePinRPCClient: HermesRPCClientProtocol {
 struct MessagePinTests {
     private func loaded(_ rpc: MessagePinRPCClient) async throws -> DockModel {
         let defaults = try #require(UserDefaults(suiteName: "MessagePinTests.\(UUID().uuidString)"))
-        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("message-pin-\(UUID().uuidString)")
-        let model = DockModel(sessionAgentStateFileURL: temporary.appendingPathComponent("agents.json"),
-                              defaults: defaults, initialSessionID: "chat",
-                              botActivityFileURL: temporary.appendingPathComponent("bots.json"), rpcClient: rpc)
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "message-pin-\(UUID().uuidString)")
+        let model = DockModel(
+            sessionAgentStateFileURL: temporary.appendingPathComponent("agents.json"),
+            defaults: defaults, initialSessionID: "chat",
+            botActivityFileURL: temporary.appendingPathComponent("bots.json"), rpcClient: rpc)
         await model.refreshCurrentSession()
         try await waitUntil { !model.isLoadingMessagePins }
         await model.refreshMessagePins()
@@ -103,13 +123,16 @@ struct MessagePinTests {
 
     @Test func referencesKeepStableUIDAcrossCompactionAndRejectForeignResponses() throws {
         let id = UUID()
-        let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [["id": 12, "role": "assistant", "content": "answer", "message_uid": "logical"]])
+        let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
+            ["id": 12, "role": "assistant", "content": "answer", "message_uid": "logical"]
+        ])
         let reference = try #require(StoredMessageReference.references(rows: rows, rowIDs: [12: id])[id])
         let pin = PinnedMessage(rowID: 99, uid: "logical", role: "assistant", preview: "answer")
         #expect(pin.matches(reference))
         #expect(!pin.matches(StoredMessageReference(rowID: 99, uid: "foreign")))
         #expect(throws: (any Error).self) {
-            try PinnedMessage.parse(["supported": true, "requested_session_id": "other", "pins": []], sessionID: "chat")
+            try PinnedMessage.parse(
+                ["supported": true, "requested_session_id": "other", "pins": []], sessionID: "chat")
         }
     }
 
@@ -130,7 +153,10 @@ struct MessagePinTests {
         let rpc = MessagePinRPCClient()
         rpc.deferHistory = true
         rpc.rows = (1...600).map { id in
-            ["role": id % 2 == 1 ? "user" : "assistant", "text": "message \(id)", "row_id": id, "message_uid": "uid-\(id)"]
+            [
+                "role": id % 2 == 1 ? "user" : "assistant", "text": "message \(id)", "row_id": id,
+                "message_uid": "uid-\(id)",
+            ]
         }
         rpc.pins = [["row_id": 2, "message_uid": "uid-2", "role": "assistant", "preview": "message 2"]]
         let model = try await loaded(rpc)
@@ -146,10 +172,18 @@ struct MessagePinTests {
         let rpc = MessagePinRPCClient()
         let model = try await loaded(rpc)
         for populated in [false, true] {
-            rpc.pins = populated ? [
-                ["row_id": 1, "message_uid": "ask", "role": "user", "preview": "Keep the release checklist here so we can return to it later."],
-                ["row_id": 2, "message_uid": "reply", "role": "assistant", "preview": "The changes passed verification. Finish the active turn before restarting Hermes."],
-            ] : []
+            rpc.pins =
+                populated
+                ? [
+                    [
+                        "row_id": 1, "message_uid": "ask", "role": "user",
+                        "preview": "Keep the release checklist here so we can return to it later.",
+                    ],
+                    [
+                        "row_id": 2, "message_uid": "reply", "role": "assistant",
+                        "preview": "The changes passed verification. Finish the active turn before restarting Hermes.",
+                    ],
+                ] : []
             await model.refreshMessagePins()
             let host = NSHostingView(rootView: MessagePinsView(model: model, onSelect: { _ in }).dockThemedRoot())
             host.frame = NSRect(x: 0, y: 0, width: 320, height: 340)
@@ -166,7 +200,8 @@ struct MessagePinTests {
             host.display()
             host.cacheDisplay(in: host.bounds, to: rep)
             let data = try #require(rep.representation(using: .png, properties: [:]))
-            try data.write(to: URL(fileURLWithPath: dir).appendingPathComponent(populated ? "pins-loaded.png" : "pins-empty.png"))
+            try data.write(
+                to: URL(fileURLWithPath: dir).appendingPathComponent(populated ? "pins-loaded.png" : "pins-empty.png"))
             window.orderOut(nil)
         }
     }

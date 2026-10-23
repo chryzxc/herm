@@ -1,4 +1,5 @@
 import Testing
+
 @testable import Herm
 
 struct VoicePromptsTests {
@@ -7,18 +8,28 @@ struct VoicePromptsTests {
         #expect(VoicePrompts.approvalChoice(for: "Yeah go ahead", choices: choices) == ApprovalChoice.once)
         #expect(VoicePrompts.approvalChoice(for: "No, don’t run that", choices: choices) == ApprovalChoice.deny)
         #expect(VoicePrompts.approvalChoice(for: "do not", choices: choices) == ApprovalChoice.deny)
-        #expect(VoicePrompts.approvalChoice(for: "allow it for this session", choices: choices) == ApprovalChoice.session)
+        #expect(
+            VoicePrompts.approvalChoice(for: "allow it for this session", choices: choices) == ApprovalChoice.session)
         #expect(VoicePrompts.approvalChoice(for: "always", choices: choices) == nil)
         #expect(VoicePrompts.approvalChoice(for: "hmm", choices: choices) == nil)
     }
 
     @Test func spokenClarifyAnswerMatchesOptions() {
         let choices = ["Postgres", "SQLite", "Use both"]
-        #expect(VoicePrompts.clarificationAnswer(for: "let's go with sqlite", choices: choices, multiSelect: false).answer == "SQLite")
-        #expect(VoicePrompts.clarificationAnswer(for: "the second one", choices: choices, multiSelect: false).answer == "SQLite")
-        #expect(VoicePrompts.clarificationAnswer(for: "I need two separate databases please", choices: choices, multiSelect: false).answer
-            == "I need two separate databases please")
-        #expect(VoicePrompts.clarificationAnswer(for: "one and three", choices: choices, multiSelect: true).display == "Postgres, Use both")
+        #expect(
+            VoicePrompts.clarificationAnswer(for: "let's go with sqlite", choices: choices, multiSelect: false).answer
+                == "SQLite")
+        #expect(
+            VoicePrompts.clarificationAnswer(for: "the second one", choices: choices, multiSelect: false).answer
+                == "SQLite")
+        #expect(
+            VoicePrompts.clarificationAnswer(
+                for: "I need two separate databases please", choices: choices, multiSelect: false
+            ).answer
+                == "I need two separate databases please")
+        #expect(
+            VoicePrompts.clarificationAnswer(for: "one and three", choices: choices, multiSelect: true).display
+                == "Postgres, Use both")
     }
 
     @Test func wakePhraseWakesOnlyWhenAddressed() {
@@ -56,9 +67,15 @@ struct VoicePromptsTests {
         #expect(!VoiceEndpointDetector.shouldEndTurn("", lastWordAt: 0, quietSince: nil, now: 12))
         #expect(VoiceEndpointDetector.shouldEndTurn(nil, lastWordAt: 0, quietSince: 9, now: 9))
         // The smart-turn model overrides the word guess both ways.
-        #expect(VoiceEndpointDetector.shouldEndTurn("book a table and", lastWordAt: 9, quietSince: 9, now: 9.6, finished: true))
-        #expect(!VoiceEndpointDetector.shouldEndTurn("book a table for two", lastWordAt: 9, quietSince: 9, now: 11.5, finished: false))
-        #expect(VoiceEndpointDetector.shouldEndTurn("book a table for two", lastWordAt: 9, quietSince: 9, now: 12.1, finished: false))
+        #expect(
+            VoiceEndpointDetector.shouldEndTurn(
+                "book a table and", lastWordAt: 9, quietSince: 9, now: 9.6, finished: true))
+        #expect(
+            !VoiceEndpointDetector.shouldEndTurn(
+                "book a table for two", lastWordAt: 9, quietSince: 9, now: 11.5, finished: false))
+        #expect(
+            VoiceEndpointDetector.shouldEndTurn(
+                "book a table for two", lastWordAt: 9, quietSince: 9, now: 12.1, finished: false))
     }
 
     @Test func quietRoomTimeoutsDoNotDisableOnDeviceRecognition() {
@@ -68,14 +85,22 @@ struct VoicePromptsTests {
     }
 
     @Test func backgroundNoiseCannotHoldARecognizedRequestForever() {
-        #expect(!VoiceEndpointDetector.shouldEndTurn("Hello", lastWordAt: 10, quietSince: nil,
-            now: 13.9, isHearingSpeech: true))
-        #expect(VoiceEndpointDetector.shouldEndTurn("Hello", lastWordAt: 10, quietSince: nil,
-            now: 14, isHearingSpeech: true))
-        #expect(!VoiceEndpointDetector.shouldEndTurn("Hello there", lastWordAt: 13, quietSince: nil,
-            now: 14, isHearingSpeech: true))
-        #expect(!VoiceEndpointDetector.shouldEndTurn("", lastWordAt: 0, quietSince: nil,
-            now: 100, isHearingSpeech: true))
+        #expect(
+            !VoiceEndpointDetector.shouldEndTurn(
+                "Hello", lastWordAt: 10, quietSince: nil,
+                now: 13.9, isHearingSpeech: true))
+        #expect(
+            VoiceEndpointDetector.shouldEndTurn(
+                "Hello", lastWordAt: 10, quietSince: nil,
+                now: 14, isHearingSpeech: true))
+        #expect(
+            !VoiceEndpointDetector.shouldEndTurn(
+                "Hello there", lastWordAt: 13, quietSince: nil,
+                now: 14, isHearingSpeech: true))
+        #expect(
+            !VoiceEndpointDetector.shouldEndTurn(
+                "", lastWordAt: 0, quietSince: nil,
+                now: 100, isHearingSpeech: true))
     }
 
     @Test func recognizedWordsSurviveAnErrorAtTheEndOfCapture() {

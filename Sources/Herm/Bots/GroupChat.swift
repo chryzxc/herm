@@ -35,8 +35,9 @@ struct GroupRoom: Identifiable, Equatable, Sendable {
             let handle = (row["handle"] as? String) ?? profile
             let display = (row["display_name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? handle
             let isRemote = (row["target"] as? [String: Any])?["kind"] as? String == "peer"
-            return Member(memberID: (row["member_id"] as? String) ?? profile, profile: profile, handle: handle,
-                          displayName: display, isRemote: isRemote)
+            return Member(
+                memberID: (row["member_id"] as? String) ?? profile, profile: profile, handle: handle,
+                displayName: display, isRemote: isRemote)
         }
         updatedAt = Date(timeIntervalSince1970: (raw["updated_at"] as? Double) ?? 0)
         latestSeq = raw["latest_seq"] as? Int ?? 0
@@ -119,15 +120,17 @@ struct GroupRoomApproval: Equatable, Sendable {
 
     init?(_ raw: [String: Any]) {
         guard raw["kind"] as? String == "approval",
-              let memberID = raw["member_id"] as? String,
-              let taskID = raw["task_id"] as? String,
-              let requestID = raw["request_id"] as? String else { return nil }
+            let memberID = raw["member_id"] as? String,
+            let taskID = raw["task_id"] as? String,
+            let requestID = raw["request_id"] as? String
+        else { return nil }
         self.memberID = memberID
         self.taskID = taskID
         executionGeneration = raw["execution_generation"] as? Int ?? 0
         self.requestID = requestID
         let approval = raw["approval"] as? [String: Any] ?? [:]
-        summary = (approval["command"] as? String) ?? (approval["description"] as? String) ?? "A command needs approval."
+        summary =
+            (approval["command"] as? String) ?? (approval["description"] as? String) ?? "A command needs approval."
     }
 }
 
@@ -150,7 +153,8 @@ struct GroupMemberTurn: Equatable {
                 let tools = DockModel.historyToolCalls(in: row, timestamp: Date())
                 turns[turns.count - 1].tools += tools
                 if tools.isEmpty, let text = row["content"] as? String,
-                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
                     turns[turns.count - 1].reply = text
                 }
             default:
@@ -199,8 +203,8 @@ struct RemoteMemberInvite: Codable, Equatable {
             "target": [
                 "kind": "peer", "peer_id": memberID, "profile": targetProfile,
                 "installation_id": catalog["installation_id"] as? String ?? "",
-                "capability_digest": catalog["catalog_digest"] as? String ?? ""
-            ]
+                "capability_digest": catalog["catalog_digest"] as? String ?? "",
+            ],
         ]
     }
 }
@@ -214,7 +218,9 @@ enum RoomLinkCode {
 
     static func decode<T: Decodable>(_ type: T.Type, from code: String) -> T? {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix(prefix), let data = Data(base64Encoded: String(trimmed.dropFirst(prefix.count))) else { return nil }
+        guard trimmed.hasPrefix(prefix), let data = Data(base64Encoded: String(trimmed.dropFirst(prefix.count))) else {
+            return nil
+        }
         return try? JSONDecoder().decode(type, from: data)
     }
 }
@@ -283,12 +289,15 @@ final class GroupChatStore: ObservableObject {
         guard let client else { return }
         if !isAvailable {
             guard let caps = try? await client.request(HermesFeatureIDs.ID.groupsCapabilities.rawValue, params: [:]),
-                  caps["driver"] as? Bool == true else { return }
+                caps["driver"] as? Bool == true
+            else { return }
             isAvailable = true
             installID = caps["authority_gateway_id"] as? String
             isRoomLinkEnabled = (caps["room_link"] as? [String: Any])?["enabled"] as? Bool == true
         }
-        guard let result = try? await client.request(HermesFeatureIDs.ID.groupsList.rawValue, params: [:]) else { return }
+        guard let result = try? await client.request(HermesFeatureIDs.ID.groupsList.rawValue, params: [:]) else {
+            return
+        }
         let listed = (result["rooms"] as? [[String: Any]] ?? []).compactMap(GroupRoom.init)
         // A room first seen here starts read; only later activity marks it unread.
         for room in listed where seenSeq[room.id] == nil { markSeen(room.id, through: room.latestSeq) }
@@ -296,18 +305,27 @@ final class GroupChatStore: ObservableObject {
         for room in listed where room.latestSeq != previewSeq[room.id] {
             previewSeq[room.id] = room.latestSeq
             // The last message sits within the trailing bookkeeping events of its turn.
-            guard let page = try? await client.request(HermesFeatureIDs.ID.groupsLog.rawValue, params: [
-                "room_id": room.id, "since_seq": max(0, room.latestSeq - 12), "limit": 12
-            ]) else { continue }
+            guard
+                let page = try? await client.request(
+                    HermesFeatureIDs.ID.groupsLog.rawValue,
+                    params: [
+                        "room_id": room.id, "since_seq": max(0, room.latestSeq - 12), "limit": 12,
+                    ])
+            else { continue }
             updateLastMessage(room.id, from: (page["events"] as? [[String: Any]] ?? []).compactMap(GroupRoomEvent.init))
         }
     }
 
     /// Sidebar preview: "You: …" or "Forge: …" from the newest message event.
     private func updateLastMessage(_ roomID: String, from events: [GroupRoomEvent]) {
-        guard let event = events.last(where: {
-            switch $0.kind { case .user, .member: true; default: false }
-        }) else { return }
+        guard
+            let event = events.last(where: {
+                switch $0.kind {
+                case .user, .member: true
+                default: false
+                }
+            })
+        else { return }
         var author = "You"
         if case .member(let id) = event.kind {
             author = rooms.first { $0.id == roomID }?.member(id)?.displayName ?? id
@@ -319,28 +337,37 @@ final class GroupChatStore: ObservableObject {
     static func members(for bots: [BotSummary]) -> [[String: Any]] {
         bots.map { bot in
             // Hermes addresses the primary profile as @hermes.
-            ["member_id": bot.id, "profile": bot.id, "handle": bot.id == "default" ? "hermes" : bot.id, "display_name": bot.name]
+            [
+                "member_id": bot.id, "profile": bot.id, "handle": bot.id == "default" ? "hermes" : bot.id,
+                "display_name": bot.name,
+            ]
         }
     }
 
     /// Returns the new room id, or nil with `errorMessage` set.
     /// Remote members are registered right after the room exists, since
     /// `groups.peer.register` needs the room on this gateway.
-    func create(name: String, bots: [BotSummary], remote: [RemoteMemberInvite] = [],
-                roomID: String = UUID().uuidString.lowercased()) async -> String? {
+    func create(
+        name: String, bots: [BotSummary], remote: [RemoteMemberInvite] = [],
+        roomID: String = UUID().uuidString.lowercased()
+    ) async -> String? {
         guard let client, Self.memberLimits.contains(bots.count + remote.count) else { return nil }
         do {
-            let result = try await client.request(HermesFeatureIDs.ID.groupsCreate.rawValue, params: [
-                "room_id": roomID, "name": name, "members": Self.members(for: bots) + remote.map(\.rosterRow)
-            ])
+            let result = try await client.request(
+                HermesFeatureIDs.ID.groupsCreate.rawValue,
+                params: [
+                    "room_id": roomID, "name": name, "members": Self.members(for: bots) + remote.map(\.rosterRow),
+                ])
             if let room = (result["room"] as? [String: Any]).flatMap(GroupRoom.init) {
                 rooms.insert(room, at: 0)
             }
             for invite in remote {
-                _ = try await client.request(HermesFeatureIDs.ID.groupsPeerRegister.rawValue, params: [
-                    "room_id": roomID, "member_id": invite.memberID, "target_url": invite.endpointURL,
-                    "target_profile": invite.targetProfile, "grant": invite.grant, "catalog": invite.catalog
-                ])
+                _ = try await client.request(
+                    HermesFeatureIDs.ID.groupsPeerRegister.rawValue,
+                    params: [
+                        "room_id": roomID, "member_id": invite.memberID, "target_url": invite.endpointURL,
+                        "target_profile": invite.targetProfile, "grant": invite.grant, "catalog": invite.catalog,
+                    ])
             }
             errorMessage = nil
             return roomID
@@ -354,10 +381,12 @@ final class GroupChatStore: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let client, !trimmed.isEmpty else { return }
         do {
-            _ = try await client.request(HermesFeatureIDs.ID.groupsSend.rawValue, params: [
-                "room_id": roomID, "event_id": UUID().uuidString.lowercased(),
-                "payload": ["text": GenerativeUIIntegration.preparePrompt(trimmed), "thread_id": thread]
-            ])
+            _ = try await client.request(
+                HermesFeatureIDs.ID.groupsSend.rawValue,
+                params: [
+                    "room_id": roomID, "event_id": UUID().uuidString.lowercased(),
+                    "payload": ["text": GenerativeUIIntegration.preparePrompt(trimmed), "thread_id": thread],
+                ])
             workingRooms.insert(roomID)
             errorMessage = nil
             await poll(roomID)
@@ -373,18 +402,25 @@ final class GroupChatStore: ObservableObject {
         var appended: [GroupRoomEvent] = []
         if cursors[roomID] == nil {
             // Long rooms: start near the end instead of replaying every event.
-            let latest = (try? await client.request(HermesFeatureIDs.ID.groupsLog.rawValue, params: [
-                "room_id": roomID, "since_seq": 0, "limit": 1
-            ]))?["latest_seq"] as? Int ?? 0
+            let latest =
+                (try? await client.request(
+                    HermesFeatureIDs.ID.groupsLog.rawValue,
+                    params: [
+                        "room_id": roomID, "since_seq": 0, "limit": 1,
+                    ]))?["latest_seq"] as? Int ?? 0
             let start = max(0, latest - Self.historyWindow)
             cursors[roomID] = start
             earliestLoadedSeq[roomID] = start
         }
         var cursor = cursors[roomID] ?? 0
         while true {
-            guard let page = try? await client.request(HermesFeatureIDs.ID.groupsLog.rawValue, params: [
-                "room_id": roomID, "since_seq": cursor, "limit": 500
-            ]) else { break }
+            guard
+                let page = try? await client.request(
+                    HermesFeatureIDs.ID.groupsLog.rawValue,
+                    params: [
+                        "room_id": roomID, "since_seq": cursor, "limit": 500,
+                    ])
+            else { break }
             appended += (page["events"] as? [[String: Any]] ?? []).compactMap(GroupRoomEvent.init)
             cursor = max(cursor, page["cursor"] as? Int ?? cursor)
             guard page["has_more"] as? Bool == true else { break }
@@ -394,7 +430,9 @@ final class GroupChatStore: ObservableObject {
         markSeen(roomID, through: cursor)
         updateLastMessage(roomID, from: appended)
 
-        guard let state = try? await client.request(HermesFeatureIDs.ID.groupsState.rawValue, params: ["room_id": roomID]) else { return }
+        guard
+            let state = try? await client.request(HermesFeatureIDs.ID.groupsState.rawValue, params: ["room_id": roomID])
+        else { return }
         let status = state["driver_status"] as? [String: Any]
         let working = status?["working"] as? Bool == true
         if working != workingRooms.contains(roomID) {
@@ -410,16 +448,18 @@ final class GroupChatStore: ObservableObject {
             if blocked { blockedRooms.insert(roomID) } else { blockedRooms.remove(roomID) }
         }
         if let room = (state["room"] as? [String: Any]).flatMap(GroupRoom.init),
-           let index = rooms.firstIndex(where: { $0.id == roomID }), rooms[index] != room {
+            let index = rooms.firstIndex(where: { $0.id == roomID }), rooms[index] != room
+        {
             rooms[index] = room
         }
 
         // Re-read activity for members mid-turn or with a new reply.
-        var active = Set(appended.compactMap { event -> String? in
-            if case .member(let id) = event.kind { return id }
-            if case .started(let id) = event.kind { return id }
-            return nil
-        })
+        var active = Set(
+            appended.compactMap { event -> String? in
+                if case .member(let id) = event.kind { return id }
+                if case .started(let id) = event.kind { return id }
+                return nil
+            })
         if working { active.formUnion(openTurnMembers(in: roomID)) }
         if memberTurns[roomID] == nil, let room = rooms.first(where: { $0.id == roomID }) {
             active.formUnion(room.members.map(\.memberID))
@@ -444,15 +484,18 @@ final class GroupChatStore: ObservableObject {
         guard let client, let member = rooms.first(where: { $0.id == roomID })?.member(memberID) else { return }
         let key = "\(roomID)/\(memberID)"
         if memberSessionIDs[key] == nil {
-            let listed = try? await client.request(HermesFeatureIDs.ID.sessionList.rawValue, params: [
-                "title": "Group: \(roomID)", "profile": member.profile
-            ])
+            let listed = try? await client.request(
+                HermesFeatureIDs.ID.sessionList.rawValue,
+                params: [
+                    "title": "Group: \(roomID)", "profile": member.profile,
+                ])
             let row = (listed?["sessions"] as? [[String: Any]])?.first
             memberSessionIDs[key] = (row?["resolved_id"] as? String) ?? (row?["id"] as? String)
         }
         guard let sessionID = memberSessionIDs[key],
-              let rows = try? await HermesControlRPC(client: client)
-                .sessionMessages(sessionID: sessionID, profileID: member.profile, latest: true)["data"] as? [[String: Any]]
+            let rows = try? await HermesControlRPC(client: client)
+                .sessionMessages(sessionID: sessionID, profileID: member.profile, latest: true)["data"]
+                as? [[String: Any]]
         else { return }
         let turns = GroupMemberTurn.turns(from: rows)
         if memberTurns[roomID]?[memberID] != turns { memberTurns[roomID, default: [:]][memberID] = turns }
@@ -477,9 +520,13 @@ final class GroupChatStore: ObservableObject {
         var older: [GroupRoomEvent] = []
         var cursor = start
         while cursor < end {
-            guard let page = try? await client.request(HermesFeatureIDs.ID.groupsLog.rawValue, params: [
-                "room_id": roomID, "since_seq": cursor, "limit": min(500, end - cursor)
-            ]) else { return }
+            guard
+                let page = try? await client.request(
+                    HermesFeatureIDs.ID.groupsLog.rawValue,
+                    params: [
+                        "room_id": roomID, "since_seq": cursor, "limit": min(500, end - cursor),
+                    ])
+            else { return }
             older += (page["events"] as? [[String: Any]] ?? []).compactMap(GroupRoomEvent.init).filter { $0.seq <= end }
             let next = page["cursor"] as? Int ?? cursor
             guard next > cursor, page["has_more"] as? Bool == true else { break }
@@ -494,24 +541,29 @@ final class GroupChatStore: ObservableObject {
     func invite(_ request: RemoteMemberRequest, bot: BotSummary) async -> String? {
         guard let client else { return nil }
         do {
-            let result = try await client.request(HermesFeatureIDs.ID.groupsPeerInvite.rawValue, params: [
-                "profile": bot.id, "room_id": request.roomID, "home_install_id": request.homeInstallID,
-                "authority_gateway_id": request.homeInstallID, "authority_epoch": 1,
-                "member_id": request.memberID, "ttl_seconds": 86_400
-            ])
+            let result = try await client.request(
+                HermesFeatureIDs.ID.groupsPeerInvite.rawValue,
+                params: [
+                    "profile": bot.id, "room_id": request.roomID, "home_install_id": request.homeInstallID,
+                    "authority_gateway_id": request.homeInstallID, "authority_epoch": 1,
+                    "member_id": request.memberID, "ttl_seconds": 86_400,
+                ])
             let endpoint = result["endpoint"] as? [String: Any] ?? [:]
             guard endpoint["available"] as? Bool == true, let url = endpoint["url"] as? String,
-                  let grant = result["grant"] as? String,
-                  let catalog = result["catalog"],
-                  let catalogData = try? JSONSerialization.data(withJSONObject: catalog) else {
-                errorMessage = "This machine has no reachable RoomLink endpoint (\(endpoint["reason"] as? String ?? "unavailable"))."
+                let grant = result["grant"] as? String,
+                let catalog = result["catalog"],
+                let catalogData = try? JSONSerialization.data(withJSONObject: catalog)
+            else {
+                errorMessage =
+                    "This machine has no reachable RoomLink endpoint (\(endpoint["reason"] as? String ?? "unavailable"))."
                 return nil
             }
             errorMessage = nil
-            return RoomLinkCode.encode(RemoteMemberInvite(
-                memberID: request.memberID, handle: request.handle,
-                targetProfile: result["target_profile"] as? String ?? bot.id, displayName: bot.name,
-                grant: grant, endpointURL: url, catalogJSON: String(decoding: catalogData, as: UTF8.self)))
+            return RoomLinkCode.encode(
+                RemoteMemberInvite(
+                    memberID: request.memberID, handle: request.handle,
+                    targetProfile: result["target_profile"] as? String ?? bot.id, displayName: bot.name,
+                    grant: grant, endpointURL: url, catalogJSON: String(decoding: catalogData, as: UTF8.self)))
         } catch {
             errorMessage = "Couldn't create the invite: \(error.localizedDescription)"
             return nil
@@ -520,7 +572,8 @@ final class GroupChatStore: ObservableObject {
 
     func retry(_ taskID: String, in roomID: String) async {
         do {
-            _ = try await client?.request(HermesFeatureIDs.ID.groupsRetry.rawValue, params: ["room_id": roomID, "task_id": taskID])
+            _ = try await client?.request(
+                HermesFeatureIDs.ID.groupsRetry.rawValue, params: ["room_id": roomID, "task_id": taskID])
             errorMessage = nil
         } catch {
             errorMessage = "Couldn't retry: \(error.localizedDescription)"
@@ -536,9 +589,11 @@ final class GroupChatStore: ObservableObject {
     func rename(_ roomID: String, to name: String) async {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        _ = try? await client?.request(HermesFeatureIDs.ID.groupsRename.rawValue, params: [
-            "room_id": roomID, "event_id": UUID().uuidString.lowercased(), "name": trimmed
-        ])
+        _ = try? await client?.request(
+            HermesFeatureIDs.ID.groupsRename.rawValue,
+            params: [
+                "room_id": roomID, "event_id": UUID().uuidString.lowercased(), "name": trimmed,
+            ])
         await refreshRooms()
     }
 
@@ -555,11 +610,13 @@ final class GroupChatStore: ObservableObject {
 
     /// Room members may only offer `once` or `deny` (Hermes' room driver).
     func respond(to approval: GroupRoomApproval, in roomID: String, approve: Bool) async {
-        _ = try? await client?.request(HermesFeatureIDs.ID.groupsApprove.rawValue, params: [
-            "room_id": roomID, "member_id": approval.memberID, "task_id": approval.taskID,
-            "execution_generation": approval.executionGeneration, "request_id": approval.requestID,
-            "choice": approve ? "once" : "deny"
-        ])
+        _ = try? await client?.request(
+            HermesFeatureIDs.ID.groupsApprove.rawValue,
+            params: [
+                "room_id": roomID, "member_id": approval.memberID, "task_id": approval.taskID,
+                "execution_generation": approval.executionGeneration, "request_id": approval.requestID,
+                "choice": approve ? "once" : "deny",
+            ])
         await poll(roomID)
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -45,7 +46,9 @@ struct RepositoryCodeWorkspaceTests {
 
         #expect(zip(offsets, offsets.dropFirst()).allSatisfy { $0.0 < $0.1 })
         #expect(offsets.first == -RepositoryShimmerMotion.bandWidth(for: width))
-        #expect(RepositoryShimmerMotion.offset(containerWidth: width, at: RepositoryShimmerMotion.duration) == offsets.first)
+        #expect(
+            RepositoryShimmerMotion.offset(containerWidth: width, at: RepositoryShimmerMotion.duration) == offsets.first
+        )
     }
 
     @Test func sessionRepositoryScopeKeepsSessionsDistinctForOnePath() {
@@ -60,7 +63,8 @@ struct RepositoryCodeWorkspaceTests {
         let fake = PullRequestMutationFake()
         let center = PullRequestCenterModel(mutationExecutor: fake)
         let record = PullRequestRecord(
-            repository: GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!),
+            repository: GitHubRepositoryReference(
+                owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!),
             localPath: "/tmp/repo", number: 7, title: "Improve reliability", body: "", author: "owner",
             authorAvatarURL: nil, headBranch: "feature", baseBranch: "main", updatedAt: nil, isDraft: true,
             webURL: nil, requestedReviewers: [], comments: 0, additions: nil, deletions: nil, changedFiles: nil,
@@ -118,7 +122,7 @@ struct RepositoryCodeWorkspaceTests {
                 "additions": 4,
                 "deletions": 2,
                 "patch": "@@ -1 +1 @@\\n-old\\n+new",
-                "blob_url": "https://github.com/owner/repo/blob/main/Sources/App/Main.swift"
+                "blob_url": "https://github.com/owner/repo/blob/main/Sources/App/Main.swift",
             ]
         ]
 
@@ -142,8 +146,9 @@ struct RepositoryCodeWorkspaceTests {
 
     @Test func pullRequestFileTreeGroupsNestedPaths() {
         let files = [
-            PullRequestFile(path: "Sources/App/Main.swift", status: "modified", additions: 1, deletions: 2, patch: nil, webURL: nil),
-            PullRequestFile(path: "README.md", status: "modified", additions: 3, deletions: 0, patch: nil, webURL: nil)
+            PullRequestFile(
+                path: "Sources/App/Main.swift", status: "modified", additions: 1, deletions: 2, patch: nil, webURL: nil),
+            PullRequestFile(path: "README.md", status: "modified", additions: 3, deletions: 0, patch: nil, webURL: nil),
         ]
         let tree = PullRequestFileTreeBuilder.make(files: files)
         #expect(tree.map(\.id) == ["README.md", "Sources", "Sources/App", "Sources/App/Main.swift"])
@@ -195,7 +200,9 @@ struct RepositoryCodeWorkspaceTests {
 
     @Test func parsesGitHubSSHAndHTTPSRemotes() {
         #expect(GitHubRemoteParser.parse("git@github.com:owner/repo.git")?.id == "owner/repo")
-        #expect(GitHubRemoteParser.parse("https://github.com/owner/repo")?.webURL.absoluteString == "https://github.com/owner/repo")
+        #expect(
+            GitHubRemoteParser.parse("https://github.com/owner/repo")?.webURL.absoluteString
+                == "https://github.com/owner/repo")
         #expect(GitHubRemoteParser.parse("ssh://git@github.com/owner/repo.git")?.id == "owner/repo")
         #expect(GitHubRemoteParser.parse("ssh://other@github.com/owner/repo.git") == nil)
         #expect(GitHubRemoteParser.parse("https://token@github.com/owner/repo.git") == nil)
@@ -203,14 +210,19 @@ struct RepositoryCodeWorkspaceTests {
         #expect(GitHubRemoteParser.parse("git@github.com:owner/../secrets.git") == nil)
     }
     @Test func documentURLStaysWithinTheSelectedRepository() {
-        #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "Sources/App.swift")?.path == "/workspace/project/Sources/App.swift")
-        #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "../outside.swift") == nil)
+        #expect(
+            RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "Sources/App.swift")?.path
+                == "/workspace/project/Sources/App.swift")
+        #expect(
+            RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "../outside.swift") == nil)
         #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "/outside.swift") == nil)
     }
 
     @Test func documentURLRejectsSymlinkEscapesOutsideRepository() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-root-\(UUID().uuidString)")
-        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-outside-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-document-root-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-document-outside-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         defer {
@@ -218,25 +230,30 @@ struct RepositoryCodeWorkspaceTests {
             try? FileManager.default.removeItem(at: outside)
         }
         try "secret".write(to: outside.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
-        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("linked"), withDestinationURL: outside)
 
         #expect(RepositoryService.documentURL(repositoryPath: root.path, filePath: "linked/secret.txt") == nil)
     }
 
     @Test func documentURLRejectsInRepositorySymlinkComponents() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-in-repo-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-document-in-repo-\(UUID().uuidString)")
         let realDirectory = root.appendingPathComponent("real")
         try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try "valid".write(to: realDirectory.appendingPathComponent("App.swift"), atomically: true, encoding: .utf8)
-        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: realDirectory)
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("linked"), withDestinationURL: realDirectory)
 
         #expect(RepositoryService.documentURL(repositoryPath: root.path, filePath: "linked/App.swift") == nil)
     }
 
     @Test func projectExplorerDoesNotDescendIntoSymlinkedDirectories() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-project-root-\(UUID().uuidString)")
-        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-project-outside-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-project-root-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-project-outside-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         defer {
@@ -245,7 +262,8 @@ struct RepositoryCodeWorkspaceTests {
         }
         try "secret".write(to: outside.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
         try "valid".write(to: root.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
-        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("linked"), withDestinationURL: outside)
 
         let entries = await RepositoryService.projectFiles(path: root.path)
 
@@ -254,16 +272,23 @@ struct RepositoryCodeWorkspaceTests {
     }
 
     @Test func projectExplorerHidesGeneratedTreesUntilRequested() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-project-generated-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root.appendingPathComponent("Sources"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: root.appendingPathComponent(".cache"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: root.appendingPathComponent("node_modules"), withIntermediateDirectories: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-project-generated-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Sources"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".cache"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("node_modules"), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try "let value = 1".write(to: root.appendingPathComponent("Sources/App.swift"), atomically: true, encoding: .utf8)
+        try "let value = 1".write(
+            to: root.appendingPathComponent("Sources/App.swift"), atomically: true, encoding: .utf8)
         try "generated".write(to: root.appendingPathComponent(".cache/state.json"), atomically: true, encoding: .utf8)
-        try "dependency".write(to: root.appendingPathComponent("node_modules/package.json"), atomically: true, encoding: .utf8)
+        try "dependency".write(
+            to: root.appendingPathComponent("node_modules/package.json"), atomically: true, encoding: .utf8)
 
         let defaultEntries = await RepositoryService.projectFiles(path: root.path)
         #expect(defaultEntries.contains { $0.path == "Sources/App.swift" })
@@ -285,8 +310,10 @@ struct RepositoryCodeWorkspaceTests {
     }
 
     @Test func loadAndSaveDocumentRejectSymlinkEscapes() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-load-save-\(UUID().uuidString)")
-        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-load-save-outside-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-document-load-save-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-document-load-save-outside-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         defer {
@@ -294,10 +321,12 @@ struct RepositoryCodeWorkspaceTests {
             try? FileManager.default.removeItem(at: outside)
         }
         try "secret".write(to: outside.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
-        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("linked"), withDestinationURL: outside)
 
         let loaded = await RepositoryService.loadDocument(path: root.path, filePath: "linked/secret.txt")
-        let saved = await RepositoryService.saveDocument(path: root.path, filePath: "linked/secret.txt", contents: "overwritten")
+        let saved = await RepositoryService.saveDocument(
+            path: root.path, filePath: "linked/secret.txt", contents: "overwritten")
 
         #expect(loaded == nil)
         #expect(saved == false)
@@ -315,28 +344,28 @@ struct RepositoryCodeWorkspaceTests {
     @Test func parsesPorcelainBlameWithRepeatedMetadataAndBlankLines() {
         let committedHash = String(repeating: "a", count: 40)
         let output = """
-        \(committedHash) 1 1 2
-        author Ada Lovelace
-        author-time 1700000000
-        author-tz +0000
-        summary Add parser
-        filename Sources/App.swift
-        \tlet first = true
-        \(committedHash) 2 2 1
-        author Ada Lovelace
-        author-time 1700000000
-        author-tz +0000
-        summary Add parser
-        filename Sources/App.swift
-        \t
-        \(String(repeating: "0", count: 40)) 3 3 1
-        author Working Tree
-        author-time 1700000000
-        author-tz +0000
-        summary Temporary change
-        filename Sources/App.swift
-        \tlet changed = true
-        """
+            \(committedHash) 1 1 2
+            author Ada Lovelace
+            author-time 1700000000
+            author-tz +0000
+            summary Add parser
+            filename Sources/App.swift
+            \tlet first = true
+            \(committedHash) 2 2 1
+            author Ada Lovelace
+            author-time 1700000000
+            author-tz +0000
+            summary Add parser
+            filename Sources/App.swift
+            \t
+            \(String(repeating: "0", count: 40)) 3 3 1
+            author Working Tree
+            author-time 1700000000
+            author-tz +0000
+            summary Temporary change
+            filename Sources/App.swift
+            \tlet changed = true
+            """
 
         let document = RepositoryService.parseBlamePorcelain(output, path: "Sources/App.swift")
 
@@ -389,11 +418,13 @@ struct RepositoryCodeWorkspaceTests {
     }
 
     @Test func blameReadsTrackedWorkingTreeContents() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-blame-tracked-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hermes-blame-tracked-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try "# Title\n\nTracked content\n".write(to: root.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try "# Title\n\nTracked content\n".write(
+            to: root.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         #expect(runGit(path: root.path, arguments: ["init", "-q"]))
         #expect(runGit(path: root.path, arguments: ["config", "user.email", "tests@example.com"]))
         #expect(runGit(path: root.path, arguments: ["config", "user.name", "Hermes Tests"]))

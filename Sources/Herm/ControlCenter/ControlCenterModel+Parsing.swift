@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     static func parseCronJobs(_ result: [String: Any]) -> [CronSummary] {
@@ -10,18 +10,24 @@ extension ControlCenterModel {
             var editable: Set<CronEditField> = []
             if row["name"] as? String != nil { editable.insert(.name) }
             if row["schedule"] as? String != nil { editable.insert(.schedule) }
-            if (row["prompt"] as? String) != nil || (row["request"] as? String) != nil || (row["task"] as? String) != nil { editable.insert(.prompt) }
+            if (row["prompt"] as? String) != nil || (row["request"] as? String) != nil
+                || (row["task"] as? String) != nil
+            {
+                editable.insert(.prompt)
+            }
             // `cron.manage list` only sends a truncated `prompt_preview`; it is display-only, not editable.
-            let prompt = (row["prompt"] as? String) ?? (row["request"] as? String) ?? (row["task"] as? String) ?? (row["prompt_preview"] as? String)
+            let prompt =
+                (row["prompt"] as? String) ?? (row["request"] as? String) ?? (row["task"] as? String)
+                ?? (row["prompt_preview"] as? String)
             return CronSummary(
                 id: id,
                 name: (row["name"] as? String) ?? id,
                 // Hermes reports interval jobs as {"kind", "minutes", "display"}.
                 schedule: (row["schedule"] as? String)
                     ?? ((row["schedule"] as? [String: Any])?["expr"] as? String)
-                    ?? ((row["schedule"] as? [String: Any])?["display"] as? String)
-                    ?? (row["schedule_display"] as? String)
-                    ?? "Scheduled",
+                        ?? ((row["schedule"] as? [String: Any])?["display"] as? String)
+                            ?? (row["schedule_display"] as? String)
+                                ?? "Scheduled",
                 enabled: (row["enabled"] as? Bool) ?? !(row["paused"] as? Bool ?? false),
                 nextRun: row["next_run_at"] as? String ?? row["next_run"] as? String ?? row["nextRun"] as? String,
                 sessionID: row["session_id"] as? String ?? row["sessionID"] as? String,
@@ -41,11 +47,12 @@ extension ControlCenterModel {
         let rows = (result["sessions"] as? [[String: Any]]) ?? []
         return jobs.map { job in
             let prefix = "cron_\(job.id)_"
-            let sessionID = rows.first { row in
-                let source = (row["source"] as? String)?.lowercased()
-                let id = row["id"] as? String
-                return source == "cron" && id?.hasPrefix(prefix) == true
-            }?["id"] as? String
+            let sessionID =
+                rows.first { row in
+                    let source = (row["source"] as? String)?.lowercased()
+                    let id = row["id"] as? String
+                    return source == "cron" && id?.hasPrefix(prefix) == true
+                }?["id"] as? String
             guard let sessionID else { return job }
             return CronSummary(
                 id: job.id,
@@ -115,7 +122,10 @@ extension ControlCenterModel {
                 throw HermesGateway.GatewayError.malformedResponse
             }
             pageCount += 1
-            if !rows.isEmpty, Self.paginationPageIsRepeated(rows, seenSignatures: &seenPageSignatures, seenSessionIDs: &seenSessionIDs) {
+            if !rows.isEmpty,
+                Self.paginationPageIsRepeated(
+                    rows, seenSignatures: &seenPageSignatures, seenSessionIDs: &seenSessionIDs)
+            {
                 throw HermesGateway.GatewayError.malformedResponse
             }
             sessionRows.append(contentsOf: rows)
@@ -132,7 +142,9 @@ extension ControlCenterModel {
         for start in stride(from: 0, to: sessions.count, by: 8) {
             let end = min(start + 8, sessions.count)
             let batch = Array(sessions[start..<end])
-            let fetched = await withTaskGroup(of: (String, [SessionActivityStep], Bool).self, returning: [(String, [SessionActivityStep], Bool)].self) { group in
+            let fetched = await withTaskGroup(
+                of: (String, [SessionActivityStep], Bool).self, returning: [(String, [SessionActivityStep], Bool)].self
+            ) { group in
                 for session in batch {
                     group.addTask { [weak self] in
                         guard let self else { return (session.id, [], false) }
@@ -161,14 +173,19 @@ extension ControlCenterModel {
             throw NSError(
                 domain: "HermesControl",
                 code: 206,
-                userInfo: [NSLocalizedDescriptionKey: "Latest activity is partial: unable to read activity from \(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s")."]
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Latest activity is partial: unable to read activity from \(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s")."
+                ]
             )
         }
         guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
         latestActivities = projectedActivities
     }
 
-    func fetchActivitySteps(rpc: HermesControlRPC, sessionID: String) async -> (steps: [SessionActivityStep], succeeded: Bool) {
+    func fetchActivitySteps(rpc: HermesControlRPC, sessionID: String) async -> (
+        steps: [SessionActivityStep], succeeded: Bool
+    ) {
         do {
             let result = try await rpc.sessionMessages(sessionID: sessionID)
             guard let steps = Self.parseActivityStepsEnvelope(result) else {
@@ -187,7 +204,8 @@ extension ControlCenterModel {
 
     static func parseActivityStepsEnvelope(_ result: [String: Any]) -> [SessionActivityStep]? {
         guard result["messages"] == nil,
-              let rows = result["data"] as? [[String: Any]] else {
+            let rows = result["data"] as? [[String: Any]]
+        else {
             return nil
         }
         var steps: [SessionActivityStep] = []
@@ -202,7 +220,8 @@ extension ControlCenterModel {
                 return nil
             }
             guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  seenActivityIDs.insert(id).inserted else { return nil }
+                seenActivityIDs.insert(id).inserted
+            else { return nil }
             if let role = row["role"], !(role is String) { return nil }
             if let timestamp = row["timestamp"], activityDate(timestamp) == nil { return nil }
             if let toolName = row["tool_name"], !(toolName is String) { return nil }
@@ -230,9 +249,10 @@ extension ControlCenterModel {
             }
 
             let timestamp = activityDate(row["timestamp"]) ?? .distantPast
-            steps.append(contentsOf: names.enumerated().map { nameIndex, name in
-                SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp)
-            })
+            steps.append(
+                contentsOf: names.enumerated().map { nameIndex, name in
+                    SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp)
+                })
         }
         return steps
     }
@@ -296,19 +316,21 @@ extension ControlCenterModel {
         var sessions: [SessionSummary] = []
         for row in rows {
             guard let id = row["id"] as? String,
-                  !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  isOptionalString(row["title"]),
-                  isOptionalString(row["name"]),
-                  isOptionalString(row["state"]),
-                  isOptionalString(row["status"]),
-                  isOptionalString(row["preview"]),
-                  isOptionalString(row["last_message"]) else {
+                !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                isOptionalString(row["title"]),
+                isOptionalString(row["name"]),
+                isOptionalString(row["state"]),
+                isOptionalString(row["status"]),
+                isOptionalString(row["preview"]),
+                isOptionalString(row["last_message"])
+            else {
                 return nil
             }
             let title = (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session"
             let state = (row["state"] as? String) ?? (row["status"] as? String) ?? "active"
             let preview = row["preview"] as? String ?? row["last_message"] as? String
-            let updatedAt = activityDate(row["updated_at"])
+            let updatedAt =
+                activityDate(row["updated_at"])
                 ?? activityDate(row["last_active"])
                 ?? activityDate(row["last_message_at"])
                 ?? activityDate(row["started_at"])
@@ -339,9 +361,10 @@ extension ControlCenterModel {
         return rows.compactMap { row in
             let id = (row["subagent_id"] as? String) ?? (row["id"] as? String)
             guard let id else { return nil }
-            let state = DockModel.canonicalAgentStatus(
-                (row["status"] as? String) ?? (row["state"] as? String)
-            ) ?? "running"
+            let state =
+                DockModel.canonicalAgentStatus(
+                    (row["status"] as? String) ?? (row["state"] as? String)
+                ) ?? "running"
             guard AgentActivityPresentation.isActiveStatus(state) else { return nil }
             return AgentSummary(
                 id: id,
@@ -377,7 +400,9 @@ extension ControlCenterModel {
         }
         results += attention.compactMap { item in
             guard matches(item.title, item.detail) else { return nil }
-            return ControlSearchResult(id: "attention:\(item.id)", reference: item.reference, title: item.title, detail: item.detail, sourceLabel: "INBOX")
+            return ControlSearchResult(
+                id: "attention:\(item.id)", reference: item.reference, title: item.title, detail: item.detail,
+                sourceLabel: "INBOX")
         }
         results += reminders.compactMap { reminder in
             let detail = reminder.list ?? "Apple Reminder"
@@ -427,8 +452,9 @@ extension ControlCenterModel {
         var providers: [String: [String]] = [:]
         for row in rows("models", modelResult) {
             guard let model = row["model"] as? String,
-                  let provider = row["provider"] as? String, !provider.isEmpty,
-                  providers[model]?.contains(provider) != true else { continue }
+                let provider = row["provider"] as? String, !provider.isEmpty,
+                providers[model]?.contains(provider) != true
+            else { continue }
             providers[model, default: []].append(provider)
         }
         let dayFormatter = DateFormatter()
@@ -492,10 +518,14 @@ extension ControlCenterModel {
             },
             tasks: tasks(rows("by_task", result)),
             tools: rows("tools", result).map {
-                TokenUsageReport.Share(name: ($0["tool"] as? String) ?? "unknown", count: intValue($0["count"]), percentage: doubleValue($0["percentage"]) ?? 0)
+                TokenUsageReport.Share(
+                    name: ($0["tool"] as? String) ?? "unknown", count: intValue($0["count"]),
+                    percentage: doubleValue($0["percentage"]) ?? 0)
             },
             skills: rows("top_skills", skills).map {
-                TokenUsageReport.Share(name: ($0["skill"] as? String) ?? "unknown", count: intValue($0["total_count"]), percentage: doubleValue($0["percentage"]) ?? 0)
+                TokenUsageReport.Share(
+                    name: ($0["skill"] as? String) ?? "unknown", count: intValue($0["total_count"]),
+                    percentage: doubleValue($0["percentage"]) ?? 0)
             },
             skillLoads: intValue(skillSummary["total_skill_loads"]),
             distinctSkills: intValue(skillSummary["distinct_skills_used"])
@@ -504,7 +534,8 @@ extension ControlCenterModel {
 
     static func parseCheckpoints(_ result: [String: Any]) -> [HermesCheckpointSummary] {
         guard result["enabled"] as? Bool == true,
-              let rows = result["checkpoints"] as? [[String: Any]], rows.count <= 50 else { return [] }
+            let rows = result["checkpoints"] as? [[String: Any]], rows.count <= 50
+        else { return [] }
         return rows.compactMap { row in
             guard let hash = row["hash"] as? String, !hash.isEmpty, hash.count <= 128 else { return nil }
             let timestamp = (row["timestamp"] as? String ?? "").prefix(128)
@@ -529,7 +560,9 @@ extension ControlCenterModel {
             contextPercent: doubleValue(result["context_percent"]),
             estimatedTotal: intValue(result["estimated_total"]),
             model: result["model"] as? String,
-            compressionThresholdTokens: optionalIntValue(result["compression_threshold_tokens"]).flatMap { $0 > 0 ? $0 : nil },
+            compressionThresholdTokens: optionalIntValue(result["compression_threshold_tokens"]).flatMap {
+                $0 > 0 ? $0 : nil
+            },
             compressionEnabled: result["compression_enabled"] as? Bool,
             contextEstimated: result["context_estimated"] as? Bool ?? false
         )
@@ -537,15 +570,18 @@ extension ControlCenterModel {
 
     static func parseProviderQuota(_ result: [String: Any]) -> ProviderQuotaSnapshot? {
         guard let provider = (result["provider"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !provider.isEmpty,
-              let updatedString = result["updated_at"] as? String,
-              let updatedAt = QuotaJSON.iso8601Date(updatedString) else { return nil }
-        let displayName = ((result["display_name"] as? String) ?? provider).trimmingCharacters(in: .whitespacesAndNewlines)
+            !provider.isEmpty,
+            let updatedString = result["updated_at"] as? String,
+            let updatedAt = QuotaJSON.iso8601Date(updatedString)
+        else { return nil }
+        let displayName = ((result["display_name"] as? String) ?? provider).trimmingCharacters(
+            in: .whitespacesAndNewlines)
         let rows = (result["windows"] as? [[String: Any]] ?? []).prefix(5).compactMap { row -> ProviderQuotaWindow? in
             guard let id = (row["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !id.isEmpty,
-                  let label = (row["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !label.isEmpty else { return nil }
+                !id.isEmpty,
+                let label = (row["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !label.isEmpty
+            else { return nil }
             let rawPercent = doubleValue(row["remaining_percent"])
             if row["remaining_percent"] != nil && (rawPercent == nil || !(0...100).contains(rawPercent!)) { return nil }
             let percent = rawPercent
@@ -577,8 +613,9 @@ extension ControlCenterModel {
 
     static func hermesPooledCredential(_ value: Any?) -> HermesPooledCredential? {
         guard let object = value as? [String: Any],
-              let provider = object["provider"] as? String, !provider.isEmpty,
-              let id = object["id"] as? String, !id.isEmpty else { return nil }
+            let provider = object["provider"] as? String, !provider.isEmpty,
+            let id = object["id"] as? String, !id.isEmpty
+        else { return nil }
         return HermesPooledCredential(
             provider: provider,
             id: id,
@@ -627,7 +664,8 @@ extension ControlCenterModel {
 
     /// Large boards take tens of milliseconds to scan and decode; polling on
     /// the main actor made every refresh a visible scroll hitch.
-    nonisolated static func parseKanbanTasksOffMain(_ output: String, boardSlug: String?) async -> [KanbanTaskSummary]? {
+    nonisolated static func parseKanbanTasksOffMain(_ output: String, boardSlug: String?) async -> [KanbanTaskSummary]?
+    {
         await Task.detached(priority: .utility) {
             parseKanbanTasksStrict(output, boardSlug: boardSlug)
         }.value
@@ -648,16 +686,18 @@ extension ControlCenterModel {
         // Fast path: the Kanban adapter emits a bare JSON array, so skip the
         // byte scan below when the whole output already decodes.
         if let data = output.data(using: .utf8),
-           let value = try? JSONSerialization.jsonObject(with: data),
-           let rows = kanbanTaskRows(from: value) {
+            let value = try? JSONSerialization.jsonObject(with: data),
+            let rows = kanbanTaskRows(from: value)
+        {
             return rows.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) }
         }
         let bytes = Array(output.utf8)
         var validEmptyRows: [[String: Any]]?
         for start in bytes.indices where bytes[start] == UInt8(ascii: "[") || bytes[start] == UInt8(ascii: "{") {
             guard let end = matchingJSONBracket(in: bytes, from: start),
-                  let value = try? JSONSerialization.jsonObject(with: Data(bytes[start...end])),
-                  let rows = kanbanTaskRows(from: value) else { continue }
+                let value = try? JSONSerialization.jsonObject(with: Data(bytes[start...end])),
+                let rows = kanbanTaskRows(from: value)
+            else { continue }
             if !rows.isEmpty { return rows.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) } }
             validEmptyRows = rows
         }
@@ -672,9 +712,13 @@ extension ControlCenterModel {
         for index in start..<bytes.count {
             let byte = bytes[index]
             if inString {
-                if escaped { escaped = false }
-                else if byte == UInt8(ascii: "\\") { escaped = true }
-                else if byte == UInt8(ascii: "\"") { inString = false }
+                if escaped {
+                    escaped = false
+                } else if byte == UInt8(ascii: "\\") {
+                    escaped = true
+                } else if byte == UInt8(ascii: "\"") {
+                    inString = false
+                }
                 continue
             }
             switch byte {
@@ -692,8 +736,9 @@ extension ControlCenterModel {
     nonisolated static func kanbanTaskRows(from value: Any) -> [[String: Any]]? {
         if let rows = value as? [[String: Any]] { return rows }
         if let encoded = value as? String,
-           let data = encoded.data(using: .utf8),
-           let nested = try? JSONSerialization.jsonObject(with: data) {
+            let data = encoded.data(using: .utf8),
+            let nested = try? JSONSerialization.jsonObject(with: data)
+        {
             return kanbanTaskRows(from: nested)
         }
         guard let envelope = value as? [String: Any] else { return nil }
@@ -711,7 +756,8 @@ extension ControlCenterModel {
         sessionID: String? = nil
     ) -> KanbanTaskSummary? {
         guard let data = output.data(using: .utf8),
-              let value = try? JSONSerialization.jsonObject(with: data) else { return nil }
+            let value = try? JSONSerialization.jsonObject(with: data)
+        else { return nil }
         let row: [String: Any]
         if let dictionary = value as? [String: Any], let task = dictionary["task"] as? [String: Any] {
             row = task
@@ -751,13 +797,14 @@ extension ControlCenterModel {
         sessionID: String? = nil
     ) -> KanbanTaskSummary? {
         guard let id = (row["id"] as? String) ?? (row["task_id"] as? String),
-              let title = (row["title"] as? String) ?? (row["t"] as? String) else { return nil }
+            let title = (row["title"] as? String) ?? (row["t"] as? String)
+        else { return nil }
         return KanbanTaskSummary(
             id: id,
             boardSlug: boardSlug
                 ?? (row["board_slug"] as? String)
-                ?? (row["boardSlug"] as? String)
-                ?? (row["board"] as? String),
+                    ?? (row["boardSlug"] as? String)
+                        ?? (row["board"] as? String),
             title: title,
             status: (row["status"] as? String) ?? (row["s"] as? String) ?? "unknown",
             detail: (row["body"] as? String) ?? (row["description"] as? String),
@@ -767,8 +814,10 @@ extension ControlCenterModel {
             startedAt: activityDate(row["started_at"] ?? row["startedAt"]),
             completedAt: activityDate(row["completed_at"] ?? row["completedAt"]),
             currentStepKey: (row["current_step_key"] as? String) ?? (row["currentStepKey"] as? String),
-            modelOverride: (row["model_override"] as? String) ?? (row["modelOverride"] as? String) ?? (row["model"] as? String),
-            providerOverride: (row["provider_override"] as? String) ?? (row["providerOverride"] as? String) ?? (row["provider"] as? String),
+            modelOverride: (row["model_override"] as? String) ?? (row["modelOverride"] as? String)
+                ?? (row["model"] as? String),
+            providerOverride: (row["provider_override"] as? String) ?? (row["providerOverride"] as? String)
+                ?? (row["provider"] as? String),
             skills: kanbanStringList(row["skills"]),
             workflowTemplateID: (row["workflow_template_id"] as? String) ?? (row["workflowTemplateID"] as? String),
             workspacePath: row["workspace_path"] as? String
@@ -777,15 +826,16 @@ extension ControlCenterModel {
 
     static func parseLatestKanbanEvent(_ value: Any?) -> (kind: String?, note: String?, date: Date?) {
         guard let events = value as? [[String: Any]], !events.isEmpty else { return (nil, nil, nil) }
-        let latest = events.max { lhs, rhs in
-            (activityDate(lhs["created_at"] ?? lhs["createdAt"]) ?? .distantPast)
-                < (activityDate(rhs["created_at"] ?? rhs["createdAt"]) ?? .distantPast)
-        } ?? [:]
+        let latest =
+            events.max { lhs, rhs in
+                (activityDate(lhs["created_at"] ?? lhs["createdAt"]) ?? .distantPast)
+                    < (activityDate(rhs["created_at"] ?? rhs["createdAt"]) ?? .distantPast)
+            } ?? [:]
         return (
             (latest["kind"] as? String) ?? (latest["type"] as? String),
             (latest["note"] as? String)
                 ?? ((latest["payload"] as? [String: Any])?["note"] as? String)
-                ?? (latest["payload"] as? String),
+                    ?? (latest["payload"] as? String),
             activityDate(latest["created_at"] ?? latest["createdAt"])
         )
     }
@@ -793,16 +843,21 @@ extension ControlCenterModel {
     /// The session Activity projection is a privacy boundary. Even when the
     /// CLI request carries a session filter, publish only rows that return a
     /// present, exact canonical session identifier.
-    static func filterSessionKanbanTasks(_ tasks: [KanbanTaskSummary], sessionID: String, aliases: Set<String> = [], observedIDs: Set<String> = []) -> [KanbanTaskSummary] {
+    static func filterSessionKanbanTasks(
+        _ tasks: [KanbanTaskSummary], sessionID: String, aliases: Set<String> = [], observedIDs: Set<String> = []
+    ) -> [KanbanTaskSummary] {
         guard !sessionID.isEmpty else { return [] }
         let ids = aliases.union([sessionID])
         return tasks.filter { $0.sessionID.map(ids.contains) ?? observedIDs.contains($0.id) }
     }
 
-    static func parseKanbanTaskDetail(_ output: String, fallback: KanbanTaskSummary, boardSlug: String? = nil) -> KanbanTaskDetail? {
+    static func parseKanbanTaskDetail(_ output: String, fallback: KanbanTaskSummary, boardSlug: String? = nil)
+        -> KanbanTaskDetail?
+    {
         guard let data = output.data(using: .utf8),
-              let value = try? JSONSerialization.jsonObject(with: data),
-              let source = kanbanTaskDetailRow(from: value) else { return nil }
+            let value = try? JSONSerialization.jsonObject(with: data),
+            let source = kanbanTaskDetailRow(from: value)
+        else { return nil }
         guard let id = (source["id"] as? String) ?? (source["task_id"] as? String) else { return nil }
         let resolvedBoardSlug = boardSlug ?? fallback.boardSlug
         var detail = KanbanTaskDetail(
@@ -814,8 +869,10 @@ extension ControlCenterModel {
             priority: Self.stringValue(source["priority"]) ?? fallback.priority,
             assignee: (source["assignee"] as? String) ?? (source["assigned_to"] as? String) ?? fallback.assignee,
             runs: [],
-            modelOverride: (source["model_override"] as? String) ?? (source["modelOverride"] as? String) ?? (source["model"] as? String) ?? fallback.modelOverride,
-            providerOverride: (source["provider_override"] as? String) ?? (source["providerOverride"] as? String) ?? (source["provider"] as? String) ?? fallback.providerOverride
+            modelOverride: (source["model_override"] as? String) ?? (source["modelOverride"] as? String)
+                ?? (source["model"] as? String) ?? fallback.modelOverride,
+            providerOverride: (source["provider_override"] as? String) ?? (source["providerOverride"] as? String)
+                ?? (source["provider"] as? String) ?? fallback.providerOverride
         )
         // `show --json` wraps the task with its history; the history may also
         // arrive inline on the task row from relay transports.
@@ -882,7 +939,8 @@ extension ControlCenterModel {
         }
         if let string = value as? String {
             if let data = string.data(using: .utf8),
-               let decoded = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+                let decoded = try? JSONSerialization.jsonObject(with: data) as? [Any]
+            {
                 return kanbanStringList(decoded)
             }
             return string.split(separator: ",").compactMap { nonEmpty(String($0)) }
@@ -894,7 +952,8 @@ extension ControlCenterModel {
     static func kanbanEventNote(_ value: Any?) -> String? {
         if let string = value as? String {
             if let data = string.data(using: .utf8),
-               let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
                 return kanbanEventNote(decoded)
             }
             return nonEmpty(string)
@@ -959,7 +1018,8 @@ extension ControlCenterModel {
 
     static func parseKanbanRuns(_ output: String, boardSlug: String? = nil) -> [KanbanRunSummary] {
         guard let data = output.data(using: .utf8),
-              let value = try? JSONSerialization.jsonObject(with: data) else { return [] }
+            let value = try? JSONSerialization.jsonObject(with: data)
+        else { return [] }
         let rows: [[String: Any]]
         if let array = value as? [[String: Any]] {
             rows = array
@@ -993,8 +1053,10 @@ extension ControlCenterModel {
 
     static func parseKanbanStats(_ output: String) -> KanbanStatsSummary? {
         guard let data = output.data(using: .utf8),
-              let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        let source = (row["counts"] as? [String: Any])
+            let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let source =
+            (row["counts"] as? [String: Any])
             ?? (row["by_status"] as? [String: Any])
             ?? row
         let counts = source.reduce(into: [String: Int]()) { result, entry in
@@ -1005,7 +1067,8 @@ extension ControlCenterModel {
 
     static func parseKanbanBoards(_ output: String) -> [KanbanBoardSummary] {
         guard let data = output.data(using: .utf8),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+            let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else { return [] }
         return rows.compactMap { row in
             guard let slug = row["slug"] as? String, !slug.isEmpty else { return nil }
             let rawCounts = row["counts"] as? [String: Any] ?? [:]
@@ -1026,7 +1089,8 @@ extension ControlCenterModel {
 
     static func parseKanbanAssignees(_ output: String) -> [String] {
         guard let data = output.data(using: .utf8),
-              let value = try? JSONSerialization.jsonObject(with: data) else { return [] }
+            let value = try? JSONSerialization.jsonObject(with: data)
+        else { return [] }
         let rows: [Any]
         if let array = value as? [Any] {
             rows = array
@@ -1035,23 +1099,30 @@ extension ControlCenterModel {
         } else {
             return []
         }
-        return Array(Set(rows.compactMap { row in
-            if let value = row as? String { return value }
-            guard let row = row as? [String: Any] else { return nil }
-            return (row["name"] as? String) ?? (row["profile"] as? String) ?? (row["id"] as? String)
-        })).sorted()
+        return Array(
+            Set(
+                rows.compactMap { row in
+                    if let value = row as? String { return value }
+                    guard let row = row as? [String: Any] else { return nil }
+                    return (row["name"] as? String) ?? (row["profile"] as? String) ?? (row["id"] as? String)
+                })
+        ).sorted()
     }
 
-    static func parseKanbanDiagnostics(_ output: String, boardSlug: String?, severity: String? = nil) -> [KanbanDiagnosticSummary] {
+    static func parseKanbanDiagnostics(_ output: String, boardSlug: String?, severity: String? = nil)
+        -> [KanbanDiagnosticSummary]
+    {
         guard let data = output.data(using: .utf8),
-              let value = try? JSONSerialization.jsonObject(with: data) else { return [] }
+            let value = try? JSONSerialization.jsonObject(with: data)
+        else { return [] }
         let rows = (value as? [[String: Any]]) ?? ((value as? [String: Any])?["diagnostics"] as? [[String: Any]]) ?? []
         return rows.enumerated().compactMap { index, row in
             let rowSeverity = (row["severity"] as? String) ?? "warning"
             guard severity == nil || severity == rowSeverity else { return nil }
             let taskID = row["task_id"] as? String ?? row["taskID"] as? String
             let title = (row["title"] as? String) ?? "Kanban diagnostic"
-            let fallback = [boardSlug ?? "default", taskID ?? "all", rowSeverity, title, String(index)].joined(separator: ":")
+            let fallback = [boardSlug ?? "default", taskID ?? "all", rowSeverity, title, String(index)].joined(
+                separator: ":")
             return KanbanDiagnosticSummary(
                 id: (row["id"] as? String) ?? fallback,
                 severity: rowSeverity,
@@ -1095,13 +1166,20 @@ extension ControlCenterModel {
                 status: row["status"] as? String,
                 exitCode: Self.optionalVerificationExitCode(row["exit_code"] ?? row["exitCode"]),
                 outputSummary: row["output_summary"] as? String ?? row["outputSummary"] as? String,
-                adapter: VerificationEvidenceText.bounded(row["adapter"] as? String ?? row["tool_identifier"] as? String ?? row["toolIdentifier"] as? String),
+                adapter: VerificationEvidenceText.bounded(
+                    row["adapter"] as? String ?? row["tool_identifier"] as? String ?? row["toolIdentifier"] as? String),
                 capturedAt: Self.optionalISO8601Date(row["captured_at"] ?? row["capturedAt"]),
-                repositoryIdentity: VerificationEvidenceText.bounded(row["repository_identity"] as? String ?? row["repositoryIdentity"] as? String),
-                commitFingerprint: VerificationEvidenceText.bounded(row["commit_fingerprint"] as? String ?? row["commitFingerprint"] as? String),
-                targetFingerprint: VerificationEvidenceText.bounded(row["target_fingerprint"] as? String ?? row["targetFingerprint"] as? String),
-                diffFingerprint: VerificationEvidenceText.bounded(row["diff_fingerprint"] as? String ?? row["diffFingerprint"] as? String),
-                rulesScopeDetail: VerificationEvidenceText.bounded(row["rules_scope_detail"] as? String ?? row["rulesScopeDetail"] as? String ?? row["rules"] as? String),
+                repositoryIdentity: VerificationEvidenceText.bounded(
+                    row["repository_identity"] as? String ?? row["repositoryIdentity"] as? String),
+                commitFingerprint: VerificationEvidenceText.bounded(
+                    row["commit_fingerprint"] as? String ?? row["commitFingerprint"] as? String),
+                targetFingerprint: VerificationEvidenceText.bounded(
+                    row["target_fingerprint"] as? String ?? row["targetFingerprint"] as? String),
+                diffFingerprint: VerificationEvidenceText.bounded(
+                    row["diff_fingerprint"] as? String ?? row["diffFingerprint"] as? String),
+                rulesScopeDetail: VerificationEvidenceText.bounded(
+                    row["rules_scope_detail"] as? String ?? row["rulesScopeDetail"] as? String ?? row["rules"]
+                        as? String),
                 staleReason: VerificationEvidenceText.bounded(staleReasonValue),
                 hasInvalidStaleReason: hasInvalidStaleReason
             )
@@ -1133,8 +1211,9 @@ extension ControlCenterModel {
 
     static func parseJourneyNodes(_ output: String) -> [HermesJourneyNode] {
         guard let data = output.data(using: .utf8),
-              let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let rows = value["nodes"] as? [[String: Any]] else { return [] }
+            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let rows = value["nodes"] as? [[String: Any]]
+        else { return [] }
         return rows.compactMap { row in
             guard let id = row["id"] as? String else { return nil }
             return HermesJourneyNode(
@@ -1175,50 +1254,63 @@ extension ControlCenterModel {
                 guard !message.isEmpty else { continue }
                 let current = runs.removeLast()
                 let error = [current.error, message].compactMap { $0 }.joined(separator: "\n")
-                runs.append(CronRunSummary(
-                    id: current.id,
-                    status: current.status,
-                    jobID: current.jobID,
-                    source: current.source,
-                    claimedAt: current.claimedAt,
-                    error: error,
-                    sessionID: current.sessionID
-                ))
+                runs.append(
+                    CronRunSummary(
+                        id: current.id,
+                        status: current.status,
+                        jobID: current.jobID,
+                        source: current.source,
+                        claimedAt: current.claimedAt,
+                        error: error,
+                        sessionID: current.sessionID
+                    ))
                 continue
             }
             let columns = raw.split(whereSeparator: { $0 == " " || $0 == "\t" })
             guard columns.count >= 2,
-                  !raw.localizedCaseInsensitiveContains("No cron execution attempts") else { continue }
+                !raw.localizedCaseInsensitiveContains("No cron execution attempts")
+            else { continue }
             let metadata = columns.dropFirst(2)
             let jobID = metadata.first(where: { $0.hasPrefix("job=") }).map { String($0.dropFirst(4)) }
             let source = metadata.first(where: { $0.hasPrefix("source=") }).map { String($0.dropFirst(7)) }
             let claimedAt = metadata.first(where: { !$0.contains("=") }).map(String.init)
-            runs.append(CronRunSummary(
-                id: String(columns[0]),
-                status: String(columns[1]),
-                jobID: jobID,
-                source: source,
-                claimedAt: claimedAt,
-                error: nil,
-                sessionID: nil
-            ))
+            runs.append(
+                CronRunSummary(
+                    id: String(columns[0]),
+                    status: String(columns[1]),
+                    jobID: jobID,
+                    source: source,
+                    claimedAt: claimedAt,
+                    error: nil,
+                    sessionID: nil
+                ))
         }
         return runs
     }
 
     static func parseStructuredCronRuns(_ result: [String: Any], jobID: String) throws -> [CronRunSummary] {
-        guard let rows = result["runs"] as? [[String: Any]], rows.count <= 50 else { throw HermesGateway.GatewayError.malformedResponse }
+        guard let rows = result["runs"] as? [[String: Any]], rows.count <= 50 else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
         var seen = Set<String>()
         return try rows.map { row in
             guard let id = row["id"] as? String, !id.isEmpty, seen.insert(id).inserted,
-                  let source = row["source"] as? String, ["cron", "cron_output"].contains(source),
-                  let started = row["started_at"] as? NSNumber, started.doubleValue.isFinite,
-                  id.hasPrefix(source == "cron" ? "cron_\(jobID)_" : "cron_output:\(jobID):") else { throw HermesGateway.GatewayError.malformedResponse }
+                let source = row["source"] as? String, ["cron", "cron_output"].contains(source),
+                let started = row["started_at"] as? NSNumber, started.doubleValue.isFinite,
+                id.hasPrefix(source == "cron" ? "cron_\(jobID)_" : "cron_output:\(jobID):")
+            else { throw HermesGateway.GatewayError.malformedResponse }
             let status: String
-            if let reported = row["status"] as? String { status = reported }
-            else if row["scheduler_owned"] as? Bool == true || (row["scheduler_owned"] == nil && row["is_active"] as? Bool == true) { status = "running" }
-            else { status = row["ended_at"] is NSNumber ? "finished" : "unknown" }
-            return CronRunSummary(id: id, status: status, jobID: jobID, source: source,
+            if let reported = row["status"] as? String {
+                status = reported
+            } else if row["scheduler_owned"] as? Bool == true
+                || (row["scheduler_owned"] == nil && row["is_active"] as? Bool == true)
+            {
+                status = "running"
+            } else {
+                status = row["ended_at"] is NSNumber ? "finished" : "unknown"
+            }
+            return CronRunSummary(
+                id: id, status: status, jobID: jobID, source: source,
                 claimedAt: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: started.doubleValue)),
                 error: row["error"] as? String, sessionID: source == "cron" ? id : nil,
                 outputPreview: source == "cron_output" ? row["preview"] as? String : nil)
@@ -1230,14 +1322,16 @@ extension ControlCenterModel {
         return clean.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
             let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty,
-                  !text.localizedCaseInsensitiveContains("MCP Servers:"),
-                  !text.localizedCaseInsensitiveContains("No MCP servers configured"),
-                  !text.hasPrefix("─") else { return nil }
+                !text.localizedCaseInsensitiveContains("MCP Servers:"),
+                !text.localizedCaseInsensitiveContains("No MCP servers configured"),
+                !text.hasPrefix("─")
+            else { return nil }
 
             let columns = text.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
             guard columns.count >= 4,
-                  columns[0].lowercased() != "name",
-                  let toolMarkerIndex = columns.firstIndex(where: { $0 == "all" || $0 == "selected" || $0 == "excluded" }) else { return nil }
+                columns[0].lowercased() != "name",
+                let toolMarkerIndex = columns.firstIndex(where: { $0 == "all" || $0 == "selected" || $0 == "excluded" })
+            else { return nil }
 
             let toolIndex = columns[toolMarkerIndex] == "all" ? toolMarkerIndex : toolMarkerIndex - 1
             guard toolIndex > 1, toolMarkerIndex + 1 < columns.count else { return nil }
@@ -1313,7 +1407,8 @@ extension ControlCenterModel {
 
         func walk(_ value: Any) {
             if let row = value as? [String: Any] {
-                let looksLikeSession = row["state"] != nil || row["status"] != nil || row["preview"] != nil || row["last_message"] != nil
+                let looksLikeSession =
+                    row["state"] != nil || row["status"] != nil || row["preview"] != nil || row["last_message"] != nil
                 if row["id"] is String && looksLikeSession {
                     rows.append(row)
                 }
@@ -1330,7 +1425,8 @@ extension ControlCenterModel {
             let title = (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session"
             let state = (row["state"] as? String) ?? (row["status"] as? String) ?? "active"
             let preview = row["preview"] as? String ?? row["last_message"] as? String
-            let updatedAt = activityDate(row["updated_at"])
+            let updatedAt =
+                activityDate(row["updated_at"])
                 ?? activityDate(row["last_active"])
                 ?? activityDate(row["last_message_at"])
                 ?? activityDate(row["started_at"])

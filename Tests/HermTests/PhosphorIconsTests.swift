@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Testing
+
 @testable import Herm
 
 struct PhosphorIconsTests {
@@ -30,18 +31,19 @@ struct PhosphorIconsTests {
 
     private func meanInkBrightness(in appearanceName: NSAppearance.Name) throws -> CGFloat {
         let appearance = try #require(NSAppearance(named: appearanceName))
-        let bitmap = try #require(NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: 16,
-            pixelsHigh: 16,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ))
+        let bitmap = try #require(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: 16,
+                pixelsHigh: 16,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ))
         let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap))
         appearance.performAsCurrentDrawingAppearance {
             NSGraphicsContext.saveGraphicsState()
@@ -56,7 +58,8 @@ struct PhosphorIconsTests {
         for y in 0..<bitmap.pixelsHigh {
             for x in 0..<bitmap.pixelsWide {
                 guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
-                      color.alphaComponent > 0.1 else { continue }
+                    color.alphaComponent > 0.1
+                else { continue }
                 total += (color.redComponent + color.greenComponent + color.blueComponent) / 3
                 count += 1
             }

@@ -23,7 +23,9 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
             // Secondary filter under the Tasks/Quota tabs: plain text so it never reads as a second tab bar.
             HStack(spacing: 10) {
                 ForEach(options, id: \.self) { option in
-                    Button { select(option) } label: {
+                    Button {
+                        select(option)
+                    } label: {
                         Text(title(option))
                             .font(.system(size: 11, weight: selection == option ? .semibold : .regular))
                             .foregroundStyle(selection == option ? Color.dockPrimaryText : Color.dockMetadataText)
@@ -44,13 +46,20 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
     private var segmented: some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.self) { option in
-                Button { select(option) } label: {
-                    DockIcon(symbol?(option) ?? .circle, size: 13,
-                             color: selection == option ? .dockAccent : .dockSecondaryText)
-                        .frame(width: 26, height: 22)
-                        .background(DockThemeShape(cornerRadius: 5)
-                            .dockSelectionFill(selection == option, fallback: selection == option ? Color.dockAccentMuted : .clear))
-                        .contentShape(Rectangle())
+                Button {
+                    select(option)
+                } label: {
+                    DockIcon(
+                        symbol?(option) ?? .circle, size: 13,
+                        color: selection == option ? .dockAccent : .dockSecondaryText
+                    )
+                    .frame(width: 26, height: 22)
+                    .background(
+                        DockThemeShape(cornerRadius: 5)
+                            .dockSelectionFill(
+                                selection == option, fallback: selection == option ? Color.dockAccentMuted : .clear)
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)
                 .help(title(option))
@@ -73,10 +82,14 @@ struct EdgeQuotaToolbar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            EdgePreviewModeToggle(options: EdgeQuotaLayout.allCases, selection: layout,
-                                  title: { "\($0.title) layout" }, symbol: { $0.symbol }) { layout = $0 }
+            EdgePreviewModeToggle(
+                options: EdgeQuotaLayout.allCases, selection: layout,
+                title: { "\($0.title) layout" }, symbol: { $0.symbol }
+            ) { layout = $0 }
 
-            Button { control.refreshProviderQuota() } label: {
+            Button {
+                control.refreshProviderQuota()
+            } label: {
                 Group {
                     if refreshing {
                         ProgressView().controlSize(.small).scaleEffect(0.7)
@@ -123,9 +136,13 @@ struct EdgeQuotaPreview: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(refreshing ? "Loading quota…" : "Quota unavailable")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(refreshing ? "Reading connected providers" : "Open Quota to connect a provider or review its status.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockSecondaryText)
+                        Text(
+                            refreshing
+                                ? "Reading connected providers"
+                                : "Open Quota to connect a provider or review its status."
+                        )
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
                     }
                     .padding(.top, 12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -151,14 +168,21 @@ struct EdgeQuotaPreview: View {
         HStack(spacing: 8) {
             if let updatedAt = quotas.map(\.updatedAt).max() {
                 TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                    Text(refreshing ? "Refreshing…" :
-                         control.refreshState(for: "provider.quota")?.isStale == true ? "Stale data" :
-                         "Updated \(Self.shortDuration(timeline.date.timeIntervalSince(updatedAt))) ago")
-                        .foregroundStyle(Color.dockSecondaryText)
+                    Text(
+                        refreshing
+                            ? "Refreshing…"
+                            : control.refreshState(for: "provider.quota")?.isStale == true
+                                ? "Stale data"
+                                : "Updated \(Self.shortDuration(timeline.date.timeIntervalSince(updatedAt))) ago"
+                    )
+                    .foregroundStyle(Color.dockSecondaryText)
                 }
             }
             Spacer(minLength: 0)
-            if let sessionActions { Button("Session…", action: sessionActions).buttonStyle(.dockCompact).accessibilityLabel("Capacity and actions for the selected quick destination") }
+            if let sessionActions {
+                Button("Session…", action: sessionActions).buttonStyle(.dockCompact).accessibilityLabel(
+                    "Capacity and actions for the selected quick destination")
+            }
             Button(action: openQuota) {
                 DockIconLabel("Open Quota", icon: .arrowRight)
             }
@@ -175,7 +199,8 @@ struct EdgeQuotaPreview: View {
             ForEach(Array(quotas.enumerated()), id: \.element.provider) { index, snapshot in
                 if index > 0 { Divider().overlay(Color.dockBorderLight).padding(.leading, 28) }
                 HStack(alignment: .top, spacing: 8) {
-                    ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName))
+                    ProviderMarkBadge(
+                        mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName))
                     VStack(alignment: .leading, spacing: 5) {
                         Text(snapshot.displayName)
                             .font(.system(size: 12, weight: .semibold))
@@ -250,7 +275,9 @@ struct EdgeQuotaPreview: View {
             ForEach(quotas, id: \.provider) { snapshot in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
-                        ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName), size: 18)
+                        ProviderMarkBadge(
+                            mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName),
+                            size: 18)
                         Text(snapshot.displayName)
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
@@ -273,8 +300,13 @@ struct EdgeQuotaPreview: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                        Color.dockSurface2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                        Color.dockBorderLight, lineWidth: DockLayout.hairline))
             }
         }
         .padding(.vertical, 8)
@@ -306,7 +338,7 @@ struct EdgeQuotaPreview: View {
                         Text("\(Int(remaining.rounded()))")
                             .font(.system(size: 11, weight: .semibold))
                             .monospacedDigit()
-                        + Text("%")
+                            + Text("%")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundColor(Color.dockSecondaryText)
                     } else if let value = Self.ringValue(window) {
@@ -342,7 +374,8 @@ struct EdgeQuotaPreview: View {
             TimelineView(.periodic(from: .now, by: 60)) { timeline in
                 Text(resets > timeline.date ? Self.shortDuration(resets.timeIntervalSince(timeline.date)) : "Now")
             }
-            .help("Resets \(resets.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
+            .help(
+                "Resets \(resets.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
         } else if let text = window.resetsDisplay {
             Text(text)
         }
@@ -363,7 +396,8 @@ struct EdgeQuotaPreview: View {
             parts.append("daily budget line at \(Int(marker)) percent")
         }
         if let resets = window.resetsAt {
-            parts.append("resets \(resets.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
+            parts.append(
+                "resets \(resets.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
         }
         return parts.joined(separator: ", ")
     }
@@ -377,7 +411,9 @@ struct EdgeQuotaPreview: View {
     }
 
     /// Keeps every reported allowance, with the common session and weekly windows first.
-    nonisolated static func compactWindows(_ windows: [ProviderQuotaWindow]) -> [(label: String, window: ProviderQuotaWindow)] {
+    nonisolated static func compactWindows(_ windows: [ProviderQuotaWindow]) -> [(
+        label: String, window: ProviderQuotaWindow
+    )] {
         let session = windows.first { $0.label == "Session" || $0.id == "gemini-5h" }
         let weekly = windows.first { $0.label == "Weekly" || $0.id == "gemini-weekly" }
         let known = [session.map { ("5h", $0) }, weekly.map { ("7d", $0) }].compactMap { $0 }
@@ -431,12 +467,14 @@ struct EdgeQuotaChangeCard: View {
     @State private var settled = false
 
     var body: some View {
-        let layout = inline
+        let layout =
+            inline
             ? AnyLayout(HStackLayout(alignment: .center, spacing: 20))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: compact ? 10 : 16))
         layout {
             HStack(spacing: 8) {
-                ProviderMarkBadge(mark: ProviderMark(providerID: change.current.provider, displayName: change.current.displayName))
+                ProviderMarkBadge(
+                    mark: ProviderMark(providerID: change.current.provider, displayName: change.current.displayName))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(change.current.displayName).font(.system(size: compact ? 12 : 13, weight: .semibold))
                     if !compact {
@@ -455,7 +493,10 @@ struct EdgeQuotaChangeCard: View {
         .padding(.vertical, compact ? 0 : 14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .task {
-            guard !reduceMotion else { settled = true; return }
+            guard !reduceMotion else {
+                settled = true
+                return
+            }
             // Let the notch finish opening before the meters move.
             try? await Task.sleep(for: .milliseconds(450))
             withAnimation(.easeInOut(duration: 1.4)) { settled = true }
@@ -498,7 +539,9 @@ struct EdgeQuotaChangeCard: View {
                 .frame(height: 6)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(label == "5h" ? "5-hour window" : label == "7d" ? "Weekly window" : window.label), \(Int(before.rounded())) to \(Int(now.rounded())) percent remaining")
+            .accessibilityLabel(
+                "\(label == "5h" ? "5-hour window" : label == "7d" ? "Weekly window" : window.label), \(Int(before.rounded())) to \(Int(now.rounded())) percent remaining"
+            )
         }
     }
 }
@@ -537,10 +580,14 @@ struct ChatQuotaChip: View {
 
     var body: some View {
         if enabled, let lowest {
-            Button { showingDetail.toggle() } label: {
+            Button {
+                showingDetail.toggle()
+            } label: {
                 HStack(spacing: 4) {
-                    ProviderMarkBadge(mark: ProviderMark(providerID: lowest.snapshot.provider,
-                                                         displayName: lowest.snapshot.displayName), size: 14)
+                    ProviderMarkBadge(
+                        mark: ProviderMark(
+                            providerID: lowest.snapshot.provider,
+                            displayName: lowest.snapshot.displayName), size: 14)
                     Text("\(Int(lowest.remaining.rounded()))%")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(QuotaWorkspaceView.color(for: lowest.window.threshold))
@@ -552,7 +599,9 @@ struct ChatQuotaChip: View {
             }
             .buttonStyle(.dockHover)
             .help("\(lowest.snapshot.displayName) has \(Int(lowest.remaining.rounded()))% left")
-            .accessibilityLabel("Quota: \(lowest.snapshot.displayName) \(Int(lowest.remaining.rounded())) percent remaining")
+            .accessibilityLabel(
+                "Quota: \(lowest.snapshot.displayName) \(Int(lowest.remaining.rounded())) percent remaining"
+            )
             .popover(isPresented: $showingDetail, arrowEdge: .top) {
                 EdgeQuotaPreview(control: control) {
                     showingDetail = false
@@ -583,8 +632,13 @@ struct ChatQuotaBanner: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(maxWidth: metrics.readingWidth)
-                    .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), tint: .dockSurface2, stroke: .dockBorderLight)
-                    .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.12), radius: 8, y: 2)
+                    .dockFloatingSurface(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous),
+                        tint: .dockSurface2, stroke: .dockBorderLight
+                    )
+                    .shadow(
+                        color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.12), radius: 8, y: 2
+                    )
                     .padding(.horizontal, metrics.contentInset)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -597,10 +651,12 @@ struct ChatQuotaBanner: View {
             guard !quotas.isEmpty else { return }
             defer { lastQuotas = quotas }
             guard enabled, let previousQuotas = lastQuotas,
-                  let provider = EdgeQuotaBands.droppedProvider(from: EdgeQuotaBands.bands(previousQuotas),
-                                                                to: EdgeQuotaBands.bands(quotas)),
-                  let previous = previousQuotas.first(where: { $0.provider == provider }),
-                  let current = quotas.first(where: { $0.provider == provider }) else { return }
+                let provider = EdgeQuotaBands.droppedProvider(
+                    from: EdgeQuotaBands.bands(previousQuotas),
+                    to: EdgeQuotaBands.bands(quotas)),
+                let previous = previousQuotas.first(where: { $0.provider == provider }),
+                let current = quotas.first(where: { $0.provider == provider })
+            else { return }
             change = EdgeQuotaChange(previous: previous, current: current)
             dismissTask?.cancel()
             dismissTask = Task {

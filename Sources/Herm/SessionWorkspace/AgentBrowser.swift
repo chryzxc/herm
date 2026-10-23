@@ -13,7 +13,10 @@ final class AgentBrowser: ObservableObject {
     private static var preferredPortOwner: SessionBrowserKey?
     private static let world = "herm"
 
-    enum State: Equatable { case off, starting, running, failed(String) }
+    enum State: Equatable {
+        case off, starting, running
+        case failed(String)
+    }
 
     struct Page: Identifiable, Equatable {
         let id: String
@@ -70,8 +73,9 @@ final class AgentBrowser: ObservableObject {
         Self.connectionTask = Task { [weak self] in
             await previous?.value
             guard let self, model.browserSessionKey == key, state == .running, self.cdpURL == cdpURL else { return }
-            do { try await model.setHermesBrowser(cdpURL: cdpURL) }
-            catch { if model.browserSessionKey == key { fail(error.localizedDescription) } }
+            do { try await model.setHermesBrowser(cdpURL: cdpURL) } catch {
+                if model.browserSessionKey == key { fail(error.localizedDescription) }
+            }
         }
     }
 
@@ -95,7 +99,9 @@ final class AgentBrowser: ObservableObject {
                 guard let self, self.annotating else { return }
                 self.applyAnnotating()
             }
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             MainActor.assumeIsolated { self?.process?.terminate() }
         }
     }
@@ -103,7 +109,10 @@ final class AgentBrowser: ObservableObject {
     // MARK: Lifecycle
 
     func start() {
-        switch state { case .starting, .running: return; default: break }
+        switch state {
+        case .starting, .running: return
+        default: break
+        }
         state = .starting
         Task {
             do {
@@ -120,13 +129,18 @@ final class AgentBrowser: ObservableObject {
                 }
                 if let first = pages.first {
                     try await attach(first.id)
-                } else if let id = try await cdp.send("Target.createTarget", ["url": "about:blank"])["targetId"] as? String {
+                } else if let id = try await cdp.send("Target.createTarget", ["url": "about:blank"])["targetId"]
+                    as? String
+                {
                     try await attach(id)
                 }
                 cdpURL = "http://127.0.0.1:\(endpoint.port)"
                 state = .running
                 reconnectHermes()
-                if let url = pendingURL { pendingURL = nil; navigate(url) }
+                if let url = pendingURL {
+                    pendingURL = nil
+                    navigate(url)
+                }
             } catch {
                 fail(error.localizedDescription)
             }
@@ -191,12 +205,17 @@ final class AgentBrowser: ObservableObject {
         annotating = false
     }
 
-    private struct Endpoint { let port: Int; let ws: URL }
+    private struct Endpoint {
+        let port: Int
+        let ws: URL
+    }
     static let preferredPort = 9333
 
     nonisolated static var profileRoot: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let support =
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support", isDirectory: true)
         return support.appendingPathComponent("Herm/AgentBrowser", isDirectory: true)
     }
 
@@ -226,7 +245,8 @@ final class AgentBrowser: ObservableObject {
         psOutput.split(separator: "\n").compactMap { line in
             let fields = line.split(separator: " ", maxSplits: 2)
             guard fields.count == 3, fields[1] == "1",
-                  fields[2].contains("--user-data-dir=\(profileRoot)/") else { return nil }
+                fields[2].contains("--user-data-dir=\(profileRoot)/")
+            else { return nil }
             return pid_t(fields[0])
         }
     }
@@ -247,12 +267,17 @@ final class AgentBrowser: ObservableObject {
         if Self.preferredPortOwner == nil { Self.preferredPortOwner = key }
         let busy: Bool
         if Self.preferredPortOwner == key {
-            busy = (try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(Self.preferredPort)/json/version")!)) != nil
-        } else { busy = true }
+            busy =
+                (try? await URLSession.shared.data(
+                    from: URL(string: "http://127.0.0.1:\(Self.preferredPort)/json/version")!)) != nil
+        } else {
+            busy = true
+        }
         let process = Process()
         process.executableURL = executable
         process.arguments = [
-            "--headless=new", "--remote-debugging-port=\(busy ? 0 : Self.preferredPort)", "--user-data-dir=\(profile.path)",
+            "--headless=new", "--remote-debugging-port=\(busy ? 0 : Self.preferredPort)",
+            "--user-data-dir=\(profile.path)",
             "--no-first-run", "--no-default-browser-check", "--window-size=1280,800",
             // Headless Chrome announces itself (HeadlessChrome UA, navigator.webdriver), and sites
             // like Google answer with a degraded no-JS page. Look like the regular browser.
@@ -274,10 +299,11 @@ final class AgentBrowser: ObservableObject {
     /// Chrome writes "<port>\n/devtools/browser/<id>" once it listens; a stale file fails the probe.
     private static func endpoint(_ file: URL) async -> Endpoint? {
         guard let lines = try? String(contentsOf: file, encoding: .utf8).split(separator: "\n"), lines.count >= 2,
-              let port = Int(lines[0]), let ws = URL(string: "ws://127.0.0.1:\(port)\(lines[1])"),
-              let probe = URL(string: "http://127.0.0.1:\(port)/json/version"),
-              let (_, response) = try? await URLSession.shared.data(from: probe),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            let port = Int(lines[0]), let ws = URL(string: "ws://127.0.0.1:\(port)\(lines[1])"),
+            let probe = URL(string: "http://127.0.0.1:\(port)/json/version"),
+            let (_, response) = try? await URLSession.shared.data(from: probe),
+            (response as? HTTPURLResponse)?.statusCode == 200
+        else { return nil }
         return Endpoint(port: port, ws: ws)
     }
 
@@ -289,10 +315,14 @@ final class AgentBrowser: ObservableObject {
         let playwright = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/ms-playwright")
         let builds = ((try? fm.contentsOfDirectory(atPath: playwright.path)) ?? [])
             .filter { $0.hasPrefix("chromium-") }.sorted(by: >)
-            .flatMap { build in ["chrome-mac-arm64", "chrome-mac"].flatMap { dir in [
-                "\(playwright.path)/\(build)/\(dir)/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-                "\(playwright.path)/\(build)/\(dir)/Chromium.app/Contents/MacOS/Chromium",
-            ] } }
+            .flatMap { build in
+                ["chrome-mac-arm64", "chrome-mac"].flatMap { dir in
+                    [
+                        "\(playwright.path)/\(build)/\(dir)/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+                        "\(playwright.path)/\(build)/\(dir)/Chromium.app/Contents/MacOS/Chromium",
+                    ]
+                }
+            }
         return (apps + builds).first { fm.isExecutableFile(atPath: $0) }.map { URL(fileURLWithPath: $0) }
     }
 
@@ -301,7 +331,8 @@ final class AgentBrowser: ObservableObject {
         let app = executable.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let version = Bundle(url: app)?.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         let major = version.split(separator: ".").first.flatMap { Int($0) } ?? 140
-        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/\(major).0.0.0 Safari/537.36"
+        return
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/\(major).0.0.0 Safari/537.36"
     }
 
     private static func error(_ message: String) -> NSError {
@@ -317,7 +348,10 @@ final class AgentBrowser: ObservableObject {
             sessionID = nil
             cdp.fire("Target.detachFromTarget", ["sessionId": old])
         }
-        guard let sid = try await cdp.send("Target.attachToTarget", ["targetId": targetID, "flatten": true])["sessionId"] as? String else {
+        guard
+            let sid = try await cdp.send("Target.attachToTarget", ["targetId": targetID, "flatten": true])["sessionId"]
+                as? String
+        else {
             throw Self.error("Could not attach to the browser tab.")
         }
         sessionID = sid
@@ -328,19 +362,28 @@ final class AgentBrowser: ObservableObject {
         dialog = nil
         annotateContextID = nil
         _ = try await cdp.send("Page.enable", session: sid)
-        _ = try await cdp.send("Runtime.addBinding", ["name": "hermAnnotate", "executionContextName": Self.world], session: sid)
-        _ = try await cdp.send("Page.addScriptToEvaluateOnNewDocument", ["source": BrowserAnnotation.script, "worldName": Self.world], session: sid)
+        _ = try await cdp.send(
+            "Runtime.addBinding", ["name": "hermAnnotate", "executionContextName": Self.world], session: sid)
+        _ = try await cdp.send(
+            "Page.addScriptToEvaluateOnNewDocument", ["source": BrowserAnnotation.script, "worldName": Self.world],
+            session: sid)
         let tree = try await cdp.send("Page.getFrameTree", session: sid)
         mainFrameID = ((tree["frameTree"] as? [String: Any])?["frame"] as? [String: Any])?["id"] as? String
         refreshHistory()
         if let mainFrameID,
-           let context = try await cdp.send("Page.createIsolatedWorld", ["frameId": mainFrameID, "worldName": Self.world], session: sid)["executionContextId"] as? Int {
+            let context = try await cdp.send(
+                "Page.createIsolatedWorld", ["frameId": mainFrameID, "worldName": Self.world], session: sid)[
+                    "executionContextId"] as? Int
+        {
             annotateContextID = context
-            _ = try await cdp.send("Runtime.evaluate", ["expression": BrowserAnnotation.script, "contextId": context], session: sid)
+            _ = try await cdp.send(
+                "Runtime.evaluate", ["expression": BrowserAnnotation.script, "contextId": context], session: sid)
         }
         _ = try await cdp.send("Runtime.enable", session: sid)
-        if let document = try? await cdp.send("Runtime.evaluate", ["expression": "document.readyState", "returnByValue": true], session: sid),
-           sessionID == sid, let readyState = (document["result"] as? [String: Any])?["value"] as? String {
+        if let document = try? await cdp.send(
+            "Runtime.evaluate", ["expression": "document.readyState", "returnByValue": true], session: sid),
+            sessionID == sid, let readyState = (document["result"] as? [String: Any])?["value"] as? String
+        {
             navigation.isLoading = readyState != "complete"
         }
         applyAnnotating()
@@ -370,16 +413,20 @@ final class AgentBrowser: ObservableObject {
         let width = presetWidth > 0 ? CGFloat(presetWidth) : panelSize.width
         // Wider than the panel scales down; narrower keeps the panel's height at 1:1.
         let height = (panelSize.height * max(1, width / panelSize.width)).rounded()
-        _ = try await cdp.send("Emulation.setDeviceMetricsOverride", [
-            "width": Int(width), "height": Int(height), "deviceScaleFactor": backingScale,
-            "mobile": presetWidth > 0 && presetWidth < 800,
-        ], session: sid)
+        _ = try await cdp.send(
+            "Emulation.setDeviceMetricsOverride",
+            [
+                "width": Int(width), "height": Int(height), "deviceScaleFactor": backingScale,
+                "mobile": presetWidth > 0 && presetWidth < 800,
+            ], session: sid)
         cdp.fire("Page.stopScreencast", session: sid)
         guard viewers > 0 else { return }
-        cdp.fire("Page.startScreencast", [
-            "format": "jpeg", "quality": 80, "everyNthFrame": 2,  // ~30fps is plenty to watch
-            "maxWidth": Int(width * backingScale), "maxHeight": Int(height * backingScale),
-        ], session: sid)
+        cdp.fire(
+            "Page.startScreencast",
+            [
+                "format": "jpeg", "quality": 80, "everyNthFrame": 2,  // ~30fps is plenty to watch
+                "maxWidth": Int(width * backingScale), "maxHeight": Int(height * backingScale),
+            ], session: sid)
     }
 
     private func handle(_ method: String, _ params: [String: Any], _ session: String?) {
@@ -399,8 +446,11 @@ final class AgentBrowser: ObservableObject {
             guard id == activeTargetID else { return }
             sessionID = nil
             activeTargetID = nil
-            if let next = pages.last { Task { try? await attach(next.id) } }
-            else { cdp?.fire("Target.createTarget", ["url": "about:blank"]) }
+            if let next = pages.last {
+                Task { try? await attach(next.id) }
+            } else {
+                cdp?.fire("Target.createTarget", ["url": "about:blank"])
+            }
         default:
             break
         }
@@ -408,12 +458,16 @@ final class AgentBrowser: ObservableObject {
         navigation.receiveCDP(method, params: params, mainFrameID: mainFrameID)
         switch method {
         case "Page.screencastFrame":
-            if let ack = params["sessionId"] { cdp?.fire("Page.screencastFrameAck", ["sessionId": ack], session: session) }
+            if let ack = params["sessionId"] {
+                cdp?.fire("Page.screencastFrameAck", ["sessionId": ack], session: session)
+            }
             guard let base64 = params["data"] as? String, let data = Data(base64Encoded: base64),
-                  let image = NSImage(data: data) else { return }
+                let image = NSImage(data: data)
+            else { return }
             let meta = params["metadata"] as? [String: Any]
-            let css = CGSize(width: meta?["deviceWidth"] as? Double ?? image.size.width,
-                             height: meta?["deviceHeight"] as? Double ?? image.size.height)
+            let css = CGSize(
+                width: meta?["deviceWidth"] as? Double ?? image.size.width,
+                height: meta?["deviceHeight"] as? Double ?? image.size.height)
             lastFrame = (image, css)
             onFrame?(image, css)
         case "Page.frameNavigated":
@@ -431,23 +485,27 @@ final class AgentBrowser: ObservableObject {
             }
             refreshHistory()
         case "Page.javascriptDialogOpening":
-            dialog = Dialog(type: params["type"] as? String ?? "alert", message: params["message"] as? String ?? "",
-                            defaultPrompt: params["defaultPrompt"] as? String ?? "")
+            dialog = Dialog(
+                type: params["type"] as? String ?? "alert", message: params["message"] as? String ?? "",
+                defaultPrompt: params["defaultPrompt"] as? String ?? "")
         case "Page.javascriptDialogClosed":
             // Also fires when Hermes answers it with its own dialog tool.
             dialog = nil
         case "Runtime.executionContextCreated":
             guard let context = params["context"] as? [String: Any], context["name"] as? String == Self.world,
-                  (context["auxData"] as? [String: Any])?["frameId"] as? String == mainFrameID,
-                  let id = context["id"] as? Int else { return }
+                (context["auxData"] as? [String: Any])?["frameId"] as? String == mainFrameID,
+                let id = context["id"] as? Int
+            else { return }
             annotateContextID = id
             applyAnnotating()
         case "Runtime.executionContextsCleared":
             annotateContextID = nil
         case "Runtime.bindingCalled":
             // Only our isolated world has the binding; the context check drops iframes.
-            guard params["name"] as? String == "hermAnnotate", params["executionContextId"] as? Int == annotateContextID,
-                  let payload = params["payload"] as? String else { return }
+            guard params["name"] as? String == "hermAnnotate",
+                params["executionContextId"] as? Int == annotateContextID,
+                let payload = params["payload"] as? String
+            else { return }
             receive(payload)
         case "Runtime.consoleAPICalled":
             guard params["type"] as? String == "error" else { return }
@@ -457,8 +515,9 @@ final class AgentBrowser: ObservableObject {
             appendConsole(args.joined(separator: " "))
         case "Runtime.exceptionThrown":
             let details = params["exceptionDetails"] as? [String: Any]
-            appendConsole((details?["exception"] as? [String: Any])?["description"] as? String
-                ?? details?["text"] as? String ?? "Uncaught exception")
+            appendConsole(
+                (details?["exception"] as? [String: Any])?["description"] as? String
+                    ?? details?["text"] as? String ?? "Uncaught exception")
         default:
             break
         }
@@ -482,7 +541,9 @@ final class AgentBrowser: ObservableObject {
             Task {
                 let image = await screenshot(annotation)
                 evaluate("window.__hermAnnotate?.done()")
-                if let model, model.browserSessionKey == key { BrowserAnnotation.deliver(annotation.context, image: image, to: model) }
+                if let model, model.browserSessionKey == key {
+                    BrowserAnnotation.deliver(annotation.context, image: image, to: model)
+                }
             }
         case nil:
             break
@@ -493,18 +554,26 @@ final class AgentBrowser: ObservableObject {
         let rect = annotation.rect
         guard let cdp, let sid = sessionID, rect.width >= 2, rect.height >= 2 else { return nil }
         // `clip` is in document coordinates, so add the scroll offset.
-        let clip: [String: Any] = ["x": rect.x + annotation.scrollX, "y": rect.y + annotation.scrollY,
-                                   "width": rect.width, "height": rect.height, "scale": 1]
-        guard let result = try? await cdp.send("Page.captureScreenshot", ["format": "png", "clip": clip], session: sid),
-              let base64 = result["data"] as? String, let data = Data(base64Encoded: base64) else { return nil }
+        let clip: [String: Any] = [
+            "x": rect.x + annotation.scrollX, "y": rect.y + annotation.scrollY,
+            "width": rect.width, "height": rect.height, "scale": 1,
+        ]
+        guard
+            let result = try? await cdp.send("Page.captureScreenshot", ["format": "png", "clip": clip], session: sid),
+            let base64 = result["data"] as? String, let data = Data(base64Encoded: base64)
+        else { return nil }
         return NSImage(data: data)
     }
 
     func selection() async -> String {
         guard let cdp, let sid = sessionID, let context = annotateContextID,
-              let result = try? await cdp.send("Runtime.evaluate", [
-                  "expression": "window.__hermAnnotate?.selection() ?? ''", "contextId": context, "returnByValue": true,
-              ], session: sid) else { return "" }
+            let result = try? await cdp.send(
+                "Runtime.evaluate",
+                [
+                    "expression": "window.__hermAnnotate?.selection() ?? ''", "contextId": context,
+                    "returnByValue": true,
+                ], session: sid)
+        else { return "" }
         return (result["result"] as? [String: Any])?["value"] as? String ?? ""
     }
 
@@ -516,7 +585,10 @@ final class AgentBrowser: ObservableObject {
     // MARK: Navigation and input
 
     func navigate(_ url: URL) {
-        guard state == .running, sessionID != nil else { pendingURL = url; return }
+        guard state == .running, sessionID != nil else {
+            pendingURL = url
+            return
+        }
         pendingURL = nil
         performNavigation("Page.navigate", ["url": url.absoluteString])
     }
@@ -539,8 +611,11 @@ final class AgentBrowser: ObservableObject {
         userHasControl = false
         guard let model, let sessionID = model.sessionID else { return }
         let page = activePage.map { " The browser is now on \($0.url)." } ?? ""
-        model.send(QueuedPrompt(sessionID: sessionID, text: "I've finished that step in the browser myself.\(page) Continue where you left off.",
-                                images: [], pdfURL: nil))
+        model.send(
+            QueuedPrompt(
+                sessionID: sessionID,
+                text: "I've finished that step in the browser myself.\(page) Continue where you left off.",
+                images: [], pdfURL: nil))
     }
 
     func goBack() {
@@ -571,7 +646,7 @@ final class AgentBrowser: ObservableObject {
                 if let error = result["errorText"] as? String, error != "net::ERR_ABORTED" {
                     navigation.fail(HermesDiagnosticsService.safeSummary(error))
                 } else if method == "Page.navigate", result["loaderId"] == nil {
-                    navigation.finish() // Same-document navigation has no new loader.
+                    navigation.finish()  // Same-document navigation has no new loader.
                 }
             } catch {
                 guard self.sessionID == sessionID, navigationRequestID == requestID else { return }
@@ -586,18 +661,26 @@ final class AgentBrowser: ObservableObject {
         historyRequestID = requestID
         Task {
             guard let result = try? await cdp.send("Page.getNavigationHistory", session: sessionID),
-                  self.sessionID == sessionID, historyRequestID == requestID else { return }
+                self.sessionID == sessionID, historyRequestID == requestID
+            else { return }
             navigation.updateHistory(result)
         }
     }
     func select(_ page: Page) { Task { try? await attach(page.id) } }
     func newTab() { fire("Target.createTarget", ["url": "about:blank"], browserLevel: true) }
 
-    func mouse(_ type: String, at point: CGPoint, button: String = "none", buttons: Int = 0, clicks: Int = 0,
-               modifiers: Int, delta: CGPoint = .zero) {
-        var params: [String: Any] = ["type": type, "x": point.x, "y": point.y, "button": button,
-                                     "buttons": buttons, "clickCount": clicks, "modifiers": modifiers]
-        if type == "mouseWheel" { params["deltaX"] = delta.x; params["deltaY"] = delta.y }
+    func mouse(
+        _ type: String, at point: CGPoint, button: String = "none", buttons: Int = 0, clicks: Int = 0,
+        modifiers: Int, delta: CGPoint = .zero
+    ) {
+        var params: [String: Any] = [
+            "type": type, "x": point.x, "y": point.y, "button": button,
+            "buttons": buttons, "clickCount": clicks, "modifiers": modifiers,
+        ]
+        if type == "mouseWheel" {
+            params["deltaX"] = delta.x
+            params["deltaY"] = delta.y
+        }
         fire("Input.dispatchMouseEvent", params)
     }
 
@@ -656,7 +739,8 @@ final class CDPConnection {
         var message: [String: Any] = ["id": id, "method": method, "params": params]
         if let session { message["sessionId"] = session }
         guard let data = try? JSONSerialization.data(withJSONObject: message),
-              let text = String(data: data, encoding: .utf8) else { return id }
+            let text = String(data: data, encoding: .utf8)
+        else { return id }
         task.send(.string(text)) { [weak self] error in
             guard let error else { return }
             Task { @MainActor in self?.pending.removeValue(forKey: id)?.resume(throwing: error) }
@@ -685,11 +769,12 @@ final class CDPConnection {
     }
 
     nonisolated private static func decode(_ message: URLSessionWebSocketTask.Message) -> [String: Any]? {
-        let data: Data? = switch message {
-        case .string(let text): text.data(using: .utf8)
-        case .data(let data): data
-        @unknown default: nil
-        }
+        let data: Data? =
+            switch message {
+            case .string(let text): text.data(using: .utf8)
+            case .data(let data): data
+            @unknown default: nil
+            }
         return data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     }
 
@@ -697,8 +782,10 @@ final class CDPConnection {
         if let id = object["id"] as? Int {
             guard let continuation = pending.removeValue(forKey: id) else { return }
             if let error = object["error"] as? [String: Any] {
-                continuation.resume(throwing: NSError(domain: "Herm.CDP", code: error["code"] as? Int ?? 0,
-                                                      userInfo: [NSLocalizedDescriptionKey: error["message"] as? String ?? "CDP error"]))
+                continuation.resume(
+                    throwing: NSError(
+                        domain: "Herm.CDP", code: error["code"] as? Int ?? 0,
+                        userInfo: [NSLocalizedDescriptionKey: error["message"] as? String ?? "CDP error"]))
             } else {
                 continuation.resume(returning: Reply(value: object["result"] as? [String: Any] ?? [:]))
             }
@@ -718,7 +805,11 @@ final class CDPConnection {
 final class AgentBrowserCanvas: NSView {
     var browser: AgentBrowser? {
         didSet {
-            if let frame = browser?.lastFrame { image = frame.image; cssSize = frame.css; needsDisplay = true }
+            if let frame = browser?.lastFrame {
+                image = frame.image
+                cssSize = frame.css
+                needsDisplay = true
+            }
             browser?.onFrame = { [weak self] image, css in
                 self?.image = image
                 self?.cssSize = css
@@ -744,7 +835,8 @@ final class AgentBrowserCanvas: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
+        addTrackingArea(
+            NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -758,7 +850,9 @@ final class AgentBrowserCanvas: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        image?.draw(in: pageRect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
+        image?.draw(
+            in: pageRect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true,
+            hints: [.interpolation: NSImageInterpolation.high])
     }
 
     override func layout() {
@@ -774,8 +868,9 @@ final class AgentBrowserCanvas: NSView {
     private func cssPoint(_ event: NSEvent) -> CGPoint {
         let point = convert(event.locationInWindow, from: nil)
         let rect = pageRect
-        return CGPoint(x: (point.x - rect.minX) / rect.width * cssSize.width,
-                       y: (point.y - rect.minY) / rect.height * cssSize.height)
+        return CGPoint(
+            x: (point.x - rect.minX) / rect.width * cssSize.width,
+            y: (point.y - rect.minY) / rect.height * cssSize.height)
     }
 
     /// CDP modifier bits: Alt 1, Ctrl 2, Meta 4, Shift 8.
@@ -786,9 +881,15 @@ final class AgentBrowserCanvas: NSView {
 
     private func press(_ event: NSEvent, _ type: String, button: String, bit: Int) {
         guard browser?.inputLocked != true else { return }
-        if type == "mousePressed" { window?.makeFirstResponder(self); pressedButtons |= bit } else { pressedButtons &= ~bit }
-        browser?.mouse(type, at: cssPoint(event), button: button, buttons: pressedButtons,
-                       clicks: event.clickCount, modifiers: Self.modifiers(event.modifierFlags))
+        if type == "mousePressed" {
+            window?.makeFirstResponder(self)
+            pressedButtons |= bit
+        } else {
+            pressedButtons &= ~bit
+        }
+        browser?.mouse(
+            type, at: cssPoint(event), button: button, buttons: pressedButtons,
+            clicks: event.clickCount, modifiers: Self.modifiers(event.modifierFlags))
     }
 
     override func mouseDown(with event: NSEvent) { press(event, "mousePressed", button: "left", bit: 1) }
@@ -801,15 +902,17 @@ final class AgentBrowserCanvas: NSView {
 
     private func move(_ event: NSEvent, button: String) {
         guard browser?.inputLocked != true else { return }
-        browser?.mouse("mouseMoved", at: cssPoint(event), button: button, buttons: pressedButtons,
-                       modifiers: Self.modifiers(event.modifierFlags))
+        browser?.mouse(
+            "mouseMoved", at: cssPoint(event), button: button, buttons: pressedButtons,
+            modifiers: Self.modifiers(event.modifierFlags))
     }
 
     override func scrollWheel(with event: NSEvent) {
         guard browser?.inputLocked != true else { return }
         let factor: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 40
-        browser?.mouse("mouseWheel", at: cssPoint(event), modifiers: Self.modifiers(event.modifierFlags),
-                       delta: CGPoint(x: -event.scrollingDeltaX * factor, y: -event.scrollingDeltaY * factor))
+        browser?.mouse(
+            "mouseWheel", at: cssPoint(event), modifiers: Self.modifiers(event.modifierFlags),
+            delta: CGPoint(x: -event.scrollingDeltaX * factor, y: -event.scrollingDeltaY * factor))
     }
 
     /// Mac key code → DOM key name, Windows virtual key code, and the text it types.
@@ -828,20 +931,26 @@ final class AgentBrowserCanvas: NSView {
             case "v":
                 if let text = NSPasteboard.general.string(forType: .string) { browser?.insertText(text) }
             case "a":
-                browser?.key(["type": "rawKeyDown", "key": "a", "code": "KeyA", "windowsVirtualKeyCode": 65,
-                              "modifiers": modifiers, "commands": ["selectAll"]])
+                browser?.key([
+                    "type": "rawKeyDown", "key": "a", "code": "KeyA", "windowsVirtualKeyCode": 65,
+                    "modifiers": modifiers, "commands": ["selectAll"],
+                ])
             default:
                 super.keyDown(with: event)
             }
             return
         }
         if let special = Self.specialKeys[event.keyCode] {
-            var down: [String: Any] = ["type": special.text == nil ? "rawKeyDown" : "keyDown", "key": special.key,
-                                       "code": special.key, "windowsVirtualKeyCode": special.code, "modifiers": modifiers]
+            var down: [String: Any] = [
+                "type": special.text == nil ? "rawKeyDown" : "keyDown", "key": special.key,
+                "code": special.key, "windowsVirtualKeyCode": special.code, "modifiers": modifiers,
+            ]
             if let text = special.text { down["text"] = text }
             browser?.key(down)
-            browser?.key(["type": "keyUp", "key": special.key, "code": special.key,
-                          "windowsVirtualKeyCode": special.code, "modifiers": modifiers])
+            browser?.key([
+                "type": "keyUp", "key": special.key, "code": special.key,
+                "windowsVirtualKeyCode": special.code, "modifiers": modifiers,
+            ])
         } else if let text = event.characters, !text.isEmpty {
             browser?.key(["type": "keyDown", "text": text, "unmodifiedText": text, "key": text, "modifiers": modifiers])
             browser?.key(["type": "keyUp", "key": text, "modifiers": modifiers])
@@ -874,7 +983,8 @@ struct AgentBrowserPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
                 VStack(spacing: 8) {
-                    Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(.center)
+                    Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(
+                        .center)
                     Button("Try Again") { browser.start() }
                 }
                 .padding(16)
@@ -1010,16 +1120,21 @@ private struct AgentDialogCard: View {
                         .buttonStyle(DockSecondaryButtonStyle())
                         .keyboardShortcut(.cancelAction)
                 }
-                Button(dialog.type == "beforeunload" ? "Leave" : "OK") { answer(true, dialog.type == "prompt" ? text : nil) }
-                    .buttonStyle(DockPrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
+                Button(dialog.type == "beforeunload" ? "Leave" : "OK") {
+                    answer(true, dialog.type == "prompt" ? text : nil)
+                }
+                .buttonStyle(DockPrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
             }
             .controlSize(.small)
         }
         .padding(14)
         .frame(maxWidth: 340)
         .dockHUDPanel()
-        .onAppear { text = dialog.defaultPrompt; focused = dialog.type == "prompt" }
+        .onAppear {
+            text = dialog.defaultPrompt
+            focused = dialog.type == "prompt"
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(title): \(dialog.message)")
     }

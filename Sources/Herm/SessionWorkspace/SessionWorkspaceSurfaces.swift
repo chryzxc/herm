@@ -137,9 +137,11 @@ struct SessionPullRequestsSurface: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
-            TextField("", text: $center.query, prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText))
-                .textFieldStyle(.plain)
-                .accessibilityLabel("Search pull requests")
+            TextField(
+                "", text: $center.query, prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText)
+            )
+            .textFieldStyle(.plain)
+            .accessibilityLabel("Search pull requests")
         }
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34)
@@ -149,8 +151,10 @@ struct SessionPullRequestsSurface: View {
 
     @ViewBuilder private var refreshButton: some View {
         if let repositoryPath {
-            DockIconButton(icon: .arrowsClockwise, label: "Refresh pull requests", isBusy: center.isRefreshing,
-                           style: DockThemePalette(theme: DockThemeRuntime.current)) {
+            DockIconButton(
+                icon: .arrowsClockwise, label: "Refresh pull requests", isBusy: center.isRefreshing,
+                style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) {
                 Task { await center.refreshScoped(repositoryPath: repositoryPath) }
             }
         }
@@ -189,8 +193,12 @@ struct SessionIssuesSurface: View {
                                 .padding(.vertical, 32)
                             } else {
                                 ForEach(center.visible) { issue in
-                                    Button { center.selectedIssueID = issue.id } label: {
-                                        IssueRowView(issue: issue, isSelected: center.selectedIssueID == issue.id, viewer: center.viewerLogin)
+                                    Button {
+                                        center.selectedIssueID = issue.id
+                                    } label: {
+                                        IssueRowView(
+                                            issue: issue, isSelected: center.selectedIssueID == issue.id,
+                                            viewer: center.viewerLogin)
                                     }
                                     .buttonStyle(.dockHover)
                                 }
@@ -216,21 +224,27 @@ struct SessionIssuesSurface: View {
         VStack(spacing: DockSpacing.control) {
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
-                TextField("", text: $center.query, prompt: Text("Search issues").foregroundColor(Color.dockMetadataText))
-                    .textFieldStyle(.plain)
-                    .accessibilityLabel("Search issues")
+                TextField(
+                    "", text: $center.query, prompt: Text("Search issues").foregroundColor(Color.dockMetadataText)
+                )
+                .textFieldStyle(.plain)
+                .accessibilityLabel("Search issues")
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
-            .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
+            .background(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)
+            )
             .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
             HStack(spacing: DockSpacing.control) {
                 DockTabBar(options: GitHubIssueFilter.allCases, selection: $center.filter, title: { $0.rawValue })
                     .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: DockSpacing.control)
                 if let repositoryPath {
-                    DockIconButton(icon: .arrowsClockwise, label: "Refresh issues", isBusy: center.isRefreshing,
-                                   style: DockThemePalette(theme: DockThemeRuntime.current)) {
+                    DockIconButton(
+                        icon: .arrowsClockwise, label: "Refresh issues", isBusy: center.isRefreshing,
+                        style: DockThemePalette(theme: DockThemeRuntime.current)
+                    ) {
                         Task { await center.refreshScoped(repositoryPath: repositoryPath) }
                     }
                 }
@@ -418,16 +432,22 @@ struct WorktreePicker: View {
     private var filtered: [RepositoryWorktreeSummary] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return worktrees }
-        return worktrees.filter { $0.displayName.localizedCaseInsensitiveContains(q) || ($0.branch ?? "").localizedCaseInsensitiveContains(q) }
+        return worktrees.filter {
+            $0.displayName.localizedCaseInsensitiveContains(q) || ($0.branch ?? "").localizedCaseInsensitiveContains(q)
+        }
     }
 
     @ViewBuilder
     var body: some View {
         if worktrees.count > 1 {
-            Button { isOpen.toggle() } label: { label }
-                .buttonStyle(.dockHover)
-                .help("Choose the worktree Explorer and Source Control show")
-                .popover(isPresented: $isOpen, arrowEdge: .top) { list }
+            Button {
+                isOpen.toggle()
+            } label: {
+                label
+            }
+            .buttonStyle(.dockHover)
+            .help("Choose the worktree Explorer and Source Control show")
+            .popover(isPresented: $isOpen, arrowEdge: .top) { list }
         } else {
             label.help(current?.path ?? selection ?? "")
         }
@@ -447,7 +467,8 @@ struct WorktreePicker: View {
                     .lineLimit(1).truncationMode(.middle)
             }
             if worktrees.count > 1 {
-                DockIcon(.caretUpDown).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockMetadataText)
+                DockIcon(.caretUpDown).dockFont(.compactStatus, weight: .regular).foregroundStyle(
+                    Color.dockMetadataText)
             }
             Spacer(minLength: 0)
         }
@@ -486,16 +507,21 @@ struct WorktreePicker: View {
             isOpen = false
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: tree.path == selection ? "checkmark" : (tree.isLocked ? "lock" : "arrow.triangle.branch"))
-                    .frame(width: 14).foregroundStyle(tree.path == selection ? Color.dockAccent : Color.dockMetadataText)
+                Image(
+                    systemName: tree.path == selection
+                        ? "checkmark" : (tree.isLocked ? "lock" : "arrow.triangle.branch")
+                )
+                .frame(width: 14).foregroundStyle(tree.path == selection ? Color.dockAccent : Color.dockMetadataText)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(tree.displayName).dockFont(.body).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.middle)
+                        Text(tree.displayName).dockFont(.body).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                            .truncationMode(.middle)
                         if tree.path == mainPath {
                             Text("source folder").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                         }
                     }
-                    Text(branchLabel(tree)).dockFont(.machineMetadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(.middle)
+                    Text(branchLabel(tree)).dockFont(.machineMetadata).foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1).truncationMode(.middle)
                 }
                 Spacer(minLength: 4)
                 if (tree.snapshot?.changedFiles ?? 0) > 0 { Circle().fill(Color.dockAccent).frame(width: 6, height: 6) }

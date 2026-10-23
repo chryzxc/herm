@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -17,7 +18,10 @@ struct ArtifactFileIconTests {
     }
 
     @Test func everyMappedIconIsBundled() {
-        let samples = ArtifactFileIcon.fileNames.keys.map { $0 } + ArtifactFileIcon.extensions.keys.map { "f.\($0)" } + ["unknown"]
+        let samples =
+            ArtifactFileIcon.fileNames.keys.map { $0 } + ArtifactFileIcon.extensions.keys.map { "f.\($0)" } + [
+                "unknown"
+            ]
         for sample in samples {
             #expect(ArtifactFileIcon.image(for: sample) != nil, "no bundled icon for \(sample)")
         }
@@ -36,9 +40,12 @@ struct InlineFileIconTests {
     }
 
     @Test func nativeMarkdownTagsIconsBeforeFileCodeSpans() {
-        let output = NativeMarkdownAttributedTextBuilder.document("See `app.ts` and `npm test`.", palette: NativeMarkdownPalette())
+        let output = NativeMarkdownAttributedTextBuilder.document(
+            "See `app.ts` and `npm test`.", palette: NativeMarkdownPalette())
         var icons = 0
-        output.string.enumerateAttribute(NativeMarkdownAttributedTextBuilder.fileIconKey, in: NSRange(location: 0, length: output.string.length)) { value, _, _ in
+        output.string.enumerateAttribute(
+            NativeMarkdownAttributedTextBuilder.fileIconKey, in: NSRange(location: 0, length: output.string.length)
+        ) { value, _, _ in
             if value != nil { icons += 1 }
         }
         #expect(icons == 1)

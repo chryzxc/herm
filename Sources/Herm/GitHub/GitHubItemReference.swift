@@ -14,7 +14,9 @@ struct GitHubItemReference: Hashable, Codable, Sendable, Identifiable {
 }
 enum GitHubMergeability: String, Sendable, Equatable { case mergeable, conflicting, unknown }
 private struct GitHubNavigationKey: EnvironmentKey {
-    static let defaultValue: @MainActor @Sendable (GitHubItemReference) -> Void = { reference in NSWorkspace.shared.open(reference.webURL) }
+    static let defaultValue: @MainActor @Sendable (GitHubItemReference) -> Void = { reference in
+        NSWorkspace.shared.open(reference.webURL)
+    }
 }
 extension EnvironmentValues {
     var openGitHubItem: @MainActor @Sendable (GitHubItemReference) -> Void {

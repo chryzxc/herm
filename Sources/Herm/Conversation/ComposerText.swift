@@ -23,7 +23,8 @@ enum ComposerMentionPresentation {
         }
 
         let rosterHandles = Set(profileIDs.map { "@\($0.lowercased())" })
-        let hasAdditionalRosterMention = requestText
+        let hasAdditionalRosterMention =
+            requestText
             .split(whereSeparator: { $0.isWhitespace })
             .map { String($0).lowercased() }
             .contains(where: rosterHandles.contains)
@@ -41,15 +42,18 @@ enum ComposerMentionPresentation {
         let mentioned = mentionedProfiles(in: text, profileIDs: profileIDs)
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard mentioned.count == 1,
-              trimmed.split(whereSeparator: \.isWhitespace).contains(where: { !$0.hasPrefix("@") }) else { return nil }
+            trimmed.split(whereSeparator: \.isWhitespace).contains(where: { !$0.hasPrefix("@") })
+        else { return nil }
         return DirectBotRequest(profileID: mentioned[0], text: trimmed)
     }
 
     /// Why a Bot picked into `draft` would not be reached, shown in the `@`
     /// popover. Herm's relay is text-only and takes one Bot; anything else
     /// goes to the session agent, which has `message_agent` only in a Bot Chat.
-    static func relayNotice(draft: String, profileIDs: [String], hasAttachments: Bool,
-                            isQueued: Bool, inBotChat: Bool) -> String? {
+    static func relayNotice(
+        draft: String, profileIDs: [String], hasAttachments: Bool,
+        isQueued: Bool, inBotChat: Bool
+    ) -> String? {
         guard !inBotChat else { return nil }
         if hasAttachments {
             return "Bots get text only. Remove attachments and context to send this to a Bot."
@@ -66,13 +70,17 @@ enum ComposerMentionPresentation {
 
     /// Roster profiles mentioned in `text`, in first-mention order.
     static func mentionedProfiles(in text: String, profileIDs: [String]) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: #"(?:^|\s)@([a-z0-9][a-z0-9_-]*)(?![a-z0-9_@/:-])"#, options: .caseInsensitive) else { return [] }
+        guard
+            let regex = try? NSRegularExpression(
+                pattern: #"(?:^|\s)@([a-z0-9][a-z0-9_-]*)(?![a-z0-9_@/:-])"#, options: .caseInsensitive)
+        else { return [] }
         let source = text as NSString
         var resolved: [String] = []
         for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)) {
             let handle = source.substring(with: match.range(at: 1))
             guard let profile = profileIDs.first(where: { $0.caseInsensitiveCompare(handle) == .orderedSame }),
-                  !resolved.contains(profile) else { continue }
+                !resolved.contains(profile)
+            else { continue }
             resolved.append(profile)
         }
         return resolved
@@ -90,7 +98,9 @@ enum ComposerMentionPresentation {
     static func annotatedPrompt(_ text: String, profileIDs: [String]) -> String {
         let resolved = mentionedProfiles(in: text, profileIDs: profileIDs)
         guard !resolved.isEmpty else { return text }
-        let identities = resolved.map { "@\($0) = agent profile \"\($0)\" (message_agent target: \"\($0 == "default" ? "hermes" : $0)\")" }.joined(separator: "; ")
+        let identities = resolved.map {
+            "@\($0) = agent profile \"\($0)\" (message_agent target: \"\($0 == "default" ? "hermes" : $0)\")"
+        }.joined(separator: "; ")
         return text + "\n\n[@mentions resolved from the Bot Mode roster — the user is referring to: " + identities
             + ". If they want one of these agents contacted, compose your own message and send it with your message_agent tool; never forward the user's text verbatim. If this session has no message_agent tool, agent messaging is unavailable here — say so.]"
     }

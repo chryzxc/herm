@@ -47,7 +47,12 @@ struct PullRequestRowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius + 1).dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
+        .background(
+            DockThemeShape(cornerRadius: DockLayout.controlRadius + 1).dockSelectionFill(
+                isSelected,
+                fallback: isSelected
+                    ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear))
+        )
         .overlay(alignment: .leading) {
             if isSelected {
                 Capsule().fill(Color.dockAccent).frame(width: 3).padding(.vertical, 12)
@@ -85,7 +90,11 @@ struct PullRequestFileTreeRow: View {
                 PullRequestFileIcon(path: node.isDirectory ? nil : node.title, size: 14)
                 Text(node.title)
                     .dockFont(.body, weight: node.isDirectory ? .regular : .medium)
-                    .foregroundStyle(isSelected ? Color.dockPrimaryText : (node.isDirectory ? Color.dockMetadataText : Color.dockSecondaryText))
+                    .foregroundStyle(
+                        isSelected
+                            ? Color.dockPrimaryText
+                            : (node.isDirectory ? Color.dockMetadataText : Color.dockSecondaryText)
+                    )
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 6)
@@ -96,7 +105,11 @@ struct PullRequestFileTreeRow: View {
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
-                    .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.16) : (isHovered && !node.isDirectory ? Color.dockSurface4.opacity(0.5) : Color.clear))
+                    .dockSelectionFill(
+                        isSelected,
+                        fallback: isSelected
+                            ? Color.dockAccent.opacity(0.16)
+                            : (isHovered && !node.isDirectory ? Color.dockSurface4.opacity(0.5) : Color.clear))
             )
             .contentShape(Rectangle())
         }
@@ -131,15 +144,25 @@ struct PullRequestDiffLineView: View {
     var wordDiffsEnabled = false
 
     var body: some View {
-        let tint: Color = line.kind == .addition ? .dockSuccess : (line.kind == .deletion ? .dockDestructive : (line.kind == .hunk ? .dockAccent : .dockSecondaryText))
-        let fill: Color = line.kind == .addition ? Color.dockSuccess.opacity(0.13) : (line.kind == .deletion ? Color.dockDestructive.opacity(0.13) : (line.kind == .hunk ? Color.dockAccent.opacity(0.08) : Color.dockSurface2))
+        let tint: Color =
+            line.kind == .addition
+            ? .dockSuccess
+            : (line.kind == .deletion ? .dockDestructive : (line.kind == .hunk ? .dockAccent : .dockSecondaryText))
+        let fill: Color =
+            line.kind == .addition
+            ? Color.dockSuccess.opacity(0.13)
+            : (line.kind == .deletion
+                ? Color.dockDestructive.opacity(0.13)
+                : (line.kind == .hunk ? Color.dockAccent.opacity(0.08) : Color.dockSurface2))
         let content = (line.kind == .addition || line.kind == .deletion) ? String(line.text.dropFirst()) : line.text
         let counterpartContent = counterpart.map { value in
             guard let first = value.first, first == "+" || first == "-" else { return value }
             return String(value.dropFirst())
         }
         HStack(spacing: 0) {
-            if line.kind == .addition || line.kind == .deletion { Text(String(line.text.prefix(1))).foregroundStyle(tint).fontWeight(.bold) }
+            if line.kind == .addition || line.kind == .deletion {
+                Text(String(line.text.prefix(1))).foregroundStyle(tint).fontWeight(.bold)
+            }
             diffWords(content, counterpart: counterpartContent, tint: tint)
         }
         .frame(maxWidth: .infinity, minHeight: 19, alignment: .leading)
@@ -157,7 +180,9 @@ struct PullRequestDiffLineView: View {
                 ForEach(Array(words.enumerated()), id: \.offset) { _, word in
                     Text(word)
                         .foregroundStyle(Color.dockSecondaryText)
-                        .background(otherWords.contains(word.trimmingCharacters(in: .whitespacesAndNewlines)) ? Color.clear : tint.opacity(0.28))
+                        .background(
+                            otherWords.contains(word.trimmingCharacters(in: .whitespacesAndNewlines))
+                                ? Color.clear : tint.opacity(0.28))
                     if word != words.last { Text(" ") }
                 }
             }
@@ -166,4 +191,3 @@ struct PullRequestDiffLineView: View {
         }
     }
 }
-

@@ -6,7 +6,10 @@ struct PullRequestDetailView: View {
     let onOpenChat: (PullRequestRecord) -> Void
     var isInspector = false
 
-    init(center: PullRequestCenterModel, onOpenChat: @escaping (PullRequestRecord) -> Void, isInspector: Bool = false, initialTab: Int = 0) {
+    init(
+        center: PullRequestCenterModel, onOpenChat: @escaping (PullRequestRecord) -> Void, isInspector: Bool = false,
+        initialTab: Int = 0
+    ) {
         _center = ObservedObject(wrappedValue: center)
         _chats = ObservedObject(wrappedValue: center.details.chats)
         self.onOpenChat = onOpenChat
@@ -50,8 +53,11 @@ struct PullRequestDetailView: View {
             }
             .sheet(isPresented: $readingGuide) {
                 if let model = contextRouter?.model, let pr = center.selected {
-                    ReviewGuideView(coordinator: guide, model: model,
-                        currentIdentity: (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown"), directory: pr.localPath.isEmpty ? nil : pr.localPath).modifier(ReviewSheetContext())
+                    ReviewGuideView(
+                        coordinator: guide, model: model,
+                        currentIdentity: (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown"),
+                        directory: pr.localPath.isEmpty ? nil : pr.localPath
+                    ).modifier(ReviewSheetContext())
                 }
             }
             .task(id: "\(center.selectedID ?? ""):\(center.isRefreshing):\(detailRefreshID)") {
@@ -82,8 +88,11 @@ struct PullRequestDetailView: View {
                             _ = await mutationCoordinator.confirm(request, using: center)
                         }
                     }
-                case let .status(_, status):
-                    Button(status == .closed ? "Close pull request" : status.rawValue, role: status == .closed ? .destructive : nil) {
+                case .status(_, let status):
+                    Button(
+                        status == .closed ? "Close pull request" : status.rawValue,
+                        role: status == .closed ? .destructive : nil
+                    ) {
                         Task { _ = await mutationCoordinator.confirm(request, using: center) }
                     }
                 }
@@ -95,9 +104,9 @@ struct PullRequestDetailView: View {
 
     private func mutationConfirmationMessage(_ request: PullRequestMutationRequest) -> Text {
         switch request {
-        case let .comment(record, body):
+        case .comment(let record, let body):
             return Text("Post this comment to \(record.repository.id) pull request #\(record.number)?\n\n\(body)")
-        case let .status(record, status):
+        case .status(let record, let status):
             if status == .closed {
                 return Text("This will close pull request #\(record.number) in \(record.repository.id).")
             }
@@ -112,48 +121,60 @@ struct PullRequestDetailView: View {
         // lands; a failed fetch stores files so this cannot spin forever.
         if let pr = center.selected, pr.changedFiles == nil, center.filesByID[pr.id] == nil {
             detailLoadingPane
-        } else if let pr = center.selected { VStack(alignment: .leading, spacing: 0) {
-        // Header stays above the scroller so scrolled content never draws over or steals clicks from it.
-        detailHeader(pr).zIndex(1)
-        if detailTab == 0 {
-            GeometryReader { geometry in
-                ScrollView {
-                    summary(pr, wide: geometry.size.width >= 840)
-                        .padding(.horizontal, isInspector ? 12 : 24)
-                        .padding(.bottom, contextRouter?.model == nil ? 0 : 96)
-                }.clipped()
-            }
-        } else if detailTab == 2 {
-            PullRequestReviewView(model: center.review(for: pr), record: pr, viewer: center.viewerLogin,
-                onChanged: { Task { await center.refreshSelectedDetail() } },
-                horizontalPadding: isInspector ? 12 : 20,
-                onReviewCode: { detailTab = 1 }, onEditComment: { target in
-                    guard center.review(for: pr).beginInline(target, record: pr) else { return }
-                    inlineTarget = target
-                    detailTab = 1
-                    if let file = center.filesByID[pr.id]?.first(where: { $0.path == target.path }) {
-                        selectedFileID = file.id
-                        if !reviewPreferences.expandedFileIDs.contains(file.id) { reviewPreferences.toggleExpanded(file.id) }
-                        sourceDiffFileIDs.insert(file.id)
+        } else if let pr = center.selected {
+            VStack(alignment: .leading, spacing: 0) {
+                // Header stays above the scroller so scrolled content never draws over or steals clicks from it.
+                detailHeader(pr).zIndex(1)
+                if detailTab == 0 {
+                    GeometryReader { geometry in
+                        ScrollView {
+                            summary(pr, wide: geometry.size.width >= 840)
+                                .padding(.horizontal, isInspector ? 12 : 24)
+                                .padding(.bottom, contextRouter?.model == nil ? 0 : 96)
+                        }.clipped()
                     }
-                })
-                .padding(.bottom, contextRouter?.model == nil ? 0 : 88)
+                } else if detailTab == 2 {
+                    PullRequestReviewView(
+                        model: center.review(for: pr), record: pr, viewer: center.viewerLogin,
+                        onChanged: { Task { await center.refreshSelectedDetail() } },
+                        horizontalPadding: isInspector ? 12 : 20,
+                        onReviewCode: { detailTab = 1 },
+                        onEditComment: { target in
+                            guard center.review(for: pr).beginInline(target, record: pr) else { return }
+                            inlineTarget = target
+                            detailTab = 1
+                            if let file = center.filesByID[pr.id]?.first(where: { $0.path == target.path }) {
+                                selectedFileID = file.id
+                                if !reviewPreferences.expandedFileIDs.contains(file.id) {
+                                    reviewPreferences.toggleExpanded(file.id)
+                                }
+                                sourceDiffFileIDs.insert(file.id)
+                            }
+                        }
+                    )
+                    .padding(.bottom, contextRouter?.model == nil ? 0 : 88)
+                } else {
+                    code(pr).padding(.horizontal, isInspector ? 12 : 16)
+                        .padding(.bottom, contextRouter?.model == nil ? 0 : 88)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay(alignment: .bottomTrailing) {
+                if let model = contextRouter?.model {
+                    PullRequestFloatingChatView(chat: chats.chat(for: pr), runtime: model, record: pr)
+                        .id(pr.id)
+                        .padding(isInspector ? 12 : 20)
+                }
+            }
+        } else if center.isInitialLoad {
+            detailLoadingPane
         } else {
-            code(pr).padding(.horizontal, isInspector ? 12 : 16)
-                .padding(.bottom, contextRouter?.model == nil ? 0 : 88)
+            VStack(spacing: 12) {
+                DockIcon(.gitPullRequest, size: 28, color: Color.dockMetadataText)
+                Text(center.isRefreshing ? "Loading pull requests…" : "Select a pull request").dockFont(
+                    size: 15, weight: .medium)
+            }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .overlay(alignment: .bottomTrailing) {
-        if let model = contextRouter?.model {
-            PullRequestFloatingChatView(chat: chats.chat(for: pr), runtime: model, record: pr)
-                .id(pr.id)
-                .padding(isInspector ? 12 : 20)
-        }
-    }
-    } else if center.isInitialLoad {
-        detailLoadingPane
-    } else { VStack(spacing: 12) { DockIcon(.gitPullRequest, size: 28, color: Color.dockMetadataText); Text(center.isRefreshing ? "Loading pull requests…" : "Select a pull request").dockFont(size: 15, weight: .medium) }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity) }
     }
 
     private var detailLoadingPane: some View {
@@ -186,7 +207,8 @@ struct PullRequestDetailView: View {
                     ForEach(0..<5, id: \.self) { index in
                         HStack(spacing: 14) {
                             RepositoryShimmerBlock(width: 88, height: 11, cornerRadius: 4)
-                            RepositoryShimmerBlock(width: index.isMultiple(of: 2) ? 236 : 176, height: 11, cornerRadius: 4)
+                            RepositoryShimmerBlock(
+                                width: index.isMultiple(of: 2) ? 236 : 176, height: 11, cornerRadius: 4)
                         }
                     }
                     RepositoryShimmerBlock(width: nil, height: 1, cornerRadius: 0)
@@ -258,7 +280,9 @@ struct PullRequestDetailView: View {
         .background(Color.dockCanvas)
     }
     private func summary(_ pr: PullRequestRecord, wide: Bool) -> some View {
-        let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 36))
+        let layout =
+            wide
+            ? AnyLayout(HStackLayout(alignment: .top, spacing: 36))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
         return VStack(alignment: .leading, spacing: 28) {
             summaryIdentity(pr)
@@ -288,8 +312,14 @@ struct PullRequestDetailView: View {
                 .dockFont(.pageTitle).foregroundStyle(Color.dockPrimaryText)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) { summaryAuthor(pr); branchRoute(pr) }
-                VStack(alignment: .leading, spacing: 10) { summaryAuthor(pr); branchRoute(pr) }
+                HStack(spacing: 16) {
+                    summaryAuthor(pr)
+                    branchRoute(pr)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    summaryAuthor(pr)
+                    branchRoute(pr)
+                }
             }
         }
     }
@@ -314,12 +344,16 @@ struct PullRequestDetailView: View {
             }
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             VStack(alignment: .leading, spacing: 16) {
-                DockSectionHeader(title: "Activity", count: activity.count, isExpanded: $activityExpanded, style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
+                DockSectionHeader(
+                    title: "Activity", count: activity.count, isExpanded: $activityExpanded,
+                    style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
                 if activityExpanded {
                     if activity.isEmpty {
                         Text(center.isLoadingDetail(for: pr.id) ? "Loading activity…" : "No activity loaded.")
                             .dockFont(.body).foregroundStyle(Color.dockMetadataText)
-                    } else { GitHubTimelineView(reference: pr.reference, items: activity) }
+                    } else {
+                        GitHubTimelineView(reference: pr.reference, items: activity)
+                    }
                 }
             }
             commentComposer(pr)
@@ -330,10 +364,13 @@ struct PullRequestDetailView: View {
     private func summarySidebar(_ pr: PullRequestRecord) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
-                DockSectionHeader(title: "Changes", isExpanded: $changesExpanded, style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
+                DockSectionHeader(
+                    title: "Changes", isExpanded: $changesExpanded,
+                    style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
                 changeTotals(pr)
                 if changesExpanded {
-                    PullRequestChangeBreakdownView(files: center.filesByID[pr.id], expectedCount: pr.changedFiles,
+                    PullRequestChangeBreakdownView(
+                        files: center.filesByID[pr.id], expectedCount: pr.changedFiles,
                         isCurrent: center.filesAreCurrent(for: pr), isLoading: center.isLoadingDetail(for: pr.id),
                         onReviewFiles: { detailTab = 1 }, embedded: true)
                 }
@@ -342,9 +379,12 @@ struct PullRequestDetailView: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Reviewers").foregroundStyle(Color.dockMetadataText)
-                    Text(pr.requestedReviewers.isEmpty ? "No reviewers requested" : pr.requestedReviewers.joined(separator: ", "))
-                        .foregroundStyle(pr.requestedReviewers.isEmpty ? Color.dockSecondaryText : Color.dockReview)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        pr.requestedReviewers.isEmpty
+                            ? "No reviewers requested" : pr.requestedReviewers.joined(separator: ", ")
+                    )
+                    .foregroundStyle(pr.requestedReviewers.isEmpty ? Color.dockSecondaryText : Color.dockReview)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 if pr.state == "open" {
@@ -354,7 +394,9 @@ struct PullRequestDetailView: View {
             }.dockFont(.body)
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             VStack(alignment: .leading, spacing: 10) {
-                DockSectionHeader(title: "Checks", count: pr.checks.isEmpty ? nil : pr.checks.count, isExpanded: $checksExpanded, style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
+                DockSectionHeader(
+                    title: "Checks", count: pr.checks.isEmpty ? nil : pr.checks.count, isExpanded: $checksExpanded,
+                    style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
                 if checksExpanded { checksSection(pr) }
             }
             Color.dockBorderLight.frame(height: DockLayout.hairline)
@@ -371,7 +413,8 @@ struct PullRequestDetailView: View {
             DockIcon(.gitBranch, size: 14, color: .dockMerged)
             Text(pr.baseBranch).foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
+                .background(
+                    DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
             DockIcon(.arrowLeft, size: 13, color: .dockMetadataText)
             Text(pr.headBranch).foregroundStyle(Color.dockSecondaryText)
         }.dockFont(.body, weight: .regular, design: .monospaced).lineLimit(1).truncationMode(.middle)
@@ -380,7 +423,9 @@ struct PullRequestDetailView: View {
 
     private func changeTotals(_ pr: PullRequestRecord) -> some View {
         HStack(spacing: 8) {
-            Button { detailTab = 1 } label: {
+            Button {
+                detailTab = 1
+            } label: {
                 Text(pr.changedFiles.map { "\($0) files" } ?? "Changed files")
             }.buttonStyle(.dockLink)
             if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
@@ -392,11 +437,16 @@ struct PullRequestDetailView: View {
     private func checksSection(_ pr: PullRequestRecord) -> some View {
         if pr.checks.isEmpty {
             HStack(spacing: 12) {
-            Text(pr.checksAvailable ? "No checks reported by GitHub." : "Check status unavailable. Refresh to retry.")
-                    .dockFont(.navigation)
-                    .foregroundStyle(Color.dockMetadataText)
+                Text(
+                    pr.checksAvailable ? "No checks reported by GitHub." : "Check status unavailable. Refresh to retry."
+                )
+                .dockFont(.navigation)
+                .foregroundStyle(Color.dockMetadataText)
                 Spacer()
-                DockIconButton(icon: .arrowsClockwise, label: "Refresh checks", isBusy: center.isLoadingDetail, size: 24, style: DockThemePalette(theme: DockThemeRuntime.current)) {
+                DockIconButton(
+                    icon: .arrowsClockwise, label: "Refresh checks", isBusy: center.isLoadingDetail, size: 24,
+                    style: DockThemePalette(theme: DockThemeRuntime.current)
+                ) {
                     center.invalidateSelectedDetail()
                     detailRefreshID += 1
                 }
@@ -411,7 +461,11 @@ struct PullRequestDetailView: View {
                         DockIcon(checkIcon(for: check), size: 14, color: checkColor(for: check))
                             .frame(width: 22, height: 22)
                             .background(Circle().fill(checkColor(for: check).opacity(0.12)))
-                        if let url = check.detailsURL { Link(check.name, destination: url).buttonStyle(.dockLink) } else { Text(check.name) }
+                        if let url = check.detailsURL {
+                            Link(check.name, destination: url).buttonStyle(.dockLink)
+                        } else {
+                            Text(check.name)
+                        }
                         Spacer()
                         Text(checkPresentation(for: check))
                             .foregroundStyle(Color.dockMetadataText)
@@ -426,7 +480,9 @@ struct PullRequestDetailView: View {
     }
 
     private func activityItems(_ pr: PullRequestRecord) -> [GitHubConversationItem] {
-        pr.activityItems(comments: center.commentsByID[pr.id] ?? [], commits: center.commitsByID[pr.id] ?? [], events: center.eventsByID[pr.id] ?? [])
+        pr.activityItems(
+            comments: center.commentsByID[pr.id] ?? [], commits: center.commitsByID[pr.id] ?? [],
+            events: center.eventsByID[pr.id] ?? [])
     }
 
     private func commentComposer(_ pr: PullRequestRecord) -> some View {
@@ -439,28 +495,41 @@ struct PullRequestDetailView: View {
             HStack {
                 Text("\(commentDraft.count)/10000").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 Spacer()
-                Button { mutationCoordinator.requestComment(commentDraft, for: pr) } label: {
-                    GitHubActionLabel(title: center.isPostingComment ? "Posting…" : "Post comment", isBusy: center.isPostingComment)
+                Button {
+                    mutationCoordinator.requestComment(commentDraft, for: pr)
+                } label: {
+                    GitHubActionLabel(
+                        title: center.isPostingComment ? "Posting…" : "Post comment", isBusy: center.isPostingComment)
                 }.buttonStyle(.dockPrimary)
-                    .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || commentDraft.count > 10_000 || center.isPostingComment)
+                    .disabled(
+                        commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || commentDraft.count > 10_000 || center.isPostingComment)
             }
         }
         .padding(16)
         .background(DockThemeShape(cornerRadius: DockLayout.paneRadius).dockSurfaceFill(Color.dockCanvas))
-        .overlay(DockThemeShape(cornerRadius: DockLayout.paneRadius).stroke(Color.dockBorder, lineWidth: DockLayout.hairline))
+        .overlay(
+            DockThemeShape(cornerRadius: DockLayout.paneRadius).stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+        )
     }
 
-    private func checkIcon(for check: GitHubCheckSummary) -> Ph { checkColor(for: check) == Color.dockSuccess ? .check : (checkColor(for: check) == Color.dockDestructive ? .x : .clock) }
+    private func checkIcon(for check: GitHubCheckSummary) -> Ph {
+        checkColor(for: check) == Color.dockSuccess
+            ? .check : (checkColor(for: check) == Color.dockDestructive ? .x : .clock)
+    }
     private func checkColor(for check: GitHubCheckSummary) -> Color {
         let conclusion = check.conclusion?.lowercased()
         if ["neutral", "skipped"].contains(conclusion) { return Color.dockMetadataText }
         if conclusion == "success" { return Color.dockSuccess }
-        if ["failure", "cancelled", "timed_out", "action_required"].contains(conclusion) { return Color.dockDestructive }
+        if ["failure", "cancelled", "timed_out", "action_required"].contains(conclusion) {
+            return Color.dockDestructive
+        }
         return check.isPending ? DockStatusTone.working.color : Color.dockSecondaryText
     }
     private func checkPresentation(for check: GitHubCheckSummary) -> String {
         guard check.status.lowercased() == "completed" else {
-            return check.status.lowercased() == "in_progress" ? "Running" : (check.isPending ? "Pending" : "Status unknown")
+            return check.status.lowercased() == "in_progress"
+                ? "Running" : (check.isPending ? "Pending" : "Status unknown")
         }
         switch check.conclusion?.lowercased() {
         case "success": return "Passed"
@@ -477,8 +546,7 @@ struct PullRequestDetailView: View {
     private func authorAvatar(_ pr: PullRequestRecord) -> some View {
         if let url = pr.authorAvatarURL {
             AsyncImage(url: url) { phase in
-                if let image = phase.image { image.resizable().scaledToFill() }
-                else { avatarFallback }
+                if let image = phase.image { image.resizable().scaledToFill() } else { avatarFallback }
             }
             .frame(width: 26, height: 26)
             .clipShape(Circle())
@@ -510,13 +578,17 @@ struct PullRequestDetailView: View {
             } label: {
                 HStack(spacing: 7) {
                     if center.updatingStatusID == pr.id { ProgressView().controlSize(.mini) }
-                    if center.updatingStatusID != pr.id { DockIcon(pr.presentationIcon, size: 12, color: pr.presentationColor) }
+                    if center.updatingStatusID != pr.id {
+                        DockIcon(pr.presentationIcon, size: 12, color: pr.presentationColor)
+                    }
                     Text(center.updatingStatusID == pr.id ? "Updating status…" : current.rawValue)
                     DockIcon(.caretDown, size: 12, color: Color.dockSecondaryText)
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 28)
-                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(pr.presentationColor.opacity(0.12)))
+                .background(
+                    DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
+                        pr.presentationColor.opacity(0.12)))
             }
             .disabled(center.isUpdatingStatus)
             .help("Change pull request status")
@@ -532,7 +604,9 @@ struct PullRequestDetailView: View {
     private func detailTabs(_ pr: PullRequestRecord) -> some View {
         HStack(spacing: 4) {
             detailTabButton("Summary", selected: detailTab == 0) { detailTab = 0 }
-            Button { detailTab = 1 } label: {
+            Button {
+                detailTab = 1
+            } label: {
                 HStack(spacing: 6) {
                     Text("Changes")
                     if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
@@ -552,13 +626,19 @@ struct PullRequestDetailView: View {
     private func detailActions(_ pr: PullRequestRecord, compact: Bool = false) -> some View {
         HStack(spacing: 6) {
             if !compact {
-                DockIconButton(icon: watches.contains(pr) ? .pushPinSlash : .pushPin, label: watches.contains(pr) ? "Stop watching pull request" : "Watch pull request", size: 28, style: DockThemePalette(theme: DockThemeRuntime.current)) { watches.toggle(pr) }
+                DockIconButton(
+                    icon: watches.contains(pr) ? .pushPinSlash : .pushPin,
+                    label: watches.contains(pr) ? "Stop watching pull request" : "Watch pull request", size: 28,
+                    style: DockThemePalette(theme: DockThemeRuntime.current)
+                ) { watches.toggle(pr) }
             }
             if let url = pr.webURL {
                 GitHubLinkButton(destination: url, accessibilityLabel: "Open pull request on GitHub")
             }
-            DockIconButton(icon: .arrowsClockwise, label: "Refresh pull request details",
-                           isBusy: center.isLoadingDetail(for: pr.id), style: DockThemePalette(theme: DockThemeRuntime.current)) {
+            DockIconButton(
+                icon: .arrowsClockwise, label: "Refresh pull request details",
+                isBusy: center.isLoadingDetail(for: pr.id), style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) {
                 center.invalidateSelectedDetail()
                 detailRefreshID += 1
             }
@@ -568,18 +648,29 @@ struct PullRequestDetailView: View {
             if contextRouter?.model != nil {
                 Group {
                     if compact {
-                        DockIconButton(icon: .sparkle, label: "Review with Hermes", size: 28, style: DockThemePalette(theme: DockThemeRuntime.current)) { openReviewGuide(pr) }
+                        DockIconButton(
+                            icon: .sparkle, label: "Review with Hermes", size: 28,
+                            style: DockThemePalette(theme: DockThemeRuntime.current)
+                        ) { openReviewGuide(pr) }
                     } else {
-                        Button(hasCurrentGuide(pr) ? "Read review" : "Review with Hermes", icon: .sparkle) { openReviewGuide(pr) }
-                            .buttonStyle(.dockSecondary)
+                        Button(hasCurrentGuide(pr) ? "Read review" : "Review with Hermes", icon: .sparkle) {
+                            openReviewGuide(pr)
+                        }
+                        .buttonStyle(.dockSecondary)
                     }
                 }
-                    .disabled(guide.requesting || (!hasCurrentGuide(pr) && (guide.uncertain || !center.filesAreCurrent(for: pr)
-                        || !(center.filesByID[pr.id] ?? []).contains { $0.patch?.isEmpty == false })))
+                .disabled(
+                    guide.requesting
+                        || (!hasCurrentGuide(pr)
+                            && (guide.uncertain || !center.filesAreCurrent(for: pr)
+                                || !(center.filesByID[pr.id] ?? []).contains { $0.patch?.isEmpty == false }))
+                )
             }
             if pr.isOpenForWork || pr.mergedAt != nil {
-                PullRequestLandingView(record: pr, client: center.api.client, toolbar: true,
-                    onLanded: { center.applyLandingSnapshot($0, for: pr) }) {
+                PullRequestLandingView(
+                    record: pr, client: center.api.client, toolbar: true,
+                    onLanded: { center.applyLandingSnapshot($0, for: pr) }
+                ) {
                     Task { await center.refreshSelectedDetail() }
                 }
                 .id(pr.id)
@@ -589,14 +680,18 @@ struct PullRequestDetailView: View {
     }
 
     private func hasCurrentGuide(_ pr: PullRequestRecord) -> Bool {
-        guide.session != nil && guide.sourceIdentity == (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown")
+        guide.session != nil
+            && guide.sourceIdentity == (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown")
     }
 
     private func openReviewGuide(_ pr: PullRequestRecord) {
         if !hasCurrentGuide(pr), let model = contextRouter?.model {
-            guide.start(model: model, reviewerProfileID: "default", directory: pr.localPath.isEmpty ? nil : pr.localPath,
+            guide.start(
+                model: model, reviewerProfileID: "default", directory: pr.localPath.isEmpty ? nil : pr.localPath,
                 identity: (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown"),
-                documents: (center.filesByID[pr.id] ?? []).compactMap { file in file.patch.map { DiffDocument(path: file.path, patch: $0) } },
+                documents: (center.filesByID[pr.id] ?? []).compactMap { file in
+                    file.patch.map { DiffDocument(path: file.path, patch: $0) }
+                },
                 partial: (center.filesByID[pr.id] ?? []).contains { $0.patch == nil })
         }
         readingGuide = true
@@ -645,7 +740,8 @@ struct PullRequestDetailView: View {
                         }
                         .onChange(of: inlineTarget?.id, initial: true) { _, id in
                             guard let id, let target = inlineTarget,
-                                  let file = files.first(where: { $0.path == target.path }) else { return }
+                                let file = files.first(where: { $0.path == target.path })
+                            else { return }
                             proxy.scrollTo(file.id, anchor: .top)
                             Task { @MainActor in
                                 await Task.yield()
@@ -686,7 +782,9 @@ struct PullRequestDetailView: View {
 
     /// The inspector's code review, full window: the same pull request on its Code tab.
     private func expandedReview(close: @escaping () -> Void) -> some View {
-        DockExpandedPage(title: "Code review", subtitle: center.selected.map { "#\($0.number) · \($0.title)" } ?? "", close: close) {
+        DockExpandedPage(
+            title: "Code review", subtitle: center.selected.map { "#\($0.number) · \($0.title)" } ?? "", close: close
+        ) {
             PullRequestDetailView(center: center, onOpenChat: onOpenChat, initialTab: 1)
         }
     }
@@ -702,15 +800,24 @@ struct PullRequestDetailView: View {
                     DockMenuSection("Review guide") {
                         ReviewGuideGenerateAction(requesting: guide.requesting, menuRow: true) { reviewerProfileID in
                             guard let model = contextRouter?.model else { return }
-                            guide.start(model: model, reviewerProfileID: reviewerProfileID, directory: pr.localPath.isEmpty ? nil : pr.localPath,
+                            guide.start(
+                                model: model, reviewerProfileID: reviewerProfileID,
+                                directory: pr.localPath.isEmpty ? nil : pr.localPath,
                                 identity: (pr.headRevision ?? "unknown") + ":" + (pr.baseRevision ?? "unknown"),
-                                documents: (center.filesByID[pr.id] ?? []).compactMap { file in file.patch.map { DiffDocument(path: file.path, patch: $0) } },
+                                documents: (center.filesByID[pr.id] ?? []).compactMap { file in
+                                    file.patch.map { DiffDocument(path: file.path, patch: $0) }
+                                },
                                 partial: (center.filesByID[pr.id] ?? []).contains { $0.patch == nil })
                             readingGuide = true
-                        }.disabled(guide.requesting || guide.uncertain || !center.filesAreCurrent(for: pr) || contextRouter?.model == nil)
+                        }.disabled(
+                            guide.requesting || guide.uncertain || !center.filesAreCurrent(for: pr)
+                                || contextRouter?.model == nil)
                         if guide.session != nil || guide.requesting { Button("Read guide") { readingGuide = true } }
                         if let session = guide.session {
-                            Button("Open review conversation") { contextRouter?.model?.resumeSession(session); contextRouter?.onOpened(session.id) }
+                            Button("Open review conversation") {
+                                contextRouter?.model?.resumeSession(session)
+                                contextRouter?.onOpened(session.id)
+                            }
                         }
                         if guide.requesting {
                             HStack(spacing: 8) {
@@ -721,7 +828,8 @@ struct PullRequestDetailView: View {
                     }
                     if watches.error != nil { Text("Watch unavailable. Try again.").dockFont(.body).padding(8) }
                 } label: {
-                    PullRequestReviewToolbarIcon(name: .dotsThree, accessibilityLabel: "Review actions", tooltip: "Review actions")
+                    PullRequestReviewToolbarIcon(
+                        name: .dotsThree, accessibilityLabel: "Review actions", tooltip: "Review actions")
                 }
                 .fixedSize()
                 .help("Review actions")
@@ -731,7 +839,8 @@ struct PullRequestDetailView: View {
                 Toggle("Enable rich preview", isOn: $reviewPreferences.richPreview)
                 Toggle("Enable word diffs", isOn: $reviewPreferences.wordDiffs)
             } label: {
-                PullRequestReviewToolbarIcon(name: .sliders, accessibilityLabel: "Review options", tooltip: "Review options")
+                PullRequestReviewToolbarIcon(
+                    name: .sliders, accessibilityLabel: "Review options", tooltip: "Review options")
             }
             // `.borderlessButton` drops custom-shape labels on macOS, leaving only the indicator.
             .buttonStyle(.dockHover)
@@ -742,9 +851,12 @@ struct PullRequestDetailView: View {
                 reviewPreferences.setAllExpanded(fileIDs)
             } label: {
                 PullRequestReviewToolbarIcon(
-                    name: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? .arrowsInLineVertical : .caretUpDown,
-                    accessibilityLabel: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? "Collapse all diffs" : "Expand all diffs",
-                    tooltip: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? "Collapse all diffs" : "Expand all diffs"
+                    name: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs)
+                        ? .arrowsInLineVertical : .caretUpDown,
+                    accessibilityLabel: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs)
+                        ? "Collapse all diffs" : "Expand all diffs",
+                    tooltip: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs)
+                        ? "Collapse all diffs" : "Expand all diffs"
                 )
             }
             .buttonStyle(.dockHover)
@@ -755,7 +867,8 @@ struct PullRequestDetailView: View {
             } label: {
                 PullRequestReviewToolbarIcon(
                     name: reviewPreferences.diffMode == .unified ? .columns : .rows,
-                    accessibilityLabel: "Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff",
+                    accessibilityLabel:
+                        "Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff",
                     tooltip: "Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff"
                 )
             }
@@ -766,7 +879,8 @@ struct PullRequestDetailView: View {
                 Button {
                     if reviewRouter?.present(expandedReview { reviewRouter?.close() }) != true { expandedSheet = true }
                 } label: {
-                    PullRequestReviewToolbarIcon(name: .arrowsOutSimple, accessibilityLabel: "Expand review", tooltip: "Expand review")
+                    PullRequestReviewToolbarIcon(
+                        name: .arrowsOutSimple, accessibilityLabel: "Expand review", tooltip: "Expand review")
                 }
                 .buttonStyle(.dockHover)
                 .help("Expand review")
@@ -793,7 +907,8 @@ struct PullRequestDetailView: View {
                     .frame(height: 18)
                     .background(Capsule().fill(Color.dockSurface4))
                 Spacer(minLength: 4)
-                PullRequestDiffStat(additions: files.reduce(0) { $0 + $1.additions }, deletions: files.reduce(0) { $0 + $1.deletions })
+                PullRequestDiffStat(
+                    additions: files.reduce(0) { $0 + $1.additions }, deletions: files.reduce(0) { $0 + $1.deletions })
             }
             .padding(.horizontal, 12)
             .frame(height: 36)
@@ -801,7 +916,12 @@ struct PullRequestDetailView: View {
             TextField("Find changed file", text: $fileQuery).textFieldStyle(.dockGlass).padding(8)
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(PullRequestFileTreeBuilder.make(files: files.filter { fileQuery.isEmpty || $0.path.localizedCaseInsensitiveContains(fileQuery) })) { node in
+                    ForEach(
+                        PullRequestFileTreeBuilder.make(
+                            files: files.filter {
+                                fileQuery.isEmpty || $0.path.localizedCaseInsensitiveContains(fileQuery)
+                            })
+                    ) { node in
                         PullRequestFileTreeRow(
                             node: node,
                             file: node.fileID.flatMap { filesByID[$0] },
@@ -810,7 +930,9 @@ struct PullRequestDetailView: View {
                         ) {
                             guard let fileID = node.fileID else { return }
                             selectedFileID = fileID
-                            if !reviewPreferences.expandedFileIDs.contains(fileID) { reviewPreferences.toggleExpanded(fileID) }
+                            if !reviewPreferences.expandedFileIDs.contains(fileID) {
+                                reviewPreferences.toggleExpanded(fileID)
+                            }
                         }
                     }
                 }
@@ -850,39 +972,65 @@ struct PullRequestDetailView: View {
             .buttonStyle(.dockHover)
             if expanded {
                 fileContent(file)
-                if let pr = center.selected { PullRequestThreadListView(model: center.review(for: pr), record: pr, path: file.path).padding(8) }
+                if let pr = center.selected {
+                    PullRequestThreadListView(model: center.review(for: pr), record: pr, path: file.path).padding(8)
+                }
             }
         }
         .background(Color.dockCanvas)
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(
+                Color.dockBorderLight, lineWidth: 0.5))
     }
 
     @ViewBuilder
     private func fileContent(_ file: PullRequestFile) -> some View {
-        if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), let patch = file.patch, isMarkdown(file.path) {
+        if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), let patch = file.patch,
+            isMarkdown(file.path)
+        {
             VStack(alignment: .leading, spacing: 6) {
-                Text("CHANGED LINES PREVIEW · OMITTED CONTENT IS NOT SHOWN").dockFont(size: 9, weight: .bold, design: .monospaced).foregroundStyle(Color.dockMetadataText)
-                MarkdownMessageView(markdown: previewMarkdown(from: patch)).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.dockSurface2)
-                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(.compactStatus, weight: .semibold)
+                Text("CHANGED LINES PREVIEW · OMITTED CONTENT IS NOT SHOWN").dockFont(
+                    size: 9, weight: .bold, design: .monospaced
+                ).foregroundStyle(Color.dockMetadataText)
+                MarkdownMessageView(markdown: previewMarkdown(from: patch)).padding(12).frame(
+                    maxWidth: .infinity, alignment: .leading
+                ).background(Color.dockSurface2)
+                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(
+                    .compactStatus, weight: .semibold)
             }.padding(8)
-        } else if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), isImage(file.path), let url = file.webURL {
+        } else if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), isImage(file.path),
+            let url = file.webURL
+        {
             VStack(alignment: .leading, spacing: 6) {
                 AsyncImage(url: imagePreviewURL(for: url)) { phase in
-                    if let image = phase.image { image.resizable().scaledToFit().frame(maxHeight: 420) }
-                    else { Text("Image preview unavailable. Open on GitHub to view this file.").foregroundStyle(Color.dockMetadataText) }
+                    if let image = phase.image {
+                        image.resizable().scaledToFit().frame(maxHeight: 420)
+                    } else {
+                        Text("Image preview unavailable. Open on GitHub to view this file.").foregroundStyle(
+                            Color.dockMetadataText)
+                    }
                 }
-                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(.compactStatus, weight: .semibold)
+                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(
+                    .compactStatus, weight: .semibold)
             }.padding(8)
         } else if let patch = file.patch {
             diffPatch(patch, file: file)
         } else {
-            HStack { Text("Binary or truncated patch").dockFont(.metadata).foregroundStyle(Color.dockMetadataText); Spacer(); if let url = file.webURL { Link("Open on GitHub", destination: url).buttonStyle(.dockLink) } }.padding(12)
+            HStack {
+                Text("Binary or truncated patch").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                Spacer()
+                if let url = file.webURL { Link("Open on GitHub", destination: url).buttonStyle(.dockLink) }
+            }.padding(12)
         }
     }
 
-    private func isMarkdown(_ path: String) -> Bool { ["md", "markdown", "mdown"].contains((path as NSString).pathExtension.lowercased()) }
-    private func isImage(_ path: String) -> Bool { ["png", "jpg", "jpeg", "gif", "webp", "svg"].contains((path as NSString).pathExtension.lowercased()) }
+    private func isMarkdown(_ path: String) -> Bool {
+        ["md", "markdown", "mdown"].contains((path as NSString).pathExtension.lowercased())
+    }
+    private func isImage(_ path: String) -> Bool {
+        ["png", "jpg", "jpeg", "gif", "webp", "svg"].contains((path as NSString).pathExtension.lowercased())
+    }
     private func imagePreviewURL(for url: URL) -> URL {
         guard url.host?.lowercased() == "github.com" else { return url }
         let components = url.path.split(separator: "/").map(String.init)
@@ -890,32 +1038,57 @@ struct PullRequestDetailView: View {
         let rawPath = Array(components[0...1]) + Array(components.dropFirst(3))
         return URL(string: "https://raw.githubusercontent.com/\(rawPath.joined(separator: "/"))") ?? url
     }
-    private func previewMarkdown(from patch: String) -> String { PullRequestDiffPresentation.lines(patch).filter { $0.kind != .deletion && $0.kind != .hunk && $0.kind != .metadata }.map { $0.kind == .addition ? String($0.text.dropFirst()) : $0.text }.joined(separator: "\n") }
+    private func previewMarkdown(from patch: String) -> String {
+        PullRequestDiffPresentation.lines(patch).filter {
+            $0.kind != .deletion && $0.kind != .hunk && $0.kind != .metadata
+        }.map { $0.kind == .addition ? String($0.text.dropFirst()) : $0.text }.joined(separator: "\n")
+    }
 
     @ViewBuilder
     private func diffPatch(_ patch: String, file: PullRequestFile) -> some View {
         let capturedRecord = center.selected
-        SharedDiffView(patch: patch, path: file.path, preferredSplit: reviewPreferences.diffMode == .split,
-                       wraps: reviewPreferences.wordWrap, wordDiffs: reviewPreferences.wordDiffs,
-                       onComment: (capturedRecord.map { $0.state == "open" && $0.headRevision != nil && center.filesAreCurrent(for: $0) } ?? false) ? { line in
-            if let pr = capturedRecord, center.selected?.id == pr.id,
-               center.selected?.headRevision == pr.headRevision, center.filesAreCurrent(for: pr),
-               let revision = pr.headRevision, pr.state == "open", let number = line.newLine ?? line.oldLine {
-                let target = GitHubInlineCommentTarget(path: file.path, line: number,
-                    side: line.newLine == nil ? "LEFT" : "RIGHT", revision: revision)
-                if center.review(for: pr).beginInline(target, record: pr) { inlineTarget = target }
+        SharedDiffView(
+            patch: patch, path: file.path, preferredSplit: reviewPreferences.diffMode == .split,
+            wraps: reviewPreferences.wordWrap, wordDiffs: reviewPreferences.wordDiffs,
+            onComment: (capturedRecord.map {
+                $0.state == "open" && $0.headRevision != nil && center.filesAreCurrent(for: $0)
+            } ?? false)
+                ? { line in
+                    if let pr = capturedRecord, center.selected?.id == pr.id,
+                        center.selected?.headRevision == pr.headRevision, center.filesAreCurrent(for: pr),
+                        let revision = pr.headRevision, pr.state == "open", let number = line.newLine ?? line.oldLine
+                    {
+                        let target = GitHubInlineCommentTarget(
+                            path: file.path, line: number,
+                            side: line.newLine == nil ? "LEFT" : "RIGHT", revision: revision)
+                        if center.review(for: pr).beginInline(target, record: pr) { inlineTarget = target }
+                    }
+                } : nil,
+            contextLoader: { lines in
+                guard let pr = center.selected, center.filesAreCurrent(for: pr) else {
+                    throw GitHubRequestError.changed
+                }
+                let service = PullRequestContextService(client: center.review(for: pr).service.client)
+                let value = try await service.expand(record: pr, file: file, patch: patch, lines: lines)
+                guard center.selected?.id == pr.id, center.filesAreCurrent(for: pr),
+                    center.selected?.headRevision == pr.headRevision
+                else { throw GitHubRequestError.changed }
+                return value
+            }, comparison: center.selected.map(DiffComparisonIdentity.pullRequest),
+            revisionNotes: center.selected.map { pr in
+                ReviewDraftStore.shared.notes(
+                    key: (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":pr:" + pr.id)
+            },
+            reviewAccessory: capturedRecord.map { pr in
+                AnyView(
+                    PullRequestInlineReview(
+                        model: center.review(for: pr), record: pr,
+                        document: DiffDocument(path: file.path, patch: patch), target: $inlineTarget))
             }
-        } : nil, contextLoader: { lines in
-            guard let pr = center.selected, center.filesAreCurrent(for: pr) else { throw GitHubRequestError.changed }
-            let service = PullRequestContextService(client: center.review(for: pr).service.client)
-            let value = try await service.expand(record: pr, file: file, patch: patch, lines: lines)
-            guard center.selected?.id == pr.id, center.filesAreCurrent(for: pr), center.selected?.headRevision == pr.headRevision else { throw GitHubRequestError.changed }
-            return value
-        }, comparison: center.selected.map(DiffComparisonIdentity.pullRequest), revisionNotes: center.selected.map { pr in ReviewDraftStore.shared.notes(key: (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":pr:" + pr.id) },
-            reviewAccessory: capturedRecord.map { pr in AnyView(PullRequestInlineReview(
-                model: center.review(for: pr), record: pr,
-                document: DiffDocument(path: file.path, patch: patch), target: $inlineTarget)) })
-        .id((contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":" + (center.selected?.id ?? "") + ":" + file.path)
+        )
+        .id(
+            (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":" + (center.selected?.id ?? "")
+                + ":" + file.path)
     }
 
 }

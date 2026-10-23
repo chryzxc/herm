@@ -10,7 +10,10 @@ struct RepositoryReviewBaseline: Equatable {
     let acknowledgedFindingIDs: [String]
     let completeness: RepositoryReviewCompleteness
 
-    init(repositoryID: String, headRevision: String?, fingerprint: String, reviewedAt: Date = .now, acknowledgedFindingIDs: [String], completeness: RepositoryReviewCompleteness = .partial) {
+    init(
+        repositoryID: String, headRevision: String?, fingerprint: String, reviewedAt: Date = .now,
+        acknowledgedFindingIDs: [String], completeness: RepositoryReviewCompleteness = .partial
+    ) {
         self.repositoryID = repositoryID
         self.headRevision = headRevision
         self.fingerprint = fingerprint
@@ -21,22 +24,36 @@ struct RepositoryReviewBaseline: Equatable {
 
     init?(dictionary: [String: Any]) {
         guard let repositoryID = dictionary["repositoryID"] as? String,
-              let fingerprint = dictionary["fingerprint"] as? String,
-              let timestamp = dictionary["reviewedAt"] as? TimeInterval else { return nil }
-        self.init(repositoryID: repositoryID, headRevision: dictionary["headRevision"] as? String, fingerprint: fingerprint, reviewedAt: Date(timeIntervalSince1970: timestamp), acknowledgedFindingIDs: dictionary["acknowledgedFindingIDs"] as? [String] ?? [], completeness: RepositoryReviewCompleteness(rawValue: dictionary["completeness"] as? String ?? "") ?? .partial)
+            let fingerprint = dictionary["fingerprint"] as? String,
+            let timestamp = dictionary["reviewedAt"] as? TimeInterval
+        else { return nil }
+        self.init(
+            repositoryID: repositoryID, headRevision: dictionary["headRevision"] as? String, fingerprint: fingerprint,
+            reviewedAt: Date(timeIntervalSince1970: timestamp),
+            acknowledgedFindingIDs: dictionary["acknowledgedFindingIDs"] as? [String] ?? [],
+            completeness: RepositoryReviewCompleteness(rawValue: dictionary["completeness"] as? String ?? "")
+                ?? .partial)
     }
 
     var dictionary: [String: Any] {
-        ["repositoryID": repositoryID, "headRevision": headRevision as Any, "fingerprint": fingerprint, "reviewedAt": reviewedAt.timeIntervalSince1970, "acknowledgedFindingIDs": acknowledgedFindingIDs, "completeness": completeness.rawValue]
+        [
+            "repositoryID": repositoryID, "headRevision": headRevision as Any, "fingerprint": fingerprint,
+            "reviewedAt": reviewedAt.timeIntervalSince1970, "acknowledgedFindingIDs": acknowledgedFindingIDs,
+            "completeness": completeness.rawValue,
+        ]
     }
 }
 
 enum RepositoryWatchState: Equatable {
-    case inactive, watching, stale(String)
+    case inactive, watching
+    case stale(String)
 }
 
 enum RepositoryReviewBaselineStatus: Equatable {
-    case none, current(Date), stale(Date), partial(Date)
+    case none
+    case current(Date)
+    case stale(Date)
+    case partial(Date)
 
     static func make(baseline: RepositoryReviewBaseline?, fingerprint: String?) -> RepositoryReviewBaselineStatus {
         guard let baseline else { return .none }
@@ -66,7 +83,9 @@ enum SessionContextPressure: String, Equatable {
 }
 
 enum HandoffWorkflowState: Equatable {
-    case idle, starting, running(String), failed(String)
+    case idle, starting
+    case running(String)
+    case failed(String)
 }
 
 @MainActor
@@ -122,14 +141,20 @@ final class DeveloperWorkflowModel: ObservableObject {
         }
     }
 
-    func setActiveRepository(path: String?, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async {
+    func setActiveRepository(path: String?, preferences: CommandCenterPreferencesStore, control: ControlCenterModel)
+        async
+    {
         interruptionCoordinator = control.interruptionCoordinator
         preferencesStore = preferences
-        DebugLog.writeDiagnostic("repository.workflow set path=\(path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") active=\(activePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") snapshot=\(repository.path.isEmpty ? "empty" : URL(fileURLWithPath: repository.path).lastPathComponent) git=\(repository.isGitRepository)")
+        DebugLog.writeDiagnostic(
+            "repository.workflow set path=\(path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") active=\(activePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") snapshot=\(repository.path.isEmpty ? "empty" : URL(fileURLWithPath: repository.path).lastPathComponent) git=\(repository.isGitRepository)"
+        )
         if path == activePath {
             guard let path,
-                  repository.path != path || !repository.isGitRepository else { return }
-            DebugLog.writeDiagnostic("repository.workflow same_path_refresh path=\(URL(fileURLWithPath: path).lastPathComponent)")
+                repository.path != path || !repository.isGitRepository
+            else { return }
+            DebugLog.writeDiagnostic(
+                "repository.workflow same_path_refresh path=\(URL(fileURLWithPath: path).lastPathComponent)")
             await refresh(preferences: preferences, control: control)
             return
         }
@@ -146,7 +171,18 @@ final class DeveloperWorkflowModel: ObservableObject {
         branches = []
         guard path != nil else {
             DebugLog.writeDiagnostic("repository.workflow cleared")
-            repository = .empty; repositoryFingerprint = nil; githubRepository = nil; githubPullRequests = []; githubError = nil; hasLoadedGitHub = false; changes = nil; baselineStatus = .none; isRefreshing = false; control.setDevelopmentContextProjection(nil); syncWatchers(preferences: preferences, control: control); return
+            repository = .empty
+            repositoryFingerprint = nil
+            githubRepository = nil
+            githubPullRequests = []
+            githubError = nil
+            hasLoadedGitHub = false
+            changes = nil
+            baselineStatus = .none
+            isRefreshing = false
+            control.setDevelopmentContextProjection(nil)
+            syncWatchers(preferences: preferences, control: control)
+            return
         }
         await refresh(preferences: preferences, control: control)
         syncWatchers(preferences: preferences, control: control)
@@ -155,7 +191,10 @@ final class DeveloperWorkflowModel: ObservableObject {
     func refresh(preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async {
         preferencesStore = preferences
         guard let path = activePath else { return }
-        let token = UUID(); generation = token; isRefreshing = true; error = nil
+        let token = UUID()
+        generation = token
+        isRefreshing = true
+        error = nil
         async let snapshot = RepositoryService.inspect(path: path)
         async let changes = RepositoryService.changeSnapshot(path: path)
         async let worktrees = RepositoryService.worktrees(path: path)
@@ -164,7 +203,10 @@ final class DeveloperWorkflowModel: ObservableObject {
         async let githubRemote = RepositoryService.githubRemote(path: path)
         async let recentCommits = RepositoryService.recentCommits(path: path)
         async let stashEntries = RepositoryService.stashes(path: path)
-        let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint, resolvedGitHubRemote) = await (snapshot, changes, worktrees, branches, fingerprint, githubRemote)
+        let (
+            resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint,
+            resolvedGitHubRemote
+        ) = await (snapshot, changes, worktrees, branches, fingerprint, githubRemote)
         guard token == generation, path == activePath else { return }
         let (resolvedCommits, resolvedStashes) = await (recentCommits, stashEntries)
         guard token == generation, path == activePath else { return }
@@ -173,17 +215,25 @@ final class DeveloperWorkflowModel: ObservableObject {
         if let resolvedCommits { commits = resolvedCommits }
         commitsError = resolvedCommits == nil ? "Could not refresh commits. Refresh to try again." : nil
         let githubRepositoryChanged = githubRepository != resolvedGitHubRemote
-        repository = resolvedSnapshot; repositoryFingerprint = resolvedFingerprint; githubRepository = resolvedGitHubRemote; self.changes = resolvedChanges; self.worktrees = resolvedWorktrees; self.branches = resolvedBranches
+        repository = resolvedSnapshot
+        repositoryFingerprint = resolvedFingerprint
+        githubRepository = resolvedGitHubRemote
+        self.changes = resolvedChanges
+        self.worktrees = resolvedWorktrees
+        self.branches = resolvedBranches
         if githubRepositoryChanged {
             githubPullRequests = []
             githubError = nil
             hasLoadedGitHub = false
         }
-        DebugLog.writeDiagnostic("repository.workflow refreshed path=\(resolvedSnapshot.path.isEmpty ? "empty" : URL(fileURLWithPath: resolvedSnapshot.path).lastPathComponent) branch=\(resolvedSnapshot.branch) changed=\(resolvedSnapshot.changedFiles) git=\(resolvedSnapshot.isGitRepository)")
+        DebugLog.writeDiagnostic(
+            "repository.workflow refreshed path=\(resolvedSnapshot.path.isEmpty ? "empty" : URL(fileURLWithPath: resolvedSnapshot.path).lastPathComponent) branch=\(resolvedSnapshot.branch) changed=\(resolvedSnapshot.changedFiles) git=\(resolvedSnapshot.isGitRepository)"
+        )
         control.setDevelopmentContextProjection(resolvedSnapshot)
         if let resolvedFingerprint { watchedFingerprints[resolvedSnapshot.repositoryID] = resolvedFingerprint }
         isRefreshing = false
-        updateBaselineStatus(preferences: preferences, repositoryID: resolvedSnapshot.repositoryID, fingerprint: resolvedFingerprint)
+        updateBaselineStatus(
+            preferences: preferences, repositoryID: resolvedSnapshot.repositoryID, fingerprint: resolvedFingerprint)
         updateWatchState(preferences: preferences)
 
         // Load GitHub data as part of the repository refresh. Previously the
@@ -204,7 +254,11 @@ final class DeveloperWorkflowModel: ObservableObject {
         isRefreshingGitHub = true
         defer { isRefreshingGitHub = false }
         let result = await client.pullRequests(for: requestedRepository)
-        guard Self.acceptsGitHubRefresh(requestedRepository: requestedRepository, currentRepository: githubRepository, requestedGeneration: requestedGeneration, currentGeneration: generation) else { return }
+        guard
+            Self.acceptsGitHubRefresh(
+                requestedRepository: requestedRepository, currentRepository: githubRepository,
+                requestedGeneration: requestedGeneration, currentGeneration: generation)
+        else { return }
         switch result {
         case .success(let pullRequests):
             githubPullRequests = pullRequests
@@ -252,7 +306,10 @@ final class DeveloperWorkflowModel: ObservableObject {
         process.standardError = outputPipe
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             let output = String(decoding: data, as: UTF8.self)
             DispatchQueue.main.async {
                 guard let self, self.githubAuthenticationProcess != nil else { return }
@@ -316,7 +373,8 @@ final class DeveloperWorkflowModel: ObservableObject {
 
         isSigningOutGitHub = true
         authenticateAfterGitHubSignOut = thenAuthenticate
-        githubAuthenticationNotice = thenAuthenticate ? "Signing out before a clean GitHub sign-in…" : "Signing out of GitHub…"
+        githubAuthenticationNotice =
+            thenAuthenticate ? "Signing out before a clean GitHub sign-in…" : "Signing out of GitHub…"
         githubAuthenticationCode = nil
 
         let process = Process()
@@ -342,7 +400,8 @@ final class DeveloperWorkflowModel: ObservableObject {
                     self.githubAuthenticationNotice = "Opening a clean GitHub sign-in…"
                     self.authenticateGitHub()
                 } else {
-                    self.githubAuthenticationNotice = completed.terminationStatus == 0 ? "GitHub signed out." : "No GitHub session was stored."
+                    self.githubAuthenticationNotice =
+                        completed.terminationStatus == 0 ? "GitHub signed out." : "No GitHub session was stored."
                 }
             }
         }
@@ -371,7 +430,8 @@ final class DeveloperWorkflowModel: ObservableObject {
     }
 
     private func openGitHubDevicePageIfPresent() {
-        let tokens = githubAuthenticationOutput
+        let tokens =
+            githubAuthenticationOutput
             .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\r" || $0 == "\t" })
             .map(String.init)
 
@@ -379,7 +439,8 @@ final class DeveloperWorkflowModel: ObservableObject {
         // label may be followed by words such as “in” or “browser”). Search
         // every token for the device-code shape instead of assuming the next
         // token is the value.
-        if let candidate = tokens
+        if let candidate =
+            tokens
             .map({ $0.trimmingCharacters(in: .punctuationCharacters) })
             .first(where: {
                 let parts = $0.split(separator: "-", omittingEmptySubsequences: true)
@@ -387,36 +448,47 @@ final class DeveloperWorkflowModel: ObservableObject {
                 // characters, a hyphen, then four more characters. This
                 // excludes prose such as “one-time” from being displayed as
                 // the code.
-                return parts.count == 2 && parts.allSatisfy { part in
-                    part.count == 4 && part.allSatisfy { $0.isLetter || $0.isNumber }
-                }
-            }) {
+                return parts.count == 2
+                    && parts.allSatisfy { part in
+                        part.count == 4 && part.allSatisfy { $0.isLetter || $0.isNumber }
+                    }
+            })
+        {
             githubAuthenticationCode = candidate
             githubAuthenticationNotice = "Enter this code in the GitHub browser window."
         }
 
-        let candidates = githubAuthenticationOutput
+        let candidates =
+            githubAuthenticationOutput
             .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\r" || $0 == "\t" })
             .map(String.init)
-        guard let rawURL = candidates.first(where: {
-            ($0.hasPrefix("https://github.com/") || $0.hasPrefix("http://github.com/")) &&
-            ($0.contains("/login/device") || $0.contains("/login/oauth"))
-        }), let url = URL(string: rawURL.trimmingCharacters(in: .punctuationCharacters)) else { return }
+        guard
+            let rawURL = candidates.first(where: {
+                ($0.hasPrefix("https://github.com/") || $0.hasPrefix("http://github.com/"))
+                    && ($0.contains("/login/device") || $0.contains("/login/oauth"))
+            }), let url = URL(string: rawURL.trimmingCharacters(in: .punctuationCharacters))
+        else { return }
         ExternalOpen.open(url)
         if githubAuthenticationCode == nil {
             githubAuthenticationNotice = "GitHub sign-in opened in your browser. Finish the device verification there."
         }
     }
 
-    nonisolated static func acceptsGitHubRefresh(requestedRepository: GitHubRepositoryReference, currentRepository: GitHubRepositoryReference?, requestedGeneration: UUID, currentGeneration: UUID) -> Bool {
+    nonisolated static func acceptsGitHubRefresh(
+        requestedRepository: GitHubRepositoryReference, currentRepository: GitHubRepositoryReference?,
+        requestedGeneration: UUID, currentGeneration: UUID
+    ) -> Bool {
         requestedGeneration == currentGeneration && requestedRepository == currentRepository
     }
 
     var githubIntegrationState: GitHubIntegrationState {
-        GitHubIntegrationPresentation.state(repository: githubRepository, hasLoaded: hasLoadedGitHub, error: githubError)
+        GitHubIntegrationPresentation.state(
+            repository: githubRepository, hasLoaded: hasLoadedGitHub, error: githubError)
     }
 
-    func switchBranch(_ branch: String, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async -> Bool {
+    func switchBranch(_ branch: String, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async
+        -> Bool
+    {
         guard let path = activePath, repository.isGitRepository, !isMutatingSourceControl else { return false }
         isRefreshing = true
         defer { isRefreshing = false }
@@ -429,8 +501,12 @@ final class DeveloperWorkflowModel: ObservableObject {
         return true
     }
 
-    func applySourceControl(_ action: RepositorySourceControlAction, path: String, refresh: () async -> Void) async -> Bool {
-        guard !isMutatingSourceControl, !isRefreshing, activePath == path, repository.path == path, repository.isGitRepository else { return false }
+    func applySourceControl(_ action: RepositorySourceControlAction, path: String, refresh: () async -> Void) async
+        -> Bool
+    {
+        guard !isMutatingSourceControl, !isRefreshing, activePath == path, repository.path == path,
+            repository.isGitRepository
+        else { return false }
         isMutatingSourceControl = true
         sourceControlError = nil
         defer { isMutatingSourceControl = false }
@@ -444,13 +520,15 @@ final class DeveloperWorkflowModel: ObservableObject {
     func runReview(preferences: CommandCenterPreferencesStore) async {
         preferencesStore = preferences
         guard let path = activePath else { return }
-        let token = UUID(); generation = token
+        let token = UUID()
+        generation = token
         let result = await RepositoryService.review(path: path)
         guard token == generation, path == activePath, let result else { return }
         review = result
         reviewedFileIDs = []
         watchedFingerprints[result.repositoryID] = result.fingerprint
-        updateBaselineStatus(preferences: preferences, repositoryID: result.repositoryID, fingerprint: result.fingerprint)
+        updateBaselineStatus(
+            preferences: preferences, repositoryID: result.repositoryID, fingerprint: result.fingerprint)
     }
 
     var canSaveReviewBaseline: Bool {
@@ -464,16 +542,26 @@ final class DeveloperWorkflowModel: ObservableObject {
 
     func isReviewed(_ file: RepositoryFileChange) -> Bool { reviewedFileIDs.contains(file.id) }
 
-    func isReviewCovered(_ file: RepositoryFileChange) -> Bool { review?.files.contains(where: { $0.id == file.id }) == true }
+    func isReviewCovered(_ file: RepositoryFileChange) -> Bool {
+        review?.files.contains(where: { $0.id == file.id }) == true
+    }
 
     func toggleReviewed(_ file: RepositoryFileChange) {
-        if reviewedFileIDs.contains(file.id) { reviewedFileIDs.remove(file.id) } else { reviewedFileIDs.insert(file.id) }
+        if reviewedFileIDs.contains(file.id) {
+            reviewedFileIDs.remove(file.id)
+        } else {
+            reviewedFileIDs.insert(file.id)
+        }
     }
 
     func saveReviewBaseline(preferences: CommandCenterPreferencesStore, acknowledgedFindingIDs: [String]) {
         guard let review, canSaveReviewBaseline else { return }
-        preferences.saveBaseline(RepositoryReviewBaseline(repositoryID: review.repositoryID, headRevision: review.headRevision, fingerprint: review.fingerprint, acknowledgedFindingIDs: acknowledgedFindingIDs, completeness: review.completeness))
-        updateBaselineStatus(preferences: preferences, repositoryID: review.repositoryID, fingerprint: review.fingerprint)
+        preferences.saveBaseline(
+            RepositoryReviewBaseline(
+                repositoryID: review.repositoryID, headRevision: review.headRevision, fingerprint: review.fingerprint,
+                acknowledgedFindingIDs: acknowledgedFindingIDs, completeness: review.completeness))
+        updateBaselineStatus(
+            preferences: preferences, repositoryID: review.repositoryID, fingerprint: review.fingerprint)
         updateWatchState(preferences: preferences)
     }
 
@@ -502,7 +590,8 @@ final class DeveloperWorkflowModel: ObservableObject {
             Task { [weak self] in
                 guard let fingerprint = await RepositoryService.fingerprint(path: repository.path) else { return }
                 await MainActor.run {
-                    guard let self, token == self.watchGeneration, self.watchedPaths[repository.id] == repository.path else { return }
+                    guard let self, token == self.watchGeneration, self.watchedPaths[repository.id] == repository.path
+                    else { return }
                     self.watchedFingerprints[repository.id] = fingerprint
                 }
             }
@@ -544,7 +633,9 @@ final class DeveloperWorkflowModel: ObservableObject {
             review = refreshedReview
             reviewedFileIDs = []
         }
-        let notice = RepositoryChangeNotice(repositoryID: id, displayName: URL(fileURLWithPath: path).lastPathComponent, changedFiles: snapshot.changedFiles, createdAt: .now)
+        let notice = RepositoryChangeNotice(
+            repositoryID: id, displayName: URL(fileURLWithPath: path).lastPathComponent,
+            changedFiles: snapshot.changedFiles, createdAt: .now)
         notices.removeAll { $0.repositoryID == id }
         notices.insert(notice, at: 0)
         notices = Array(notices.prefix(20))
@@ -552,26 +643,34 @@ final class DeveloperWorkflowModel: ObservableObject {
             updateBaselineStatus(preferences: preferencesStore, repositoryID: id, fingerprint: fingerprint)
             updateWatchState(preferences: preferencesStore)
         }
-        let interruption = HermNotice(kind: .information, source: .repository, profileID: nil,
+        let interruption = HermNotice(
+            kind: .information, source: .repository, profileID: nil,
             sourceID: id, eventID: "\(fingerprint):\(notice.createdAt.timeIntervalSince1970)")
         _ = interruptionCoordinator?.admit(interruption, channel: .record)
         if notificationsEnabled, HermesAppRuntime.supportsUserNotifications,
-           interruptionCoordinator?.admit(interruption, channel: .system) != false {
+            interruptionCoordinator?.admit(interruption, channel: .system) != false
+        {
             let content = UNMutableNotificationContent()
             content.title = "Repository changed"
             content.body = "\(notice.displayName): \(notice.changedFiles) changed files"
             content.userInfo = ["repository_id": id]
-            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "hermes.repository.\(id)", content: content, trigger: nil))
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "hermes.repository.\(id)", content: content, trigger: nil))
         }
     }
 
-    private func updateBaselineStatus(preferences: CommandCenterPreferencesStore?, repositoryID: String, fingerprint: String?) {
+    private func updateBaselineStatus(
+        preferences: CommandCenterPreferencesStore?, repositoryID: String, fingerprint: String?
+    ) {
         guard let preferences else { return }
         baselineStatus = .make(baseline: preferences.baseline(for: repositoryID), fingerprint: fingerprint)
     }
 
     private func updateWatchState(preferences: CommandCenterPreferencesStore) {
-        guard repository.isGitRepository, preferences.isWatchingRepository(repository.repositoryID) else { watchState = .inactive; return }
+        guard repository.isGitRepository, preferences.isWatchingRepository(repository.repositoryID) else {
+            watchState = .inactive
+            return
+        }
         switch baselineStatus {
         case .stale: watchState = .stale("Review baseline is stale.")
         default: watchState = .watching
@@ -580,9 +679,12 @@ final class DeveloperWorkflowModel: ObservableObject {
 
     func handoffPrompt(focus: String, verification: VerificationSummary?, review: RepositoryReviewSnapshot?) -> String {
         let scope = verification?.evidence?.scope ?? "unknown"
-        let reviewSummary = review.map { "\($0.blockerCount) blockers, \($0.warningCount) warnings, \($0.completeness.rawValue) coverage" } ?? "not run"
+        let reviewSummary =
+            review.map {
+                "\($0.blockerCount) blockers, \($0.warningCount) warnings, \($0.completeness.rawValue) coverage"
+            } ?? "not run"
         return """
-        Create a concise Markdown handoff for this active Hermes session. Do not edit files, create tasks, commits, branches, or messages. Report unknown information honestly. Include sections: Work completed; Important decisions; Files changed; Verification evidence (scope: \(scope)); Unresolved findings; Running work; Recommended next actions. Local review summary: \(reviewSummary). Focus: \(focus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "general handoff" : focus).
-        """
+            Create a concise Markdown handoff for this active Hermes session. Do not edit files, create tasks, commits, branches, or messages. Report unknown information honestly. Include sections: Work completed; Important decisions; Files changed; Verification evidence (scope: \(scope)); Unresolved findings; Running work; Recommended next actions. Local review summary: \(reviewSummary). Focus: \(focus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "general handoff" : focus).
+            """
     }
 }

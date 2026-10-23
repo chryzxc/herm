@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 extension DockPopover {
@@ -10,7 +10,8 @@ extension DockPopover {
     var immersiveVoiceStage: some View {
         ZStack {
             Color.dockCanvas
-            RadialGradient(colors: [Color.dockAccent.opacity(0.10), .clear], center: .center, startRadius: 40, endRadius: 700)
+            RadialGradient(
+                colors: [Color.dockAccent.opacity(0.10), .clear], center: .center, startRadius: 40, endRadius: 700)
             voiceStage(immersive: true)
         }
         .ignoresSafeArea()
@@ -29,10 +30,11 @@ extension DockPopover {
                 VoiceMeteredOrb(
                     mode: voiceOrbMode, speech: speechInput.reading, mic: micLevelMeter.reading,
                     showsRing: voiceOrbMode == .listening && !speechInput.isRecording,
-                    hermFaceID: conversationHermFaceID)
-                    .scaleEffect(orbScale)
-                    .frame(width: 320 * orbScale, height: 320 * orbScale)
-                    .contentShape(Circle())
+                    hermFaceID: conversationHermFaceID
+                )
+                .scaleEffect(orbScale)
+                .frame(width: 320 * orbScale, height: 320 * orbScale)
+                .contentShape(Circle())
             }
             .buttonStyle(.dockHover)
             .help(voiceOrbHelp)
@@ -51,26 +53,31 @@ extension DockPopover {
                 // captions' place until answered.
                 voicePromptCard
                     .frame(maxWidth: immersive ? 520 : 420)
-                    .shadow(color: (model.approvalText != nil ? Color.dockWarning : Color.dockAccent).opacity(0.35), radius: 28)
+                    .shadow(
+                        color: (model.approvalText != nil ? Color.dockWarning : Color.dockAccent).opacity(0.35),
+                        radius: 28
+                    )
                     .padding(.horizontal, 16)
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             } else {
-            VStack(spacing: 8) {
-                if let user = captions.user {
-                    Text(user)
-                        .dockFont(.navigation, weight: .medium)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(2)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                VStack(spacing: 8) {
+                    if let user = captions.user {
+                        Text(user)
+                            .dockFont(.navigation, weight: .medium)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(2)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                    if let caption = model.voiceState.isNativeConversationActive
+                        ? model.voiceSpokenCaption : captions.reply?.text
+                    {
+                        VoiceReplyCaption(text: caption, immersive: immersive)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
                 }
-                if let caption = model.voiceState.isNativeConversationActive ? model.voiceSpokenCaption : captions.reply?.text {
-                    VoiceReplyCaption(text: caption, immersive: immersive)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-            }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: immersive ? 560 : 360, minHeight: 96, alignment: .top)
-            .padding(.horizontal, 16)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: immersive ? 560 : 360, minHeight: 96, alignment: .top)
+                .padding(.horizontal, 16)
             }
 
             voiceControls(style: style)
@@ -80,10 +87,12 @@ extension DockPopover {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             // A pending approval or question dims everything else.
-            VoiceActivityPillsLayer(model: model, cardWidth: immersive ? 280 : 200, cronJobs: controlCenter.cronJobs,
-                                    leavesLeftFree: !voiceHUD.cards.isEmpty)
-                .padding(immersive ? 24 : 12)
-                .opacity(hasPendingVoicePrompt ? 0.2 : 1)
+            VoiceActivityPillsLayer(
+                model: model, cardWidth: immersive ? 280 : 200, cronJobs: controlCenter.cronJobs,
+                leavesLeftFree: !voiceHUD.cards.isEmpty
+            )
+            .padding(immersive ? 24 : 12)
+            .opacity(hasPendingVoicePrompt ? 0.2 : 1)
         }
         .overlay(alignment: .leading) {
             GeometryReader { geometry in
@@ -155,17 +164,25 @@ extension DockPopover {
                 Text(voiceStatusText)
                     .dockFont(.body, weight: .semibold)
                     .tracking(0.75)
-                    .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent))
+                    .foregroundStyle(
+                        model.voiceState == .listening
+                            ? Color.dockSuccess
+                            : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent)
+                    )
                     .contentTransition(.opacity)
             }
         } else if model.status == .working && !speechInput.isRecording {
             voiceActivityIndicator
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         } else if speechInput.isRecording || voiceOutput.isSpeaking {
-            Text(speechInput.isRecording ? "\(model.agentDisplayName.uppercased()) IS LISTENING" : "\(model.agentDisplayName.uppercased()) IS SPEAKING")
-                .dockFont(.body, weight: .semibold)
-                .tracking(0.75)
-                .foregroundStyle(speechInput.isRecording ? Color.dockSuccess : Color.dockAccent)
+            Text(
+                speechInput.isRecording
+                    ? "\(model.agentDisplayName.uppercased()) IS LISTENING"
+                    : "\(model.agentDisplayName.uppercased()) IS SPEAKING"
+            )
+            .dockFont(.body, weight: .semibold)
+            .tracking(0.75)
+            .foregroundStyle(speechInput.isRecording ? Color.dockSuccess : Color.dockAccent)
         }
     }
 
@@ -173,7 +190,8 @@ extension DockPopover {
     /// are asked aloud instead when spoken answers work.
     var hasPendingVoicePrompt: Bool {
         model.approvalText != nil
-            || (showsVoiceClarificationCard && model.status == .needsClarification && model.clarificationQuestion != nil)
+            || (showsVoiceClarificationCard && model.status == .needsClarification
+                && model.clarificationQuestion != nil)
             || model.valuePrompt != nil
     }
 
@@ -204,9 +222,11 @@ extension DockPopover {
         if model.voiceState == .thinking, !steering.isEmpty { return ("→ " + steering, nil) }
         // While Hermes transcribes, the last user line is the previous turn.
         guard voiceOrbMode != .listening, voiceOrbMode != .idle, voiceOrbMode != .transcribing,
-              let userIndex = model.messages.lastIndex(where: { $0.role == .user }) else { return (nil, nil) }
+            let userIndex = model.messages.lastIndex(where: { $0.role == .user })
+        else { return (nil, nil) }
         let reply = model.messages[(userIndex + 1)...].last { $0.role == .hermes }
-        let text = reply.map(GenerativeUIIntegration.readableText)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let text =
+            reply.map(GenerativeUIIntegration.readableText)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return (
             "“" + model.messages[userIndex].text + "”",
             reply.flatMap { text.isEmpty ? nil : ($0.id, text) }
@@ -239,7 +259,8 @@ extension DockPopover {
             case .idle:
                 // While muted, the mute toggle is the resume control.
                 if !model.isVoiceMicMuted {
-                    DockIconButton(icon: .play, label: "Resume listening", size: 34, style: style, action: handleVoiceOrbTap)
+                    DockIconButton(
+                        icon: .play, label: "Resume listening", size: 34, style: style, action: handleVoiceOrbTap)
                 }
             case .transcribing:
                 DockIconButton(icon: .microphone, label: "Transcribing", isBusy: true, size: 34, style: style) {}
@@ -308,12 +329,13 @@ extension DockPopover {
         // A pending approval or question waits for a spoken answer.
         let awaitsAnswer = model.voicePromptSpeech != nil
         guard sessionWorkspaceMode == .voice,
-              !model.voiceState.isNativeConversationActive,
-              model.status == .idle || awaitsAnswer,
-              !model.isSending || awaitsAnswer,
-              !speechInput.isRecording,
-              !speechInput.isStarting,
-              !voiceOutput.isSpeaking else { return }
+            !model.voiceState.isNativeConversationActive,
+            model.status == .idle || awaitsAnswer,
+            !model.isSending || awaitsAnswer,
+            !speechInput.isRecording,
+            !speechInput.isStarting,
+            !voiceOutput.isSpeaking
+        else { return }
         // A new local turn resets transient capture failures. Leaving the old
         // error as a guard made the voice orb's retry action a permanent no-op.
         speechInput.startListening()

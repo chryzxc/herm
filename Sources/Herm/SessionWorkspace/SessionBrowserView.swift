@@ -23,7 +23,10 @@ enum InAppBrowser {
 
 /// Responsive-mode widths for the page.
 enum BrowserViewport: Int, CaseIterable, Identifiable {
-    case fit = 0, phone = 390, tablet = 768, desktop = 1280
+    case fit = 0
+    case phone = 390
+    case tablet = 768
+    case desktop = 1280
     var id: Int { rawValue }
     var title: String {
         switch self {
@@ -68,28 +71,31 @@ struct BrowserAnnotation: Decodable {
             var value = "#888888"
             NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
                 guard let c = NSColor(color).usingColorSpace(.sRGB)?.withAlphaComponent(1) else { return }
-                value = String(format: "#%02X%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255),
-                               Int(c.blueComponent * 255), Int(c.alphaComponent * 255))
+                value = String(
+                    format: "#%02X%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255),
+                    Int(c.blueComponent * 255), Int(c.alphaComponent * 255))
             }
             return value
         }
-        let tokens = ["accent": palette.accent, "on-accent": palette.onAccent, "surface": palette.surface,
-                      "field": palette.background, "text": palette.primaryText, "muted": palette.secondaryText,
-                      "border": palette.divider]
+        let tokens = [
+            "accent": palette.accent, "on-accent": palette.onAccent, "surface": palette.surface,
+            "field": palette.background, "text": palette.primaryText, "muted": palette.secondaryText,
+            "border": palette.divider,
+        ]
         return "{" + tokens.map { "\"\($0.key)\":\"\(hex($0.value))\"" }.joined(separator: ",") + "}"
     }
 
     /// Page-world hook for the WebKit tab; agent mode reads the console over CDP instead.
     static let consoleHook = """
-    (() => {
-      const h = window.webkit?.messageHandlers?.hermConsole; if (!h) return;
-      const str = (a) => a instanceof Error ? (a.stack || String(a)) : typeof a === 'object' ? (() => { try { return JSON.stringify(a) } catch { return String(a) } })() : String(a);
-      const send = (args) => { try { h.postMessage(args.map(str).join(' ').slice(0, 2000)) } catch {} };
-      const error = console.error; console.error = function (...a) { send(a); return error.apply(this, a) };
-      addEventListener('error', (e) => send([e.error || e.message]));
-      addEventListener('unhandledrejection', (e) => send(['Unhandled rejection:', e.reason]));
-    })();
-    """
+        (() => {
+          const h = window.webkit?.messageHandlers?.hermConsole; if (!h) return;
+          const str = (a) => a instanceof Error ? (a.stack || String(a)) : typeof a === 'object' ? (() => { try { return JSON.stringify(a) } catch { return String(a) } })() : String(a);
+          const send = (args) => { try { h.postMessage(args.map(str).join(' ').slice(0, 2000)) } catch {} };
+          const error = console.error; console.error = function (...a) { send(a); return error.apply(this, a) };
+          addEventListener('error', (e) => send([e.error || e.message]));
+          addEventListener('unhandledrejection', (e) => send(['Unhandled rejection:', e.reason]));
+        })();
+        """
 
     var context: ChatContext {
         let host = URL(string: url)?.host() ?? url
@@ -142,7 +148,10 @@ struct SessionBrowserView: View {
     @State private var field = ""
     @FocusState private var isEditingAddress: Bool
 
-    init(model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil, discoveryActive: Bool = true) {
+    init(
+        model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil,
+        discoveryActive: Bool = true
+    ) {
         self.discoveryActive = discoveryActive
         self.model = model
         self.workspace = workspace
@@ -150,8 +159,9 @@ struct SessionBrowserView: View {
         let controller = browser ?? workspace.primary
         self.browser = controller
         agent = workspace.agent
-        _field = State(initialValue: browser == nil && workspace.agent.isActive
-            ? workspace.agent.activePage?.url ?? controller.address : controller.currentURL ?? controller.address)
+        _field = State(
+            initialValue: browser == nil && workspace.agent.isActive
+                ? workspace.agent.activePage?.url ?? controller.address : controller.currentURL ?? controller.address)
     }
 
     private var showsAgent: Bool { isPrimary && agent.isActive }
@@ -216,7 +226,8 @@ struct SessionBrowserView: View {
         .onAppear {
             browser.model = model
             if browser.currentURL == nil, browser.address.isEmpty || browser.address == "about:blank",
-               let restored = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL {
+                let restored = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL
+            {
                 browser.address = restored
             }
             field = displayAddress(pageURL.isEmpty ? browser.address : pageURL)
@@ -273,11 +284,15 @@ struct SessionBrowserView: View {
             DockIconButton(icon: .arrowRight, label: "Forward", style: palette) {
                 if showsAgent { agent.goForward() } else { browser.web.goForward() }
             }.disabled(!navigation.canGoForward)
-            DockIconButton(icon: navigation.isLoading ? .x : .arrowClockwise,
-                           label: navigation.isLoading ? "Stop loading" : "Reload page (⌘R)", style: palette) {
+            DockIconButton(
+                icon: navigation.isLoading ? .x : .arrowClockwise,
+                label: navigation.isLoading ? "Stop loading" : "Reload page (⌘R)", style: palette
+            ) {
                 if navigation.isLoading {
                     if showsAgent { agent.stopLoading() } else { browser.stopLoading() }
-                } else { reload() }
+                } else {
+                    reload()
+                }
             }
         }
     }
@@ -286,8 +301,14 @@ struct SessionBrowserView: View {
         TextField("Search or enter address", text: $field)
             .textFieldStyle(DockGlassTextFieldStyle(compact: true, trailingInset: 20))
             .focused($isEditingAddress)
-            .onSubmit { go(field); isEditingAddress = false }
-            .onExitCommand { field = displayAddress(pageURL); isEditingAddress = false }
+            .onSubmit {
+                go(field)
+                isEditingAddress = false
+            }
+            .onExitCommand {
+                field = displayAddress(pageURL)
+                isEditingAddress = false
+            }
             .accessibilityLabel("Browser address")
             .help(navigation.isLoading ? "Loading page…" : "Search or enter address (⌘L)")
             .overlay(alignment: .trailing) {
@@ -301,17 +322,24 @@ struct SessionBrowserView: View {
 
     private var pageActions: some View {
         HStack(spacing: 6) {
-            DockIconButton(icon: .cursorClick, label: annotating ? "Stop Annotating (Esc)" : "Annotate: click an element to comment on it",
-                           isProminent: annotating, style: palette) {
+            DockIconButton(
+                icon: .cursorClick,
+                label: annotating ? "Stop Annotating (Esc)" : "Annotate: click an element to comment on it",
+                isProminent: annotating, style: palette
+            ) {
                 if showsAgent { agent.annotating.toggle() } else { browser.annotating.toggle() }
             }
             .disabled(pageURL.isEmpty || pageURL == "about:blank")
-            LocalServersMenu(processIDs: TerminalWorkspaceStore.shared.processIDs(matching:
-                WorkspaceIdentity.session(model)), active: discoveryActive, toolbarControl: true)
+            LocalServersMenu(
+                processIDs: TerminalWorkspaceStore.shared.processIDs(
+                    matching:
+                        WorkspaceIdentity.session(model)), active: discoveryActive, toolbarControl: true)
             Spacer(minLength: 0)
             DockMenu {
                 ForEach(BrowserViewport.allCases) { option in
-                    DockMenuCheckRow(title: option.title, isSelected: option == viewport) { viewportRaw = option.rawValue }
+                    DockMenuCheckRow(title: option.title, isSelected: option == viewport) {
+                        viewportRaw = option.rawValue
+                    }
                 }
             } label: {
                 HStack(spacing: 5) {
@@ -341,14 +369,19 @@ struct SessionBrowserView: View {
             Button("Open in Default Browser", icon: .arrowSquareOut) {
                 if let url = URL(string: pageURL) { ExternalOpen.open(url) }
             }.disabled(!["http", "https"].contains(URL(string: pageURL)?.scheme?.lowercased() ?? ""))
-            Button(consoleErrors.isEmpty ? "No Console Errors" : "Send \(consoleErrors.count) Console Errors", icon: .bugBeetle) {
+            Button(
+                consoleErrors.isEmpty ? "No Console Errors" : "Send \(consoleErrors.count) Console Errors",
+                icon: .bugBeetle
+            ) {
                 sendConsole()
             }
             .disabled(consoleErrors.isEmpty)
             if showsAgent, agent.pages.count > 1 {
                 DockMenuSection("Agent Tabs") {
                     ForEach(agent.pages) { page in
-                        Button { agent.select(page) } label: {
+                        Button {
+                            agent.select(page)
+                        } label: {
                             let title = page.title.isEmpty ? page.url : page.title
                             if page.id == agent.activeTargetID { Label(title, icon: .check) } else { Text(title) }
                         }
@@ -364,7 +397,9 @@ struct SessionBrowserView: View {
                 .contentShape(Rectangle())
         }
         .help(consoleErrors.isEmpty ? "More browser actions" : "\(consoleErrors.count) console errors")
-        .accessibilityLabel(consoleErrors.isEmpty ? "More browser actions" : "More browser actions, \(consoleErrors.count) console errors")
+        .accessibilityLabel(
+            consoleErrors.isEmpty
+                ? "More browser actions" : "More browser actions, \(consoleErrors.count) console errors")
     }
 
     @ViewBuilder private var pageContent: some View {
@@ -374,14 +409,18 @@ struct SessionBrowserView: View {
             } else {
                 GeometryReader { geo in
                     BrowserWebView(web: browser.web)
-                        .frame(width: viewport == .fit ? geo.size.width : min(geo.size.width, CGFloat(viewport.rawValue)))
+                        .frame(
+                            width: viewport == .fit ? geo.size.width : min(geo.size.width, CGFloat(viewport.rawValue))
+                        )
                         .frame(maxWidth: .infinity)
                         .onAppear { browser.zoom(toFit: viewport.rawValue, in: geo.size.width) }
                         .onChange(of: geo.size.width) { _, width in browser.zoom(toFit: viewport.rawValue, in: width) }
                         .onChange(of: viewportRaw) { _, raw in browser.zoom(toFit: raw, in: geo.size.width) }
                 }
             }
-            if (pageURL.isEmpty || pageURL == "about:blank"), !navigation.isLoading, !showsAgent || agent.state == .running {
+            if pageURL.isEmpty || pageURL == "about:blank", !navigation.isLoading,
+                !showsAgent || agent.state == .running
+            {
                 VStack(spacing: 8) {
                     DockIcon(.globe, size: 24, color: Color.dockSecondaryText)
                     Text("Open a page").dockFont(.body, weight: .semibold)
@@ -428,17 +467,22 @@ struct SessionBrowserView: View {
         let selection = showsAgent ? await agent.selection() : await browser.selection()
         guard model.browserSessionKey == workspace.key else { return }
         var body = "Regarding the page \(url)" + (pageTitle.isEmpty ? "" : " (\"\(pageTitle)\")")
-        if !selection.isEmpty { body += "\nSelected text:\n> " + selection.replacingOccurrences(of: "\n", with: "\n> ") }
+        if !selection.isEmpty {
+            body += "\nSelected text:\n> " + selection.replacingOccurrences(of: "\n", with: "\n> ")
+        }
         let title = pageTitle.isEmpty ? (URL(string: url)?.host() ?? url) : pageTitle
-        BrowserAnnotation.deliver(ChatContext(id: "browser-page:\(url)", title: title, body: body), image: nil, to: model)
+        BrowserAnnotation.deliver(
+            ChatContext(id: "browser-page:\(url)", title: title, body: body), image: nil, to: model)
     }
 
     private func sendConsole() {
         let errors = consoleErrors
         guard !errors.isEmpty else { return }
         let body = "Console errors on \(pageURL):\n```\n\(errors.joined(separator: "\n"))\n```"
-        BrowserAnnotation.deliver(ChatContext(id: "browser-console:\(UUID().uuidString)", title: "\(errors.count) console errors",
-                                              body: body), image: nil, to: model)
+        BrowserAnnotation.deliver(
+            ChatContext(
+                id: "browser-console:\(UUID().uuidString)", title: "\(errors.count) console errors",
+                body: body), image: nil, to: model)
     }
 
     private func open(_ url: URL) {
@@ -486,20 +530,26 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
         let content = configuration.userContentController
         let handler = WeakMessageHandler(self)
         // Annotate runs in Herm's own content world: the page can't call its handler.
-        content.addUserScript(WKUserScript(source: BrowserAnnotation.script, injectionTime: .atDocumentEnd,
-                                           forMainFrameOnly: true, in: .defaultClient))
+        content.addUserScript(
+            WKUserScript(
+                source: BrowserAnnotation.script, injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true, in: .defaultClient))
         content.add(handler, contentWorld: .defaultClient, name: "hermAnnotate")
-        content.addUserScript(WKUserScript(source: BrowserAnnotation.consoleHook, injectionTime: .atDocumentStart,
-                                           forMainFrameOnly: true, in: .page))
+        content.addUserScript(
+            WKUserScript(
+                source: BrowserAnnotation.consoleHook, injectionTime: .atDocumentStart,
+                forMainFrameOnly: true, in: .page))
         content.add(handler, contentWorld: .page, name: "hermConsole")
         web.navigationDelegate = self
-        web.publisher(for: \.isLoading).combineLatest(web.publisher(for: \.canGoBack), web.publisher(for: \.canGoForward))
-            .receive(on: RunLoop.main)
-            .sink { [weak self] loading, back, forward in
-                self?.navigation.isLoading = loading
-                self?.navigation.canGoBack = back
-                self?.navigation.canGoForward = forward
-            }.store(in: &webObservations)
+        web.publisher(for: \.isLoading).combineLatest(
+            web.publisher(for: \.canGoBack), web.publisher(for: \.canGoForward)
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] loading, back, forward in
+            self?.navigation.isLoading = loading
+            self?.navigation.canGoBack = back
+            self?.navigation.canGoForward = forward
+        }.store(in: &webObservations)
         web.publisher(for: \.url).receive(on: RunLoop.main)
             .sink { [weak self] url in
                 guard let self, let url else { return }
@@ -571,7 +621,8 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     private func failed(_ navigation: WKNavigation?, error: Error) {
         let nsError = error as NSError
         guard !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled),
-              activeNavigation == nil || activeNavigation === navigation else { return }
+            activeNavigation == nil || activeNavigation === navigation
+        else { return }
         self.navigation.fail(HermesDiagnosticsService.safeSummary(error.localizedDescription))
     }
 
@@ -589,7 +640,9 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
             Task {
                 let image = await snapshot(annotation.rect)
                 evaluate("window.__hermAnnotate?.done()")
-                if let model, model.browserSessionKey == key { BrowserAnnotation.deliver(annotation.context, image: image, to: model) }
+                if let model, model.browserSessionKey == key {
+                    BrowserAnnotation.deliver(annotation.context, image: image, to: model)
+                }
             }
         case nil:
             break

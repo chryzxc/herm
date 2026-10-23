@@ -29,7 +29,9 @@ struct QuotaProviderDescriptor: Identifiable, Equatable, Hashable {
 }
 
 enum QuotaProviderCatalog {
-    static let all: [QuotaProviderDescriptor] = [codexHermes, opencode, glm, deepseek, kimi, openrouter, claude, antigravity]
+    static let all: [QuotaProviderDescriptor] = [
+        codexHermes, opencode, glm, deepseek, kimi, openrouter, claude, antigravity,
+    ]
     private static let orderDefaultsKey = "quota.providerOrder"
 
     static let codexHermes = QuotaProviderDescriptor(
@@ -49,7 +51,8 @@ enum QuotaProviderCatalog {
         summary: "OpenCode Go session, weekly, and monthly allowance windows.",
         website: URL(string: "https://opencode.ai"),
         connect: .apiKey(
-            instruction: "Paste your OpenCode Go API key. It is stored in Herm's own provider config and used only to read quota.",
+            instruction:
+                "Paste your OpenCode Go API key. It is stored in Herm's own provider config and used only to read quota.",
             storageKey: "opencode-go"
         )
     )
@@ -60,7 +63,8 @@ enum QuotaProviderCatalog {
         summary: "Z.ai GLM Coding Plan session, weekly, and web-search windows.",
         website: URL(string: "https://z.ai"),
         connect: .apiKey(
-            instruction: "Paste your Z.ai API key. It is stored in Herm's own provider config and used only to read quota.",
+            instruction:
+                "Paste your Z.ai API key. It is stored in Herm's own provider config and used only to read quota.",
             storageKey: "glm"
         )
     )
@@ -71,7 +75,8 @@ enum QuotaProviderCatalog {
         summary: "DeepSeek API pay-as-you-go balance.",
         website: URL(string: "https://platform.deepseek.com"),
         connect: .apiKey(
-            instruction: "Paste your DeepSeek API key, or leave it to Hermes' DEEPSEEK_API_KEY. It is stored in Herm's own provider config and used only to read the balance.",
+            instruction:
+                "Paste your DeepSeek API key, or leave it to Hermes' DEEPSEEK_API_KEY. It is stored in Herm's own provider config and used only to read the balance.",
             storageKey: "deepseek"
         )
     )
@@ -82,7 +87,8 @@ enum QuotaProviderCatalog {
         summary: "Moonshot (Kimi) open platform pay-as-you-go balance.",
         website: URL(string: "https://platform.moonshot.ai"),
         connect: .apiKey(
-            instruction: "Paste your Moonshot platform API key, or leave it to Hermes' MOONSHOT_API_KEY / KIMI_API_KEY. It is stored in Herm's own provider config and used only to read the balance.",
+            instruction:
+                "Paste your Moonshot platform API key, or leave it to Hermes' MOONSHOT_API_KEY / KIMI_API_KEY. It is stored in Herm's own provider config and used only to read the balance.",
             storageKey: "kimi"
         )
     )
@@ -93,7 +99,8 @@ enum QuotaProviderCatalog {
         summary: "OpenRouter credits and the key's spend limit.",
         website: URL(string: "https://openrouter.ai"),
         connect: .apiKey(
-            instruction: "Paste your OpenRouter API key, or leave it to Hermes' OPENROUTER_API_KEY. It is stored in Herm's own provider config and used only to read credits.",
+            instruction:
+                "Paste your OpenRouter API key, or leave it to Hermes' OPENROUTER_API_KEY. It is stored in Herm's own provider config and used only to read credits.",
             storageKey: "openrouter"
         )
     )
@@ -105,7 +112,8 @@ enum QuotaProviderCatalog {
         website: URL(string: "https://claude.ai/code"),
         connect: .login(
             command: "claude auth login",
-            instruction: "Starts the Claude Code CLI sign-in, which opens your browser to authenticate with your Anthropic account. Herm then reads the credential the CLI stores on this Mac."
+            instruction:
+                "Starts the Claude Code CLI sign-in, which opens your browser to authenticate with your Anthropic account. Herm then reads the credential the CLI stores on this Mac."
         )
     )
 
@@ -116,7 +124,8 @@ enum QuotaProviderCatalog {
         website: URL(string: "https://antigravity.google"),
         connect: .openApp(
             applicationName: "Antigravity",
-            instruction: "Opens the Antigravity app. Sign in inside Antigravity; quota is read from its local service whenever the app is running."
+            instruction:
+                "Opens the Antigravity app. Sign in inside Antigravity; quota is read from its local service whenever the app is running."
         )
     )
 

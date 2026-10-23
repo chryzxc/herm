@@ -50,7 +50,8 @@ enum OfficeStaticMeshBatcher {
 
         func visit(_ entity: Entity) {
             if isDynamic(entity) { return }
-            if let model = entity as? ModelEntity, append(model, relativeTo: root, into: &batches, geometry: &geometry) {
+            if let model = entity as? ModelEntity, append(model, relativeTo: root, into: &batches, geometry: &geometry)
+            {
                 merged.append(model)
             }
             for child in entity.children { visit(child) }
@@ -82,8 +83,10 @@ enum OfficeStaticMeshBatcher {
     }
 
     /// Returns false when the entity cannot be merged and must stay as-is.
-    private static func append(_ entity: ModelEntity, relativeTo root: Entity, into batches: inout [MaterialKey: Batch],
-                               geometry cache: inout [ObjectIdentifier: CachedMesh]) -> Bool {
+    private static func append(
+        _ entity: ModelEntity, relativeTo root: Entity, into batches: inout [MaterialKey: Batch],
+        geometry cache: inout [ObjectIdentifier: CachedMesh]
+    ) -> Bool {
         guard let model = entity.model else { return false }
         let mesh = model.mesh
         let id = ObjectIdentifier(mesh)
@@ -93,27 +96,41 @@ enum OfficeStaticMeshBatcher {
         var keyed: [(MaterialKey, any RealityKit.Material)] = []
         for piece in pieces {
             guard model.materials.indices.contains(piece.materialIndex),
-                  let key = key(for: model.materials[piece.materialIndex]) else { return false }
+                let key = key(for: model.materials[piece.materialIndex])
+            else { return false }
             keyed.append((key, model.materials[piece.materialIndex]))
         }
         let world = entity.transformMatrix(relativeTo: root)
         for (piece, (key, material)) in zip(pieces, keyed) {
             let batch: Batch
-            if let existing = batches[key] { batch = existing } else { batch = Batch(material: material); batches[key] = batch }
+            if let existing = batches[key] {
+                batch = existing
+            } else {
+                batch = Batch(material: material)
+                batches[key] = batch
+            }
             let transform = world * piece.transform
-            let normalMatrix = simd_float3x3(columns: (
-                SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
-                SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
-                SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z))).inverse.transpose
+            let normalMatrix = simd_float3x3(
+                columns: (
+                    SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
+                    SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
+                    SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
+                )
+            ).inverse.transpose
             let base = UInt32(batch.positions.count)
             batch.positions += transformed(piece.positions, by: transform, translate: true)
-            batch.normals += transformed(piece.normals, by: simd_float4x4(
-                SIMD4(normalMatrix.columns.0, 0), SIMD4(normalMatrix.columns.1, 0),
-                SIMD4(normalMatrix.columns.2, 0), SIMD4(0, 0, 0, 1)), translate: false)
+            batch.normals += transformed(
+                piece.normals,
+                by: simd_float4x4(
+                    SIMD4(normalMatrix.columns.0, 0), SIMD4(normalMatrix.columns.1, 0),
+                    SIMD4(normalMatrix.columns.2, 0), SIMD4(0, 0, 0, 1)), translate: false)
             batch.indices += piece.indices.withUnsafeBufferPointer { source in
                 [UInt32](unsafeUninitializedCapacity: source.count) { out, count in
                     var i = 0
-                    while i < source.count { out[i] = source[i] &+ base; i &+= 1 }
+                    while i < source.count {
+                        out[i] = source[i] &+ base
+                        i &+= 1
+                    }
                     count = source.count
                 }
             }
@@ -126,28 +143,53 @@ enum OfficeStaticMeshBatcher {
     /// flattening the office's vertices take many seconds.
     /// Normals (translate == false) are renormalized.
     private static func transformed(_ vectors: [SIMD3<Float>], by m: simd_float4x4, translate: Bool) -> [SIMD3<Float>] {
-        let c0 = m.columns.0, c1 = m.columns.1, c2 = m.columns.2, c3 = m.columns.3
-        let m00 = c0.x, m10 = c0.y, m20 = c0.z, m01 = c1.x, m11 = c1.y, m21 = c1.z, m02 = c2.x, m12 = c2.y, m22 = c2.z
-        let tx: Float = translate ? c3.x : 0, ty: Float = translate ? c3.y : 0, tz: Float = translate ? c3.z : 0
+        let c0 = m.columns.0
+        let c1 = m.columns.1
+        let c2 = m.columns.2
+        let c3 = m.columns.3
+        let m00 = c0.x
+        let m10 = c0.y
+        let m20 = c0.z
+        let m01 = c1.x
+        let m11 = c1.y
+        let m21 = c1.z
+        let m02 = c2.x
+        let m12 = c2.y
+        let m22 = c2.z
+        let tx: Float = translate ? c3.x : 0
+        let ty: Float = translate ? c3.y : 0
+        let tz: Float = translate ? c3.z : 0
         // SIMD3<Float> is laid out as four floats; the fourth is padding.
         precondition(MemoryLayout<SIMD3<Float>>.stride == 4 * MemoryLayout<Float>.stride)
         return vectors.withUnsafeBufferPointer { source in
             [SIMD3<Float>](unsafeUninitializedCapacity: source.count) { buffer, count in
-                guard let input = source.baseAddress, let output = buffer.baseAddress else { count = 0; return }
+                guard let input = source.baseAddress, let output = buffer.baseAddress else {
+                    count = 0
+                    return
+                }
                 let from = UnsafeRawPointer(input).assumingMemoryBound(to: Float.self)
                 let to = UnsafeMutableRawPointer(output).assumingMemoryBound(to: Float.self)
                 var o = 0
                 let end = source.count &* 4
                 while o < end {
-                    let x = from[o], y = from[o + 1], z = from[o + 2]
+                    let x = from[o]
+                    let y = from[o + 1]
+                    let z = from[o + 2]
                     var rx = m00 * x + m01 * y + m02 * z + tx
                     var ry = m10 * x + m11 * y + m12 * z + ty
                     var rz = m20 * x + m21 * y + m22 * z + tz
                     if !translate {
                         let length = (rx * rx + ry * ry + rz * rz).squareRoot()
-                        if length > 0 { rx /= length; ry /= length; rz /= length }
+                        if length > 0 {
+                            rx /= length
+                            ry /= length
+                            rz /= length
+                        }
                     }
-                    to[o] = rx; to[o + 1] = ry; to[o + 2] = rz; to[o + 3] = 0
+                    to[o] = rx
+                    to[o + 1] = ry
+                    to[o + 2] = rz
+                    to[o + 3] = 0
                     o &+= 4
                 }
                 count = source.count
@@ -163,16 +205,21 @@ enum OfficeStaticMeshBatcher {
 
     private static func extract(_ mesh: MeshResource) -> [Geometry]? {
         let contents = mesh.contents
-        let instances: [(model: String, transform: simd_float4x4)] = contents.instances.isEmpty
+        let instances: [(model: String, transform: simd_float4x4)] =
+            contents.instances.isEmpty
             ? contents.models.map { ($0.id, matrix_identity_float4x4) }
             : contents.instances.map { ($0.model, $0.transform) }
         var pieces: [Geometry] = []
         for instance in instances {
             guard let meshModel = contents.models[instance.model] else { return nil }
             for part in meshModel.parts {
-                guard let normals = part.normals?.elements, let indices = part.triangleIndices?.elements else { return nil }
-                pieces.append(Geometry(materialIndex: part.materialIndex, transform: instance.transform,
-                                       positions: part.positions.elements, normals: normals, indices: indices))
+                guard let normals = part.normals?.elements, let indices = part.triangleIndices?.elements else {
+                    return nil
+                }
+                pieces.append(
+                    Geometry(
+                        materialIndex: part.materialIndex, transform: instance.transform,
+                        positions: part.positions.elements, normals: normals, indices: indices))
             }
         }
         return pieces
@@ -180,13 +227,17 @@ enum OfficeStaticMeshBatcher {
 
     /// Only flat, opaque colors merge; translucent glass keeps per-entity sorting.
     private static func key(for material: any RealityKit.Material) -> MaterialKey? {
-        if let simple = material as? SimpleMaterial, simple.color.texture == nil, simple.color.tint.alphaComponent >= 1 {
-            return MaterialKey(unlit: false, color: simple.color.tint, roughness: scalar(simple.roughness), metallic: scalar(simple.metallic))
+        if let simple = material as? SimpleMaterial, simple.color.texture == nil, simple.color.tint.alphaComponent >= 1
+        {
+            return MaterialKey(
+                unlit: false, color: simple.color.tint, roughness: scalar(simple.roughness),
+                metallic: scalar(simple.metallic))
         }
         // Light pools are unlit with an opacity texture; merged meshes carry
         // no UVs, so they must stay separate or they render invisible.
         if let unlit = material as? UnlitMaterial, unlit.color.texture == nil, unlit.color.tint.alphaComponent >= 1,
-           case .opaque = unlit.blending {
+            case .opaque = unlit.blending
+        {
             return MaterialKey(unlit: true, color: unlit.color.tint, roughness: 0, metallic: 0)
         }
         return nil

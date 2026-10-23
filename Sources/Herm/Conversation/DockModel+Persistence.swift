@@ -29,19 +29,23 @@ extension DockModel {
     func writeAgentStateSnapshot() {
         lastAgentStateCacheAt = Date()
         guard let sessionStorageID else { return }
-        let snapshot = agentStateBySessionID.merging([sessionStorageID: SessionAgentState(
-            activeToolCalls: activeToolCalls,
-            recentEvents: recentEvents,
-            sessionAgents: sessionAgents,
-            activeSubagents: activeSubagents,
-            agentActivities: agentActivities,
-            synthesizedSubagentIDs: synthesizedSubagentIDs
-        )]) { _, new in new }
+        let snapshot = agentStateBySessionID.merging([
+            sessionStorageID: SessionAgentState(
+                activeToolCalls: activeToolCalls,
+                recentEvents: recentEvents,
+                sessionAgents: sessionAgents,
+                activeSubagents: activeSubagents,
+                agentActivities: agentActivities,
+                synthesizedSubagentIDs: synthesizedSubagentIDs
+            )
+        ]) { _, new in new }
         Task { await agentStateWriter.enqueue(snapshot) }
     }
 
     func persistActiveSessionID(_ sessionID: String?) {
-        guard let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionID.isEmpty else { return }
+        guard let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionID.isEmpty else {
+            return
+        }
         defaults.set(sessionID, forKey: lastSessionIDKey(for: sessionProfileID ?? profileScopeID))
     }
 
@@ -67,7 +71,8 @@ extension DockModel {
     static func stableSessionID(from result: [String: Any]) -> String? {
         for key in ["session_key", "stored_session_id", "resumed"] {
             if let value = result[key] as? String,
-               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 return value
             }
         }
@@ -88,7 +93,8 @@ extension DockModel {
         let requested = requestedSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         if resolvedSessionID == requested { return true }
         if let storageAlias = stableSessionID(from: result),
-           storageAlias.trimmingCharacters(in: .whitespacesAndNewlines) == requested {
+            storageAlias.trimmingCharacters(in: .whitespacesAndNewlines) == requested
+        {
             return true
         }
         return false
@@ -120,7 +126,8 @@ extension DockModel {
         storageID: String?
     ) -> String? {
         if let requestedSessionID = requestedSessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !requestedSessionID.isEmpty {
+            !requestedSessionID.isEmpty
+        {
             return requestedSessionID
         }
         return sessionAttributionID(runtimeID: runtimeID, storageID: storageID)

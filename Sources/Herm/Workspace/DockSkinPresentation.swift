@@ -17,7 +17,6 @@ struct DockSkinPresentation: Equatable {
 
     static var current: Self { DockThemeRuntime.current.presentation }
 
-
     var composerRadius: CGFloat { composer == .line ? 0 : DockLayout.paneRadius }
     var composerShadow: CGFloat { composer == .floating ? 6 : 0 }
     var composerControlFill: Color { composer == .floating ? .dockControlSurface : .clear }
@@ -40,19 +39,29 @@ extension DockThemeID {
     var presentation: DockSkinPresentation {
         switch self {
         case .retro:
-            DockSkinPresentation(composerPlaceholder: "C:\\> Type a message_", restoringPlaceholder: "Please wait…", answerPlaceholder: "Reply to Herm_")
+            DockSkinPresentation(
+                composerPlaceholder: "C:\\> Type a message_", restoringPlaceholder: "Please wait…",
+                answerPlaceholder: "Reply to Herm_")
         case .eInk:
             DockSkinPresentation(transcript: .document, composer: .desktop)
         case .clay:
             DockSkinPresentation(composerPlaceholder: "Say anything")
         case .pixel:
-            DockSkinPresentation(composerPlaceholder: "Insert coin ▸ type a message", restoringPlaceholder: "Loading save file…", answerPlaceholder: "Player 1, answer Herm…")
+            DockSkinPresentation(
+                composerPlaceholder: "Insert coin ▸ type a message", restoringPlaceholder: "Loading save file…",
+                answerPlaceholder: "Player 1, answer Herm…")
         case .notebook:
-            DockSkinPresentation(transcript: .document, composer: .desktop, composerPlaceholder: "Jot something down…", restoringPlaceholder: "Opening your notebook…")
+            DockSkinPresentation(
+                transcript: .document, composer: .desktop, composerPlaceholder: "Jot something down…",
+                restoringPlaceholder: "Opening your notebook…")
         case .hud:
-            DockSkinPresentation(composerPlaceholder: "Awaiting input…", restoringPlaceholder: "Restoring session…", answerPlaceholder: "Respond to Herm…")
+            DockSkinPresentation(
+                composerPlaceholder: "Awaiting input…", restoringPlaceholder: "Restoring session…",
+                answerPlaceholder: "Respond to Herm…")
         case .storm:
-            DockSkinPresentation(composerPlaceholder: "Signal Herm…", restoringPlaceholder: "Reconnecting to the grid…", answerPlaceholder: "Signal your answer…")
+            DockSkinPresentation(
+                composerPlaceholder: "Signal Herm…", restoringPlaceholder: "Reconnecting to the grid…",
+                answerPlaceholder: "Signal your answer…")
         case .swiss:
             DockSkinPresentation(transcript: .document, composer: .line, composerPlaceholder: "Ask anything")
         default: DockSkinPresentation()

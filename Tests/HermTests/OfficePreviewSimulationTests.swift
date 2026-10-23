@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct OfficePreviewSimulationTests {
@@ -111,15 +112,17 @@ struct OfficePreviewSimulationTests {
     }
 
     @Test func rosterUsesStableVisibleBotIDsAndExactAssigneeMatching() throws {
-        let bots = [bot("profile-nova", name: "Nova"), bot("profile-atlas", name: "Atlas"),
-                    bot("hidden", hidden: true), bot("profile-atlas", name: "Atlas")]
+        let bots = [
+            bot("profile-nova", name: "Nova"), bot("profile-atlas", name: "Atlas"),
+            bot("hidden", hidden: true), bot("profile-atlas", name: "Atlas"),
+        ]
         let tasks = [
             task("owned", status: "running", assignee: "profile-atlas"),
             task("name-match", status: "running", assignee: "Atlas"),
             task("case-match", status: "running", assignee: "PROFILE-ATLAS"),
             task("unassigned", status: "todo"),
             task("unknown-owner", status: "running", assignee: "missing"),
-            task("hidden-owner", status: "running", assignee: "hidden")
+            task("hidden-owner", status: "running", assignee: "hidden"),
         ]
         let agents = OfficePreviewResolver.agents(bots: bots, tasks: tasks)
         #expect(agents.map(\.id) == ["hidden", "profile-atlas", "profile-nova"])
@@ -146,7 +149,8 @@ struct OfficePreviewSimulationTests {
         let tasks = statuses.map { task($0, status: $0, assignee: "bot") }
         let agent = try #require(OfficePreviewResolver.agents(bots: [bot("bot")], tasks: tasks).first)
         #expect(agent.taskData?.id == "running")
-        #expect(agent.tasks.map(\.id) == ["running", "review", "blocked", "ready", "triage", "scheduled", "todo", "done"])
+        #expect(
+            agent.tasks.map(\.id) == ["running", "review", "blocked", "ready", "triage", "scheduled", "todo", "done"])
         #expect(agent.tasks.count == tasks.count)
     }
 
@@ -159,7 +163,7 @@ struct OfficePreviewSimulationTests {
             task("old-start", title: "A", status: "running", assignee: "bot", startedAt: old, latestEventAt: new),
             task("title-z", title: "Z", status: "running", assignee: "bot", startedAt: new, latestEventAt: new),
             task("id-z", title: "A", status: "running", assignee: "bot", startedAt: new, latestEventAt: new),
-            task("id-a", title: "A", status: "running", assignee: "bot", startedAt: new, latestEventAt: new)
+            task("id-a", title: "A", status: "running", assignee: "bot", startedAt: new, latestEventAt: new),
         ]
         let expected = ["id-a", "id-z", "title-z", "old-start", "old-event", "missing-date"]
         for snapshot in [tasks, Array(tasks.reversed())] {
@@ -170,7 +174,10 @@ struct OfficePreviewSimulationTests {
 
     @Test func allKanbanAliasesResolveToTheExpectedOfficeAction() {
         let groups: [([String], OfficePreviewLane, OfficePreviewPhase, OfficePreviewLocation)] = [
-            (["running", "active", "working", "in_progress", "in-progress", "inprogress", " RUNNING\n"], .running, .implementing, .desk),
+            (
+                ["running", "active", "working", "in_progress", "in-progress", "inprogress", " RUNNING\n"], .running,
+                .implementing, .desk
+            ),
             (["review", "waiting", "pending"], .review, .reviewing, .reviewTable),
             (["blocked", "failed", "error"], .blocked, .waiting, .desk),
             (["triage"], .triage, .planning, .kanbanBoard),
@@ -178,7 +185,7 @@ struct OfficePreviewSimulationTests {
             (["todo"], .todo, .resting, .lounge),
             (["scheduled"], .scheduled, .resting, .lounge),
             (["done", "completed", "complete", "archived"], .done, .resting, .lounge),
-            (["custom-status", ""], .unknown, .resting, .lounge)
+            (["custom-status", ""], .unknown, .resting, .lounge),
         ]
         for (aliases, lane, phase, location) in groups {
             for alias in aliases {
@@ -192,11 +199,13 @@ struct OfficePreviewSimulationTests {
     }
 
     @Test func reportedStepOverridesOlderEventsAndOnlyChangesRunningActions() {
-        let explicitStep = OfficePreviewTaskData(task("step", status: "running", currentStepKey: "implement", latestEventNote: "swift test"))
+        let explicitStep = OfficePreviewTaskData(
+            task("step", status: "running", currentStepKey: "implement", latestEventNote: "swift test"))
         #expect(explicitStep.phase == .implementing)
         let verification = OfficePreviewTaskData(task("test", status: "running", currentStepKey: "verification"))
         #expect(verification.phase == .testing)
-        let reading = OfficePreviewTaskData(task("read", status: "running", currentStepKey: "research", latestEventNote: "swift test"))
+        let reading = OfficePreviewTaskData(
+            task("read", status: "running", currentStepKey: "research", latestEventNote: "swift test"))
         #expect(reading.phase == .reading)
         let fallback = OfficePreviewTaskData(task("fallback", status: "running", latestEventNote: "Running tests"))
         #expect(fallback.phase == .testing)
@@ -204,7 +213,8 @@ struct OfficePreviewSimulationTests {
         #expect(kindFallback.phase == .reading)
         let blocked = OfficePreviewTaskData(task("blocked", status: "blocked", currentStepKey: "testing"))
         #expect(blocked.phase == .waiting)
-        let unrelated = OfficePreviewTaskData(task("unrelated", status: "running", latestEventNote: "Update latest result"))
+        let unrelated = OfficePreviewTaskData(
+            task("unrelated", status: "running", latestEventNote: "Update latest result"))
         #expect(unrelated.phase == .implementing)
     }
 
@@ -238,7 +248,10 @@ struct OfficePreviewSimulationTests {
     }
 
     @Test func unknownStatusRemainsExplicitInTheInspector() throws {
-        let agent = try #require(OfficePreviewResolver.agents(bots: [bot("bot")], tasks: [task("task", status: "custom-stage", assignee: "bot")]).first)
+        let agent = try #require(
+            OfficePreviewResolver.agents(
+                bots: [bot("bot")], tasks: [task("task", status: "custom-stage", assignee: "bot")]
+            ).first)
         #expect(agent.monitorStatus == "Unknown status")
         #expect(agent.bubbleText == "Unknown status")
         #expect(agent.taskData?.status == "custom-stage")
@@ -361,17 +374,21 @@ struct OfficePreviewSimulationTests {
     }
 
     private func bot(_ id: String, name: String = "Office Bot", hidden: Bool = false) -> BotSummary {
-        BotSummary(id: id, name: name, title: nil, description: nil, model: nil, isActive: false,
-                   chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: hidden,
-                   hasAvatar: false, isDefault: false)
+        BotSummary(
+            id: id, name: name, title: nil, description: nil, model: nil, isActive: false,
+            chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: hidden,
+            hasAvatar: false, isDefault: false)
     }
 
-    private func task(_ id: String, title: String? = nil, status: String, assignee: String? = nil,
-                      startedAt: Date? = nil, latestEventAt: Date? = nil, currentStepKey: String? = nil,
-                      latestEventKind: String? = nil, latestEventNote: String? = nil) -> KanbanTaskSummary {
-        KanbanTaskSummary(id: id, title: title ?? id, status: status, detail: nil, priority: nil,
-                          assignee: assignee, startedAt: startedAt, currentStepKey: currentStepKey,
-                          latestEventKind: latestEventKind, latestEventNote: latestEventNote,
-                          latestEventAt: latestEventAt)
+    private func task(
+        _ id: String, title: String? = nil, status: String, assignee: String? = nil,
+        startedAt: Date? = nil, latestEventAt: Date? = nil, currentStepKey: String? = nil,
+        latestEventKind: String? = nil, latestEventNote: String? = nil
+    ) -> KanbanTaskSummary {
+        KanbanTaskSummary(
+            id: id, title: title ?? id, status: status, detail: nil, priority: nil,
+            assignee: assignee, startedAt: startedAt, currentStepKey: currentStepKey,
+            latestEventKind: latestEventKind, latestEventNote: latestEventNote,
+            latestEventAt: latestEventAt)
     }
 }

@@ -52,7 +52,8 @@ struct WorkDay: Equatable {
     var activeHours: Int { hours.reduce(0) { $0 + ($1 > 0 ? 1 : 0) } }
     /// The longest run of consecutive active hours.
     var longestStretch: Int {
-        var best = 0, run = 0
+        var best = 0
+        var run = 0
         for count in hours {
             run = count > 0 ? run + 1 : 0
             best = max(best, run)
@@ -107,7 +108,8 @@ struct WorkCalendarIndex: Equatable {
 
     /// Mean activity per active day outside `range`; nil under 3 days, too few to call anything usual.
     func usualActivity(excluding range: ClosedRange<Date>) -> Double? {
-        var total = 0, count = 0
+        var total = 0
+        var count = 0
         for (date, day) in days where !range.contains(date) && day.activityCount > 0 {
             total += day.activityCount
             count += 1
@@ -134,7 +136,9 @@ struct WorkCalendarIndex: Equatable {
             return calendar.startOfDay(for: date)
         }
 
-        for session in sessions { if let k = key(session.updatedAt) { days[k, default: WorkDay()].sessions.append(session) } }
+        for session in sessions {
+            if let k = key(session.updatedAt) { days[k, default: WorkDay()].sessions.append(session) }
+        }
         for task in tasks { if let k = key(task.completedAt) { days[k, default: WorkDay()].doneTasks.append(task) } }
         for commit in commits { if let k = key(commit.date) { days[k, default: WorkDay()].commits.append(commit) } }
         for pr in pullRequests { if let k = key(pr.mergedAt) { days[k, default: WorkDay()].pullRequests.append(pr) } }
@@ -152,10 +156,13 @@ struct WorkCalendarIndex: Equatable {
             day.doneTasks.sort { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
             var assignees: [String: Int] = [:]
             for task in day.doneTasks { if let bot = task.assignee, !bot.isEmpty { assignees[bot, default: 0] += 1 } }
-            day.assignees = assignees.map { WorkCount(id: $0.key, count: $0.value) }.sorted { ($0.count, $1.id) > ($1.count, $0.id) }
+            day.assignees = assignees.map { WorkCount(id: $0.key, count: $0.value) }.sorted {
+                ($0.count, $1.id) > ($1.count, $0.id)
+            }
             for (bot, count) in assignees { monthAssignees[bot, default: 0] += count }
             for commit in day.commits { monthRepos[commit.repo, default: 0] += 1 }
-            let stamps = day.sessions.compactMap(\.updatedAt) + day.doneTasks.compactMap(\.completedAt)
+            let stamps =
+                day.sessions.compactMap(\.updatedAt) + day.doneTasks.compactMap(\.completedAt)
                 + day.commits.map(\.date) + day.pullRequests.map(\.mergedAt) + day.cronRuns.compactMap(\.claimedDate)
             for stamp in stamps { day.hours[calendar.component(.hour, from: stamp)] += 1 }
             day.firstAt = stamps.min()
@@ -169,7 +176,8 @@ struct WorkCalendarIndex: Equatable {
         // Streaks count days inside this month only.
         func active(_ date: Date) -> Bool { (days[date]?.activityCount ?? 0) > 0 }
         func step(_ date: Date, _ by: Int) -> Date { calendar.date(byAdding: .day, value: by, to: date) ?? date }
-        var longest = 0, run = 0
+        var longest = 0
+        var run = 0
         var cursor = monthStart
         while cursor < monthEnd {
             run = active(cursor) ? run + 1 : 0
@@ -288,20 +296,24 @@ extension WorkCalendarIndex {
     /// Days in `[from, to]` that fall inside this month; a week crossing a month edge only counts the loaded side.
     func range(from: Date, to: Date, calendar: Calendar = .current) -> WorkRange {
         var range = WorkRange()
-        var repoTally: [String: Int] = [:], prTally: [String: Int] = [:], assigneeTally: [String: Int] = [:]
-        var weekdayTotals = [Int](repeating: 0, count: 7), weekdayDays = [Int](repeating: 0, count: 7)
+        var repoTally: [String: Int] = [:]
+        var prTally: [String: Int] = [:]
+        var assigneeTally: [String: Int] = [:]
+        var weekdayTotals = [Int](repeating: 0, count: 7)
+        var weekdayDays = [Int](repeating: 0, count: 7)
         let monthEnd = calendar.date(byAdding: .month, value: 1, to: month) ?? month
         var cursor = max(calendar.startOfDay(for: from), month)
         let last = min(calendar.startOfDay(for: to), calendar.date(byAdding: .day, value: -1, to: monthEnd) ?? to)
         while cursor <= last {
             let day = days[cursor]
-            range.points.append(.init(
-                date: cursor,
-                shipped: (day?.doneTasks.count ?? 0) + (day?.commits.count ?? 0),
-                sessions: day?.sessions.count ?? 0,
-                runs: day?.cronRuns.count ?? 0,
-                hasFailure: day?.hasFailedRun ?? false
-            ))
+            range.points.append(
+                .init(
+                    date: cursor,
+                    shipped: (day?.doneTasks.count ?? 0) + (day?.commits.count ?? 0),
+                    sessions: day?.sessions.count ?? 0,
+                    runs: day?.cronRuns.count ?? 0,
+                    hasFailure: day?.hasFailedRun ?? false
+                ))
             if let day {
                 range.pullRequests.append(contentsOf: day.pullRequests)
                 range.tasks.append(contentsOf: day.doneTasks)
@@ -339,14 +351,18 @@ extension WorkCalendarIndex {
         range.commits.sort { $0.date > $1.date }
         range.sessions.sort { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
         if range.points.count >= 14 {
-            range.weekdayMeans = (0..<7).map { weekdayDays[$0] > 0 ? Double(weekdayTotals[$0]) / Double(weekdayDays[$0]) : 0 }
+            range.weekdayMeans = (0..<7).map {
+                weekdayDays[$0] > 0 ? Double(weekdayTotals[$0]) / Double(weekdayDays[$0]) : 0
+            }
         }
         range.assignees = ranked(assigneeTally)
         if range.activeDays > 0, let first = range.points.first?.date, let last = range.points.last?.date {
             let perDay = Double(range.points.reduce(0) { $0 + $1.total }) / Double(range.activeDays)
             range.vsUsual = perDay.percentChange(from: usualActivity(excluding: first...last))
         }
-        if range.points.count == calendar.range(of: .day, in: .month, for: month)?.count { range.streak = currentStreak }
+        if range.points.count == calendar.range(of: .day, in: .month, for: month)?.count {
+            range.streak = currentStreak
+        }
         return range
     }
 }

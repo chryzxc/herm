@@ -88,7 +88,9 @@ struct DockModal<Content: View, Footer: View>: View {
                 }
             }
             Spacer(minLength: 12)
-            Button { dismiss() } label: {
+            Button {
+                dismiss()
+            } label: {
                 DockIcon(.x)
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -113,7 +115,10 @@ extension DockModal where Footer == EmptyView {
         contentPadding: CGFloat = 20,
         @ViewBuilder content: () -> Content
     ) {
-        self.init(icon: icon, badge: badge, title: title, subtitle: subtitle, width: width, contentPadding: contentPadding, content: content) { EmptyView() }
+        self.init(
+            icon: icon, badge: badge, title: title, subtitle: subtitle, width: width, contentPadding: contentPadding,
+            content: content
+        ) { EmptyView() }
     }
 }
 
@@ -133,7 +138,8 @@ func modalSection<Content: View>(_ title: String, @ViewBuilder content: () -> Co
 /// A field title with an optional inline hint above its control.
 @MainActor
 @ViewBuilder
-func labeledField<Content: View>(_ title: String, hint: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+func labeledField<Content: View>(_ title: String, hint: String? = nil, @ViewBuilder content: () -> Content) -> some View
+{
     VStack(alignment: .leading, spacing: 5) {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
@@ -169,7 +175,10 @@ struct ModalNote: View {
 /// The standard footer: Cancel plus one primary action, right-aligned.
 @MainActor
 @ViewBuilder
-func modalActions(primaryTitle: String, pendingTitle: String = "Saving…", isDisabled: Bool, isPending: Bool, onCancel: @escaping () -> Void, onPrimary: @escaping () -> Void) -> some View {
+func modalActions(
+    primaryTitle: String, pendingTitle: String = "Saving…", isDisabled: Bool, isPending: Bool,
+    onCancel: @escaping () -> Void, onPrimary: @escaping () -> Void
+) -> some View {
     Spacer()
     Button("Cancel", action: onCancel)
         .keyboardShortcut(.cancelAction)
@@ -197,10 +206,14 @@ struct DockModalButtonStyle: ButtonStyle {
             .frame(minWidth: 92, minHeight: DockLayout.controlHeight)
             .background {
                 if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true, elevated: true)
+                    Color.clear.dockLiquidGlass(
+                        shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true, elevated: true
+                    )
                 } else {
                     shape.fill(isPrimary ? Color.dockAccent : Color.dockControlSurface)
-                        .overlay(shape.stroke(isPrimary ? Color.clear : Color.dockBorder, lineWidth: DockLayout.outline))
+                        .overlay(
+                            shape.stroke(isPrimary ? Color.clear : Color.dockBorder, lineWidth: DockLayout.outline)
+                        )
                         .overlay(shape.fill(Color.black.opacity(configuration.isPressed ? 0.12 : 0)))
                 }
             }

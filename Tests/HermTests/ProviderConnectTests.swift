@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct ProviderConnectTests {
@@ -23,7 +24,8 @@ struct ProviderConnectTests {
     }
 
     @Test func keyStoreRoundTripsAndRemovesKeys() {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("provider-key-store-\(UUID().uuidString)", isDirectory: true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "provider-key-store-\(UUID().uuidString)", isDirectory: true)
         let store = ProviderKeyStore(fileURL: directory.appendingPathComponent("providers.json"))
 
         #expect(store.savedKey("glm") == nil)
@@ -44,12 +46,14 @@ struct ProviderConnectTests {
     }
 
     @Test func keyStoreFileIsOwnerOnly() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("provider-key-store-\(UUID().uuidString)", isDirectory: true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "provider-key-store-\(UUID().uuidString)", isDirectory: true)
         let fileURL = directory.appendingPathComponent("providers.json")
         ProviderKeyStore(fileURL: fileURL).save("key", storageKey: "glm")
 
         let filePermissions = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.posixPermissions] as? Int
-        let directoryPermissions = try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int
+        let directoryPermissions =
+            try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int
         #expect(filePermissions == 0o600)
         #expect(directoryPermissions == 0o700)
         try? FileManager.default.removeItem(at: directory)
@@ -58,11 +62,24 @@ struct ProviderConnectTests {
     @MainActor
     @Test func resolvesExecutablesAcrossSearchDirectories() {
         let fileExists: (String) -> Bool = { ["/opt/homebrew/bin/codex", "/Users/x/.local/bin/claude"].contains($0) }
-        #expect(ProviderLoginModel.executablePath(command: "codex login", searchDirectories: ["/opt/homebrew/bin", "/usr/local/bin"], fileExists: fileExists) == "/opt/homebrew/bin/codex")
-        #expect(ProviderLoginModel.executablePath(command: "claude auth login", searchDirectories: ["/usr/bin", "/Users/x/.local/bin"], fileExists: fileExists) == "/Users/x/.local/bin/claude")
-        #expect(ProviderLoginModel.executablePath(command: "missing login", searchDirectories: ["/usr/bin"], fileExists: fileExists) == nil)
-        #expect(ProviderLoginModel.executablePath(command: "/usr/local/bin/custom --flag", searchDirectories: [], fileExists: fileExists) == nil)
-        #expect(ProviderLoginModel.executablePath(command: "/opt/local/bin/custom", searchDirectories: [], fileExists: { $0 == "/opt/local/bin/custom" }) == "/opt/local/bin/custom")
+        #expect(
+            ProviderLoginModel.executablePath(
+                command: "codex login", searchDirectories: ["/opt/homebrew/bin", "/usr/local/bin"],
+                fileExists: fileExists) == "/opt/homebrew/bin/codex")
+        #expect(
+            ProviderLoginModel.executablePath(
+                command: "claude auth login", searchDirectories: ["/usr/bin", "/Users/x/.local/bin"],
+                fileExists: fileExists) == "/Users/x/.local/bin/claude")
+        #expect(
+            ProviderLoginModel.executablePath(
+                command: "missing login", searchDirectories: ["/usr/bin"], fileExists: fileExists) == nil)
+        #expect(
+            ProviderLoginModel.executablePath(
+                command: "/usr/local/bin/custom --flag", searchDirectories: [], fileExists: fileExists) == nil)
+        #expect(
+            ProviderLoginModel.executablePath(
+                command: "/opt/local/bin/custom", searchDirectories: [], fileExists: { $0 == "/opt/local/bin/custom" })
+                == "/opt/local/bin/custom")
     }
 
     @MainActor
@@ -73,17 +90,21 @@ struct ProviderConnectTests {
             nodeVersionDirectoriesAt: nil
         )
         #expect(directories.first == "/custom/bin")
-        for expected in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/Users/x/.local/bin", "/Users/x/.volta/bin"] {
+        for expected in [
+            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/Users/x/.local/bin", "/Users/x/.volta/bin",
+        ] {
             #expect(directories.contains(expected))
         }
     }
 
     @MainActor
     @Test func loginOutputRemovesTerminalFormatting() {
-        let lines = ProviderLoginModel.cappedLines([], newLines: [
-            "Open \u{001B}[94mhttps://auth.openai.com/device\u{001B}[0m",
-            "Code: \u{001B}[1mABCD-1234\u{001B}[0m"
-        ])
+        let lines = ProviderLoginModel.cappedLines(
+            [],
+            newLines: [
+                "Open \u{001B}[94mhttps://auth.openai.com/device\u{001B}[0m",
+                "Code: \u{001B}[1mABCD-1234\u{001B}[0m",
+            ])
         #expect(lines == ["Open https://auth.openai.com/device", "Code: ABCD-1234"])
     }
 

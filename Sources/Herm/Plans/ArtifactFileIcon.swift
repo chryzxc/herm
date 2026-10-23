@@ -75,14 +75,16 @@ enum ArtifactFileIcon {
     static func mappedName(forPath text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 260,
-              !trimmed.contains(where: \.isWhitespace) else { return nil }
+            !trimmed.contains(where: \.isWhitespace)
+        else { return nil }
         let fileName = trimmed.split(separator: "/").last.map(String.init) ?? trimmed
         return mappedName(for: fileName)
     }
 
-    private static let bundle: Bundle = Bundle.main.resourceURL.flatMap {
-        Bundle(url: $0.appendingPathComponent("Herm_Herm.bundle"))
-    } ?? Bundle.module
+    private static let bundle: Bundle =
+        Bundle.main.resourceURL.flatMap {
+            Bundle(url: $0.appendingPathComponent("Herm_Herm.bundle"))
+        } ?? Bundle.module
 
     // NSCache is thread-safe; images are read-only once cached.
     nonisolated(unsafe) private static let cache = NSCache<NSString, NSImage>()
@@ -105,7 +107,8 @@ enum ArtifactFileIcon {
     private static func image(named key: String) -> NSImage? {
         if let cached = cache.object(forKey: key as NSString) { return cached }
         guard let url = bundle.url(forResource: key, withExtension: "svg", subdirectory: "FileIcons"),
-              let image = NSImage(contentsOf: url) else { return nil }
+            let image = NSImage(contentsOf: url)
+        else { return nil }
         cache.setObject(image, forKey: key as NSString)
         return image
     }
@@ -126,7 +129,10 @@ struct FileTypeIcon: View {
         }
         .padding(size * 0.18)
         .frame(width: size, height: size)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2)
+        )
         .accessibilityHidden(true)
     }
 }

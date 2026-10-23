@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct VoiceTurnTelemetryTests {
@@ -106,7 +107,6 @@ struct VoiceTurnTelemetryTests {
         #expect(!staleDrainCompleted)
         #expect(!competingCaptureStarted)
     }
-
 
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import RealityKit
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -36,8 +37,10 @@ struct OfficeActivityRegressionTests {
         let root = Entity()
         var layout = OfficePreviewLayout()
         layout.authored = OfficeDesignSceneBuilder().build(in: root, capacity: 24)
-        for name in ["courtyard-pergola", "campus-bench", "courtyard-fountain", "parked-bicycle",
-                     "campus-planting-bed", "site-sidewalk-floor", "entrance-promenade-floor"] {
+        for name in [
+            "courtyard-pergola", "campus-bench", "courtyard-fountain", "parked-bicycle",
+            "campus-planting-bed", "site-sidewalk-floor", "entrance-promenade-floor",
+        ] {
             #expect(root.findEntity(named: name) != nil)
         }
         for name in ["campus-bench", "courtyard-fountain", "parked-bicycle", "campus-planting-bed", "pergola-post"] {
@@ -53,13 +56,21 @@ struct OfficeActivityRegressionTests {
 
     @Test func interactionsPairOnlyColleaguesInTheSameReportedBoardAndPhase() {
         func agent(_ id: String, board: String?, status: String) -> OfficePreviewAgentPresentation {
-            .init(id: id, name: id, tasks: [.init(KanbanTaskSummary(id: id, boardSlug: board,
-                title: id, status: status, detail: nil, priority: nil, assignee: id))])
+            .init(
+                id: id, name: id,
+                tasks: [
+                    .init(
+                        KanbanTaskSummary(
+                            id: id, boardSlug: board,
+                            title: id, status: status, detail: nil, priority: nil, assignee: id))
+                ])
         }
-        let agents = [agent("a", board: "app", status: "review"), agent("b", board: "app", status: "review"),
-                      agent("c", board: "other", status: "review"), agent("d", board: "app", status: "running"),
-                      agent("e", board: nil, status: "review"), agent("f", board: nil, status: "review"),
-                      agent("g", board: "app", status: "ready"), agent("h", board: "app", status: "triage")]
+        let agents = [
+            agent("a", board: "app", status: "review"), agent("b", board: "app", status: "review"),
+            agent("c", board: "other", status: "review"), agent("d", board: "app", status: "running"),
+            agent("e", board: nil, status: "review"), agent("f", board: nil, status: "review"),
+            agent("g", board: "app", status: "ready"), agent("h", board: "app", status: "triage"),
+        ]
         let plan = OfficePreviewInteractionPlan.make(agents: agents)
         #expect(plan.partners == ["a": "b", "b": "a", "g": "h", "h": "g"])
         #expect(plan.stations["a"] != plan.stations["b"])
@@ -69,14 +80,17 @@ struct OfficeActivityRegressionTests {
     }
 
     @Test func defaultProfileRemainsVisibleWhenNoMainSessionRepresentsIt() {
-        let bot = BotSummary(id: "nexus", name: "Nexus", title: nil, description: nil, model: nil,
+        let bot = BotSummary(
+            id: "nexus", name: "Nexus", title: nil, description: nil, model: nil,
             isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
             isHidden: false, hasAvatar: false, isDefault: true)
         let simulation = OfficePreviewSimulation(bots: [bot])
         #expect(simulation.agents.map(\.id) == ["nexus"])
-        simulation.update(bots: [bot], tasks: [], sessions: [
-            .init(id: "chat", title: "Chat", state: "idle", isCurrent: true, activities: [])
-        ])
+        simulation.update(
+            bots: [bot], tasks: [],
+            sessions: [
+                .init(id: "chat", title: "Chat", state: "idle", isCurrent: true, activities: [])
+            ])
         #expect(simulation.agents.map(\.id) == ["main-session:chat"])
     }
 }

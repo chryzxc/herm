@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func refreshKanban(filter: KanbanListFilter? = nil) {
@@ -46,7 +46,8 @@ extension ControlCenterModel {
         // closed. A healthy, unchanged poll must publish nothing, or every
         // view observing this model re-renders mid-scroll.
         let globalState = projectionRefreshStates["kanban.global"]
-        let quietAggregate = scope.isAggregate && trigger == .background && globalKanbanIsCurrent
+        let quietAggregate =
+            scope.isAggregate && trigger == .background && globalKanbanIsCurrent
             && globalState?.lastSuccess != nil && globalState?.error == nil && globalState?.isStale == false
         if scope.isAggregate, !quietAggregate {
             globalKanbanIsCurrent = false
@@ -63,8 +64,11 @@ extension ControlCenterModel {
         }
         let activeFilter = scope.isAggregate ? (filter ?? KanbanListFilter()) : kanbanFilter
         let generation = UUID()
-        if scope.isAggregate { aggregateKanbanRefreshGeneration = generation }
-        else { visibleKanbanRefreshGeneration = generation }
+        if scope.isAggregate {
+            aggregateKanbanRefreshGeneration = generation
+        } else {
+            visibleKanbanRefreshGeneration = generation
+        }
         let bindingGeneration = clientBindingGeneration
         Task {
             defer {
@@ -85,15 +89,22 @@ extension ControlCenterModel {
                 // projection. Query it once: splitting an unfiltered board
                 // into assumed status lanes delays publication until every
                 // request completes and drops any future Hermes status value.
-                let result = scope.isAggregate
+                let result =
+                    scope.isAggregate
                     ? try await cli.kanbanListAggregate(filter: activeFilter, background: trigger == .background)
-                    : try await cli.kanbanList(boardSlug: requestedBoardSlug, filter: activeFilter, background: trigger == .background)
-                let parsed = result.succeeded
+                    : try await cli.kanbanList(
+                        boardSlug: requestedBoardSlug, filter: activeFilter, background: trigger == .background)
+                let parsed =
+                    result.succeeded
                     ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
                     : nil
                 guard result.succeeded else {
-                    guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
-                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
+                    guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else {
+                        return
+                    }
+                    let message =
+                        Self.safeUserDiagnostic(result.stderr).isEmpty
+                        ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("kanban.board", error: message)
                     if scope.isAggregate { recordProjectionFailure("kanban.global", error: message) }
                     lastError = message
@@ -118,9 +129,11 @@ extension ControlCenterModel {
                     for taskID in observedIDs where !knownIDs.contains(taskID) {
                         let missKey = "\(requestedBoardSlug ?? "")|\(taskID)"
                         guard !unrecoverableKanbanTaskIDs.contains(missKey),
-                              let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID) else { continue }
+                            let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID)
+                        else { continue }
                         guard shown.succeeded,
-                              let task = Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug) else {
+                            let task = Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug)
+                        else {
                             unrecoverableKanbanTaskIDs.insert(missKey)
                             continue
                         }
@@ -203,7 +216,8 @@ extension ControlCenterModel {
         let currentIDs = current.map(\.id)
         let incomingIDs = deduplicated.map(\.id)
         let incomingByID = Dictionary(deduplicated.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let rowsUnchanged = current.count == deduplicated.count
+        let rowsUnchanged =
+            current.count == deduplicated.count
             && current.allSatisfy { incomingByID[$0.id] == $0 }
         if rowsUnchanged {
             return current
@@ -215,7 +229,8 @@ extension ControlCenterModel {
         }
         let currentIDSet = Set(currentIDs)
         let retained = currentIDs.compactMap { incomingByID[$0] }
-        let newProjects = deduplicated
+        let newProjects =
+            deduplicated
             .filter { !currentIDSet.contains($0.id) }
             .sorted { $0.id < $1.id }
         return retained + newProjects
@@ -249,7 +264,8 @@ extension ControlCenterModel {
     /// chat view and stutters a transcript being scrolled.
     func refreshSessionKanban(for sessionID: String? = nil, quiet: Bool = false) {
         let candidateSessionID = sessionID ?? dockModel?.sessionID
-        let requestedSessionID = candidateSessionID == dockModel?.sessionID
+        let requestedSessionID =
+            candidateSessionID == dockModel?.sessionID
             ? dockModel?.kanbanSessionID
             : candidateSessionID
         // Session activity spans boards, independently of the global selector.
@@ -267,7 +283,8 @@ extension ControlCenterModel {
             return
         }
         let generation = UUID()
-        let isNewProjection = sessionKanbanSessionID != requestedSessionID || sessionKanbanBoardSlug != requestedBoardSlug
+        let isNewProjection =
+            sessionKanbanSessionID != requestedSessionID || sessionKanbanBoardSlug != requestedBoardSlug
         sessionKanbanTask?.cancel()
         sessionKanbanTask = nil
         sessionKanbanRefreshPending = false
@@ -280,13 +297,17 @@ extension ControlCenterModel {
         sessionKanbanBoardSlug = requestedBoardSlug
         if !quiet { beginProjectionRefresh("kanban.session") }
 
-        guard Self.shouldAttemptSessionKanbanQuery(
-            sessionID: requestedSessionID,
-            hasCLI: cli != nil
-        ),
-        let requestedSessionID,
-        let cli else {
-            if !quiet { recordProjectionFailure("kanban.session", error: "Kanban is unavailable for the current session.") }
+        guard
+            Self.shouldAttemptSessionKanbanQuery(
+                sessionID: requestedSessionID,
+                hasCLI: cli != nil
+            ),
+            let requestedSessionID,
+            let cli
+        else {
+            if !quiet {
+                recordProjectionFailure("kanban.session", error: "Kanban is unavailable for the current session.")
+            }
             return
         }
 
@@ -315,21 +336,25 @@ extension ControlCenterModel {
                     filter: KanbanListFilter(includeArchived: true, sort: "updated"),
                     background: quiet
                 )
-                let parsed = result.succeeded
+                let parsed =
+                    result.succeeded
                     ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
                     : nil
-                guard Self.isCurrentSessionKanbanResult(
-                    generationMatches: generation == self.sessionKanbanRefreshGeneration,
-                    publishedSessionID: self.sessionKanbanSessionID,
-                    requestedSessionID: requestedSessionID,
-                    publishedBoardSlug: self.sessionKanbanBoardSlug,
-                    requestedBoardSlug: requestedBoardSlug
-                ) else { return }
+                guard
+                    Self.isCurrentSessionKanbanResult(
+                        generationMatches: generation == self.sessionKanbanRefreshGeneration,
+                        publishedSessionID: self.sessionKanbanSessionID,
+                        requestedSessionID: requestedSessionID,
+                        publishedBoardSlug: self.sessionKanbanBoardSlug,
+                        requestedBoardSlug: requestedBoardSlug
+                    )
+                else { return }
                 guard result.succeeded else {
                     if quiet { return }
                     self.recordProjectionFailure(
                         "kanban.session",
-                        error: Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
+                        error: Self.safeUserDiagnostic(result.stderr).isEmpty
+                            ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
                     )
                     return
                 }
@@ -359,30 +384,33 @@ extension ControlCenterModel {
                 for taskID in observedIDs where !knownIDs.contains(taskID) {
                     let missKey = "\(requestedBoardSlug ?? "")|\(taskID)"
                     guard !self.unrecoverableKanbanTaskIDs.contains(missKey),
-                          let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID) else { continue }
+                        let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID)
+                    else { continue }
                     guard shown.succeeded,
-                          // A card owned by another session (e.g. an id that
-                          // merely appeared in `kanban list` output) is not ours.
-                          Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug)
+                        // A card owned by another session (e.g. an id that
+                        // merely appeared in `kanban list` output) is not ours.
+                        Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug)
                             .map({ $0.sessionID.map(aliases.contains) ?? true }) ?? false,
-                          let task = Self.parseKanbanTaskSummary(
+                        let task = Self.parseKanbanTaskSummary(
                             shown.stdout,
                             boardSlug: requestedBoardSlug,
                             sessionID: requestedSessionID
-                          ) else {
+                        )
+                    else {
                         self.unrecoverableKanbanTaskIDs.insert(missKey)
                         continue
                     }
                     sessionTasks.append(task)
                 }
                 guard !Task.isCancelled,
-                      Self.isCurrentSessionKanbanResult(
+                    Self.isCurrentSessionKanbanResult(
                         generationMatches: generation == self.sessionKanbanRefreshGeneration,
                         publishedSessionID: self.sessionKanbanSessionID,
                         requestedSessionID: requestedSessionID,
                         publishedBoardSlug: self.sessionKanbanBoardSlug,
                         requestedBoardSlug: requestedBoardSlug
-                      ) else { return }
+                    )
+                else { return }
                 self.sessionKanbanTasksByRequest[requested] = sessionTasks
                 let changed = self.sessionKanbanTasks != sessionTasks
                 if changed { self.sessionKanbanTasks = sessionTasks }
@@ -393,8 +421,10 @@ extension ControlCenterModel {
                 }
             } catch {
                 guard generation == self.sessionKanbanRefreshGeneration,
-                      self.sessionKanbanSessionID == requestedSessionID, !quiet else { return }
-                self.recordProjectionFailure("kanban.session", error: Self.safeUserDiagnostic(error.localizedDescription))
+                    self.sessionKanbanSessionID == requestedSessionID, !quiet
+                else { return }
+                self.recordProjectionFailure(
+                    "kanban.session", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -440,7 +470,9 @@ extension ControlCenterModel {
                 let result = try await cli.kanbanBoards()
                 guard generation == kanbanBoardsGeneration else { return }
                 guard result.succeeded else {
-                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban boards are unavailable." : Self.safeUserDiagnostic(result.stderr)
+                    lastError =
+                        Self.safeUserDiagnostic(result.stderr).isEmpty
+                        ? "Hermes Kanban boards are unavailable." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 let boards = Self.parseKanbanBoards(result.stdout)
@@ -449,11 +481,13 @@ extension ControlCenterModel {
                 }
                 let previousSelection = selectedKanbanBoardSlug
                 if let selected = selectedKanbanBoardSlug,
-                   boards.contains(where: { $0.slug == selected && !$0.archived }) {
+                    boards.contains(where: { $0.slug == selected && !$0.archived })
+                {
                     // Preserve an explicitly selected Dock board even when the
                     // shared Hermes default changes elsewhere.
                 } else {
-                    selectedKanbanBoardSlug = boards.first(where: { $0.isCurrent && !$0.archived })?.slug
+                    selectedKanbanBoardSlug =
+                        boards.first(where: { $0.isCurrent && !$0.archived })?.slug
                         ?? boards.first(where: { !$0.archived })?.slug
                 }
                 let inventoryRefreshPlan = Self.boardInventoryRefreshPlan(
@@ -530,9 +564,10 @@ extension ControlCenterModel {
         kanbanAssigneesGeneration = generation
         Task {
             guard let result = try? await cli.kanbanAssignees(boardSlug: requestedBoardSlug),
-                  result.succeeded,
-                  generation == kanbanAssigneesGeneration,
-                  requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                result.succeeded,
+                generation == kanbanAssigneesGeneration,
+                requestedBoardSlug == selectedKanbanBoardSlug
+            else { return }
             let assignees = Self.parseKanbanAssignees(result.stdout)
             if kanbanAssignees != assignees {
                 kanbanAssignees = assignees
@@ -550,19 +585,22 @@ extension ControlCenterModel {
             do {
                 let result = try await cli.kanbanDiagnostics(boardSlug: requestedBoardSlug, severity: severity)
                 guard generation == kanbanDiagnosticsGeneration,
-                      requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                    requestedBoardSlug == selectedKanbanBoardSlug
+                else { return }
                 guard result.succeeded else {
                     recordProjectionFailure("kanban.diagnostics", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
-                let diagnostics = Self.parseKanbanDiagnostics(result.stdout, boardSlug: requestedBoardSlug, severity: severity)
+                let diagnostics = Self.parseKanbanDiagnostics(
+                    result.stdout, boardSlug: requestedBoardSlug, severity: severity)
                 if kanbanDiagnostics != diagnostics {
                     kanbanDiagnostics = diagnostics
                 }
                 recordProjectionSuccess("kanban.diagnostics")
             } catch {
                 guard generation == kanbanDiagnosticsGeneration else { return }
-                recordProjectionFailure("kanban.diagnostics", error: Self.safeUserDiagnostic(error.localizedDescription))
+                recordProjectionFailure(
+                    "kanban.diagnostics", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -577,10 +615,12 @@ extension ControlCenterModel {
             do {
                 let result = try await cli.kanbanAttachments(boardSlug: requestedBoardSlug, taskID: taskID)
                 guard generation == kanbanAttachmentsGeneration,
-                      kanbanDetailTaskIdentity == KanbanTaskIdentity(boardSlug: requestedBoardSlug, taskID: taskID) else { return }
+                    kanbanDetailTaskIdentity == KanbanTaskIdentity(boardSlug: requestedBoardSlug, taskID: taskID)
+                else { return }
                 guard result.succeeded,
-                      let data = result.stdout.data(using: .utf8),
-                      let value = try? JSONSerialization.jsonObject(with: data) else {
+                    let data = result.stdout.data(using: .utf8),
+                    let value = try? JSONSerialization.jsonObject(with: data)
+                else {
                     recordProjectionFailure("kanban.attachments", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
@@ -588,7 +628,8 @@ extension ControlCenterModel {
                 recordProjectionSuccess("kanban.attachments")
             } catch {
                 guard generation == kanbanAttachmentsGeneration else { return }
-                recordProjectionFailure("kanban.attachments", error: Self.safeUserDiagnostic(error.localizedDescription))
+                recordProjectionFailure(
+                    "kanban.attachments", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -627,8 +668,10 @@ extension ControlCenterModel {
                 kanbanDetail = detail
             } catch {
                 guard generation == kanbanDetailGeneration,
-                      kanbanDetailTaskIdentity == identity else { return }
-                kanbanDetailError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                    kanbanDetailTaskIdentity == identity
+                else { return }
+                kanbanDetailError = HermesDiagnosticsService.safeSummary(
+                    Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -640,8 +683,9 @@ extension ControlCenterModel {
         let boardSlug = task.boardSlug ?? selectedKanbanBoardSlug
         let identity = KanbanTaskIdentity(boardSlug: boardSlug, taskID: task.id)
         guard kanbanDetailTaskIdentity == identity,
-              let detail = try? await fetchKanbanTaskDetail(task, boardSlug: boardSlug, cli: cli).detail,
-              kanbanDetailTaskIdentity == identity, detail != kanbanDetail else { return }
+            let detail = try? await fetchKanbanTaskDetail(task, boardSlug: boardSlug, cli: cli).detail,
+            kanbanDetailTaskIdentity == identity, detail != kanbanDetail
+        else { return }
         kanbanDetail = detail
     }
 
@@ -663,8 +707,10 @@ extension ControlCenterModel {
                 kanbanChatCheckedSessionIDs = []
             }
         }
-        for task in tasks where (task.latestEventAt ?? .distantFuture) >= floor.timestamp
-            && kanbanChatSyncedEventAt[task.id] != task.latestEventAt {
+        for task in tasks
+        where (task.latestEventAt ?? .distantFuture) >= floor.timestamp
+            && kanbanChatSyncedEventAt[task.id] != task.latestEventAt
+        {
             // A live external turn reloads the transcript every few seconds,
             // minting a new anchor each time. Re-insert from the last read of
             // an unchanged card instead of spawning `kanban show` again.
@@ -673,7 +719,9 @@ extension ControlCenterModel {
                 dockModel.insertKanbanBoardNotices(KanbanNotice.boardEventNotices(for: cached.detail))
                 continue
             }
-            guard let detail = try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug, cli: cli).detail else { continue }
+            guard let detail = try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug, cli: cli).detail else {
+                continue
+            }
             kanbanChatDetailCache[task.id] = (task.latestEventAt, detail)
             guard kanbanChatSyncAnchor == floor.id else { continue }
             kanbanChatSyncedEventAt[task.id] = task.latestEventAt
@@ -689,13 +737,15 @@ extension ControlCenterModel {
     /// conversation or worker run, not a feed.
     func discoverFeedSessions(mentioning taskID: String, anchor: UUID) async {
         guard let rpc, let dockModel,
-              let hits = try? await rpc.searchSessions(query: taskID) else { return }
+            let hits = try? await rpc.searchSessions(query: taskID)
+        else { return }
         let own = Set(dockModel.botActivitySessionIDs.compactMap { $0 })
         for hit in hits {
             guard let id = hit["session_id"] as? String, !own.contains(id),
-                  kanbanChatCheckedSessionIDs.insert(id).inserted,
-                  let rows = try? await rpc.sessionMessages(sessionID: id, latest: true)["data"] as? [[String: Any]],
-                  Self.isFeedSession(rows), kanbanChatSyncAnchor == anchor else { continue }
+                kanbanChatCheckedSessionIDs.insert(id).inserted,
+                let rows = try? await rpc.sessionMessages(sessionID: id, latest: true)["data"] as? [[String: Any]],
+                Self.isFeedSession(rows), kanbanChatSyncAnchor == anchor
+            else { continue }
             kanbanChatFeeds[id] = (hit["source"] as? String).flatMap(Self.nonEmpty) ?? "feed"
         }
     }
@@ -709,15 +759,17 @@ extension ControlCenterModel {
     func syncFeedSessionsIntoChat(anchor: UUID) async {
         guard let rpc else { return }
         for (feedID, source) in kanbanChatFeeds.sorted(by: { $0.key < $1.key }) {
-            guard let rows = try? await rpc.sessionMessages(sessionID: feedID, latest: true)["data"] as? [[String: Any]] else { continue }
+            guard let rows = try? await rpc.sessionMessages(sessionID: feedID, latest: true)["data"] as? [[String: Any]]
+            else { continue }
             guard kanbanChatSyncAnchor == anchor, let dockModel else { return }
             let feed = DockModel.parseMessages(
                 TranscriptHistoryPaging.displayRows(fromStoredRows: rows),
                 defaultBotProfileID: source,
                 defaultBotDisplayName: source
             ).messages.map {
-                ChatMessage(role: .hermes, text: $0.text, timestamp: $0.timestamp,
-                            systemEvent: .feed(source: source, text: $0.text))
+                ChatMessage(
+                    role: .hermes, text: $0.text, timestamp: $0.timestamp,
+                    systemEvent: .feed(source: source, text: $0.text))
             }
             dockModel.insertTimelineMessages(feed)
         }
@@ -727,7 +779,8 @@ extension ControlCenterModel {
     /// leaves the board's selected `kanbanDetail` untouched.
     func sessionKanbanTaskDetail(_ task: KanbanTaskSummary) async -> KanbanTaskDetail? {
         guard let cli else { return nil }
-        return try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, cli: cli).detail
+        return try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, cli: cli)
+            .detail
     }
 
     /// One `show` round trip, plus `runs` only for Hermes versions whose
@@ -740,22 +793,26 @@ extension ControlCenterModel {
         let taskResult = try await cli.kanbanShow(boardSlug: boardSlug, taskID: task.id)
         guard taskResult.succeeded else {
             let safeError = HermesDiagnosticsService.safeSummary(taskResult.stderr)
-            return (nil, safeError.isEmpty ? "Hermes task details are unavailable. Showing the board summary." : safeError)
+            return (
+                nil, safeError.isEmpty ? "Hermes task details are unavailable. Showing the board summary." : safeError
+            )
         }
         // A successful Hermes version may return a human-readable `show`
         // response instead of structured JSON. The selected card already
         // contains authoritative summary data, so keep Details usable and use
         // the structured response only to enrich it when available.
-        var detail = Self.parseKanbanTaskDetail(taskResult.stdout, fallback: task, boardSlug: boardSlug)
+        var detail =
+            Self.parseKanbanTaskDetail(taskResult.stdout, fallback: task, boardSlug: boardSlug)
             ?? Self.fallbackKanbanTaskDetail(task, boardSlug: boardSlug)
         if detail.runs.isEmpty, capabilityAvailable("kanban.taskRuns") {
             let runsResult = try await cli.kanbanRuns(boardSlug: boardSlug, taskID: task.id)
             if runsResult.succeeded {
-                detail = Self.enrichedKanbanTaskDetail(
-                    detail,
-                    runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: boardSlug),
-                    boardSlug: boardSlug
-                ) ?? detail
+                detail =
+                    Self.enrichedKanbanTaskDetail(
+                        detail,
+                        runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: boardSlug),
+                        boardSlug: boardSlug
+                    ) ?? detail
             }
         }
         return (detail, nil)
@@ -765,7 +822,8 @@ extension ControlCenterModel {
     /// The cached entry (or the card summary) stays visible while refreshing.
     func inspectKanbanTask(_ task: KanbanTaskSummary) {
         let identity = KanbanTaskIdentity(boardSlug: task.boardSlug, taskID: task.id)
-        var entry = kanbanTaskInspections[identity]
+        var entry =
+            kanbanTaskInspections[identity]
             ?? KanbanTaskInspection(detail: Self.fallbackKanbanTaskDetail(task, boardSlug: task.boardSlug))
         guard let cli else {
             entry.error = "Hermes task details are unavailable. Showing the board summary."
@@ -788,8 +846,9 @@ extension ControlCenterModel {
                 next.error = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
             if let result = await attachmentsResult, result.succeeded,
-               let data = result.stdout.data(using: .utf8),
-               let value = try? JSONSerialization.jsonObject(with: data) {
+                let data = result.stdout.data(using: .utf8),
+                let value = try? JSONSerialization.jsonObject(with: data)
+            {
                 next.attachments = Self.parseKanbanAttachments(value, boardSlug: task.boardSlug, taskID: task.id)
                 next.attachmentsAvailable = true
             } else {
@@ -810,7 +869,8 @@ extension ControlCenterModel {
         next[identity] = entry
         // Bounded LRU. In-flight entries are never evicted.
         while kanbanTaskInspectionOrder.count > Self.kanbanTaskInspectionLimit,
-              let index = kanbanTaskInspectionOrder.firstIndex(where: { kanbanTaskInspectionGenerations[$0] == nil }) {
+            let index = kanbanTaskInspectionOrder.firstIndex(where: { kanbanTaskInspectionGenerations[$0] == nil })
+        {
             next[kanbanTaskInspectionOrder.remove(at: index)] = nil
         }
         if next != kanbanTaskInspections { kanbanTaskInspections = next }
@@ -823,9 +883,10 @@ extension ControlCenterModel {
         kanbanStatsGeneration = generation
         Task {
             guard let result = try? await cli.kanbanStats(boardSlug: requestedBoardSlug),
-                  result.succeeded,
-                  generation == kanbanStatsGeneration,
-                  requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                result.succeeded,
+                generation == kanbanStatsGeneration,
+                requestedBoardSlug == selectedKanbanBoardSlug
+            else { return }
             let stats = Self.parseKanbanStats(result.stdout)
             if kanbanStats != stats {
                 kanbanStats = stats
@@ -854,12 +915,15 @@ extension ControlCenterModel {
                 body: cleanBody.isEmpty ? nil : cleanBody
             )
             guard result.succeeded else {
-                lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr)
+                lastError =
+                    Self.safeUserDiagnostic(result.stderr).isEmpty
+                    ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr)
                 return false
             }
             if let sessionID = dockModel?.kanbanSessionID, !sessionID.isEmpty,
-               (selectedKanbanBoardSlug ?? "").isEmpty,
-               let taskID = Self.kanbanTaskID(fromCreateOutput: result.stdout) {
+                (selectedKanbanBoardSlug ?? "").isEmpty,
+                let taskID = Self.kanbanTaskID(fromCreateOutput: result.stdout)
+            {
                 try? await cli.kanbanAttributeSession(taskID: taskID, sessionID: sessionID)
             }
             refreshKanban()
@@ -873,8 +937,9 @@ extension ControlCenterModel {
 
     static func kanbanTaskID(fromCreateOutput output: String) -> String? {
         if let data = output.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let id = object["id"] as? String {
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let id = object["id"] as? String
+        {
             return id
         }
         return output.range(of: #""id"\s*:\s*"(t_[A-Za-z0-9_-]+)""#, options: .regularExpression)
@@ -892,13 +957,23 @@ extension ControlCenterModel {
             do {
                 let result: HermesCLIResult
                 switch action {
-                case .complete: result = try await cli.kanbanComplete(boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
-                case .block: result = try await cli.kanbanBlock(boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
-                case .unblock: result = try await cli.kanbanUnblock(boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
-                case .archive: result = try await cli.kanbanArchive(boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
+                case .complete:
+                    result = try await cli.kanbanComplete(
+                        boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
+                case .block:
+                    result = try await cli.kanbanBlock(
+                        boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
+                case .unblock:
+                    result = try await cli.kanbanUnblock(
+                        boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
+                case .archive:
+                    result = try await cli.kanbanArchive(
+                        boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
                 }
                 guard result.succeeded else {
-                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
+                    lastError =
+                        Self.safeUserDiagnostic(result.stderr).isEmpty
+                        ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 refreshKanban()
@@ -927,20 +1002,34 @@ extension ControlCenterModel {
                 let result: HermesCLIResult
                 switch request.kind {
                 case .comment:
-                    result = try await cli.kanbanComment(boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id, text: value)
+                    result = try await cli.kanbanComment(
+                        boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id,
+                        text: value)
                 case .schedule:
-                    result = try await cli.kanbanSchedule(boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id, reason: value)
+                    result = try await cli.kanbanSchedule(
+                        boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id,
+                        reason: value)
                 case .assign:
-                    result = try await cli.kanbanAssign(boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id, profile: value, reassign: false, reclaim: false)
+                    result = try await cli.kanbanAssign(
+                        boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id,
+                        profile: value, reassign: false, reclaim: false)
                 case .reassign:
-                    result = try await cli.kanbanAssign(boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id, profile: value, reassign: true, reclaim: request.reclaimFirst)
+                    result = try await cli.kanbanAssign(
+                        boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id,
+                        profile: value, reassign: true, reclaim: request.reclaimFirst)
                 case .promote:
-                    result = try await cli.kanbanPromote(boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id, reason: value)
+                    result = try await cli.kanbanPromote(
+                        boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id,
+                        reason: value)
                 case .reclaim:
-                    result = try await cli.kanbanReclaim(boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id, reason: value)
+                    result = try await cli.kanbanReclaim(
+                        boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id,
+                        reason: value)
                 }
                 guard result.succeeded else {
-                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
+                    lastError =
+                        Self.safeUserDiagnostic(result.stderr).isEmpty
+                        ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 refreshKanban()
@@ -980,7 +1069,8 @@ extension ControlCenterModel {
         Task {
             defer { finishAction(actionID) }
             do {
-                _ = try await cli.kanbanMove(boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id, status: lane.status)
+                _ = try await cli.kanbanMove(
+                    boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id, status: lane.status)
             } catch {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }

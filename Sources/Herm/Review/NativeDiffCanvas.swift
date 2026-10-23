@@ -151,7 +151,9 @@ final class DiffCanvasContainer: NSView {
                 split ? [rows.map(\.left), rows.map(\.right)] : [document.lines.map(Optional.some)]
             // Overlay rulers inset the document; zero would hide source underneath the gutter.
             let leadingOrigin = NSPoint(x: onComment == nil ? -76 : -100, y: 0)
-            pendingScroll = columns.indices.map { pendingScroll.indices.contains($0) ? pendingScroll[$0] : leadingOrigin }
+            pendingScroll = columns.indices.map {
+                pendingScroll.indices.contains($0) ? pendingScroll[$0] : leadingOrigin
+            }
             for (columnIndex, column) in columns.enumerated() {
                 let scroll = NSScrollView()
                 let text = DiffSelectableTextView()
@@ -337,7 +339,8 @@ private final class DiffLineRuler: NSRulerView {
     override var requiredThickness: CGFloat { text?.onComment == nil ? 76 : 100 }
     override func drawHashMarksAndLabels(in rect: NSRect) {
         guard let text, let manager = text.layoutManager, let container = text.textContainer,
-              manager.numberOfGlyphs > 0 else {
+            manager.numberOfGlyphs > 0
+        else {
             commentButtons.values.forEach { $0.removeFromSuperview() }
             commentButtons.removeAll()
             return
@@ -376,7 +379,8 @@ private final class DiffLineRuler: NSRulerView {
                     if side == "RIGHT" { target.oldLine = nil }
                     let captured = target
                     button.onPress = { [weak text] in text?.onComment?(captured) }
-                    let location = "\(target.newLine == nil ? "old" : "new") line \(target.newLine ?? target.oldLine ?? 0)"
+                    let location =
+                        "\(target.newLine == nil ? "old" : "new") line \(target.newLine ?? target.oldLine ?? 0)"
                     button.toolTip = "Add review comment on \(location)"
                     button.setAccessibilityLabel("Add review comment on \(location)")
                 }

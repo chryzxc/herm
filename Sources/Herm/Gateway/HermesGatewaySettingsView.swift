@@ -19,13 +19,20 @@ struct HermesGatewaySettingsView: View {
                     .foregroundStyle(Color.dockPrimaryText)
                     .accessibilityLabel("Hermes gateway: \(service.label)")
                 Spacer(minLength: 0)
-                DockIconButton(icon: .arrowsClockwise, label: "Refresh gateway status", isBusy: service.isRefreshing, style: theme.palette) {
+                DockIconButton(
+                    icon: .arrowsClockwise, label: "Refresh gateway status", isBusy: service.isRefreshing,
+                    style: theme.palette
+                ) {
                     Task { await service.refresh() }
                 }
                 .disabled(service.isRestarting)
-                Button { confirmsRestart = true } label: {
-                    DockActionLabel(title: "Restart gateway", pendingTitle: "Restarting…", isPending: service.isRestarting)
-                        .frame(width: 140)
+                Button {
+                    confirmsRestart = true
+                } label: {
+                    DockActionLabel(
+                        title: "Restart gateway", pendingTitle: "Restarting…", isPending: service.isRestarting
+                    )
+                    .frame(width: 140)
                 }
                 .buttonStyle(.dockPress)
                 .dockFont(.body, weight: .medium)
@@ -50,7 +57,9 @@ struct HermesGatewaySettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This restarts the default-profile messaging gateway. Connected messaging channels and scheduled work may be interrupted while it restarts.")
+            Text(
+                "This restarts the default-profile messaging gateway. Connected messaging channels and scheduled work may be interrupted while it restarts."
+            )
         }
         .accessibilityIdentifier("hermes-gateway-settings")
     }

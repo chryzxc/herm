@@ -26,11 +26,14 @@ struct SessionFilesView: View {
     @State private var openRequestID = UUID()
 
     private var presentationIdentity: String {
-        (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? scope?.identity ?? "local") + ":files:" + (projectPath ?? "")
+        (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? scope?.identity ?? "local") + ":files:"
+            + (projectPath ?? "")
     }
     private func savePresentation() {
-        WorkspacePresentationStore.shared.saveReferences(ExplorerPresentation(selected: selectedPath, openFile: document?.path,
-            expandedDirectories: Array(expandedDirectories.sorted().prefix(200))), identity: presentationIdentity)
+        WorkspacePresentationStore.shared.saveReferences(
+            ExplorerPresentation(
+                selected: selectedPath, openFile: document?.path,
+                expandedDirectories: Array(expandedDirectories.sorted().prefix(200))), identity: presentationIdentity)
     }
     private static let indentWidth: CGFloat = 12
 
@@ -42,7 +45,10 @@ struct SessionFilesView: View {
                     document: document,
                     onClose: { self.document = nil },
                     onSave: { draft in
-                        guard await RepositoryService.saveDocument(path: projectPath, filePath: document.path, contents: draft) else { return false }
+                        guard
+                            await RepositoryService.saveDocument(
+                                path: projectPath, filePath: document.path, contents: draft)
+                        else { return false }
                         await onRefresh()
                         await reloadGitStatus()
                         return true
@@ -64,11 +70,14 @@ struct SessionFilesView: View {
             await reload(resetDisclosure: false)
             guard !Task.isCancelled, presentationIdentity == identity else { return }
             if onOpenFile == nil, document == nil, let file = saved?.openFile, let projectPath,
-               RepositoryService.isSafeRelativePath(file) {
+                RepositoryService.isSafeRelativePath(file)
+            {
                 let loaded = await RepositoryService.loadDocument(path: projectPath, filePath: file)
                 guard !Task.isCancelled, presentationIdentity == identity else { return }
                 document = loaded
-                if loaded == nil { error = "The previously open file is unavailable. Choose another file or refresh Explorer." }
+                if loaded == nil {
+                    error = "The previously open file is unavailable. Choose another file or refresh Explorer."
+                }
             }
         }
         .onChange(of: selectedPath) { _, _ in savePresentation() }
@@ -100,12 +109,19 @@ struct SessionFilesView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if isLoading, entries.isEmpty {
-                        HStack(spacing: 7) { ProgressView().controlSize(.small); Text("Loading files…") }
-                            .dockFont(.body)
-                            .foregroundStyle(Color.dockMetadataText)
-                            .padding(12)
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading files…")
+                        }
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .padding(12)
                     } else if entries.isEmpty {
-                        empty(.folder, "No files to show", showsGeneratedFiles ? "The selected project folder has no readable files." : "Generated folders are hidden. Use Explorer options to show them.")
+                        empty(
+                            .folder, "No files to show",
+                            showsGeneratedFiles
+                                ? "The selected project folder has no readable files."
+                                : "Generated folders are hidden. Use Explorer options to show them.")
                     } else if visibleEntries.isEmpty {
                         Text("No files match “\(filterText)”")
                             .dockFont(.body)
@@ -171,7 +187,11 @@ struct SessionFilesView: View {
             .background(alignment: .leading) { indentGuides(depth: entry.depth) }
             .background {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.16) : hoveredPath == entry.path ? Color.dockSurface4.opacity(0.55) : .clear)
+                    .dockSelectionFill(
+                        isSelected,
+                        fallback: isSelected
+                            ? Color.dockAccent.opacity(0.16)
+                            : hoveredPath == entry.path ? Color.dockSurface4.opacity(0.55) : .clear)
             }
             .contentShape(Rectangle())
         }
@@ -179,7 +199,9 @@ struct SessionFilesView: View {
         .disabled(isOpeningFile && !entry.isDirectory)
         .onHover { hoveredPath = $0 ? entry.path : (hoveredPath == entry.path ? nil : hoveredPath) }
         .help(entry.path)
-        .accessibilityLabel(entry.isDirectory ? "\(isExpanded ? "Collapse" : "Expand") \(entry.path)" : "Open \(entry.path)")
+        .accessibilityLabel(
+            entry.isDirectory ? "\(isExpanded ? "Collapse" : "Expand") \(entry.path)" : "Open \(entry.path)"
+        )
         .contextMenu { contextMenu(for: entry) }
     }
 
@@ -201,7 +223,8 @@ struct SessionFilesView: View {
         }
         var attributed = AttributedString(name)
         if let lower = AttributedString.Index(range.lowerBound, within: attributed),
-           let upper = AttributedString.Index(range.upperBound, within: attributed) {
+            let upper = AttributedString.Index(range.upperBound, within: attributed)
+        {
             attributed[lower..<upper].foregroundColor = .dockAccent
             attributed[lower..<upper].font = .system(size: 12.5, weight: .bold)
         }
@@ -236,8 +259,10 @@ struct SessionFilesView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 4)
-            ExplorerToolbarButton(icon: .arrowsInLineVertical, help: "Collapse all folders") { expandedDirectories.removeAll() }
-                .disabled(expandedDirectories.isEmpty)
+            ExplorerToolbarButton(icon: .arrowsInLineVertical, help: "Collapse all folders") {
+                expandedDirectories.removeAll()
+            }
+            .disabled(expandedDirectories.isEmpty)
             ExplorerToolbarButton(icon: .arrowClockwise, help: "Refresh files and git status", isBusy: isRefreshing) {
                 Task { await refresh() }
             }
@@ -281,7 +306,9 @@ struct SessionFilesView: View {
                 Text("\(visibleEntries.filter { !$0.isDirectory }.count)")
                     .dockFont(.metadata, weight: .regular, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
-                Button { filterText = "" } label: {
+                Button {
+                    filterText = ""
+                } label: {
                     DockIcon(.xCircle, weight: .fill).dockFont(.body)
                 }
                 .buttonStyle(.dockHover)
@@ -291,7 +318,10 @@ struct SessionFilesView: View {
         }
         .padding(.horizontal, 9)
         .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.72)))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2.opacity(0.72))
+        )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .padding(.horizontal, 4)
         .padding(.bottom, 8)
@@ -330,7 +360,9 @@ struct SessionFilesView: View {
     }
 
     /// Git reports root-relative paths; the explorer lists project-relative ones.
-    static func projectRelativeStatus(_ files: [RepositoryFileChange], projectPrefix: String) -> [String: RepositoryFileStatus] {
+    static func projectRelativeStatus(_ files: [RepositoryFileChange], projectPrefix: String) -> [String:
+        RepositoryFileStatus]
+    {
         var result: [String: RepositoryFileStatus] = [:]
         // Worktree status first so it wins over the staged entry for the same path.
         for file in files.sorted(by: { !$0.isStaged && $1.isStaged }) where file.path.hasPrefix(projectPrefix) {
@@ -376,7 +408,8 @@ struct SessionFilesView: View {
     static func foldersFirst(_ entries: [ProjectFileEntry]) -> [ProjectFileEntry] {
         let parts = entries.map { $0.path.split(separator: "/").map(String.init) }
         let order = entries.indices.sorted { a, b in
-            let x = parts[a], y = parts[b]
+            let x = parts[a]
+            let y = parts[b]
             for index in 0..<min(x.count, y.count) where x[index] != y[index] {
                 let xIsFolder = index < x.count - 1 || entries[a].isDirectory
                 let yIsFolder = index < y.count - 1 || entries[b].isDirectory
@@ -414,7 +447,8 @@ struct SessionFilesView: View {
     /// children. Load the folder's own level on expand, like VS Code.
     private func loadChildren(of directory: String) async {
         guard let projectPath else { return }
-        let children = await RepositoryService.projectDirectory(path: projectPath, directory: directory, includeGenerated: showsGeneratedFiles)
+        let children = await RepositoryService.projectDirectory(
+            path: projectPath, directory: directory, includeGenerated: showsGeneratedFiles)
         let known = Set(entries.map(\.id))
         let missing = children.filter { !known.contains($0.id) }
         if !missing.isEmpty { entries = Self.foldersFirst(entries + missing) }
@@ -453,9 +487,13 @@ struct SessionFilesView: View {
     }
 
     private func reload(resetDisclosure: Bool) async {
-        guard let projectPath else { entries = []; return }
+        guard let projectPath else {
+            entries = []
+            return
+        }
         isLoading = true
-        entries = Self.foldersFirst(await RepositoryService.projectFiles(path: projectPath, includeGenerated: showsGeneratedFiles))
+        entries = Self.foldersFirst(
+            await RepositoryService.projectFiles(path: projectPath, includeGenerated: showsGeneratedFiles))
         if resetDisclosure { expandedDirectories.removeAll() }
         isLoading = false
         for directory in expandedDirectories { await loadChildren(of: directory) }

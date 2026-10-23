@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func quotaReaderID(for providerID: String) -> String? { providerQuotaReaderIDs[providerID] }
@@ -42,7 +42,8 @@ extension ControlCenterModel {
                 }
                 for await (readerID, result) in group {
                     guard generation == providerQuotaGeneration,
-                          self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { continue }
+                        self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                    else { continue }
                     let previous = reportedProviderQuotas.filter { providerQuotaReaderIDs[$0.provider] == readerID }
                     diagnostics[readerID] = nil
                     if let error = result.error {
@@ -58,7 +59,8 @@ extension ControlCenterModel {
                     seen.formUnion(snapshots.map(\.provider))
                     guard snapshots != previous else { continue }
                     let replaced = Set(previous.map(\.provider))
-                    reportedProviderQuotas = reportedProviderQuotas.filter { !replaced.contains($0.provider) } + snapshots
+                    reportedProviderQuotas =
+                        reportedProviderQuotas.filter { !replaced.contains($0.provider) } + snapshots
                     applyProviderQuotaPresentation()
                     changed = true
                 }
@@ -70,7 +72,10 @@ extension ControlCenterModel {
                 recordProjectionFailure("provider.quota", error: "Quota read was interrupted.")
                 return
             }
-            if providerQuotaDiagnostics != diagnostics { providerQuotaDiagnostics = diagnostics; changed = true }
+            if providerQuotaDiagnostics != diagnostics {
+                providerQuotaDiagnostics = diagnostics
+                changed = true
+            }
             if readerIDs == nil, reportedProviderQuotas.contains(where: { !seen.contains($0.provider) }) {
                 reportedProviderQuotas.removeAll { !seen.contains($0.provider) }
                 applyProviderQuotaPresentation()
@@ -112,10 +117,16 @@ extension ControlCenterModel {
     /// sign in outside Hermes.
     func hermesRow(for descriptor: QuotaProviderDescriptor) -> HermesProviderRow? {
         let hermesBacked: Bool
-        if case .apiKey = descriptor.connect { hermesBacked = true } else { hermesBacked = descriptor.id == "codex-hermes" }
+        if case .apiKey = descriptor.connect {
+            hermesBacked = true
+        } else {
+            hermesBacked = descriptor.id == "codex-hermes"
+        }
         guard hermesBacked else { return nil }
         let id = descriptor.id == "codex-hermes" ? "codex" : descriptor.id
-        let matches = hermesProviderRows?.filter { QuotaWorkspacePresentation.quotaProviderID(for: $0.slug) == id && $0.access != .external }
+        let matches = hermesProviderRows?.filter {
+            QuotaWorkspacePresentation.quotaProviderID(for: $0.slug) == id && $0.access != .external
+        }
         // Several Hermes slugs share one quota id (opencode-go/-zen, kimi-coding/-cn); take the one the quota reader reads.
         return matches?.first { $0.slug == Self.quotaHermesSlugs[id] } ?? matches?.first
     }
@@ -124,7 +135,8 @@ extension ControlCenterModel {
     /// it is only monitored here and has no Settings → Providers row.
     func isQuotaOnly(_ snapshot: ProviderQuotaSnapshot) -> Bool {
         guard hermesProviderRows != nil, snapshot.hermesCredential == nil,
-              let descriptor = QuotaProviderCatalog.descriptor(for: snapshot.provider) else { return false }
+            let descriptor = QuotaProviderCatalog.descriptor(for: snapshot.provider)
+        else { return false }
         return hermesRow(for: descriptor) == nil
     }
 
@@ -182,9 +194,10 @@ extension ControlCenterModel {
         let readerIDs = Set(reportedProviderQuotas.map(\.provider))
         let named = reportedProviderQuotas.filter { snapshot in
             guard let credential = snapshot.hermesCredential, snapshot.windows.isEmpty,
-                  let id = QuotaWorkspacePresentation.quotaProviderID(for: credential.provider),
-                  // Claude and Antigravity read other logins, not this pooled key.
-                  QuotaProviderCatalog.descriptor(for: id)?.storageKey != nil else { return true }
+                let id = QuotaWorkspacePresentation.quotaProviderID(for: credential.provider),
+                // Claude and Antigravity read other logins, not this pooled key.
+                QuotaProviderCatalog.descriptor(for: id)?.storageKey != nil
+            else { return true }
             return !readerIDs.contains(id)
         }.map { snapshot in
             ProviderQuotaSnapshot(
@@ -202,8 +215,12 @@ extension ControlCenterModel {
 
     /// Pay-as-you-go APIs only report a balance, so their cards add spend,
     /// top model, and runway from Hermes' own usage analytics.
-    static func balanceUsageWindows(for snapshot: ProviderQuotaSnapshot, usage: TokenUsageReport?) -> [ProviderQuotaWindow] {
-        guard let usage, usage.days > 0, ["deepseek", "kimi", "openrouter"].contains(snapshot.provider) else { return [] }
+    static func balanceUsageWindows(for snapshot: ProviderQuotaSnapshot, usage: TokenUsageReport?)
+        -> [ProviderQuotaWindow]
+    {
+        guard let usage, usage.days > 0, ["deepseek", "kimi", "openrouter"].contains(snapshot.provider) else {
+            return []
+        }
         let models = usage.models.filter { model in
             (model.providers.isEmpty ? [model.model] : model.providers)
                 .contains { QuotaWorkspacePresentation.quotaProviderID(for: $0) == snapshot.provider }
@@ -213,15 +230,28 @@ extension ControlCenterModel {
         let tokens = models.reduce(0) { $0 + $1.totalTokens }
         let calls = models.reduce(0) { $0 + $1.apiCalls }
         func window(_ id: String, _ label: String, _ value: String, _ detail: String?) -> ProviderQuotaWindow {
-            ProviderQuotaWindow(id: id, label: label, remainingPercent: nil, remainingDisplay: value, limitDisplay: detail, resetsAt: nil, resetsDisplay: nil)
+            ProviderQuotaWindow(
+                id: id, label: label, remainingPercent: nil, remainingDisplay: value, limitDisplay: detail,
+                resetsAt: nil, resetsDisplay: nil)
         }
-        var windows = [window("hermes-spend", "Spent · last \(usage.days)d", "\(UsageWorkspaceView.cost(cost)) est.", "\(UsageWorkspaceView.tokens(tokens)) tokens · \(calls) calls")]
+        var windows = [
+            window(
+                "hermes-spend", "Spent · last \(usage.days)d", "\(UsageWorkspaceView.cost(cost)) est.",
+                "\(UsageWorkspaceView.tokens(tokens)) tokens · \(calls) calls")
+        ]
         if let top = models.max(by: { $0.totalTokens < $1.totalTokens }) {
-            windows.append(window("hermes-top-model", "Top model", top.model, "\(UsageWorkspaceView.tokens(top.totalTokens)) tokens · \(UsageWorkspaceView.cost(top.estimatedCost))"))
+            windows.append(
+                window(
+                    "hermes-top-model", "Top model", top.model,
+                    "\(UsageWorkspaceView.tokens(top.totalTokens)) tokens · \(UsageWorkspaceView.cost(top.estimatedCost))"
+                ))
         }
         if cost > 0, let balance = snapshot.windows.lazy.compactMap(\.amount).first {
             let days = balance / (cost / Double(usage.days))
-            windows.append(window("hermes-runway", "Runway", days < 1 ? "Under a day" : "~\(Int(days.rounded())) days", "at the \(usage.days)-day pace"))
+            windows.append(
+                window(
+                    "hermes-runway", "Runway", days < 1 ? "Under a day" : "~\(Int(days.rounded())) days",
+                    "at the \(usage.days)-day pace"))
         }
         return windows
     }
@@ -338,7 +368,10 @@ extension ControlCenterModel {
             let pool = credentials.filter { $0.provider == provider }
             // No cards for the provider yet (read failed): keep the pin, decide next refresh.
             guard !pool.isEmpty else { continue }
-            guard let pinned = pool.first(where: { $0.id == id }) else { forget.insert(provider); continue }
+            guard let pinned = pool.first(where: { $0.id == id }) else {
+                forget.insert(provider)
+                continue
+            }
             let current = strategy(provider) ?? "fill_first"
             if current == "fill_first", pinned.position != 1 { restore.append(pinned) }
         }
@@ -362,7 +395,8 @@ extension ControlCenterModel {
             if !line.hasPrefix(" "), let header = line.split(separator: " ").first, line.hasSuffix("credentials):") {
                 provider = String(header)
             } else if line.contains("←"),
-                      let id = line.split(separator: " ").first(where: { $0.hasPrefix("id=") })?.dropFirst(3), !id.isEmpty {
+                let id = line.split(separator: " ").first(where: { $0.hasPrefix("id=") })?.dropFirst(3), !id.isEmpty
+            {
                 keys.insert("\(provider)/\(id)")
             }
         }
@@ -377,9 +411,11 @@ extension ControlCenterModel {
     /// `hermes auth priority <provider> <id> 0`. Under `round_robin` Hermes
     /// rotates the order after each pick, so it only stays first until then.
     func makeHermesPooledCredentialPrimary(for providerID: String) {
-        guard let credential = reportedProviderQuotas.first(where: { $0.provider == providerID })?.hermesCredential else { return }
+        guard let credential = reportedProviderQuotas.first(where: { $0.provider == providerID })?.hermesCredential
+        else { return }
         guard let cli else {
-            providerQuotaActionErrors[providerID] = "Hermes is not connected, so the account order could not be changed."
+            providerQuotaActionErrors[providerID] =
+                "Hermes is not connected, so the account order could not be changed."
             return
         }
         let actionID = Self.hermesCredentialPrimaryActionID(providerID)
@@ -388,16 +424,19 @@ extension ControlCenterModel {
         Task {
             defer { finishAction(actionID) }
             do {
-                let result = try await cli.authPriority(provider: credential.provider, credentialID: credential.id, priority: 0)
+                let result = try await cli.authPriority(
+                    provider: credential.provider, credentialID: credential.id, priority: 0)
                 guard result.succeeded else {
                     let message = Self.safeUserDiagnostic(result.stderr)
-                    providerQuotaActionErrors[providerID] = message.isEmpty ? "Hermes could not reorder this account." : message
+                    providerQuotaActionErrors[providerID] =
+                        message.isEmpty ? "Hermes could not reorder this account." : message
                     return
                 }
                 hermesPrimaryCredentials[credential.provider] = credential.id
                 refreshProviderQuota()
             } catch {
-                providerQuotaActionErrors[providerID] = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                providerQuotaActionErrors[providerID] = HermesDiagnosticsService.safeSummary(
+                    Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -406,7 +445,8 @@ extension ControlCenterModel {
     /// `hermes auth remove`, so Hermes stops rotating through it too. The Dock
     /// only forgets its own nickname and position after Hermes succeeds.
     func removeHermesPooledCredential(for providerID: String) {
-        guard let credential = reportedProviderQuotas.first(where: { $0.provider == providerID })?.hermesCredential else { return }
+        guard let credential = reportedProviderQuotas.first(where: { $0.provider == providerID })?.hermesCredential
+        else { return }
         guard let cli else {
             providerQuotaActionErrors[providerID] = "Hermes is not connected, so the account could not be removed."
             return
@@ -420,16 +460,19 @@ extension ControlCenterModel {
                 let result = try await cli.authRemove(provider: credential.provider, credentialID: credential.id)
                 guard result.succeeded else {
                     let message = Self.safeUserDiagnostic(result.stderr)
-                    providerQuotaActionErrors[providerID] = message.isEmpty ? "Hermes could not remove this account." : message
+                    providerQuotaActionErrors[providerID] =
+                        message.isEmpty ? "Hermes could not remove this account." : message
                     return
                 }
                 providerNicknameStore.removeNickname(for: providerID)
-                presentationDefaults.set(providerQuotaOrder.filter { $0 != providerID }, forKey: Self.providerQuotaOrderKey)
+                presentationDefaults.set(
+                    providerQuotaOrder.filter { $0 != providerID }, forKey: Self.providerQuotaOrderKey)
                 reportedProviderQuotas.removeAll { $0.provider == providerID }
                 applyProviderQuotaPresentation()
                 refreshProviderQuota()
             } catch {
-                providerQuotaActionErrors[providerID] = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                providerQuotaActionErrors[providerID] = HermesDiagnosticsService.safeSummary(
+                    Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -462,7 +505,8 @@ extension ControlCenterModel {
     }
 
     nonisolated static func readQuota(_ read: @Sendable () async throws -> [String: Any]) async -> QuotaReadResult {
-        do { return QuotaReadResult(value: try await read(), error: nil) }
-        catch { return QuotaReadResult(value: nil, error: Self.safeUserDiagnostic(error.localizedDescription)) }
+        do { return QuotaReadResult(value: try await read(), error: nil) } catch {
+            return QuotaReadResult(value: nil, error: Self.safeUserDiagnostic(error.localizedDescription))
+        }
     }
 }

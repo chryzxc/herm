@@ -22,9 +22,12 @@ final class PullRequestChatRPC: HermesRPCClientProtocol {
         calls.append((method, params))
         switch method {
         case "session.create": return ["session_id": "runtime", "stored_session_id": "pr-chat"]
-        case "session.resume": return ["session_id": "runtime", "stored_session_id": "pr-chat", "profile": "default", "running": false]
+        case "session.resume":
+            return ["session_id": "runtime", "stored_session_id": "pr-chat", "profile": "default", "running": false]
         case "prompt.submit":
-            if rejectSubmit { throw NSError(domain: "Hermes", code: 1, userInfo: [NSLocalizedDescriptionKey: "Request rejected"]) }
+            if rejectSubmit {
+                throw NSError(domain: "Hermes", code: 1, userInfo: [NSLocalizedDescriptionKey: "Request rejected"])
+            }
             if delaySubmit { return try await withCheckedThrowingContinuation { delayedSubmit = $0 } }
             return ["status": submitStatus]
         case "session.active_list": return ["sessions": active]
@@ -41,11 +44,13 @@ final class PullRequestChatRPC: HermesRPCClientProtocol {
 @MainActor
 struct PullRequestChatTests {
     func record(_ number: Int = 93) throws -> PullRequestRecord {
-        try #require(PullRequestCenterAPI().parse([
-            "number": number, "title": "Bound synthetic measurement tooling", "state": "open",
-            "body": "Add bounded measurements.", "user": ["login": "author"],
-            "head": ["ref": "measurements", "sha": "abc"], "base": ["ref": "main", "sha": "def"],
-        ], repository: GitHubReferenceParser.repository("owner/repo")!, localPath: ""))
+        try #require(
+            PullRequestCenterAPI().parse(
+                [
+                    "number": number, "title": "Bound synthetic measurement tooling", "state": "open",
+                    "body": "Add bounded measurements.", "user": ["login": "author"],
+                    "head": ["ref": "measurements", "sha": "abc"], "base": ["ref": "main", "sha": "def"],
+                ], repository: GitHubReferenceParser.repository("owner/repo")!, localPath: ""))
     }
 
     @Test func defaultBotReceivesPRContextAndFollowUpsReuseTheSession() async throws {
@@ -168,7 +173,9 @@ struct PullRequestChatTests {
     }
 
     @Test func historyRejectsAnotherOwnerAndHidesToolPayloadsAndContext() throws {
-        let session = HermesSession(id: "pr-chat", profileID: "default", title: "PR", preview: "", startedAt: nil, messageCount: 0, source: "herm")
+        let session = HermesSession(
+            id: "pr-chat", profileID: "default", title: "PR", preview: "", startedAt: nil, messageCount: 0,
+            source: "herm")
         for mismatch in [["session_id": "other"], ["profile": "other"]] {
             var result: [String: Any] = mismatch
             result["messages"] = [["role": "assistant", "content": "Wrong conversation"]]
@@ -176,12 +183,18 @@ struct PullRequestChatTests {
                 try HermesPullRequestChatService.parse(result, session: session, isRunning: false)
             }
         }
-        let snapshot = try HermesPullRequestChatService.parse(["messages": [
-            ["role": "user", "content": "<pull_request_context>\nPR metadata\n</pull_request_context>\n\nWhat changed?"],
-            ["role": "assistant", "content": "Tool arguments", "tool_calls": [["id": "tool"]]],
-            ["role": "tool", "content": "Raw output"],
-            ["role": "assistant", "content": [["type": "text", "text": "A bounded change."]]],
-        ]], session: session, isRunning: false)
+        let snapshot = try HermesPullRequestChatService.parse(
+            [
+                "messages": [
+                    [
+                        "role": "user",
+                        "content": "<pull_request_context>\nPR metadata\n</pull_request_context>\n\nWhat changed?",
+                    ],
+                    ["role": "assistant", "content": "Tool arguments", "tool_calls": [["id": "tool"]]],
+                    ["role": "tool", "content": "Raw output"],
+                    ["role": "assistant", "content": [["type": "text", "text": "A bounded change."]]],
+                ]
+            ], session: session, isRunning: false)
         #expect(snapshot.messages.map(\.text) == ["What changed?", "A bounded change."])
         #expect(snapshot.messages.map(\.isUser) == [true, false])
     }
@@ -194,7 +207,9 @@ struct PullRequestChatTests {
         let snapshot = try await HermesPullRequestChatService(client: rpc).load(destination)
         #expect(snapshot.isRunning && snapshot.needsAttention)
         rpc.active = [["session_key": "another-chat", "status": "working"]]
-        await #expect(throws: (any Error).self) { try await HermesPullRequestChatService(client: rpc).load(destination) }
+        await #expect(throws: (any Error).self) {
+            try await HermesPullRequestChatService(client: rpc).load(destination)
+        }
     }
 
     @Test func refreshFromBeforeSubmissionCannotClearTheNewRunningState() async throws {

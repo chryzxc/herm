@@ -6,7 +6,9 @@ import SwiftUI
 struct DockSkinSpecimen: View {
     let theme: DockThemeID
     /// Sample Bots in states that show each skin's face tone, ring and badges.
-    static let faces: [(id: String, mood: BotMood)] = [("nexus", .idle), ("forge", .tool), ("comms", .approval), ("atlas", .done)]
+    static let faces: [(id: String, mood: BotMood)] = [
+        ("nexus", .idle), ("forge", .tool), ("comms", .approval), ("atlas", .done),
+    ]
     @Environment(\.colorScheme) private var colorScheme
 
     private var palette: DockThemePalette { DockThemePalette(theme: theme) }
@@ -61,7 +63,10 @@ struct DockSkinSpecimen: View {
         .frame(height: 148)
         // Native-material tokens are translucent; the specimen needs a solid base.
         .background(palette.windowBackground.overlay(DockBackdrop(style: style, accent: palette.accent)))
-        .background(theme.appearance == .dark || (theme.appearance == .system && colorScheme == .dark) ? Color.black : Color.white)
+        .background(
+            theme.appearance == .dark || (theme.appearance == .system && colorScheme == .dark)
+                ? Color.black : Color.white
+        )
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .accessibilityHidden(true)
         .allowsHitTesting(false)
@@ -83,9 +88,13 @@ struct DockSkinSpecimen: View {
             panel.fill(palette.surface)
                 .overlay {
                     if style.material == .glass {
-                        panel.stroke(LinearGradient(colors: [palette.primaryText.opacity(0.5), palette.divider.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                        panel.stroke(
+                            LinearGradient(
+                                colors: [palette.primaryText.opacity(0.5), palette.divider.opacity(0.2)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                     } else if style.outlineWidth > 0 {
-                        panel.stroke(palette.divider.opacity(style.outlineWidth > 1 ? 1 : 0.6), lineWidth: style.outlineWidth)
+                        panel.stroke(
+                            palette.divider.opacity(style.outlineWidth > 1 ? 1 : 0.6), lineWidth: style.outlineWidth)
                     }
                 }
                 .dockStickerShadow(panel, theme: theme)

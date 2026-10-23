@@ -1,11 +1,13 @@
 import AppKit
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct GitHubMarkdownPipelineTests {
     @Test func legacyNativeHostUsesTheCanonicalAttributedDocument() {
-        let source = "# Heading\n\n1. First **bold**\n2. Second [safe](https://example.com)\n\n> Quote\n\n| Name | Value |\n| --- | --- |\n| a | b |\n\n```swift\nlet answer = 42\n```"
+        let source =
+            "# Heading\n\n1. First **bold**\n2. Second [safe](https://example.com)\n\n> Quote\n\n| Name | Value |\n| --- | --- |\n| a | b |\n\n```swift\nlet answer = 42\n```"
         let canonical = NativeMarkdownAttributedTextBuilder.document(source, palette: NativeMarkdownPalette()).string
         let legacy = NativeMarkdownMessageView.Coordinator.attributedString(for: source)
         #expect(legacy.string == canonical.string)
@@ -17,11 +19,13 @@ struct GitHubMarkdownPipelineTests {
                 let font = row[.font] as? NSFont
                 let paragraph = row[.paragraphStyle] as? NSParagraphStyle
                 let color = (row[.foregroundColor] as? NSColor)?.usingColorSpace(.sRGB)
-                return "\(font?.fontName ?? ""):\(font?.pointSize ?? 0):\(row[.link] ?? ""):\(paragraph?.headIndent ?? 0):\(paragraph?.textBlocks.count ?? 0):\(color?.redComponent ?? 0):\(color?.greenComponent ?? 0):\(color?.blueComponent ?? 0)"
+                return
+                    "\(font?.fontName ?? ""):\(font?.pointSize ?? 0):\(row[.link] ?? ""):\(paragraph?.headIndent ?? 0):\(paragraph?.textBlocks.count ?? 0):\(color?.redComponent ?? 0):\(color?.greenComponent ?? 0):\(color?.blueComponent ?? 0)"
             }
         }
         #expect(attributes(legacy) == attributes(canonical))
-        #expect(MarkdownMessageView.renderBlocks(for: source) == MarkdownRenderDocumentBuilder.renderBlocks(for: source))
+        #expect(
+            MarkdownMessageView.renderBlocks(for: source) == MarkdownRenderDocumentBuilder.renderBlocks(for: source))
     }
     @Test func presentationSizeChangesInvalidateAttributedOutput() {
         let first = NativeMarkdownTextSectionView()
@@ -52,22 +56,29 @@ struct GitHubMarkdownPipelineTests {
             let palette = NativeMarkdownPalette(bodySize: size)
             let heading = NativeMarkdownAttributedTextBuilder.document("# Heading", palette: palette).string
             let code = NativeMarkdownAttributedTextBuilder.code("let value = 1", palette: palette)
-            #expect((heading.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == palette.fontSize(18))
+            #expect(
+                (heading.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == palette.fontSize(18))
             #expect((code.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == palette.fontSize(12.5))
         }
         let view = NativeMarkdownCodeView()
         for size in [CGFloat(14), CGFloat(16), CGFloat(14)] {
             view.update(code: "```swift\nlet value = 1\n```", language: "swift", bodySize: size)
-            let text = view.subviews.flatMap { $0.subviews }.flatMap { $0.subviews }.compactMap { $0 as? NSTextView }.first
+            let text = view.subviews.flatMap { $0.subviews }.flatMap { $0.subviews }.compactMap { $0 as? NSTextView }
+                .first
             #expect(text != nil)
-            #expect((text?.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == NativeMarkdownPalette(bodySize: size).fontSize(12.5))
+            #expect(
+                (text?.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize
+                    == NativeMarkdownPalette(bodySize: size).fontSize(12.5))
         }
     }
     @Test func documentCacheSeparatesSourceAndThemeRevisions() {
         let id = UUID()
-        let first = MarkdownRenderDocumentCache.document(for: "old", key: .init(messageID: id, contentRevision: 1, themeRevision: 0))
-        let updated = MarkdownRenderDocumentCache.document(for: "new", key: .init(messageID: id, contentRevision: 2, themeRevision: 0))
-        let themed = MarkdownRenderDocumentCache.document(for: "new", key: .init(messageID: id, contentRevision: 2, themeRevision: 1))
+        let first = MarkdownRenderDocumentCache.document(
+            for: "old", key: .init(messageID: id, contentRevision: 1, themeRevision: 0))
+        let updated = MarkdownRenderDocumentCache.document(
+            for: "new", key: .init(messageID: id, contentRevision: 2, themeRevision: 0))
+        let themed = MarkdownRenderDocumentCache.document(
+            for: "new", key: .init(messageID: id, contentRevision: 2, themeRevision: 1))
         #expect(first.source == "old")
         #expect(updated.source == "new")
         #expect(themed.key.themeRevision == 1)

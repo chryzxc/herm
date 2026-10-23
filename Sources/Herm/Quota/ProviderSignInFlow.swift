@@ -22,7 +22,8 @@ struct ProviderSignInPrompt: Equatable {
         prompt.code = all.lazy.compactMap(code(in:)).last
         if let success = lines.last(where: { $0.hasPrefix("Added ") || $0.hasPrefix("Saved ") }) {
             prompt.successLine = success
-            prompt.accountLabel = success.split(separator: "\"", omittingEmptySubsequences: false).dropFirst().first.map(String.init)
+            prompt.accountLabel = success.split(separator: "\"", omittingEmptySubsequences: false).dropFirst().first
+                .map(String.init)
         }
         // input() prompts never end in a newline, so only the partial line can be one.
         let waiting = partial.trimmingCharacters(in: .whitespaces)
@@ -33,15 +34,21 @@ struct ProviderSignInPrompt: Equatable {
 
     /// `Enter this code: ABCD-1234` / `If prompted, enter code: ABCD-1234`.
     static func code(in line: String) -> String? {
-        guard let match = line.range(of: #"(?i)enter (this )?code:\s*[A-Z0-9][A-Z0-9-]{3,}"#, options: .regularExpression) else { return nil }
+        guard
+            let match = line.range(of: #"(?i)enter (this )?code:\s*[A-Z0-9][A-Z0-9-]{3,}"#, options: .regularExpression)
+        else { return nil }
         return line[match].split(separator: ":").last.map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     static func links(in line: String) -> [(range: Range<String.Index>, url: URL)] {
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
-        return detector.matches(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line)).compactMap { match in
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return []
+        }
+        return detector.matches(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line)).compactMap {
+            match in
             guard let url = match.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-                  let range = Range(match.range, in: line) else { return nil }
+                let range = Range(match.range, in: line)
+            else { return nil }
             return (range, url)
         }
     }
@@ -94,11 +101,15 @@ struct ProviderSignInFlow: View {
                     } else if let failure = login.failureText {
                         failed(failure)
                     } else if let status = login.exitStatus {
-                        failed("Sign-in didn't finish (exit status \(status)). The details below show what Hermes reported.")
+                        failed(
+                            "Sign-in didn't finish (exit status \(status)). The details below show what Hermes reported."
+                        )
                     }
                 }
                 if !login.outputLines.isEmpty || !login.partialLine.isEmpty {
-                    DisclosureGroup(isExpanded: $showsDetails) { details } label: {
+                    DisclosureGroup(isExpanded: $showsDetails) {
+                        details
+                    } label: {
                         Text("Sign-in details")
                             .dockFont(.body, weight: .medium)
                             .foregroundStyle(Color.dockSecondaryText)
@@ -136,7 +147,9 @@ struct ProviderSignInFlow: View {
             if usesBrowser {
                 step(1, "Open the sign-in page", done: false) {
                     if let url = prompt.url {
-                        Button { NSWorkspace.shared.open(url) } label: {
+                        Button {
+                            NSWorkspace.shared.open(url)
+                        } label: {
                             DockIconLabel("Open \(url.host ?? "sign-in page")", icon: .arrowSquareOut)
                         }
                         .buttonStyle(.dockPrimary)
@@ -163,20 +176,28 @@ struct ProviderSignInFlow: View {
                         .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
+                                .dockSurfaceFill(
+                                    Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
                         )
                     }
                 }
             }
             if prompt.needsInput || showsReply {
-                step(usesBrowser ? (prompt.code == nil ? 2 : 3) : 1, prompt.asksForCode || !prompt.needsInput ? "Paste the authorization code" : "Hermes is asking a question", done: false) {
+                step(
+                    usesBrowser ? (prompt.code == nil ? 2 : 3) : 1,
+                    prompt.asksForCode || !prompt.needsInput
+                        ? "Paste the authorization code" : "Hermes is asking a question", done: false
+                ) {
                     if prompt.needsInput, !prompt.asksForCode {
-                        Text(login.partialLine).dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(Color.dockSecondaryText)
+                        Text(login.partialLine).dockFont(.metadata, weight: .regular, design: .monospaced)
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
                     HStack(spacing: 8) {
-                        DockTextField(prompt.asksForCode ? "Paste the code from the browser" : "Type a reply", text: $reply)
-                            .textFieldStyle(.dockGlass)
-                            .onSubmit(sendReply)
+                        DockTextField(
+                            prompt.asksForCode ? "Paste the code from the browser" : "Type a reply", text: $reply
+                        )
+                        .textFieldStyle(.dockGlass)
+                        .onSubmit(sendReply)
                         Button("Submit", action: sendReply)
                             .buttonStyle(.dockSecondary)
                             .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -199,7 +220,9 @@ struct ProviderSignInFlow: View {
         }
     }
 
-    private func step<Content: View>(_ number: Int, _ title: String, done: Bool, @ViewBuilder content: () -> Content) -> some View {
+    private func step<Content: View>(_ number: Int, _ title: String, done: Bool, @ViewBuilder content: () -> Content)
+        -> some View
+    {
         HStack(alignment: .top, spacing: 10) {
             Text("\(number)")
                 .dockFont(.metadata, weight: .bold, design: .rounded)
@@ -255,7 +278,10 @@ struct ProviderSignInFlow: View {
     private var details: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array((login.outputLines + (login.partialLine.isEmpty ? [] : [login.partialLine])).enumerated()), id: \.offset) { _, line in
+                ForEach(
+                    Array((login.outputLines + (login.partialLine.isEmpty ? [] : [login.partialLine])).enumerated()),
+                    id: \.offset
+                ) { _, line in
                     Text(ProviderSignInPrompt.linked(line))
                         .dockFont(.metadata, weight: .regular, design: .monospaced)
                         .foregroundStyle(Color.dockSecondaryText)
@@ -269,7 +295,8 @@ struct ProviderSignInFlow: View {
         .frame(maxHeight: 150)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .dockSurfaceFill(Color.dockSurface.opacity(0.4), stroke: Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                .dockSurfaceFill(
+                    Color.dockSurface.opacity(0.4), stroke: Color.dockBorderLight, lineWidth: DockLayout.hairline)
         )
         .padding(.top, 6)
     }

@@ -17,12 +17,15 @@ enum HermesProfileService {
     static func parse(_ output: String, format: HermesProfileInputFormat) -> HermesProfileInventory {
         switch format {
         case .humanTable:
-            return HermesProfileInventory(state: .unsupported, profiles: [], connections: [], diagnostic: "Human-readable inventory is unsupported.")
+            return HermesProfileInventory(
+                state: .unsupported, profiles: [], connections: [],
+                diagnostic: "Human-readable inventory is unsupported.")
         case .json:
             do {
                 return try parseVerifiedJSON(output)
             } catch {
-                return HermesProfileInventory(state: .malformed, profiles: [], connections: [], diagnostic: "Structured inventory was malformed.")
+                return HermesProfileInventory(
+                    state: .malformed, profiles: [], connections: [], diagnostic: "Structured inventory was malformed.")
             }
         }
     }
@@ -43,18 +46,20 @@ enum HermesProfileService {
         maxAge: TimeInterval = 300
     ) throws -> HermesProfileInventory {
         guard let data = output.data(using: .utf8),
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              Set(object.keys) == ["profiles", "connections"],
-              let rawProfiles = object["profiles"] as? [[String: Any]],
-              let rawConnections = object["connections"] as? [[String: Any]] else {
+            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            Set(object.keys) == ["profiles", "connections"],
+            let rawProfiles = object["profiles"] as? [[String: Any]],
+            let rawConnections = object["connections"] as? [[String: Any]]
+        else {
             throw ParseError.invalid
         }
 
         var profiles: [HermesProfileSummary] = []
         for raw in rawProfiles {
             guard Set(raw.keys).isSubset(of: ["name", "model", "gateway", "is_active"]),
-                  let name = raw["name"] as? String, safeIdentifier(name),
-                  let gateway = raw["gateway"] as? String, safeIdentifier(gateway) else { throw ParseError.invalid }
+                let name = raw["name"] as? String, safeIdentifier(name),
+                let gateway = raw["gateway"] as? String, safeIdentifier(gateway)
+            else { throw ParseError.invalid }
 
             let model: String?
             if let rawModel = raw["model"] {
@@ -71,14 +76,16 @@ enum HermesProfileService {
             } else {
                 isActive = false
             }
-            profiles.append(HermesProfileSummary(name: name, model: model, isActive: isActive, state: state(for: gateway)))
+            profiles.append(
+                HermesProfileSummary(name: name, model: model, isActive: isActive, state: state(for: gateway)))
         }
 
         var connections: [HermesConnectionSummary] = []
         for raw in rawConnections {
             guard Set(raw.keys).isSubset(of: ["profile", "status", "label", "transport"]),
-                  let profileName = raw["profile"] as? String, safeIdentifier(profileName),
-                  let status = raw["status"] as? String, safeIdentifier(status) else { throw ParseError.invalid }
+                let profileName = raw["profile"] as? String, safeIdentifier(profileName),
+                let status = raw["status"] as? String, safeIdentifier(status)
+            else { throw ParseError.invalid }
 
             let label: String?
             if let rawLabel = raw["label"] {
@@ -95,7 +102,9 @@ enum HermesProfileService {
             } else {
                 transport = "gateway"
             }
-            connections.append(HermesConnectionSummary(profileName: profileName, label: label, transport: transport, state: state(for: status)))
+            connections.append(
+                HermesConnectionSummary(
+                    profileName: profileName, label: label, transport: transport, state: state(for: status)))
         }
 
         let stale = maxAge >= 0 && now.timeIntervalSince(observedAt) > maxAge
@@ -109,14 +118,16 @@ enum HermesProfileService {
 
     private static func safeIdentifier(_ value: String) -> Bool {
         guard !value.isEmpty, value.count <= 128,
-              value.first?.isLetter == true || value.first?.isNumber == true else { return false }
+            value.first?.isLetter == true || value.first?.isNumber == true
+        else { return false }
         return value.allSatisfy { $0.isLetter || $0.isNumber || ".:_-".contains($0) }
     }
 
     private static func safeModel(_ value: String) -> Bool {
         guard safeIdentifier(value),
-              !value.lowercased().contains("token"),
-              !value.lowercased().contains("secret") else { return false }
+            !value.lowercased().contains("token"),
+            !value.lowercased().contains("secret")
+        else { return false }
         return true
     }
 

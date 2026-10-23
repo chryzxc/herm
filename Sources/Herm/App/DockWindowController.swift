@@ -23,7 +23,7 @@ final class DockWindowController: NSObject, NSWindowDelegate {
     init(model: DockModel, controlCenter: ControlCenterModel) {
         self.model = model
         self.controlCenter = controlCenter
-        presentation.isFullscreen = true // the window always uses the full Mission Control layout
+        presentation.isFullscreen = true  // the window always uses the full Mission Control layout
     }
 
     func open() {
@@ -58,9 +58,10 @@ final class DockWindowController: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered, defer: false)
         window.title = "Herm"
         // Unified chrome: app background runs under the titlebar, like VS Code.
         window.titlebarAppearsTransparent = true
@@ -73,19 +74,23 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.minSize = NSSize(width: 900 * DockWorkspaceScale.window,
-                                height: 600 * DockWorkspaceScale.window)
+        window.minSize = NSSize(
+            width: 900 * DockWorkspaceScale.window,
+            height: 600 * DockWorkspaceScale.window)
         window.delegate = self
-        let workspace = NSHostingView(rootView: DockWindowWorkspace { DockPopover(
-            model: model, panelPresentation: presentation, controlCenter: controlCenter,
-            onClose: { [weak window] in window?.performClose(nil) },
-            onFullscreenToggle: { [weak window] in window?.toggleFullScreen(nil) },
-            onOpenWindow: { [weak self, weak window] in
-                window?.close()
-                self?.onReturnToFloating?()
-            },
-            usesWindowChrome: true
-        ) })
+        let workspace = NSHostingView(
+            rootView: DockWindowWorkspace {
+                DockPopover(
+                    model: model, panelPresentation: presentation, controlCenter: controlCenter,
+                    onClose: { [weak window] in window?.performClose(nil) },
+                    onFullscreenToggle: { [weak window] in window?.toggleFullScreen(nil) },
+                    onOpenWindow: { [weak self, weak window] in
+                        window?.close()
+                        self?.onReturnToFloating?()
+                    },
+                    usesWindowChrome: true
+                )
+            })
         workspace.sizingOptions = []
         workspace.safeAreaRegions = []
         // Herm lays out its own 52pt title row. A titlebar safe area would let

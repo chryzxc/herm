@@ -117,12 +117,25 @@ struct IssueDetailView: View {
                         accessibilityLabel: "Open issue on GitHub"
                     )
                 }
-                DockIconButton(icon: .arrowsClockwise, label: "Refresh issue details", isBusy: center.loadingDetailID == issue.id, style: DockThemePalette(theme: DockThemeRuntime.current)) { Task { await center.refreshSelectedDetail() } }
-                GitHubAuthoringMenu(reference: displayedIssue.reference, client: center.api.client, onIssueStateChanged: { center.applyIssueState($0) }) { Task { await center.refreshSelectedDetail() } }.id(displayedIssue.id)
+                DockIconButton(
+                    icon: .arrowsClockwise, label: "Refresh issue details", isBusy: center.loadingDetailID == issue.id,
+                    style: DockThemePalette(theme: DockThemeRuntime.current)
+                ) { Task { await center.refreshSelectedDetail() } }
+                GitHubAuthoringMenu(
+                    reference: displayedIssue.reference, client: center.api.client,
+                    onIssueStateChanged: { center.applyIssueState($0) }
+                ) { Task { await center.refreshSelectedDetail() } }.id(displayedIssue.id)
                 DockMenu {
-                    Button(PullRequestChatLinkStore().sessionID(for: displayedIssue.id) == nil ? "Prepare in Hermes" : "Open linked Hermes chat") { onOpenChat(displayedIssue) }
-                } label: { DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28)
-                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6))) }
+                    Button(
+                        PullRequestChatLinkStore().sessionID(for: displayedIssue.id) == nil
+                            ? "Prepare in Hermes" : "Open linked Hermes chat"
+                    ) { onOpenChat(displayedIssue) }
+                } label: {
+                    DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28)
+                        .background(
+                            DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
+                                Color.dockControlSurface.opacity(0.6)))
+                }
                 AttachToChatMenu(pill: true) { ChatContext(issue: displayedIssue) }
             }
             .padding(.horizontal, isInspector ? 12 : 24)
@@ -157,7 +170,9 @@ struct IssueDetailView: View {
                     }.dockFont(.body).dockCard(padding: 16)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        DockSectionHeader(title: "Description", isExpanded: $descriptionExpanded, style: DockThemePalette(theme: DockThemeRuntime.current))
+                        DockSectionHeader(
+                            title: "Description", isExpanded: $descriptionExpanded,
+                            style: DockThemePalette(theme: DockThemeRuntime.current))
                         if descriptionExpanded {
                             if displayedIssue.body.isEmpty {
                                 Text("No description provided.").foregroundStyle(Color.dockSecondaryText)
@@ -168,7 +183,9 @@ struct IssueDetailView: View {
                             }
                         }
                     }.dockFont(.body).dockCard(padding: 16)
-                    GitHubMetadataView(reference: displayedIssue.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(issue.id)
+                    GitHubMetadataView(reference: displayedIssue.reference, client: center.api.client) {
+                        Task { await center.refreshSelectedDetail() }
+                    }.id(issue.id)
                     GitHubConversationView(model: center.conversation(for: displayedIssue))
                         .id("conversation:" + issue.id)
                 }
@@ -197,7 +214,9 @@ struct IssueDetailView: View {
                 HStack(spacing: 12) {
                     assignment(metadata.assignment, issue: issue)
                     Spacer(minLength: 8)
-                    if let updated = metadata.updated { Text(updated).foregroundStyle(Color.dockMetadataText).fixedSize() }
+                    if let updated = metadata.updated {
+                        Text(updated).foregroundStyle(Color.dockMetadataText).fixedSize()
+                    }
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     assignment(metadata.assignment, issue: issue)

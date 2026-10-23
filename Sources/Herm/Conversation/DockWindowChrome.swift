@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Geometry of the window's unified title row (see DockWindowController).
@@ -44,7 +44,9 @@ struct TitlebarDoubleClickArea: NSViewRepresentable {
                 case "None": break
                 default: window?.zoom(nil)
                 }
-            } else { super.mouseDown(with: event) }
+            } else {
+                super.mouseDown(with: event)
+            }
         }
     }
 

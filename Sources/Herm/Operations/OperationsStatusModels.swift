@@ -58,7 +58,10 @@ struct OperationsStatusCard: Identifiable, Equatable, Sendable {
     let formatSupport: OperationsFormatSupport
     var isStale: Bool = false
 
-    init(id: String, title: String, status: OperationsStatus, detail: String, formatSupport: OperationsFormatSupport, isStale: Bool = false) {
+    init(
+        id: String, title: String, status: OperationsStatus, detail: String, formatSupport: OperationsFormatSupport,
+        isStale: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.status = status
@@ -78,15 +81,16 @@ struct OperationsStatusSnapshot: Equatable, Sendable {
         self.cards = cards
     }
 
-    static let unavailable = OperationsStatusSnapshot(cards: OperationsSurface.allCases.map {
-        OperationsStatusCard(
-            id: $0.rawValue,
-            title: $0.title,
-            status: .unavailable,
-            detail: "Status is unavailable. Reconnect Hermes and refresh.",
-            formatSupport: .unsupported
-        )
-    })
+    static let unavailable = OperationsStatusSnapshot(
+        cards: OperationsSurface.allCases.map {
+            OperationsStatusCard(
+                id: $0.rawValue,
+                title: $0.title,
+                status: .unavailable,
+                detail: "Status is unavailable. Reconnect Hermes and refresh.",
+                formatSupport: .unsupported
+            )
+        })
 }
 
 /// A generation-guarded projection. Refresh never clears a successful value;
@@ -128,11 +132,12 @@ struct OperationsStatusProjection: Equatable, Sendable {
     var displayCards: [OperationsStatusCard] {
         switch state {
         case .ready(let snapshot): snapshot.cards
-        case .stale(let snapshot, _): snapshot.cards.map { card in
-            var copy = card
-            copy.isStale = true
-            return copy
-        }
+        case .stale(let snapshot, _):
+            snapshot.cards.map { card in
+                var copy = card
+                copy.isStale = true
+                return copy
+            }
         default: []
         }
     }
@@ -145,9 +150,12 @@ struct OperationsStatusProjection: Equatable, Sendable {
     }
 
     static func sanitize(_ message: String) -> String {
-        let redacted = message
+        let redacted =
+            message
             .replacingOccurrences(of: #"/(Users|private|var|tmp)/[^\s]+"#, with: "[path]", options: .regularExpression)
-            .replacingOccurrences(of: #"(?i)(token|password|secret|bearer|api[_-]?key)=\S+"#, with: "$1=[redacted]", options: .regularExpression)
+            .replacingOccurrences(
+                of: #"(?i)(token|password|secret|bearer|api[_-]?key)=\S+"#, with: "$1=[redacted]",
+                options: .regularExpression)
         let compact = redacted.trimmingCharacters(in: .whitespacesAndNewlines)
         return String((compact.isEmpty ? "Refresh failed." : compact).prefix(240))
     }

@@ -62,9 +62,12 @@ enum OfficeLowPolyMesh {
         var uvs: [SIMD2<Float>] = []
         var indices: [UInt32] = []
         // (normal axis, sign, u axis, v axis) with u × v pointing outward.
-        let faces: [(Int, Float, Int, Int)] = [(0, 1, 1, 2), (0, -1, 2, 1), (1, 1, 2, 0), (1, -1, 0, 2), (2, 1, 0, 1), (2, -1, 1, 0)]
+        let faces: [(Int, Float, Int, Int)] = [
+            (0, 1, 1, 2), (0, -1, 2, 1), (1, 1, 2, 0), (1, -1, 0, 2), (2, 1, 0, 1), (2, -1, 1, 0),
+        ]
         for (axis, sign, uAxis, vAxis) in faces {
-            let us = coordinates(uAxis), vs = coordinates(vAxis)
+            let us = coordinates(uAxis)
+            let vs = coordinates(vAxis)
             let base = UInt32(positions.count)
             for (j, v) in vs.enumerated() {
                 for (i, u) in us.enumerated() {
@@ -82,7 +85,10 @@ enum OfficeLowPolyMesh {
             let row = UInt32(us.count)
             for j in 0..<UInt32(vs.count - 1) {
                 for i in 0..<UInt32(us.count - 1) {
-                    let a = base + j * row + i, b = a + 1, c = a + row + 1, d = a + row
+                    let a = base + j * row + i
+                    let b = a + 1
+                    let c = a + row + 1
+                    let d = a + row
                     indices += [a, b, c, a, c, d]
                 }
             }

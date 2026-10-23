@@ -37,8 +37,10 @@ two central palette files. `make check` runs this in CI. The scanner's own tests
 verify that new files and extra copies of old exceptions are rejected.
 
 `Scripts/color-exceptions.json` counts existing source colors, legacy avatar
-compatibility, and scene material definitions by exact source line. It is not a
-whole-file exemption. Remove entries as legacy code goes away; do not regenerate
+compatibility, and scene material definitions by exact source expression. Layout,
+semicolons, and trailing commas may change without consuming another exception;
+string contents and other tokens must match. Multiline colors are checked too.
+It is not a whole-file exemption. Remove entries as legacy code goes away; do not regenerate
 or increase counts just to pass a new feature. An intentional new external
 identity/material exception requires a reviewable explanation in this document.
 The check catches common syntax, not every possible way to construct a color;

@@ -1,7 +1,7 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
@@ -69,7 +69,10 @@ extension WorkspaceActivitySidebar {
                             case .usage, .calendar, .capabilities, .messaging: EmptyView()
                             }
                         }
-                        .frame(maxWidth: readingWidthModes.contains(selectedMode) ? 1280 : .infinity, alignment: .topLeading)
+                        .frame(
+                            maxWidth: readingWidthModes.contains(selectedMode) ? 1280 : .infinity,
+                            alignment: .topLeading
+                        )
                         .frame(maxWidth: .infinity, alignment: .top)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
@@ -84,47 +87,52 @@ extension WorkspaceActivitySidebar {
 
     var pageHeader: some View {
         if selectedMode == .kanban {
-            AnyView(DockPageHeader(
-                title: selectedMode.pageHeaderTitle,
-                subtitle: pageHeaderSubtitle,
-                onRefresh: { applyKanbanFilters() },
-                isRefreshing: control.isKanbanRefreshPending,
-                trailing: { if titleRow != nil { kanbanToolbarControls } }
-            ))
+            AnyView(
+                DockPageHeader(
+                    title: selectedMode.pageHeaderTitle,
+                    subtitle: pageHeaderSubtitle,
+                    onRefresh: { applyKanbanFilters() },
+                    isRefreshing: control.isKanbanRefreshPending,
+                    trailing: { if titleRow != nil { kanbanToolbarControls } }
+                ))
         } else if selectedMode == .automations {
-            AnyView(DockPageHeader(
-                title: selectedMode.pageHeaderTitle,
-                subtitle: pageHeaderSubtitle,
-                onRefresh: refreshAutomations,
-                isRefreshing: automationIsRefreshing,
-                trailing: {
-                Button(action: { isShowingAutomationComposer = true }) {
-                    DockIconLabel("New automation", icon: .plus)
-                }
-                .buttonStyle(.dockSecondary)
-                .controlSize(.small)
-                }
-            ))
+            AnyView(
+                DockPageHeader(
+                    title: selectedMode.pageHeaderTitle,
+                    subtitle: pageHeaderSubtitle,
+                    onRefresh: refreshAutomations,
+                    isRefreshing: automationIsRefreshing,
+                    trailing: {
+                        Button(action: { isShowingAutomationComposer = true }) {
+                            DockIconLabel("New automation", icon: .plus)
+                        }
+                        .buttonStyle(.dockSecondary)
+                        .controlSize(.small)
+                    }
+                ))
         } else if selectedMode == .core {
-            AnyView(DockPageHeader(
-                title: selectedMode.pageHeaderTitle,
-                subtitle: pageHeaderSubtitle,
-                onRefresh: { control.refresh() },
-                isRefreshing: control.isRefreshing,
-                sidebarCollapsed: $isSettingsRailCollapsed
-            ))
+            AnyView(
+                DockPageHeader(
+                    title: selectedMode.pageHeaderTitle,
+                    subtitle: pageHeaderSubtitle,
+                    onRefresh: { control.refresh() },
+                    isRefreshing: control.isRefreshing,
+                    sidebarCollapsed: $isSettingsRailCollapsed
+                ))
         } else if selectedMode == .usage {
-            AnyView(DockPageHeader(
-                title: selectedMode.pageHeaderTitle,
-                subtitle: pageHeaderSubtitle,
-                // Only the page switch; each tab's own controls sit in its first row.
-                trailing: { DockTabBar(options: ActivityTab.allCases, selection: $activityTab, title: \.rawValue) }
-            ))
+            AnyView(
+                DockPageHeader(
+                    title: selectedMode.pageHeaderTitle,
+                    subtitle: pageHeaderSubtitle,
+                    // Only the page switch; each tab's own controls sit in its first row.
+                    trailing: { DockTabBar(options: ActivityTab.allCases, selection: $activityTab, title: \.rawValue) }
+                ))
         } else {
-            AnyView(DockPageHeader(
-                title: selectedMode.pageHeaderTitle,
-                subtitle: pageHeaderSubtitle
-            ))
+            AnyView(
+                DockPageHeader(
+                    title: selectedMode.pageHeaderTitle,
+                    subtitle: pageHeaderSubtitle
+                ))
         }
     }
 
@@ -245,7 +253,8 @@ extension WorkspaceActivitySidebar {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .diagnostics:
+        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety,
+            .browser, .memory, .voice, .advanced, .diagnostics:
             return nil
         }
     }
@@ -317,18 +326,26 @@ extension WorkspaceActivitySidebar {
             bots: botMode.bots,
             mainSessions: officeMainSessions,
             onOpenSession: { id in
-                if let session = model.sessions.first(where: { $0.id == id }) { model.resumeSession(session) }
-                else if let session = control.activeSessions.first(where: { $0.id == id }) { control.openLatestActivitySession(session) }
+                if let session = model.sessions.first(where: { $0.id == id }) {
+                    model.resumeSession(session)
+                } else if let session = control.activeSessions.first(where: { $0.id == id }) {
+                    control.openLatestActivitySession(session)
+                }
             },
             avatarImages: botMode.avatarImages,
             canAssignTasks: control.capabilityAvailable("kanban.assign"),
             isDataCurrent: officeKanbanIsCurrent,
-            subtitle: projectionHeaderSubtitle(control.projectionState(for: "kanban.board"), fallback: selectedMode.pageHeaderSubtitle),
-            onRefresh: { control.refreshGlobalKanban(); control.refresh(); botMode.refresh() },
+            subtitle: projectionHeaderSubtitle(
+                control.projectionState(for: "kanban.board"), fallback: selectedMode.pageHeaderSubtitle),
+            onRefresh: {
+                control.refreshGlobalKanban()
+                control.refresh()
+                botMode.refresh()
+            },
             isRefreshing: control.isKanbanRefreshPending
         ) { task, botID in
-                guard control.capabilityAvailable("kanban.assign") else { return }
-                kanbanMutationRequest = KanbanMutationRequest(task: task, kind: .assign, value: botID, reclaimFirst: false)
+            guard control.capabilityAvailable("kanban.assign") else { return }
+            kanbanMutationRequest = KanbanMutationRequest(task: task, kind: .assign, value: botID, reclaimFirst: false)
         }
         .task { await botMode.refreshNow(force: true) }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -337,14 +354,21 @@ extension WorkspaceActivitySidebar {
     var officeMainSessions: [OfficeMainSession] {
         let botIDs = Set(botMode.bots.filter { !$0.isDefault }.map(\.id))
         let sessionsCurrent: Bool
-        if case .ready = control.projectionState(for: "sessions") { sessionsCurrent = true }
-        else { sessionsCurrent = false }
+        if case .ready = control.projectionState(for: "sessions") {
+            sessionsCurrent = true
+        } else {
+            sessionsCurrent = false
+        }
         var summaries = control.activeSessions.filter { session in
             session.profileID.map { !botIDs.contains($0) } ?? true
         }
         if let id = model.sessionID, !summaries.contains(where: { $0.id == id }),
-           model.sessionProfileID.map({ !botIDs.contains($0) }) ?? true {
-            summaries.append(.init(id: id, title: model.sessions.first(where: { $0.id == id })?.displayTitle ?? "Current conversation", state: "unknown", preview: nil))
+            model.sessionProfileID.map({ !botIDs.contains($0) }) ?? true
+        {
+            summaries.append(
+                .init(
+                    id: id, title: model.sessions.first(where: { $0.id == id })?.displayTitle ?? "Current conversation",
+                    state: "unknown", preview: nil))
         }
         return summaries.map { session in
             let current = session.id == model.sessionID
@@ -357,11 +381,14 @@ extension WorkspaceActivitySidebar {
                 case .idle: state = "idle"
                 case .offline: state = "offline"
                 }
-            } else { state = sessionsCurrent ? session.state : "unknown" }
+            } else {
+                state = sessionsCurrent ? session.state : "unknown"
+            }
             let activities = control.latestActivities.filter { $0.sessionID == session.id }.prefix(12).map {
                 OfficeMainSession.Activity(id: $0.id, name: $0.activityName, timestamp: $0.timestamp)
             }
-            return OfficeMainSession(id: session.id, title: session.title, state: state, isCurrent: current, activities: activities)
+            return OfficeMainSession(
+                id: session.id, title: session.title, state: state, isCurrent: current, activities: activities)
         }
     }
 
@@ -388,10 +415,12 @@ extension WorkspaceActivitySidebar {
     }
 
     var kanbanHeaderSubtitle: String {
-        let boardName = control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name
+        let boardName =
+            control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name
             ?? control.selectedKanbanBoardSlug
             ?? "Current board"
-        let total = control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.total
+        let total =
+            control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.total
             ?? control.kanbanTasks.count
         return "\(boardName) · \(control.kanbanTasks.count) of \(total) tasks"
     }
@@ -418,153 +447,162 @@ extension WorkspaceActivitySidebar {
     }
 
     var sidebarHeader: some View {
-            HStack {
-                Spacer()
-                Button { isShowingCommandPalette = true } label: {
-                    DockIcon(.command)
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockAccent)
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.dockHover)
-                .help("Command palette")
-                .keyboardShortcut("k", modifiers: [.command])
-                Button(action: onClose) {
-                    DockIcon(.caretLeft)
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.dockSurface4))
-                }
-                .buttonStyle(.dockHover)
-                .dockHitTarget()
-                .help("Return to chat")
+        HStack {
+            Spacer()
+            Button {
+                isShowingCommandPalette = true
+            } label: {
+                DockIcon(.command)
+                    .dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockAccent)
+                    .frame(width: 32, height: 32)
             }
-            .padding(.horizontal, 16)
-            .frame(height: 50)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            .buttonStyle(.dockHover)
+            .help("Command palette")
+            .keyboardShortcut("k", modifiers: [.command])
+            Button(action: onClose) {
+                DockIcon(.caretLeft)
+                    .dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Color.dockSurface4))
+            }
+            .buttonStyle(.dockHover)
+            .dockHitTarget()
+            .help("Return to chat")
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 50)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     // Keep the cross-file sheet host independent of this projection's concrete SwiftUI layout.
     var observedSidebar: AnyView {
-        AnyView(sidebarContent
-        .background(Color.dockCanvas)
-        .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder], onCompletion: handleRepositoryImport)
-        // Repository loading is owned by DockPopover's shared context-panel
-        // task so switching Global/Session cannot let this view clear or race
-        // the workflow projection. Manual Refresh actions still use the local
-        // refreshRepository() path below.
-        .task {
-            control.bind(to: model)
-            control.refresh()
-            // The initial tab does not produce an `onChange` event. Load
-            // projections only after binding the CLI client, so a directly
-            // opened Quota or Kanban tab never misses its first request.
-            if selectedMode == .quota {
-                control.refreshProviderQuota()
-            } else if selectedMode == .kanban {
-                applyKanbanFilters()
-            } else if selectedMode == .officePreview {
-                control.refreshGlobalKanban()
-            }
-        }
-        .onChange(of: initialMode) { _, mode in selectedMode = mode }
-        .onChange(of: model.status) { _, _ in control.rebuildAttention() }
-        .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
-        .onChange(of: model.sessionID) { _, sessionID in
-            sessionSteerFeedback = nil
-            control.focus(sessionID: sessionID)
-            if sessionID != nil {
-                control.refresh()
-            }
-        }
-        .onChange(of: control.projectSessions) { _, sessions in
-            guard let path = selectedProjectFolderPath, !sessions.isEmpty else { return }
-            store.attachProject(at: path, toSessions: sessions)
-        }
-        .onChange(of: control.cronJobs) { _, _ in
-            reconcileSelectedCronJob()
-        }
-        .onChange(of: control.capabilities) { _, _ in
-            guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
-            applyKanbanFilters()
-        }
-        .onChange(of: selectedMode) { _, mode in
-            switch mode {
-            case .quota:
-                control.refreshProviderQuota()
-            case .kanban:
-                // Re-apply this surface's visible controls. This prevents a
-                // session-only query started from Activity from leaking into
-                // a separately opened global board.
-                applyKanbanFilters()
-            case .officePreview:
-                // The office reads the same global Kanban projection as the
-                // Kanban page; it never creates or mutates a second task store.
-                control.refreshGlobalKanban()
-            case .automations:
-                control.refresh()
-                control.refreshCronRuns()
-                reconcileSelectedCronJob()
-            default:
-                break
-            }
-        }
-        .onChange(of: model.runtimeConfiguration) { _, _ in
-            guard selectedMode == .quota else { return }
-            control.refreshProviderQuota()
-        }
-        .onChange(of: model.observedKanbanTaskRevision) { _, _ in
-            // Keep the board in step with an exact `kanban show <id>` tool
-            // event. The task may not carry a durable session_id, so waiting
-            // for a session-filtered list would leave the board falsely empty.
-            if selectedMode == .officePreview { control.refreshGlobalKanban() }
-            else if selectedMode == .kanban { applyKanbanFilters(trigger: .background) }
-        }
-        .task(id: selectedMode == .quota) {
-            guard selectedMode == .quota else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-                guard !Task.isCancelled, selectedMode == .quota else { return }
-                control.refreshProviderQuota()
-            }
-        }
-        .onChange(of: searchQuery) { _, query in
-            guard selectedMode == .search else { return }
-            control.search(query)
-        })
+        AnyView(
+            sidebarContent
+                .background(Color.dockCanvas)
+                .fileImporter(
+                    isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder],
+                    onCompletion: handleRepositoryImport
+                )
+                // Repository loading is owned by DockPopover's shared context-panel
+                // task so switching Global/Session cannot let this view clear or race
+                // the workflow projection. Manual Refresh actions still use the local
+                // refreshRepository() path below.
+                .task {
+                    control.bind(to: model)
+                    control.refresh()
+                    // The initial tab does not produce an `onChange` event. Load
+                    // projections only after binding the CLI client, so a directly
+                    // opened Quota or Kanban tab never misses its first request.
+                    if selectedMode == .quota {
+                        control.refreshProviderQuota()
+                    } else if selectedMode == .kanban {
+                        applyKanbanFilters()
+                    } else if selectedMode == .officePreview {
+                        control.refreshGlobalKanban()
+                    }
+                }
+                .onChange(of: initialMode) { _, mode in selectedMode = mode }
+                .onChange(of: model.status) { _, _ in control.rebuildAttention() }
+                .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
+                .onChange(of: model.sessionID) { _, sessionID in
+                    sessionSteerFeedback = nil
+                    control.focus(sessionID: sessionID)
+                    if sessionID != nil {
+                        control.refresh()
+                    }
+                }
+                .onChange(of: control.projectSessions) { _, sessions in
+                    guard let path = selectedProjectFolderPath, !sessions.isEmpty else { return }
+                    store.attachProject(at: path, toSessions: sessions)
+                }
+                .onChange(of: control.cronJobs) { _, _ in
+                    reconcileSelectedCronJob()
+                }
+                .onChange(of: control.capabilities) { _, _ in
+                    guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
+                    applyKanbanFilters()
+                }
+                .onChange(of: selectedMode) { _, mode in
+                    switch mode {
+                    case .quota:
+                        control.refreshProviderQuota()
+                    case .kanban:
+                        // Re-apply this surface's visible controls. This prevents a
+                        // session-only query started from Activity from leaking into
+                        // a separately opened global board.
+                        applyKanbanFilters()
+                    case .officePreview:
+                        // The office reads the same global Kanban projection as the
+                        // Kanban page; it never creates or mutates a second task store.
+                        control.refreshGlobalKanban()
+                    case .automations:
+                        control.refresh()
+                        control.refreshCronRuns()
+                        reconcileSelectedCronJob()
+                    default:
+                        break
+                    }
+                }
+                .onChange(of: model.runtimeConfiguration) { _, _ in
+                    guard selectedMode == .quota else { return }
+                    control.refreshProviderQuota()
+                }
+                .onChange(of: model.observedKanbanTaskRevision) { _, _ in
+                    // Keep the board in step with an exact `kanban show <id>` tool
+                    // event. The task may not carry a durable session_id, so waiting
+                    // for a session-filtered list would leave the board falsely empty.
+                    if selectedMode == .officePreview {
+                        control.refreshGlobalKanban()
+                    } else if selectedMode == .kanban {
+                        applyKanbanFilters(trigger: .background)
+                    }
+                }
+                .task(id: selectedMode == .quota) {
+                    guard selectedMode == .quota else { return }
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 60_000_000_000)
+                        guard !Task.isCancelled, selectedMode == .quota else { return }
+                        control.refreshProviderQuota()
+                    }
+                }
+                .onChange(of: searchQuery) { _, query in
+                    guard selectedMode == .search else { return }
+                    control.search(query)
+                })
     }
 
     var modePicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-            ForEach(compactRailLeading) { compactModeButton($0) }
+                ForEach(compactRailLeading) { compactModeButton($0) }
 
-            compactTabButton(title: "Artifacts", icon: .files, isSelected: false) {
-                onOpenArtifacts()
-            }
-
-            ForEach(compactRailTrailing) { compactModeButton($0) }
-
-            DockMenu {
-                DockMenuSection("More") {
-                    ForEach(compactOverflowNavigation) { mode in
-                        secondaryModeButton(mode)
-                    }
+                compactTabButton(title: "Artifacts", icon: .files, isSelected: false) {
+                    onOpenArtifacts()
                 }
-            } label: {
-                compactTabLabel(
-                    title: "More",
-                    icon: .dotsThreeCircle,
-                    detail: isToolsModeSelected ? selectedMode.tabLabel : nil,
-                    badgeCount: toolsBadgeCount,
-                    isUrgent: toolsBadgeIsUrgent,
-                    isSelected: isToolsModeSelected
-                )
+
+                ForEach(compactRailTrailing) { compactModeButton($0) }
+
+                DockMenu {
+                    DockMenuSection("More") {
+                        ForEach(compactOverflowNavigation) { mode in
+                            secondaryModeButton(mode)
+                        }
+                    }
+                } label: {
+                    compactTabLabel(
+                        title: "More",
+                        icon: .dotsThreeCircle,
+                        detail: isToolsModeSelected ? selectedMode.tabLabel : nil,
+                        badgeCount: toolsBadgeCount,
+                        isUrgent: toolsBadgeIsUrgent,
+                        isSelected: isToolsModeSelected
+                    )
+                }
+                .buttonStyle(.dockHover)
+                .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
             }
-            .buttonStyle(.dockHover)
-            .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
-        }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -636,16 +674,21 @@ extension WorkspaceActivitySidebar {
                     project.sessionIDs.contains($0.id) || control.projectIDBySessionID[$0.id] == project.id
                 }
                 let name = URL(fileURLWithPath: project.name).lastPathComponent
-                return CompactProjectGroup(id: project.id, title: name.isEmpty ? project.name : name, sessions: sessions)
+                return CompactProjectGroup(
+                    id: project.id, title: name.isEmpty ? project.name : name, sessions: sessions)
             }
             .filter { !$0.sessions.isEmpty }
-            .sorted { ($0.sessions.first?.lastUpdatedAt ?? .distantPast) > ($1.sessions.first?.lastUpdatedAt ?? .distantPast) }
+            .sorted {
+                ($0.sessions.first?.lastUpdatedAt ?? .distantPast) > ($1.sessions.first?.lastUpdatedAt ?? .distantPast)
+            }
     }
 
     /// Compact mode mirrors the fullscreen rail's daily operator destinations.
     /// Repository and setup surfaces remain available from More.
     var compactRailLeading: [ControlTab] {
-        [.kanban, .calendar, .automations, .capabilities].filter { $0 != .kanban || showsKanbanInSidebar }.filter { $0 != .calendar || showsCalendarInSidebar }
+        [.kanban, .calendar, .automations, .capabilities].filter { $0 != .kanban || showsKanbanInSidebar }.filter {
+            $0 != .calendar || showsCalendarInSidebar
+        }
     }
 
     var compactRailTrailing: [ControlTab] {
@@ -712,7 +755,9 @@ extension WorkspaceActivitySidebar {
     }
 
     func secondaryModeButton(_ mode: ControlTab) -> some View {
-        Button { select(mode) } label: {
+        Button {
+            select(mode)
+        } label: {
             HStack {
                 DockIconLabel(mode.tabLabel, icon: mode.icon)
                 if badgeCount(for: mode) > 0 {
@@ -726,7 +771,9 @@ extension WorkspaceActivitySidebar {
     }
 
     func modeButton(_ mode: ControlTab) -> some View {
-        Button { select(mode) } label: {
+        Button {
+            select(mode)
+        } label: {
             HStack(spacing: 8) {
                 DockIcon(mode.icon)
                     .dockFont(.body, weight: .semibold)
@@ -765,7 +812,10 @@ extension WorkspaceActivitySidebar {
             model.refreshRuntimeConfiguration()
             control.refresh(forceCapabilities: true)
         }
-        if mode == .automations { control.refresh(); control.refreshCronRuns() }
+        if mode == .automations {
+            control.refresh()
+            control.refreshCronRuns()
+        }
         if mode == .projects {
             control.refresh()
             Task { await refreshRepository() }
@@ -781,8 +831,12 @@ extension WorkspaceActivitySidebar {
     func run(_ command: DockAction) {
         switch command {
         case .tab(let tab): select(tab)
-        case .captureWindow: model.captureDesktopWindow(); model.requestComposerFocus()
-        case .newChat: model.newChat(); model.requestComposerFocus()
+        case .captureWindow:
+            model.captureDesktopWindow()
+            model.requestComposerFocus()
+        case .newChat:
+            model.newChat()
+            model.requestComposerFocus()
         case .focusComposer: model.requestComposerFocus()
         case .stop: model.stop()
         case .voice: model.startVoiceConversation()

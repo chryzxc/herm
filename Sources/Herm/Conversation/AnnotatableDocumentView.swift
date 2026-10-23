@@ -55,12 +55,15 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
         let revision = DockThemeRuntime.revision
-        if coordinator.renderedText != text || coordinator.renderedTheme != revision || coordinator.renderedMarkdown != isMarkdown || coordinator.renderedScale != workspaceScale {
+        if coordinator.renderedText != text || coordinator.renderedTheme != revision
+            || coordinator.renderedMarkdown != isMarkdown || coordinator.renderedScale != workspaceScale
+        {
             coordinator.renderedText = text
             coordinator.renderedTheme = revision
             coordinator.renderedMarkdown = isMarkdown
             coordinator.renderedScale = workspaceScale
-            textView.textStorage?.setAttributedString(Self.attributed(text, isMarkdown: isMarkdown, scale: workspaceScale))
+            textView.textStorage?.setAttributedString(
+                Self.attributed(text, isMarkdown: isMarkdown, scale: workspaceScale))
             coordinator.forceHighlightRefresh()
             let rendered = textView.string
             DispatchQueue.main.async { onRendered(rendered) }
@@ -76,16 +79,22 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
     private static func attributed(_ text: String, isMarkdown: Bool, scale: CGFloat) -> NSAttributedString {
         let palette = NativeMarkdownPalette(bodySize: DockTypography.size(.conversation, scale: scale))
         guard isMarkdown else {
-            return NSAttributedString(string: text, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: DockWorkspaceScale.points(11.5, scale: scale), weight: .regular),
-                .foregroundColor: palette.primary,
-            ])
+            return NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(
+                        ofSize: DockWorkspaceScale.points(11.5, scale: scale), weight: .regular),
+                    .foregroundColor: palette.primary,
+                ])
         }
         // Quotes and highlights are text offsets; inline file icons would add
         // attachment characters to selections, so the review view omits them.
-        let document = NSMutableAttributedString(attributedString: NativeMarkdownAttributedTextBuilder.document(text, palette: palette).string)
+        let document = NSMutableAttributedString(
+            attributedString: NativeMarkdownAttributedTextBuilder.document(text, palette: palette).string)
         var iconRanges: [NSRange] = []
-        document.enumerateAttribute(NativeMarkdownAttributedTextBuilder.fileIconKey, in: NSRange(location: 0, length: document.length)) { value, range, _ in
+        document.enumerateAttribute(
+            NativeMarkdownAttributedTextBuilder.fileIconKey, in: NSRange(location: 0, length: document.length)
+        ) { value, range, _ in
             if value != nil { iconRanges.append(range) }
         }
         iconRanges.reversed().forEach { document.deleteCharacters(in: $0) }
@@ -118,9 +127,11 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
             }
             let index = textView.characterIndexForInsertion(at: point)
             // Smallest highlight wins when notes overlap.
-            if let hit = appliedHighlights
+            if let hit =
+                appliedHighlights
                 .filter({ NSLocationInRange(index, $0.range) })
-                .min(by: { $0.range.length < $1.range.length }) {
+                .min(by: { $0.range.length < $1.range.length })
+            {
                 open(hit)
             }
         }
@@ -132,11 +143,18 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         /// Drops leading/trailing whitespace and newlines so a sloppy drag
         /// doesn't highlight to the end of the line or into the next bullet.
         static func trimmed(_ range: NSRange, in string: NSString) -> NSRange {
-            guard range.length > 0, NSMaxRange(range) <= string.length else { return NSRange(location: range.location, length: 0) }
+            guard range.length > 0, NSMaxRange(range) <= string.length else {
+                return NSRange(location: range.location, length: 0)
+            }
             let blank = CharacterSet.whitespacesAndNewlines
-            var start = range.location, end = NSMaxRange(range)
-            while start < end, let scalar = UnicodeScalar(string.character(at: start)), blank.contains(scalar) { start += 1 }
-            while end > start, let scalar = UnicodeScalar(string.character(at: end - 1)), blank.contains(scalar) { end -= 1 }
+            var start = range.location
+            var end = NSMaxRange(range)
+            while start < end, let scalar = UnicodeScalar(string.character(at: start)), blank.contains(scalar) {
+                start += 1
+            }
+            while end > start, let scalar = UnicodeScalar(string.character(at: end - 1)), blank.contains(scalar) {
+                end -= 1
+            }
             return NSRange(location: start, length: end - start)
         }
 
@@ -153,12 +171,14 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
             let order: [AnnotationHighlight.Style: Int] = [.sent: 0, .draft: 1, .active: 2]
             for highlight in highlights.sorted(by: { order[$0.style]! < order[$1.style]! })
             where NSMaxRange(highlight.range) <= length {
-                let alpha: CGFloat = switch highlight.style {
-                case .sent: 0.07
-                case .draft: 0.16
-                case .active: 0.30
-                }
-                layout.addTemporaryAttribute(.backgroundColor, value: accent.withAlphaComponent(alpha), forCharacterRange: highlight.range)
+                let alpha: CGFloat =
+                    switch highlight.style {
+                    case .sent: 0.07
+                    case .draft: 0.16
+                    case .active: 0.30
+                    }
+                layout.addTemporaryAttribute(
+                    .backgroundColor, value: accent.withAlphaComponent(alpha), forCharacterRange: highlight.range)
             }
             appliedHighlights = highlights
             textView.needsDisplay = true
@@ -213,7 +233,9 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
             popover = nil
             hosting = nil
             shownAnchor = nil
-            if let textView { textView.setSelectedRange(NSRange(location: textView.selectedRange().location, length: 0)) }
+            if let textView {
+                textView.setSelectedRange(NSRange(location: textView.selectedRange().location, length: 0))
+            }
         }
     }
 }
@@ -244,7 +266,9 @@ final class ReviewTextView: NSTextView {
         // Symmetric inset sized for both margins; the origin override below
         // moves the text left so the spare width becomes the right gutter.
         textContainerInset = NSSize(width: (Self.leftInset + Self.gutter) / 2, height: 16)
-        linkTextAttributes = [.foregroundColor: NSColor(Color.dockAccent), .underlineStyle: NSUnderlineStyle.single.rawValue]
+        linkTextAttributes = [
+            .foregroundColor: NSColor(Color.dockAccent), .underlineStyle: NSUnderlineStyle.single.rawValue,
+        ]
         selectedTextAttributes = [.backgroundColor: NSColor(Color.dockAccent).withAlphaComponent(0.3)]
     }
 
@@ -271,7 +295,8 @@ final class ReviewTextView: NSTextView {
         let accent = NSColor(Color.dockAccent)
         for marker in markers() where marker.rect.intersects(dirtyRect) {
             let active = marker.highlight.style == .active
-            let path = NSBezierPath(roundedRect: marker.rect, xRadius: marker.rect.height / 2, yRadius: marker.rect.height / 2)
+            let path = NSBezierPath(
+                roundedRect: marker.rect, xRadius: marker.rect.height / 2, yRadius: marker.rect.height / 2)
             (active ? accent : accent.withAlphaComponent(0.22)).setFill()
             path.fill()
             let label = "\(marker.highlight.number ?? 0)" as NSString
@@ -280,7 +305,9 @@ final class ReviewTextView: NSTextView {
                 .foregroundColor: active ? NSColor(Color.dockOnAccentText) : accent,
             ]
             let size = label.size(withAttributes: attributes)
-            label.draw(at: NSPoint(x: marker.rect.midX - size.width / 2, y: marker.rect.midY - size.height / 2), withAttributes: attributes)
+            label.draw(
+                at: NSPoint(x: marker.rect.midX - size.width / 2, y: marker.rect.midY - size.height / 2),
+                withAttributes: attributes)
         }
     }
 
@@ -290,7 +317,9 @@ final class ReviewTextView: NSTextView {
         let origin = textContainerOrigin
         for highlight in coordinator.appliedHighlights where NSMaxRange(highlight.range) <= string.utf16.count {
             let glyphs = layout.glyphRange(forCharacterRange: highlight.range, actualCharacterRange: nil)
-            layout.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
+            layout.enumerateEnclosingRects(
+                forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container
+            ) { rect, _ in
                 self.addCursorRect(rect.offsetBy(dx: origin.x, dy: origin.y), cursor: .pointingHand)
             }
         }
@@ -302,12 +331,17 @@ final class ReviewTextView: NSTextView {
     private func markers() -> [(highlight: AnnotationHighlight, rect: NSRect)] {
         guard let coordinator else { return [] }
         var result: [(highlight: AnnotationHighlight, rect: NSRect)] = []
-        for highlight in coordinator.appliedHighlights.filter({ $0.number != nil }).sorted(by: { $0.number! < $1.number! }) {
+        for highlight in coordinator.appliedHighlights.filter({ $0.number != nil }).sorted(by: {
+            $0.number! < $1.number!
+        }) {
             guard let line = firstLineRect(for: highlight.range) else { continue }
             let size = NSSize(width: 18, height: 16)
             var x = bounds.maxX - Self.gutter + 10
-            while result.contains(where: { abs($0.rect.minX - x) < 1 && abs($0.rect.midY - line.midY) < 4 }) { x += size.width - 6 }
-            result.append((highlight, NSRect(x: x, y: line.midY - size.height / 2, width: size.width, height: size.height)))
+            while result.contains(where: { abs($0.rect.minX - x) < 1 && abs($0.rect.midY - line.midY) < 4 }) {
+                x += size.width - 6
+            }
+            result.append(
+                (highlight, NSRect(x: x, y: line.midY - size.height / 2, width: size.width, height: size.height)))
         }
         return result
     }
@@ -323,10 +357,14 @@ final class ReviewTextView: NSTextView {
     }
 
     private func lineRects(for range: NSRange) -> [NSRect] {
-        guard let layout = layoutManager, let container = textContainer, NSMaxRange(range) <= string.utf16.count else { return [] }
+        guard let layout = layoutManager, let container = textContainer, NSMaxRange(range) <= string.utf16.count else {
+            return []
+        }
         let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
         var rects: [NSRect] = []
-        layout.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
+        layout.enumerateEnclosingRects(
+            forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container
+        ) { rect, _ in
             rects.append(rect)
         }
         let origin = textContainerOrigin

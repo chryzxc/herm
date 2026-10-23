@@ -1,10 +1,12 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct ProfileServiceTests {
     @Test func parsesIsolatedProfilesAndConnectionsFromStrictJSON() throws {
-        let json = #"{"profiles":[{"name":"default","model":"gpt-5.6-terra","gateway":"running"},{"name":"work","model":"claude","gateway":"unavailable"}],"connections":[{"profile":"default","status":"ready"},{"profile":"work","status":"unavailable"}]}"#
+        let json =
+            #"{"profiles":[{"name":"default","model":"gpt-5.6-terra","gateway":"running"},{"name":"work","model":"claude","gateway":"unavailable"}],"connections":[{"profile":"default","status":"ready"},{"profile":"work","status":"unavailable"}]}"#
 
         let result = try HermesProfileService.parseVerifiedJSON(json)
 
@@ -35,7 +37,7 @@ struct ProfileServiceTests {
             "file:///Users/example/Projects/private",
             "ssh://user@example.com/var/lib/hermes",
             "gateway failed at /Users/example/.config/hermes/config.yaml",
-            "gateway failed for https://user:token@example.com/api"
+            "gateway failed for https://user:token@example.com/api",
         ]
 
         for reason in hostileReasons {
@@ -68,7 +70,8 @@ struct ProfileServiceTests {
     @Test func staleDataIsExplicitWhenSnapshotAgeExceedsPolicy() throws {
         let json = #"{"profiles":[{"name":"default","model":"gpt-5.6-terra","gateway":"running"}],"connections":[]}"#
         let old = Date(timeIntervalSince1970: 100)
-        let result = try HermesProfileService.parseVerifiedJSON(json, observedAt: old, now: Date(timeIntervalSince1970: 120), maxAge: 10)
+        let result = try HermesProfileService.parseVerifiedJSON(
+            json, observedAt: old, now: Date(timeIntervalSince1970: 120), maxAge: 10)
 
         #expect(result.state == .stale)
         #expect(result.profiles.count == 1)
@@ -76,7 +79,8 @@ struct ProfileServiceTests {
     }
 
     @Test func inventoryRejectsProjectOrWorktreeFieldsWithoutLeakingThem() {
-        let json = #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","cwd":"/Users/example/Projects/secret","worktree":"/tmp/worktree"}],"connections":[]}"#
+        let json =
+            #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","cwd":"/Users/example/Projects/secret","worktree":"/tmp/worktree"}],"connections":[]}"#
         let result = HermesProfileService.parse(json, format: .json)
         let encoded = String(describing: result)
 
@@ -88,7 +92,8 @@ struct ProfileServiceTests {
     }
 
     @Test func unsafeIdentityFieldsAreRejectedBeforeEnteringInventory() {
-        let json = #"{"profiles":[{"name":"default","model":"https://user:token@example.com/key","gateway":"running"}],"connections":[]}"#
+        let json =
+            #"{"profiles":[{"name":"default","model":"https://user:token@example.com/key","gateway":"running"}],"connections":[]}"#
 
         let result = HermesProfileService.parse(json, format: .json)
 
@@ -98,7 +103,8 @@ struct ProfileServiceTests {
     }
 
     @Test func rejectsUnknownKeysInsteadOfSilentlyDroppingThem() {
-        let json = #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","unknown":"value"}],"connections":[]}"#
+        let json =
+            #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","unknown":"value"}],"connections":[]}"#
 
         let result = HermesProfileService.parse(json, format: .json)
 
@@ -108,10 +114,12 @@ struct ProfileServiceTests {
 
     @Test func rejectsWrongTypesForPresentOptionalFields() {
         let modelNumber = #"{"profiles":[{"name":"default","model":7,"gateway":"running"}],"connections":[]}"#
-        let activeString = #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","is_active":"true"}],"connections":[]}"#
+        let activeString =
+            #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","is_active":"true"}],"connections":[]}"#
         let labelNumber = #"{"profiles":[],"connections":[{"profile":"default","status":"ready","label":7}]}"#
         let transportNumber = #"{"profiles":[],"connections":[{"profile":"default","status":"ready","transport":7}]}"#
-        let modelPath = #"{"profiles":[{"name":"default","model":"models/gpt-5","gateway":"running"}],"connections":[]}"#
+        let modelPath =
+            #"{"profiles":[{"name":"default","model":"models/gpt-5","gateway":"running"}],"connections":[]}"#
 
         #expect(HermesProfileService.parse(modelNumber, format: .json).state == .malformed)
         #expect(HermesProfileService.parse(activeString, format: .json).state == .malformed)

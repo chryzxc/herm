@@ -1,7 +1,7 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
@@ -222,7 +222,9 @@ struct SettingsActionRow<Content: View>: View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).dockFont(.navigation, weight: .medium).foregroundStyle(Color.dockPrimaryText)
-                if !detail.isEmpty { Text(detail).dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(2) }
+                if !detail.isEmpty {
+                    Text(detail).dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(2)
+                }
             }
             Spacer(minLength: 12)
             actions()
@@ -238,7 +240,8 @@ struct SettingsInlineNotice: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Circle().fill(tint).frame(width: 7, height: 7).padding(.top, 4)
-            Text(text).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
+            Text(text).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).fixedSize(
+                horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.vertical, 8)

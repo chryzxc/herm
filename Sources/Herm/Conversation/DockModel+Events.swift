@@ -13,8 +13,11 @@ extension DockModel {
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
         guard acceptGatewayEvent(type: type, params: params) else { return }
         let noticePayload = params["payload"] as? [String: Any] ?? [:]
-        if type == "message.complete" || type == "error", let owner = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String) {
-            for (key, pending) in redirectingPrompts where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
+        if type == "message.complete" || type == "error",
+            let owner = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
+        {
+            for (key, pending) in redirectingPrompts
+            where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
                 var redirect = pending
                 redirect.completedTurns += 1
                 if interruptState == .requesting, currentSessionIDs.contains(owner) {
@@ -28,29 +31,42 @@ extension DockModel {
                 }
             }
         }
-        let failed = type == "error" || type == "message.error" || (type == "message.complete" && (noticePayload["error"] as? String)?.isEmpty == false)
+        let failed =
+            type == "error" || type == "message.error"
+            || (type == "message.complete" && (noticePayload["error"] as? String)?.isEmpty == false)
         if type == "message.start", let owner = params["session_id"] as? String {
             let reference = interruptionNotice(.information, owner: owner)
             interruptionCoordinator?.clearFailure(owner: reference.sourceID, profileID: reference.profileID)
         }
         if failed, let owner = params["session_id"] as? String {
-            let identity = (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" } ?? UUID().uuidString
+            let identity =
+                (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" }
+                ?? UUID().uuidString
             completionNoticeIDs[rowSessionID(owner)] = identity
             interruptionCoordinator?.recordFailure(interruptionNotice(.failure, owner: owner, eventID: identity))
         }
         if type == "message.complete", let owner = params["session_id"] as? String {
-            let identity = (failed ? completionNoticeIDs[rowSessionID(owner)] : nil)
-                ?? (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" } ?? UUID().uuidString
+            let identity =
+                (failed ? completionNoticeIDs[rowSessionID(owner)] : nil)
+                ?? (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" }
+                ?? UUID().uuidString
             completionNoticeIDs[rowSessionID(owner)] = identity
             if completionNoticeIDs.count > 256 { completionNoticeIDs = [rowSessionID(owner): identity] }
-            if !failed { _ = interruptionCoordinator?.admit(interruptionNotice(.completion, owner: owner), channel: .record) }
+            if !failed {
+                _ = interruptionCoordinator?.admit(interruptionNotice(.completion, owner: owner), channel: .record)
+            }
         }
-        if let owner = params["session_id"] as? String, type == "message.start" || type == "message.complete" || failed {
+        if let owner = params["session_id"] as? String, type == "message.start" || type == "message.complete" || failed
+        {
             let origin = interruptionNotice(.information, owner: owner)
             let receipt = params["persisted_turn"] as? [String: Any]
-            let completionRow = receipt?["complete"] as? Bool == true ? receipt.flatMap { TranscriptHistoryPaging.rowID($0, key: "final_assistant_row_id") } : nil
-            DeveloperWorkflowModel.shared.observeTurnBaseline(origin: QuickDestination(profileID: origin.profileID, sessionID: origin.sourceID),
-                started: type == "message.start", completed: type == "message.complete", failed: failed, completionRowID: completionRow)
+            let completionRow =
+                receipt?["complete"] as? Bool == true
+                ? receipt.flatMap { TranscriptHistoryPaging.rowID($0, key: "final_assistant_row_id") } : nil
+            DeveloperWorkflowModel.shared.observeTurnBaseline(
+                origin: QuickDestination(profileID: origin.profileID, sessionID: origin.sourceID),
+                started: type == "message.start", completed: type == "message.complete", failed: failed,
+                completionRowID: completionRow)
         }
         captureObservedKanbanTaskIDs(type: type, params: params)
         eventRouter.route(type: type, params: params)
@@ -64,7 +80,9 @@ extension DockModel {
             resolveApproval(for: eventSessionID, requestID: requestID)
         }
         if type == "message.start" || type == "message.complete" || type == "sessions.changed" {
-            touchSession(sessionID: eventSessionID, at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
+            touchSession(
+                sessionID: eventSessionID,
+                at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
         }
         if type == "message.start", let eventSessionID {
             updateSessionActivity(sessionID: eventSessionID, isWorking: true)
@@ -95,20 +113,24 @@ extension DockModel {
     /// boundary, while the command/result still exists, so a task whose
     /// database row lacks `session_id` can remain visible to its owner.
     func captureObservedKanbanTaskIDs(type: String, params: [String: Any]) {
-        guard type == "tool.call" || type == "tool.start" || type == "tool.use" || type == "tool_use"
+        guard
+            type == "tool.call" || type == "tool.start" || type == "tool.use" || type == "tool_use"
                 || type == "tool.result" || type == "tool_result" || type == "tool.complete" || type == "tool_complete",
-              let currentSessionID = sessionID else { return }
+            let currentSessionID = sessionID
+        else { return }
         let payload = params["payload"] as? [String: Any] ?? [:]
         let envelopeSessionID = params["session_id"] as? String
         let eventSessionID = envelopeSessionID ?? (payload["session_id"] as? String)
-        guard Self.eventBelongsToSession(
-            type: type,
-            envelopeSessionID: envelopeSessionID,
-            eventSessionID: eventSessionID,
-            payload: payload,
-            currentSessionID: currentSessionID,
-            agents: sessionAgents + activeSubagents
-        ) else { return }
+        guard
+            Self.eventBelongsToSession(
+                type: type,
+                envelopeSessionID: envelopeSessionID,
+                eventSessionID: eventSessionID,
+                payload: payload,
+                currentSessionID: currentSessionID,
+                agents: sessionAgents + activeSubagents
+            )
+        else { return }
 
         let text = Self.eventText(payload)
         guard text.localizedCaseInsensitiveContains("kanban") else { return }
@@ -130,16 +152,20 @@ extension DockModel {
         // presented as Bot work; `kanban show` remains the source of its
         // lifecycle, title, assignee, and heartbeat.
         let originSessionID = sessionStorageID ?? currentSessionID
-        for taskID in taskIDs where !botActivityBySessionID[originSessionID, default: []].contains(where: { $0.isKanbanReference && $0.linkedCardID == taskID }) {
-            insertBotActivity(BotActivityRecord(
-                id: "kanban-reference:\(originSessionID):\(taskID)",
-                originSessionID: originSessionID,
-                botID: "kanban-reference",
-                botName: "Hermes Kanban",
-                summary: "Exact Hermes card reference",
-                state: .queued,
-                linkedCardID: taskID
-            ))
+        for taskID in taskIDs
+        where !botActivityBySessionID[originSessionID, default: []].contains(where: {
+            $0.isKanbanReference && $0.linkedCardID == taskID
+        }) {
+            insertBotActivity(
+                BotActivityRecord(
+                    id: "kanban-reference:\(originSessionID):\(taskID)",
+                    originSessionID: originSessionID,
+                    botID: "kanban-reference",
+                    botName: "Hermes Kanban",
+                    summary: "Exact Hermes card reference",
+                    state: .queued,
+                    linkedCardID: taskID
+                ))
         }
         // Repeated references can carry status changes for an existing card.
         // Notify Activity for those as well as newly discovered IDs.
@@ -162,27 +188,38 @@ extension DockModel {
         case "clarify.expire", "clarification.expire":
             let requestID = Self.nestedClarificationString(keys: ["request_id", "id"], in: params)
             if let requestID {
-                updateInFlightBotActivity(for: requestID, state: .canceled, result: "This question expired before Hermes received an answer.")
+                updateInFlightBotActivity(
+                    for: requestID, state: .canceled, result: "This question expired before Hermes received an answer.")
             }
         case "message.start":
             setInFlightBotActivityWorking(for: eventSessionID)
         case "message.delta":
             for activity in Array(inFlightBotActivities.values) where activity.botChatSessionID == eventSessionID {
-                inFlightBotActivities[activity.activityID]?.replyText += (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
+                inFlightBotActivities[activity.activityID]?.replyText +=
+                    (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
             }
         case "message.complete", "message.error", "error":
-            let rawError = Self.messageCompletionError(from: payload)
+            let rawError =
+                Self.messageCompletionError(from: payload)
                 ?? (type == "message.complete" ? nil : Self.eventText(payload))
             let error = rawError.map(Self.safeUserDiagnostic)
             for activity in Array(inFlightBotActivities.values) where activity.botChatSessionID == eventSessionID {
                 let completedText = Self.completedMessageText(from: payload).flatMap { $0.isEmpty ? nil : $0 }
                 let reply = error ?? completedText ?? activity.replyText
-                if currentSessionIDs.contains(activity.originSessionID), !currentSessionIDs.contains(eventSessionID), !reply.isEmpty {
-                    let name = botActivityBySessionID[activity.originSessionID]?.first(where: { $0.id == activity.activityID })?.botName ?? activity.botID
-                    messages.append(ChatMessage(role: .hermes, text: reply, isError: error != nil,
-                                                botProfileID: activity.botID, botDisplayName: name))
+                if currentSessionIDs.contains(activity.originSessionID), !currentSessionIDs.contains(eventSessionID),
+                    !reply.isEmpty
+                {
+                    let name =
+                        botActivityBySessionID[activity.originSessionID]?.first(where: { $0.id == activity.activityID }
+                        )?.botName ?? activity.botID
+                    messages.append(
+                        ChatMessage(
+                            role: .hermes, text: reply, isError: error != nil,
+                            botProfileID: activity.botID, botDisplayName: name))
                 }
-                updateBotActivity(id: activity.activityID, state: error == nil ? .completed : .failed, result: reply.isEmpty ? nil : reply)
+                updateBotActivity(
+                    id: activity.activityID, state: error == nil ? .completed : .failed,
+                    result: reply.isEmpty ? nil : reply)
                 inFlightBotActivities.removeValue(forKey: activity.activityID)
             }
         default:
@@ -195,10 +232,11 @@ extension DockModel {
     /// de-duplication and ownership remain centralized.
     func acceptGatewayEvent(type: String, params: [String: Any]) -> Bool {
         if type == "gateway.ready",
-           let payload = params["payload"] as? [String: Any],
-           let epoch = payload["replay_epoch"] as? String,
-           !epoch.isEmpty,
-           epoch != gatewayReplayEpoch {
+            let payload = params["payload"] as? [String: Any],
+            let epoch = payload["replay_epoch"] as? String,
+            !epoch.isEmpty,
+            epoch != gatewayReplayEpoch
+        {
             gatewayReplayEpoch = epoch
             processedGatewaySequencesBySessionID.removeAll()
             highestGatewaySequenceBySessionID.removeAll()
@@ -207,8 +245,9 @@ extension DockModel {
         }
 
         guard let sequence = (params["seq"] as? NSNumber)?.intValue ?? params["seq"] as? Int,
-              let eventSessionID = (params["session_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !eventSessionID.isEmpty else {
+            let eventSessionID = (params["session_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !eventSessionID.isEmpty
+        else {
             return true
         }
 
@@ -234,11 +273,12 @@ extension DockModel {
         gatewayReplayTask?.cancel()
         gatewayReplayTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let ids = Set([
-                self.sessionID,
-                self.sessionStorageID,
-                self.kanbanAttributionSessionID
-            ].compactMap { $0 }.filter { !$0.isEmpty })
+            let ids = Set(
+                [
+                    self.sessionID,
+                    self.sessionStorageID,
+                    self.kanbanAttributionSessionID,
+                ].compactMap { $0 }.filter { !$0.isEmpty })
             for id in ids {
                 guard !Task.isCancelled else { return }
                 guard let last = self.highestGatewaySequenceBySessionID[id], last > 0 else { continue }
@@ -278,7 +318,8 @@ extension DockModel {
                     self.refreshDelegationStatus()
                 }
             } catch {
-                DebugLog.write("activity: gateway replay unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                DebugLog.write(
+                    "activity: gateway replay unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -286,9 +327,11 @@ extension DockModel {
     func capturePendingApproval(type: String, params: [String: Any]) {
         guard type == "approval.request" else { return }
         let payload = params["payload"] as? [String: Any] ?? [:]
-        guard let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !ownerSessionID.isEmpty else { return }
+        guard
+            let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !ownerSessionID.isEmpty
+        else { return }
         let approval = ApprovalPresentation.from(payload: payload)
         let pendingApproval = PendingApproval(
             title: approval.title,
@@ -304,7 +347,8 @@ extension DockModel {
     }
 
     func restorePendingApproval(for sessionIDs: [String?]) {
-        let identities = sessionIDs
+        let identities =
+            sessionIDs
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         guard let approval = identities.compactMap({ pendingApprovalsBySessionID[$0] }).first else {
@@ -341,12 +385,16 @@ extension DockModel {
     }
 
     func capturePendingClarification(type: String, params: [String: Any]) {
-        guard type == "clarification.request" || type == "clarify.request"
-                || type == "clarification.expire" || type == "clarify.expire" else { return }
+        guard
+            type == "clarification.request" || type == "clarify.request"
+                || type == "clarification.expire" || type == "clarify.expire"
+        else { return }
         let payload = params["payload"] as? [String: Any] ?? [:]
-        guard let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !ownerSessionID.isEmpty else { return }
+        guard
+            let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !ownerSessionID.isEmpty
+        else { return }
 
         if type == "clarification.expire" || type == "clarify.expire" {
             let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
@@ -356,9 +404,11 @@ extension DockModel {
         }
 
         var clarification = Self.pendingClarification(from: params)
-        clarification.responseTarget = attentionTarget(sessionID: ownerSessionID, requestID: clarification.requestID, params: params)
+        clarification.responseTarget = attentionTarget(
+            sessionID: ownerSessionID, requestID: clarification.requestID, params: params)
         if let requestID = clarification.requestID,
-           resolvedClarificationRequestIDs.contains(requestID) {
+            resolvedClarificationRequestIDs.contains(requestID)
+        {
             return
         }
         let aliases = pendingClarificationAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
@@ -368,7 +418,8 @@ extension DockModel {
     }
 
     func restorePendingClarification(for sessionIDs: [String?]) {
-        let identities = sessionIDs
+        let identities =
+            sessionIDs
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         guard let clarification = identities.compactMap({ pendingClarificationsBySessionID[$0] }).first else {
@@ -396,7 +447,8 @@ extension DockModel {
     func removePendingClarification(for sessionID: String, requestID: String? = nil) -> Set<String> {
         let aliases = pendingClarificationAliasesBySessionID[sessionID] ?? [sessionID]
         if let requestID,
-           !aliases.compactMap({ pendingClarificationsBySessionID[$0]?.requestID }).contains(requestID) {
+            !aliases.compactMap({ pendingClarificationsBySessionID[$0]?.requestID }).contains(requestID)
+        {
             return []
         }
         for alias in aliases {
@@ -411,14 +463,17 @@ extension DockModel {
     func attentionTarget(sessionID: String, requestID: String?, params: [String: Any]) -> AttentionRequest? {
         guard let requestID, !requestID.isEmpty else { return nil }
         let payload = params["payload"] as? [String: Any] ?? [:]
-        let profile = (params["profile"] as? String) ?? (payload["profile"] as? String) ?? quickSessionOwners[sessionID]?.profileID
+        let profile =
+            (params["profile"] as? String) ?? (payload["profile"] as? String) ?? quickSessionOwners[sessionID]?
+            .profileID
             ?? sessions.first(where: { $0.id == sessionID })?.profileID
             ?? (currentSessionIDs.contains(sessionID) ? sessionProfileID ?? profileScopeID : nil)
         return AttentionRequest(sessionID: sessionID, profileID: profile, requestID: requestID)
     }
 
     static func pendingClarification(from params: [String: Any]) -> PendingClarification {
-        let question = nestedClarificationString(keys: ["question", "prompt", "query"], in: params)
+        let question =
+            nestedClarificationString(keys: ["question", "prompt", "query"], in: params)
             ?? nestedClarificationString(keys: ["message", "description", "text", "detail"], in: params)
             ?? "Hermes needs more information."
         let choices = nestedClarificationStrings(keys: ["choices", "options", "suggested_responses"], in: params)
@@ -439,11 +494,15 @@ extension DockModel {
         let current = clarification?.current
         clarificationQuestion = current?.question ?? clarification?.question
         // A batch question without its own choices falls back to the request's.
-        clarificationChoices = current.map { $0.choices.isEmpty ? clarification?.choices ?? [] : $0.choices } ?? clarification?.choices ?? []
-        clarificationMultiSelect = clarificationChoices.isEmpty ? false : current?.multiSelect ?? clarification?.multiSelect ?? false
+        clarificationChoices =
+            current.map { $0.choices.isEmpty ? clarification?.choices ?? [] : $0.choices } ?? clarification?.choices
+            ?? []
+        clarificationMultiSelect =
+            clarificationChoices.isEmpty ? false : current?.multiSelect ?? clarification?.multiSelect ?? false
         clarificationRequestID = clarification?.requestID
         if let clarification, let current, clarification.batch.count > 1,
-           let index = clarification.batch.firstIndex(of: current) {
+            let index = clarification.batch.firstIndex(of: current)
+        {
             clarificationProgress = "Question \(index + 1) of \(clarification.batch.count)"
         } else {
             clarificationProgress = nil
@@ -471,15 +530,18 @@ extension DockModel {
         // agent (or an event with a missing session ID) mutate the current
         // session before the later guard ran.
         guard let currentSessionID = sessionID,
-              Self.eventBelongsToSession(
+            Self.eventBelongsToSession(
                 type: type,
                 envelopeSessionID: envelopeSessionID,
                 eventSessionID: eventSessionID,
                 payload: rawPayload,
                 currentSessionID: currentSessionID,
                 agents: sessionAgents + activeSubagents
-              ) else {
-            if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: ignoring event \(type) without current-session ownership") }
+            )
+        else {
+            if !Self.isHighFrequencyEvent(type) {
+                DebugLog.write("model: ignoring event \(type) without current-session ownership")
+            }
             return
         }
         // Hermes orders a stopped turn's terminal frame before the next turn's
@@ -490,12 +552,15 @@ extension DockModel {
             if type == "message.complete" || type == "error" { isDiscardingStoppedTurn = false }
             return
         }
-        let activityProjection = Self.isHighFrequencyEvent(type) ? nil : Self.agentActivityProjection(
-            type: type,
-            params: params,
-            currentSessionID: sessionID,
-            agents: sessionAgents + activeSubagents
-        )
+        let activityProjection =
+            Self.isHighFrequencyEvent(type)
+            ? nil
+            : Self.agentActivityProjection(
+                type: type,
+                params: params,
+                currentSessionID: sessionID,
+                agents: sessionAgents + activeSubagents
+            )
         if let activityProjection {
             recordAgentActivity(activityProjection.kind, params: params, payload: activityProjection.payload)
             mergeAgentEvent(activityProjection.kind, payload: activityProjection.payload)
@@ -505,10 +570,13 @@ extension DockModel {
         let payload = activityProjection?.payload ?? rawPayload
         let isRelevantSubagentEvent = activityProjection != nil && type.hasPrefix("subagent.")
         if let eventSessionID,
-           !eventSessionID.isEmpty,
-           let sessionID, sessionID != eventSessionID,
-           !isRelevantSubagentEvent {
-            if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)") }
+            !eventSessionID.isEmpty,
+            let sessionID, sessionID != eventSessionID,
+            !isRelevantSubagentEvent
+        {
+            if !Self.isHighFrequencyEvent(type) {
+                DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)")
+            }
             return
         }
         if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: handling event \(type)") }
@@ -540,7 +608,9 @@ extension DockModel {
                 // `compacting`, including the stored compression-feasibility warning it
                 // replays on a session's first turn. Only real progress lines count.
                 let text = payload["text"] as? String ?? ""
-                let isProgress = ["Compacting context", "Preflight compression", "— compacting ~"].contains { text.contains($0) }
+                let isProgress = ["Compacting context", "Preflight compression", "— compacting ~"].contains {
+                    text.contains($0)
+                }
                 guard payload["kind"] as? String == "compressing" || isProgress else { break }
                 recordTurnCompaction(isComplete: false)
                 compactingSessionID = sessionID
@@ -553,9 +623,11 @@ extension DockModel {
                 completeBotDispatch(from: text)
                 if let notices = Self.kanbanNotices(from: text) {
                     for notice in notices {
-                        appendBelowLiveTurn(ChatMessage(role: .hermes, text: notice.body,
-                                                        botProfileID: notice.profileID, botDisplayName: notice.displayName,
-                                                        kanbanNotice: KanbanNotice(text: notice.body)))
+                        appendBelowLiveTurn(
+                            ChatMessage(
+                                role: .hermes, text: notice.body,
+                                botProfileID: notice.profileID, botDisplayName: notice.displayName,
+                                kanbanNotice: KanbanNotice(text: notice.body)))
                     }
                 } else {
                     appendSystemEvent(.liveStatus(kind: "process"), text: text)
@@ -569,16 +641,18 @@ extension DockModel {
             appendSystemEvent(SystemEvent(label: "Notice"), text: payload["message"] as? String ?? "")
         case "notification.show":
             let level = payload["level"] as? String
-            let event = SystemEvent(label: SystemEvent.humanized((payload["kind"] as? String) ?? level ?? "notification"),
-                                    tone: level == "warning" || level == "error" ? .attention : .inactive)
+            let event = SystemEvent(
+                label: SystemEvent.humanized((payload["kind"] as? String) ?? level ?? "notification"),
+                tone: level == "warning" || level == "error" ? .attention : .inactive)
             appendSystemEvent(event, text: payload["text"] as? String ?? "", key: payload["key"] as? String)
         case "message.interim":
             completeLiveReasoning()
             // Already-streamed commentary is in the live row; the rest would
             // otherwise only appear after a reload.
             if (payload["already_streamed"] as? Bool) != true,
-               let text = payload["text"] as? String,
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let text = payload["text"] as? String,
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 appendBelowLiveTurn(ChatMessage(role: .hermes, text: text))
             }
         case "background.complete", "btw.complete":
@@ -587,7 +661,8 @@ extension DockModel {
                 messages.append(ChatMessage(role: .hermes, text: text))
             }
             guard !taskID.isEmpty,
-                  let index = backgroundTasks.firstIndex(where: { $0.id == taskID }) else { break }
+                let index = backgroundTasks.firstIndex(where: { $0.id == taskID })
+            else { break }
             backgroundTasks[index].status = .completed
             backgroundTasks[index].output = payload["text"] as? String
             backgroundTasks[index].completedAt = .now
@@ -668,13 +743,14 @@ extension DockModel {
             conversationActivityPhase = .responding
             streamingMessageIsVisionNotice = false
             reasoningState = nil
-        reasoningFlushTask?.cancel()
-        reasoningFlushTask = nil
-        streamingReasoningBuffer = ""
+            reasoningFlushTask?.cancel()
+            reasoningFlushTask = nil
+            streamingReasoningBuffer = ""
             isShowingReasoning = false
             activeToolCalls = []
         case "message.delta":
-            guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String), streamingMessageID != nil else { return }
+            guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String), streamingMessageID != nil
+            else { return }
             isAwaitingClarificationResume = false
             completeLiveReasoning()
             if streamingMessageIsVisionNotice { return }
@@ -688,7 +764,8 @@ extension DockModel {
             isAwaitingClarificationResume = false
             let completedMessageIDForPin = streamingMessageID
             if let completedText = Self.completedMessageText(from: payload),
-               !completedText.isEmpty {
+                !completedText.isEmpty
+            {
                 if streamingMessageID == nil {
                     beginStreamingMessage()
                 }
@@ -705,7 +782,8 @@ extension DockModel {
             }
             if let id = sessionID, let usage = sessionTokenUsage, usage.sessionID == id {
                 if let usageDict = payload["usage"] as? [String: Any],
-                   case let total = ControlCenterModel.parseSessionUsage(usageDict).totalTokens, total > 0 {
+                    case let total = ControlCenterModel.parseSessionUsage(usageDict).totalTokens, total > 0
+                {
                     if total > usage.total { turnTokens = total - usage.total }
                     sessionTokenUsage = (id, total)
                 } else {
@@ -723,20 +801,27 @@ extension DockModel {
                 let text = Self.safeUserDiagnostic(error)
                 appendTerminalErrorMessage(text)
                 updateInFlightBotActivity(for: eventSessionID, state: .failed, result: text)
-                notify(title: "Hermes could not complete the request", body: text, identifier: "failure:\(sessionID ?? "hermes")")
+                notify(
+                    title: "Hermes could not complete the request", body: text,
+                    identifier: "failure:\(sessionID ?? "hermes")")
             } else {
                 commitStreamingMessage(tokenCount: turnTokens)
-                applyMessagePinReceipt(payload["persisted_turn"] as? [String: Any], assistantMessageID: completedMessageIDForPin ?? messages.last?.id)
+                applyMessagePinReceipt(
+                    payload["persisted_turn"] as? [String: Any],
+                    assistantMessageID: completedMessageIDForPin ?? messages.last?.id)
                 Task { await refreshMessagePins() }
                 let result = messages.last(where: { $0.role == .hermes })?.text
-                updateInFlightBotActivity(for: eventSessionID, state: wasInterrupting ? .canceled : .completed, result: result)
+                updateInFlightBotActivity(
+                    for: eventSessionID, state: wasInterrupting ? .canceled : .completed, result: result)
             }
             if wasInterrupting {
                 updateInFlightBotActivity(for: eventSessionID, state: .canceled)
             }
             endLocalTurn(eventSessionID: eventSessionID)
             if completionNotificationsEnabled {
-                let response = messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? "Hermes completed the active request."
+                let response =
+                    messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText)
+                    ?? "Hermes completed the active request."
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
             }
             if voiceState.isNativeConversationActive, completionError != nil, !wasInterrupting {
@@ -750,10 +835,14 @@ extension DockModel {
                 resumeVoiceListening(force: true)
             } else if voiceState.isNativeConversationActive, voiceState != .preparing {
                 voiceTelemetry.completedResponse()
-                let response = messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? ""
+                let response =
+                    messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? ""
                 speakNativeVoiceReply(response)
             }
-            if let sessionStorageID { cacheAgentState(for: sessionStorageID); Task { await agentStateWriter.flush() } }
+            if let sessionStorageID {
+                cacheAgentState(for: sessionStorageID)
+                Task { await agentStateWriter.flush() }
+            }
             // A stopped turn keeps its queue; Enter on an empty composer sends it.
             if !wasInterrupting || sendQueuedPromptAfterInterrupt {
                 if !isRedirectInFlight { sendQueuedPromptAfterInterrupt = false }
@@ -770,7 +859,9 @@ extension DockModel {
             if isPresentingApproval {
                 playApprovalSound()
             }
-            notify(title: approval.title, body: approval.detail, identifier: "approval:\(sessionID ?? "hermes")", approvalRequestID: approval.requestID)
+            notify(
+                title: approval.title, body: approval.detail, identifier: "approval:\(sessionID ?? "hermes")",
+                approvalRequestID: approval.requestID)
         case "clarification.request", "clarify.request":
             // Hermes adapters have emitted clarification fields both inside
             // `payload` and alongside it in the event params. Prefer the
@@ -783,7 +874,8 @@ extension DockModel {
                 break
             }
             if let requestID, !requestID.isEmpty,
-               !presentedClarificationRequestIDs.insert(requestID).inserted {
+                !presentedClarificationRequestIDs.insert(requestID).inserted
+            {
                 // The gateway may replay a request after an answer has been
                 // submitted. Its request ID already owns the transcript row.
                 break
@@ -798,13 +890,17 @@ extension DockModel {
             isSending = false
             status = .needsClarification
             conversationActivityPhase = .idle
-            notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")",
-                   replyRequestID: clarification.batch.count > 1 || clarification.multiSelect ? nil : requestID)
+            notify(
+                title: "Hermes needs clarification", body: question,
+                identifier: "clarification:\(sessionID ?? "hermes")",
+                replyRequestID: clarification.batch.count > 1 || clarification.multiSelect ? nil : requestID)
         case "prompt.request":
             guard let prompt = ValuePrompt.from(payload: payload) else { break }
             valuePrompt = prompt
             valuePromptError = nil
-            notify(title: prompt.title, body: "Hermes is waiting for your input.", identifier: "prompt:\(sessionID ?? "hermes")")
+            notify(
+                title: prompt.title, body: "Hermes is waiting for your input.",
+                identifier: "prompt:\(sessionID ?? "hermes")")
         case "prompt.expire":
             if payload["request_id"] as? String == valuePrompt?.requestID { valuePrompt = nil }
         case "clarify.expire", "clarification.expire":
@@ -837,7 +933,8 @@ extension DockModel {
             interruptState = .idle
             if wasInterrupting { releaseStoppedTurnPrompts() }
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
-            let text = Self.isVisionUnsupportedError(raw)
+            let text =
+                Self.isVisionUnsupportedError(raw)
                 ? Self.visionUnsupportedNotice
                 : Self.safeUserDiagnostic(raw)
             if !wasInterrupting { appendTerminalErrorMessage(text) }
@@ -875,7 +972,8 @@ extension DockModel {
             // block and the next tool call or reply text closes it.
             // `thinking.delta` is Hermes' wait/spinner notice, not reasoning.
             // MoA advisor output and fan-out progress share the block, as in Hermes Desktop.
-            let delta = type.hasPrefix("moa.")
+            let delta =
+                type.hasPrefix("moa.")
                 ? Self.moaReasoningLine(type: type, payload: payload) ?? ""
                 : (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
             guard !delta.isEmpty else { return }
@@ -898,21 +996,25 @@ extension DockModel {
 
         case "tool.call", "tool.start", "tool.use", "tool_use":
             completeLiveReasoning()
-            let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "unknown"
-            let childSessionID = (payload["child_session_id"] as? String)
+            let name =
+                (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String)
+                ?? "unknown"
+            let childSessionID =
+                (payload["child_session_id"] as? String)
                 ?? (params["child_session_id"] as? String)
             let eventAgentID = Self.agentID(
                 explicitAgentID: (payload["subagent_id"] as? String)
                     ?? (params["subagent_id"] as? String)
-                    ?? (payload["agent_id"] as? String)
-                    ?? (params["agent_id"] as? String),
+                        ?? (payload["agent_id"] as? String)
+                            ?? (params["agent_id"] as? String),
                 eventSessionID: eventSessionID,
                 childSessionID: childSessionID,
                 goal: payload["goal"] as? String,
                 taskIndex: (payload["task_index"] as? NSNumber)?.intValue,
                 agents: sessionAgents + activeSubagents
             )
-            let argsDict = (payload["arguments"] as? [String: Any])
+            let argsDict =
+                (payload["arguments"] as? [String: Any])
                 ?? (payload["input"] as? [String: Any])
                 ?? (payload["args"] as? [String: Any])
                 ?? Self.parseArgsDict(payload["args_text"])
@@ -931,7 +1033,8 @@ extension DockModel {
             } else {
                 input = ""
             }
-            let id = (payload["id"] as? String)
+            let id =
+                (payload["id"] as? String)
                 ?? (payload["tool_id"] as? String)
                 ?? (payload["tool_call_id"] as? String)
                 ?? (payload["tool_use_id"] as? String)
@@ -947,30 +1050,33 @@ extension DockModel {
             // Text streamed so far belongs above this call: close the row so
             // the call (and later text) renders below it, in timeline order.
             if streamingMessageID != nil, streamingMessageSessionID == sessionID,
-               streamingMessageBuffer.contains(where: { !$0.isWhitespace }) {
+                streamingMessageBuffer.contains(where: { !$0.isWhitespace })
+            {
                 splitLiveTurn()
             }
-            activeToolCalls.append(ActiveToolCall(
-                id: id,
-                name: name,
-                input: Self.truncatedForPersistence(input),
-                context: payload["context"] as? String ?? "",
-                startedAt: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
-                result: nil,
-                isComplete: false,
-                agentID: eventAgentID,
-                parentAgentID: payload["parent_id"] as? String,
-                childSessionID: childSessionID,
-                args: Self.textArgs(argsDict),
-                traceTiming: (dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"])) != nil
-                    ? .runtime : params["herm_trace_replayed"] as? Bool == true ? .unavailable : .observed
-            ))
+            activeToolCalls.append(
+                ActiveToolCall(
+                    id: id,
+                    name: name,
+                    input: Self.truncatedForPersistence(input),
+                    context: payload["context"] as? String ?? "",
+                    startedAt: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
+                    result: nil,
+                    isComplete: false,
+                    agentID: eventAgentID,
+                    parentAgentID: payload["parent_id"] as? String,
+                    childSessionID: childSessionID,
+                    args: Self.textArgs(argsDict),
+                    traceTiming: (dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"])) != nil
+                        ? .runtime : params["herm_trace_replayed"] as? Bool == true ? .unavailable : .observed
+                ))
             if Self.isDelegationTool(name) {
                 synthesizeSubagent(toolCallID: id, args: argsDict)
             }
             recordBotDispatch(toolCallID: id, toolName: name, args: argsDict)
         case "tool.result", "tool_result", "tool.complete", "tool_complete":
-            let id = (payload["id"] as? String)
+            let id =
+                (payload["id"] as? String)
                 ?? (payload["tool_id"] as? String)
                 ?? (payload["tool_call_id"] as? String)
                 ?? (payload["tool_use_id"] as? String)
@@ -990,14 +1096,20 @@ extension DockModel {
                 }
                 activeToolCalls[index].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
                 activeToolCalls[index].isComplete = true
-                activeToolCalls[index].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
+                activeToolCalls[index].completedAt =
+                    dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 activeToolCalls[index].traceDuration = SessionTraceProjection.measuredDuration(payload["duration_s"])
-                activeToolCalls[index].traceOutcome = SessionTraceProjection.outcome(payload["result"] ?? payload["output"])
-                if params["herm_trace_replayed"] as? Bool == true && dateValue(params["timestamp"]) == nil && dateValue(payload["timestamp"]) == nil {
+                activeToolCalls[index].traceOutcome = SessionTraceProjection.outcome(
+                    payload["result"] ?? payload["output"])
+                if params["herm_trace_replayed"] as? Bool == true && dateValue(params["timestamp"]) == nil
+                    && dateValue(payload["timestamp"]) == nil
+                {
                     activeToolCalls[index].traceTiming = .unavailable
                 }
                 activeToolCalls[index].diffPreview = diffPreview
-                if activeToolCalls[index].args == nil { activeToolCalls[index].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
+                if activeToolCalls[index].args == nil {
+                    activeToolCalls[index].args = Self.textArgs(Self.parseArgsDict(payload["args"]))
+                }
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: id, result: result, payload: payload) }
                 bindBotDispatch(toolCallID: id, result: result)
             } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
@@ -1007,24 +1119,34 @@ extension DockModel {
                 }
                 activeToolCalls[last].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
                 activeToolCalls[last].isComplete = true
-                activeToolCalls[last].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
+                activeToolCalls[last].completedAt =
+                    dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 // The legacy completion fallback does not prove trace ownership.
                 activeToolCalls[last].traceTiming = .unavailable
                 activeToolCalls[last].diffPreview = diffPreview
-                if activeToolCalls[last].args == nil { activeToolCalls[last].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
-                if wasDelegation { completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload) }
+                if activeToolCalls[last].args == nil {
+                    activeToolCalls[last].args = Self.textArgs(Self.parseArgsDict(payload["args"]))
+                }
+                if wasDelegation {
+                    completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload)
+                }
                 bindBotDispatch(toolCallID: activeToolCalls[last].id, result: result)
             }
-            if let todos = payload["todos"] as? [[String: Any]], let sessionID { applyTodos(todos, sessionID: sessionID) }
+            if let todos = payload["todos"] as? [[String: Any]], let sessionID {
+                applyTodos(todos, sessionID: sessionID)
+            }
         case "todo.updated":
-            if let todos = payload["todos"] as? [[String: Any]], let sessionID { applyTodos(todos, sessionID: sessionID) }
+            if let todos = payload["todos"] as? [[String: Any]], let sessionID {
+                applyTodos(todos, sessionID: sessionID)
+            }
 
         default:
             DebugLog.write("model: unknown event type: \(type) params: \(params.keys.sorted().joined(separator: ", "))")
             break
         }
         if type == "sessions.changed" || type.hasPrefix("tool.") || type.hasPrefix("subagent.")
-            || type == "message.start" || type == "message.complete" {
+            || type == "message.start" || type == "message.complete"
+        {
             refreshDelegationStatus()
             cacheCurrentAgentState()
         }
@@ -1033,12 +1155,13 @@ extension DockModel {
     func appendTerminalErrorMessage(_ text: String) {
         guard !didAppendTerminalErrorForCurrentTurn else { return }
         didAppendTerminalErrorForCurrentTurn = true
-        messages.append(ChatMessage(
-            role: .hermes,
-            text: text,
-            modelName: currentModelName,
-            isError: true
-        ))
+        messages.append(
+            ChatMessage(
+                role: .hermes,
+                text: text,
+                modelName: currentModelName,
+                isError: true
+            ))
     }
 
     static func completedMessageText(from payload: [String: Any]) -> String? {
@@ -1087,13 +1210,15 @@ extension DockModel {
     /// than the loaded history stay out so they do not pile up at the top.
     func insertKanbanBoardNotices(_ notices: [(key: String, profileID: String?, text: String, date: Date)]) {
         var known = Set(messages.compactMap(\.kanbanNotice?.eventKey))
-        insertTimelineMessages(notices.compactMap { item in
-            guard known.insert(item.key).inserted, var notice = KanbanNotice(text: item.text) else { return nil }
-            notice.eventKey = item.key
-            return ChatMessage(role: .hermes, text: item.text, timestamp: item.date,
-                               botProfileID: item.profileID ?? "kanban",
-                               botDisplayName: item.profileID == nil ? "Kanban" : nil, kanbanNotice: notice)
-        })
+        insertTimelineMessages(
+            notices.compactMap { item in
+                guard known.insert(item.key).inserted, var notice = KanbanNotice(text: item.text) else { return nil }
+                notice.eventKey = item.key
+                return ChatMessage(
+                    role: .hermes, text: item.text, timestamp: item.date,
+                    botProfileID: item.profileID ?? "kanban",
+                    botDisplayName: item.profileID == nil ? "Kanban" : nil, kanbanNotice: notice)
+            })
     }
 
     /// Places messages from outside the live stream (board events, pipeline
@@ -1102,7 +1227,9 @@ extension DockModel {
     func insertTimelineMessages(_ items: [ChatMessage]) {
         guard let floor = messages.first?.timestamp else { return }
         for message in items.sorted(by: { $0.timestamp < $1.timestamp }) where message.timestamp >= floor {
-            guard !messages.contains(where: { $0.timestamp == message.timestamp && $0.text == message.text }) else { continue }
+            guard !messages.contains(where: { $0.timestamp == message.timestamp && $0.text == message.text }) else {
+                continue
+            }
             if let index = messages.firstIndex(where: { $0.timestamp > message.timestamp }) {
                 messages.insert(message, at: index)
             } else {
@@ -1120,13 +1247,16 @@ extension DockModel {
         let generation = sessionResumeGeneration
         let profileID = sessionProfileID ?? profileScopeID
         Task { @MainActor in
-            guard let loaded = try? await fetchEarlierTranscriptRows(
-                from: TranscriptHistoryCursor(storageSessionID: storageID, profileID: profileID),
-                limit: TranscriptHistoryPaging.pageRowLimit, minimumDisplayRows: 1, maximumPages: 1
-            ), generation == sessionResumeGeneration, sessionStorageID == storageID else { return }
-            insertTimelineMessages(Self.parseMessages(loaded.rows).messages.filter {
-                $0.systemEvent != nil && $0.systemEvent?.isFeed == false
-            })
+            guard
+                let loaded = try? await fetchEarlierTranscriptRows(
+                    from: TranscriptHistoryCursor(storageSessionID: storageID, profileID: profileID),
+                    limit: TranscriptHistoryPaging.pageRowLimit, minimumDisplayRows: 1, maximumPages: 1
+                ), generation == sessionResumeGeneration, sessionStorageID == storageID
+            else { return }
+            insertTimelineMessages(
+                Self.parseMessages(loaded.rows).messages.filter {
+                    $0.systemEvent != nil && $0.systemEvent?.isFeed == false
+                })
         }
     }
 
@@ -1135,7 +1265,8 @@ extension DockModel {
         guard !text.isEmpty else { return }
         let message = ChatMessage(role: .hermes, text: text, systemEvent: event)
         if let key, let id = systemEventMessageIDs[key], let index = messages.firstIndex(where: { $0.id == id }) {
-            messages[index] = ChatMessage(id: id, role: .hermes, text: text, timestamp: messages[index].timestamp, systemEvent: event)
+            messages[index] = ChatMessage(
+                id: id, role: .hermes, text: text, timestamp: messages[index].timestamp, systemEvent: event)
             return
         }
         // A repeated status line (retries) doesn't stack identical cards.
@@ -1152,7 +1283,8 @@ extension DockModel {
 
     func appendBelowLiveTurn(_ message: ChatMessage) {
         guard let id = streamingMessageID, streamingMessageSessionID == sessionID,
-              let index = messages.firstIndex(where: { $0.id == id }) else {
+            let index = messages.firstIndex(where: { $0.id == id })
+        else {
             messages.append(message)
             return
         }
@@ -1207,7 +1339,8 @@ extension DockModel {
     func recordTurnThinking(_ state: ReasoningState) {
         guard streamingMessageID != nil else { return }
         if let index = streamingTurnActivity.lastIndex(where: { $0.name == ActiveToolCall.thinkingName }),
-           !streamingTurnActivity[index].isComplete {
+            !streamingTurnActivity[index].isComplete
+        {
             // Live text goes to the open thought row only; writing it into the
             // step broke TurnActivityView's equality on every reasoning flush.
             if state.isComplete {
@@ -1215,18 +1348,19 @@ extension DockModel {
                 closeTurnThinking()
             }
         } else if !state.isComplete || !state.text.isEmpty {
-            streamingTurnActivity.append(ActiveToolCall(
-                id: "thinking:\(UUID().uuidString)",
-                name: ActiveToolCall.thinkingName,
-                input: "",
-                context: "",
-                startedAt: Date(),
-                result: state.text,
-                isComplete: state.isComplete,
-                completedAt: state.isComplete ? Date() : nil,
-                // Herm watches this segment arrive, so its clock times it.
-                traceTiming: .observed
-            ))
+            streamingTurnActivity.append(
+                ActiveToolCall(
+                    id: "thinking:\(UUID().uuidString)",
+                    name: ActiveToolCall.thinkingName,
+                    input: "",
+                    context: "",
+                    startedAt: Date(),
+                    result: state.text,
+                    isComplete: state.isComplete,
+                    completedAt: state.isComplete ? Date() : nil,
+                    // Herm watches this segment arrive, so its clock times it.
+                    traceTiming: .observed
+                ))
         }
         liveReasoning.text = state.text
     }
@@ -1236,20 +1370,22 @@ extension DockModel {
     func recordTurnCompaction(isComplete: Bool) {
         guard streamingMessageID != nil else { return }
         if let index = streamingTurnActivity.lastIndex(where: { $0.name == ActiveToolCall.compactionName }),
-           !streamingTurnActivity[index].isComplete {
+            !streamingTurnActivity[index].isComplete
+        {
             guard isComplete else { return }
             streamingTurnActivity[index].isComplete = true
             streamingTurnActivity[index].completedAt = Date()
         } else if !isComplete {
-            streamingTurnActivity.append(ActiveToolCall(
-                id: "compaction:\(UUID().uuidString)",
-                name: ActiveToolCall.compactionName,
-                input: "",
-                context: "",
-                startedAt: Date(),
-                isComplete: false,
-                traceTiming: .observed
-            ))
+            streamingTurnActivity.append(
+                ActiveToolCall(
+                    id: "compaction:\(UUID().uuidString)",
+                    name: ActiveToolCall.compactionName,
+                    input: "",
+                    context: "",
+                    startedAt: Date(),
+                    isComplete: false,
+                    traceTiming: .observed
+                ))
         }
     }
 
@@ -1267,7 +1403,9 @@ extension DockModel {
 
     func closeTurnThinking() {
         for index in streamingTurnActivity.indices
-        where streamingTurnActivity[index].name == ActiveToolCall.thinkingName && !streamingTurnActivity[index].isComplete {
+        where streamingTurnActivity[index].name == ActiveToolCall.thinkingName
+            && !streamingTurnActivity[index].isComplete
+        {
             let text = streamingReasoningBuffer.isEmpty ? liveReasoning.text : streamingReasoningBuffer
             if !text.isEmpty { streamingTurnActivity[index].result = text }
             streamingTurnActivity[index].isComplete = true
@@ -1287,9 +1425,10 @@ extension DockModel {
 
     func removePendingClarificationResumeMessage() {
         guard let streamingMessageID,
-              let index = messages.firstIndex(where: { $0.id == streamingMessageID }),
-              messages[index].role == .hermes,
-              messages[index].text.isEmpty else { return }
+            let index = messages.firstIndex(where: { $0.id == streamingMessageID }),
+            messages[index].role == .hermes,
+            messages[index].text.isEmpty
+        else { return }
         messages.remove(at: index)
         self.streamingMessageID = nil
         streamingMessageSessionID = nil
@@ -1305,7 +1444,8 @@ extension DockModel {
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
         if let id = streamingMessageID,
-           let index = messages.firstIndex(where: { $0.id == id }) {
+            let index = messages.firstIndex(where: { $0.id == id })
+        {
             messages.remove(at: index)
         }
         streamingMessageID = nil
@@ -1337,7 +1477,8 @@ extension DockModel {
         if let dictionary = value as? [String: Any] {
             for key in keys {
                 if let string = dictionary[key] as? String,
-                   !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
                     return string
                 }
             }
@@ -1349,8 +1490,9 @@ extension DockModel {
                 if let result = nestedClarificationString(keys: keys, in: child) { return result }
             }
         } else if let string = value as? String,
-                  let data = string.data(using: .utf8),
-                  let decoded = try? JSONSerialization.jsonObject(with: data) {
+            let data = string.data(using: .utf8),
+            let decoded = try? JSONSerialization.jsonObject(with: data)
+        {
             return nestedClarificationString(keys: keys, in: decoded)
         }
         return nil
@@ -1375,8 +1517,9 @@ extension DockModel {
                 if !result.isEmpty { return result }
             }
         } else if let string = value as? String,
-                  let data = string.data(using: .utf8),
-                  let decoded = try? JSONSerialization.jsonObject(with: data) {
+            let data = string.data(using: .utf8),
+            let decoded = try? JSONSerialization.jsonObject(with: data)
+        {
             return nestedClarificationStrings(keys: keys, in: decoded)
         }
         return []
@@ -1398,7 +1541,8 @@ extension DockModel {
         isDiscardingStoppedTurn = true
         // Hermes purged its server queue, so a redirect it queued will not run.
         if let owner = sessionID {
-            for (key, pending) in redirectingPrompts where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
+            for (key, pending) in redirectingPrompts
+            where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
                 var redirect = pending
                 redirect.wasInterrupted = true
                 redirectingPrompts[key] = redirect.isQueuedByHermes ? nil : redirect
@@ -1460,8 +1604,8 @@ extension DockModel {
     static func isMidTurnEvent(_ type: String) -> Bool {
         switch type {
         case "tool.call", "tool.start", "tool.use", "tool_use",
-             "reasoning.start", "reasoning.delta", "reasoning.available", "thinking", "thinking.delta",
-             "moa.reference", "moa.progress", "moa.phase":
+            "reasoning.start", "reasoning.delta", "reasoning.available", "thinking", "thinking.delta",
+            "moa.reference", "moa.progress", "moa.phase":
             true
         default:
             false
@@ -1478,7 +1622,8 @@ extension DockModel {
             return "◇ \(label.isEmpty ? "Reference" : label)\n\(text)\n"
         case "moa.progress":
             guard let done = (payload["refs_done"] as? NSNumber)?.intValue,
-                  let total = (payload["refs_total"] as? NSNumber)?.intValue else { return nil }
+                let total = (payload["refs_total"] as? NSNumber)?.intValue
+            else { return nil }
             return label.isEmpty ? "◇ MoA refs \(done)/\(total)\n" : "◇ MoA refs \(done)/\(total) — \(label)\n"
         case "moa.phase":
             return payload["phase"] as? String == "aggregator" ? "◇ MoA aggregating…\n" : nil
@@ -1506,7 +1651,8 @@ extension DockModel {
             // response grows, wrapping its entire live Text becomes more
             // expensive, so the presentation cadence backs off while the
             // transport buffer remains lossless.
-            let interval = ConversationStreamingPresentationPolicy
+            let interval =
+                ConversationStreamingPresentationPolicy
                 .flushIntervalMilliseconds(textLength: self.streamingMessageBuffer.utf8.count)
             try? await Task.sleep(for: .milliseconds(interval))
             guard !Task.isCancelled, self.streamingMessageGeneration == generation else { return }
@@ -1531,8 +1677,9 @@ extension DockModel {
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
         guard streamingMessageID != nil,
-              streamingMessageSessionID == sessionID,
-              let newText = pendingStreamingText() else { return }
+            streamingMessageSessionID == sessionID,
+            let newText = pendingStreamingText()
+        else { return }
         applyVisionNoticeDetectionIfNeeded(to: newText)
         let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
         if streamingMessageIsVisionNotice {
@@ -1552,8 +1699,9 @@ extension DockModel {
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
         guard let id = streamingMessageID,
-              streamingMessageSessionID == sessionID,
-              let index = messages.firstIndex(where: { $0.id == id }) else {
+            streamingMessageSessionID == sessionID,
+            let index = messages.firstIndex(where: { $0.id == id })
+        else {
             streamingText.clearPresentation()
             streamingResponseStartedAt = nil
             return
@@ -1609,20 +1757,23 @@ extension DockModel {
         // params dict on the main thread caused lag spikes during tool storms.
         // Bound the input before serializing.
         let detail: String
-        if let data = try? JSONSerialization.data(withJSONObject: Self.boundedEventPayload(params), options: [.sortedKeys]),
-           let json = String(data: data, encoding: .utf8) {
+        if let data = try? JSONSerialization.data(
+            withJSONObject: Self.boundedEventPayload(params), options: [.sortedKeys]),
+            let json = String(data: data, encoding: .utf8)
+        {
             detail = String(json.prefix(500))
         } else {
             detail = String(String(describing: params).prefix(500))
         }
         // The gateway already logs one line per received event; a duplicate
         // here doubled the per-event logging cost during tool storms.
-        recentEvents.append(AgentEvent(
-            id: UUID(),
-            type: type,
-            detail: detail,
-            timestamp: dateValue(params["timestamp"]) ?? Date()
-        ))
+        recentEvents.append(
+            AgentEvent(
+                id: UUID(),
+                type: type,
+                detail: detail,
+                timestamp: dateValue(params["timestamp"]) ?? Date()
+            ))
         if recentEvents.count > 40 {
             recentEvents.removeFirst(recentEvents.count - 40)
         }

@@ -1,6 +1,6 @@
 import AppKit
-import CoreSpotlight
 import Combine
+import CoreSpotlight
 import SwiftUI
 import UserNotifications
 
@@ -132,15 +132,20 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // first match so icon-only buttons explain themselves on hover.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
         DispatchQueue.global(qos: .utility).async { AgentBrowser.reapOrphans() }
-        let edge = EdgeDockController(model: model, controlCenter: controlCenter, interruptions: interruptions, openQuota: { [weak self] in
-            self?.dockPanel?.showQuota()
-        }, openKanban: { [weak self] task in
-            self?.dockPanel?.showKanban(task)
-        }, openDock: { [weak self] in
-            self?.dockPanel?.showFromNotification()
-        })
+        let edge = EdgeDockController(
+            model: model, controlCenter: controlCenter, interruptions: interruptions,
+            openQuota: { [weak self] in
+                self?.dockPanel?.showQuota()
+            },
+            openKanban: { [weak self] task in
+                self?.dockPanel?.showKanban(task)
+            },
+            openDock: { [weak self] in
+                self?.dockPanel?.showFromNotification()
+            })
         edgeDock = edge
-        dockPanel = DockPanelController(model: model, controlCenter: controlCenter, notchPanel: edge.panel,
+        dockPanel = DockPanelController(
+            model: model, controlCenter: controlCenter, notchPanel: edge.panel,
             placement: { [weak edge] in edge?.placement },
             onWillShow: { [weak edge] in edge?.prepareForWorkspace() },
             onHide: { [weak edge] in edge?.restoreNotch() })
@@ -174,13 +179,18 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         installCommandDoubleTapShortcut()
         spotlightIndex = SessionSpotlightIndex(model: model)
         PullRequestWatchStore.shared.onNotice = { [weak model] reference, changes in
-            model?.publishWorkflowNotice(HermNotice(kind: .information, source: .repository, profileID: nil,
-                sourceID: reference.id, eventID: UUID().uuidString), body: "\(reference.id): " + changes.joined(separator: " · "), openURL: reference.url)
+            model?.publishWorkflowNotice(
+                HermNotice(
+                    kind: .information, source: .repository, profileID: nil,
+                    sourceID: reference.id, eventID: UUID().uuidString),
+                body: "\(reference.id): " + changes.joined(separator: " · "), openURL: reference.url)
         }
         PullRequestWatchStore.shared.start()
         _ = DesktopCaptureService.shared
         quickCaptureHotKey = QuickCaptureHotKey { [weak self] in self?.edgeDock?.toggleQuickCapture() }
-        windowCaptureHotKey = QuickCaptureHotKey(identifier: 2, preference: { DesktopCaptureShortcut.stored }) { [weak self] in self?.edgeDock?.captureWindow() }
+        windowCaptureHotKey = QuickCaptureHotKey(identifier: 2, preference: { DesktopCaptureShortcut.stored }) {
+            [weak self] in self?.edgeDock?.captureWindow()
+        }
         writeStatusItemDiagnosticIfRequested()
         HermAppUpdater.shared.isBusy = { [model] in model.isSending || model.status == .working }
         HermAppUpdater.shared.start()
@@ -213,16 +223,21 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private func setKeepAwake(_ busy: Bool) {
         let enabled = UserDefaults.standard.bool(forKey: Self.keepAwakeKey)
         if busy, enabled, keepAwake == nil {
-            keepAwake = ProcessInfo.processInfo.beginActivity(options: .idleSystemSleepDisabled, reason: "Hermes is working")
-        } else if (!busy || !enabled), let activity = keepAwake {
+            keepAwake = ProcessInfo.processInfo.beginActivity(
+                options: .idleSystemSleepDisabled, reason: "Hermes is working")
+        } else if !busy || !enabled, let activity = keepAwake {
             ProcessInfo.processInfo.endActivity(activity)
             keepAwake = nil
         }
     }
 
     /// Services menu entry "Send to Herm": drops the selected text into the composer and opens the panel.
-    @objc func sendToHerm(_ pasteboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString>) {
-        guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+    @objc func sendToHerm(
+        _ pasteboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString>
+    ) {
+        guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !text.isEmpty
+        else {
             error.pointee = "No text was selected."
             return
         }
@@ -244,13 +259,14 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             let frame = button.flatMap { button in
                 button.window?.convertToScreen(button.convert(button.bounds, to: nil))
             }
-            let detail = [
-                "title=\(button?.title ?? "")",
-                "visible=\(self.dockPanel?.statusItemIsVisible ?? false)",
-                "button_hidden=\(button?.isHidden ?? true)",
-                "button_frame=\(frame.map(NSStringFromRect) ?? "nil")",
-                "screen_count=\(NSScreen.screens.count)"
-            ].joined(separator: "\n") + "\n"
+            let detail =
+                [
+                    "title=\(button?.title ?? "")",
+                    "visible=\(self.dockPanel?.statusItemIsVisible ?? false)",
+                    "button_hidden=\(button?.isHidden ?? true)",
+                    "button_frame=\(frame.map(NSStringFromRect) ?? "nil")",
+                    "screen_count=\(NSScreen.screens.count)",
+                ].joined(separator: "\n") + "\n"
             try? detail.write(
                 to: URL(fileURLWithPath: "/private/tmp/hermes-status-item-diagnostic.txt"),
                 atomically: true,
@@ -268,9 +284,12 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         if let localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: handler) {
             commandEventMonitors.append(localMonitor)
         }
-        if let globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] event in
-            self?.handleCommandEvent(event)
-        }) {
+        if let globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: .flagsChanged,
+            handler: { [weak self] event in
+                self?.handleCommandEvent(event)
+            })
+        {
             commandEventMonitors.append(globalMonitor)
         }
         // Two rapid Command shortcuts (⌘C then ⌘V) must not read as a
@@ -279,10 +298,13 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         if let localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: handler) {
             commandEventMonitors.append(localKeyMonitor)
         }
-        if let globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] _ in
-            self?.commandDoubleTapDetector.noteKeyActivity()
-            self?.optionDoubleTapDetector.noteKeyActivity()
-        }) {
+        if let globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: .keyDown,
+            handler: { [weak self] _ in
+                self?.commandDoubleTapDetector.noteKeyActivity()
+                self?.optionDoubleTapDetector.noteKeyActivity()
+            })
+        {
             commandEventMonitors.append(globalKeyMonitor)
         }
     }
@@ -295,7 +317,9 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         }
         let workspace = DoubleTapShortcut.workspace
         if workspace.keyCodes.contains(event.keyCode) {
-            if commandDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(workspace.flag), at: event.timestamp) {
+            if commandDoubleTapDetector.handle(
+                isCommandDown: event.modifierFlags.contains(workspace.flag), at: event.timestamp)
+            {
                 if dockWindow?.isOpen == true {
                     dockWindow?.toggle()
                 } else {
@@ -306,15 +330,20 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         }
         let notch = DoubleTapShortcut.notch
         if notch.keyCodes.contains(event.keyCode),
-           optionDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(notch.flag), at: event.timestamp) {
+            optionDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(notch.flag), at: event.timestamp)
+        {
             edgeDock?.toggleQuickPreview()
         }
     }
 
     /// A Spotlight result for a session opens the workspace on that session.
-    func application(_ application: NSApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+    func application(
+        _ application: NSApplication, continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
         guard userActivity.activityType == CSSearchableItemActionType,
-              let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return false }
+            let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
+        else { return false }
         let id = SessionSpotlightIndex.sessionID(from: identifier)
         dockPanel?.switchToWindow()
         if let session = model.sessions.first(where: { $0.id == id }) { model.resumeSession(session) }
@@ -340,11 +369,14 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         model.shutdown()
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+    ) async {
         let choice = HermNotificationAction.choice(for: response.actionIdentifier)
         let requestID = response.notification.request.content.userInfo[HermNotificationAction.requestIDKey] as? String
         let reply = (response as? UNTextInputNotificationResponse)?.userText
-        let prURL = (response.notification.request.content.userInfo["herm.open-pr"] as? String).flatMap(URL.init(string:))
+        let prURL = (response.notification.request.content.userInfo["herm.open-pr"] as? String).flatMap(
+            URL.init(string:))
         await MainActor.run { [weak self] in
             if let choice, let requestID {
                 self?.model.answerApproval(requestID: requestID, choice: choice)
@@ -391,7 +423,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private let preferences = CommandCenterPreferencesStore.shared
     private let statusItem: NSStatusItem
     private let unreadBadge = UnreadBadgeView(frame: .zero)
-    private let panel = DockPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    private let panel = DockPanel(
+        contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     private let notchPanel: NSWindow
     private let panelPresentation = DockPanelPresentation()
     private var cancellables = Set<AnyCancellable>()
@@ -413,8 +446,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     var statusItemDiagnostic: NSStatusBarButton? { statusItem.button }
     var statusItemIsVisible: Bool { statusItem.isVisible }
 
-    init(model: DockModel, controlCenter: ControlCenterModel, notchPanel: NSWindow, placement: @escaping () -> EdgeDockPlacement?,
-         onWillShow: @escaping () -> Void, onHide: @escaping () -> Void) {
+    init(
+        model: DockModel, controlCenter: ControlCenterModel, notchPanel: NSWindow,
+        placement: @escaping () -> EdgeDockPlacement?,
+        onWillShow: @escaping () -> Void, onHide: @escaping () -> Void
+    ) {
         self.model = model
         self.controlCenter = controlCenter
         self.notchPanel = notchPanel
@@ -451,7 +487,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             .sink { [weak self] _ in
                 DispatchQueue.main.async {
                     guard let self, self.isWorkspaceVisible, !self.isFullscreen,
-                          let side = self.placement()?.side, side != self.panelPresentation.edgeSide else { return }
+                        let side = self.placement()?.side, side != self.panelPresentation.edgeSide
+                    else { return }
                     self.resizePanel(to: self.desiredWidth)
                     EdgeDockMotion.reveal(self.workspaceHost, side: side, fromShortcut: false)
                 }
@@ -478,7 +515,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             unreadBadge.widthAnchor.constraint(equalToConstant: 7),
             unreadBadge.heightAnchor.constraint(equalToConstant: 7),
             unreadBadge.topAnchor.constraint(equalTo: button.topAnchor, constant: 2),
-            unreadBadge.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -2)
+            unreadBadge.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -2),
         ])
     }
 
@@ -508,20 +545,26 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             return
         }
         let hostingView = EdgeDockHostingView(
-            rootView: DockPopover(model: model, panelPresentation: panelPresentation, controlCenter: controlCenter, availableWorkspaceWidth: { [weak self] in
-                self?.availableWorkspaceWidth() ?? .greatestFiniteMagnitude
-            }, onWorkspaceWidthChange: { [weak self] width in
-                // The split view changes pane count when the inspector toggles.
-                // Animating the window at the same time can leave an old
-                // divider drawn over the newly positioned conversation.
-                self?.resizePanel(to: width) ?? width
-            }, onClose: { [weak self] in
-                self?.hide()
-            }, onFullscreenToggle: { [weak self] in
-                self?.toggleFullscreen()
-            }, onOpenWindow: { [weak self] in
-                self?.switchToWindow()
-            })
+            rootView: DockPopover(
+                model: model, panelPresentation: panelPresentation, controlCenter: controlCenter,
+                availableWorkspaceWidth: { [weak self] in
+                    self?.availableWorkspaceWidth() ?? .greatestFiniteMagnitude
+                },
+                onWorkspaceWidthChange: { [weak self] width in
+                    // The split view changes pane count when the inspector toggles.
+                    // Animating the window at the same time can leave an old
+                    // divider drawn over the newly positioned conversation.
+                    self?.resizePanel(to: width) ?? width
+                },
+                onClose: { [weak self] in
+                    self?.hide()
+                },
+                onFullscreenToggle: { [weak self] in
+                    self?.toggleFullscreen()
+                },
+                onOpenWindow: { [weak self] in
+                    self?.switchToWindow()
+                })
         )
         hostingView.wantsLayer = true
         // DockPopover owns the contour so a shortcut can attach cleanly to the
@@ -586,7 +629,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private var statusItemFrame: NSRect {
         guard let button = statusItem.button,
-              let window = button.window else { return .zero }
+            let window = button.window
+        else { return .zero }
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
@@ -601,7 +645,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         let name = model.agentDisplayName
         let unread = hasUnreadResponse ?? model.hasUnreadResponse
         statusItem.button?.title = name
-        statusItem.button?.image?.accessibilityDescription = unread ? "\(name) AI agent, unread update" : "\(name) AI agent"
+        statusItem.button?.image?.accessibilityDescription =
+            unread ? "\(name) AI agent, unread update" : "\(name) AI agent"
         statusItem.button?.toolTip = unread ? "\(name) AI agent — unread update" : "\(name) AI agent"
     }
 
@@ -684,10 +729,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         }
         if !isWorkspaceVisible {
             // Read fresh: Settings and the fullscreen toggle both write this key.
-            isFullscreen = false // the native window is the full-size surface
+            isFullscreen = false  // the native window is the full-size surface
         }
         onWillShow()
-        hideTask?.cancel(); hideTask = nil
+        hideTask?.cancel()
+        hideTask = nil
         let wasVisible = panel.isVisible
         isWorkspaceVisible = true
         panel.onCancel = { [weak self] in self?.hide() }
@@ -719,7 +765,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             // Also reverse an unfinished close when reopening the still-visible panel.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isWorkspaceVisible else { return }
-                withAnimation(self.reducesMotion ? nil : EdgeDockMotion.panelMorph(side: self.panelPresentation.edgeSide, opening: true)) {
+                withAnimation(
+                    self.reducesMotion
+                        ? nil : EdgeDockMotion.panelMorph(side: self.panelPresentation.edgeSide, opening: true)
+                ) {
                     self.panelPresentation.isRevealed = true
                 }
             }
@@ -728,7 +777,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
-            DebugLog.write("panel: shown (app active: \(NSApp.isActive), frontmost: \(frontmost), key: \(self.panel.isKeyWindow), responder: \(self.panel.responderDescription))")
+            DebugLog.write(
+                "panel: shown (app active: \(NSApp.isActive), frontmost: \(frontmost), key: \(self.panel.isKeyWindow), responder: \(self.panel.responderDescription))"
+            )
         }
     }
 
@@ -841,7 +892,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         desiredWidth = width
         guard !isFullscreen, let placement = placement() else { return width }
         let insets = placement.workspaceInsets
-        let availableWidth = max(0, placement.screenFrame.width - Metrics.screenInset - insets.leading - insets.trailing)
+        let availableWidth = max(
+            0, placement.screenFrame.width - Metrics.screenInset - insets.leading - insets.trailing)
         let fittedWidth = min(width, availableWidth)
         let height = min(Metrics.height, placement.visibleFrame.height)
         panelPresentation.edgeSide = placement.side
@@ -888,10 +940,15 @@ final class DockPanel: NSPanel {
     var onCancel: (() -> Void)?
     private var privacyObserver: NSObjectProtocol?
 
-    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+    override init(
+        contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType,
+        defer flag: Bool
+    ) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
         applyScreenSharingPrivacy()
-        privacyObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+        privacyObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             MainActor.assumeIsolated { self?.applyScreenSharingPrivacy() }
         }
     }
@@ -915,7 +972,8 @@ final class DockPanel: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown {
-            DebugLog.write("panel: keyDown code=\(event.keyCode) repeat=\(event.isARepeat) responder=\(responderDescription)")
+            DebugLog.write(
+                "panel: keyDown code=\(event.keyCode) repeat=\(event.isARepeat) responder=\(responderDescription)")
         }
         super.sendEvent(event)
     }

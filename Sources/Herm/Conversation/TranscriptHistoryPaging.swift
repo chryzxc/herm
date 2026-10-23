@@ -48,21 +48,25 @@ enum TranscriptHistoryPaging {
     static let maximumTimelinePages = 20
 
     static func pagePath(sessionID: String, profileID: String?, limit: Int, offset: Int) -> String? {
-        sessionPath(sessionID: sessionID, endpoint: "messages", profileID: profileID, query: [
-            URLQueryItem(name: "limit", value: String(limit)),
-            URLQueryItem(name: "offset", value: String(offset)),
-            URLQueryItem(name: "order", value: "latest"),
-            // Rows archived by in-place compaction are still display history;
-            // without them the transcript ends at the compaction boundary.
-            URLQueryItem(name: "include_compacted", value: "true"),
-        ])
+        sessionPath(
+            sessionID: sessionID, endpoint: "messages", profileID: profileID,
+            query: [
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "offset", value: String(offset)),
+                URLQueryItem(name: "order", value: "latest"),
+                // Rows archived by in-place compaction are still display history;
+                // without them the transcript ends at the compaction boundary.
+                URLQueryItem(name: "include_compacted", value: "true"),
+            ])
     }
 
     static func timelinePath(sessionID: String, profileID: String?, afterRowID: Int) -> String? {
-        sessionPath(sessionID: sessionID, endpoint: "timeline", profileID: profileID, query: [
-            URLQueryItem(name: "limit", value: String(timelinePageLimit)),
-            URLQueryItem(name: "after_row_id", value: String(afterRowID)),
-        ])
+        sessionPath(
+            sessionID: sessionID, endpoint: "timeline", profileID: profileID,
+            query: [
+                URLQueryItem(name: "limit", value: String(timelinePageLimit)),
+                URLQueryItem(name: "after_row_id", value: String(afterRowID)),
+            ])
     }
 
     static func sessionPath(sessionID: String, endpoint: String, profileID: String?, query: [URLQueryItem]) -> String? {
@@ -101,7 +105,8 @@ enum TranscriptHistoryPaging {
         guard let pagination = response["pagination"] as? [String: Any] else {
             return Page(rows: rows, returned: rows.count, isPaginated: false)
         }
-        let returned = (pagination["returned"] as? Int)
+        let returned =
+            (pagination["returned"] as? Int)
             ?? (pagination["returned"] as? NSNumber)?.intValue
             ?? rows.count
         return Page(rows: rows, returned: returned, isPaginated: true)
@@ -132,7 +137,8 @@ enum TranscriptHistoryPaging {
         }
         let pagination = response["pagination"] as? [String: Any]
         guard (pagination?["has_more"] as? Bool) == true,
-              let next = pagination.flatMap({ rowID($0, key: "next_cursor") }) else { return (entries, nil) }
+            let next = pagination.flatMap({ rowID($0, key: "next_cursor") })
+        else { return (entries, nil) }
         return (entries, next)
     }
 
@@ -148,7 +154,9 @@ enum TranscriptHistoryPaging {
             // Tool rows and tool-only assistant rows carry the turn's
             // activity; `parseMessages` attaches it to the next reply.
             if role == "tool" {
-                var tool: [String: Any] = ["role": "tool", "name": (row["tool_name"] ?? row["name"]) as? String ?? "tool"]
+                var tool: [String: Any] = [
+                    "role": "tool", "name": (row["tool_name"] ?? row["name"]) as? String ?? "tool",
+                ]
                 for key in ["tool_call_id", "timestamp"] { tool[key] = row[key] }
                 // The result feeds delivered-file cards, diffs and error states, as live.
                 let result = storedText(row["content"])
@@ -159,16 +167,20 @@ enum TranscriptHistoryPaging {
             var activity: [String: Any] = [:]
             if role == "assistant" {
                 var toolCalls = row["tool_calls"]
-                if let encoded = toolCalls as? String { toolCalls = try? JSONSerialization.jsonObject(with: Data(encoded.utf8)) }
+                if let encoded = toolCalls as? String {
+                    toolCalls = try? JSONSerialization.jsonObject(with: Data(encoded.utf8))
+                }
                 activity["tool_calls"] = toolCalls as? [[String: Any]]
                 // Codex commentary rides beside empty `content`; live it arrives as `message.interim`.
                 activity["display_commentary"] = row["display_commentary"] as? [String]
-                activity["reasoning"] = (row["display_reasoning"] ?? row["reasoning"] ?? row["reasoning_content"]) as? String
+                activity["reasoning"] =
+                    (row["display_reasoning"] ?? row["reasoning"] ?? row["reasoning_content"]) as? String
             }
             var text = storedText(row["display_content"] as? String ?? row["content"])
             if role == "user" {
                 text = text.replacingOccurrences(
-                    of: #"(^|\n)\[Triggering message id: `[^`\n]*` — use as `message_id` for reply/react/pin via the discord tools\.\]\n*"#,
+                    of:
+                        #"(^|\n)\[Triggering message id: `[^`\n]*` — use as `message_id` for reply/react/pin via the discord tools\.\]\n*"#,
                     with: "$1",
                     options: .regularExpression
                 )
@@ -200,7 +212,8 @@ enum TranscriptHistoryPaging {
         let afterPrefix = text.dropFirst(skillInvocationPrefix.count)
         var name = ""
         if afterPrefix.first == "\"",
-           let close = afterPrefix.dropFirst().firstIndex(of: "\"") {
+            let close = afterPrefix.dropFirst().firstIndex(of: "\"")
+        {
             name = String(afterPrefix[afterPrefix.index(after: afterPrefix.startIndex)..<close])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }

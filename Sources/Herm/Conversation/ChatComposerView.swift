@@ -57,7 +57,8 @@ struct ChatComposerView: View {
                         stageAttachmentFiles(urls)
                     }
                 } else if case .failure(let error) = result,
-                          let message = AttachmentPopoverPresentation.importerErrorMessage(error) {
+                    let message = AttachmentPopoverPresentation.importerErrorMessage(error)
+                {
                     model.reportAttachmentError(message)
                 }
             }
@@ -73,7 +74,10 @@ struct ChatComposerView: View {
                 isComposerPulsing = isRecording
             }
             .onChange(of: dictation.isRecording) { _, isRecording in
-                if !isRecording { updateDictation(); liveDictation = ComposerDictation() }
+                if !isRecording {
+                    updateDictation()
+                    liveDictation = ComposerDictation()
+                }
             }
             .onChange(of: dictation.transcript) { _, _ in
                 updateDictation()
@@ -91,9 +95,14 @@ struct ChatComposerView: View {
             }
             .sheet(item: $inspectingContext) { context in
                 ComposerContextPreview(context: context) { text in
-                    guard contextPreviewOwner == WorkspaceIdentity.session(model), model.attachedContexts.contains(where: { $0.id == context.id }) else { return }
-                    if let token = context.inlineToken, model.draft.contains(token) { model.draft = model.draft.replacingOccurrences(of: token, with: text) }
-                    else { model.stageDraft(text) }
+                    guard contextPreviewOwner == WorkspaceIdentity.session(model),
+                        model.attachedContexts.contains(where: { $0.id == context.id })
+                    else { return }
+                    if let token = context.inlineToken, model.draft.contains(token) {
+                        model.draft = model.draft.replacingOccurrences(of: token, with: text)
+                    } else {
+                        model.stageDraft(text)
+                    }
                     model.attachedContexts.removeAll { $0.id == context.id }
                 }
             }
@@ -118,27 +127,33 @@ struct ChatComposerView: View {
                         let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
                         // History navigation must not swallow Up/Down in other text fields.
                         if event.modifierFlags.intersection(editingModifiers).isEmpty,
-                           dockModel.isComposerEditing,
-                           let firstResponder = event.window?.firstResponder as? NSTextView {
+                            dockModel.isComposerEditing,
+                            let firstResponder = event.window?.firstResponder as? NSTextView
+                        {
                             let direction: Int?
                             switch event.keyCode {
-                            case 126: direction = -1 // Up arrow
-                            case 125: direction = 1 // Down arrow
+                            case 126: direction = -1  // Up arrow
+                            case 125: direction = 1  // Down arrow
                             default: direction = nil
                             }
                             if let direction,
-                               firstResponder.isEditable,
-                               MainActor.assumeIsolated({ () -> Bool in
-                                   guard !composerText.isCompletionOpen else { return false }
-                                   // In a draft, arrows move the caret first; history only
-                                   // takes over once the caret can't move further that way.
-                                   if !composerText.isBrowsingHistory, !firstResponder.string.isEmpty {
-                                       let before = firstResponder.selectedRange()
-                                       if direction < 0 { firstResponder.moveUp(nil) } else { firstResponder.moveDown(nil) }
-                                       if firstResponder.selectedRange() != before { return true }
-                                   }
-                                   return dockModel.navigateComposerHistory(direction: direction)
-                               }) {
+                                firstResponder.isEditable,
+                                MainActor.assumeIsolated({ () -> Bool in
+                                    guard !composerText.isCompletionOpen else { return false }
+                                    // In a draft, arrows move the caret first; history only
+                                    // takes over once the caret can't move further that way.
+                                    if !composerText.isBrowsingHistory, !firstResponder.string.isEmpty {
+                                        let before = firstResponder.selectedRange()
+                                        if direction < 0 {
+                                            firstResponder.moveUp(nil)
+                                        } else {
+                                            firstResponder.moveDown(nil)
+                                        }
+                                        if firstResponder.selectedRange() != before { return true }
+                                    }
+                                    return dockModel.navigateComposerHistory(direction: direction)
+                                })
+                            {
                                 return nil
                             }
                         }
@@ -146,8 +161,9 @@ struct ChatComposerView: View {
                         // isComposerEditing only flips on the first keystroke, so an
                         // untouched composer must be recognised by its first responder.
                         guard event.window?.firstResponder is ComposerInputTextView,
-                              event.modifierFlags.contains(.command),
-                              event.charactersIgnoringModifiers?.lowercased() == "v" else {
+                            event.modifierFlags.contains(.command),
+                            event.charactersIgnoringModifiers?.lowercased() == "v"
+                        else {
                             return event
                         }
                         let consumed = MainActor.assumeIsolated {
@@ -180,15 +196,20 @@ struct ChatComposerView: View {
     private var composerContent: some View {
         // Evaluate submission capabilities based on draft text, images, and steering state
         let draftIsEmpty = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasComposerContent = !draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil || !model.attachedContexts.isEmpty
+        let hasComposerContent =
+            !draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil
+            || !model.attachedContexts.isEmpty
         let isResponding = model.status == .working || model.isSending
         // Mid-turn input redirects the turn, or queues when it can't (attachments, approvals).
         let isSteeringTurn = model.isSending && model.sessionID != nil
         let queuedPrompts = model.currentSessionQueuedPrompts
-        let queuesAttachments = isSteeringTurn && (!model.pendingImages.isEmpty || model.pendingPDFURL != nil
-            || !model.attachedContexts.isEmpty || model.replyQuote != nil)
-        let submitLabel = hasComposerContent && model.status != .needsClarification
-            && (model.hasQueuedOrRedirectingPrompt || queuesAttachments)
+        let queuesAttachments =
+            isSteeringTurn
+            && (!model.pendingImages.isEmpty || model.pendingPDFURL != nil
+                || !model.attachedContexts.isEmpty || model.replyQuote != nil)
+        let submitLabel =
+            hasComposerContent && model.status != .needsClarification
+                && (model.hasQueuedOrRedirectingPrompt || queuesAttachments)
             ? "Queue message"
             : (isSteeringTurn ? DockSkinPresentation.current.steerLabel : DockSkinPresentation.current.submitLabel)
         // An idle composer with a queue left by a stopped turn sends the next one.
@@ -196,12 +217,14 @@ struct ChatComposerView: View {
         let showStop = isResponding && !hasComposerContent && !speechInput.isRecording
         // Keep stop reachable while a steer draft is typed or Hermes waits on a
         // clarification; the submit button already shows stop when the draft is empty.
-        let showsInterruptControl = (isResponding || model.status == .needsClarification)
+        let showsInterruptControl =
+            (isResponding || model.status == .needsClarification)
             && !speechInput.isRecording
             && !showStop
         // Leave room for TextEditor's native top and bottom insets.
         let minimumComposerHeight = ComposerLayout.minHeight
-        let effectiveComposerHeight = max(minimumComposerHeight, draftIsEmpty ? ComposerLayout.minHeight : composerHeight)
+        let effectiveComposerHeight = max(
+            minimumComposerHeight, draftIsEmpty ? ComposerLayout.minHeight : composerHeight)
         // One visual gutter shared by the native editor and placeholder. Do
         // not counteract TextEditor's internal padding with nested offsets:
         // those offsets made the caret look detached from the input edge.
@@ -224,424 +247,475 @@ struct ChatComposerView: View {
             // One tray joins the plan, queue and folder bar to the input. With
             // none of them showing, the input covers it completely.
             VStack(spacing: 0) {
-            PinnedWorkStrip(model: model)
-            if let controlCenter { RunningProcessesStrip(control: controlCenter, isTurnActive: isResponding) }
+                PinnedWorkStrip(model: model)
+                if let controlCenter { RunningProcessesStrip(control: controlCenter, isTurnActive: isResponding) }
 
-            if !queuedPrompts.isEmpty {
-                QueuedPromptList(model: model, prompts: queuedPrompts)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            }
-
-            if let quote = model.replyQuote {
-                ReplyQuoteChip(quote: quote, showsAuthor: false) { model.replyQuote = nil }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-            }
-
-            VStack(spacing: 6) {
-
-            // Main multi-line text input area at top of card container.
-            ZStack(alignment: .topLeading) {
-                ComposerInputEditor(
-                    text: $composer.text,
-                    isFocused: isComposerFocused,
-                    onSubmit: submitComposerInput,
-                    onCompletionKey: completions.handleKey,
-                    onDropFiles: stageAttachmentFiles,
-                    onFocusChanged: { focused in
-                        isComposerFocused = focused
-                        model.isComposerEditing = focused
-                    },
-                    onCaretMoved: { text, caret in
-                        contextCaret = caret
-                        // Moving the caret retargets or closes an open popover; only typing opens one.
-                        completions.caretMoved(text: text, caret: caret)
-                    },
-                    takePendingCaret: {
-                        defer { composer.pendingCaret = nil }
-                        return composer.pendingCaret
-                    },
-                    onTextChanged: { text, caret in
-                        contextCaret = caret
-                        model.removeDeletedInlineContexts()
-                        completions.update(for: text, caret: caret)
-                    },
-                    onContentHeightChanged: { contentHeight in
-                        composerHeight = ComposerLayout.height(for: contentHeight)
-                    },
-                    contexts: model.attachedContexts, onInspectContext: { contextPreviewOwner = WorkspaceIdentity.session(model); inspectingContext = $0 }
-                )
-                    // The native scroll view remains bounded while its document
-                    // grows, so wheel and trackpad scrolling stay inside the
-                    // editor after the composer reaches its maximum height.
-                    .frame(height: max(1, effectiveComposerHeight - textTopPadding))
-                    .frame(maxWidth: .infinity)
-                    .disabled(model.isRestoringSession)
-
-                // Placeholder text shares the editor's single visual gutter.
-                if composer.text.isEmpty {
-                    Text(placeholderText)
-                        .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .padding(.leading, textContentInset)
-                        .allowsHitTesting(false)
+                if !queuedPrompts.isEmpty {
+                    QueuedPromptList(model: model, prompts: queuedPrompts)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 }
-            }
-            // Move the native editor and the placeholder together; applying
-            // padding to only the placeholder would reintroduce caret drift.
-            .padding(.top, textTopPadding)
-            .frame(height: effectiveComposerHeight)
-            .frame(maxWidth: .infinity)
-            // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
-            // proposal while its intrinsic text height changes. Mask the
-            // complete input surface as a final paint boundary.
-            .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
 
-            // Image Attachment Previews (if any images are pending)
-            if !model.pendingImages.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(model.pendingImages) { image in
-                            HStack(spacing: 6) {
-                                Image(nsImage: image.image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                Button(action: { model.removePendingImage(image) }) {
-                                    DockIcon(.x)
-                                        .dockFont(.compactStatus, weight: .bold)
-                                        .foregroundStyle(Color.dockSecondaryText)
-                                    .frame(width: 22, height: 22)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.dockHover)
-                                .help("Remove image")
+                if let quote = model.replyQuote {
+                    ReplyQuoteChip(quote: quote, showsAuthor: false) { model.replyQuote = nil }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                }
+
+                VStack(spacing: 6) {
+
+                    // Main multi-line text input area at top of card container.
+                    ZStack(alignment: .topLeading) {
+                        ComposerInputEditor(
+                            text: $composer.text,
+                            isFocused: isComposerFocused,
+                            onSubmit: submitComposerInput,
+                            onCompletionKey: completions.handleKey,
+                            onDropFiles: stageAttachmentFiles,
+                            onFocusChanged: { focused in
+                                isComposerFocused = focused
+                                model.isComposerEditing = focused
+                            },
+                            onCaretMoved: { text, caret in
+                                contextCaret = caret
+                                // Moving the caret retargets or closes an open popover; only typing opens one.
+                                completions.caretMoved(text: text, caret: caret)
+                            },
+                            takePendingCaret: {
+                                defer { composer.pendingCaret = nil }
+                                return composer.pendingCaret
+                            },
+                            onTextChanged: { text, caret in
+                                contextCaret = caret
+                                model.removeDeletedInlineContexts()
+                                completions.update(for: text, caret: caret)
+                            },
+                            onContentHeightChanged: { contentHeight in
+                                composerHeight = ComposerLayout.height(for: contentHeight)
+                            },
+                            contexts: model.attachedContexts,
+                            onInspectContext: {
+                                contextPreviewOwner = WorkspaceIdentity.session(model)
+                                inspectingContext = $0
                             }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).dockSurfaceFill(Color.dockSurface))
-                            .contextMenu {
-                                Button("Add Text from Image to Message") { Task { await model.stageText(from: image) } }
-                            }
+                        )
+                        // The native scroll view remains bounded while its document
+                        // grows, so wheel and trackpad scrolling stay inside the
+                        // editor after the composer reaches its maximum height.
+                        .frame(height: max(1, effectiveComposerHeight - textTopPadding))
+                        .frame(maxWidth: .infinity)
+                        .disabled(model.isRestoringSession)
+
+                        // Placeholder text shares the editor's single visual gutter.
+                        if composer.text.isEmpty {
+                            Text(placeholderText)
+                                .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .padding(.leading, textContentInset)
+                                .allowsHitTesting(false)
                         }
                     }
-                }
-            }
-            if !model.attachedContexts.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(model.attachedContexts) { context in
-                            HStack(spacing: 7) {
-                                Button {
-                                    contextPreviewOwner = WorkspaceIdentity.session(model)
-                                    inspectingContext = context
-                                } label: {
-                                    HStack(spacing: 7) {
-                                        DockIcon(.chatCircleText).foregroundStyle(Color.dockAccent)
-                                        Text(context.title).dockFont(.body)
-                                            .lineLimit(1).frame(maxWidth: 240, alignment: .leading)
+                    // Move the native editor and the placeholder together; applying
+                    // padding to only the placeholder would reintroduce caret drift.
+                    .padding(.top, textTopPadding)
+                    .frame(height: effectiveComposerHeight)
+                    .frame(maxWidth: .infinity)
+                    // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
+                    // proposal while its intrinsic text height changes. Mask the
+                    // complete input surface as a final paint boundary.
+                    .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
+
+                    // Image Attachment Previews (if any images are pending)
+                    if !model.pendingImages.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(model.pendingImages) { image in
+                                    HStack(spacing: 6) {
+                                        Image(nsImage: image.image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 32, height: 32)
+                                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                        Button(action: { model.removePendingImage(image) }) {
+                                            DockIcon(.x)
+                                                .dockFont(.compactStatus, weight: .bold)
+                                                .foregroundStyle(Color.dockSecondaryText)
+                                                .frame(width: 22, height: 22)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.dockHover)
+                                        .help("Remove image")
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous).dockSurfaceFill(
+                                            Color.dockSurface)
+                                    )
+                                    .contextMenu {
+                                        Button("Add Text from Image to Message") {
+                                            Task { await model.stageText(from: image) }
+                                        }
                                     }
                                 }
-                                .buttonStyle(.dockCompact)
-                                .accessibilityLabel("Inspect context: " + context.title)
-                                Button { model.removeAttachedContext(context) } label: {
-                                    DockIcon(.x)
-                                        .dockFont(.compactStatus, weight: .bold)
-                                        .foregroundStyle(Color.dockSecondaryText)
+                            }
+                        }
+                    }
+                    if !model.attachedContexts.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(model.attachedContexts) { context in
+                                    HStack(spacing: 7) {
+                                        Button {
+                                            contextPreviewOwner = WorkspaceIdentity.session(model)
+                                            inspectingContext = context
+                                        } label: {
+                                            HStack(spacing: 7) {
+                                                DockIcon(.chatCircleText).foregroundStyle(Color.dockAccent)
+                                                Text(context.title).dockFont(.body)
+                                                    .lineLimit(1).frame(maxWidth: 240, alignment: .leading)
+                                            }
+                                        }
+                                        .buttonStyle(.dockCompact)
+                                        .accessibilityLabel("Inspect context: " + context.title)
+                                        Button {
+                                            model.removeAttachedContext(context)
+                                        } label: {
+                                            DockIcon(.x)
+                                                .dockFont(.compactStatus, weight: .bold)
+                                                .foregroundStyle(Color.dockSecondaryText)
+                                                .frame(width: 22, height: 22)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.dockHover)
+                                        .help("Remove context").accessibilityLabel("Remove context: " + context.title)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                            .dockSurfaceFill(Color.dockSurface)
+                                    )
+                                    .help("Inspect context")
+                                }
+                            }
+                        }
+                    }
+                    if let pdfURL = model.pendingPDFURL {
+                        HStack(spacing: 7) {
+                            DockIcon(.fileText)
+                                .foregroundStyle(Color.dockAccent)
+                            Text(pdfURL.lastPathComponent)
+                                .dockFont(.metadata, weight: .medium)
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(1)
+                            Button {
+                                model.removePendingPDF()
+                            } label: {
+                                DockIcon(.x)
+                                    .dockFont(.compactStatus, weight: .bold)
+                                    .foregroundStyle(Color.dockSecondaryText)
                                     .frame(width: 22, height: 22)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.dockHover)
+                            .help("Remove PDF")
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                .dockSurfaceFill(Color.dockSurface))
+                    }
+                    ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) {
+                        error in
+                        HStack(spacing: 6) {
+                            Text(error)
+                                .dockFont(.metadata)
+                                .foregroundStyle(Color.dockWarning)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button {
+                                model.clearAttachmentErrors()
+                            } label: {
+                                DockIcon(.x)
+                                    .dockFont(.compactStatus, weight: .bold)
+                                    .foregroundStyle(Color.dockSecondaryText)
+                                    .frame(width: 22, height: 22)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.dockHover)
+                            .help("Remove attachment")
+                        }
+                    }
+
+                    // Integrated Bottom Toolbar Row
+                    HStack(alignment: .center, spacing: 8) {
+                        // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
+                        HStack(alignment: .center, spacing: 6) {
+                            // Attachment popover keeps secondary actions discoverable
+                            // without changing the composer's stable footprint.
+                            Button {
+                                showingAttachmentPopover = true
+                            } label: {
+                                DockIcon(.plus, size: 14, color: Color.dockSecondaryText)
+                                    .frame(width: 28, height: 28)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                            .fill(DockSkinPresentation.current.composerControlFill)
+                                    )
+                                    .frame(width: 32, height: 32)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.dockHover)
+                            .help("Attach or insert content")
+                            .accessibilityLabel("Attach")
+                            .popover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
+                                AttachmentPopover(
+                                    pasteImageAvailable: pasteImageAvailable,
+                                    onSelect: handleAttachmentAction,
+                                    onInsertURL: insertURL,
+                                    onSelectSnippet: insertSnippet
+                                )
+                            }
+
+                            if #available(macOS 15.2, *), OnDeviceAssist.isAvailable {
+                                Button {
+                                    NSApp.sendAction(#selector(NSResponder.showWritingTools(_:)), to: nil, from: nil)
+                                } label: {
+                                    DockIcon(.magicWand, size: 14, color: Color.dockSecondaryText)
+                                        .frame(width: 28, height: 28)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                                .fill(DockSkinPresentation.current.composerControlFill)
+                                        )
+                                        .frame(width: 32, height: 32)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.dockHover)
+                                .help("Rewrite or proofread with Apple Intelligence")
+                                .accessibilityLabel("Writing Tools")
+                            }
+
+                            composerModelPicker
+                        }
+                        .layoutPriority(-1)
+
+                        Spacer(minLength: 4)
+
+                        // Right Toolbar Group: Thinking depth selector menu & circular submit button
+                        HStack(alignment: .center, spacing: 8) {
+                            if let controlCenter {
+                                ChatQuotaChip(
+                                    control: controlCenter, openQuota: openQuota,
+                                    selectedProvider: selectedModelOptionID?.components(separatedBy: "|").first)
+                            }
+                            SessionContextRing(model: model)
+
+                            composerReasoningPicker
+
+                            if !speechInput.isRecording {
+                                Button {
+                                    if dictation.isRecording { dictation.stop() } else { beginDictation() }
+                                } label: {
+                                    DockIcon(
+                                        dictation.isRecording ? .stop : .microphone, size: 14,
+                                        color: dictation.isRecording ? Color.dockDestructive : Color.dockSecondaryText
+                                    )
+                                    .frame(width: 28, height: 28)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                            .fill(
+                                                dictation.isRecording
+                                                    ? Color.dockDestructiveFill.opacity(0.14)
+                                                    : DockSkinPresentation.current.composerControlFill)
+                                    )
+                                    .frame(width: 32, height: 32)
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.dockHover)
-                                .help("Remove context").accessibilityLabel("Remove context: " + context.title)
+                                .disabled(model.isRestoringSession || dictation.isStarting)
+                                .help(dictation.isRecording ? "Stop dictation" : "Dictate")
+                                .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
-                            .help("Inspect context")
-                        }
-                    }
-                }
-            }
-            if let pdfURL = model.pendingPDFURL {
-                HStack(spacing: 7) {
-                    DockIcon(.fileText)
-                        .foregroundStyle(Color.dockAccent)
-                    Text(pdfURL.lastPathComponent)
-                        .dockFont(.metadata, weight: .medium)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                    Button { model.removePendingPDF() } label: {
-                        DockIcon(.x)
-                            .dockFont(.compactStatus, weight: .bold)
-                            .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.dockHover)
-                    .help("Remove PDF")
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
-            }
-            ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) { error in
-                HStack(spacing: 6) {
-                    Text(error)
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockWarning)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button { model.clearAttachmentErrors() } label: {
-                        DockIcon(.x)
-                            .dockFont(.compactStatus, weight: .bold)
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.dockHover)
-                    .help("Remove attachment")
-                }
-            }
 
-            // Integrated Bottom Toolbar Row
-            HStack(alignment: .center, spacing: 8) {
-                // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
-                HStack(alignment: .center, spacing: 6) {
-                    // Attachment popover keeps secondary actions discoverable
-                    // without changing the composer's stable footprint.
-                    Button { showingAttachmentPopover = true } label: {
-                        DockIcon(.plus, size: 14, color: Color.dockSecondaryText)
-                            .frame(width: 28, height: 28)
-                            .background(
-                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                    .fill(DockSkinPresentation.current.composerControlFill)
-                            )
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.dockHover)
-                    .help("Attach or insert content")
-                    .accessibilityLabel("Attach")
-                    .popover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
-                        AttachmentPopover(
-                            pasteImageAvailable: pasteImageAvailable,
-                            onSelect: handleAttachmentAction,
-                            onInsertURL: insertURL,
-                            onSelectSnippet: insertSnippet
-                        )
-                    }
-
-                    if #available(macOS 15.2, *), OnDeviceAssist.isAvailable {
-                        Button {
-                            NSApp.sendAction(#selector(NSResponder.showWritingTools(_:)), to: nil, from: nil)
-                        } label: {
-                            DockIcon(.magicWand, size: 14, color: Color.dockSecondaryText)
-                                .frame(width: 28, height: 28)
-                                .background(
-                                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                        .fill(DockSkinPresentation.current.composerControlFill)
-                                )
-                                .frame(width: 32, height: 32)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.dockHover)
-                        .help("Rewrite or proofread with Apple Intelligence")
-                        .accessibilityLabel("Writing Tools")
-                    }
-
-                    composerModelPicker
-                }
-                .layoutPriority(-1)
-
-                Spacer(minLength: 4)
-
-                // Right Toolbar Group: Thinking depth selector menu & circular submit button
-                HStack(alignment: .center, spacing: 8) {
-                    if let controlCenter {
-                        ChatQuotaChip(control: controlCenter, openQuota: openQuota,
-                                      selectedProvider: selectedModelOptionID?.components(separatedBy: "|").first)
-                    }
-                    SessionContextRing(model: model)
-
-                    composerReasoningPicker
-
-                    if !speechInput.isRecording {
-                        Button {
-                            if dictation.isRecording { dictation.stop() }
-                            else { beginDictation() }
-                        } label: {
-                            DockIcon(dictation.isRecording ? .stop : .microphone, size: 14,
-                                     color: dictation.isRecording ? Color.dockDestructive : Color.dockSecondaryText)
-                                .frame(width: 28, height: 28)
-                                .background(
-                                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                        .fill(dictation.isRecording ? Color.dockDestructiveFill.opacity(0.14) : DockSkinPresentation.current.composerControlFill)
-                                )
-                                .frame(width: 32, height: 32)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.dockHover)
-                        .disabled(model.isRestoringSession || dictation.isStarting)
-                        .help(dictation.isRecording ? "Stop dictation" : "Dictate")
-                        .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
-                    }
-
-                    if showsInterruptControl {
-                        Button(action: { onStop() }) {
-                            DockIcon(.stop, weight: .fill)
-                                .dockFont(.compactStatus, weight: .bold)
-                                .foregroundStyle(Color.dockDestructive)
-                                .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
-                                .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
-                        }
-                        .buttonStyle(.dockHover)
-                        .help(model.status == .needsClarification
-                              ? "Dismiss the question and interrupt Hermes"
-                              : "Stop Hermes response")
-                        .accessibilityLabel(model.status == .needsClarification ? "Dismiss clarification" : "Stop Hermes response")
-                    }
-
-                    // Submit and stop share one action, styled by the composer role.
-                    Button(action: {
-                        if speechInput.isRecording {
-                            speechInput.stop()
-                            model.send()
-                        } else if showStop {
-                            onStop()
-                        } else {
-                            submitComposerInput()
-                        }
-                    }) {
-                        ZStack {
-                            (DockSkinPresentation.current.composer != .floating
-                                ? AnyShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
-                                : AnyShape(Circle()))
-                                .fill(canSubmit && !model.isRestoringSession ? Color.dockAccent : Color.dockSurface6)
-                                .frame(width: isFullscreen ? 36 : 32, height: isFullscreen ? 36 : 32)
-
-                            Group {
-                                if speechInput.isRecording {
-                                    DockIcon(.stop, weight: .fill)
-                                        .dockFont(.compactStatus, weight: .bold)
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                } else if showStop {
+                            if showsInterruptControl {
+                                Button(action: { onStop() }) {
                                     DockIcon(.stop, weight: .fill)
                                         .dockFont(.compactStatus, weight: .bold)
                                         .foregroundStyle(Color.dockDestructive)
-                                        .transition(.scale(scale: 0.3).combined(with: .opacity))
+                                        .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
+                                        .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
+                                }
+                                .buttonStyle(.dockHover)
+                                .help(
+                                    model.status == .needsClarification
+                                        ? "Dismiss the question and interrupt Hermes"
+                                        : "Stop Hermes response"
+                                )
+                                .accessibilityLabel(
+                                    model.status == .needsClarification
+                                        ? "Dismiss clarification" : "Stop Hermes response")
+                            }
+
+                            // Submit and stop share one action, styled by the composer role.
+                            Button(action: {
+                                if speechInput.isRecording {
+                                    speechInput.stop()
+                                    model.send()
+                                } else if showStop {
+                                    onStop()
                                 } else {
-                                    DockIcon(.arrowUp)
-                                        .dockFont(.body, weight: .semibold)
-                                        // Use soft dockPrimaryText instead of stark white to prevent eye strain
-                                        .foregroundStyle(canSubmit ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
-                                        // Send: the arrow launches up and drops back in.
-                                        .keyframeAnimator(initialValue: CGFloat(0), trigger: sendKick) { view, y in
-                                            view.offset(y: y).opacity(1 - Double(abs(y)) / 14)
-                                        } keyframes: { _ in
-                                            KeyframeTrack {
-                                                CubicKeyframe(-12, duration: 0.14)
-                                                MoveKeyframe(10)
-                                                SpringKeyframe(0, duration: 0.3, spring: .bouncy)
-                                            }
+                                    submitComposerInput()
+                                }
+                            }) {
+                                ZStack {
+                                    (DockSkinPresentation.current.composer != .floating
+                                        ? AnyShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
+                                        : AnyShape(Circle()))
+                                        .fill(
+                                            canSubmit && !model.isRestoringSession
+                                                ? Color.dockAccent : Color.dockSurface6
+                                        )
+                                        .frame(width: isFullscreen ? 36 : 32, height: isFullscreen ? 36 : 32)
+
+                                    Group {
+                                        if speechInput.isRecording {
+                                            DockIcon(.stop, weight: .fill)
+                                                .dockFont(.compactStatus, weight: .bold)
+                                                .foregroundStyle(Color.dockPrimaryText)
+                                        } else if showStop {
+                                            DockIcon(.stop, weight: .fill)
+                                                .dockFont(.compactStatus, weight: .bold)
+                                                .foregroundStyle(Color.dockDestructive)
+                                                .transition(.scale(scale: 0.3).combined(with: .opacity))
+                                        } else {
+                                            DockIcon(.arrowUp)
+                                                .dockFont(.body, weight: .semibold)
+                                                // Use soft dockPrimaryText instead of stark white to prevent eye strain
+                                                .foregroundStyle(
+                                                    canSubmit
+                                                        ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5)
+                                                )
+                                                // Send: the arrow launches up and drops back in.
+                                                .keyframeAnimator(initialValue: CGFloat(0), trigger: sendKick) {
+                                                    view, y in
+                                                    view.offset(y: y).opacity(1 - Double(abs(y)) / 14)
+                                                } keyframes: { _ in
+                                                    KeyframeTrack {
+                                                        CubicKeyframe(-12, duration: 0.14)
+                                                        MoveKeyframe(10)
+                                                        SpringKeyframe(0, duration: 0.3, spring: .bouncy)
+                                                    }
+                                                }
+                                                .transition(.scale(scale: 0.3).combined(with: .opacity))
                                         }
-                                        .transition(.scale(scale: 0.3).combined(with: .opacity))
+                                    }
+                                    .animation(
+                                        reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65),
+                                        value: showStop)
                                 }
                             }
-                            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65), value: showStop)
-                        }
-                    }
-                    .buttonStyle(.dockHover)
-                    .frame(width: 32, height: 32)
-                    .disabled(
-                        model.isRestoringSession ||
-                        model.isUpdatingSessionModel ||
-                        (!speechInput.isRecording && !showStop && (!canSubmit || (!isSteeringTurn && model.isSending)))
-                    )
-                    .accessibilityLabel(speechInput.isRecording ? "Send voice prompt" : showStop ? "Stop Hermes response" : submitLabel)
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .help(
-                        speechInput.isRecording
-                            ? "Send voice prompt"
-                            : (showStop
-                                ? "Stop Hermes response"
-                                : "\(submitLabel) (↩; ⇧↩ for newline)")
-                    )
-                }
-            }
-            .padding(.top, 0)
-
-            // Voice Recording & Steering Status Messages
-            if let error = speechInput.errorMessage ?? dictation.errorMessage {
-                HStack(spacing: 8) {
-                    Text(error)
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockWarning)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Retry", action: beginDictation)
-                        .buttonStyle(.dockCompact)
-                        .disabled(model.isRestoringSession || dictation.isStarting)
-                    Button {
-                        speechInput.dismissError()
-                        dictation.dismissError()
-                    } label: {
-                        DockIcon(.x, size: 12)
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.dockHover)
-                    .accessibilityLabel("Dismiss speech recognition warning")
-                }
-                .padding(.top, 2)
-            }
-            if let steeringError = model.steeringError {
-                Text(steeringError)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockWarning)
-                    .padding(.top, 2)
-            }
-            if let clarificationResponseError = model.clarificationResponseError {
-                Text(clarificationResponseError)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockWarning)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
-            }
-            }
-            .padding(.leading, 6)
-            .padding(.trailing, 8)
-            .padding(.top, 6)
-            .padding(.bottom, 6)
-            .background {
-                let skin = DockSkinPresentation.current
-                let shape = DockThemeShape(cornerRadius: skin.composerRadius, role: .pane)
-                if skin.composer == .line {
-                    // Typographic skins replace the input box with one rule.
-                    Rectangle()
-                        .fill(speechInput.isRecording ? Color.dockDestructiveFill : isComposerFocused ? Color.dockAccent : Color.dockPrimaryText)
-                        .frame(height: isComposerFocused ? 2 : 1)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                } else {
-                    shape.dockInputFill()
-                        .overlay {
-                            shape.stroke(
-                                speechInput.isRecording
-                                    ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
-                                    : (isComposerFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder),
-                                lineWidth: isComposerFocused || speechInput.isRecording ? max(1, DockLayout.outline) : DockLayout.outline
+                            .buttonStyle(.dockHover)
+                            .frame(width: 32, height: 32)
+                            .disabled(
+                                model.isRestoringSession || model.isUpdatingSessionModel
+                                    || (!speechInput.isRecording && !showStop
+                                        && (!canSubmit || (!isSteeringTurn && model.isSending)))
                             )
-                            .opacity(DockLayout.outline > 0 || isComposerFocused || speechInput.isRecording ? 1 : 0)
+                            .accessibilityLabel(
+                                speechInput.isRecording
+                                    ? "Send voice prompt" : showStop ? "Stop Hermes response" : submitLabel
+                            )
+                            .keyboardShortcut(.return, modifiers: [.command])
+                            .help(
+                                speechInput.isRecording
+                                    ? "Send voice prompt"
+                                    : (showStop
+                                        ? "Stop Hermes response"
+                                        : "\(submitLabel) (↩; ⇧↩ for newline)")
+                            )
                         }
-                        .dockStickerShadow(shape)
-                        .dockFoldCrease()
-                        .dockEmboss(shape)
-                        .dockBevel(pressed: true)
-                        .dockCardMarks()
-                        .shadow(color: Color.black.opacity(0.10), radius: skin.composerShadow, y: skin.composerShadow == 0 ? 0 : 2)
-                }
-            }
+                    }
+                    .padding(.top, 0)
 
-            if let worktreeBar { worktreeBar.padding(.vertical, 2) }
+                    // Voice Recording & Steering Status Messages
+                    if let error = speechInput.errorMessage ?? dictation.errorMessage {
+                        HStack(spacing: 8) {
+                            Text(error)
+                                .dockFont(.metadata)
+                                .foregroundStyle(Color.dockWarning)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button("Retry", action: beginDictation)
+                                .buttonStyle(.dockCompact)
+                                .disabled(model.isRestoringSession || dictation.isStarting)
+                            Button {
+                                speechInput.dismissError()
+                                dictation.dismissError()
+                            } label: {
+                                DockIcon(.x, size: 12)
+                                    .frame(width: 24, height: 24)
+                            }
+                            .buttonStyle(.dockHover)
+                            .accessibilityLabel("Dismiss speech recognition warning")
+                        }
+                        .padding(.top, 2)
+                    }
+                    if let steeringError = model.steeringError {
+                        Text(steeringError)
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockWarning)
+                            .padding(.top, 2)
+                    }
+                    if let clarificationResponseError = model.clarificationResponseError {
+                        Text(clarificationResponseError)
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockWarning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
+                }
+                .padding(.leading, 6)
+                .padding(.trailing, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 6)
+                .background {
+                    let skin = DockSkinPresentation.current
+                    let shape = DockThemeShape(cornerRadius: skin.composerRadius, role: .pane)
+                    if skin.composer == .line {
+                        // Typographic skins replace the input box with one rule.
+                        Rectangle()
+                            .fill(
+                                speechInput.isRecording
+                                    ? Color.dockDestructiveFill
+                                    : isComposerFocused ? Color.dockAccent : Color.dockPrimaryText
+                            )
+                            .frame(height: isComposerFocused ? 2 : 1)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                    } else {
+                        shape.dockInputFill()
+                            .overlay {
+                                shape.stroke(
+                                    speechInput.isRecording
+                                        ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
+                                        : (isComposerFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder),
+                                    lineWidth: isComposerFocused || speechInput.isRecording
+                                        ? max(1, DockLayout.outline) : DockLayout.outline
+                                )
+                                .opacity(DockLayout.outline > 0 || isComposerFocused || speechInput.isRecording ? 1 : 0)
+                            }
+                            .dockStickerShadow(shape)
+                            .dockFoldCrease()
+                            .dockEmboss(shape)
+                            .dockBevel(pressed: true)
+                            .dockCardMarks()
+                            .shadow(
+                                color: Color.black.opacity(0.10), radius: skin.composerShadow,
+                                y: skin.composerShadow == 0 ? 0 : 2)
+                    }
+                }
+
+                if let worktreeBar { worktreeBar.padding(.vertical, 2) }
             }
             .background {
                 let skin = DockSkinPresentation.current
@@ -726,8 +800,11 @@ struct ChatComposerView: View {
 
     private func updateDictation() {
         guard liveDictation.owner != nil else { return }
-        guard let text = liveDictation.update(dictation.transcript, text: composer.text,
-            owner: WorkspaceIdentity.session(model)) else {
+        guard
+            let text = liveDictation.update(
+                dictation.transcript, text: composer.text,
+                owner: WorkspaceIdentity.session(model))
+        else {
             liveDictation = ComposerDictation()
             dictation.stop()
             return
@@ -750,7 +827,8 @@ struct ChatComposerView: View {
         return ComposerMentionPresentation.relayNotice(
             draft: composer.text,
             profileIDs: botMode.visibleBots.map(\.id),
-            hasAttachments: !model.attachedContexts.isEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil,
+            hasAttachments: !model.attachedContexts.isEmpty || !model.pendingImages.isEmpty
+                || model.pendingPDFURL != nil,
             isQueued: model.hasQueuedOrRedirectingPrompt,
             inBotChat: current != nil && botMode.visibleBots.contains { $0.chat?.sessionID == current }
         )
@@ -819,7 +897,8 @@ struct ChatComposerView: View {
 
     private var sessionModelDisplayName: String {
         if let id = model.sessionModelOptionID,
-           let option = model.runtimeModelOptions.first(where: { $0.id == id }) {
+            let option = model.runtimeModelOptions.first(where: { $0.id == id })
+        {
             return option.displayName
         }
         if let value = model.sessionModelValue, !value.isEmpty {
@@ -833,7 +912,8 @@ struct ChatComposerView: View {
     }
 
     private var sessionReasoningDisplayName: String {
-        let reasoning = model.sessionID == nil
+        let reasoning =
+            model.sessionID == nil
             ? model.defaultReasoningVariant
             : model.sessionReasoningVariant
         return reasoning?.displayName ?? "Loading…"
@@ -844,7 +924,8 @@ struct ChatComposerView: View {
         guard model.sessionID == nil else { return nil }
         if let id = model.defaultModelOptionID { return id }
         guard let provider = model.runtimeConfiguration?.provider,
-              let modelName = model.runtimeConfiguration?.model else { return nil }
+            let modelName = model.runtimeConfiguration?.model
+        else { return nil }
         return HermesModelOption(provider: provider, model: modelName).id
     }
 
@@ -950,8 +1031,10 @@ private struct SessionContextRing: View {
             }
             if let details {
                 if details.contextMax > 0 {
-                    detailRow(details.contextEstimated ? "Estimated usage" : "Usage",
-                              "\(SessionTokenFormatting.formatCompact(details.contextUsed)) / \(SessionTokenFormatting.formatCompact(details.contextMax)) tokens")
+                    detailRow(
+                        details.contextEstimated ? "Estimated usage" : "Usage",
+                        "\(SessionTokenFormatting.formatCompact(details.contextUsed)) / \(SessionTokenFormatting.formatCompact(details.contextMax)) tokens"
+                    )
                 }
                 if details.compressionEnabled == false {
                     detailRow("Automatic compaction", "Disabled")
@@ -963,7 +1046,9 @@ private struct SessionContextRing: View {
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                     if model.compactingSessionID != model.sessionID, details.contextUsed > 0 {
-                        detailRow("Until token threshold", SessionTokenFormatting.format(max(0, threshold - details.contextUsed)))
+                        detailRow(
+                            "Until token threshold",
+                            SessionTokenFormatting.format(max(0, threshold - details.contextUsed)))
                     }
                 } else {
                     Text("Compaction threshold isn’t reported by this runtime.")
@@ -978,8 +1063,10 @@ private struct SessionContextRing: View {
                         detailRow(category.label, SessionTokenFormatting.format(category.tokens))
                     }
                 }
-                Text("The ring measures the full window. Idle time or provider limits can also trigger compaction; this is a token threshold, not a countdown.")
-                    .foregroundStyle(Color.dockSecondaryText)
+                Text(
+                    "The ring measures the full window. Idle time or provider limits can also trigger compaction; this is a token threshold, not a countdown."
+                )
+                .foregroundStyle(Color.dockSecondaryText)
             } else {
                 Text(loadingDetails ? "Loading context details…" : "Context details are unavailable.")
                     .foregroundStyle(Color.dockMetadataText)
@@ -1106,7 +1193,13 @@ private struct QueuedPromptList: View {
         var parts: [String] = []
         if let pdf = prompt.pdfURL { parts.append("[PDF: \(pdf.lastPathComponent)]") }
         parts.append(contentsOf: prompt.contexts.map { "[\($0.title)]" })
-        if !prompt.text.isEmpty { parts.append(prompt.contexts.reduce(prompt.text) { value, context in context.inlineToken.map { value.replacingOccurrences(of: $0, with: "[" + context.title + "]") } ?? value }) }
+        if !prompt.text.isEmpty {
+            parts.append(
+                prompt.contexts.reduce(prompt.text) { value, context in
+                    context.inlineToken.map { value.replacingOccurrences(of: $0, with: "[" + context.title + "]") }
+                        ?? value
+                })
+        }
         return parts.joined(separator: " ")
     }
 }
@@ -1158,7 +1251,8 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
-        textView.contexts = contexts; textView.onInspectContext = onInspectContext
+        textView.contexts = contexts
+        textView.onInspectContext = onInspectContext
         textView.font = DockSkinPresentation.nativeFont(size: DockTypography.size(.conversation))
         textView.textColor = NSColor(Color.dockPrimaryText)
         textView.insertionPointColor = NSColor(Color.dockAccent)
@@ -1193,7 +1287,8 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
-        textView.contexts = contexts; textView.onInspectContext = onInspectContext
+        textView.contexts = contexts
+        textView.onInspectContext = onInspectContext
         context.coordinator.synchronize(textView)
         if let caret = takePendingCaret() {
             textView.setSelectedRange(NSRange(location: min(caret, (textView.string as NSString).length), length: 0))
@@ -1203,8 +1298,9 @@ struct ComposerInputEditor: NSViewRepresentable {
         guard isFocused, scrollView.window?.firstResponder !== textView else { return }
         DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView, weak scrollView] in
             guard let coordinator, let textView, let scrollView,
-                  coordinator.parent.isFocused, textView.isEditable,
-                  scrollView.documentView === textView else { return }
+                coordinator.parent.isFocused, textView.isEditable,
+                scrollView.documentView === textView
+            else { return }
             scrollView.window?.makeFirstResponder(textView)
         }
     }
@@ -1216,7 +1312,9 @@ struct ComposerInputEditor: NSViewRepresentable {
 
         func synchronize(_ textView: NSTextView) {
             isSynchronizingText = true
-            synchronization.synchronize(textView, markdown: parent.text, contexts: parent.contexts, inset: parent.inset, bodySize: DockTypography.size(.conversation, scale: parent.workspaceScale))
+            synchronization.synchronize(
+                textView, markdown: parent.text, contexts: parent.contexts, inset: parent.inset,
+                bodySize: DockTypography.size(.conversation, scale: parent.workspaceScale))
             isSynchronizingText = false
         }
 
@@ -1281,15 +1379,20 @@ private final class ComposerInputTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
         if index < (string as NSString).length,
-           let attachment = textStorage?.attribute(.attachment, at: index, effectiveRange: nil) as? InlineContextAttachment,
-           let context = contexts.first(where: { $0.inlineToken == attachment.token }) {
-            onInspectContext?(context); return
+            let attachment = textStorage?.attribute(.attachment, at: index, effectiveRange: nil)
+                as? InlineContextAttachment,
+            let context = contexts.first(where: { $0.inlineToken == attachment.token })
+        {
+            onInspectContext?(context)
+            return
         }
         super.mouseDown(with: event)
     }
 
     override func writeSelection(to pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-        guard type == .string, let storage = textStorage, selectedRange().length > 0 else { return super.writeSelection(to: pasteboard, type: type) }
+        guard type == .string, let storage = textStorage, selectedRange().length > 0 else {
+            return super.writeSelection(to: pasteboard, type: type)
+        }
         let selected = storage.attributedSubstring(from: selectedRange())
         let serialized = InlineContextCodec.serialize(selected)
         let readable = contexts.reduce(serialized) { value, context in
@@ -1305,7 +1408,10 @@ private final class ComposerInputTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let urls = AttachmentPopoverFileSelection.fileURLs(from: .general)
-        guard !urls.isEmpty, let onDropFiles else { super.paste(sender); return }
+        guard !urls.isEmpty, let onDropFiles else {
+            super.paste(sender)
+            return
+        }
         onDropFiles(urls)
     }
 
@@ -1327,12 +1433,14 @@ private final class ComposerInputTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
         if event.modifierFlags.intersection(editingModifiers).isEmpty,
-           let key = ComposerCompletionKey(keyCode: event.keyCode),
-           onCompletionKey?(key) == true {
+            let key = ComposerCompletionKey(keyCode: event.keyCode),
+            onCompletionKey?(key) == true
+        {
             return
         }
-        if (event.keyCode == 36 || event.keyCode == 76),
-           event.modifierFlags.intersection(editingModifiers).isEmpty {
+        if event.keyCode == 36 || event.keyCode == 76,
+            event.modifierFlags.intersection(editingModifiers).isEmpty
+        {
             onSubmit?()
             return
         }
@@ -1383,7 +1491,8 @@ private struct PinnedWorkStrip: View {
                         DockActivityIndicator(state: .running, size: 12)
                         Text(task.prompt).lineLimit(1).truncationMode(.tail)
                             .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                        Text("background").dockFont(.compactStatus, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText)
+                        Text("background").dockFont(.compactStatus, weight: .regular, design: .monospaced)
+                            .foregroundStyle(Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
@@ -1417,11 +1526,15 @@ private struct RunningProcessesStrip: View {
     @ViewBuilder private var content: some View {
         if !control.processes.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Button { withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() } } label: {
+                Button {
+                    withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() }
+                } label: {
                     HStack(spacing: 6) {
                         DockIcon(.terminal, size: 12, color: Color.dockSecondaryText)
-                        Text("\(control.processes.count) background process\(control.processes.count == 1 ? "" : "es") running")
-                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        Text(
+                            "\(control.processes.count) background process\(control.processes.count == 1 ? "" : "es") running"
+                        )
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
@@ -1432,7 +1545,9 @@ private struct RunningProcessesStrip: View {
                     ForEach(control.processes) { process in
                         HStack(spacing: 8) {
                             Text(process.name).lineLimit(1).truncationMode(.middle)
-                                .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(Color.dockPrimaryText)
+                                .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
+                                    Color.dockPrimaryText
+                                )
                                 .help(process.detail ?? process.name)
                             Spacer(minLength: 0)
                             Button("Stop") { pending = process }
@@ -1444,10 +1559,15 @@ private struct RunningProcessesStrip: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .confirmationDialog("Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
+            .confirmationDialog(
+                "Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
+            ) {
                 if let process = pending {
                     Button("Stop \(process.name)", role: .destructive) {
-                        Task { _ = await control.killProcess(process); pending = nil }
+                        Task {
+                            _ = await control.killProcess(process)
+                            pending = nil
+                        }
                     }
                 }
                 Button("Cancel", role: .cancel) { pending = nil }

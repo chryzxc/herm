@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct ArtifactServiceTests {
@@ -11,7 +12,8 @@ struct ArtifactServiceTests {
 
     @Test func artifactActionsExposeContextAwareLocalFileAndSessionCapabilities() {
         let file = ArtifactRecord(value: "/tmp/report.pdf", sessionID: "s1", sessionTitle: "Report", timestamp: .now)
-        let link = ArtifactRecord(value: "https://example.com/report", sessionID: "missing", sessionTitle: "Report", timestamp: .now)
+        let link = ArtifactRecord(
+            value: "https://example.com/report", sessionID: "missing", sessionTitle: "Report", timestamp: .now)
 
         let fileActions = ArtifactActionPresentation.make(record: file, hasSourceSession: true)
         #expect(fileActions.canOpen)
@@ -27,11 +29,16 @@ struct ArtifactServiceTests {
     }
 
     @Test func extractsImagesDocumentsAndLinksFromSessionMessages() {
-        let session = HermesSession(id: "s1", title: "Quarterly report", preview: "", startedAt: nil, messageCount: 3, source: "hermes")
+        let session = HermesSession(
+            id: "s1", title: "Quarterly report", preview: "", startedAt: nil, messageCount: 3, source: "hermes")
         let messages: [[String: Any]] = [
-            ["role": "assistant", "content": "Created [report.docx](/tmp/report.docx) and ![chart](file:///tmp/chart.png) https://example.com/report"],
+            [
+                "role": "assistant",
+                "content":
+                    "Created [report.docx](/tmp/report.docx) and ![chart](file:///tmp/chart.png) https://example.com/report",
+            ],
             ["role": "tool", "name": "docx.create", "content": "Saved to /tmp/report.docx"],
-            ["role": "assistant", "content": "MEDIA: /tmp/chart.png"]
+            ["role": "assistant", "content": "MEDIA: /tmp/chart.png"],
         ]
 
         let records = ArtifactService.extract(session: session, messages: messages).sorted { $0.label < $1.label }
@@ -43,15 +50,24 @@ struct ArtifactServiceTests {
     }
 
     @Test func matchesDesktopRulesForDeliverablesOnly() {
-        let session = HermesSession(id: "s1", title: "Files", preview: "", startedAt: nil, messageCount: 5, source: "hermes")
+        let session = HermesSession(
+            id: "s1", title: "Files", preview: "", startedAt: nil, messageCount: 5, source: "hermes")
         let messages: [[String: Any]] = [
             // Code edits and bare source paths are not deliverables.
-            ["role": "assistant", "content": "Patched /tmp/app.swift and `/tmp/plan.md`", "timestamp": 100.0,
-             "tool_calls": #"[{"function":{"name":"patch","arguments":"{\"path\":\"/tmp/app.swift\"}"}}]"#],
-            ["role": "tool", "tool_name": "terminal", "content": #"{"output": "/tmp/unrelated.txt"}"#, "timestamp": 150.0],
-            ["role": "tool", "tool_name": "image_generate", "content": #"{"image_path": "/tmp/cat.png", "note": "/tmp/skip.swift"}"#, "timestamp": 200.0],
+            [
+                "role": "assistant", "content": "Patched /tmp/app.swift and `/tmp/plan.md`", "timestamp": 100.0,
+                "tool_calls": #"[{"function":{"name":"patch","arguments":"{\"path\":\"/tmp/app.swift\"}"}}]"#,
+            ],
+            [
+                "role": "tool", "tool_name": "terminal", "content": #"{"output": "/tmp/unrelated.txt"}"#,
+                "timestamp": 150.0,
+            ],
+            [
+                "role": "tool", "tool_name": "image_generate",
+                "content": #"{"image_path": "/tmp/cat.png", "note": "/tmp/skip.swift"}"#, "timestamp": 200.0,
+            ],
             ["role": "tool", "tool_name": "text_to_speech", "content": "MEDIA:/tmp/voice", "timestamp": 250.0],
-            ["role": "assistant", "content": "See [anchor](#top) and [src](./Sources/App.swift)", "timestamp": 300.0]
+            ["role": "assistant", "content": "See [anchor](#top) and [src](./Sources/App.swift)", "timestamp": 300.0],
         ]
 
         let records = ArtifactService.extract(session: session, messages: messages)
@@ -65,7 +81,8 @@ struct ArtifactServiceTests {
         let calendar = Calendar(identifier: .gregorian)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let records = [0.0, 3_600, 86_400 * 1.2, 86_400 * 40].map {
-            ArtifactRecord(value: "/tmp/\($0)", sessionID: "s", sessionTitle: "S", timestamp: now.addingTimeInterval(-$0))
+            ArtifactRecord(
+                value: "/tmp/\($0)", sessionID: "s", sessionTitle: "S", timestamp: now.addingTimeInterval(-$0))
         }
         let sections = ArtifactDaySection.group(records, now: now, calendar: calendar)
         #expect(sections.first?.title == "Today")
@@ -75,8 +92,10 @@ struct ArtifactServiceTests {
 
     @Test func filtersSearchAcrossLabelsPathsAndSessionTitles() {
         let records = [
-            ArtifactRecord(value: "/tmp/report.pdf", sessionID: "s1", sessionTitle: "Quarterly report", timestamp: .now),
-            ArtifactRecord(value: "https://example.com/guide", sessionID: "s2", sessionTitle: "Travel notes", timestamp: .now)
+            ArtifactRecord(
+                value: "/tmp/report.pdf", sessionID: "s1", sessionTitle: "Quarterly report", timestamp: .now),
+            ArtifactRecord(
+                value: "https://example.com/guide", sessionID: "s2", sessionTitle: "Travel notes", timestamp: .now),
         ]
 
         #expect(ArtifactService.filter(records, query: "quarterly").count == 1)
@@ -87,14 +106,19 @@ struct ArtifactServiceTests {
 
 @MainActor
 struct ArtifactIndexLoaderTests {
-    private let session = HermesSession(id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil, updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes")
+    private let session = HermesSession(
+        id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil,
+        updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes")
 
     @Test func readsEveryMessagePageAndKeepsFirstMention() async {
         var offsets: [Int] = []
         let results = await ArtifactIndexLoader.load(sessions: [session]) { _, offset in
             offsets.append(offset)
             let messages: [[String: Any]] = (offset..<min(offset + 100, 650)).map { index in
-                ["role": "assistant", "content": "MEDIA: /tmp/\(index == 600 ? 0 : index).png", "timestamp": Double(index + 1)]
+                [
+                    "role": "assistant", "content": "MEDIA: /tmp/\(index == 600 ? 0 : index).png",
+                    "timestamp": Double(index + 1),
+                ]
             }
             return ["messages": messages, "pagination": ["limit": 100]]
         }
@@ -106,8 +130,9 @@ struct ArtifactIndexLoaderTests {
     }
 
     @Test func unchangedSessionsReuseOnlyArtifactRecordsWithoutReadingTranscripts() async {
-        let cachedRecord = ArtifactRecord(value: "/tmp/cached.pdf", sessionID: session.id,
-                                          sessionTitle: session.displayTitle, timestamp: .now, profileID: session.profileID)
+        let cachedRecord = ArtifactRecord(
+            value: "/tmp/cached.pdf", sessionID: session.id,
+            sessionTitle: session.displayTitle, timestamp: .now, profileID: session.profileID)
         let cache = [session.scopedID: ArtifactIndexLoader.CachedSession(session: session, records: [cachedRecord])]
         var reads = 0
         let results = await ArtifactIndexLoader.load(sessions: [session], cache: cache) { _, _ in
@@ -118,10 +143,18 @@ struct ArtifactIndexLoaderTests {
         #expect(results.first?.records == [cachedRecord])
 
         let changedSessions = [
-            HermesSession(id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil, updatedAt: Date(timeIntervalSince1970: 101), messageCount: 650, source: "hermes"),
-            HermesSession(id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil, updatedAt: Date(timeIntervalSince1970: 100), messageCount: 651, source: "hermes"),
-            HermesSession(id: "s", profileID: "work", title: "Renamed", preview: "", startedAt: nil, updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes"),
-            HermesSession(id: "s", profileID: "personal", title: "Archive", preview: "", startedAt: nil, updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes")
+            HermesSession(
+                id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: 101), messageCount: 650, source: "hermes"),
+            HermesSession(
+                id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: 100), messageCount: 651, source: "hermes"),
+            HermesSession(
+                id: "s", profileID: "work", title: "Renamed", preview: "", startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes"),
+            HermesSession(
+                id: "s", profileID: "personal", title: "Archive", preview: "", startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes"),
         ]
         for changed in changedSessions {
             let refreshed = await ArtifactIndexLoader.load(sessions: [changed], cache: cache) { _, _ in
@@ -136,7 +169,9 @@ struct ArtifactIndexLoaderTests {
     @Test func laterPageFailureDoesNotPublishIncompleteSession() async {
         let results = await ArtifactIndexLoader.load(sessions: [session]) { _, offset in
             if offset > 0 { throw HermesGateway.GatewayError.malformedResponse }
-            return ["messages": [["role": "assistant", "content": "MEDIA: /tmp/first.png"]], "pagination": ["limit": 1]]
+            return [
+                "messages": [["role": "assistant", "content": "MEDIA: /tmp/first.png"]], "pagination": ["limit": 1],
+            ]
         }
         #expect(results.first?.error != nil)
         #expect(results.first?.records.isEmpty == true)
@@ -160,30 +195,51 @@ struct ArtifactIndexLoaderTests {
 
 extension ArtifactServiceTests {
     @Test func extractsDesktopTerminalProducerAndEncodedMediaOutputs() {
-        let session = HermesSession(id: "s", title: "Outputs", preview: "", startedAt: nil, messageCount: 5, source: "hermes")
+        let session = HermesSession(
+            id: "s", title: "Outputs", preview: "", startedAt: nil, messageCount: 5, source: "hermes")
         let messages: [[String: Any]] = [
-            ["role": "assistant", "content": "[report](#media:%2Ftmp%2Freport%20final.pdf) and https://example.com/result"],
-            ["role": "tool", "name": "terminal", "content": ["outputs": [["stdout": "Saved /tmp/chart.png and MEDIA: /tmp/delivery"]]]],
+            [
+                "role": "assistant",
+                "content": "[report](#media:%2Ftmp%2Freport%20final.pdf) and https://example.com/result",
+            ],
+            [
+                "role": "tool", "name": "terminal",
+                "content": ["outputs": [["stdout": "Saved /tmp/chart.png and MEDIA: /tmp/delivery"]]],
+            ],
             ["role": "tool", "name": "document_create", "content": "Saved /tmp/summary.docx"],
             ["role": "tool", "name": "browser_vision", "content": "Screenshot path: /tmp/screenshot.png"],
-            ["role": "user", "content": "MEDIA: /tmp/input.png"]
+            ["role": "user", "content": "MEDIA: /tmp/input.png"],
         ]
         let values = Set(ArtifactService.extract(session: session, messages: messages).map(\.value))
-        #expect(values == ["/tmp/report final.pdf", "https://example.com/result", "/tmp/chart.png", "/tmp/delivery", "/tmp/summary.docx", "/tmp/screenshot.png"])
+        #expect(
+            values == [
+                "/tmp/report final.pdf", "https://example.com/result", "/tmp/chart.png", "/tmp/delivery",
+                "/tmp/summary.docx", "/tmp/screenshot.png",
+            ])
     }
 
     @Test func ignoresPackageDownloadsButKeepsExplicitDeliveries() {
-        let session = HermesSession(id: "s", title: "Outputs", preview: "", startedAt: nil, messageCount: 1, source: "hermes")
-        let records = ArtifactService.extract(session: session, messages: [
-            ["role": "tool", "name": "terminal", "content": "Downloading https://example.com/packages/a/dependency.zip /home/test/.cache/pip/cache.json MEDIA: /tmp/delivered.whl"]
-        ])
+        let session = HermesSession(
+            id: "s", title: "Outputs", preview: "", startedAt: nil, messageCount: 1, source: "hermes")
+        let records = ArtifactService.extract(
+            session: session,
+            messages: [
+                [
+                    "role": "tool", "name": "terminal",
+                    "content":
+                        "Downloading https://example.com/packages/a/dependency.zip /home/test/.cache/pip/cache.json MEDIA: /tmp/delivered.whl",
+                ]
+            ])
         #expect(records.map(\.value) == ["/tmp/delivered.whl"])
     }
 
     @Test func profileOwnershipKeepsMatchingSessionPathsDistinct() {
         let messages: [[String: Any]] = [["role": "assistant", "content": "MEDIA: /tmp/chart.png"]]
         let records = ["work", "personal"].flatMap { profile in
-            ArtifactService.extract(session: HermesSession(id: "s", profileID: profile, title: profile, preview: "", startedAt: nil, messageCount: 1, source: "hermes"), messages: messages)
+            ArtifactService.extract(
+                session: HermesSession(
+                    id: "s", profileID: profile, title: profile, preview: "", startedAt: nil, messageCount: 1,
+                    source: "hermes"), messages: messages)
         }
         #expect(Set(records.map(\.id)).count == 2)
     }

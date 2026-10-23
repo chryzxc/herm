@@ -1,10 +1,13 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct VoiceHandsFreeTests {
     /// Feeds `level` at ~43 buffers/s (1024 frames @ 44.1 kHz) for `seconds`.
-    private func feed(_ detector: inout VoiceEndpointDetector, level: Double, seconds: Double, from start: inout Double) -> Bool {
+    private func feed(_ detector: inout VoiceEndpointDetector, level: Double, seconds: Double, from start: inout Double)
+        -> Bool
+    {
         var ended = false
         let step = 1024.0 / 44_100
         for _ in 0..<Int(seconds / step) {
@@ -77,7 +80,10 @@ struct VoiceHandsFreeTests {
     }
 
     @Test func speechCuesPreserveTheTextInShortOrderedSegments() {
-        #expect(VoiceSubtitleTrack.cues(from: "Hello there. The build finished cleanly.") == ["Hello there.", "The build finished cleanly."])
+        #expect(
+            VoiceSubtitleTrack.cues(from: "Hello there. The build finished cleanly.") == [
+                "Hello there.", "The build finished cleanly.",
+            ])
         let long = Array(repeating: "word", count: 60).joined(separator: " ") + "."
         let cues = VoiceSubtitleTrack.cues(from: long)
         #expect(cues.allSatisfy { $0.count <= VoiceSubtitleTrack.maxCueLength })
@@ -85,7 +91,9 @@ struct VoiceHandsFreeTests {
     }
 
     @Test func pillTargetsPreferWebLinksThenExistingFiles() {
-        #expect(VoicePillQueue.target(in: #"{"path": "/etc/hosts", "url": "https://example.com/a"}"#) == "https://example.com/a")
+        #expect(
+            VoicePillQueue.target(in: #"{"path": "/etc/hosts", "url": "https://example.com/a"}"#)
+                == "https://example.com/a")
         #expect(VoicePillQueue.target(in: #"{"path": "/etc/hosts"}"#) == "/etc/hosts")
         #expect(VoicePillQueue.target(in: "wrote /definitely/not/here.txt") == nil)
         #expect(VoicePillQueue.target(in: "javascript:alert(1)") == nil)

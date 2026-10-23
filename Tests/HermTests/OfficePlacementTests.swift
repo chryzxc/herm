@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct OfficePlacementTests {
@@ -11,7 +12,7 @@ struct OfficePlacementTests {
         let nodes: [String: OfficePreviewLayout.Node] = [
             "idle": .init(slot: 2, index: 0, isStation: true, leisureIndex: 4),
             "walking": .init(slot: -1, index: 0, isStation: false, connectorPosition: [1, 0, 2]),
-            "invalid": .init(slot: 0, index: -1, isStation: true)
+            "invalid": .init(slot: 0, index: -1, isStation: true),
         ]
         store.save(nodes)
         let restored = OfficePlacementStore(defaults: defaults).load()

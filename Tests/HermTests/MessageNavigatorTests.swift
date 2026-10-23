@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Herm
 
 final class MessageNavigatorTests: XCTestCase {
@@ -7,15 +8,17 @@ final class MessageNavigatorTests: XCTestCase {
         let messageID = UUID()
         let messages = [
             ChatMessage(id: messageID, role: .user, text: "A very long message " + String(repeating: "x", count: 220)),
-            ChatMessage(role: .hermes, text: "assistant response")
+            ChatMessage(role: .hermes, text: "assistant response"),
         ]
 
         let items = MessageNavigator.items(messages: messages, sessionID: sessionID, previewLimit: 32)
 
-        XCTAssertEqual(items.map(\.target), [
-            MessageNavigatorTarget(sessionID: sessionID, messageID: messageID),
-            MessageNavigatorTarget(sessionID: sessionID, messageID: messages[1].id)
-        ])
+        XCTAssertEqual(
+            items.map(\.target),
+            [
+                MessageNavigatorTarget(sessionID: sessionID, messageID: messageID),
+                MessageNavigatorTarget(sessionID: sessionID, messageID: messages[1].id),
+            ])
         XCTAssertEqual(items[0].ordinal, 1)
         XCTAssertLessThanOrEqual(items[0].preview.count, 32)
         XCTAssertTrue(items[0].preview.hasSuffix("…"))
@@ -27,7 +30,7 @@ final class MessageNavigatorTests: XCTestCase {
             ChatMessage(role: .hermes, text: "**Markdown** answer"),
             ChatMessage(role: .user, text: "Please inspect the image"),
             ChatMessage(role: .hermes, text: "Tool result: compiler passed"),
-            ChatMessage(role: .hermes, text: "Clarification needed: choose a branch")
+            ChatMessage(role: .hermes, text: "Clarification needed: choose a branch"),
         ]
         let items = MessageNavigator.items(messages: messages, sessionID: "session-a")
 
@@ -88,7 +91,8 @@ final class MessageNavigatorTests: XCTestCase {
     }
 
     func testBoundedPreviewTruncatesIndentedCodeStyleBodies() {
-        let text = "    indented code line one\n    indented code line two\n"
+        let text =
+            "    indented code line one\n    indented code line two\n"
             + String(repeating: "plain continuation line\n", count: 100)
         let unbounded = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -188,7 +192,8 @@ final class MessageNavigatorTests: XCTestCase {
             )
             exposedUpperBounds.append(next.upperBound)
             range = next
-            visibleSpan = (max(range.upperBound - ConversationMessageWindow.pageSize, range.lowerBound))...(range.upperBound - 1)
+            visibleSpan =
+                (max(range.upperBound - ConversationMessageWindow.pageSize, range.lowerBound))...(range.upperBound - 1)
         }
 
         XCTAssertEqual(range.upperBound, totalCount)
@@ -220,7 +225,8 @@ final class MessageNavigatorTests: XCTestCase {
     func testRevealEarlierSlidesBoundedUnderRepeatedClicks() {
         let totalCount = 400
         var range = ConversationMessageWindow.tailRange(totalCount: totalCount)
-        var visibleSpan: ClosedRange<Int> = range.lowerBound...(range.lowerBound + ConversationMessageWindow.pageSize - 1)
+        var visibleSpan: ClosedRange<Int> =
+            range.lowerBound...(range.lowerBound + ConversationMessageWindow.pageSize - 1)
         var lowerBounds: [Int] = []
 
         for _ in 0..<(totalCount / ConversationMessageWindow.pageSize + 1) {
@@ -363,13 +369,16 @@ final class MessageNavigatorTests: XCTestCase {
         for _ in 0..<10 { await Task.yield() }
         let range = coordinator.mountedRange
         XCTAssertTrue(range.contains(19))
-        XCTAssertLessThanOrEqual(range.count, ConversationMessageWindow.jumpContextAbove + 1 + ConversationMessageWindow.jumpContextBelow)
+        XCTAssertLessThanOrEqual(
+            range.count, ConversationMessageWindow.jumpContextAbove + 1 + ConversationMessageWindow.jumpContextBelow)
         XCTAssertFalse(coordinator.presentation.isAtBottom)
         XCTAssertEqual(coordinator.presentation.unseenMessageCount, 0)
         XCTAssertNil(scrolledMessageID)
-        let layout = ConversationTranscriptLayout(sessionID: model.sessionID, generation: coordinator.generation, range: range,
+        let layout = ConversationTranscriptLayout(
+            sessionID: model.sessionID, generation: coordinator.generation, range: range,
             rows: range.map { index in
-                MessageNavigatorViewport(target: .init(sessionID: "session-a", messageID: model.messages[index].id),
+                MessageNavigatorViewport(
+                    target: .init(sessionID: "session-a", messageID: model.messages[index].id),
                     index: index, minY: CGFloat(index) * 100, maxY: CGFloat(index + 1) * 100)
             })
         coordinator.receiveLayout(layout)

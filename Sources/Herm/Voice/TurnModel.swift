@@ -23,18 +23,20 @@ final class TurnModelStore: ObservableObject {
     private var download: Task<Void, Never>?
     private var transfer: URLSessionDownloadTask?
 
-    private static let repository = "https://huggingface.co/aufklarer/Smart-Turn-v3.2-CoreML/resolve/75f069717f500947195fa1945c46ddb472559cff/smart_turn.mlmodelc/"
+    private static let repository =
+        "https://huggingface.co/aufklarer/Smart-Turn-v3.2-CoreML/resolve/75f069717f500947195fa1945c46ddb472559cff/smart_turn.mlmodelc/"
     private static let files: [(path: String, size: Int, sha256: String)] = [
         ("analytics/coremldata.bin", 243, "1646746d0029e78d26be065e62602d4f89e51013ec238b653adf7d7d21057f89"),
         ("coremldata.bin", 643, "9245ac99889c9d738cba6c89da9e851fd16488bf8effbc15a109d06b401c9383"),
         ("model.mil", 69_968, "41a6d9ac0f7d01d738e56ecdf4435e55f139591541b7cf1a4dba6b9ce2f1c9ef"),
-        ("weights/weight.bin", 16_714_240, "b6295316741a0149e1fcab7cdf030e1b9bfb0eef778207accee91a2a9703a39c")
+        ("weights/weight.bin", 16_714_240, "b6295316741a0149e1fcab7cdf030e1b9bfb0eef778207accee91a2a9703a39c"),
     ]
     static let downloadSize = files.reduce(0) { $0 + $1.size }
 
     private static var directory: URL {
         (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true))
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support", isDirectory: true))
             .appendingPathComponent("Herm/Models/smart_turn.mlmodelc", isDirectory: true)
     }
 
@@ -47,34 +49,42 @@ final class TurnModelStore: ObservableObject {
         guard download == nil else { return }
         phase = .downloading(0)
         download = Task { [weak self] in
-            let staging = FileManager.default.temporaryDirectory.appendingPathComponent("herm-smart-turn-\(UUID().uuidString)", isDirectory: true)
+            let staging = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "herm-smart-turn-\(UUID().uuidString)", isDirectory: true)
             defer { try? FileManager.default.removeItem(at: staging) }
             do {
                 var done = 0
                 for file in Self.files {
                     let base = done
                     let fetched = try await self?.fetch(Self.repository + file.path) { fraction in
-                        self?.phase = .downloading(Double(base) + fraction * Double(file.size) / Double(Self.downloadSize))
+                        self?.phase = .downloading(
+                            Double(base) + fraction * Double(file.size) / Double(Self.downloadSize))
                     }
                     guard let fetched else { return }
                     try Task.checkCancellation()
-                    let digest = SHA256.hash(data: try Data(contentsOf: fetched)).map { String(format: "%02x", $0) }.joined()
+                    let digest = SHA256.hash(data: try Data(contentsOf: fetched)).map { String(format: "%02x", $0) }
+                        .joined()
                     guard digest == file.sha256 else { throw TurnModelError.corrupt }
                     let target = staging.appendingPathComponent(file.path)
-                    try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try FileManager.default.createDirectory(
+                        at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try FileManager.default.moveItem(at: fetched, to: target)
                     done += file.size
                 }
-                try FileManager.default.createDirectory(at: Self.directory.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(
+                    at: Self.directory.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try? FileManager.default.removeItem(at: Self.directory)
                 try FileManager.default.moveItem(at: staging, to: Self.directory)
                 self?.download = nil
                 self?.load()
             } catch {
                 self?.download = nil
-                self?.phase = error is CancellationError || (error as? URLError)?.code == .cancelled
+                self?.phase =
+                    error is CancellationError || (error as? URLError)?.code == .cancelled
                     ? .notInstalled
-                    : .failed(error is TurnModelError ? "The download didn't match the expected model." : error.localizedDescription)
+                    : .failed(
+                        error is TurnModelError
+                            ? "The download didn't match the expected model." : error.localizedDescription)
             }
         }
     }
@@ -168,7 +178,8 @@ final class TurnAudio: @unchecked Sendable {
     private let lock = NSLock()
     private var samples: [Float] = []
     private var converter: AVAudioConverter?
-    private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+    private let format = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
 
     /// Called on the audio thread only.
     func append(_ buffer: AVAudioPCMBuffer) {
@@ -239,7 +250,8 @@ struct TurnModelSettingsView: View {
         let size = ByteCountFormatter.string(fromByteCount: Int64(TurnModelStore.downloadSize), countStyle: .file)
         switch store.phase {
         case .notInstalled:
-            return "Waits while you pause mid-sentence and replies as soon as you finish, from how you sound. Runs on this Mac (\(size))."
+            return
+                "Waits while you pause mid-sentence and replies as soon as you finish, from how you sound. Runs on this Mac (\(size))."
         case .downloading:
             return "Downloading the turn model (\(size))…"
         case .installed:

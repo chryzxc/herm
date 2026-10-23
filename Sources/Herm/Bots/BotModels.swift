@@ -60,7 +60,12 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     /// (kanban or cron workers), where the heartbeat heuristic still applies.
     var liveBusy: Bool?
 
-    init(id: String, name: String, title: String?, description: String?, model: String?, provider: String? = nil, isActive: Bool, chat: BotChatReference?, recentSession: BotChatReference? = nil, worker: BotWorkerReference? = nil, avatarURL: URL?, preview: String?, lastActive: Date?, isHidden: Bool, hasAvatar: Bool, hasCustomAvatar: Bool = false, isDefault: Bool) {
+    init(
+        id: String, name: String, title: String?, description: String?, model: String?, provider: String? = nil,
+        isActive: Bool, chat: BotChatReference?, recentSession: BotChatReference? = nil,
+        worker: BotWorkerReference? = nil, avatarURL: URL?, preview: String?, lastActive: Date?, isHidden: Bool,
+        hasAvatar: Bool, hasCustomAvatar: Bool = false, isDefault: Bool
+    ) {
         self.id = id
         self.name = name
         self.title = title
@@ -92,7 +97,8 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     /// kept out of Recents, so this is the only way to open one.
     var liveWorkerChat: BotChatReference? {
         guard let worker, worker.isLive else { return nil }
-        return BotChatReference(sessionID: worker.sessionID, profileID: id, title: worker.title, lastActive: worker.lastActive)
+        return BotChatReference(
+            sessionID: worker.sessionID, profileID: id, title: worker.title, lastActive: worker.lastActive)
     }
 }
 
@@ -146,8 +152,8 @@ enum BotRosterPresentation {
     static let primaryActionLabel = "Edit Profile"
 }
 
-private extension String {
-    var nonEmpty: String? {
+extension String {
+    fileprivate var nonEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -239,15 +245,18 @@ struct BotActivityEvent: Identifiable, Equatable, Sendable {
 
     /// ponytail: "working" is the roster's own 90s/live heuristic, so a finish
     /// surfaces up to ~90s after the last write; Hermes has no bot push event.
-    static func events(from old: [BotSummary], to new: [BotSummary], excluding profileID: String?) -> [BotActivityEvent] {
+    static func events(from old: [BotSummary], to new: [BotSummary], excluding profileID: String?) -> [BotActivityEvent]
+    {
         guard !old.isEmpty else { return [] }
-        let before = Dictionary(old.map { ($0.id, $0.isWorkingNow || $0.isRecentlyActive) }, uniquingKeysWith: { _, n in n })
+        let before = Dictionary(
+            old.map { ($0.id, $0.isWorkingNow || $0.isRecentlyActive) }, uniquingKeysWith: { _, n in n })
         return new.compactMap { bot in
             guard bot.id != profileID, let was = before[bot.id] else { return nil }
             let now = bot.isWorkingNow || bot.isRecentlyActive
             guard now != was else { return nil }
-            return BotActivityEvent(botID: bot.id, name: bot.name, finished: !now,
-                                    stamp: String(Int(bot.lastActive?.timeIntervalSince1970 ?? 0)))
+            return BotActivityEvent(
+                botID: bot.id, name: bot.name, finished: !now,
+                stamp: String(Int(bot.lastActive?.timeIntervalSince1970 ?? 0)))
         }
     }
 }

@@ -20,7 +20,9 @@ struct AddPoolAccountSheet: View {
     /// Providers `hermes auth add` can sign in through a browser. Every other
     /// provider only takes an API key, and without `--api-key` Hermes would
     /// wait on a hidden `Paste your API key:` prompt.
-    nonisolated static let browserSignInProviders: Set<String> = ["openai-codex", "anthropic", "nous", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"]
+    nonisolated static let browserSignInProviders: Set<String> = [
+        "openai-codex", "anthropic", "nous", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter",
+    ]
 
     private var providerID: String { provider.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var keyOnly: Bool { !providerID.isEmpty && !Self.browserSignInProviders.contains(providerID) }
@@ -126,7 +128,9 @@ struct AddPoolAccountSheet: View {
                     .textFieldStyle(.dockGlass)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 126), spacing: 6)], spacing: 6) {
                     ForEach(suggestions, id: \.self) { id in
-                        Button { provider = id } label: {
+                        Button {
+                            provider = id
+                        } label: {
                             HStack(spacing: 6) {
                                 ProviderMarkBadge(mark: ProviderMark(hermesProvider: id), size: 16)
                                 Text(id).lineLimit(1)

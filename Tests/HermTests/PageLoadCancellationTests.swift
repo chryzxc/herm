@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 /// Deliberately finishes a response after cancellation, like an already-delivered network reply.
@@ -12,7 +13,10 @@ private actor PausedGitHubTransport: GitHubIssueTransport {
 
     init(pausedPath: String) { self.pausedPath = pausedPath }
     var isPaused: Bool { continuation != nil }
-    func release() { continuation?.resume(); continuation = nil }
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let url = request.url!
@@ -26,14 +30,24 @@ private actor PausedGitHubTransport: GitHubIssueTransport {
         if url.path == "/user" {
             payload = ["login": "ada"]
         } else if url.path == "/search/issues" {
-            payload = ["items": [["number": 19, "title": "A PR", "state": "open",
-                                  "repository": ["full_name": "owner/repo"], "user": ["login": "ada"]]]]
+            payload = [
+                "items": [
+                    [
+                        "number": 19, "title": "A PR", "state": "open",
+                        "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
+                    ]
+                ]
+            ]
         } else {
-            payload = ["number": 19, "title": "Full detail", "head": ["ref": "feature", "sha": "abc"],
-                       "base": ["ref": "main"], "user": ["login": "ada"]]
+            payload = [
+                "number": 19, "title": "Full detail", "head": ["ref": "feature", "sha": "abc"],
+                "base": ["ref": "main"], "user": ["login": "ada"],
+            ]
         }
-        return (try JSONSerialization.data(withJSONObject: payload),
-                HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        return (
+            try JSONSerialization.data(withJSONObject: payload),
+            HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
     }
 }
 
@@ -125,7 +139,8 @@ private actor RemoteLookupProbe {
         peak = max(peak, active)
         defer { active -= 1 }
         if pauses { try? await Task.sleep(for: .seconds(60)) }
-        return GitHubRepositoryReference(owner: "owner", name: path, webURL: URL(string: "https://github.com/owner/\(path)")!)
+        return GitHubRepositoryReference(
+            owner: "owner", name: path, webURL: URL(string: "https://github.com/owner/\(path)")!)
     }
 }
 
@@ -167,7 +182,11 @@ private final class ArtifactLoadProbe {
 extension PageLoadCancellationTests {
     @MainActor @Test func artifactLoadsAreBoundedAndCancelWithoutStartingQueuedSessions() async throws {
         let probe = ArtifactLoadProbe()
-        let sessions = (0..<50).map { HermesSession(id: String($0), title: "Session", preview: "", startedAt: nil, messageCount: 1, source: "test", isHidden: false) }
+        let sessions = (0..<50).map {
+            HermesSession(
+                id: String($0), title: "Session", preview: "", startedAt: nil, messageCount: 1, source: "test",
+                isHidden: false)
+        }
         let load = Task { await ArtifactIndexLoader.load(sessions: sessions, messages: probe.messages) }
         for _ in 0..<2_000 {
             if probe.calls >= 4 { break }

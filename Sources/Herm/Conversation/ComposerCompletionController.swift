@@ -23,9 +23,11 @@ final class ComposerCompletionController: ObservableObject {
     /// Scopes completions to one bot's commands and files (the forward box).
     private var profileID: String?
 
-    func configure(model: DockModel, botMode: BotModeModel, profileID: String? = nil,
-                   text: @escaping () -> String, apply: @escaping (String, Int) -> Void,
-                   onOpenChanged: @escaping (Bool) -> Void = { _ in }) {
+    func configure(
+        model: DockModel, botMode: BotModeModel, profileID: String? = nil,
+        text: @escaping () -> String, apply: @escaping (String, Int) -> Void,
+        onOpenChanged: @escaping (Bool) -> Void = { _ in }
+    ) {
         self.model = model
         self.botMode = botMode
         self.profileID = profileID
@@ -46,12 +48,19 @@ final class ComposerCompletionController: ObservableObject {
                     || bot.name.localizedCaseInsensitiveContains(query)
                     || (bot.title?.localizedCaseInsensitiveContains(query) == true)
             }
-            .map { ComposerCompletionItem(text: "@\($0.id)", display: "@\($0.id)", meta: $0.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "", group: "", bot: $0) }
+            .map {
+                ComposerCompletionItem(
+                    text: "@\($0.id)", display: "@\($0.id)",
+                    meta: $0.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "", group: "", bot: $0)
+            }
     }
 
     func update(for text: String, caret: Int) {
         guard let model else { return }
-        let wasMention: Bool = { if case .mention = trigger { return true }; return false }()
+        let wasMention: Bool = {
+            if case .mention = trigger { return true }
+            return false
+        }()
         let caret = min(caret, (text as NSString).length)
         let detected = ComposerCompletionTrigger.detect(in: (text as NSString).substring(to: caret))
         if detected != nil, detected == trigger, caret == self.caret { return }
@@ -64,7 +73,8 @@ final class ComposerCompletionController: ObservableObject {
         }
         trigger = detected
         if case .mention = detected,
-           ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: wasMention, isPickerVisible: true) {
+            ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: wasMention, isPickerVisible: true)
+        {
             Task { @MainActor [botMode] in await botMode?.refreshNow(force: true) }
         }
         // Show what is already known (local Bots, last RPC answer for this exact
@@ -83,7 +93,8 @@ final class ComposerCompletionController: ObservableObject {
             // opening keystroke so the popover isn't held back by it.
             if !isFirstKeystroke { try? await Task.sleep(for: .milliseconds(60)) }
             guard !Task.isCancelled else { return }
-            let found = await model.composerCompletions(for: detected, bots: botItems(for: detected), profile: profileID)
+            let found = await model.composerCompletions(
+                for: detected, bots: botItems(for: detected), profile: profileID)
             guard !Task.isCancelled, trigger == detected else { return }
             cache[detected] = found
             if found != result {
@@ -140,10 +151,11 @@ final class ComposerCompletionController: ObservableObject {
             let item = result.items[index]
             // Enter on a command that is already fully typed runs it instead of re-inserting it.
             if key == .enter,
-               let trigger,
-               case let before = split.before,
-               ComposerCompletion.accepting(item, trigger: trigger, in: before, replaceFrom: result.replaceFrom)
-                .text.trimmingCharacters(in: .whitespaces) == before.trimmingCharacters(in: .whitespaces) {
+                let trigger,
+                case let before = split.before,
+                ComposerCompletion.accepting(item, trigger: trigger, in: before, replaceFrom: result.replaceFrom)
+                    .text.trimmingCharacters(in: .whitespaces) == before.trimmingCharacters(in: .whitespaces)
+            {
                 close()
                 return false
             }

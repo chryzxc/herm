@@ -1,8 +1,9 @@
 import AppKit
-import SwiftUI
-import SwiftTerm
 import Foundation
+import SwiftTerm
+import SwiftUI
 import UniformTypeIdentifiers
+
 struct SessionInspector: View {
     @ObservedObject var model: DockModel
     @ObservedObject var botMode: BotModeModel
@@ -45,7 +46,6 @@ struct SessionInspector: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.expandedReviewRouter) private var reviewRouter
 
-
     private struct ExtraTab: Identifiable {
         let id: UUID
         let kind: Section
@@ -59,9 +59,10 @@ struct SessionInspector: View {
     }
 
     private var extras: [ExtraTab] {
-        terminalExtras + (browserWorkspace?.extras.enumerated().map {
-            ExtraTab(id: $0.element.id, kind: .browser, number: $0.offset + 2, sessionID: model.navigationSessionID)
-        } ?? [])
+        terminalExtras
+            + (browserWorkspace?.extras.enumerated().map {
+                ExtraTab(id: $0.element.id, kind: .browser, number: $0.offset + 2, sessionID: model.navigationSessionID)
+            } ?? [])
     }
 
     private enum Section: String, CaseIterable, Identifiable {
@@ -105,7 +106,9 @@ struct SessionInspector: View {
             }
             sessionModePicker
 
-            if selectedSection != .timeline, selectedSection != .github, let workflowError = workflow.error, filePreview.attachmentDiff == nil {
+            if selectedSection != .timeline, selectedSection != .github, let workflowError = workflow.error,
+                filePreview.attachmentDiff == nil
+            {
                 HStack(spacing: 8) {
                     DockIcon(.warning)
                         .foregroundStyle(Color.dockWarning)
@@ -144,45 +147,86 @@ struct SessionInspector: View {
             let reviewRouter = reviewRouter
             reopenMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 guard reviewRouter?.layers.isEmpty != false else { return event }
-                guard event.keyCode == 17, event.modifierFlags.intersection([.command, .shift, .control, .option]) == [.command, .shift],
-                      !(event.window?.firstResponder is NSTextView), !(event.window?.firstResponder is TerminalView), !recentClosed.isEmpty else { return event }
-                reopenLastClosed(); return nil
+                guard event.keyCode == 17,
+                    event.modifierFlags.intersection([.command, .shift, .control, .option]) == [.command, .shift],
+                    !(event.window?.firstResponder is NSTextView), !(event.window?.firstResponder is TerminalView),
+                    !recentClosed.isEmpty
+                else { return event }
+                reopenLastClosed()
+                return nil
             }
         }
-        .onDisappear { if let reopenMonitor { NSEvent.removeMonitor(reopenMonitor); self.reopenMonitor = nil } }
-        .confirmationDialog("Close this terminal group?", isPresented: Binding(get: { closingExtra != nil }, set: { if !$0 { closingExtra = nil } })) {
-            Button("Close terminals", role: .destructive) { if let extra = closingExtra { finishClosingExtra(extra) }; closingExtra = nil }
+        .onDisappear {
+            if let reopenMonitor {
+                NSEvent.removeMonitor(reopenMonitor)
+                self.reopenMonitor = nil
+            }
+        }
+        .confirmationDialog(
+            "Close this terminal group?",
+            isPresented: Binding(get: { closingExtra != nil }, set: { if !$0 { closingExtra = nil } })
+        ) {
+            Button("Close terminals", role: .destructive) {
+                if let extra = closingExtra { finishClosingExtra(extra) }
+                closingExtra = nil
+            }
             Button("Cancel", role: .cancel) { closingExtra = nil }
-        } message: { Text("The foreground commands will stop. Other terminal groups stay open.") }
+        } message: {
+            Text("The foreground commands will stop. Other terminal groups stay open.")
+        }
         .confirmationDialog("Close the terminal?", isPresented: $closingTerminal) {
             Button("Close terminals", role: .destructive) { finishClose(.terminal) }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("The foreground commands will stop. Other terminal groups stay open.") }
+        } message: {
+            Text("The foreground commands will stop. Other terminal groups stay open.")
+        }
         .task(id: WorkspaceIdentity.session(model)) {
             restoringPresentation = true
-            if let legacy = UserDefaults.standard.string(forKey: "sessionInspector.selectedSection"), legacy == "Activity" {
+            if let legacy = UserDefaults.standard.string(forKey: "sessionInspector.selectedSection"),
+                legacy == "Activity"
+            {
                 selectedSection = .timeline
             }
-            closedRaw = closedRaw.split(separator: "|").map { InspectorPresentation.migratedTab(String($0)) }.joined(separator: "|")
+            closedRaw = closedRaw.split(separator: "|").map { InspectorPresentation.migratedTab(String($0)) }.joined(
+                separator: "|")
             if let saved = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model)) {
                 closedRaw = saved.closed
                 recentClosed = saved.recentClosed
                 for id in (saved.terminalTabs ?? []).prefix(16) where !terminalExtras.contains(where: { $0.id == id }) {
-                    terminalExtras.append(ExtraTab(id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2, sessionID: model.navigationSessionID))
+                    terminalExtras.append(
+                        ExtraTab(
+                            id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
+                            sessionID: model.navigationSessionID))
                 }
                 if let workspace = browserWorkspace, workspace.extras.isEmpty {
                     for address in (saved.browserTabs ?? []).prefix(16) {
-                        if let safe = WorkspacePresentationStore.restorableBrowserURL(address), let url = URL(string: safe) { workspace.addTab().open(url) }
+                        if let safe = WorkspacePresentationStore.restorableBrowserURL(address),
+                            let url = URL(string: safe)
+                        {
+                            workspace.addTab().open(url)
+                        }
                     }
                 }
-                selectedExtraID = saved.selectedExtra.flatMap { id in extras.contains(where: { $0.id == id && isVisible($0) }) ? id : nil }
-                if let index = saved.selectedBrowser, let workspace = browserWorkspace, workspace.extras.indices.contains(index) { selectedExtraID = workspace.extras[index].id }
+                selectedExtraID = saved.selectedExtra.flatMap { id in
+                    extras.contains(where: { $0.id == id && isVisible($0) }) ? id : nil
+                }
+                if let index = saved.selectedBrowser, let workspace = browserWorkspace,
+                    workspace.extras.indices.contains(index)
+                {
+                    selectedExtraID = workspace.extras[index].id
+                }
                 if let section = Section(rawValue: saved.selected) { selectedSection = section }
             }
-            if gitHub.item(for: WorkspaceIdentity.session(model))?.reference != nil { reopen(.github) }
-            else if selectedSection == .github { selectedSection = .timeline }
-            if filePreview.attachmentDiff != nil { reopen(.diff) }
-            else if selectedSection == .diff { selectedSection = .changes }
+            if gitHub.item(for: WorkspaceIdentity.session(model))?.reference != nil {
+                reopen(.github)
+            } else if selectedSection == .github {
+                selectedSection = .timeline
+            }
+            if filePreview.attachmentDiff != nil {
+                reopen(.diff)
+            } else if selectedSection == .diff {
+                selectedSection = .changes
+            }
             restoringPresentation = false
         }
         .onChange(of: selectedExtraID) { _, _ in savePresentation() }
@@ -215,7 +259,9 @@ struct SessionInspector: View {
 
     @ViewBuilder
     private var baseContent: some View {
-        if selectedSection == .github || selectedSection == .timeline || selectedSection == .terminal || selectedSection == .files || selectedSection == .browser || selectedSection == .diff {
+        if selectedSection == .github || selectedSection == .timeline || selectedSection == .terminal
+            || selectedSection == .files || selectedSection == .browser || selectedSection == .diff
+        {
             inspectorContent
                 .padding(.horizontal, selectedSection == .github ? 0 : 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -233,8 +279,11 @@ struct SessionInspector: View {
     private func extraContent(_ extra: ExtraTab) -> some View {
         if extra.kind == .browser {
             if let workspace = browserWorkspace, let browser = workspace.extras.first(where: { $0.id == extra.id }) {
-                SessionBrowserView(model: model, workspace: workspace, browser: browser, discoveryActive: selectedExtraID == extra.id && isVisible(extra))
-                    .id(browser.id)
+                SessionBrowserView(
+                    model: model, workspace: workspace, browser: browser,
+                    discoveryActive: selectedExtraID == extra.id && isVisible(extra)
+                )
+                .id(browser.id)
             }
         } else {
             SessionTerminalView(
@@ -242,7 +291,8 @@ struct SessionInspector: View {
                 recipes: VerificationRecipeBuilder.make(facts: control.projectFacts, repository: workflow.repository),
                 repositoryID: workflow.repository.isGitRepository ? workflow.repository.repositoryID : nil,
                 repositoryFingerprint: workflow.repositoryFingerprint,
-                workspaceKey: WorkspaceIdentity.session(model) + ":extra:" + extra.id.uuidString, discoveryActive: selectedExtraID == extra.id && isVisible(extra)
+                workspaceKey: WorkspaceIdentity.session(model) + ":extra:" + extra.id.uuidString,
+                discoveryActive: selectedExtraID == extra.id && isVisible(extra)
             )
         }
     }
@@ -253,7 +303,9 @@ struct SessionInspector: View {
         if kind == .browser {
             selectedExtraID = browserWorkspace?.addTab().id
         } else {
-            let extra = ExtraTab(id: UUID(), kind: kind, number: terminalExtras.filter(isVisible).count + 2, sessionID: model.navigationSessionID)
+            let extra = ExtraTab(
+                id: UUID(), kind: kind, number: terminalExtras.filter(isVisible).count + 2,
+                sessionID: model.navigationSessionID)
             terminalExtras.append(extra)
             selectedExtraID = extra.id
         }
@@ -265,19 +317,28 @@ struct SessionInspector: View {
     }
     private var baseTerminalKey: String { WorkspaceIdentity.session(model) + ":" + (sessionRepositoryPath ?? "home") }
     private func hasRunningCommand(_ key: String) -> Bool {
-        TerminalWorkspaceStore.shared.workspace(key: key).sessions.contains { $0.hasForegroundJob || $0.projectCommand?.isRunning == true }
+        TerminalWorkspaceStore.shared.workspace(key: key).sessions.contains {
+            $0.hasForegroundJob || $0.projectCommand?.isRunning == true
+        }
     }
     private func closeExtra(_ extra: ExtraTab) {
-        if extra.kind == .terminal, hasRunningCommand(extraTerminalKey(extra)) { closingExtra = extra; return }
+        if extra.kind == .terminal, hasRunningCommand(extraTerminalKey(extra)) {
+            closingExtra = extra
+            return
+        }
         finishClosingExtra(extra)
     }
     private func finishClosingExtra(_ extra: ExtraTab) {
         let browser = browserWorkspace?.extras.first(where: { $0.id == extra.id })
-        let reference = ClosedInspectorReference(kind: extra.kind.rawValue, id: extra.kind == .terminal ? extra.id : nil,
+        let reference = ClosedInspectorReference(
+            kind: extra.kind.rawValue, id: extra.kind == .terminal ? extra.id : nil,
             url: browser.flatMap { WorkspacePresentationStore.restorableBrowserURL($0.currentURL ?? $0.address) })
-        if let data = try? JSONEncoder().encode(reference), let text = String(data: data, encoding: .utf8) { recentClosed.append(text) }
-        if extra.kind == .browser { browserWorkspace?.closeTab(extra.id) }
-        else {
+        if let data = try? JSONEncoder().encode(reference), let text = String(data: data, encoding: .utf8) {
+            recentClosed.append(text)
+        }
+        if extra.kind == .browser {
+            browserWorkspace?.closeTab(extra.id)
+        } else {
             TerminalWorkspaceStore.shared.closeWorkspace(key: extraTerminalKey(extra))
             terminalExtras.removeAll { $0.id == extra.id }
         }
@@ -286,13 +347,25 @@ struct SessionInspector: View {
     }
     private func reopenLastClosed() {
         guard let raw = recentClosed.popLast() else { return }
-        if let section = Section(rawValue: raw) { reopen(section) }
-        else if let data = raw.data(using: .utf8), let reference = try? JSONDecoder().decode(ClosedInspectorReference.self, from: data), let kind = Section(rawValue: reference.kind) {
+        if let section = Section(rawValue: raw) {
+            reopen(section)
+        } else if let data = raw.data(using: .utf8),
+            let reference = try? JSONDecoder().decode(ClosedInspectorReference.self, from: data),
+            let kind = Section(rawValue: reference.kind)
+        {
             if kind == .terminal, let id = reference.id {
-                terminalExtras.append(ExtraTab(id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2, sessionID: model.navigationSessionID)); selectedExtraID = id
+                terminalExtras.append(
+                    ExtraTab(
+                        id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
+                        sessionID: model.navigationSessionID))
+                selectedExtraID = id
             } else if kind == .browser, let workspace = browserWorkspace {
                 let tab = workspace.addTab()
-                if let address = reference.url, let safe = WorkspacePresentationStore.restorableBrowserURL(address), let url = URL(string: safe) { tab.open(url) }
+                if let address = reference.url, let safe = WorkspacePresentationStore.restorableBrowserURL(address),
+                    let url = URL(string: safe)
+                {
+                    tab.open(url)
+                }
                 selectedExtraID = tab.id
             }
         }
@@ -301,7 +374,8 @@ struct SessionInspector: View {
 
     // Keep Source Control reachable while its repository snapshot loads or refreshes.
     private var visibleSections: [Section] {
-        [.timeline, .terminal, .files, .changes, .browser] + (filePreview.attachmentDiff == nil ? [] : [.diff]) + (gitHub.item(for: WorkspaceIdentity.session(model))?.reference == nil ? [] : [.github])
+        [.timeline, .terminal, .files, .changes, .browser] + (filePreview.attachmentDiff == nil ? [] : [.diff])
+            + (gitHub.item(for: WorkspaceIdentity.session(model))?.reference == nil ? [] : [.github])
     }
 
     private var browserSessions: [String] { browserSessionsRaw.split(separator: "|").map(String.init) }
@@ -331,16 +405,26 @@ struct SessionInspector: View {
 
     private func savePresentation() {
         guard !restoringPresentation else { return }
-        WorkspacePresentationStore.shared.save(InspectorPresentation(selected: selectedSection.rawValue, closed: closedRaw,
-            recentClosed: Array(recentClosed.suffix(20)), browserURL: WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL,
-            terminalTabs: terminalExtras.filter(isVisible).map(\.id),
-            browserTabs: browserWorkspace?.extras.compactMap { WorkspacePresentationStore.restorableBrowserURL($0.currentURL ?? $0.address) },
-            selectedExtra: selectedExtraID, selectedBrowser: browserWorkspace?.extras.firstIndex(where: { $0.id == selectedExtraID })), identity: WorkspaceIdentity.session(model))
+        WorkspacePresentationStore.shared.save(
+            InspectorPresentation(
+                selected: selectedSection.rawValue, closed: closedRaw,
+                recentClosed: Array(recentClosed.suffix(20)),
+                browserURL: WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL,
+                terminalTabs: terminalExtras.filter(isVisible).map(\.id),
+                browserTabs: browserWorkspace?.extras.compactMap {
+                    WorkspacePresentationStore.restorableBrowserURL($0.currentURL ?? $0.address)
+                },
+                selectedExtra: selectedExtraID,
+                selectedBrowser: browserWorkspace?.extras.firstIndex(where: { $0.id == selectedExtraID })),
+            identity: WorkspaceIdentity.session(model))
     }
 
     private func close(_ section: Section) {
         guard openSections.count > 1 else { return }
-        if section == .terminal, hasRunningCommand(baseTerminalKey) { closingTerminal = true; return }
+        if section == .terminal, hasRunningCommand(baseTerminalKey) {
+            closingTerminal = true
+            return
+        }
         finishClose(section)
     }
 
@@ -349,8 +433,15 @@ struct SessionInspector: View {
         if section != .diff { recentClosed.append(section.rawValue) }
         if section == .diff { filePreview.attachmentDiff = nil }
         if section == .terminal { TerminalWorkspaceStore.shared.closeWorkspace(key: baseTerminalKey) }
-        if section == .browser { browserWorkspace?.suspend(); setBrowserOpenHere(false) } else { closedRaw += "|" + section.rawValue }
-        if selectedSection == section, let next = openSections.first(where: { $0 != section }) { selectedSection = next }
+        if section == .browser {
+            browserWorkspace?.suspend()
+            setBrowserOpenHere(false)
+        } else {
+            closedRaw += "|" + section.rawValue
+        }
+        if selectedSection == section, let next = openSections.first(where: { $0 != section }) {
+            selectedSection = next
+        }
     }
 
     private func reopen(_ section: Section) {
@@ -363,7 +454,9 @@ struct SessionInspector: View {
     /// Sits right after the last tab, like a browser's new-tab button.
     private var newTabMenu: some View {
         let closedSections = visibleSections.filter { !openSections.contains($0) }
-        return Button { isShowingNewTab.toggle() } label: {
+        return Button {
+            isShowingNewTab.toggle()
+        } label: {
             DockIcon(.plus, size: 14, color: Color.dockPrimaryText)
                 .frame(width: 28, height: 28)
                 .background(isShowingNewTab ? Color.dockSurface2 : Color.clear)
@@ -375,7 +468,9 @@ struct SessionInspector: View {
         .accessibilityLabel("New tab")
         .popover(isPresented: $isShowingNewTab, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
-                if !recentClosed.isEmpty { newTabRow("Reopen closed tab", icon: .arrowCounterClockwise) { reopenLastClosed() } }
+                if !recentClosed.isEmpty {
+                    newTabRow("Reopen closed tab", icon: .arrowCounterClockwise) { reopenLastClosed() }
+                }
                 newTabRow("New Terminal", icon: .terminal) { openNew(.terminal) }
                 newTabRow("New Browser", icon: .globe) { openNew(.browser) }
                 ForEach(closedSections.filter { $0 != .terminal && $0 != .browser }) { section in
@@ -423,7 +518,7 @@ struct SessionInspector: View {
 
             if let onToggle {
                 DockSidebarToggle(isCollapsed: false, edge: .trailing, action: onToggle)
-                .padding(.horizontal, 8)
+                    .padding(.horizontal, 8)
             }
         }
         .frame(height: headerHeight)
@@ -447,10 +542,14 @@ struct SessionInspector: View {
         let isSelected = selectedSection == section && selectedExtraID == nil
         return HStack(spacing: 6) {
             Button {
-                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) { selectedSection = section; selectedExtraID = nil }
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
+                    selectedSection = section
+                    selectedExtraID = nil
+                }
             } label: {
                 HStack(spacing: 6) {
-                    DockIcon(section.icon, size: 12, color: isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    DockIcon(
+                        section.icon, size: 12, color: isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
                     if isSelected || !isCompactStrip { Text(sectionTitle(section)).lineLimit(1) }
                 }
                 .contentShape(Rectangle())
@@ -461,7 +560,9 @@ struct SessionInspector: View {
             .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             if isSelected, openSections.count + extras.filter(isVisible).count > 1 {
-                Button { close(section) } label: {
+                Button {
+                    close(section)
+                } label: {
                     DockIcon(.x, size: 10, color: Color.dockSecondaryText)
                         .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
@@ -487,15 +588,20 @@ struct SessionInspector: View {
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) { selectedExtraID = extra.id }
             } label: {
                 HStack(spacing: 6) {
-                    DockIcon(extra.kind.icon, size: 12, color: isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-                    if isSelected || !isCompactStrip { Text("\(extra.kind.navigationTitle) \(extra.number)").lineLimit(1) }
+                    DockIcon(
+                        extra.kind.icon, size: 12, color: isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    if isSelected || !isCompactStrip {
+                        Text("\(extra.kind.navigationTitle) \(extra.number)").lineLimit(1)
+                    }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
 
-            Button { closeExtra(extra) } label: {
+            Button {
+                closeExtra(extra)
+            } label: {
                 DockIcon(.x, size: 10, color: Color.dockSecondaryText)
                     .frame(width: 16, height: 16)
                     .contentShape(Rectangle())
@@ -541,8 +647,9 @@ struct SessionInspector: View {
 
     private var sessionProjectName: String? {
         guard sessionProjectIsBound,
-              let sessionRepositoryPath,
-              !sessionRepositoryPath.isEmpty else { return nil }
+            let sessionRepositoryPath,
+            !sessionRepositoryPath.isEmpty
+        else { return nil }
         let name = URL(fileURLWithPath: sessionRepositoryPath).lastPathComponent
         return name.isEmpty ? nil : name
     }
@@ -553,7 +660,8 @@ struct SessionInspector: View {
         case .github:
             if let item = gitHub.item(for: WorkspaceIdentity.session(model)), let reference = item.reference {
                 if reference.kind == .pullRequest {
-                    PullRequestDetailView(center: item.pullRequests, onOpenChat: onOpenPullRequestChat, isInspector: true)
+                    PullRequestDetailView(
+                        center: item.pullRequests, onOpenChat: onOpenPullRequestChat, isInspector: true)
                 } else {
                     IssueDetailView(center: item.issues, onOpenChat: onOpenIssueChat, isInspector: true)
                 }
@@ -616,8 +724,12 @@ struct SessionInspector: View {
 
         let items: [TelemetryItem] = [
             focus.branch.map { TelemetryItem(id: "branch", icon: .gitBranch, label: "BRANCH", value: $0) },
-            focus.contextPercent.map { TelemetryItem(id: "context", icon: .chartBar, label: "CONTEXT", value: "\(Int($0.rounded()))%") },
-            focus.changedFiles.map { TelemetryItem(id: "files", icon: .fileText, label: "CHANGED", value: "\($0) files") }
+            focus.contextPercent.map {
+                TelemetryItem(id: "context", icon: .chartBar, label: "CONTEXT", value: "\(Int($0.rounded()))%")
+            },
+            focus.changedFiles.map {
+                TelemetryItem(id: "files", icon: .fileText, label: "CHANGED", value: "\($0) files")
+            },
         ].compactMap { $0 }
 
         return Group {
@@ -629,7 +741,8 @@ struct SessionInspector: View {
                                 Button {
                                     isSwitchingBranch = true
                                     Task {
-                                        _ = await workflow.switchBranch(branchName, preferences: preferences, control: control)
+                                        _ = await workflow.switchBranch(
+                                            branchName, preferences: preferences, control: control)
                                         isSwitchingBranch = false
                                     }
                                 } label: {
@@ -696,12 +809,13 @@ struct SessionInspector: View {
 
     /// Renders pre-flight readiness checks for repository cleanliness and model configuration.
     private func sessionReadinessCard(readiness: ReadinessSummary) -> some View {
-        let color: SwiftUI.Color = switch readiness.state {
-        case .ready: .dockSuccess
-        case .needsReview: .dockWarning
-        case .blocked: .dockDestructive
-        case .notApplicable: .dockSecondaryText
-        }
+        let color: SwiftUI.Color =
+            switch readiness.state {
+            case .ready: .dockSuccess
+            case .needsReview: .dockWarning
+            case .blocked: .dockDestructive
+            case .notApplicable: .dockSecondaryText
+            }
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {

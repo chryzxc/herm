@@ -1,9 +1,11 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct ConfigurationServiceTests {
-    private let validJSON = #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"openai","state":"ready"}],"models":[{"id":"gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":1},"credentials":[{"provider":"openai","present":true}]}"#
+    private let validJSON =
+        #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"openai","state":"ready"}],"models":[{"id":"gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":1},"credentials":[{"provider":"openai","present":true}]}"#
 
     @Test func parsesVerifiedRedactedJSONWithoutSecrets() throws {
         let result = try ConfigurationService.parseVerifiedJSON(validJSON)
@@ -31,7 +33,9 @@ struct ConfigurationServiceTests {
     @Test func missingAndDeniedCapabilitiesAreUnavailable() {
         #expect(ConfigurationService.unavailable(capability: .missing).state == .unavailable)
         #expect(ConfigurationService.unavailable(capability: .denied).state == .unavailable)
-        #expect(ConfigurationService.unavailable(capability: .missing).diagnostic == "Configuration health capability is unavailable.")
+        #expect(
+            ConfigurationService.unavailable(capability: .missing).diagnostic
+                == "Configuration health capability is unavailable.")
     }
 
     @Test func oldSnapshotIsStaleButRetainsSafeRedactedRows() throws {
@@ -54,7 +58,8 @@ struct ConfigurationServiceTests {
     }
 
     @Test func secretBearingAndUnsafeFieldsNeverEnterModelsOrDiagnostics() {
-        let json = #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"https://user:token@example.com/key","state":"ready"}],"models":[{"id":"prompt: tell me a secret","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"/Users/example/private","present":true}]}"#
+        let json =
+            #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"https://user:token@example.com/key","state":"ready"}],"models":[{"id":"prompt: tell me a secret","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"/Users/example/private","present":true}]}"#
         let result = ConfigurationService.parse(json, format: .json)
         let description = String(describing: result)
 
@@ -66,9 +71,12 @@ struct ConfigurationServiceTests {
     }
 
     @Test func rejectsURIAndPathSyntaxInEveryDurableIdentifierField() {
-        let providerURI = #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"provider:prod","state":"ready"}],"models":[{"id":"gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"openai","present":true}]}"#
-        let modelPath = #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"openai","state":"ready"}],"models":[{"id":"models/gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"openai","present":true}]}"#
-        let credentialPath = #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"openai","state":"ready"}],"models":[{"id":"gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"/private/provider","present":true}]}"#
+        let providerURI =
+            #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"provider:prod","state":"ready"}],"models":[{"id":"gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"openai","present":true}]}"#
+        let modelPath =
+            #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"openai","state":"ready"}],"models":[{"id":"models/gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"openai","present":true}]}"#
+        let credentialPath =
+            #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"openai","state":"ready"}],"models":[{"id":"gpt-5","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"/private/provider","present":true}]}"#
 
         for json in [providerURI, modelPath, credentialPath] {
             let result = ConfigurationService.parse(json, format: .json)

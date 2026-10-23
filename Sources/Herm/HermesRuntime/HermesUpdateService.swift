@@ -1,5 +1,5 @@
-import Foundation
 import AppKit
+import Foundation
 
 /// Version facts parsed from the local `hermes --version` projection.
 struct HermesInstalledVersion: Equatable {
@@ -10,11 +10,11 @@ struct HermesInstalledVersion: Equatable {
 
     var displayVersion: String {
         switch (marketing, calendar) {
-        case let (.some(marketing), .some(calendar)):
+        case (.some(let marketing), .some(let calendar)):
             return "v\(marketing) (\(calendar))"
-        case let (.some(marketing), .none):
+        case (.some(let marketing), .none):
             return "v\(marketing)"
-        case let (.none, .some(calendar)):
+        case (.none, .some(let calendar)):
             return "build \(calendar)"
         case (.none, .none):
             return "unknown"
@@ -73,10 +73,12 @@ enum HermesUpdateParsing {
     /// `hermes --version` first line looks like
     /// `Hermes Agent v0.19.1 (2026.7.30) · upstream e3b5512b`.
     nonisolated static func installedVersion(from output: String) -> HermesInstalledVersion? {
-        let firstLine = output
+        let firstLine =
+            output
             .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
             .first.map(String.init) ?? output
-        let marketing = firstMatch(in: firstLine, pattern: #"v(\d+\.\d+(?:\.\d+)?)"#)
+        let marketing =
+            firstMatch(in: firstLine, pattern: #"v(\d+\.\d+(?:\.\d+)?)"#)
             ?? firstMatch(in: firstLine, pattern: #"(\d+\.\d+\.\d+)"#)
         let calendar = firstMatch(in: firstLine, pattern: #"\((\d{4}\.\d{1,2}\.\d{1,2}(?:\.\d+)?)\)"#)
         guard marketing != nil || calendar != nil else { return nil }
@@ -123,13 +125,15 @@ enum HermesUpdateParsing {
     /// the fallback. Returns nil when the pair cannot be compared at all.
     nonisolated static func isOutdated(installed: HermesInstalledVersion, latest: HermesLatestRelease) -> Bool? {
         if let installedMarketing = installed.marketing,
-           let latestMarketing = latest.marketing,
-           let result = compareNumeric(installedMarketing, latestMarketing) {
+            let latestMarketing = latest.marketing,
+            let result = compareNumeric(installedMarketing, latestMarketing)
+        {
             return result == .orderedAscending
         }
         if let installedCalendar = installed.calendar,
-           let latestCalendar = latest.calendar,
-           let result = compareNumeric(installedCalendar, latestCalendar) {
+            let latestCalendar = latest.calendar,
+            let result = compareNumeric(installedCalendar, latestCalendar)
+        {
             return result == .orderedAscending
         }
         return nil
@@ -168,8 +172,9 @@ enum HermesUpdateParsing {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let match = regex.firstMatch(in: text, range: range),
-              match.numberOfRanges > 1,
-              let captureRange = Range(match.range(at: 1), in: text) else { return nil }
+            match.numberOfRanges > 1,
+            let captureRange = Range(match.range(at: 1), in: text)
+        else { return nil }
         return String(text[captureRange])
     }
 
@@ -178,7 +183,8 @@ enum HermesUpdateParsing {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.matches(in: text, range: range).compactMap { match in
             guard match.numberOfRanges > 1,
-                  let captureRange = Range(match.range(at: 1), in: text) else { return nil }
+                let captureRange = Range(match.range(at: 1), in: text)
+            else { return nil }
             return String(text[captureRange])
         }
     }
@@ -196,11 +202,12 @@ enum HermesUpdateLogPresentation {
             with: "",
             options: .regularExpression
         )
-        text = String(text.filter { character in
-            character.unicodeScalars.allSatisfy { scalar in
-                scalar == "\t" || !CharacterSet.controlCharacters.contains(scalar)
-            }
-        })
+        text = String(
+            text.filter { character in
+                character.unicodeScalars.allSatisfy { scalar in
+                    scalar == "\t" || !CharacterSet.controlCharacters.contains(scalar)
+                }
+            })
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         if !home.isEmpty, home != "/" {
             text = text.replacingOccurrences(of: home, with: "~")
@@ -224,7 +231,8 @@ private final class HermesUpdateOutputCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         buffer += text
-        var segments = buffer
+        var segments =
+            buffer
             .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r" })
             .map(String.init)
         buffer = segments.removeLast()
@@ -252,7 +260,8 @@ final class HermesUpdateService: ObservableObject {
     @Published private(set) var logLines: [String] = []
     @Published private(set) var updateStartedAt: Date?
 
-    nonisolated static let latestReleaseURLString = "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest"
+    nonisolated static let latestReleaseURLString =
+        "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest"
     nonisolated static let updateCommandArguments = ["hermes", "update"]
     nonisolated static let updateCommandDisplay = "hermes update"
     private static let logLineLimit = 300
@@ -294,8 +303,11 @@ final class HermesUpdateService: ObservableObject {
             let release = await releaseResult
 
             guard output.succeeded,
-                  let installed = HermesUpdateParsing.installedVersion(from: output.text) else {
-                self.phase = .checkFailed("The installed Hermes version could not be read. Make sure the `hermes` CLI is installed and on your PATH.")
+                let installed = HermesUpdateParsing.installedVersion(from: output.text)
+            else {
+                self.phase = .checkFailed(
+                    "The installed Hermes version could not be read. Make sure the `hermes` CLI is installed and on your PATH."
+                )
                 return
             }
             self.installed = installed
@@ -335,7 +347,10 @@ final class HermesUpdateService: ObservableObject {
 
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
-            guard !chunk.isEmpty else { handle.readabilityHandler = nil; return }
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             guard let text = String(data: chunk, encoding: .utf8) else { return }
             let lines = collector.completeLines(from: text)
                 .compactMap(HermesUpdateLogPresentation.sanitize)
@@ -380,7 +395,8 @@ final class HermesUpdateService: ObservableObject {
     private func refreshInstalledVersionAfterUpdate() async {
         let output = await Self.runHermes(arguments: ["--version"], timeout: Self.versionReadTimeout)
         if output.succeeded,
-           let installed = HermesUpdateParsing.installedVersion(from: output.text) {
+            let installed = HermesUpdateParsing.installedVersion(from: output.text)
+        {
             self.installed = installed
             self.installMethod = HermesUpdateParsing.installMethod(from: output.text)
             appendLog("Installed version is now \(installed.displayVersion).")
@@ -435,7 +451,9 @@ final class HermesUpdateService: ObservableObject {
     /// Runs a read-only Hermes CLI command locally with a timeout. The Dock
     /// launches the Hermes backend the same way, so this stays consistent
     /// with the app's existing process-launch boundary.
-    nonisolated static func runHermes(arguments: [String], timeout: TimeInterval) async -> (succeeded: Bool, text: String) {
+    nonisolated static func runHermes(arguments: [String], timeout: TimeInterval) async -> (
+        succeeded: Bool, text: String
+    ) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["hermes"] + arguments

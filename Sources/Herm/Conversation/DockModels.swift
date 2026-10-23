@@ -165,12 +165,14 @@ struct HermesSubagent: Identifiable, Equatable, Codable {
     var filesRead: [String]
     var filesWritten: [String]
 
-    init(id: String, name: String? = nil, parentID: String? = nil, childSessionID: String? = nil, depth: Int = 0,
-         goal: String, role: String? = nil, sourceSkill: String? = nil, status: String,
-         model: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil,
-         durationSeconds: Double? = nil, toolCount: Int = 0, latestActivity: String? = nil,
-         summary: String? = nil, inputTokens: Int? = nil, outputTokens: Int? = nil,
-         reasoningTokens: Int? = nil, apiCalls: Int? = nil, filesRead: [String] = [], filesWritten: [String] = []) {
+    init(
+        id: String, name: String? = nil, parentID: String? = nil, childSessionID: String? = nil, depth: Int = 0,
+        goal: String, role: String? = nil, sourceSkill: String? = nil, status: String,
+        model: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil,
+        durationSeconds: Double? = nil, toolCount: Int = 0, latestActivity: String? = nil,
+        summary: String? = nil, inputTokens: Int? = nil, outputTokens: Int? = nil,
+        reasoningTokens: Int? = nil, apiCalls: Int? = nil, filesRead: [String] = [], filesWritten: [String] = []
+    ) {
         self.id = id
         self.name = name
         self.parentID = parentID
@@ -232,11 +234,13 @@ struct AgentActivity: Identifiable, Equatable, Codable {
     var traceDuration: Double? = nil
     var traceOutcome: String? = nil
 
-    init(id: UUID, timestamp: Date, agentID: String?, kind: String, text: String,
-         toolName: String?, handoffTarget: String?, diffPreview: String? = nil,
-         parentAgentID: String? = nil, childSessionID: String? = nil,
-         traceCallID: String? = nil, traceTiming: SessionTraceTiming? = nil,
-         traceDuration: Double? = nil, traceOutcome: String? = nil) {
+    init(
+        id: UUID, timestamp: Date, agentID: String?, kind: String, text: String,
+        toolName: String?, handoffTarget: String?, diffPreview: String? = nil,
+        parentAgentID: String? = nil, childSessionID: String? = nil,
+        traceCallID: String? = nil, traceTiming: SessionTraceTiming? = nil,
+        traceDuration: Double? = nil, traceOutcome: String? = nil
+    ) {
         self.traceCallID = traceCallID
         self.traceTiming = traceTiming
         self.traceDuration = traceDuration
@@ -291,28 +295,36 @@ struct SessionAgentStateStore {
     let fileURL: URL
 
     init(fileURL: URL? = nil) {
-        let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        self.fileURL = fileURL ?? supportRoot
+        let supportRoot =
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support", isDirectory: true)
+        self.fileURL =
+            fileURL
+            ?? supportRoot
             .appendingPathComponent("Herm", isDirectory: true)
             .appendingPathComponent("session-agent-state-v1.json")
     }
 
     func load() -> [String: SessionAgentState] {
         guard let data = try? Data(contentsOf: fileURL),
-              let archive = try? JSONDecoder.sessionAgentState.decode(SessionAgentStateArchive.self, from: data),
-              archive.schemaVersion == 1 else { return [:] }
+            let archive = try? JSONDecoder.sessionAgentState.decode(SessionAgentStateArchive.self, from: data),
+            archive.schemaVersion == 1
+        else { return [:] }
         return archive.states
     }
 
     func save(_ states: [String: SessionAgentState]) {
-        guard let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: states)) else { return }
+        guard let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: states)) else {
+            return
+        }
         saveEncoded(data)
     }
 
     func saveEncoded(_ data: Data) {
         do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch {
@@ -354,8 +366,9 @@ actor SessionAgentStateWriter {
 
     private func commit() {
         guard let pending,
-              let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: pending)),
-              data != lastEncoded else { return }
+            let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: pending)),
+            data != lastEncoded
+        else { return }
         lastEncoded = data
         self.pending = nil
         // Write to disk on a background thread to avoid blocking the main thread
@@ -366,8 +379,8 @@ actor SessionAgentStateWriter {
     }
 }
 
-private extension JSONEncoder {
-    static var sessionAgentState: JSONEncoder {
+extension JSONEncoder {
+    fileprivate static var sessionAgentState: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
@@ -375,8 +388,8 @@ private extension JSONEncoder {
     }
 }
 
-private extension JSONDecoder {
-    static var sessionAgentState: JSONDecoder {
+extension JSONDecoder {
+    fileprivate static var sessionAgentState: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
@@ -406,7 +419,7 @@ struct HermesRuntimeModelSwitchRequest: Equatable {
             "key": "model",
             "value": value,
             // Selecting a catalog entry is the user's explicit confirmation.
-            "confirm_expensive_model": true
+            "confirm_expensive_model": true,
         ]
         if let sessionID { result["session_id"] = sessionID }
         return result
@@ -455,7 +468,14 @@ struct ChatMessage: Identifiable, Equatable {
     /// A Bot's answer to a DM another Bot sent from this session.
     let isBotHandoffReply: Bool
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil, isBotHandoffReply: Bool = false) {
+    init(
+        id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [],
+        timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil,
+        tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false,
+        botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil,
+        activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil,
+        isBotHandoffReply: Bool = false
+    ) {
         self.id = id
         self.role = role
         self.text = text
@@ -482,10 +502,10 @@ struct ChatMessage: Identifiable, Equatable {
     var image: NSImage? { images.first }
 
     private static func revision(for text: String) -> Int {
-        var value: UInt64 = 1469598103934665603
+        var value: UInt64 = 1_469_598_103_934_665_603
         for byte in text.utf8 {
             value ^= UInt64(byte)
-            value &*= 1099511628211
+            value &*= 1_099_511_628_211
         }
         return Int(truncatingIfNeeded: value)
     }
@@ -592,7 +612,8 @@ struct SystemEvent: Equatable {
         }
         // Other gateway notes open with an ALL-CAPS bracket header.
         guard head.hasPrefix("["),
-              let end = head.dropFirst().firstIndex(where: { ":]—".contains($0) }) else { return nil }
+            let end = head.dropFirst().firstIndex(where: { ":]—".contains($0) })
+        else { return nil }
         let header = head[head.index(after: head.startIndex)..<end].trimmingCharacters(in: .whitespaces)
         guard header.count >= 4, header == header.uppercased(), header.contains(where: \.isLetter) else { return nil }
         return SystemEvent(label: humanized(header.lowercased()))
@@ -611,14 +632,15 @@ struct SystemEvent: Equatable {
 
     /// A plugin feed row (e.g. a pipeline status line), toned by its glyph.
     static func feed(source: String, text: String) -> SystemEvent {
-        let tone: DockStatusTone = switch text.trimmingCharacters(in: .whitespaces).first {
-        case "✅", "✔": .complete
-        case "▶": .working
-        case "🔍", "👀": .review
-        case "🔁", "🔄", "→": .queued
-        case "↩", "⏸", "⛔", "🛑", "✖", "✘", "❌", "⚠": .attention
-        default: keywordTone(text)
-        }
+        let tone: DockStatusTone =
+            switch text.trimmingCharacters(in: .whitespaces).first {
+            case "✅", "✔": .complete
+            case "▶": .working
+            case "🔍", "👀": .review
+            case "🔁", "🔄", "→": .queued
+            case "↩", "⏸", "⛔", "🛑", "✖", "✘", "❌", "⚠": .attention
+            default: keywordTone(text)
+            }
         return SystemEvent(label: source, tone: tone, isFeed: true)
     }
 
@@ -626,7 +648,9 @@ struct SystemEvent: Equatable {
     private static func keywordTone(_ text: String) -> DockStatusTone {
         let head = (text.split(separator: "\n").first.map(String.init) ?? text).lowercased()
         let has = { (words: [String]) in words.contains { head.contains($0) } }
-        if has(["fail", "error", "blocked", "rejected", "changes requested", "crash", "timed out"]) { return .attention }
+        if has(["fail", "error", "blocked", "rejected", "changes requested", "crash", "timed out"]) {
+            return .attention
+        }
         if has(["review"]) { return .review }
         if has(["done", "complete", "approved", "passed", "success", "merged", "finished"]) { return .complete }
         if has(["start", "running", "in progress", "working"]) { return .working }
@@ -661,7 +685,8 @@ struct KanbanNotice: Equatable {
         var title: String?
         var reason: String?
         // Whichever separator comes first: `done — <title>` or `blocked: <reason>`.
-        let dash = event.range(of: " — "), colon = event.range(of: ": ")
+        let dash = event.range(of: " — ")
+        let colon = event.range(of: ": ")
         if let dash, colon.map({ dash.lowerBound < $0.lowerBound }) ?? true {
             title = String(event[dash.upperBound...])
             event = String(event[..<dash.lowerBound])
@@ -670,28 +695,31 @@ struct KanbanNotice: Equatable {
             event = String(event[..<colon.lowerBound])
         }
         let lower = event.lowercased()
-        (label, tone) = switch true {
-        case lower.contains("changes"): ("Changes requested", .attention)
-        case lower.hasPrefix("created"): ("Created", .queued)
-        case lower.hasPrefix("picked up"): ("Picked up", .working)
-        case lower.hasPrefix("assigned"): (event.prefix(1).uppercased() + event.dropFirst().replacing("@", with: ""), .queued)
-        case lower.hasPrefix("unblocked"): ("Unblocked", .queued)
-        case lower.contains("triage"): ("Triage", .attention)
-        case lower.contains("blocked"): ("Blocked", .attention)
-        case lower.contains("gave up"): ("Gave up", .attention)
-        case lower.contains("crash"), lower.contains("stopped unexpectedly"): ("Crashed", .attention)
-        case lower.contains("timed out"), lower.contains("ran past"): ("Timed out", .attention)
-        case lower.contains("review"): ("Ready for review", .review)
-        case lower.hasPrefix("done"), lower.contains("complete"): ("Done", .complete)
-        case lower.hasPrefix("→"): ("Moved to \(event.dropFirst().trimmingCharacters(in: .whitespaces))", .queued)
-        default: switch glyph {
-            case "✔", "✅": ("Done", .complete)
-            case "👀": ("Ready for review", .review)
-            case "🔄": ("Updated", .queued)
-            case "⏸", "⛔", "🛑", "✖", "✘", "⏱": ("Needs attention", .attention)
-            default: ("Update", .inactive)
+        (label, tone) =
+            switch true {
+            case lower.contains("changes"): ("Changes requested", .attention)
+            case lower.hasPrefix("created"): ("Created", .queued)
+            case lower.hasPrefix("picked up"): ("Picked up", .working)
+            case lower.hasPrefix("assigned"):
+                (event.prefix(1).uppercased() + event.dropFirst().replacing("@", with: ""), .queued)
+            case lower.hasPrefix("unblocked"): ("Unblocked", .queued)
+            case lower.contains("triage"): ("Triage", .attention)
+            case lower.contains("blocked"): ("Blocked", .attention)
+            case lower.contains("gave up"): ("Gave up", .attention)
+            case lower.contains("crash"), lower.contains("stopped unexpectedly"): ("Crashed", .attention)
+            case lower.contains("timed out"), lower.contains("ran past"): ("Timed out", .attention)
+            case lower.contains("review"): ("Ready for review", .review)
+            case lower.hasPrefix("done"), lower.contains("complete"): ("Done", .complete)
+            case lower.hasPrefix("→"): ("Moved to \(event.dropFirst().trimmingCharacters(in: .whitespaces))", .queued)
+            default:
+                switch glyph {
+                case "✔", "✅": ("Done", .complete)
+                case "👀": ("Ready for review", .review)
+                case "🔄": ("Updated", .queued)
+                case "⏸", "⛔", "🛑", "✖", "✘", "⏱": ("Needs attention", .attention)
+                default: ("Update", .inactive)
+                }
             }
-        }
         self.title = title
         let detail = ([reason] + lines.map(Optional.some)).compactMap { $0 }
             .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -701,7 +729,9 @@ struct KanbanNotice: Equatable {
     /// Card events Hermes never posts to chat (it notifies terminal ones
     /// only), written as wake-notice text so they parse into the same cards.
     /// Heartbeats and other worker bookkeeping stay out.
-    static func boardEventNotices(for card: KanbanTaskDetail) -> [(key: String, profileID: String?, text: String, date: Date)] {
+    static func boardEventNotices(for card: KanbanTaskDetail) -> [(
+        key: String, profileID: String?, text: String, date: Date
+    )] {
         let runs = Dictionary(card.runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return card.events.compactMap { event in
             guard let date = event.createdAt else { return nil }
@@ -720,8 +750,9 @@ struct KanbanNotice: Equatable {
             var note = event.note.flatMap { $0.components(separatedBy: .newlines).first }.map { "\n\($0)" } ?? ""
             // A pickup by a new bot is the handoff: name both ends.
             if event.kind == "claimed", note.isEmpty, let who,
-               let index = card.runs.firstIndex(where: { $0.id == event.runID }), index > 0,
-               let from = card.runs[index - 1].profile, from != who {
+                let index = card.runs.firstIndex(where: { $0.id == event.runID }), index > 0,
+                let from = card.runs[index - 1].profile, from != who
+            {
                 note = "\n\(from) → \(who)"
             }
             let key = "\(card.id)|\(event.kind)|\(Int(date.timeIntervalSince1970))|\(event.runID ?? "")"
@@ -815,7 +846,8 @@ struct ProfileScopedID: Hashable, Equatable, Sendable {
     let resourceID: String
 
     init(profileID: String?, resourceID: String) {
-        self.profileID = profileID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        self.profileID =
+            profileID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
             : nil
         self.resourceID = resourceID

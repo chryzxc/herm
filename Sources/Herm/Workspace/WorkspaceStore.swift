@@ -34,7 +34,10 @@ struct WorkspaceAgentRun: Identifiable, Codable, Equatable {
     var summary: String
     var errorMessage: String?
 
-    init(id: UUID, role: WorkspaceAgentRole, status: WorkspaceAgentStatus, taskID: UUID?, sessionID: String?, createdAt: Date, updatedAt: Date, summary: String = "", errorMessage: String? = nil) {
+    init(
+        id: UUID, role: WorkspaceAgentRole, status: WorkspaceAgentStatus, taskID: UUID?, sessionID: String?,
+        createdAt: Date, updatedAt: Date, summary: String = "", errorMessage: String? = nil
+    ) {
         self.id = id
         self.role = role
         self.status = status
@@ -46,7 +49,9 @@ struct WorkspaceAgentRun: Identifiable, Codable, Equatable {
         self.errorMessage = errorMessage
     }
 
-    private enum CodingKeys: String, CodingKey { case id, role, status, taskID, sessionID, createdAt, updatedAt, summary, errorMessage }
+    private enum CodingKeys: String, CodingKey {
+        case id, role, status, taskID, sessionID, createdAt, updatedAt, summary, errorMessage
+    }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -74,7 +79,10 @@ struct WorkspaceTask: Identifiable, Codable, Equatable {
     var updatedAt: Date
     var summary: String
 
-    init(id: UUID = UUID(), title: String, status: WorkspaceTaskStatus = .todo, projectPath: String? = nil, sessionID: String? = nil, createdAt: Date = Date(), updatedAt: Date = Date(), summary: String = "") {
+    init(
+        id: UUID = UUID(), title: String, status: WorkspaceTaskStatus = .todo, projectPath: String? = nil,
+        sessionID: String? = nil, createdAt: Date = Date(), updatedAt: Date = Date(), summary: String = ""
+    ) {
         self.id = id
         self.title = title
         self.status = status
@@ -95,9 +103,12 @@ final class WorkspaceStore: ObservableObject {
 
     private let fileURL: URL
     init(fileURL: URL? = nil) {
-        let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        let support = supportRoot
+        let supportRoot =
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support", isDirectory: true)
+        let support =
+            supportRoot
             .appendingPathComponent("HermesWorkspace", isDirectory: true)
         self.fileURL = fileURL ?? support.appendingPathComponent("workspace.json")
         load()
@@ -132,7 +143,9 @@ final class WorkspaceStore: ObservableObject {
         // A global project selection is not an attachment to a newly created
         // Hermes session. Repository context must be assigned explicitly to
         // the session (or to the full set of sessions in its project).
-        let task = WorkspaceTask(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled task" : title, status: .inProgress, projectPath: nil, sessionID: sessionID)
+        let task = WorkspaceTask(
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled task" : title,
+            status: .inProgress, projectPath: nil, sessionID: sessionID)
         tasks.insert(task, at: 0)
         addControlReference(for: task)
         save()
@@ -176,7 +189,8 @@ final class WorkspaceStore: ObservableObject {
     func setWorktreePath(_ path: String?, forSessionID sessionID: String, title: String) {
         if task(forSessionID: sessionID) == nil { ensureTask(title: title, sessionID: sessionID) }
         guard let index = tasks.firstIndex(where: { $0.sessionID == sessionID }),
-              tasks[index].worktreePath != path else { return }
+            tasks[index].worktreePath != path
+        else { return }
         tasks[index].worktreePath = path
         save()
     }
@@ -203,8 +217,9 @@ final class WorkspaceStore: ObservableObject {
     /// into an unrelated session's inspector.
     func projectPath(forSessionID sessionID: String?) -> String? {
         if let sessionID,
-           let sessionPath = task(forSessionID: sessionID)?.projectPath,
-           !sessionPath.isEmpty {
+            let sessionPath = task(forSessionID: sessionID)?.projectPath,
+            !sessionPath.isEmpty
+        {
             return sessionPath
         }
         return nil
@@ -214,7 +229,9 @@ final class WorkspaceStore: ObservableObject {
     /// selection to leak into unrelated conversations. Hermes project paths
     /// are accepted only when they are absolute; names such as "__no_project__"
     /// remain non-repository context.
-    func resolvedProjectPath(forSessionID sessionID: String?, hermesProjectPath: String?, createdSessionProjectPath: String? = nil) -> String? {
+    func resolvedProjectPath(
+        forSessionID sessionID: String?, hermesProjectPath: String?, createdSessionProjectPath: String? = nil
+    ) -> String? {
         if let sessionPath = projectPath(forSessionID: sessionID) {
             return sessionPath
         }
@@ -249,12 +266,14 @@ final class WorkspaceStore: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
-              let state = try? JSONDecoder.workspace.decode(WorkspaceState.self, from: data) else { return }
+            let state = try? JSONDecoder.workspace.decode(WorkspaceState.self, from: data)
+        else { return }
         tasks = state.tasks
         agentRuns = state.agentRuns
         projectPath = state.projectPath
 
-        let migratedReferences = state.controlReferences.isEmpty
+        let migratedReferences =
+            state.controlReferences.isEmpty
             ? tasks.compactMap { task -> ControlReference? in
                 guard let sessionID = task.sessionID else { return nil }
                 return ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID)
@@ -270,7 +289,8 @@ final class WorkspaceStore: ObservableObject {
 
     private func addControlReference(for task: WorkspaceTask) {
         guard let sessionID = task.sessionID else { return }
-        let reference = ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID, projectID: task.projectPath)
+        let reference = ControlReference(
+            source: .hermesSession, sourceID: sessionID, sessionID: sessionID, projectID: task.projectPath)
         if !controlReferences.contains(where: { $0.id == reference.id }) {
             controlReferences.append(reference)
         }
@@ -302,10 +322,12 @@ final class WorkspaceStore: ObservableObject {
     // queue; a synchronous atomic write here put a disk hitch on every task
     // action. The serial queue preserves mutation ordering so an older
     // snapshot can never overwrite a newer one.
-    private nonisolated static let saveQueue = DispatchQueue(label: "io.github.chryzxc.Herm.workspace-store-save", qos: .utility)
+    private nonisolated static let saveQueue = DispatchQueue(
+        label: "io.github.chryzxc.Herm.workspace-store-save", qos: .utility)
 
     private func save() {
-        let state = WorkspaceState(tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences)
+        let state = WorkspaceState(
+            tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences)
         Self.saveQueue.async { [fileURL] in
             Self.write(state, to: fileURL)
         }
@@ -314,7 +336,8 @@ final class WorkspaceStore: ObservableObject {
     private nonisolated static func write(_ state: WorkspaceState, to fileURL: URL) {
         guard let data = try? JSONEncoder.workspace.encode(state) else { return }
         do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch {
@@ -334,7 +357,10 @@ private struct WorkspaceState: Codable {
     var projectPath: String?
     var controlReferences: [ControlReference]
 
-    init(tasks: [WorkspaceTask], agentRuns: [WorkspaceAgentRun] = [], projectPath: String?, controlReferences: [ControlReference] = []) {
+    init(
+        tasks: [WorkspaceTask], agentRuns: [WorkspaceAgentRun] = [], projectPath: String?,
+        controlReferences: [ControlReference] = []
+    ) {
         self.schemaVersion = Self.currentSchemaVersion
         self.tasks = tasks
         self.agentRuns = agentRuns
@@ -356,8 +382,8 @@ private struct WorkspaceState: Codable {
     }
 }
 
-private extension JSONEncoder {
-    static var workspace: JSONEncoder {
+extension JSONEncoder {
+    fileprivate static var workspace: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -365,8 +391,8 @@ private extension JSONEncoder {
     }
 }
 
-private extension JSONDecoder {
-    static var workspace: JSONDecoder {
+extension JSONDecoder {
+    fileprivate static var workspace: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder

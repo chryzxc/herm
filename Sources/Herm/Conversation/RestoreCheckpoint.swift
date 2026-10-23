@@ -13,7 +13,10 @@ struct RestoreCheckpoint: Identifiable, Equatable, Sendable {
 
     var id: String { "\(sessionID):\(hash)" }
 
-    init?(sessionID: String, projectID: String? = nil, selectionID: String? = nil, hash: String, timestamp: String = "", message: String = "") {
+    init?(
+        sessionID: String, projectID: String? = nil, selectionID: String? = nil, hash: String, timestamp: String = "",
+        message: String = ""
+    ) {
         let sessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         let hash = hash.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sessionID.isEmpty, !hash.isEmpty, hash.count <= 128 else { return nil }
@@ -43,8 +46,9 @@ enum RestoreCheckpointEligibility {
         selectionID: String? = nil
     ) -> Bool {
         guard checkpoint.sessionID == sessionID.trimmingCharacters(in: .whitespacesAndNewlines),
-              compatible(checkpoint.projectID, with: projectID),
-              compatible(checkpoint.selectionID, with: selectionID) else { return false }
+            compatible(checkpoint.projectID, with: projectID),
+            compatible(checkpoint.selectionID, with: selectionID)
+        else { return false }
         return true
     }
 
@@ -62,7 +66,9 @@ enum RestoreCheckpointEligibility {
     }
 
     private static func compatible(_ checkpointScope: String?, with requestedScope: String?) -> Bool {
-        guard let requestedScope = requestedScope?.trimmingCharacters(in: .whitespacesAndNewlines), !requestedScope.isEmpty else { return true }
+        guard let requestedScope = requestedScope?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !requestedScope.isEmpty
+        else { return true }
         guard let checkpointScope else { return true }
         return checkpointScope == requestedScope
     }

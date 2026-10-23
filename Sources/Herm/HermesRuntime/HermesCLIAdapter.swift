@@ -68,7 +68,9 @@ final class HermesCLIAdapter {
     /// Uses Hermes' typed Kanban dashboard projection instead of `shell.exec`.
     /// That endpoint returns card summaries and is not subject to the control
     /// RPC's 4 KB stdout cap (full CLI rows include task bodies).
-    func kanbanList(boardSlug: String? = nil, filter: KanbanListFilter = .init(), background: Bool = false) async throws -> HermesCLIResult {
+    func kanbanList(boardSlug: String? = nil, filter: KanbanListFilter = .init(), background: Bool = false) async throws
+        -> HermesCLIResult
+    {
         if let boardSlug, !boardSlug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return try await kanbanList(forBoardSlugs: [boardSlug], filter: filter, background: background)
         }
@@ -77,21 +79,27 @@ final class HermesCLIAdapter {
 
     /// The global Control Kanban projection. This intentionally enumerates all
     /// active boards; callers that have a board selection must use `kanbanList`.
-    func kanbanListAggregate(filter: KanbanListFilter = .init(), background: Bool = false) async throws -> HermesCLIResult {
+    func kanbanListAggregate(filter: KanbanListFilter = .init(), background: Bool = false) async throws
+        -> HermesCLIResult
+    {
         let inventory = try await rpc.fetchHTTP("/api/plugins/kanban/boards")
         let boards = inventory["boards"] as? [[String: Any]] ?? []
         let boardSlugs: [String] = boards.compactMap { board in
-            guard (filter.includeArchived || !(board["archived"] as? Bool ?? false)),
-                  let slug = board["slug"] as? String,
-                  !slug.isEmpty else { return nil }
+            guard filter.includeArchived || !(board["archived"] as? Bool ?? false),
+                let slug = board["slug"] as? String,
+                !slug.isEmpty
+            else { return nil }
             return slug
         }
 
         return try await kanbanList(forBoardSlugs: boardSlugs, filter: filter, background: background)
     }
 
-    private func kanbanList(forBoardSlugs boardSlugs: [String], filter: KanbanListFilter, background: Bool) async throws -> HermesCLIResult {
-        let fetchedBoards = try await withThrowingTaskGroup(of: KanbanBoardRows.self, returning: [KanbanBoardRows].self) { group in
+    private func kanbanList(forBoardSlugs boardSlugs: [String], filter: KanbanListFilter, background: Bool) async throws
+        -> HermesCLIResult
+    {
+        let fetchedBoards = try await withThrowingTaskGroup(of: KanbanBoardRows.self, returning: [KanbanBoardRows].self)
+        { group in
             for (index, boardSlug) in boardSlugs.enumerated() {
                 group.addTask {
                     try await self.fetchKanbanBoardRows(index: index, boardSlug: boardSlug, background: background)
@@ -114,7 +122,9 @@ final class HermesCLIAdapter {
     }
 
     private func fetchKanbanBoardRows(index: Int, boardSlug: String, background: Bool) async throws -> KanbanBoardRows {
-        if background, let read = boardReads[boardSlug], Date().timeIntervalSince(read.startedAt) < backgroundBoardReadReuse {
+        if background, let read = boardReads[boardSlug],
+            Date().timeIntervalSince(read.startedAt) < backgroundBoardReadReuse
+        {
             return KanbanBoardRows(index: index, rows: try await read.task.value.rows)
         }
         // Archived cards are included once here and dropped by `matches`, so
@@ -156,7 +166,9 @@ final class HermesCLIAdapter {
         if !filter.includeArchived, row["status"] as? String == "archived" { return false }
         if let status = filter.status, row["status"] as? String != status { return false }
         if let assignee = filter.assignee, !assignee.isEmpty, row["assignee"] as? String != assignee { return false }
-        if let sessionID = filter.sessionID, !sessionID.isEmpty, row["session_id"] as? String != sessionID { return false }
+        if let sessionID = filter.sessionID, !sessionID.isEmpty, row["session_id"] as? String != sessionID {
+            return false
+        }
         // Do not approximate Hermes' identity-aware `--mine` filter with
         // "has an assignee". The dashboard projection must explicitly mark
         // ownership or the filter would silently show someone else's work.
@@ -164,18 +176,24 @@ final class HermesCLIAdapter {
     }
 
     nonisolated private static func sorted(_ rows: [[String: Any]], by key: String) -> [[String: Any]] {
-        guard key == "updated" || key == "created-desc" || key == "priority-desc" || key == "title" || key == "status" || key == "assignee" else { return rows }
+        guard
+            key == "updated" || key == "created-desc" || key == "priority-desc" || key == "title" || key == "status"
+                || key == "assignee"
+        else { return rows }
         let formatter = ISO8601DateFormatter()
         // Parse each timestamp once, rather than for every sort comparison.
         let indexed = rows.enumerated().map {
-            (index: $0.offset, row: $0.element, date: key == "updated"
-                ? updatedDate($0.element, formatter: formatter)
-                : key == "created-desc" ? createdDate($0.element, formatter: formatter) : nil)
+            (
+                index: $0.offset, row: $0.element,
+                date: key == "updated"
+                    ? updatedDate($0.element, formatter: formatter)
+                    : key == "created-desc" ? createdDate($0.element, formatter: formatter) : nil
+            )
         }
         return indexed.sorted { lhs, rhs in
             if key == "updated" || key == "created-desc" {
                 switch (lhs.date, rhs.date) {
-                case let (left?, right?) where left != right: return left > right
+                case (let left?, let right?) where left != right: return left > right
                 case (_?, nil): return true
                 case (nil, _?): return false
                 default: return lhs.index < rhs.index
@@ -185,19 +203,22 @@ final class HermesCLIAdapter {
                 let leftPriority = priority(lhs.row)
                 let rightPriority = priority(rhs.row)
                 switch (leftPriority, rightPriority) {
-                case let (left?, right?) where left != right: return left > right
+                case (let left?, let right?) where left != right: return left > right
                 case (_?, nil): return true
                 case (nil, _?): return false
                 default: return lhs.index < rhs.index
                 }
             }
-            let comparison = ((lhs.row[key] as? String) ?? "").localizedCaseInsensitiveCompare((rhs.row[key] as? String) ?? "")
+            let comparison = ((lhs.row[key] as? String) ?? "").localizedCaseInsensitiveCompare(
+                (rhs.row[key] as? String) ?? "")
             return comparison == .orderedSame ? lhs.index < rhs.index : comparison == .orderedAscending
         }.map(\.row)
     }
 
     nonisolated private static func updatedDate(_ row: [String: Any], formatter: ISO8601DateFormatter) -> Date? {
-        for key in ["updated_at", "updatedAt", "updated", "last_updated_at", "latest_event_at", "completed_at", "started_at"] {
+        for key in [
+            "updated_at", "updatedAt", "updated", "last_updated_at", "latest_event_at", "completed_at", "started_at",
+        ] {
             if let number = row[key] as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
             if let value = row[key] as? Double { return Date(timeIntervalSince1970: value) }
             if let value = row[key] as? String {
@@ -226,16 +247,26 @@ final class HermesCLIAdapter {
         if let value = row["priority"] as? String { return Int(value) }
         return nil
     }
-    func kanbanAssignees(boardSlug: String? = nil) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "assignees") + ["--json"]) }
-    func kanbanShow(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "show") + ["--json", taskID]) }
-    func kanbanRuns(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "runs") + ["--json", taskID]) }
-    func kanbanStats(boardSlug: String? = nil) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "stats") + ["--json"]) }
+    func kanbanAssignees(boardSlug: String? = nil) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "assignees") + ["--json"])
+    }
+    func kanbanShow(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "show") + ["--json", taskID])
+    }
+    func kanbanRuns(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "runs") + ["--json", taskID])
+    }
+    func kanbanStats(boardSlug: String? = nil) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "stats") + ["--json"])
+    }
     func kanbanBoards(includeArchived: Bool = false) async throws -> HermesCLIResult {
         var words = ["hermes", "kanban", "boards", "list", "--json"]
         if includeArchived { words.append("--all") }
         return try await run(words)
     }
-    func kanbanDiagnostics(boardSlug: String? = nil, severity: String? = nil, taskID: String? = nil) async throws -> HermesCLIResult {
+    func kanbanDiagnostics(boardSlug: String? = nil, severity: String? = nil, taskID: String? = nil) async throws
+        -> HermesCLIResult
+    {
         var words = kanbanWords(boardSlug: boardSlug, action: "diagnostics") + ["--json"]
         if let severity, !severity.isEmpty { words += ["--severity", severity] }
         if let taskID, !taskID.isEmpty { words += ["--task", taskID] }
@@ -259,18 +290,37 @@ final class HermesCLIAdapter {
     }
     func kanbanAttributeSession(taskID: String, sessionID: String) async throws -> HermesCLIResult {
         defer { boardReads.removeAll() }
-        return try await run(["bash", "\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh", taskID, sessionID])
+        return try await run([
+            "bash", "\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh", taskID, sessionID,
+        ])
     }
     func configGetCommandAllowlist() async throws -> HermesCLIResult {
         try await run(["hermes", "config", "get", "command_allowlist"])
     }
-    func kanbanComplete(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "complete") + [taskID, "--summary", "Completed from Hermes Control"]) }
-    func kanbanBlock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "block") + [taskID, "Blocked from Hermes Control"]) }
-    func kanbanUnblock(boardSlug: String? = nil, taskID: String, reason: String = "Unblocked from Hermes Control") async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "unblock") + [taskID, "--reason", reason]) }
-    func kanbanArchive(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "archive") + [taskID]) }
-    func kanbanComment(boardSlug: String? = nil, taskID: String, text: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "comment") + [taskID, "--", text]) }
-    func kanbanSchedule(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "schedule") + [taskID, "--", reason]) }
-    func kanbanAssign(boardSlug: String? = nil, taskID: String, profile: String, reassign: Bool, reclaim: Bool) async throws -> HermesCLIResult {
+    func kanbanComplete(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult {
+        try await run(
+            kanbanWords(boardSlug: boardSlug, action: "complete") + [
+                taskID, "--summary", "Completed from Hermes Control",
+            ])
+    }
+    func kanbanBlock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "block") + [taskID, "Blocked from Hermes Control"])
+    }
+    func kanbanUnblock(boardSlug: String? = nil, taskID: String, reason: String = "Unblocked from Hermes Control")
+        async throws -> HermesCLIResult
+    { try await run(kanbanWords(boardSlug: boardSlug, action: "unblock") + [taskID, "--reason", reason]) }
+    func kanbanArchive(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "archive") + [taskID])
+    }
+    func kanbanComment(boardSlug: String? = nil, taskID: String, text: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "comment") + [taskID, "--", text])
+    }
+    func kanbanSchedule(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "schedule") + [taskID, "--", reason])
+    }
+    func kanbanAssign(boardSlug: String? = nil, taskID: String, profile: String, reassign: Bool, reclaim: Bool)
+        async throws -> HermesCLIResult
+    {
         var words = kanbanWords(boardSlug: boardSlug, action: reassign ? "reassign" : "assign")
         if reassign && reclaim { words.append("--reclaim") }
         words += [taskID, profile]
@@ -296,8 +346,12 @@ final class HermesCLIAdapter {
         _ = try await rpc.sendHTTP("PATCH", path: path, body: ["status": status])
         return HermesCLIResult(stdout: "", stderr: "", succeeded: true)
     }
-    func kanbanPromote(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "promote") + [taskID, "--", reason]) }
-    func kanbanReclaim(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "reclaim") + ["--reason=\(reason)", taskID]) }
+    func kanbanPromote(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "promote") + [taskID, "--", reason])
+    }
+    func kanbanReclaim(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "reclaim") + ["--reason=\(reason)", taskID])
+    }
 
     /// Removes one entry from Hermes' credential pool. Hermes performs any
     /// source-specific cleanup (such as its singleton device-code login).
@@ -324,9 +378,13 @@ final class HermesCLIAdapter {
 
     func cronRun(jobID: String) async throws -> HermesCLIResult { try await run(["hermes", "cron", "run", jobID]) }
     func cronRuns(limit: Int = 20, jobID: String? = nil, profileID: String? = nil) async throws -> HermesCLIResult {
-        try await run(["hermes"] + (profileID.map { ["--profile", $0] } ?? []) + ["cron", "runs", "--limit", String(limit)] + (jobID.map { [$0] } ?? []))
+        try await run(
+            ["hermes"] + (profileID.map { ["--profile", $0] } ?? []) + ["cron", "runs", "--limit", String(limit)]
+                + (jobID.map { [$0] } ?? []))
     }
-    func cronEdit(jobID: String, changes: [CronEditField: String], profileID: String? = nil) async throws -> HermesCLIResult {
+    func cronEdit(jobID: String, changes: [CronEditField: String], profileID: String? = nil) async throws
+        -> HermesCLIResult
+    {
         var words = ["hermes"] + (profileID.map { ["--profile", $0] } ?? []) + ["cron", "edit"]
         for field in CronEditField.allCases {
             if let value = changes[field] { words.append("\(field.flag)=\(value)") }
@@ -344,7 +402,9 @@ final class HermesCLIAdapter {
     func sessionStats() async throws -> HermesCLIResult { try await run(["hermes", "sessions", "stats"]) }
     func memoryStatus() async throws -> HermesCLIResult { try await run(["hermes", "memory", "status"]) }
     func skinList() async throws -> HermesCLIResult { try await run(["hermes", "skin", "list"]) }
-    func installedPetsList() async throws -> HermesCLIResult { try await run(["hermes", "pets", "list", "--installed"]) }
+    func installedPetsList() async throws -> HermesCLIResult {
+        try await run(["hermes", "pets", "list", "--installed"])
+    }
     func emergencyStop(reason: String? = nil) async throws -> HermesCLIResult {
         var words = ["hermes", "pause"]
         if let reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -354,7 +414,9 @@ final class HermesCLIAdapter {
     }
     func resumeEmergencyStop() async throws -> HermesCLIResult { try await run(["hermes", "resume"]) }
 
-    private static let kanbanReadActions: Set<String> = ["assignees", "show", "runs", "stats", "diagnostics", "attachments", "boards", "list"]
+    private static let kanbanReadActions: Set<String> = [
+        "assignees", "show", "runs", "stats", "diagnostics", "attachments", "boards", "list",
+    ]
 
     static func isKanbanMutation(_ words: [String]) -> Bool {
         guard words.starts(with: ["hermes", "kanban"]) else { return false }

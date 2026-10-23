@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -28,8 +29,8 @@ struct AgentProjectionTests {
                     ["goal": "Build the responsive frontend", "agent_role": "Frontend"],
                     ["goal": "Implement the API and persistence layer", "agent_role": "Backend"],
                     ["goal": "Review authentication and authorization", "agent_role": "Security Reviewer"],
-                    ["goal": "Run the quality assurance test plan", "agent_role": "QA"]
-                ]
+                    ["goal": "Run the quality assurance test plan", "agent_role": "QA"],
+                ],
             ],
             startedAt: startedAt
         )
@@ -60,65 +61,72 @@ struct AgentProjectionTests {
             status: "running"
         )
 
-        #expect(DockModel.eventBelongsToSession(
-            type: "tool.result",
-            envelopeSessionID: "other-session",
-            eventSessionID: "other-session",
-            payload: ["subagent_id": currentAgent.id],
-            currentSessionID: "current-session",
-            agents: [currentAgent]
-        ) == false)
-        #expect(DockModel.eventBelongsToSession(
-            type: "message.delta",
-            envelopeSessionID: nil,
-            eventSessionID: nil,
-            payload: ["delta": "unattributed"],
-            currentSessionID: "current-session",
-            agents: [currentAgent]
-        ) == false)
-        #expect(DockModel.eventBelongsToSession(
-            type: "subagent.tool",
-            envelopeSessionID: "other-child",
-            eventSessionID: "other-child",
-            payload: [
-                "child_session_id": "child-current",
-                "parent_session_id": "current-session"
-            ],
-            currentSessionID: "current-session",
-            agents: [currentAgent]
-        ) == false)
-        #expect(DockModel.eventBelongsToSession(
-            type: "subagent.tool",
-            envelopeSessionID: "child-current",
-            eventSessionID: "child-current",
-            payload: ["child_session_id": "child-current"],
-            currentSessionID: "current-session",
-            agents: [currentAgent]
-        ))
-        #expect(DockModel.eventBelongsToSession(
-            type: "message.complete",
-            envelopeSessionID: "current-session",
-            eventSessionID: "current-session",
-            payload: [:],
-            currentSessionID: "current-session",
-            agents: [currentAgent]
-        ))
-        #expect(DockModel.eventBelongsToSession(
-            type: "message.complete",
-            envelopeSessionID: "current-session",
-            eventSessionID: "current-session",
-            payload: ["session_id": "other-session"],
-            currentSessionID: "current-session",
-            agents: [currentAgent]
-        ) == false)
-        #expect(DockModel.eventBelongsToSession(
-            type: "subagent.tool",
-            envelopeSessionID: "child-current",
-            eventSessionID: "child-current",
-            payload: ["child_session_id": "other-child"],
-            currentSessionID: "current-session",
-            agents: [currentAgent]
-        ) == false)
+        #expect(
+            DockModel.eventBelongsToSession(
+                type: "tool.result",
+                envelopeSessionID: "other-session",
+                eventSessionID: "other-session",
+                payload: ["subagent_id": currentAgent.id],
+                currentSessionID: "current-session",
+                agents: [currentAgent]
+            ) == false)
+        #expect(
+            DockModel.eventBelongsToSession(
+                type: "message.delta",
+                envelopeSessionID: nil,
+                eventSessionID: nil,
+                payload: ["delta": "unattributed"],
+                currentSessionID: "current-session",
+                agents: [currentAgent]
+            ) == false)
+        #expect(
+            DockModel.eventBelongsToSession(
+                type: "subagent.tool",
+                envelopeSessionID: "other-child",
+                eventSessionID: "other-child",
+                payload: [
+                    "child_session_id": "child-current",
+                    "parent_session_id": "current-session",
+                ],
+                currentSessionID: "current-session",
+                agents: [currentAgent]
+            ) == false)
+        #expect(
+            DockModel.eventBelongsToSession(
+                type: "subagent.tool",
+                envelopeSessionID: "child-current",
+                eventSessionID: "child-current",
+                payload: ["child_session_id": "child-current"],
+                currentSessionID: "current-session",
+                agents: [currentAgent]
+            ))
+        #expect(
+            DockModel.eventBelongsToSession(
+                type: "message.complete",
+                envelopeSessionID: "current-session",
+                eventSessionID: "current-session",
+                payload: [:],
+                currentSessionID: "current-session",
+                agents: [currentAgent]
+            ))
+        #expect(
+            DockModel.eventBelongsToSession(
+                type: "message.complete",
+                envelopeSessionID: "current-session",
+                eventSessionID: "current-session",
+                payload: ["session_id": "other-session"],
+                currentSessionID: "current-session",
+                agents: [currentAgent]
+            ) == false)
+        #expect(
+            DockModel.eventBelongsToSession(
+                type: "subagent.tool",
+                envelopeSessionID: "child-current",
+                eventSessionID: "child-current",
+                payload: ["child_session_id": "other-child"],
+                currentSessionID: "current-session",
+                agents: [currentAgent]
+            ) == false)
     }
 
     @Test func switchingSessionsRestoresEachSessionsAgentStateWithoutLeakage() {
@@ -213,12 +221,16 @@ struct AgentProjectionTests {
     }
 
     @Test func backgroundAcknowledgementDoesNotMeanAgentCompleted() {
-        #expect(DockModel.isBackgroundDelegationDispatch("""
-        {"status":"dispatched","mode":"background","count":2}
-        """))
-        #expect(!DockModel.isBackgroundDelegationDispatch("""
-        {"results":[{"status":"success","summary":"done"}]}
-        """))
+        #expect(
+            DockModel.isBackgroundDelegationDispatch(
+                """
+                {"status":"dispatched","mode":"background","count":2}
+                """))
+        #expect(
+            !DockModel.isBackgroundDelegationDispatch(
+                """
+                {"results":[{"status":"success","summary":"done"}]}
+                """))
         #expect(!DockModel.isBackgroundDelegationDispatch("plain text result"))
     }
 
@@ -229,41 +241,58 @@ struct AgentProjectionTests {
     }
 
     @Test func activeSessionRetainsKanbanReferenceAfterTerminalToolActivity() {
-        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
+        let model = DockModel(
+            initialSessionID: "session-a",
+            botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "kanban-\(UUID().uuidString).json"))
 
-        model.receiveGatewayEvent("tool.start", params: [
-            "session_id": "session-a",
-            "payload": [
-                "name": "terminal",
-                "input": "hermes kanban show t_33604ca9 --json"
-            ]
-        ])
-        model.receiveGatewayEvent("tool.start", params: [
-            "session_id": "session-b",
-            "payload": [
-                "name": "terminal",
-                "input": "hermes kanban show t_unowned --json"
-            ]
-        ])
+        model.receiveGatewayEvent(
+            "tool.start",
+            params: [
+                "session_id": "session-a",
+                "payload": [
+                    "name": "terminal",
+                    "input": "hermes kanban show t_33604ca9 --json",
+                ],
+            ])
+        model.receiveGatewayEvent(
+            "tool.start",
+            params: [
+                "session_id": "session-b",
+                "payload": [
+                    "name": "terminal",
+                    "input": "hermes kanban show t_unowned --json",
+                ],
+            ])
 
         #expect(model.observedKanbanTaskIDs == ["t_33604ca9"])
         #expect(model.observedKanbanTaskRevision == 1)
     }
 
     @Test func kanbanListingDoesNotClaimEveryListedCard() {
-        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
-        model.receiveGatewayEvent("tool.complete", params: [
-            "session_id": "session-a",
-            "payload": ["name": "terminal", "input": "hermes kanban list", "result": "t_aaaa1111 blocked\nt_bbbb2222 ready"]
-        ])
+        let model = DockModel(
+            initialSessionID: "session-a",
+            botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "kanban-\(UUID().uuidString).json"))
+        model.receiveGatewayEvent(
+            "tool.complete",
+            params: [
+                "session_id": "session-a",
+                "payload": [
+                    "name": "terminal", "input": "hermes kanban list", "result": "t_aaaa1111 blocked\nt_bbbb2222 ready",
+                ],
+            ])
         #expect(model.observedKanbanTaskIDs.isEmpty)
     }
 
     @Test func repeatedKanbanReferenceRequestsFreshStatus() {
-        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
+        let model = DockModel(
+            initialSessionID: "session-a",
+            botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "kanban-\(UUID().uuidString).json"))
         let params: [String: Any] = [
             "session_id": "session-a",
-            "payload": ["name": "terminal", "input": "hermes kanban show t_33604ca9 --json"]
+            "payload": ["name": "terminal", "input": "hermes kanban show t_33604ca9 --json"],
         ]
         model.receiveGatewayEvent("tool.start", params: params)
         let revision = model.observedKanbanTaskRevision
@@ -273,13 +302,18 @@ struct AgentProjectionTests {
     }
 
     @Test func restoredBoundedToolHistoryCanRecoverAnObservedKanbanCard() {
-        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
-        model.recentEvents = [AgentEvent(
-            id: UUID(),
-            type: "tool.complete",
-            detail: #"{"payload":{"input":"hermes kanban show t_33604ca9 --json"}}"#,
-            timestamp: .now
-        )]
+        let model = DockModel(
+            initialSessionID: "session-a",
+            botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "kanban-\(UUID().uuidString).json"))
+        model.recentEvents = [
+            AgentEvent(
+                id: UUID(),
+                type: "tool.complete",
+                detail: #"{"payload":{"input":"hermes kanban show t_33604ca9 --json"}}"#,
+                timestamp: .now
+            )
+        ]
 
         #expect(model.observedKanbanTaskIDs == ["t_33604ca9"])
     }
@@ -291,20 +325,23 @@ struct AgentProjectionTests {
     }
 
     @Test func completionStatusUpdatesAndLifecycleVariantsAreTerminal() {
-        #expect(DockModel.agentStatus(
-            current: "running",
-            eventType: "subagent.status",
-            reportedStatus: "completed"
-        ) == "complete")
+        #expect(
+            DockModel.agentStatus(
+                current: "running",
+                eventType: "subagent.status",
+                reportedStatus: "completed"
+            ) == "complete")
         #expect(DockModel.agentStatus(current: "running", eventType: "subagent.completed") == "complete")
-        #expect(DockModel.agentStatus(
-            current: "complete",
-            eventType: "subagent.status",
-            reportedStatus: "running"
-        ) == "complete")
-        #expect(!AgentActivityPresentation.isActiveStatus(
-            DockModel.canonicalAgentStatus("succeeded") ?? "running"
-        ))
+        #expect(
+            DockModel.agentStatus(
+                current: "complete",
+                eventType: "subagent.status",
+                reportedStatus: "running"
+            ) == "complete")
+        #expect(
+            !AgentActivityPresentation.isActiveStatus(
+                DockModel.canonicalAgentStatus("succeeded") ?? "running"
+            ))
     }
 
     @Test func authoritativeLiveRefreshDropsFinishedNativeAgentsButKeepsPendingPlaceholders() {
@@ -345,61 +382,70 @@ struct AgentProjectionTests {
             status: "running"
         )
 
-        #expect(DockModel.agentID(explicitAgentID: nil, eventSessionID: "child-session-1", agents: [agent]) == "agent-1")
+        #expect(
+            DockModel.agentID(explicitAgentID: nil, eventSessionID: "child-session-1", agents: [agent]) == "agent-1")
         #expect(DockModel.agentID(explicitAgentID: "agent-2", eventSessionID: nil, agents: [agent]) == "agent-2")
-        #expect(DockModel.agentID(
-            explicitAgentID: nil,
-            eventSessionID: "parent-session",
-            childSessionID: "child-session-1",
-            agents: [agent]
-        ) == "agent-1")
+        #expect(
+            DockModel.agentID(
+                explicitAgentID: nil,
+                eventSessionID: "parent-session",
+                childSessionID: "child-session-1",
+                agents: [agent]
+            ) == "agent-1")
     }
 
     @Test func legacySubagentEventsResolveByGoalOrBatchIndex() {
         let agents = [
             HermesSubagent(id: "delegate-call:0", goal: "Inspect the API", status: "running"),
-            HermesSubagent(id: "delegate-call:1", goal: "Implement the UI", status: "running")
+            HermesSubagent(id: "delegate-call:1", goal: "Implement the UI", status: "running"),
         ]
 
-        #expect(DockModel.agentID(
-            explicitAgentID: nil,
-            eventSessionID: "parent-session",
-            goal: "Implement the UI",
-            agents: agents
-        ) == "delegate-call:1")
-        #expect(DockModel.agentID(
-            explicitAgentID: nil,
-            eventSessionID: "parent-session",
-            taskIndex: 0,
-            agents: agents
-        ) == "delegate-call:0")
+        #expect(
+            DockModel.agentID(
+                explicitAgentID: nil,
+                eventSessionID: "parent-session",
+                goal: "Implement the UI",
+                agents: agents
+            ) == "delegate-call:1")
+        #expect(
+            DockModel.agentID(
+                explicitAgentID: nil,
+                eventSessionID: "parent-session",
+                taskIndex: 0,
+                agents: agents
+            ) == "delegate-call:0")
     }
 
     @Test func stableSessionIdentityPrefersDurableGatewayKeys() {
-        #expect(DockModel.stableSessionID(from: [
-            "session_id": "live-1234",
-            "stored_session_id": "stored-2026"
-        ]) == "stored-2026")
-        #expect(DockModel.stableSessionID(from: [
-            "session_id": "live-5678",
-            "session_key": "stored-resumed"
-        ]) == "stored-resumed")
+        #expect(
+            DockModel.stableSessionID(from: [
+                "session_id": "live-1234",
+                "stored_session_id": "stored-2026",
+            ]) == "stored-2026")
+        #expect(
+            DockModel.stableSessionID(from: [
+                "session_id": "live-5678",
+                "session_key": "stored-resumed",
+            ]) == "stored-resumed")
         #expect(DockModel.sessionAttributionID(runtimeID: "live-5678", storageID: "stored-resumed") == "stored-resumed")
         #expect(DockModel.sessionAttributionID(runtimeID: "live-5678", storageID: nil) == "live-5678")
-        #expect(DockModel.kanbanAttributionAfterResume(
-            requestedSessionID: "requested-stale-id",
-            resolvedSessionID: "resolved-live-id"
-        ) == "resolved-live-id")
-        #expect(DockModel.kanbanAttributionID(
-            requestedSessionID: "durable-selected-session",
-            runtimeID: "gateway-runtime-alias",
-            storageID: "gateway-storage-alias"
-        ) == "durable-selected-session")
-        #expect(DockModel.kanbanAttributionID(
-            requestedSessionID: nil,
-            runtimeID: "gateway-runtime-alias",
-            storageID: "gateway-storage-alias"
-        ) == "gateway-storage-alias")
+        #expect(
+            DockModel.kanbanAttributionAfterResume(
+                requestedSessionID: "requested-stale-id",
+                resolvedSessionID: "resolved-live-id"
+            ) == "resolved-live-id")
+        #expect(
+            DockModel.kanbanAttributionID(
+                requestedSessionID: "durable-selected-session",
+                runtimeID: "gateway-runtime-alias",
+                storageID: "gateway-storage-alias"
+            ) == "durable-selected-session")
+        #expect(
+            DockModel.kanbanAttributionID(
+                requestedSessionID: nil,
+                runtimeID: "gateway-runtime-alias",
+                storageID: "gateway-storage-alias"
+            ) == "gateway-storage-alias")
     }
 
     @Test func realHermesSubagentEnvelopeSequenceProjectsEveryTaskToOneAgent() {
@@ -411,13 +457,25 @@ struct AgentProjectionTests {
         )
         let base: [String: Any] = [
             "session_id": "parent-live-session",
-            "timestamp": 100.0
+            "timestamp": 100.0,
         ]
         let payloads: [[String: Any]] = [
-            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "text": agent.goal],
-            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "tool_name": "read_file", "tool_preview": "Sources/App.swift"],
-            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "tool_name": "terminal", "tool_preview": "swift test"],
-            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "status": "completed", "summary": "Implemented and tested"]
+            [
+                "subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0,
+                "text": agent.goal,
+            ],
+            [
+                "subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0,
+                "tool_name": "read_file", "tool_preview": "Sources/App.swift",
+            ],
+            [
+                "subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0,
+                "tool_name": "terminal", "tool_preview": "swift test",
+            ],
+            [
+                "subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0,
+                "status": "completed", "summary": "Implemented and tested",
+            ],
         ]
         let types = ["subagent.start", "subagent.tool", "subagent.tool", "subagent.complete"]
 
@@ -456,7 +514,7 @@ struct AgentProjectionTests {
             row: [
                 "subagent_id": "agent-1",
                 "last_tool": "read_file",
-                "tool_count": 3
+                "tool_count": 3,
             ],
             agent: current,
             previous: previous
@@ -469,25 +527,35 @@ struct AgentProjectionTests {
     }
 
     @Test func delegationStatusRowsRequireCurrentSessionOwnership() {
-        #expect(DockModel.delegationStatusRow([
-            "subagent_id": "current-agent",
-            "owner_agent_session_id": "session-current"
-        ], belongsTo: "session-current"))
-        #expect(DockModel.delegationStatusRow([
-            "subagent_id": "current-agent",
-            "parent_session_id": "session-current"
-        ], belongsTo: "session-current"))
-        #expect(!DockModel.delegationStatusRow([
-            "subagent_id": "other-agent",
-            "parent_session_id": "session-other"
-        ], belongsTo: "session-current"))
-        #expect(!DockModel.delegationStatusRow([
-            "subagent_id": "unscoped-agent"
-        ], belongsTo: "session-current"))
-        #expect(!DockModel.delegationStatusRow([
-            "subagent_id": "session-current",
-            "parent_id": "session-current"
-        ], belongsTo: "session-current"))
+        #expect(
+            DockModel.delegationStatusRow(
+                [
+                    "subagent_id": "current-agent",
+                    "owner_agent_session_id": "session-current",
+                ], belongsTo: "session-current"))
+        #expect(
+            DockModel.delegationStatusRow(
+                [
+                    "subagent_id": "current-agent",
+                    "parent_session_id": "session-current",
+                ], belongsTo: "session-current"))
+        #expect(
+            !DockModel.delegationStatusRow(
+                [
+                    "subagent_id": "other-agent",
+                    "parent_session_id": "session-other",
+                ], belongsTo: "session-current"))
+        #expect(
+            !DockModel.delegationStatusRow(
+                [
+                    "subagent_id": "unscoped-agent"
+                ], belongsTo: "session-current"))
+        #expect(
+            !DockModel.delegationStatusRow(
+                [
+                    "subagent_id": "session-current",
+                    "parent_id": "session-current",
+                ], belongsTo: "session-current"))
     }
 
     @Test func unchangedDelegationStatusDoesNotDuplicateAgentActivity() {
@@ -503,7 +571,7 @@ struct AgentProjectionTests {
             row: [
                 "subagent_id": "agent-1",
                 "last_tool": "read_file",
-                "tool_count": 3
+                "tool_count": 3,
             ],
             agent: agent,
             previous: agent
@@ -532,22 +600,24 @@ struct AgentProjectionTests {
     }
 
     @Test func parentDelegationToolCallIsNotSwallowedAsAgentActivity() {
-        #expect(!DockModel.isAgentScopedActivity(
-            eventAgentID: "future-agent",
-            eventSessionID: "parent-session",
-            parentSessionID: nil,
-            currentSessionID: "parent-session",
-            agents: []
-        ))
+        #expect(
+            !DockModel.isAgentScopedActivity(
+                eventAgentID: "future-agent",
+                eventSessionID: "parent-session",
+                parentSessionID: nil,
+                currentSessionID: "parent-session",
+                agents: []
+            ))
 
         let agent = HermesSubagent(id: "agent-1", goal: "Inspect API", status: "running")
-        #expect(DockModel.isAgentScopedActivity(
-            eventAgentID: "agent-1",
-            eventSessionID: "parent-session",
-            parentSessionID: nil,
-            currentSessionID: "parent-session",
-            agents: [agent]
-        ))
+        #expect(
+            DockModel.isAgentScopedActivity(
+                eventAgentID: "agent-1",
+                eventSessionID: "parent-session",
+                parentSessionID: nil,
+                currentSessionID: "parent-session",
+                agents: [agent]
+            ))
     }
 
     @Test func delegatedToolEventsBecomeMeaningfulActivityRows() {
@@ -629,7 +699,10 @@ struct AgentProjectionTests {
 
         #expect(row?.agent == "Unprofiled Delegate · Frontend")
         #expect(row?.agentID == "agent-1")
-        #expect(AgentActivityPresentation.pipeline(activities: [], toolCalls: [call], subagents: [agent]).filter { $0.agentID == agent.id }.count == 1)
+        #expect(
+            AgentActivityPresentation.pipeline(activities: [], toolCalls: [call], subagents: [agent]).filter {
+                $0.agentID == agent.id
+            }.count == 1)
         #expect(row?.parentAgentID == "parent-agent")
         #expect(row?.childSessionID == "child-session")
     }
@@ -703,10 +776,11 @@ struct AgentProjectionTests {
             timestamp: Date(timeIntervalSince1970: 30)
         )
 
-        #expect(AgentActivityPresentation.conversationTitle(
-            latestPipelineActivity: pipeline,
-            recentEvents: [unrelatedEvent]
-        ) == "Run gh pr checks 85")
+        #expect(
+            AgentActivityPresentation.conversationTitle(
+                latestPipelineActivity: pipeline,
+                recentEvents: [unrelatedEvent]
+            ) == "Run gh pr checks 85")
     }
 
     @Test func onlyANewerReasoningDeltaOverridesThePipelineTask() {
@@ -726,10 +800,11 @@ struct AgentProjectionTests {
             timestamp: Date(timeIntervalSince1970: 30)
         )
 
-        #expect(AgentActivityPresentation.conversationTitle(
-            latestPipelineActivity: pipeline,
-            recentEvents: [reasoningDelta]
-        ) == "Thinking")
+        #expect(
+            AgentActivityPresentation.conversationTitle(
+                latestPipelineActivity: pipeline,
+                recentEvents: [reasoningDelta]
+            ) == "Thinking")
     }
 
     @Test func runningPipelineActivityRemainsVisibleWhenConversationStatusIsIdle() {
@@ -781,10 +856,11 @@ struct AgentProjectionTests {
 
         #expect(pipeline.first?.status == "completed")
         #expect(pipeline.first?.isActive == false)
-        #expect(!AgentActivityPresentation.hasActiveWork(
-            toolCalls: [],
-            subagents: [completedAgent]
-        ))
+        #expect(
+            !AgentActivityPresentation.hasActiveWork(
+                toolCalls: [],
+                subagents: [completedAgent]
+            ))
     }
 
     @Test func duplicatedSubagentIDsDoNotCrashThePipelineProjection() {

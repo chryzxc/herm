@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct HermesUpdateServiceTests {
@@ -11,10 +12,10 @@ struct HermesUpdateServiceTests {
 
     @Test func parsesInstalledVersionAndInstallMethod() {
         let output = """
-        Hermes Agent v0.19.1 (2026.7.30) · upstream e3b5512b
-        Install directory: /Users/example/.hermes/hermes-agent
-        Install method: git
-        """
+            Hermes Agent v0.19.1 (2026.7.30) · upstream e3b5512b
+            Install directory: /Users/example/.hermes/hermes-agent
+            Install method: git
+            """
 
         let version = HermesUpdateParsing.installedVersion(from: output)
 
@@ -28,7 +29,7 @@ struct HermesUpdateServiceTests {
             "tag_name": "v2026.8.19",
             "name": "Hermes Agent v0.20.5 (v2026.8.19)",
             "published_at": "2026-08-21T12:16:39Z",
-            "html_url": "https://github.com/NousResearch/hermes-agent/releases/tag/v2026.8.19"
+            "html_url": "https://github.com/NousResearch/hermes-agent/releases/tag/v2026.8.19",
         ]
 
         let release = HermesUpdateParsing.latestRelease(from: payload)
@@ -48,14 +49,16 @@ struct HermesUpdateServiceTests {
 
     @Test func detectsOutdatedMarketingVersion() {
         let installed = HermesInstalledVersion(marketing: "0.19.1", calendar: "2026.7.30")
-        let latest = HermesLatestRelease(tag: "v2026.8.19", marketing: "0.20.5", name: nil, publishedAt: nil, pageURL: nil)
+        let latest = HermesLatestRelease(
+            tag: "v2026.8.19", marketing: "0.20.5", name: nil, publishedAt: nil, pageURL: nil)
 
         #expect(HermesUpdateParsing.isOutdated(installed: installed, latest: latest) == true)
     }
 
     @Test func reportsMatchingVersionsAsCurrent() {
         let installed = HermesInstalledVersion(marketing: "0.20.5", calendar: "2026.8.19")
-        let latest = HermesLatestRelease(tag: "v2026.8.19", marketing: "0.20.5", name: nil, publishedAt: nil, pageURL: nil)
+        let latest = HermesLatestRelease(
+            tag: "v2026.8.19", marketing: "0.20.5", name: nil, publishedAt: nil, pageURL: nil)
 
         #expect(HermesUpdateParsing.isOutdated(installed: installed, latest: latest) == false)
     }

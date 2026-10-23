@@ -117,7 +117,8 @@ struct KanbanBoardPresentation {
 
     static func cardDetail(_ detail: String?) -> String? {
         guard let detail else { return nil }
-        let lines = detail
+        let lines =
+            detail
             .components(separatedBy: .newlines)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("TASK_ID:") }
             .map {

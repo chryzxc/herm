@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -19,8 +20,8 @@ private final class MessageActionRPCClient: HermesRPCClientProtocol {
         case "session.resume":
             if resumeDelay != .zero { try await Task.sleep(for: resumeDelay) }
             return resumeResponse.isEmpty
-            ? ["session_id": params["session_id"] as? String ?? "", "messages": []]
-            : resumeResponse
+                ? ["session_id": params["session_id"] as? String ?? "", "messages": []]
+                : resumeResponse
         default: return [:]
         }
     }
@@ -31,7 +32,8 @@ private final class MessageActionRPCClient: HermesRPCClientProtocol {
 @MainActor
 struct ConversationMessageActionsTests {
     @Test func readableTextRemovesMarkdownAffordancesButKeepsContent() {
-        let text = ConversationMessageActionState.readableText("# Answer\n\n**Use** [this](https://example.com) and `code`.")
+        let text = ConversationMessageActionState.readableText(
+            "# Answer\n\n**Use** [this](https://example.com) and `code`.")
 
         #expect(text == "Answer\n\nUse this and code.")
     }
@@ -76,11 +78,13 @@ struct ConversationMessageActionsTests {
         rpc.branchResponse = ["session_id": "branch-session"]
         rpc.resumeResponse = [
             "session_id": "branch-session",
-            "messages": [["role": "assistant", "content": "branched answer"]]
+            "messages": [["role": "assistant", "content": "branched answer"]],
         ]
         let model = DockModel(initialSessionID: "source-session", rpcClient: rpc)
         let message = ChatMessage(id: UUID(), role: .hermes, text: "source answer")
-        model.messages = [ChatMessage(role: .user, text: "question"), message, ChatMessage(role: .hermes, text: "later")]
+        model.messages = [
+            ChatMessage(role: .user, text: "question"), message, ChatMessage(role: .hermes, text: "later"),
+        ]
 
         await model.branchConversation(from: message)
         try await waitUntil { model.sessionID == "branch-session" && model.status == .idle }
@@ -96,7 +100,7 @@ struct ConversationMessageActionsTests {
         let rpc = MessageActionRPCClient()
         rpc.resumeResponse = [
             "session_id": "source-session",
-            "messages": [["role": "assistant", "content": "authoritative answer"]]
+            "messages": [["role": "assistant", "content": "authoritative answer"]],
         ]
         let model = DockModel(initialSessionID: "source-session", rpcClient: rpc)
 
@@ -119,7 +123,7 @@ struct ConversationMessageActionsTests {
         rpc.resumeDelay = .milliseconds(50)
         rpc.resumeResponse = [
             "session_id": "branch-session",
-            "messages": [["role": "assistant", "content": "branched answer"]]
+            "messages": [["role": "assistant", "content": "branched answer"]],
         ]
         let model = DockModel(initialSessionID: "source-session", rpcClient: rpc)
         let state = ConversationMessageActionState()

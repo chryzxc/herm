@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -17,8 +18,10 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
         switch method {
         case "session.resume":
             onResume?()
-            return resumeResult ?? ["session_id": "recipient-chat", "resumed": params["session_id"] ?? "",
-                                    "info": ["profile_name": params["profile"] ?? "default"], "running": false]
+            return resumeResult ?? [
+                "session_id": "recipient-chat", "resumed": params["session_id"] ?? "",
+                "info": ["profile_name": params["profile"] ?? "default"], "running": false,
+            ]
         case "prompt.submit":
             if let submitError { throw submitError }
             return ["status": "streaming"]
@@ -33,9 +36,11 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
 @MainActor
 struct DirectBotRoutingTests {
     private func model(_ rpc: DirectBotRoutingRPCClient) -> DockModel {
-        DockModel(initialSessionID: "cypher-chat",
-                  botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("direct-bot-\(UUID().uuidString).json"),
-                  rpcClient: rpc)
+        DockModel(
+            initialSessionID: "cypher-chat",
+            botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "direct-bot-\(UUID().uuidString).json"),
+            rpcClient: rpc)
     }
 
     private func waitForSubmission(_ rpc: DirectBotRoutingRPCClient) async {
@@ -51,9 +56,10 @@ struct DirectBotRoutingTests {
         defer { model.shutdown() }
         model.sessionProfileID = "cypher"
         model.draft = text
-        let nexus = BotSummary(id: "default", name: "Nexus", title: nil, description: nil, model: nil,
-                               isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
-                               isHidden: false, hasAvatar: false, isDefault: true)
+        let nexus = BotSummary(
+            id: "default", name: "Nexus", title: nil, description: nil, model: nil,
+            isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: true)
 
         model.submitComposerInput(bots: [nexus])
         await waitForSubmission(rpc)
@@ -69,7 +75,8 @@ struct DirectBotRoutingTests {
         #expect(model.sessionID == "cypher-chat")
         #expect(model.sessionProfileID == "cypher")
 
-        model.receiveGatewayEvent("message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "I’ll handle RO2."]])
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "I’ll handle RO2."]])
         #expect(model.messages.last?.text == "I’ll handle RO2.")
         #expect(model.messages.last?.botProfileID == "default")
         #expect(model.messages.last?.botDisplayName == "Nexus")
@@ -81,7 +88,8 @@ struct DirectBotRoutingTests {
         let model = model(rpc)
         defer { model.shutdown() }
 
-        model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "audit", chatSessionID: "sentry-chat")
+        model.sendDirectBotRequest(
+            profileID: "sentry", displayName: "Sentry", text: "audit", chatSessionID: "sentry-chat")
         await waitForSubmission(rpc)
 
         #expect(rpc.requests.map(\.method) == ["session.resume", "prompt.submit"])
@@ -99,7 +107,8 @@ struct DirectBotRoutingTests {
 
         model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "start task 4")
         await waitForSubmission(rpc)
-        model.receiveGatewayEvent("message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Done"]])
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Done"]])
 
         #expect(model.messages.last?.botDisplayName == "Nexus")
         #expect(model.status == .working)
@@ -113,7 +122,8 @@ struct DirectBotRoutingTests {
         model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "audit")
         await waitForSubmission(rpc)
 
-        model.receiveGatewayEvent("message.complete", params: ["session_id": "unrelated", "payload": ["text": "Wrong bot"]])
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "unrelated", "payload": ["text": "Wrong bot"]])
         #expect(model.messages.count == 1)
         #expect(model.botActivityBySessionID["cypher-chat"]?.first?.state == .working)
     }
@@ -125,10 +135,13 @@ struct DirectBotRoutingTests {
         model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "audit")
         await waitForSubmission(rpc)
 
-        model.receiveGatewayEvent("message.delta", params: ["session_id": "recipient-chat", "payload": ["text": "Audit "]])
-        model.receiveGatewayEvent("message.delta", params: ["session_id": "recipient-chat", "payload": ["delta": "complete."]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "recipient-chat", "payload": ["text": "Audit "]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "recipient-chat", "payload": ["delta": "complete."]])
         for _ in 0..<2 {
-            model.receiveGatewayEvent("message.complete", params: ["session_id": "recipient-chat", "payload": ["text": ""]])
+            model.receiveGatewayEvent(
+                "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": ""]])
         }
         #expect(model.messages.map(\.text) == ["@Sentry audit", "Audit complete."])
         #expect(model.botActivityBySessionID["cypher-chat"]?.first?.result == "Audit complete.")
@@ -137,8 +150,10 @@ struct DirectBotRoutingTests {
     @Test(arguments: ["wrong-session", "wrong-profile", "busy"])
     func unconfirmedOrBusyDestinationsNeverReceiveTheMessage(reason: String) async throws {
         let rpc = DirectBotRoutingRPCClient()
-        rpc.resumeResult = ["session_id": "recipient-chat", "resumed": reason == "wrong-session" ? "other" : "Bot Chat",
-                            "profile": reason == "wrong-profile" ? "cypher" : "default", "running": reason == "busy"]
+        rpc.resumeResult = [
+            "session_id": "recipient-chat", "resumed": reason == "wrong-session" ? "other" : "Bot Chat",
+            "profile": reason == "wrong-profile" ? "cypher" : "default", "running": reason == "busy",
+        ]
         let model = model(rpc)
         defer { model.shutdown() }
         model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "start task 4")
@@ -170,7 +185,8 @@ struct DirectBotRoutingTests {
         defer { model.shutdown() }
         model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "start task 4")
         await waitForSubmission(rpc)
-        model.receiveGatewayEvent("error", params: ["session_id": "recipient-chat", "payload": ["error": "Request failed"]])
+        model.receiveGatewayEvent(
+            "error", params: ["session_id": "recipient-chat", "payload": ["error": "Request failed"]])
         #expect(model.messages.last?.isError == true)
         #expect(model.messages.last?.botDisplayName == "Nexus")
         #expect(model.botActivityBySessionID["cypher-chat"]?.first?.state == .failed)
@@ -191,7 +207,9 @@ struct DirectBotRoutingTests {
     }
 
     @Test func everyBotReceivesTheCurrentSessionContext() {
-        let context = [ChatMessage(role: .user, text: "Review origin."), ChatMessage(role: .hermes, text: "Repository loaded.")]
+        let context = [
+            ChatMessage(role: .user, text: "Review origin."), ChatMessage(role: .hermes, text: "Repository loaded."),
+        ]
         let message = DockModel.botRelayMessage(request: "check security", transcript: context)
         #expect(message.contains("User: Review origin."))
         #expect(message.contains("Assistant: Repository loaded."))

@@ -19,23 +19,26 @@ struct SessionBotActivityView: View {
         let originSessionID = model.kanbanSessionID ?? sessionID
         for (index, message) in model.messages.enumerated() {
             guard let botID = message.botProfileID,
-                  message.role == .hermes,
-                  !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !knownResults.contains(message.text),
-                  let originSessionID else { continue }
-            let request = index > 0 && model.messages[index - 1].role == .user
+                message.role == .hermes,
+                !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                !knownResults.contains(message.text),
+                let originSessionID
+            else { continue }
+            let request =
+                index > 0 && model.messages[index - 1].role == .user
                 ? model.messages[index - 1].text
                 : "Bot response"
-            records.append(BotActivityRecord(
-                originSessionID: originSessionID,
-                botID: botID,
-                botName: message.botDisplayName ?? botID,
-                summary: request,
-                state: .completed,
-                createdAt: message.timestamp,
-                updatedAt: message.timestamp,
-                result: message.text
-            ))
+            records.append(
+                BotActivityRecord(
+                    originSessionID: originSessionID,
+                    botID: botID,
+                    botName: message.botDisplayName ?? botID,
+                    summary: request,
+                    state: .completed,
+                    createdAt: message.timestamp,
+                    updatedAt: message.timestamp,
+                    result: message.text
+                ))
         }
         // Kanban cards are the durable activity source for dispatched Bot
         // work. Only cards already admitted by the strict session projection
@@ -46,18 +49,19 @@ struct SessionBotActivityView: View {
             let recordID = "kanban:\(task.id)"
             guard !knownIDs.contains(recordID) else { continue }
             let bot = task.assignee.flatMap { id in botMode.visibleBots.first(where: { $0.id == id }) }
-            records.append(BotActivityRecord(
-                id: recordID,
-                originSessionID: originSessionID ?? sessionID ?? "",
-                botID: bot?.id ?? "delegated-agent",
-                botName: bot?.name ?? (task.assignee?.isEmpty == false ? task.assignee! : "Delegated agent"),
-                summary: task.title,
-                state: SessionBotActivityPresentation.state(forKanbanStatus: task.status),
-                createdAt: task.startedAt ?? task.latestEventAt ?? Date(),
-                updatedAt: task.latestEventAt ?? task.completedAt ?? task.startedAt ?? Date(),
-                result: task.latestEventNote,
-                linkedCardID: task.id
-            ))
+            records.append(
+                BotActivityRecord(
+                    id: recordID,
+                    originSessionID: originSessionID ?? sessionID ?? "",
+                    botID: bot?.id ?? "delegated-agent",
+                    botName: bot?.name ?? (task.assignee?.isEmpty == false ? task.assignee! : "Delegated agent"),
+                    summary: task.title,
+                    state: SessionBotActivityPresentation.state(forKanbanStatus: task.status),
+                    createdAt: task.startedAt ?? task.latestEventAt ?? Date(),
+                    updatedAt: task.latestEventAt ?? task.completedAt ?? task.startedAt ?? Date(),
+                    result: task.latestEventNote,
+                    linkedCardID: task.id
+                ))
         }
         return SessionBotActivityPresentation.snapshot(records: records, sessionIDs: model.botActivitySessionIDs)
     }
@@ -81,16 +85,21 @@ struct SessionBotActivityView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(snapshot.list) { record in
                         let bot = botMode.visibleBots.first(where: { $0.id == record.botID })
-                        BotActivityRow(record: record, bot: bot, avatar: bot.flatMap { botMode.avatarImages[$0.id] },
-                                       expanded: expandedRecordIDs.contains(record.id),
-                                       onToggle: { toggle(record.id) }, onOpenBotChat: onOpenBotChat)
-                            .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
+                        BotActivityRow(
+                            record: record, bot: bot, avatar: bot.flatMap { botMode.avatarImages[$0.id] },
+                            expanded: expandedRecordIDs.contains(record.id),
+                            onToggle: { toggle(record.id) }, onOpenBotChat: onOpenBotChat
+                        )
+                        .transition(
+                            .asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
                     }
                 }
             }
         }
         // New records slide in and state changes recolor smoothly.
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: snapshot.list.map { "\($0.id)|\($0.state.rawValue)" })
+        .animation(
+            .spring(response: 0.35, dampingFraction: 0.85), value: snapshot.list.map { "\($0.id)|\($0.state.rawValue)" }
+        )
         .padding(embedded ? 0 : 12)
         .modifier(BotActivityGlassModifier(isEmbedded: embedded))
         .task(id: sessionID) {
@@ -220,7 +229,9 @@ private struct BotActivityPulse: View {
             .frame(width: 5, height: 5)
             .phaseAnimator(reduceMotion ? [1.0] : [1.0, 0.35]) { dot, phase in
                 dot.opacity(phase).scaleEffect(0.8 + 0.2 * phase)
-            } animation: { _ in .easeInOut(duration: 0.8) }
+            } animation: { _ in
+                .easeInOut(duration: 0.8)
+            }
     }
 }
 

@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct LocalTerminalSessionTests {
@@ -60,7 +61,10 @@ struct LocalTerminalSessionTests {
         #expect(terminal.submitCommand("printf '__HERM_OUTPUT_TEST__\\n'"))
         var publications = 0
         let subscription = terminal.objectWillChange.sink { publications += 1 }
-        defer { subscription.cancel(); terminal.close() }
+        defer {
+            subscription.cancel()
+            terminal.close()
+        }
         for _ in 0..<100 {
             if terminal.output.contains("__HERM_OUTPUT_TEST__") { break }
             try await Task.sleep(for: .milliseconds(20))
@@ -132,8 +136,12 @@ struct LocalTerminalSessionTests {
     }
 
     @Test func arbitraryCommandsCannotBecomeVerificationRecipes() {
-        let allowed = VerificationRecipe(id: "test:swift test", title: "Run tests", command: "swift test", kind: .test, workingDirectory: "/tmp", source: "Hermes project facts")
-        let arbitrary = VerificationRecipe(id: "arbitrary", title: "No", command: "rm -rf .", kind: .custom, workingDirectory: "/tmp", source: "user input")
+        let allowed = VerificationRecipe(
+            id: "test:swift test", title: "Run tests", command: "swift test", kind: .test, workingDirectory: "/tmp",
+            source: "Hermes project facts")
+        let arbitrary = VerificationRecipe(
+            id: "arbitrary", title: "No", command: "rm -rf .", kind: .custom, workingDirectory: "/tmp",
+            source: "user input")
 
         #expect(LocalTerminalSession.acceptedVerificationRecipe(allowed) == allowed)
         #expect(LocalTerminalSession.acceptedVerificationRecipe(arbitrary) == nil)

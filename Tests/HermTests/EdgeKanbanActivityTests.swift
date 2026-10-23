@@ -1,17 +1,23 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct EdgeKanbanActivityTests {
-    private func card(_ id: String = "task", board: String = "main", status: String = "running", title: String = "Fix login") -> KanbanTaskSummary {
-        KanbanTaskSummary(id: id, boardSlug: board, title: title, status: status,
+    private func card(
+        _ id: String = "task", board: String = "main", status: String = "running", title: String = "Fix login"
+    ) -> KanbanTaskSummary {
+        KanbanTaskSummary(
+            id: id, boardSlug: board, title: title, status: status,
             detail: nil, priority: nil, assignee: "Builder")
     }
 
     @Test func baselineShowsActiveCardsWithoutReplayingOldCompletions() {
         var activity = EdgeKanbanActivity()
-        let tasks = [card(), card("review", status: "review"), card("blocked", status: "blocked"),
-                     card("old", status: "done"), card("queued", status: "ready")]
+        let tasks = [
+            card(), card("review", status: "review"), card("blocked", status: "blocked"),
+            card("old", status: "done"), card("queued", status: "ready"),
+        ]
         let announced1 = activity.ingest(tasks)
         #expect(!announced1)
         let rows = activity.rows(isCurrent: true)
@@ -34,7 +40,11 @@ struct EdgeKanbanActivityTests {
             let announced5 = activity.ingest([task])
             #expect(!announced5)
             let row = activity.rows(isCurrent: true).first
-            if queued { #expect(row == nil); previous = status; continue }
+            if queued {
+                #expect(row == nil)
+                previous = status
+                continue
+            }
             #expect(row?.statusLabel == status.capitalized)
             #expect(row?.detail?.contains("\(previous.capitalized) → \(status.capitalized)") == true)
             #expect(row?.kanbanTask == task)
@@ -101,7 +111,8 @@ struct EdgeKanbanActivityTests {
     @Test func recentChangesAreBoundedWithoutCappingRunningWork() {
         var activity = EdgeKanbanActivity()
         _ = activity.ingest([])
-        let tasks = (0..<40).map { card("done-\($0)", status: "done") }
+        let tasks =
+            (0..<40).map { card("done-\($0)", status: "done") }
             + (0..<40).map { card("active-\($0)") }
         _ = activity.ingest(tasks)
         #expect(activity.rows(isCurrent: true).filter { $0.phase == .working }.count == 40)
@@ -112,18 +123,22 @@ struct EdgeKanbanActivityTests {
     }
 
     @Test func mergedListOrdersInProgressFinishedReviewAttention() {
-        func row(_ id: String, _ phase: EdgeNotchTask.Phase, _ age: TimeInterval?, current: Bool = false) -> EdgeNotchTask {
-            EdgeNotchTask(id: id, title: id, phase: phase, statusLabel: "", detail: nil,
+        func row(_ id: String, _ phase: EdgeNotchTask.Phase, _ age: TimeInterval?, current: Bool = false)
+            -> EdgeNotchTask
+        {
+            EdgeNotchTask(
+                id: id, title: id, phase: phase, statusLabel: "", detail: nil,
                 updatedAt: age.map { Date(timeIntervalSince1970: 1_000 - $0) },
                 isCurrent: current, isStatusCurrent: true, session: nil)
         }
         var activity = EdgeKanbanActivity()
         _ = activity.ingest([card()])
         let kanban = activity.rows(isCurrent: true)
-        let rows = EdgeNotchTask.merged([
-            row("done", .finished, 1), row("blocked", .attention, 1), row("old", .working, 50),
-            row("queued", .pending, 5), row("current", .working, nil, current: true),
-        ] + kanban)
+        let rows = EdgeNotchTask.merged(
+            [
+                row("done", .finished, 1), row("blocked", .attention, 1), row("old", .working, 50),
+                row("queued", .pending, 5), row("current", .working, nil, current: true),
+            ] + kanban)
         #expect(rows.map(\.id) == ["current", "old", "kanban:4:main:task", "done", "queued", "blocked"])
         #expect(rows.map(\.section) == [.inProgress, .inProgress, .inProgress, .finished, .review, .attention])
     }
@@ -184,7 +199,8 @@ struct EdgeKanbanProjectionTests {
         control.cli?.backgroundBoardReadReuse = 0
         control.refreshGlobalKanban()
         try await settle(control)
-        let task = KanbanTaskSummary(id: "task", boardSlug: "other", title: "Other board card",
+        let task = KanbanTaskSummary(
+            id: "task", boardSlug: "other", title: "Other board card",
             status: "running", detail: nil, priority: nil, assignee: nil)
         control.revealKanbanTask(task)
         #expect(control.selectedKanbanBoardSlug == "other")
@@ -198,8 +214,9 @@ struct EdgeKanbanProjectionTests {
         for _ in 0..<200 {
             try await Task.sleep(for: .milliseconds(10))
             if control.pendingActionIDs.isEmpty, !control.hasKanbanReadInFlight,
-               control.refreshState(for: "kanban.global")?.isRefreshing != true,
-               control.refreshState(for: "kanban.visible")?.isRefreshing != true {
+                control.refreshState(for: "kanban.global")?.isRefreshing != true,
+                control.refreshState(for: "kanban.visible")?.isRefreshing != true
+            {
                 return
             }
         }
@@ -217,8 +234,12 @@ private final class NotchKanbanClient: HermesRPCClientProtocol {
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         if fail { throw URLError(.cannotConnectToHost) }
         if path == "/api/plugins/kanban/boards" {
-            return ["boards": [["slug": "main", "name": "Main", "is_current": true, "archived": false],
-                               ["slug": "other", "name": "Other", "is_current": false, "archived": false]]]
+            return [
+                "boards": [
+                    ["slug": "main", "name": "Main", "is_current": true, "archived": false],
+                    ["slug": "other", "name": "Other", "is_current": false, "archived": false],
+                ]
+            ]
         }
         if path.hasPrefix("/api/plugins/kanban/board?") {
             return ["columns": [["tasks": [["id": "task", "title": "Work", "status": status]]]]]

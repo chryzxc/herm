@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 /// Local messaging gateway, independent of Herm's `hermes serve` connection.
 /// Always targets the default profile (the host gateway), never a selected chat.
@@ -27,17 +27,23 @@ struct HermesGatewayProcessStatus: Equatable, Sendable {
     /// Recognize only verified macOS CLI messages. Exit zero alone does not
     /// mean running; a registered launchd definition alone does not either.
     static func parse(_ output: String) -> Self {
-        let clean = output.replacingOccurrences(of: "\u{001B}\\[[0-9;?]*[ -/]*[@-~]", with: "", options: .regularExpression)
+        let clean = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;?]*[ -/]*[@-~]", with: "", options: .regularExpression)
         let primary = clean.components(separatedBy: "Other profiles:")[0]
         let lines = primary.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
         let managed = lines.contains { $0.hasPrefix("Launchd plist: ") && $0.hasSuffix("/ai.hermes.gateway.plist") }
         let running = lines.first { line in
-            line.range(of: #"^(?:✓ Gateway is supervised by launchd|✓ Gateway is running|✓ Detached fallback process is running|Detached gateway process is running|Note: a detached gateway process is running) \(PID:? [1-9][0-9]*(?:, [1-9][0-9]*)*\)$"#, options: .regularExpression) != nil
+            line.range(
+                of:
+                    #"^(?:✓ Gateway is supervised by launchd|✓ Gateway is running|✓ Detached fallback process is running|Detached gateway process is running|Note: a detached gateway process is running) \(PID:? [1-9][0-9]*(?:, [1-9][0-9]*)*\)$"#,
+                options: .regularExpression) != nil
         }
         if let running, let range = running.range(of: #"[1-9][0-9]*"#, options: .regularExpression) {
             return Self(state: .running, isManaged: managed, processID: Int(running[range]))
         }
-        if lines.contains("✗ Gateway is not running") || lines.contains("✗ No fallback process is running") || lines.contains("✗ Gateway service is not loaded") {
+        if lines.contains("✗ Gateway is not running") || lines.contains("✗ No fallback process is running")
+            || lines.contains("✗ Gateway service is not loaded")
+        {
             return Self(state: .stopped, isManaged: managed)
         }
         return Self(state: .unavailable, isManaged: managed)
@@ -62,7 +68,8 @@ final class HermesGatewayLifecycleModel: ObservableObject {
 
     init(
         pause: @escaping () async -> Void = { try? await Task.sleep(for: .seconds(2)) },
-        run: @escaping (HermesGatewayCommand) async -> HermesGatewayCommandResult = HermesGatewayLifecycleModel.runCommand
+        run: @escaping (HermesGatewayCommand) async -> HermesGatewayCommandResult = HermesGatewayLifecycleModel
+            .runCommand
     ) {
         self.run = run
         self.pause = pause
@@ -74,8 +81,12 @@ final class HermesGatewayLifecycleModel: ObservableObject {
         if let error { return error }
         if isRestarting { return "Waiting for the default-profile messaging gateway to restart." }
         if !hasChecked { return "Checking the default-profile messaging gateway." }
-        if status.state == .unavailable { return "Hermes did not return a recognized process status. Refresh to check again." }
-        if !status.isManaged { return "UI restart requires a Hermes launchd service. Manage manual gateways in Terminal." }
+        if status.state == .unavailable {
+            return "Hermes did not return a recognized process status. Refresh to check again."
+        }
+        if !status.isManaged {
+            return "UI restart requires a Hermes launchd service. Manage manual gateways in Terminal."
+        }
         return "Default-profile messaging gateway · checked every 15 seconds while visible."
     }
 
@@ -111,7 +122,8 @@ final class HermesGatewayLifecycleModel: ObservableObject {
         if !result.succeeded {
             error = "Gateway restart failed or timed out. Check `hermes gateway status` in Terminal, then retry."
         } else if !restartVerified(previousProcessID) {
-            error = "Restart command finished, but a replacement gateway is not confirmed running. Refresh to check again."
+            error =
+                "Restart command finished, but a replacement gateway is not confirmed running. Refresh to check again."
         }
     }
 
@@ -134,8 +146,12 @@ final class HermesGatewayLifecycleModel: ObservableObject {
     /// Run outside the gateway so restarting it cannot sever the command's
     /// transport. File output avoids pipe backpressure and inherited-pipe hangs.
     nonisolated static func runCommand(_ command: HermesGatewayCommand) async -> HermesGatewayCommandResult {
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("herm-gateway-\(UUID().uuidString)")
-        guard FileManager.default.createFile(atPath: outputURL.path, contents: nil, attributes: [.posixPermissions: 0o600]) else { return .init(succeeded: false) }
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "herm-gateway-\(UUID().uuidString)")
+        guard
+            FileManager.default.createFile(
+                atPath: outputURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        else { return .init(succeeded: false) }
         defer { try? FileManager.default.removeItem(at: outputURL) }
         guard let output = try? FileHandle(forUpdating: outputURL) else { return .init(succeeded: false) }
         defer { try? output.close() }

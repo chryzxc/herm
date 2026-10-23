@@ -1,4 +1,5 @@
 import Testing
+
 @testable import Herm
 
 struct AgentUpdateVisibilityTests {
@@ -18,9 +19,12 @@ struct AgentUpdateVisibilityTests {
 
     @MainActor @Test func railPreservesDecisionsAndConcurrentSessionWork() {
         let state = EdgeNotchState()
-        state.tasks = [EdgeNotchTask(id: "other", title: "Other session", phase: .working,
-            statusLabel: "Working", detail: nil, updatedAt: nil, isCurrent: false,
-            isStatusCurrent: true, session: nil)]
+        state.tasks = [
+            EdgeNotchTask(
+                id: "other", title: "Other session", phase: .working,
+                statusLabel: "Working", detail: nil, updatedAt: nil, isCurrent: false,
+                isStatusCurrent: true, session: nil)
+        ]
         for phase: HermesUpdatePhase in [.updating, .updateFailed("exit 1"), .checking] {
             state.agentUpdatePhase = phase
             for status: HermesStatus in [.needsApproval, .needsClarification] {

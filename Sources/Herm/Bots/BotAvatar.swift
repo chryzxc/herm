@@ -38,13 +38,16 @@ enum BotAvatarPresentation {
     // stable across launches, unlike Swift's randomized Hasher, so every
     // dynamic bot keeps the same fallback identity without a role table.
     static func seed(for profileID: String) -> UInt64 {
-        profileID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8.reduce(UInt64(14695981039346656037)) {
-            ($0 ^ UInt64($1)) &* 1099511628211
+        profileID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8.reduce(
+            UInt64(14_695_981_039_346_656_037)
+        ) {
+            ($0 ^ UInt64($1)) &* 1_099_511_628_211
         }
     }
 
     static func hue(for profileID: String) -> Double {
-        profileID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.68 : Double(seed(for: profileID) % 360) / 360
+        profileID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? 0.68 : Double(seed(for: profileID) % 360) / 360
     }
 
     static func palette(for profileID: String) -> [Color] {
@@ -88,8 +91,9 @@ struct BotAvatarView: View {
     }
 
     private func canvas(herm: Bool, mood: BotMood, frame: DockBotIndicatorFrame) -> some View {
-        DockBotOrbitCanvas(id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded), size: size, mood: mood,
-                           pose: frame.face(id: bot.id, busy: mood.moves, animated: animated))
+        DockBotOrbitCanvas(
+            id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded), size: size, mood: mood,
+            pose: frame.face(id: bot.id, busy: mood.moves, animated: animated))
     }
 
     @ViewBuilder private func standalone(herm: Bool, mood: BotMood) -> some View {
@@ -134,13 +138,22 @@ struct BotAvatarView: View {
 
     /// Recognize matte and older glossy saves before falling back to the legacy blob.
     @MainActor static func matchesHermFace(_ data: Data, id: String) -> Bool {
-        guard let stored = NSBitmapImageRep(data: data), stored.pixelsWide == 160, stored.pixelsHigh == 160 else { return false }
+        guard let stored = NSBitmapImageRep(data: data), stored.pixelsWide == 160, stored.pixelsHigh == 160 else {
+            return false
+        }
         if [DockThemeID?.none, .glass].contains(where: { theme in
-            BotFaceMark.still(id: id, theme: theme).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) } ?? false
-        }) { return true }
+            BotFaceMark.still(id: id, theme: theme).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) }
+                ?? false
+        }) {
+            return true
+        }
         if let previous = BotFaceMark.still(id: id, theme: .glass, originalColors: true).cgImage,
-           matches(stored, NSBitmapImageRep(cgImage: previous)) { return true }
-        return BotFaceMark.still(id: id, legacy: true).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) } ?? false
+            matches(stored, NSBitmapImageRep(cgImage: previous))
+        {
+            return true
+        }
+        return BotFaceMark.still(id: id, legacy: true).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) }
+            ?? false
     }
 
     private static func matches(_ stored: NSBitmapImageRep, _ fresh: NSBitmapImageRep) -> Bool {
@@ -150,9 +163,11 @@ struct BotAvatarView: View {
         for y in stride(from: 4, to: 160, by: 8) {
             for x in stride(from: 4, to: 160, by: 8) {
                 guard let a = stored.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
-                      let b = fresh.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return false }
-                let delta = max(abs(a.redComponent - b.redComponent), abs(a.greenComponent - b.greenComponent),
-                                abs(a.blueComponent - b.blueComponent), abs(a.alphaComponent - b.alphaComponent))
+                    let b = fresh.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                else { return false }
+                let delta = max(
+                    abs(a.redComponent - b.redComponent), abs(a.greenComponent - b.greenComponent),
+                    abs(a.blueComponent - b.blueComponent), abs(a.alphaComponent - b.alphaComponent))
                 if delta > 0.08 { misses += 1 }
             }
         }
@@ -174,12 +189,14 @@ struct BotWorkingPose {
     static func at(_ elapsed: TimeInterval) -> BotWorkingPose {
         let beat = max(0, elapsed).truncatingRemainder(dividingBy: 2.8)
         let wave = pow(sin(min(beat / 1.2, 1) * .pi), 2)
-        return BotWorkingPose(lift: wave * 0.4, rotation: sin(beat * .pi * 2 / 1.2) * wave * 4,
-                              scaleX: 1 - wave * 0.025, scaleY: 1 + wave * 0.025)
+        return BotWorkingPose(
+            lift: wave * 0.4, rotation: sin(beat * .pi * 2 / 1.2) * wave * 4,
+            scaleX: 1 - wave * 0.025, scaleY: 1 + wave * 0.025)
     }
 
     /// A bounded one-shot: adjacent activity changes always choose a different gesture.
-    static func reaction(at elapsed: TimeInterval, variation: Int, from start: BotWorkingPose = .rest) -> BotWorkingPose {
+    static func reaction(at elapsed: TimeInterval, variation: Int, from start: BotWorkingPose = .rest) -> BotWorkingPose
+    {
         guard elapsed >= 0, elapsed < reactionDuration else { return .rest }
         let anticipation = pow(sin(min(elapsed / 0.16, 1) * .pi), 2)
         let flight = min(max((elapsed - 0.16) / 0.68, 0), 1)
@@ -190,14 +207,17 @@ struct BotWorkingPose {
         var pose: BotWorkingPose
         switch variation % 3 {
         case 0:
-            pose = BotWorkingPose(lift: arc, reach: -arc * 0.14, rotation: -14 * arc,
-                                  scaleX: 1 - arc * 0.07, scaleY: 1 + arc * 0.07)
+            pose = BotWorkingPose(
+                lift: arc, reach: -arc * 0.14, rotation: -14 * arc,
+                scaleX: 1 - arc * 0.07, scaleY: 1 + arc * 0.07)
         case 1:
-            pose = BotWorkingPose(lift: arc * 0.7, reach: sway * 0.15, rotation: sway * 18,
-                                  scaleX: 1 + arc * 0.06, scaleY: 1 - arc * 0.06)
+            pose = BotWorkingPose(
+                lift: arc * 0.7, reach: sway * 0.15, rotation: sway * 18,
+                scaleX: 1 + arc * 0.06, scaleY: 1 - arc * 0.06)
         default:
-            pose = BotWorkingPose(lift: arc * 0.9, reach: arc * 0.14, rotation: 16 * arc,
-                                  scaleX: 1 - sway * 0.08, scaleY: 1 + sway * 0.08)
+            pose = BotWorkingPose(
+                lift: arc * 0.9, reach: arc * 0.14, rotation: 16 * arc,
+                scaleX: 1 - sway * 0.08, scaleY: 1 + sway * 0.08)
         }
         pose.scaleX += squash
         pose.scaleY -= squash
@@ -235,15 +255,19 @@ struct BotWorkingAvatarView: View {
             let reacting = frame.moves && age >= 0 && age < BotWorkingPose.reactionDuration
             let pose = frame.moves ? currentPose(at: frame.date) : .rest
             ZStack {
-                BotAvatarView(bot: bot, imageData: imageData, size: size, animated: frame.moves,
-                              orbits: true)
-                    .scaleEffect(x: pose.scaleX, y: pose.scaleY)
-                    .rotationEffect(.degrees(pose.rotation))
-                    .offset(x: size * pose.reach, y: -size * 0.2 * pose.lift)
+                BotAvatarView(
+                    bot: bot, imageData: imageData, size: size, animated: frame.moves,
+                    orbits: true
+                )
+                .scaleEffect(x: pose.scaleX, y: pose.scaleY)
+                .rotationEffect(.degrees(pose.rotation))
+                .offset(x: size * pose.reach, y: -size * 0.2 * pose.lift)
                 // Echo the real activity glyph as the Bot reaches toward the rows above.
                 DockIcon(activityIcon, size: 12, color: .dockAccent)
                     .padding(3)
-                    .background(Circle().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5))
+                    .background(
+                        Circle().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
+                    )
                     .overlay(Circle().stroke(Color.dockBorderStrong, lineWidth: 0.75))
                     .scaleEffect(reacting ? 0.7 + pose.lift * 0.3 : 0.7)
                     .offset(x: size * 0.3 - pose.reach * size, y: -size * 0.3 - pose.lift * size * 0.24)
@@ -261,7 +285,10 @@ struct BotWorkingAvatarView: View {
         }
         .onChange(of: moves) { _, engaged in
             // Do not replay a one-shot when decoration resumes.
-            if !engaged { reactionAt = nil; reactionStart = .rest }
+            if !engaged {
+                reactionAt = nil
+                reactionStart = .rest
+            }
         }
     }
 
@@ -290,7 +317,8 @@ struct BotFacePose {
         let tb = t.truncatingRemainder(dividingBy: blinkPeriod)
         let blink = tb < 0.16 ? max(0.1, CGFloat(abs(tb - 0.08) / 0.08)) : 1
         let bob = CGFloat(sin(t * (busy ? 7 : 1.8))) * (busy ? 0.03 : 0.018)
-        let look = busy
+        let look =
+            busy
             ? CGSize(width: sin(t * 2.4) >= 0 ? 0.028 : -0.028, height: -0.012)
             : CGSize(width: CGFloat(sin(t * 0.6)) * 0.025, height: CGFloat(sin(t * 0.43)) * 0.012)
         return BotFacePose(bob: bob, blink: blink, look: look, t: t)
@@ -376,7 +404,8 @@ struct BotHuddle: View {
 
     var body: some View {
         let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
-        let layout = DockBotHuddleLayout(partnerCount: partners.count, leadDone: leadDone, leadSize: leadSize, partnerSize: size)
+        let layout = DockBotHuddleLayout(
+            partnerCount: partners.count, leadDone: leadDone, leadSize: leadSize, partnerSize: size)
         let members = members(layout: layout)
         DockBotFrameClock { frame in
             let turn = layout.turn(at: frame)
@@ -406,8 +435,10 @@ struct BotHuddle: View {
                     let turn = layout.turn(at: frame)
                     member(bot, index: index + 1, size: size, active: turn.active, phase: turn.phase)
                 }
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.2, anchor: .bottom).combined(with: .opacity).combined(with: .offset(y: 8)),
+                .transition(
+                    .asymmetric(
+                        insertion: .scale(scale: 0.2, anchor: .bottom).combined(with: .opacity).combined(
+                            with: .offset(y: 8)),
                         removal: .scale(scale: 0.1).combined(with: .opacity).combined(with: .offset(y: -10))))
             }
         }
@@ -430,13 +461,16 @@ struct BotHuddle: View {
         let accent = DockAccentColor.identity(for: (next == 0 ? lead : partners[next - 1]).id).fill
         for k in 0..<3 {
             let e = 1 - pow(1 - max(0, min(1, t * 1.25 - Double(k) * 0.12)), 2)
-            let flight = arc(from: CGPoint(x: xs[active], y: top(active)), to: CGPoint(x: xs[next], y: top(next)), lift: 6 + CGFloat(k) * 5)
+            let flight = arc(
+                from: CGPoint(x: xs[active], y: top(active)), to: CGPoint(x: xs[next], y: top(next)),
+                lift: 6 + CGFloat(k) * 5)
             let p = flight.point(e)
             let d: CGFloat = 4.5 - CGFloat(k) * 0.8
             var dot = ctx
             dot.opacity = e < 1 ? 1 - e * 0.4 : 0
-            dot.fill(Path(ellipseIn: CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)),
-                     with: .color(accent))
+            dot.fill(
+                Path(ellipseIn: CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)),
+                with: .color(accent))
         }
     }
 
@@ -448,31 +482,35 @@ struct BotHuddle: View {
         let scale = talking ? ThoughtBubbleTiming.scale(phase) : 0
         return Group {
             if index == 0, !leadDone, let leadSignature {
-                BotWorkingAvatarView(bot: bot, imageData: avatars[bot.id], size: size,
-                                     activitySignature: leadSignature, activityIcon: leadIcon)
+                BotWorkingAvatarView(
+                    bot: bot, imageData: avatars[bot.id], size: size,
+                    activitySignature: leadSignature, activityIcon: leadIcon)
             } else {
-                BotAvatarView(bot: bot, imageData: avatars[bot.id], size: size, animated: !dimmed,
-                              mood: dimmed ? .idle : talking ? .replying : .tool, orbits: false)
+                BotAvatarView(
+                    bot: bot, imageData: avatars[bot.id], size: size, animated: !dimmed,
+                    mood: dimmed ? .idle : talking ? .replying : .tool, orbits: false)
             }
         }
-            .opacity(dimmed ? 0.45 : 1)
-            .saturation(dimmed ? 0.5 : 1)
-            .offset(y: bob)
-            .overlay(alignment: .top) {
-                if scale > 0 {
-                    // Every bubble floats at the same height, above the lead's head;
-                    // a shorter Bot gets a longer tail.
-                    ThoughtBubble(text: ThoughtBubbleTiming.typed(lines[bot.id].map(ThoughtBubbleTiming.short), phase: phase),
-                                  tail: (index == 0 ? 0 : leadSize - size) + 4)
-                        .fixedSize()
-                        .scaleEffect(scale, anchor: .bottomLeading)
-                        .opacity(min(1, scale * 1.5))
-                        .frame(width: 0, height: 0, alignment: .bottomLeading)
-                        .offset(x: -9, y: -2)
-                        .frame(width: 0, height: 0)
-                }
+        .opacity(dimmed ? 0.45 : 1)
+        .saturation(dimmed ? 0.5 : 1)
+        .offset(y: bob)
+        .overlay(alignment: .top) {
+            if scale > 0 {
+                // Every bubble floats at the same height, above the lead's head;
+                // a shorter Bot gets a longer tail.
+                ThoughtBubble(
+                    text: ThoughtBubbleTiming.typed(lines[bot.id].map(ThoughtBubbleTiming.short), phase: phase),
+                    tail: (index == 0 ? 0 : leadSize - size) + 4
+                )
+                .fixedSize()
+                .scaleEffect(scale, anchor: .bottomLeading)
+                .opacity(min(1, scale * 1.5))
+                .frame(width: 0, height: 0, alignment: .bottomLeading)
+                .offset(x: -9, y: -2)
+                .frame(width: 0, height: 0)
             }
-            .zIndex(talking ? 1 : 0)
+        }
+        .zIndex(talking ? 1 : 0)
     }
 
     private func arc(from a: CGPoint, to b: CGPoint, lift: CGFloat = 10) -> (path: Path, point: (Double) -> CGPoint) {
@@ -480,11 +518,15 @@ struct BotHuddle: View {
         var path = Path()
         path.move(to: a)
         path.addQuadCurve(to: b, control: control)
-        return (path, { t in
-            let u = 1 - t
-            return CGPoint(x: u * u * a.x + 2 * u * t * control.x + t * t * b.x,
-                           y: u * u * a.y + 2 * u * t * control.y + t * t * b.y)
-        })
+        return (
+            path,
+            { t in
+                let u = 1 - t
+                return CGPoint(
+                    x: u * u * a.x + 2 * u * t * control.x + t * t * b.x,
+                    y: u * u * a.y + 2 * u * t * control.y + t * t * b.y)
+            }
+        )
     }
 }
 
@@ -532,7 +574,8 @@ enum ThoughtBubbleTiming {
     /// "thinking" dots instead.
     static func typed(_ text: String?, phase: Double) -> String {
         guard let text, !text.isEmpty else {
-            return String(repeating: "•", count: 1 + Int(phase * 9) % 3).padding(toLength: 3, withPad: " ", startingAt: 0)
+            return String(repeating: "•", count: 1 + Int(phase * 9) % 3).padding(
+                toLength: 3, withPad: " ", startingAt: 0)
         }
         let shown = Int(max(0, phase - 0.1) * DockBotHuddleLayout.turnLength / 0.03)
         return String(text.prefix(max(1, shown)))
@@ -578,11 +621,19 @@ struct BotFaceMark: View {
         return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
     }
 
-    @MainActor static func still(id: String, legacy: Bool = false, theme: DockThemeID? = nil, originalColors: Bool = false) -> ImageRenderer<some View> {
-        let renderer = ImageRenderer(content: Canvas { ctx, _ in
-            if legacy { drawLegacyBlob(in: &ctx, id: id, size: 160) }
-            else { draw(in: &ctx, id: id, size: 160, mood: .idle, pose: .rest, theme: theme, originalColors: originalColors) }
-        }.frame(width: 160, height: 160))
+    @MainActor static func still(
+        id: String, legacy: Bool = false, theme: DockThemeID? = nil, originalColors: Bool = false
+    ) -> ImageRenderer<some View> {
+        let renderer = ImageRenderer(
+            content: Canvas { ctx, _ in
+                if legacy {
+                    drawLegacyBlob(in: &ctx, id: id, size: 160)
+                } else {
+                    draw(
+                        in: &ctx, id: id, size: 160, mood: .idle, pose: .rest, theme: theme,
+                        originalColors: originalColors)
+                }
+            }.frame(width: 160, height: 160))
         renderer.scale = 1
         return renderer
     }
@@ -590,7 +641,11 @@ struct BotFaceMark: View {
 
 /// The seeded traits of the legacy blob, kept to recognize its saved PNGs.
 struct BotBlobGenes {
-    struct Lobe { var amp: Double; var phase: Double; var speed: Double }
+    struct Lobe {
+        var amp: Double
+        var phase: Double
+        var speed: Double
+    }
 
     var lobes: [Lobe]
     var squash: Double
@@ -605,9 +660,10 @@ struct BotBlobGenes {
         var random = BotSeededRandom(id: id)
         func next() -> Double { random.next() }
         lobes = (2...4).map { k in
-            Lobe(amp: (0.025 + next() * 0.035) / Double(k - 1).squareRoot(),
-                 phase: next() * 2 * .pi,
-                 speed: (next() < 0.5 ? -1 : 1) * (0.5 + next() * 0.7))
+            Lobe(
+                amp: (0.025 + next() * 0.035) / Double(k - 1).squareRoot(),
+                phase: next() * 2 * .pi,
+                speed: (next() < 0.5 ? -1 : 1) * (0.5 + next() * 0.7))
         }
         squash = 0.92 + next() * 0.14
         eyeSize = 0.1 + next() * 0.035
@@ -633,8 +689,9 @@ struct BotBlobShape: Shape {
                 r += lobe.amp * cos(Double(k + 2) * a + lobe.phase)
             }
             let ry = 0.4 * r * (sin(a) > 0 ? 0.94 : 1) / genes.squash
-            return CGPoint(x: rect.midX + rect.width * 0.4 * r * genes.squash * cos(a),
-                           y: rect.minY + rect.height * (0.54 + ry * sin(a)))
+            return CGPoint(
+                x: rect.midX + rect.width * 0.4 * r * genes.squash * cos(a),
+                y: rect.minY + rect.height * (0.54 + ry * sin(a)))
         }
         func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
         var path = Path()
@@ -664,7 +721,9 @@ struct BotBlobMouth: Shape {
 struct BotOrbitStar: Shape {
     func path(in r: CGRect) -> Path {
         var p = Path()
-        let c = CGPoint(x: r.midX, y: r.midY), w = r.width / 2, k = w * 0.22
+        let c = CGPoint(x: r.midX, y: r.midY)
+        let w = r.width / 2
+        let k = w * 0.22
         p.move(to: CGPoint(x: c.x, y: c.y - w))
         p.addQuadCurve(to: CGPoint(x: c.x + w, y: c.y), control: CGPoint(x: c.x + k, y: c.y - k))
         p.addQuadCurve(to: CGPoint(x: c.x, y: c.y + w), control: CGPoint(x: c.x + k, y: c.y + k))

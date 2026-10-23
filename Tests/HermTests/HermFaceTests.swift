@@ -1,11 +1,13 @@
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 struct HermFaceTests {
     @Test func genesAreSeededPerProfile() {
         #expect(HermFaceGenes(id: "nexus") == HermFaceGenes(id: " Nexus "))
-        let roster = Set((0..<40).map { "\(HermFaceGenes(id: "bot-\($0)").body)\(HermFaceGenes(id: "bot-\($0)").eyes)" })
+        let roster = Set(
+            (0..<40).map { "\(HermFaceGenes(id: "bot-\($0)").body)\(HermFaceGenes(id: "bot-\($0)").eyes)" })
         #expect(roster.count > 8)
         for i in 0..<40 {
             let genes = HermFaceGenes(id: "bot-\(i)")

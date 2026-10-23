@@ -57,23 +57,23 @@ final class OfficeMusicService: ObservableObject {
 
     /// Checks `is running` first so polling never launches Spotify.
     nonisolated private static let script = """
-    on run argv
-        if application "Spotify" is not running then return "error" & linefeed & "Open Spotify to play music here."
-        tell application "Spotify"
-            repeat with action in argv
-                set action to action as text
-                if action is "play" then play
-                if action is "pause" then pause
-                if action is "next" then next track
-            end repeat
-            -- Spotify reports the new track a beat after a skip.
-            if (count of argv) > 0 then delay 0.4
-            set s to player state as text
-            if s is "stopped" then return "stopped"
-            return s & linefeed & (name of current track) & linefeed & (artist of current track)
-        end tell
-    end run
-    """
+        on run argv
+            if application "Spotify" is not running then return "error" & linefeed & "Open Spotify to play music here."
+            tell application "Spotify"
+                repeat with action in argv
+                    set action to action as text
+                    if action is "play" then play
+                    if action is "pause" then pause
+                    if action is "next" then next track
+                end repeat
+                -- Spotify reports the new track a beat after a skip.
+                if (count of argv) > 0 then delay 0.4
+                set s to player state as text
+                if s is "stopped" then return "stopped"
+                return s & linefeed & (name of current track) & linefeed & (artist of current track)
+            end tell
+        end run
+        """
 
     nonisolated private static func invoke(_ actions: [String]) -> String {
         let process = Process()

@@ -31,21 +31,31 @@ struct NotchDisplaySettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingsPreferenceRow(title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera.") {
-                Picker("Notch position", selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right })) {
+            SettingsPreferenceRow(
+                title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera."
+            ) {
+                Picker("Notch position", selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right }))
+                {
                     Text("Side").tag(false)
                     Text("Top island").tag(true)
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
             }
             if side == .top {
-                DockCallout(tone: .info, icon: .info, title: "Top island uses the Island skin",
-                            message: "The top island notch style and the floating panel default to the Island skin to match the notch color. Your skin returns when you switch back to Side.") { EmptyView() }
+                DockCallout(
+                    tone: .info, icon: .info, title: "Top island uses the Island skin",
+                    message:
+                        "The top island notch style and the floating panel default to the Island skin to match the notch color. Your skin returns when you switch back to Side."
+                ) { EmptyView() }
             }
-            SettingsPreferenceRow(title: "Notch status display", detail: "Choose how activity appears on the screen edge.") { EmptyView() }
+            SettingsPreferenceRow(
+                title: "Notch status display", detail: "Choose how activity appears on the screen edge."
+            ) { EmptyView() }
             HStack(spacing: 12) {
                 ForEach(NotchDisplayStyle.allCases) { option in
-                    Button { style = option } label: {
+                    Button {
+                        style = option
+                    } label: {
                         HStack(spacing: 8) {
                             EdgeNotchStatusIndicator(activity: option.previewActivity, style: option)
                                 .frame(width: 28, height: 44)
@@ -54,7 +64,9 @@ struct NotchDisplaySettings: View {
                         }
                         .foregroundStyle(style == option ? Color.dockAccent : Color.dockSecondaryText)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(style == option ? Color.dockAccentMuted : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                        .background(
+                            style == option ? Color.dockAccentMuted : Color.clear, in: RoundedRectangle(cornerRadius: 8)
+                        )
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.dockHover)
@@ -87,8 +99,11 @@ struct EdgeNotchStatusIndicator: View {
     private var animates: Bool { !reduceMotion && (activity.working || activity.attention) }
 
     private var primary: Mark {
-        activity.working ? .working : activity.hasUpdate ? .done
-            : activity.attention ? .blocked : activity.status == .offline ? .offline : .idle
+        activity.working
+            ? .working
+            : activity.hasUpdate
+                ? .done
+                : activity.attention ? .blocked : activity.status == .offline ? .offline : .idle
     }
 
     private var badges: [Mark] {
@@ -192,12 +207,13 @@ struct EdgeNotchStatusIndicator: View {
 
     /// Tinted disc with a glyph; working swaps the glyph for a rotating arc.
     private func chip(_ m: Mark, _ c: Color, _ level: Double, _ t: Double, number: Int = 0) -> some View {
-        let symbol: String? = switch m {
-        case .done: "checkmark"
-        case .blocked: activity.status == .needsClarification ? "questionmark" : "exclamationmark"
-        case .offline: "moon.zzz.fill"
-        default: nil
-        }
+        let symbol: String? =
+            switch m {
+            case .done: "checkmark"
+            case .blocked: activity.status == .needsClarification ? "questionmark" : "exclamationmark"
+            case .offline: "moon.zzz.fill"
+            default: nil
+            }
         return ZStack {
             Circle().fill(c.opacity(0.16 * level))
             Circle().strokeBorder(c.opacity(0.35 * level), lineWidth: 1)

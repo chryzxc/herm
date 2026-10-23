@@ -1,16 +1,17 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct AppleRemindersAdapterTests {
     @Test func parsesAndOrdersOverdueReminders() {
         let output = """
-        {"reminders":[
-          {"id":"later","title":"Later","dueDate":"2030-01-02T10:00:00Z","isOverdue":false},
-          {"id":"overdue","title":"Overdue","dueDate":"2020-01-02T10:00:00Z","isOverdue":true}
-        ]}
-        """
+            {"reminders":[
+              {"id":"later","title":"Later","dueDate":"2030-01-02T10:00:00Z","isOverdue":false},
+              {"id":"overdue","title":"Overdue","dueDate":"2020-01-02T10:00:00Z","isOverdue":true}
+            ]}
+            """
 
         let reminders = AppleRemindersAdapter.parse(output)
 
@@ -20,7 +21,8 @@ struct AppleRemindersAdapterTests {
     }
 
     @Test func ignoresMalformedReminderRows() {
-        let reminders = AppleRemindersAdapter.parse("[{\"title\":\"Missing id\"},{\"id\":\"valid\",\"title\":\"Keep me\"}]")
+        let reminders = AppleRemindersAdapter.parse(
+            "[{\"title\":\"Missing id\"},{\"id\":\"valid\",\"title\":\"Keep me\"}]")
 
         #expect(reminders.count == 1)
         #expect(reminders.first?.id == "valid")

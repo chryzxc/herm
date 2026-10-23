@@ -19,7 +19,8 @@ struct SessionKanbanActivityView: View {
     }
 
     private var botWorkRows: [SessionKanbanActivityPresentation.BotWorkRow] {
-        SessionKanbanActivityPresentation.botWork(tasks: control.sessionKanbanTasks, bots: botMode.visibleBots, sessionID: sessionID)
+        SessionKanbanActivityPresentation.botWork(
+            tasks: control.sessionKanbanTasks, bots: botMode.visibleBots, sessionID: sessionID)
     }
 
     private var sessionActivityBots: [BotSummary] {
@@ -52,9 +53,11 @@ struct SessionKanbanActivityView: View {
             while !Task.isCancelled {
                 // Feed rows and handoffs reach the chat through this poll, so
                 // stay quick while work is live and relax when idle.
-                let live = model.status == .working || control.sessionKanbanTasks.contains {
-                    !["done", "archived", "completed"].contains($0.status.lowercased())
-                }
+                let live =
+                    model.status == .working
+                    || control.sessionKanbanTasks.contains {
+                        !["done", "archived", "completed"].contains($0.status.lowercased())
+                    }
                 try? await Task.sleep(for: .seconds(live ? 5 : 15))
                 guard !Task.isCancelled else { continue }
                 control.refreshSessionKanban(for: sessionID, quiet: true)
@@ -75,12 +78,14 @@ struct SessionKanbanActivityView: View {
             Text(sessionID == nil ? "SESSION ATTRIBUTION UNAVAILABLE" : "KANBAN CAPABILITY UNAVAILABLE")
                 .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockWarning)
-            Text(sessionID == nil
-                 ? "This session has no durable attribution ID, so Bot work cannot be matched safely."
-                 : "Hermes did not advertise the Kanban capability for this session.")
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                sessionID == nil
+                    ? "This session has no durable attribution ID, so Bot work cannot be matched safely."
+                    : "Hermes did not advertise the Kanban capability for this session."
+            )
+            .dockFont(.body)
+            .foregroundStyle(Color.dockSecondaryText)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -108,10 +113,12 @@ struct SessionKanbanActivityView: View {
                         Text("SESSION KANBAN UNAVAILABLE")
                             .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockWarning)
-                        Text("The attribution query did not complete successfully. Retry before treating this session as empty.")
-                            .dockFont(.compactStatus, weight: .regular)
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "The attribution query did not complete successfully. Retry before treating this session as empty."
+                        )
+                        .dockFont(.compactStatus, weight: .regular)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
@@ -215,7 +222,9 @@ struct SessionKanbanActivityView: View {
             } else {
                 ForEach(sessionActivityBots) { bot in
                     HStack(alignment: .top, spacing: 9) {
-                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30, orbits: botWorkRows.contains { $0.botID == bot.id && $0.status == .running })
+                        BotAvatarView(
+                            bot: bot, imageData: botMode.avatarImages[bot.id], size: 30,
+                            orbits: botWorkRows.contains { $0.botID == bot.id && $0.status == .running })
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
                                 Text(bot.name)
@@ -241,9 +250,14 @@ struct SessionKanbanActivityView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4.opacity(0.68)))
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                            Color.dockSurface4.opacity(0.68))
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                            Color.dockBorderLight, lineWidth: 0.5))
                 }
             }
         }
@@ -253,22 +267,29 @@ struct SessionKanbanActivityView: View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("BOT WORK")
             ForEach(botWorkRows) { row in
-                Button { onOpenTask?(row.taskID) } label: {
+                Button {
+                    onOpenTask?(row.taskID)
+                } label: {
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(statusColor(row.status)).frame(width: 7, height: 7).padding(.top, 4)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(row.botName).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
-                            Text(row.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
+                            Text(row.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(2)
                             Text("\(row.status.label) · KANBAN TASK \(row.taskID)")
                                 .dockFont(.compactStatus, weight: .medium, design: .monospaced)
                                 .foregroundStyle(statusColor(row.status))
                         }
                         Spacer(minLength: 0)
-                        DockIcon(.caretRight).dockFont(.compactStatus, weight: .semibold).foregroundStyle(Color.dockMetadataText)
+                        DockIcon(.caretRight).dockFont(.compactStatus, weight: .semibold).foregroundStyle(
+                            Color.dockMetadataText)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4.opacity(0.68)))
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                            Color.dockSurface4.opacity(0.68))
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                 }
                 .buttonStyle(.dockHover)
@@ -319,9 +340,14 @@ struct SessionKanbanActivityView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4.opacity(0.68)))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                    Color.dockSurface4.opacity(0.68))
+            )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                    Color.dockBorderLight, lineWidth: 0.5))
         }
         .buttonStyle(.dockHover)
         .disabled(onOpenTask == nil && onOpenBoard == nil)

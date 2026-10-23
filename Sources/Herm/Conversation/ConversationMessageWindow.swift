@@ -209,11 +209,13 @@ enum ConversationMessageWindow {
         sessionID: String,
         messages: [ChatMessage]
     ) -> ConversationMessageJumpEffect? {
-        guard let plan = jumpPlan(
-            for: item,
-            sessionID: sessionID,
-            messages: messages
-        ) else { return nil }
+        guard
+            let plan = jumpPlan(
+                for: item,
+                sessionID: sessionID,
+                messages: messages
+            )
+        else { return nil }
         return ConversationMessageJumpEffect(
             messageID: plan.messageID,
             windowRange: plan.windowRange,
@@ -221,7 +223,6 @@ enum ConversationMessageWindow {
             unseenMessageCount: 0
         )
     }
-
 
 }
 

@@ -18,36 +18,47 @@ final class BotService {
 
     /// Stored session id -> busy, for sessions live in the gateway process.
     func liveBusy() async -> [String: Bool] {
-        guard let rows = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])["sessions"] as? [[String: Any]] else { return [:] }
-        return Dictionary(rows.compactMap { row in
-            (row["session_key"] as? String).map { ($0, (row["status"] as? String ?? "idle") != "idle") }
-        }, uniquingKeysWith: { $0 || $1 })
+        guard
+            let rows = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])[
+                "sessions"] as? [[String: Any]]
+        else { return [:] }
+        return Dictionary(
+            rows.compactMap { row in
+                (row["session_key"] as? String).map { ($0, (row["status"] as? String ?? "idle") != "idle") }
+            }, uniquingKeysWith: { $0 || $1 })
     }
 
     func list() async -> BotInventory {
         // Some runtimes expose Bots as a managed plugin; desktop-only toggles
         // are not included in this gateway contract.
-        let pluginResult = try? await client.request(HermesFeatureIDs.ID.pluginsManage.rawValue, params: ["action": "list"])
+        let pluginResult = try? await client.request(
+            HermesFeatureIDs.ID.pluginsManage.rawValue, params: ["action": "list"])
         let pluginRows = pluginResult?["plugins"] as? [[String: Any]]
         let botPlugin = pluginRows?.first { ($0["key"] as? String) == "hermes-bots" }
         if let botPlugin, botPlugin["status"] as? String != "enabled" {
-            return BotInventory(availability: .unsupported, bots: [], diagnostic: "The Hermes Bots plugin is not enabled.")
+            return BotInventory(
+                availability: .unsupported, bots: [], diagnostic: "The Hermes Bots plugin is not enabled.")
         }
         var roster = await rosterList()
         // Current Hermes builds Bot Mode in and lists no `hermes-bots` row;
         // only an unanswered probe leaves the state unknown.
-        roster.isPluginEnabled = pluginRows != nil
+        roster.isPluginEnabled =
+            pluginRows != nil
             && (botPlugin == nil || botPlugin?["status"] as? String == "enabled")
         guard roster.availability == .ready else { return roster }
         let live = await liveBusy()
         guard !live.isEmpty else { return roster }
-        return BotInventory(availability: roster.availability, bots: roster.bots.map { bot in
-            let states = [bot.chat?.sessionID, bot.recentSession?.sessionID, bot.worker?.sessionID].compactMap { $0 }.compactMap { live[$0] }
-            guard !states.isEmpty else { return bot }
-            var bot = bot
-            bot.liveBusy = states.contains(true)
-            return bot
-        }, diagnostic: roster.diagnostic, isPluginEnabled: roster.isPluginEnabled)
+        return BotInventory(
+            availability: roster.availability,
+            bots: roster.bots.map { bot in
+                let states = [bot.chat?.sessionID, bot.recentSession?.sessionID, bot.worker?.sessionID].compactMap {
+                    $0
+                }.compactMap { live[$0] }
+                guard !states.isEmpty else { return bot }
+                var bot = bot
+                bot.liveBusy = states.contains(true)
+                return bot
+            }, diagnostic: roster.diagnostic, isPluginEnabled: roster.isPluginEnabled)
     }
 
     /// Profile-only inventory for pickers that do not need plugin or live-session state.
@@ -55,12 +66,19 @@ final class BotService {
         do {
             let result = try await client.request(HermesFeatureIDs.ID.profilesList.rawValue, params: [:])
             return try Self.parseInventory(result)
-        } catch is ParseError { return BotInventory(availability: .malformed, bots: [], diagnostic: "Hermes returned malformed Bot data.") }
-        catch let error {
+        } catch is ParseError {
+            return BotInventory(availability: .malformed, bots: [], diagnostic: "Hermes returned malformed Bot data.")
+        } catch let error {
             // Hermes answers unregistered RPCs with `unknown method:`; that is
             // an old runtime, not a transport failure.
-            if Self.isUnsupportedMethod(error) { return BotInventory(availability: .unsupported, bots: [], diagnostic: "This Hermes runtime does not advertise profile support yet.") }
-            return BotInventory(availability: .unavailable, bots: [], diagnostic: "Hermes did not return the Bot roster. \(Self.transportDiagnostic(for: error))")
+            if Self.isUnsupportedMethod(error) {
+                return BotInventory(
+                    availability: .unsupported, bots: [],
+                    diagnostic: "This Hermes runtime does not advertise profile support yet.")
+            }
+            return BotInventory(
+                availability: .unavailable, bots: [],
+                diagnostic: "Hermes did not return the Bot roster. \(Self.transportDiagnostic(for: error))")
         }
     }
 
@@ -77,11 +95,14 @@ final class BotService {
     }
 
     func describe(profileID: String) async throws -> BotDetails {
-        let result = try await client.request(HermesFeatureIDs.ID.profilesDescribe.rawValue, params: ["name": profileID])
+        let result = try await client.request(
+            HermesFeatureIDs.ID.profilesDescribe.rawValue, params: ["name": profileID])
         return try Self.parseDetailsResult(result)
     }
 
-    func create(name: String, title: String?, description: String?, cloneFrom: String? = nil, skipsSkills: Bool = false) async throws -> BotDetails {
+    func create(name: String, title: String?, description: String?, cloneFrom: String? = nil, skipsSkills: Bool = false)
+        async throws -> BotDetails
+    {
         var params: [String: Any] = ["name": name]
         if let description, !description.isEmpty { params["description"] = description }
         if let cloneFrom, !cloneFrom.isEmpty { params["clone_from"] = cloneFrom }
@@ -100,16 +121,22 @@ final class BotService {
     }
 
     func delete(profileID: String) async throws {
-        let result = try await HermesCLIAdapter(rpc: HermesControlRPC(client: client)).deleteProfile(profileID: profileID)
+        let result = try await HermesCLIAdapter(rpc: HermesControlRPC(client: client)).deleteProfile(
+            profileID: profileID)
         guard result.succeeded else {
-            throw HermesCLIError.failed(result.stderr.isEmpty ? "Hermes rejected profile deletion. Refresh the roster before retrying." : result.stderr)
+            throw HermesCLIError.failed(
+                result.stderr.isEmpty
+                    ? "Hermes rejected profile deletion. Refresh the roster before retrying." : result.stderr)
         }
     }
 
     func configure(profileID: String, fields: [String: Any]) async throws -> BotDetails {
-        guard !fields.keys.contains(where: { Self.blockedFieldKeys.contains($0.lowercased()) }) else { throw ParseError.invalid }
+        guard !fields.keys.contains(where: { Self.blockedFieldKeys.contains($0.lowercased()) }) else {
+            throw ParseError.invalid
+        }
         // Hermes addresses profiles through the `name` parameter.
-        var params = fields; params["name"] = profileID
+        var params = fields
+        params["name"] = profileID
         _ = try await client.request(HermesFeatureIDs.ID.profilesConfigure.rawValue, params: params)
         return try await describe(profileID: profileID)
     }
@@ -118,40 +145,56 @@ final class BotService {
 
     /// `profiles.get_asset` answers a data URL; decode it to raw image bytes.
     func avatarImageData(profileID: String) async -> Data? {
-        guard let result = try? await client.request(HermesFeatureIDs.ID.profilesGetAsset.rawValue, params: ["name": profileID, "asset": "avatar"]),
-              (result["found"] as? Bool) == true,
-              let dataURL = result["data"] as? String else { return nil }
+        guard
+            let result = try? await client.request(
+                HermesFeatureIDs.ID.profilesGetAsset.rawValue, params: ["name": profileID, "asset": "avatar"]),
+            (result["found"] as? Bool) == true,
+            let dataURL = result["data"] as? String
+        else { return nil }
         return Self.decodeDataURL(dataURL)
     }
 
     func setAvatar(profileID: String, dataURL: String) async throws {
-        _ = try await client.request(HermesFeatureIDs.ID.profilesSetAsset.rawValue, params: ["name": profileID, "asset": "avatar", "data": dataURL])
+        _ = try await client.request(
+            HermesFeatureIDs.ID.profilesSetAsset.rawValue,
+            params: ["name": profileID, "asset": "avatar", "data": dataURL])
     }
 
     func clearAvatar(profileID: String) async throws {
-        _ = try await client.request(HermesFeatureIDs.ID.profilesSetAsset.rawValue, params: ["name": profileID, "asset": "avatar", "clear": true])
+        _ = try await client.request(
+            HermesFeatureIDs.ID.profilesSetAsset.rawValue,
+            params: ["name": profileID, "asset": "avatar", "clear": true])
     }
 
     func isImageGenerationAvailable() async -> Bool {
-        guard let result = try? await client.request(HermesFeatureIDs.ID.imageGenerate.rawValue, params: ["probe": true]),
-              (result["available"] as? Bool) == true else { return false }
+        guard
+            let result = try? await client.request(HermesFeatureIDs.ID.imageGenerate.rawValue, params: ["probe": true]),
+            (result["available"] as? Bool) == true
+        else { return false }
         return true
     }
 
     /// `image.generate` returns `image_data` (a data URL) or a plain `image`
     /// URL/path when the download step failed.
     func generateAvatarImage(prompt: String) async throws -> String {
-        let result = try await client.request(HermesFeatureIDs.ID.imageGenerate.rawValue, params: ["prompt": prompt, "aspect_ratio": "square"])
+        let result = try await client.request(
+            HermesFeatureIDs.ID.imageGenerate.rawValue, params: ["prompt": prompt, "aspect_ratio": "square"])
         if let dataURL = result["image_data"] as? String, !dataURL.isEmpty { return dataURL }
         if let image = result["image"] as? String, !image.isEmpty,
-           let url = URL(string: image), url.scheme == "https" { return image }
-        throw NSError(domain: "HermesBots", code: 1, userInfo: [NSLocalizedDescriptionKey: "Hermes could not generate an avatar image."])
+            let url = URL(string: image), url.scheme == "https"
+        {
+            return image
+        }
+        throw NSError(
+            domain: "HermesBots", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Hermes could not generate an avatar image."])
     }
 
     static func decodeDataURL(_ dataURL: String) -> Data? {
         guard let comma = dataURL.firstIndex(of: ","),
-              dataURL.hasPrefix("data:"),
-              let base64 = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])) else { return nil }
+            dataURL.hasPrefix("data:"),
+            let base64 = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
+        else { return nil }
         return base64
     }
 
@@ -163,8 +206,9 @@ final class BotService {
         } else if data.starts(with: [0xFF, 0xD8, 0xFF]) {
             mime = "image/jpeg"
         } else if data.count >= 12,
-                  data.starts(with: Array("RIFF".utf8)),
-                  Data(data[8..<12]) == Data("WEBP".utf8) {
+            data.starts(with: Array("RIFF".utf8)),
+            Data(data[8..<12]) == Data("WEBP".utf8)
+        {
             mime = "image/webp"
         } else {
             return nil
@@ -187,15 +231,19 @@ final class BotService {
     }
 
     func profileDetail(profileID: String) async throws -> BotProfileDetail {
-        let result = try await client.request(HermesFeatureIDs.ID.profilesDescribe.rawValue, params: ["name": profileID])
+        let result = try await client.request(
+            HermesFeatureIDs.ID.profilesDescribe.rawValue, params: ["name": profileID])
         return try Self.parseProfileDetail(result)
     }
 
     /// The profile's effective config (fallback chain, reasoning, context) via
     /// profile-scoped `config.get full`; `nil` when Hermes can't answer.
     func runtimeConfig(profileID: String) async -> BotRuntimeConfig? {
-        guard let result = try? await client.request(HermesFeatureIDs.ID.configGet.rawValue, params: ["key": "full", "profile": profileID]),
-              let config = result["config"] as? [String: Any] else { return nil }
+        guard
+            let result = try? await client.request(
+                HermesFeatureIDs.ID.configGet.rawValue, params: ["key": "full", "profile": profileID]),
+            let config = result["config"] as? [String: Any]
+        else { return nil }
         return Self.parseRuntimeConfig(config)
     }
 
@@ -209,13 +257,15 @@ final class BotService {
             if let baseURL = ref.baseURL { entry["base_url"] = baseURL }
             return entry
         }
-        _ = try await client.sendHTTP("PUT", path: "/api/config", body: [
-            "profile": profileID,
-            "config": [
-                "fallback_providers": entries,
-                "fallback_model": ["provider": "", "model": "", "base_url": ""],
-            ],
-        ])
+        _ = try await client.sendHTTP(
+            "PUT", path: "/api/config",
+            body: [
+                "profile": profileID,
+                "config": [
+                    "fallback_providers": entries,
+                    "fallback_model": ["provider": "", "model": "", "base_url": ""],
+                ],
+            ])
     }
 
     static func parseRuntimeConfig(_ config: [String: Any]) -> BotRuntimeConfig {
@@ -223,7 +273,8 @@ final class BotService {
             let rows = (value as? [[String: Any]]) ?? (value as? [String: Any]).map { [$0] } ?? []
             return rows.compactMap { row in
                 guard let provider = row["provider"] as? String, let model = row["model"] as? String,
-                      !provider.isEmpty, !model.isEmpty else { return nil }
+                    !provider.isEmpty, !model.isEmpty
+                else { return nil }
                 let baseURL = (row["base_url"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                 return .init(provider: provider, model: model, baseURL: baseURL)
             }
@@ -232,7 +283,9 @@ final class BotService {
         for ref in refs(config["fallback_providers"]) + refs(config["fallback_model"]) where !fallbacks.contains(ref) {
             fallbacks.append(ref)
         }
-        let effort = ((config["agent"] as? [String: Any])?["reasoning_effort"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let effort = ((config["agent"] as? [String: Any])?["reasoning_effort"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        }
         return BotRuntimeConfig(
             contextLength: (config["model"] as? [String: Any])?["context_length"] as? Int,
             reasoningEffort: effort,
@@ -244,7 +297,10 @@ final class BotService {
     /// Applies an edited snapshot. Guarded (expensive) model pins answer
     /// `confirm_required` and write nothing until the caller re-sends with
     /// `confirmExpensiveModel`.
-    func applyProfileEdit(profileID: String, title: String, description: String, soul: String, provider: String?, model: String?, disabledSkills: [String], enabledToolsets: [String]?, enabledMCPServers: [String], confirmExpensiveModel: Bool) async throws -> BotProfileEditOutcome {
+    func applyProfileEdit(
+        profileID: String, title: String, description: String, soul: String, provider: String?, model: String?,
+        disabledSkills: [String], enabledToolsets: [String]?, enabledMCPServers: [String], confirmExpensiveModel: Bool
+    ) async throws -> BotProfileEditOutcome {
         var params: [String: Any] = [
             "name": profileID,
             "description": description,
@@ -272,14 +328,16 @@ final class BotService {
     }
 
     func duplicate(profileID: String, newName: String, title: String?) async throws {
-        _ = try await client.request(HermesFeatureIDs.ID.profilesCreate.rawValue, params: ["name": newName, "clone_from": profileID])
+        _ = try await client.request(
+            HermesFeatureIDs.ID.profilesCreate.rawValue, params: ["name": newName, "clone_from": profileID])
         if let title, !title.isEmpty {
             try? await setRosterMeta(profileID: newName, title: title, hidden: nil)
         }
     }
 
     func modelOptions() async throws -> [(provider: String, models: [String])] {
-        let result = try await client.request(HermesFeatureIDs.ID.modelOptions.rawValue, params: ["explicit_only": true])
+        let result = try await client.request(
+            HermesFeatureIDs.ID.modelOptions.rawValue, params: ["explicit_only": true])
         let providers = result["providers"] as? [[String: Any]] ?? []
         return providers.compactMap { provider in
             guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String) else { return nil }
@@ -296,31 +354,38 @@ final class BotService {
     /// Hermes namespaces Bot routines as `[bot:<name>] <routine>` cron jobs;
     /// jobs without the tag belong to the core scheduler, not Bot Mode.
     func listRoutines() async -> [BotRoutine] {
-        guard let result = try? await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: ["action": "list"]),
-              let rows = result["jobs"] as? [[String: Any]] else { return [] }
+        guard
+            let result = try? await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: ["action": "list"]),
+            let rows = result["jobs"] as? [[String: Any]]
+        else { return [] }
         return rows.compactMap(Self.parseRoutine)
     }
 
     func createRoutine(profileID: String, title: String, schedule: String, prompt: String) async throws {
         guard Self.isSafeSchedule(schedule) else { throw ParseError.invalid }
-        _ = try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: [
-            "action": "add", "name": Self.routineJobName(profileID: profileID, title: title),
-            "schedule": schedule, "prompt": prompt,
-        ])
+        _ = try await client.request(
+            HermesFeatureIDs.ID.cronManage.rawValue,
+            params: [
+                "action": "add", "name": Self.routineJobName(profileID: profileID, title: title),
+                "schedule": schedule, "prompt": prompt,
+            ])
     }
 
     func removeRoutine(jobName: String) async throws {
-        _ = try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: ["action": "remove", "name": jobName])
+        _ = try await client.request(
+            HermesFeatureIDs.ID.cronManage.rawValue, params: ["action": "remove", "name": jobName])
     }
 
     static func parseRoutine(_ row: [String: Any]) -> BotRoutine? {
         guard let jobName = row["name"] as? String,
-              jobName.hasPrefix(routineTagPrefix),
-              let closing = jobName.firstIndex(of: "]") else { return nil }
+            jobName.hasPrefix(routineTagPrefix),
+            let closing = jobName.firstIndex(of: "]")
+        else { return nil }
         let profileID = String(jobName[jobName.index(jobName.startIndex, offsetBy: routineTagPrefix.count)..<closing])
         let displayTitle = jobName[jobName.index(after: closing)...].trimmingCharacters(in: .whitespaces)
         guard safeID(profileID), !displayTitle.isEmpty,
-              let schedule = row["schedule"] as? String, !schedule.isEmpty else { return nil }
+            let schedule = row["schedule"] as? String, !schedule.isEmpty
+        else { return nil }
         let prompt = (row["prompt"] as? String) ?? (row["request"] as? String) ?? (row["task"] as? String)
         return BotRoutine(
             id: jobName, profileID: profileID, name: displayTitle, jobName: jobName,
@@ -342,7 +407,9 @@ final class BotService {
     /// payloads are never read into Dock state.
     private static func parseInventory(_ result: [String: Any]) throws -> BotInventory {
         guard let rows = result["profiles"] as? [[String: Any]] else { throw ParseError.invalid }
-        let bots = try rows.map(parseSummary).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let bots = try rows.map(parseSummary).sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
         return BotInventory(availability: .ready, bots: bots, diagnostic: "")
     }
 
@@ -361,18 +428,25 @@ final class BotService {
             if let dictionary = value as? [String: Any] { return try optionalString(dictionary, key: "default") }
             throw ParseError.invalid
         }
-        let provider = (raw["provider"] as? String)
+        let provider =
+            (raw["provider"] as? String)
             ?? (raw["model"] as? [String: Any])?["provider"] as? String
         let worker = try parseWorker(raw["worker_session"])
         let isActive: Bool
-        if let value = raw["is_active"] { guard let value = value as? Bool else { throw ParseError.invalid }; isActive = value } else { isActive = worker?.isLive == true }
+        if let value = raw["is_active"] {
+            guard let value = value as? Bool else { throw ParseError.invalid }
+            isActive = value
+        } else {
+            isActive = worker?.isLive == true
+        }
         let preview = chat?.preview ?? fallbackChat?.preview
         let workerLastActive = worker?.lastActive
         let lastActive = [chat?.lastActive, fallbackChat?.lastActive, workerLastActive].compactMap { $0 }.max()
         let botsMeta = rosterMeta(raw)
         return BotSummary(
             id: id, name: name, title: title, description: description, model: model, provider: provider,
-            isActive: isActive, chat: chat, recentSession: fallbackChat, worker: worker, avatarURL: avatarURL(raw), preview: preview,
+            isActive: isActive, chat: chat, recentSession: fallbackChat, worker: worker, avatarURL: avatarURL(raw),
+            preview: preview,
             lastActive: lastActive, isHidden: botsMeta?.hidden == true,
             hasAvatar: (raw["has_avatar"] as? Bool) == true,
             hasCustomAvatar: botsMeta?.custom == true,
@@ -383,8 +457,9 @@ final class BotService {
     private static func parseWorker(_ value: Any?) throws -> BotWorkerReference? {
         guard let value, !(value is NSNull) else { return nil }
         guard let worker = value as? [String: Any],
-              let sessionID = worker["id"] as? String,
-              safeID(sessionID) else { throw ParseError.invalid }
+            let sessionID = worker["id"] as? String,
+            safeID(sessionID)
+        else { throw ParseError.invalid }
         let source = try optionalString(worker, key: "source")
         let title = try optionalString(worker, key: "title")
         return BotWorkerReference(
@@ -395,13 +470,18 @@ final class BotService {
         )
     }
 
-    private struct RosterMeta { var title: String?; var hidden: Bool?; var custom: Bool? }
+    private struct RosterMeta {
+        var title: String?
+        var hidden: Bool?
+        var custom: Bool?
+    }
 
     /// Bot Mode keeps its roster display metadata (title, hidden) in the
     /// profile's `ui_meta['hermes-bots']` block so every client sees it.
     private static func rosterMeta(_ raw: [String: Any]) -> RosterMeta? {
         guard let uiMeta = raw["ui_meta"] as? [String: Any],
-              let bots = uiMeta["hermes-bots"] as? [String: Any] else { return nil }
+            let bots = uiMeta["hermes-bots"] as? [String: Any]
+        else { return nil }
         let title = (bots["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let hidden = (bots["hidden"] as? Bool)
         let custom = (bots["custom"] as? Bool) ?? false
@@ -425,9 +505,13 @@ final class BotService {
         let description = try optionalString(raw, key: "description")
         var model: String?
         if let value = raw["model"] {
-            if let string = value as? String { model = string }
-            else if let dict = value as? [String: Any], let defaultModel = dict["default"] as? String { model = defaultModel }
-            else { throw ParseError.invalid }
+            if let string = value as? String {
+                model = string
+            } else if let dict = value as? [String: Any], let defaultModel = dict["default"] as? String {
+                model = defaultModel
+            } else {
+                throw ParseError.invalid
+            }
         }
         return BotDetails(id: name, name: name, title: nil, description: description, model: model, chat: nil)
     }
@@ -479,9 +563,14 @@ final class BotService {
     private static func parseChat(_ value: Any?, profileID: String) throws -> BotChatReference? {
         guard let value, !(value is NSNull) else { return nil }
         guard let chat = value as? [String: Any],
-              let sessionID = (chat["resolved_id"] as? String) ?? (chat["session_id"] as? String) ?? (chat["id"] as? String),
-              safeID(sessionID) else { throw ParseError.invalid }
-        return BotChatReference(sessionID: sessionID, profileID: profileID, title: try? optionalString(chat, key: "title"), preview: try? optionalString(chat, key: "preview"), lastActive: parseTimestamp(chat["last_active"] ?? chat["started_at"]))
+            let sessionID = (chat["resolved_id"] as? String) ?? (chat["session_id"] as? String)
+                ?? (chat["id"] as? String),
+            safeID(sessionID)
+        else { throw ParseError.invalid }
+        return BotChatReference(
+            sessionID: sessionID, profileID: profileID, title: try? optionalString(chat, key: "title"),
+            preview: try? optionalString(chat, key: "preview"),
+            lastActive: parseTimestamp(chat["last_active"] ?? chat["started_at"]))
     }
 
     private static func parseTimestamp(_ value: Any?) -> Date? {
@@ -495,7 +584,9 @@ final class BotService {
         guard let string = value as? String, string.count <= 512 else { throw ParseError.invalid }
         return string
     }
-    private static func safeID(_ value: String) -> Bool { !value.isEmpty && value.count <= 128 && value.allSatisfy { $0.isLetter || $0.isNumber || ".:_-".contains($0) } }
+    private static func safeID(_ value: String) -> Bool {
+        !value.isEmpty && value.count <= 128 && value.allSatisfy { $0.isLetter || $0.isNumber || ".:_-".contains($0) }
+    }
     private static let blockedFieldKeys: Set<String> = ["credentials", "memory", "path", "cwd", "token", "secret"]
     private enum ParseError: LocalizedError {
         case invalid
@@ -503,14 +594,15 @@ final class BotService {
         var errorDescription: String? {
             switch self {
             case .invalid: "Hermes returned data Herm cannot read."
-            case .sectionsFailed(let names): "Hermes did not save: \(names.isEmpty ? "unknown section" : names.joined(separator: ", "))."
+            case .sectionsFailed(let names):
+                "Hermes did not save: \(names.isEmpty ? "unknown section" : names.joined(separator: ", "))."
             }
         }
     }
 }
 
-private extension BotDetails {
-    func withTitle(_ title: String) -> BotDetails {
+extension BotDetails {
+    fileprivate func withTitle(_ title: String) -> BotDetails {
         BotDetails(id: id, name: name, title: title, description: description, model: model, chat: chat)
     }
 }
@@ -518,7 +610,9 @@ private extension BotDetails {
 @MainActor
 final class BotModeModel: ObservableObject {
     var integrationClient: HermesRPCClientProtocol? { service?.integrationClient }
-    @Published private(set) var inventory = BotInventory(availability: .unavailable, bots: [], diagnostic: "Bot inventory is unavailable.") {
+    @Published private(set) var inventory = BotInventory(
+        availability: .unavailable, bots: [], diagnostic: "Bot inventory is unavailable.")
+    {
         didSet { rebuildRosterIndex() }
     }
     /// O(1) roster lookup for per-row transcript rendering; rebuilt whenever
@@ -537,7 +631,10 @@ final class BotModeModel: ObservableObject {
     @Published var botDeletionError: String?
     @Published private(set) var selectedProfileID: String?
     @Published private(set) var avatarImages: [String: Data] = [:] {
-        didSet { rosterRevision &+= 1; BotMentions.update(bots: inventory.bots, avatars: avatarImages) }
+        didSet {
+            rosterRevision &+= 1
+            BotMentions.update(bots: inventory.bots, avatars: avatarImages)
+        }
     }
     private var service: BotService?
     let groupChats = GroupChatStore()
@@ -613,8 +710,10 @@ final class BotModeModel: ObservableObject {
     /// Welcome and voice share the same identity and confirmed plugin gate.
     func orbHermFaceID(profileID: String?) -> String? {
         guard inventory.availability == .ready, inventory.isPluginEnabled,
-              let bot = (profileID ?? selectedProfileID).flatMap({ botsByID[$0] }) ?? visibleBots.first(where: \.isDefault),
-              BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) else { return nil }
+            let bot = (profileID ?? selectedProfileID).flatMap({ botsByID[$0] })
+                ?? visibleBots.first(where: \.isDefault),
+            BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id)
+        else { return nil }
         return bot.id
     }
 
@@ -632,7 +731,9 @@ final class BotModeModel: ObservableObject {
     func setCapabilityAvailable(_ available: Bool) {
         capabilityAvailable = available
         if !available, inventory.availability != .ready {
-            inventory = BotInventory(availability: .unsupported, bots: [], diagnostic: "Bot Mode requires a Hermes runtime with profile support.")
+            inventory = BotInventory(
+                availability: .unsupported, bots: [],
+                diagnostic: "Bot Mode requires a Hermes runtime with profile support.")
         }
     }
 
@@ -647,7 +748,8 @@ final class BotModeModel: ObservableObject {
     func refreshNow(force: Bool = false) async {
         guard let service, !isRefreshing, !isPolling else { return }
         // `.unavailable` is a transport failure, so polling keeps retrying it.
-        guard force || capabilityAvailable || inventory.availability == .ready || inventory.availability == .unavailable else { return }
+        guard force || capabilityAvailable || inventory.availability == .ready || inventory.availability == .unavailable
+        else { return }
         // Background polls stay unpublished so the sidebar rail does not
         // rebuild twice every 10s; only explicit refreshes show a spinner.
         if force { isRefreshing = true } else { isPolling = true }
@@ -696,8 +798,11 @@ final class BotModeModel: ObservableObject {
         let candidate = Self.resolvedProfileID(currentSelection: selectedProfileID, visibleBots: visible)
         guard selectedProfileID != candidate else { return }
         selectedProfileID = candidate
-        if let candidate { UserDefaults.standard.set(candidate, forKey: selectedProfileKey) }
-        else { UserDefaults.standard.removeObject(forKey: selectedProfileKey) }
+        if let candidate {
+            UserDefaults.standard.set(candidate, forKey: selectedProfileKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: selectedProfileKey)
+        }
     }
 
     static func resolvedProfileID(currentSelection: String?, visibleBots: [BotSummary]) -> String? {
@@ -719,7 +824,9 @@ final class BotModeModel: ObservableObject {
 
     /// Returns true when Hermes accepted the new profile; the roster is
     /// refreshed from Hermes rather than optimistically patched.
-    func createBot(name: String, title: String, description: String, cloneFrom: String? = nil, skipsSkills: Bool = false) async -> Bool {
+    func createBot(
+        name: String, title: String, description: String, cloneFrom: String? = nil, skipsSkills: Bool = false
+    ) async -> Bool {
         guard canCreateBots, let service else {
             botCreationError = "Bot Mode requires a Hermes runtime with profile support."
             return false
@@ -728,7 +835,9 @@ final class BotModeModel: ObservableObject {
         isCreatingBot = true
         defer { isCreatingBot = false }
         do {
-            _ = try await service.create(name: name, title: title.isEmpty ? nil : title, description: description.isEmpty ? nil : description, cloneFrom: cloneFrom, skipsSkills: skipsSkills)
+            _ = try await service.create(
+                name: name, title: title.isEmpty ? nil : title, description: description.isEmpty ? nil : description,
+                cloneFrom: cloneFrom, skipsSkills: skipsSkills)
             botCreationError = nil
             await refreshNow()
             return true
@@ -778,7 +887,8 @@ final class BotModeModel: ObservableObject {
         guard inventory.availability == .ready, let service else { return }
         for bot in inventory.bots where bot.hasAvatar && avatarImages[bot.id] == nil {
             if let data = await service.avatarImageData(profileID: bot.id),
-               inventory.availability == .ready, botsByID[bot.id]?.hasAvatar == true {
+                inventory.availability == .ready, botsByID[bot.id]?.hasAvatar == true
+            {
                 avatarImages[bot.id] = data
             }
         }
@@ -799,7 +909,8 @@ final class BotModeModel: ObservableObject {
                 continue
             }
             do {
-                try await service.setAvatar(profileID: bot.id, dataURL: "data:image/png;base64," + png.base64EncodedString())
+                try await service.setAvatar(
+                    profileID: bot.id, dataURL: "data:image/png;base64," + png.base64EncodedString())
                 avatarImages[bot.id] = png
                 saved += 1
             } catch {
@@ -817,7 +928,8 @@ final class BotModeModel: ObservableObject {
 
     func generateAvatar(prompt: String) async throws -> String {
         guard capabilityAvailable, let service else {
-            throw NSError(domain: "HermesBots", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bot Mode is unavailable."])
+            throw NSError(
+                domain: "HermesBots", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bot Mode is unavailable."])
         }
         return try await service.generateAvatarImage(prompt: prompt)
     }
@@ -861,7 +973,8 @@ final class BotModeModel: ObservableObject {
     func deleteBot(_ bot: BotSummary) async -> Bool {
         guard deletingBotID == nil else { return false }
         guard canDeleteBot(bot), let service else {
-            botDeletionError = "This Bot cannot be deleted. The default Bot is protected; other Bots require Hermes profile delete support."
+            botDeletionError =
+                "This Bot cannot be deleted. The default Bot is protected; other Bots require Hermes profile delete support."
             return false
         }
         deletingBotID = bot.id
@@ -872,17 +985,22 @@ final class BotModeModel: ObservableObject {
             try await service.delete(profileID: bot.id)
             succeeded = true
         } catch {
-            botDeletionError = HermesDiagnosticsService.safeSummary(Self.mutationDiagnostic(for: error, noun: "delete the Bot"))
+            botDeletionError = HermesDiagnosticsService.safeSummary(
+                Self.mutationDiagnostic(for: error, noun: "delete the Bot"))
         }
         // Reconcile even a failed command: Hermes may have deleted the profile
         // but reported pending routing cleanup. Never remove it optimistically.
         while isRefreshing || isPolling { try? await Task.sleep(for: .milliseconds(20)) }
         await refreshNow(force: true)
         if succeeded, botsByID[bot.id] != nil {
-            inventory = BotInventory(availability: .stale, bots: inventory.bots, diagnostic: "Bot deletion completed. Refresh the roster to verify the remaining Bots.", isPluginEnabled: inventory.isPluginEnabled)
+            inventory = BotInventory(
+                availability: .stale, bots: inventory.bots,
+                diagnostic: "Bot deletion completed. Refresh the roster to verify the remaining Bots.",
+                isPluginEnabled: inventory.isPluginEnabled)
         }
         if !succeeded, inventory.availability == .ready, botsByID[bot.id] == nil {
-            botDeletionError = "The Bot is no longer in the Hermes roster, but Hermes reported a problem during deletion. \(botDeletionError ?? "Refresh the roster before retrying.")"
+            botDeletionError =
+                "The Bot is no longer in the Hermes roster, but Hermes reported a problem during deletion. \(botDeletionError ?? "Refresh the roster before retrying.")"
         }
         await loadRoutines()
         return succeeded
@@ -996,7 +1114,8 @@ final class BotModeModel: ObservableObject {
     }
 
     private static func mutationDiagnostic(for error: Error, noun: String) -> String {
-        let message = (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String ?? (error as NSError).localizedDescription
+        let message =
+            (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String ?? (error as NSError).localizedDescription
         return "Hermes could not \(noun). \(message)"
     }
 }

@@ -47,7 +47,8 @@ struct ConversationContextPicker: View {
                 }.frame(minWidth: 280)
             }
             if excerpts.partial {
-                Text("Showing the last 500 messages. Only selected excerpts will be attached.").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                Text("Showing the last 500 messages. Only selected excerpts will be attached.").dockFont(.metadata)
+                    .foregroundStyle(Color.dockSecondaryText)
             }
             if let error = excerpts.error { Text(error).dockFont(.body).foregroundStyle(Color.dockWarning) }
         } footer: {

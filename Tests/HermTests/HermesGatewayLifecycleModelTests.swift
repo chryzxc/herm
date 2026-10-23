@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @Suite("Messaging gateway service")
@@ -9,10 +10,15 @@ struct HermesGatewayLifecycleModelTests {
 
     @Test("Status needs positive process evidence, not a service definition or successful exit")
     func parsesStatus() {
-        #expect(HermesGatewayProcessStatus.parse(Self.running) == .init(state: .running, isManaged: true, processID: 9623))
-        #expect(HermesGatewayProcessStatus.parse(Self.managed + "✓ Gateway service is registered with launchd").state == .unavailable)
+        #expect(
+            HermesGatewayProcessStatus.parse(Self.running) == .init(state: .running, isManaged: true, processID: 9623))
+        #expect(
+            HermesGatewayProcessStatus.parse(Self.managed + "✓ Gateway service is registered with launchd").state
+                == .unavailable)
         #expect(HermesGatewayProcessStatus.parse("unrecognized output").state == .unavailable)
-        #expect(HermesGatewayProcessStatus.parse("✓ Gateway is running (PID: 42)") == .init(state: .running, isManaged: false, processID: 42))
+        #expect(
+            HermesGatewayProcessStatus.parse("✓ Gateway is running (PID: 42)")
+                == .init(state: .running, isManaged: false, processID: 42))
         #expect(HermesGatewayProcessStatus.parse("✗ Gateway is not running").state == .stopped)
         #expect(HermesGatewayProcessStatus.parse("✓ Gateway is running (PID: 0)").state == .unavailable)
         #expect(HermesGatewayProcessStatus.parse("\u{1B}[32m" + Self.running + "\u{1B}[0m").state == .running)
@@ -22,8 +28,13 @@ struct HermesGatewayLifecycleModelTests {
     func fallbackAndOtherProfiles() {
         let unloaded = Self.managed + "✗ Gateway service is not loaded\n"
         #expect(HermesGatewayProcessStatus.parse(unloaded).state == .stopped)
-        #expect(HermesGatewayProcessStatus.parse(unloaded + "  Note: a detached gateway process is running (PID 55)").state == .running)
-        #expect(HermesGatewayProcessStatus.parse("✗ Gateway is not running\nOther profiles:\n✓ Gateway is running (PID: 44)").state == .stopped)
+        #expect(
+            HermesGatewayProcessStatus.parse(unloaded + "  Note: a detached gateway process is running (PID 55)").state
+                == .running)
+        #expect(
+            HermesGatewayProcessStatus.parse(
+                "✗ Gateway is not running\nOther profiles:\n✓ Gateway is running (PID: 44)"
+            ).state == .stopped)
     }
 
     @Test("Status and restart target the same explicit default profile")
@@ -38,7 +49,8 @@ struct HermesGatewayLifecycleModelTests {
         var calls: [HermesGatewayCommand] = []
         let service = HermesGatewayLifecycleModel(pause: {}) { command in
             calls.append(command)
-            let output = calls.contains(.restart) ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
+            let output =
+                calls.contains(.restart) ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
             return .init(succeeded: true, output: command == .status ? output : "")
         }
         await service.refresh()
@@ -119,7 +131,8 @@ struct HermesGatewayLifecycleModelTests {
             if command == .restart {
                 return await withCheckedContinuation { continuation = $0 }
             }
-            let output = calls.contains(.restart) ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
+            let output =
+                calls.contains(.restart) ? Self.running.replacingOccurrences(of: "9623", with: "9624") : Self.running
             return .init(succeeded: true, output: output)
         }
         await service.refresh()

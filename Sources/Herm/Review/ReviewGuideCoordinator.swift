@@ -19,7 +19,8 @@ final class ReviewGuideCoordinator: ObservableObject {
     }
 
     func start(
-        model: DockModel, owner: QuickDestination? = nil, reviewerProfileID: String? = nil, directory: String?, identity: String,
+        model: DockModel, owner: QuickDestination? = nil, reviewerProfileID: String? = nil, directory: String?,
+        identity: String,
         documents: [DiffDocument], partial: Bool
     ) {
         guard !requesting, !uncertain else { return }

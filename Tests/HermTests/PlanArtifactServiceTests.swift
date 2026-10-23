@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct PlanArtifactServiceTests {
@@ -41,8 +42,11 @@ struct PlanArtifactServiceTests {
         let fixture = try Fixture()
         let outside = fixture.root.deletingLastPathComponent().appendingPathComponent("outside.md")
         try Data("# Outside\n".utf8).write(to: outside)
-        try FileManager.default.createSymbolicLink(at: fixture.plans.appendingPathComponent("escape.md"), withDestinationURL: outside)
-        #expect(throws: PlanArtifactError.unsupportedFile) { try PlanArtifactService(projectRoot: fixture.root).load(relativePath: "escape.md") }
+        try FileManager.default.createSymbolicLink(
+            at: fixture.plans.appendingPathComponent("escape.md"), withDestinationURL: outside)
+        #expect(throws: PlanArtifactError.unsupportedFile) {
+            try PlanArtifactService(projectRoot: fixture.root).load(relativePath: "escape.md")
+        }
     }
 
     @Test func boundsOversizedAndInvalidUtf8Artifacts() throws {
@@ -59,7 +63,9 @@ struct PlanArtifactServiceTests {
         try fixture.write("plan.md", contents: "# Plan\n\nDo work.\n")
         let service = PlanArtifactService(projectRoot: fixture.root)
         let document = try service.load(relativePath: "plan.md")
-        let comment = PlanReviewComment(id: UUID(), planPath: document.relativePath, planSHA256: document.sha256!, anchor: "Do work", body: "Please add a test.", createdAt: Date(timeIntervalSince1970: 1))
+        let comment = PlanReviewComment(
+            id: UUID(), planPath: document.relativePath, planSHA256: document.sha256!, anchor: "Do work",
+            body: "Please add a test.", createdAt: Date(timeIntervalSince1970: 1))
         let reviewURL = try service.saveComment(comment)
         #expect(reviewURL.path.contains(".hermes/plans/reviews"))
         #expect(try service.comments(for: document).count == 1)
@@ -85,10 +91,13 @@ struct PlanArtifactServiceTests {
 
     @Test func rejectsRevisionWriteThroughSymlinkedDirectory() throws {
         let fixture = try Fixture()
-        let outside = fixture.root.deletingLastPathComponent().appendingPathComponent("revision-escape-\(UUID().uuidString)", isDirectory: true)
+        let outside = fixture.root.deletingLastPathComponent().appendingPathComponent(
+            "revision-escape-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(at: fixture.plans.appendingPathComponent("revisions", isDirectory: true), withDestinationURL: outside)
-        let draft = PlanRevisionDraft(relativePath: "revisions/escaped.md", parentPlan: "plan.md", parentSHA256: "hash", contents: "escaped")
+        try FileManager.default.createSymbolicLink(
+            at: fixture.plans.appendingPathComponent("revisions", isDirectory: true), withDestinationURL: outside)
+        let draft = PlanRevisionDraft(
+            relativePath: "revisions/escaped.md", parentPlan: "plan.md", parentSHA256: "hash", contents: "escaped")
 
         #expect(throws: PlanArtifactError.outsidePlansDirectory) {
             try PlanArtifactService(projectRoot: fixture.root).saveRevision(draft)
@@ -98,10 +107,13 @@ struct PlanArtifactServiceTests {
 
     @Test func rejectsCommentWriteThroughSymlinkedReviewsDirectory() throws {
         let fixture = try Fixture()
-        let outside = fixture.root.deletingLastPathComponent().appendingPathComponent("reviews-escape-\(UUID().uuidString)", isDirectory: true)
+        let outside = fixture.root.deletingLastPathComponent().appendingPathComponent(
+            "reviews-escape-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(at: fixture.plans.appendingPathComponent("reviews", isDirectory: true), withDestinationURL: outside)
-        let comment = PlanReviewComment(id: UUID(), planPath: "plan.md", planSHA256: "hash", anchor: nil, body: "comment", createdAt: .now)
+        try FileManager.default.createSymbolicLink(
+            at: fixture.plans.appendingPathComponent("reviews", isDirectory: true), withDestinationURL: outside)
+        let comment = PlanReviewComment(
+            id: UUID(), planPath: "plan.md", planSHA256: "hash", anchor: nil, body: "comment", createdAt: .now)
 
         #expect(throws: PlanArtifactError.outsidePlansDirectory) {
             try PlanArtifactService(projectRoot: fixture.root).saveComment(comment)
@@ -116,13 +128,15 @@ struct PlanArtifactServiceTests {
             let outside = fixture.root.appendingPathComponent("private-reviews", isDirectory: true)
             try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
             let privateReview = outside.appendingPathComponent("plan.md")
-            try "## Comment \(UUID().uuidString)\n\nPrivate review\n".write(to: privateReview, atomically: true, encoding: .utf8)
+            try "## Comment \(UUID().uuidString)\n\nPrivate review\n".write(
+                to: privateReview, atomically: true, encoding: .utf8)
             let reviews = fixture.plans.appendingPathComponent("reviews", isDirectory: true)
             if linkDirectory {
                 try FileManager.default.createSymbolicLink(at: reviews, withDestinationURL: outside)
             } else {
                 try FileManager.default.createDirectory(at: reviews, withIntermediateDirectories: true)
-                try FileManager.default.createSymbolicLink(at: reviews.appendingPathComponent("plan.md"), withDestinationURL: privateReview)
+                try FileManager.default.createSymbolicLink(
+                    at: reviews.appendingPathComponent("plan.md"), withDestinationURL: privateReview)
             }
             let service = PlanArtifactService(projectRoot: fixture.root)
             let document = try service.load(relativePath: "plan.md")
@@ -136,7 +150,8 @@ struct PlanArtifactServiceTests {
         let service = PlanArtifactService(projectRoot: fixture.root)
         let document = try service.load(relativePath: "plan.md")
         #expect(try service.comments(for: document).isEmpty)
-        try FileManager.default.createDirectory(at: fixture.plans.appendingPathComponent("reviews/plan.md"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: fixture.plans.appendingPathComponent("reviews/plan.md"), withIntermediateDirectories: true)
         #expect(throws: PlanArtifactError.unsupportedFile) { try service.comments(for: document) }
     }
 
@@ -145,7 +160,8 @@ struct PlanArtifactServiceTests {
         let plans: URL
 
         init(createPlans: Bool = true) throws {
-            root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-plan-tests-\(UUID().uuidString)", isDirectory: true)
+            root = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "dock-plan-tests-\(UUID().uuidString)", isDirectory: true)
             plans = root.appendingPathComponent(".hermes/plans", isDirectory: true)
             if createPlans { try FileManager.default.createDirectory(at: plans, withIntermediateDirectories: true) }
         }
@@ -153,7 +169,8 @@ struct PlanArtifactServiceTests {
         func write(_ path: String, contents: String) throws { try writeData(path, data: Data(contents.utf8)) }
         func writeData(_ path: String, data: Data) throws {
             let url = plans.appendingPathComponent(path)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url)
         }
 

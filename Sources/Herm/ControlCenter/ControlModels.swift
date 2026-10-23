@@ -76,18 +76,21 @@ enum CronScheduleFormatting {
         let dayOfWeek = fields[4]
 
         if minute.hasPrefix("*/"), hour == "*", dayOfMonth == "*", month == "*", dayOfWeek == "*",
-           let interval = Int(minute.dropFirst(2)), interval > 0 {
+            let interval = Int(minute.dropFirst(2)), interval > 0
+        {
             return interval == 1 ? "Every minute" : "Every \(interval) minutes"
         }
         if hour.hasPrefix("*/"), dayOfMonth == "*", month == "*", dayOfWeek == "*",
-           let interval = Int(hour.dropFirst(2)), let minuteValue = Int(minute), interval > 0,
-           (0...59).contains(minuteValue) {
+            let interval = Int(hour.dropFirst(2)), let minuteValue = Int(minute), interval > 0,
+            (0...59).contains(minuteValue)
+        {
             let time = clockTime(hour: 0, minute: minuteValue)
             return interval == 1 ? "Every hour at \(time)" : "Every \(interval) hours at \(time)"
         }
 
         guard let hourValue = Int(hour), let minuteValue = Int(minute),
-              (0...23).contains(hourValue), (0...59).contains(minuteValue) else {
+            (0...23).contains(hourValue), (0...59).contains(minuteValue)
+        else {
             return "Custom schedule"
         }
         let time = clockTime(hour: hourValue, minute: minuteValue)
@@ -106,7 +109,8 @@ enum CronScheduleFormatting {
     private static func intervalDescription(_ expression: String) -> String? {
         let parts = expression.lowercased().split(separator: " ")
         guard parts.count == 2, parts[0] == "every", let unit = parts[1].last,
-              let value = Int(parts[1].dropLast()), value > 0 else { return nil }
+            let value = Int(parts[1].dropLast()), value > 0
+        else { return nil }
         let minutes: Int
         switch unit {
         case "m": minutes = value
@@ -204,11 +208,13 @@ struct ApprovalPresentation: Equatable {
         // The description/reason is usually the safety rule that triggered the
         // approval (for example, "recursive delete"). Lead with the command so
         // every approval surface shows the exact action the user is deciding on.
-        let detail = command
+        let detail =
+            command
             ?? stringValue(in: payload, keys: ["message", "details", "description", "reason"])
             ?? "Hermes wants to perform an action."
 
-        let title = stringValue(in: payload, keys: ["title", "approval_title", "action_title"])
+        let title =
+            stringValue(in: payload, keys: ["title", "approval_title", "action_title"])
             ?? (command != nil ? "Run command" : "Review requested action")
 
         let description = stringValue(in: payload, keys: ["description", "reason"])
@@ -242,11 +248,12 @@ struct ApprovalPresentation: Equatable {
     }
 
     static func alwaysAllowCaption(title: String, detail: String) -> String {
-        alwaysAllowCaption(for: ApprovalPresentation(
-            title: title,
-            detail: detail,
-            detailIsCommand: title == "Run command"
-        ))
+        alwaysAllowCaption(
+            for: ApprovalPresentation(
+                title: title,
+                detail: detail,
+                detailIsCommand: title == "Run command"
+            ))
     }
 
     private static func stringValue(in payload: [String: Any], keys: [String]) -> String? {
@@ -285,7 +292,10 @@ struct ControlReference: Identifiable, Codable, Hashable, Equatable {
     var projectID: String?
     var clarificationRequestID: String?
 
-    init(source: ControlSource, sourceID: String, sessionID: String? = nil, projectID: String? = nil, clarificationRequestID: String? = nil) {
+    init(
+        source: ControlSource, sourceID: String, sessionID: String? = nil, projectID: String? = nil,
+        clarificationRequestID: String? = nil
+    ) {
         self.source = source
         self.sourceID = sourceID
         self.sessionID = sessionID
@@ -390,9 +400,10 @@ enum SessionLifecyclePresentation {
         switch session.state
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-            .replacingOccurrences(of: "-", with: "_") {
+            .replacingOccurrences(of: "-", with: "_")
+        {
         case "running", "active", "working", "busy", "streaming", "pending", "queued",
-             "starting", "needs_approval", "needs_clarification", "waiting", "waiting_for_input":
+            "starting", "needs_approval", "needs_clarification", "waiting", "waiting_for_input":
             return .active
         case "completed", "complete", "done", "idle", "finished", "archived":
             return .completed
@@ -407,7 +418,8 @@ enum SessionLifecyclePresentation {
         status(for: session, refresh: refresh).label
     }
 
-    static func rowLabel(for session: SessionSummary, isCurrent: Bool, refresh: ProjectionRefreshState? = nil) -> String {
+    static func rowLabel(for session: SessionSummary, isCurrent: Bool, refresh: ProjectionRefreshState? = nil) -> String
+    {
         let lifecycle = detail(for: session, refresh: refresh)
         return isCurrent ? "Current · \(lifecycle)" : lifecycle
     }
@@ -416,7 +428,9 @@ enum SessionLifecyclePresentation {
         "\(detail(for: session, refresh: refresh)): \(session.title)"
     }
 
-    static func accessibilityLabel(for session: SessionSummary, isCurrent: Bool, refresh: ProjectionRefreshState? = nil) -> String {
+    static func accessibilityLabel(for session: SessionSummary, isCurrent: Bool, refresh: ProjectionRefreshState? = nil)
+        -> String
+    {
         "\(rowLabel(for: session, isCurrent: isCurrent, refresh: refresh)): \(session.title)"
     }
 }
@@ -437,8 +451,9 @@ enum SessionPreviewPresentation {
         guard !trimmed.isEmpty else { return nil }
 
         if let data = trimmed.data(using: .utf8),
-           let payload = try? JSONSerialization.jsonObject(with: data),
-           let dictionary = payload as? [String: Any] {
+            let payload = try? JSONSerialization.jsonObject(with: data),
+            let dictionary = payload as? [String: Any]
+        {
             return summary(for: dictionary)
         }
 
@@ -525,10 +540,11 @@ enum GlobalSessionActivityPresentation {
                 )
             }
         }
-        return Array(items.sorted { lhs, rhs in
-            if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
-            return lhs.id > rhs.id
-        }.prefix(max(0, limit)))
+        return Array(
+            items.sorted { lhs, rhs in
+                if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
+                return lhs.id > rhs.id
+            }.prefix(max(0, limit)))
     }
 }
 
@@ -565,8 +581,9 @@ struct ProjectSummary: Identifiable, Codable, Equatable {
     var isRenderableProject: Bool {
         let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalizedName.isEmpty,
-              normalizedName != "__no_project__",
-              normalizedName != "tmp" else { return false }
+            normalizedName != "__no_project__",
+            normalizedName != "tmp"
+        else { return false }
 
         // Hermes gives every real project a generated `p_<hex>` id, so only a
         // generated-looking *name* (a bucket that defaulted to its id) is internal.
@@ -604,7 +621,13 @@ struct KanbanTaskSummary: Identifiable, Equatable {
     /// The directory the task ran in, usually a git worktree of the project.
     let workspacePath: String?
 
-    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil, modelOverride: String? = nil, providerOverride: String? = nil, skills: [String] = [], workflowTemplateID: String? = nil, workspacePath: String? = nil) {
+    init(
+        id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?,
+        assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil,
+        currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil,
+        latestEventAt: Date? = nil, modelOverride: String? = nil, providerOverride: String? = nil,
+        skills: [String] = [], workflowTemplateID: String? = nil, workspacePath: String? = nil
+    ) {
         self.id = id
         self.boardSlug = boardSlug
         self.title = title
@@ -640,7 +663,10 @@ struct KanbanRunSummary: Identifiable, Equatable {
     let startedAt: Date?
     let endedAt: Date?
 
-    init(id: String, boardSlug: String? = nil, status: String, outcome: String?, profile: String?, summary: String?, elapsed: String?, stepKey: String? = nil, error: String? = nil, startedAt: Date? = nil, endedAt: Date? = nil) {
+    init(
+        id: String, boardSlug: String? = nil, status: String, outcome: String?, profile: String?, summary: String?,
+        elapsed: String?, stepKey: String? = nil, error: String? = nil, startedAt: Date? = nil, endedAt: Date? = nil
+    ) {
         self.id = id
         self.boardSlug = boardSlug
         self.status = status
@@ -706,7 +732,10 @@ struct KanbanTaskDetail: Identifiable, Equatable {
     var comments: [KanbanCommentSummary] = []
     var events: [KanbanEventSummary] = []
 
-    init(id: String, boardSlug: String? = nil, title: String, body: String?, status: String, priority: String?, assignee: String?, runs: [KanbanRunSummary], modelOverride: String? = nil, providerOverride: String? = nil) {
+    init(
+        id: String, boardSlug: String? = nil, title: String, body: String?, status: String, priority: String?,
+        assignee: String?, runs: [KanbanRunSummary], modelOverride: String? = nil, providerOverride: String? = nil
+    ) {
         self.id = id
         self.boardSlug = boardSlug
         self.title = title
@@ -1117,7 +1146,12 @@ struct CronSummary: Identifiable, Codable, Equatable {
     let lastError: String?
     let details: CronJobDetails
 
-    init(id: String, name: String, schedule: String, enabled: Bool, nextRun: String?, sessionID: String? = nil, delivery: String? = nil, prompt: String? = nil, report: String? = nil, editableFields: Set<CronEditField> = [], lastRunAt: String? = nil, lastStatus: String? = nil, lastError: String? = nil, details: CronJobDetails = CronJobDetails()) {
+    init(
+        id: String, name: String, schedule: String, enabled: Bool, nextRun: String?, sessionID: String? = nil,
+        delivery: String? = nil, prompt: String? = nil, report: String? = nil, editableFields: Set<CronEditField> = [],
+        lastRunAt: String? = nil, lastStatus: String? = nil, lastError: String? = nil,
+        details: CronJobDetails = CronJobDetails()
+    ) {
         self.id = id
         self.name = name
         self.schedule = schedule
@@ -1148,7 +1182,11 @@ struct CronJobDetails: Codable, Equatable {
     var pausedReason: String?
     var noAgent: Bool?
 
-    init(model: String? = nil, provider: String? = nil, skills: [String] = [], toolsets: [String] = [], script: String? = nil, workdir: String? = nil, repeats: String? = nil, deliveryError: String? = nil, pausedReason: String? = nil, noAgent: Bool? = nil) {
+    init(
+        model: String? = nil, provider: String? = nil, skills: [String] = [], toolsets: [String] = [],
+        script: String? = nil, workdir: String? = nil, repeats: String? = nil, deliveryError: String? = nil,
+        pausedReason: String? = nil, noAgent: Bool? = nil
+    ) {
         self.model = model
         self.provider = provider
         self.skills = skills
@@ -1230,7 +1268,9 @@ struct CronEditDraft: Equatable {
         name = job.name
         schedule = job.schedule
         prompt = job.prompt ?? ""
-        configuration = CronConfigurationDraft(delivery: job.delivery ?? "local", workdir: job.details.workdir ?? "", model: job.details.model ?? "", provider: job.details.provider ?? "")
+        configuration = CronConfigurationDraft(
+            delivery: job.delivery ?? "local", workdir: job.details.workdir ?? "", model: job.details.model ?? "",
+            provider: job.details.provider ?? "")
     }
 
     func changes(comparedTo job: CronSummary) -> [CronEditField: String] {
@@ -1266,7 +1306,10 @@ struct CronRunSummary: Identifiable, Hashable {
     let sessionID: String?
     let outputPreview: String?
 
-    init(id: String, status: String, jobID: String?, source: String?, claimedAt: String?, error: String?, sessionID: String? = nil, outputPreview: String? = nil) {
+    init(
+        id: String, status: String, jobID: String?, source: String?, claimedAt: String?, error: String?,
+        sessionID: String? = nil, outputPreview: String? = nil
+    ) {
         self.id = id
         self.status = status
         self.jobID = jobID
@@ -1351,7 +1394,8 @@ struct CapabilityState: Identifiable, Equatable {
         self.provenance = CapabilityProvenance(source: source)
         switch self.availability {
         case .available:
-            self.probeState = probeState == .missing || probeState == .unsupported ? .unverified : (probeState ?? .unverified)
+            self.probeState =
+                probeState == .missing || probeState == .unsupported ? .unverified : (probeState ?? .unverified)
         case .unavailable:
             self.probeState = .missing
         case .unsupported:
@@ -1369,7 +1413,9 @@ extension CapabilityCategory {
             self = .security
         } else if ["review", "ocr", "opencode"].contains(where: id.contains) {
             self = .review
-        } else if ["integration", "reminder", "note", "calendar", "messaging", "email", "mcp", "kanban", "cron"].contains(where: id.contains) {
+        } else if ["integration", "reminder", "note", "calendar", "messaging", "email", "mcp", "kanban", "cron"]
+            .contains(where: id.contains)
+        {
             self = .integration
         } else {
             self = .core
@@ -1482,7 +1528,8 @@ enum VerificationEvidenceText {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= maxLength,
-              trimmed.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+            trimmed.rangeOfCharacter(from: .controlCharacters) == nil
+        else { return nil }
         let safe = HermesDiagnosticsService.safeSummary(trimmed)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !safe.isEmpty, safe.count <= maxLength else { return nil }
@@ -1513,7 +1560,12 @@ struct VerificationEvidenceSummary: Equatable {
     /// The rejected value is never retained or rendered.
     let hasInvalidStaleReason: Bool
 
-    init(command: String?, canonicalCommand: String?, kind: String?, scope: String?, status: String?, exitCode: Int?, outputSummary: String?, adapter: String? = nil, capturedAt: Date? = nil, repositoryIdentity: String? = nil, commitFingerprint: String? = nil, targetFingerprint: String? = nil, diffFingerprint: String? = nil, rulesScopeDetail: String? = nil, staleReason: String? = nil, hasInvalidStaleReason: Bool = false) {
+    init(
+        command: String?, canonicalCommand: String?, kind: String?, scope: String?, status: String?, exitCode: Int?,
+        outputSummary: String?, adapter: String? = nil, capturedAt: Date? = nil, repositoryIdentity: String? = nil,
+        commitFingerprint: String? = nil, targetFingerprint: String? = nil, diffFingerprint: String? = nil,
+        rulesScopeDetail: String? = nil, staleReason: String? = nil, hasInvalidStaleReason: Bool = false
+    ) {
         self.command = command
         self.canonicalCommand = canonicalCommand
         self.kind = kind
@@ -1571,7 +1623,9 @@ enum ControlTab: String, CaseIterable, Identifiable {
     static let primaryNavigation: [ControlTab] = [.kanban]
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
-    static let globalNavigation: [ControlTab] = [.kanban, .projects, .capabilities, .messaging, .quota, .usage, .calendar]
+    static let globalNavigation: [ControlTab] = [
+        .kanban, .projects, .capabilities, .messaging, .quota, .usage, .calendar,
+    ]
     static let sessionNavigation: [ControlTab] = [.changes]
     static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .officePreview, .core]
@@ -1659,14 +1713,18 @@ struct ControlTabBadgeState: Equatable {
     func count(for tab: ControlTab) -> Int {
         switch tab {
         case .changes: changeCount
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities, .messaging: 0
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities,
+            .messaging:
+            0
         }
     }
 
     func isUrgent(for tab: ControlTab) -> Bool {
         switch tab {
         case .changes: changeCount > 0
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities, .messaging: false
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities,
+            .messaging:
+            false
         }
     }
 }

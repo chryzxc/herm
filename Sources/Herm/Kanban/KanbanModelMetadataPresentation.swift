@@ -31,9 +31,9 @@ struct KanbanModelMetadataPresentation: Equatable {
 
     private static func format(provider: String?, model: String?) -> String {
         switch (provider, model) {
-        case let (provider?, model?): "\(provider) / \(model)"
-        case let (provider?, nil): provider
-        case let (nil, model?): model
+        case (let provider?, let model?): "\(provider) / \(model)"
+        case (let provider?, nil): provider
+        case (nil, let model?): model
         case (nil, nil): "Model unavailable"
         }
     }

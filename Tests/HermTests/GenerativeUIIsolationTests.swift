@@ -1,15 +1,16 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct GenerativeUIIsolationTests {
     private let surface = """
-    ```herm-ui
-    {"version":1,"id":"example","title":"Example","fallback":"Readable result","kind":"html","html":"<script>throw new Error('must not run')</script>"}
-    ```
-    """
+        ```herm-ui
+        {"version":1,"id":"example","title":"Example","fallback":"Readable result","kind":"html","html":"<script>throw new Error('must not run')</script>"}
+        ```
+        """
 
     @Test func preferenceDefaultsOnAndChangesImmediately() {
         let key = GenerativeUIIntegration.preferenceKey
@@ -37,7 +38,9 @@ struct GenerativeUIIsolationTests {
         #expect(original.text == surface)
         #expect(original.attachingImages([]).text == surface)
         // Optional metadata written by an older experiment remains safely ignorable.
-        let old = Data(#"{"id":"old","name":"terminal","input":"","context":"","startedAt":0,"isComplete":true,"facts":{"outcome":"failed"}}"#.utf8)
+        let old = Data(
+            #"{"id":"old","name":"terminal","input":"","context":"","startedAt":0,"isComplete":true,"facts":{"outcome":"failed"}}"#
+                .utf8)
         let call = try JSONDecoder().decode(ActiveToolCall.self, from: old)
         let saved = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(call)) as? [String: Any])
         #expect(call.id == "old" && call.isComplete)
@@ -49,7 +52,9 @@ struct GenerativeUIIsolationTests {
         let message = ChatMessage(role: .user, text: stored)
         #expect(message.text == stored)
         #expect(GenerativeUIIntegration.readableText(message) == "Question")
-        #expect(GenerativeUIIntegration.displayUserText("Ordinary [Herm rendering context v1] text") == "Ordinary [Herm rendering context v1] text")
+        #expect(
+            GenerativeUIIntegration.displayUserText("Ordinary [Herm rendering context v1] text")
+                == "Ordinary [Herm rendering context v1] text")
     }
 
     @Test func ordinaryStreamingDoesNotRestartRichParsingAndRichRequestsInvalidate() throws {
@@ -62,7 +67,9 @@ struct GenerativeUIIsolationTests {
         let live = try #require(RichDocumentParseRequest(surface, streaming: true, identity: "session/message:1"))
         let completed = try #require(RichDocumentParseRequest(surface, streaming: false, identity: "session/message:1"))
         #expect(live != completed)
-        #expect(completed != RichDocumentParseRequest(surface + "\nNew content", streaming: false, identity: completed.identity))
+        #expect(
+            completed
+                != RichDocumentParseRequest(surface + "\nNew content", streaming: false, identity: completed.identity))
         #expect(completed != RichDocumentParseRequest(surface, streaming: false, identity: "another-session/message:1"))
         #expect(completed != RichDocumentParseRequest(surface, streaming: false, identity: "session/message:2"))
         #expect(RichDocument(live.source, streaming: live.streaming).segments == [.pending])
@@ -80,7 +87,8 @@ struct GenerativeUIIsolationTests {
             }
         }
         let host = NSHostingView(rootView: reply("Plain reply", streaming: true))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 160),
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 160),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.orderFrontRegardless()
@@ -115,7 +123,8 @@ struct GenerativeUIIsolationTests {
             Text("Existing conversation renderer").onAppear { appeared = true }
         }
         let host = NSHostingView(rootView: root)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 100),
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 100),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.orderFrontRegardless()

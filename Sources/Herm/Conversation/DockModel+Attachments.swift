@@ -12,7 +12,9 @@ extension DockModel {
         // Finder supplies an icon bitmap alongside the actual file URLs.
         guard AttachmentPopoverFileSelection.fileURLs(from: pasteboard).isEmpty else { return false }
         guard pasteboard.types?.contains(where: { $0 == .png || $0 == .tiff }) == true else { return false }
-        guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return true }
+        guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return true
+        }
         return text.isEmpty || !text.contains(where: \.isWhitespace)
     }
 
@@ -25,7 +27,8 @@ extension DockModel {
             return false
         }
         guard let data = pasteboard.data(forType: imageType),
-              let nsImage = NSImage(data: data) else {
+            let nsImage = NSImage(data: data)
+        else {
             pendingAttachmentError = "Could not paste image: the clipboard image could not be read."
             return false
         }
@@ -51,7 +54,8 @@ extension DockModel {
             return
         }
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
-              let size = values.fileSize else {
+            let size = values.fileSize
+        else {
             pendingPDFError = "The PDF size could not be read."
             return
         }
@@ -81,7 +85,8 @@ extension DockModel {
             }
             let id = "file:" + url.standardizedFileURL.path
             guard !attachedContexts.contains(where: { $0.id == id }) else { return }
-            var context = ChatContext(id: id, title: url.lastPathComponent,
+            var context = ChatContext(
+                id: id, title: url.lastPathComponent,
                 body: "Read the attached file \(url.lastPathComponent) as context.")
             context.kind = .file
             context.attachmentURL = url
@@ -122,8 +127,9 @@ extension DockModel {
     @discardableResult
     func stageImage(_ nsImage: NSImage) -> Bool {
         guard let tiff = nsImage.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else {
+            let rep = NSBitmapImageRep(data: tiff),
+            let png = rep.representation(using: .png, properties: [:])
+        else {
             pendingAttachmentError = "Could not paste image: the image could not be encoded."
             DebugLog.write("model: failed to encode pasted image as PNG")
             return false
@@ -135,7 +141,8 @@ extension DockModel {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
         } catch {
             pendingAttachmentError = "Could not paste image: the image could not be saved."
-            DebugLog.write("model: failed to write image temp file: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            DebugLog.write(
+                "model: failed to write image temp file: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
         pendingImages.append(ImageAttachment(image: nsImage, fileURL: tempURL))

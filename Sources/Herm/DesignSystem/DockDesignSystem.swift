@@ -5,20 +5,24 @@ import SwiftUI
 /// these semantic roles rather than introducing near-duplicate font sizes,
 /// row heights, and compact control treatments.
 enum DockTypography {
-    enum Role { case pageTitle, sectionLabel, rowTitle, body, control, metadata, machineMetadata, compactStatus, metric, navigation, conversation, code }
+    enum Role {
+        case pageTitle, sectionLabel, rowTitle, body, control, metadata, machineMetadata, compactStatus, metric,
+            navigation, conversation, code
+    }
 
     /// Compact point sizes. Window sizing is applied once by the caller's environment.
     nonisolated static func size(_ role: Role, scale: CGFloat = 1) -> CGFloat {
-        let points: CGFloat = switch role {
-        case .pageTitle: 16
-        case .sectionLabel, .compactStatus: 10
-        case .rowTitle, .body, .control: 12
-        case .metadata, .machineMetadata: 11
-        case .metric: 20
-        case .navigation: 13
-        case .conversation: 14
-        case .code: 12.5
-        }
+        let points: CGFloat =
+            switch role {
+            case .pageTitle: 16
+            case .sectionLabel, .compactStatus: 10
+            case .rowTitle, .body, .control: 12
+            case .metadata, .machineMetadata: 11
+            case .metric: 20
+            case .navigation: 13
+            case .conversation: 14
+            case .code: 12.5
+            }
         return DockWorkspaceScale.points(points, scale: scale)
     }
 
@@ -31,18 +35,23 @@ enum DockTypography {
         }
     }
 
-    static func font(_ role: Role, scale: CGFloat = 1, weight: Font.Weight? = nil, design overrideDesign: Font.Design? = nil) -> Font {
-        let defaultWeight: Font.Weight = switch role {
-        case .pageTitle, .sectionLabel, .compactStatus: .semibold
-        case .rowTitle, .control: .medium
-        default: .regular
-        }
-        let design: Font.Design = switch role {
-        case .sectionLabel, .machineMetadata, .compactStatus, .code: .monospaced
-        case .metric: .rounded
-        default: DockThemeStyle.current.fontDesign
-        }
-        let font = Font.system(size: size(role, scale: scale), weight: weight ?? defaultWeight, design: overrideDesign ?? design)
+    static func font(
+        _ role: Role, scale: CGFloat = 1, weight: Font.Weight? = nil, design overrideDesign: Font.Design? = nil
+    ) -> Font {
+        let defaultWeight: Font.Weight =
+            switch role {
+            case .pageTitle, .sectionLabel, .compactStatus: .semibold
+            case .rowTitle, .control: .medium
+            default: .regular
+            }
+        let design: Font.Design =
+            switch role {
+            case .sectionLabel, .machineMetadata, .compactStatus, .code: .monospaced
+            case .metric: .rounded
+            default: DockThemeStyle.current.fontDesign
+            }
+        let font = Font.system(
+            size: size(role, scale: scale), weight: weight ?? defaultWeight, design: overrideDesign ?? design)
         return role == .metric ? font.monospacedDigit() : font
     }
 
@@ -206,8 +215,9 @@ struct DockShimmerTrack: View {
                             if muted {
                                 Capsule().fill(Color.dockSecondaryText.opacity(0.55))
                             } else {
-                                LinearGradient(colors: [tone.color.opacity(0), tone.color, tone.color.opacity(0)],
-                                               startPoint: .leading, endPoint: .trailing)
+                                LinearGradient(
+                                    colors: [tone.color.opacity(0), tone.color, tone.color.opacity(0)],
+                                    startPoint: .leading, endPoint: .trailing)
                             }
                         }
                         .frame(width: min(80, width * 0.4))
@@ -231,12 +241,12 @@ extension View {
             dockLiquidGlass(shape, elevated: true)
         } else {
             self
-            .background(Color.dockOpaqueCanvas)  // dockCanvas is translucent in native themes
-            .background(Color.dockCanvas.opacity(0.92))
-            .clipShape(shape)
-            .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.outline))
-            .dockFoldCrease()
-            .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
+                .background(Color.dockOpaqueCanvas)  // dockCanvas is translucent in native themes
+                .background(Color.dockCanvas.opacity(0.92))
+                .clipShape(shape)
+                .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+                .dockFoldCrease()
+                .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
         }
     }
 
@@ -246,9 +256,14 @@ extension View {
     func dockSignageCard(tone: DockStatusTone, emphasized: Bool = false, highlighted: Bool = false) -> some View {
         let strong = emphasized || tone == .attention
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.paneRadius, role: .pane)
-        return self
+        return
+            self
             .background(shape.fill(highlighted ? Color.dockSurface4 : Color.dockSurface))
-            .overlay(shape.stroke(tone.color.opacity(strong ? 0.9 : highlighted ? 0.6 : 0.35), lineWidth: max(emphasized ? 1.5 : 1, DockLayout.outline)))
+            .overlay(
+                shape.stroke(
+                    tone.color.opacity(strong ? 0.9 : highlighted ? 0.6 : 0.35),
+                    lineWidth: max(emphasized ? 1.5 : 1, DockLayout.outline))
+            )
             .dockStickerShadow(shape)
             .dockFoldCrease()
     }
@@ -272,11 +287,20 @@ struct DockNavRow: View {
         let inverted = isSelected && style.theme.style.selection == .invert
         Button(action: action) {
             HStack(spacing: 10) {
-                DockIcon(icon, size: 15, color: inverted ? style.background : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
+                DockIcon(
+                    icon, size: 15,
+                    color: inverted
+                        ? style.background
+                        : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText
+                )
                 .frame(width: 18)
                 Text(title)
-                    .dockFont(size: 13, weight: isSelected ? .semibold : .regular, design: DockThemeStyle.current.fontDesign)
-                    .foregroundStyle(inverted ? style.background : isSelected || isHovering ? style.primaryText : style.secondaryText)
+                    .dockFont(
+                        size: 13, weight: isSelected ? .semibold : .regular, design: DockThemeStyle.current.fontDesign
+                    )
+                    .foregroundStyle(
+                        inverted ? style.background : isSelected || isHovering ? style.primaryText : style.secondaryText
+                    )
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if showsUpdateBadge {
@@ -317,16 +341,21 @@ struct DockRailButton: View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius)
         let inverted = isSelected && style.theme.style.selection == .invert
         Button(action: action) {
-            DockIcon(icon, size: 17, color: inverted ? style.background : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
-                .frame(width: 38, height: 38)
-                .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)
-                .background(shape.fill(!isSelected && isHovering ? style.accent.opacity(0.14) : .clear))
-                .overlay(alignment: .topTrailing) {
-                    if showsUpdateBadge {
-                        Circle().fill(style.warning).frame(width: 7, height: 7).padding(7)
-                    }
+            DockIcon(
+                icon, size: 17,
+                color: inverted
+                    ? style.background
+                    : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText
+            )
+            .frame(width: 38, height: 38)
+            .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)
+            .background(shape.fill(!isSelected && isHovering ? style.accent.opacity(0.14) : .clear))
+            .overlay(alignment: .topTrailing) {
+                if showsUpdateBadge {
+                    Circle().fill(style.warning).frame(width: 7, height: 7).padding(7)
                 }
-                .contentShape(Rectangle())
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -356,14 +385,21 @@ struct DockIconButton: View {
                 if isBusy {
                     ProgressView().controlSize(.mini)
                 } else {
-                    DockIcon(icon, size: size * 0.5, color: isProminent ? style.accent : isHovering ? style.primaryText : style.secondaryText)
+                    DockIcon(
+                        icon, size: size * 0.5,
+                        color: isProminent ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 }
             }
-            .frame(width: DockWorkspaceScale.points(size, scale: workspaceScale),
-                   height: DockWorkspaceScale.points(size, scale: workspaceScale))
-            .background(shape.fill(isProminent
-                                   ? style.accent.opacity(isHovering ? 0.24 : 0.14)
-                                   : style.surface4.opacity(isHovering ? 0.9 : 0.6)))
+            .frame(
+                width: DockWorkspaceScale.points(size, scale: workspaceScale),
+                height: DockWorkspaceScale.points(size, scale: workspaceScale)
+            )
+            .background(
+                shape.fill(
+                    isProminent
+                        ? style.accent.opacity(isHovering ? 0.24 : 0.14)
+                        : style.surface4.opacity(isHovering ? 0.9 : 0.6))
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -554,7 +590,10 @@ struct DockSectionHeader<Actions: View>: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
-                .foregroundStyle(isContentHeader || icon != nil ? style.primaryText : (isHovering && isExpanded != nil ? style.secondaryText : style.metadataText))
+                .foregroundStyle(
+                    isContentHeader || icon != nil
+                        ? style.primaryText
+                        : (isHovering && isExpanded != nil ? style.secondaryText : style.metadataText))
             if let count, icon != nil {
                 Text(count > 99 ? "99+" : "\(count)")
                     .dockFont(size: 11, weight: .semibold).monospacedDigit()
@@ -580,8 +619,14 @@ struct DockSectionHeader<Actions: View>: View {
 }
 
 extension DockSectionHeader where Actions == EmptyView {
-    init(title: String, count: Int? = nil, isExpanded: Binding<Bool>? = nil, style: DockThemePalette, isContentHeader: Bool = false, icon: Ph? = nil, tint: Color = .dockAccent) {
-        self.init(title: title, count: count, isExpanded: isExpanded, style: style, isContentHeader: isContentHeader, icon: icon, tint: tint) { EmptyView() }
+    init(
+        title: String, count: Int? = nil, isExpanded: Binding<Bool>? = nil, style: DockThemePalette,
+        isContentHeader: Bool = false, icon: Ph? = nil, tint: Color = .dockAccent
+    ) {
+        self.init(
+            title: title, count: count, isExpanded: isExpanded, style: style, isContentHeader: isContentHeader,
+            icon: icon, tint: tint
+        ) { EmptyView() }
     }
 }
 

@@ -17,7 +17,8 @@ final class HermesRuntimeConfigurationRefresh {
     private var activeScope: String?
     private var configurationScope: String?
     private var hasCompleteConfiguration = false
-    private var success: (configuration: HermesRuntimeConfiguration, instant: TimeInterval, scope: String, signature: String)?
+    private var success:
+        (configuration: HermesRuntimeConfiguration, instant: TimeInterval, scope: String, signature: String)?
     private(set) var configuration: HermesRuntimeConfiguration?
     private(set) var isLoading = false
     private(set) var error: String?
@@ -86,9 +87,10 @@ final class HermesRuntimeConfigurationRefresh {
                 onChange?()
             }
             if let success, success.scope == key, clock() - success.instant < 30,
-               let path = success.configuration.configPath,
-               let signature = await metadata(path), signature == success.signature,
-               token == generation, key == scope(), !Task.isCancelled {
+                let path = success.configuration.configPath,
+                let signature = await metadata(path), signature == success.signature,
+                token == generation, key == scope(), !Task.isCancelled
+            {
                 break
             }
             guard !Task.isCancelled, !cancellationRequested else { break }
@@ -106,7 +108,8 @@ final class HermesRuntimeConfigurationRefresh {
             }
             let outcome = await reader { [weak self] name in
                 guard let self, self.generation == token, self.scope() == key,
-                      !Task.isCancelled, !self.cancellationRequested, let name else { return }
+                    !Task.isCancelled, !self.cancellationRequested, let name
+                else { return }
                 self.configuration = Self.withIdentity(name, retaining: self.configuration)
                 self.configurationScope = key
                 self.onChange?()
@@ -146,8 +149,10 @@ final class HermesRuntimeConfigurationRefresh {
         onChange?()
     }
 
-    static func withIdentity(_ name: String, retaining value: HermesRuntimeConfiguration?) -> HermesRuntimeConfiguration {
-        HermesRuntimeConfiguration(agentName: name, model: value?.model, provider: value?.provider,
+    static func withIdentity(_ name: String, retaining value: HermesRuntimeConfiguration?) -> HermesRuntimeConfiguration
+    {
+        HermesRuntimeConfiguration(
+            agentName: name, model: value?.model, provider: value?.provider,
             configPath: value?.configPath, maxTurns: value?.maxTurns, terminalTimeout: value?.terminalTimeout,
             skills: value?.skills ?? [], skillsInventory: value?.skillsInventory ?? .unavailable(.emptyOutput),
             mcpServers: value?.mcpServers ?? [], plugins: value?.plugins ?? [])
@@ -156,7 +161,8 @@ final class HermesRuntimeConfigurationRefresh {
     nonisolated static func environmentScope() -> String {
         let environment = HermesEnvironment.processEnvironment()
         let path = environment["PATH"] ?? ""
-        let executable = path.split(separator: ":", omittingEmptySubsequences: false)
+        let executable =
+            path.split(separator: ":", omittingEmptySubsequences: false)
             .map { URL(fileURLWithPath: String($0)).appendingPathComponent("hermes") }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }?
             .resolvingSymlinksInPath().path ?? ""
@@ -179,13 +185,15 @@ final class HermesRuntimeConfigurationRefresh {
             do {
                 let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
                 guard let modified = attrs[.modificationDate] as? Date,
-                      let size = attrs[.size] as? NSNumber,
-                      let number = attrs[.systemFileNumber] as? NSNumber,
-                      let device = attrs[.systemNumber] as? NSNumber else { return nil }
+                    let size = attrs[.size] as? NSNumber,
+                    let number = attrs[.systemFileNumber] as? NSNumber,
+                    let device = attrs[.systemNumber] as? NSNumber
+                else { return nil }
                 parts.append("\(device):\(number):\(modified.timeIntervalSince1970):\(size)")
             } catch let error as NSError {
                 guard error.domain == NSCocoaErrorDomain,
-                      error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError else { return nil }
+                    error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError
+                else { return nil }
                 parts.append("missing")
             }
         }

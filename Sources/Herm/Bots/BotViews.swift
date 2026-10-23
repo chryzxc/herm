@@ -40,7 +40,10 @@ struct BotRosterPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
-        .alert("Generate Avatars", isPresented: Binding(get: { avatarResult != nil }, set: { if !$0 { avatarResult = nil } })) {
+        .alert(
+            "Generate Avatars",
+            isPresented: Binding(get: { avatarResult != nil }, set: { if !$0 { avatarResult = nil } })
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(avatarResult ?? "")
@@ -111,12 +114,17 @@ struct BotRosterPage: View {
             }
             Button("Cancel", role: .cancel) { pendingBotDeletion = nil }
         } message: { bot in
-            Text("Permanently delete \(bot.name) (@\(bot.id)) and all its settings, credentials, memories, sessions, skills, and routines? This also stops its running gateway and affects any active sessions for this Bot. This cannot be undone.")
+            Text(
+                "Permanently delete \(bot.name) (@\(bot.id)) and all its settings, credentials, memories, sessions, skills, and routines? This also stops its running gateway and affects any active sessions for this Bot. This cannot be undone."
+            )
         }
-        .alert("Bot Deletion Needs Attention", isPresented: Binding(
-            get: { model.botDeletionError != nil },
-            set: { if !$0 { model.botDeletionError = nil } }
-        )) {
+        .alert(
+            "Bot Deletion Needs Attention",
+            isPresented: Binding(
+                get: { model.botDeletionError != nil },
+                set: { if !$0 { model.botDeletionError = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) { model.botDeletionError = nil }
         } message: {
             Text(model.botDeletionError ?? "The Bot could not be deleted.")
@@ -148,7 +156,12 @@ struct BotRosterPage: View {
         DockPageHeader(
             title: "Bots",
             subtitle: "\(model.visibleBots.count) Bots · \(model.activeNowBots.count) active",
-            onRefresh: { Task { await model.refreshNow(force: true); await model.loadBotDeletionCapability() } },
+            onRefresh: {
+                Task {
+                    await model.refreshNow(force: true)
+                    await model.loadBotDeletionCapability()
+                }
+            },
             isRefreshing: model.isRefreshing
         ) {
             HStack(spacing: 10) {
@@ -160,11 +173,15 @@ struct BotRosterPage: View {
                     }
                     .controlSize(.regular)
                     .disabled(!model.canCreateBots)
-                    .help(model.canCreateBots ? "Create a new Hermes Bot profile" : "Bot creation requires a Hermes runtime with profile support")
+                    .help(
+                        model.canCreateBots
+                            ? "Create a new Hermes Bot profile"
+                            : "Bot creation requires a Hermes runtime with profile support")
                     Button {
                         showsAvatarTip.toggle()
                     } label: {
-                        DockActionLabel(title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
+                        DockActionLabel(
+                            title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
                     }
                     .controlSize(.regular)
                     .disabled(isPopulatingAvatars)
@@ -279,7 +296,10 @@ struct BotRosterPage: View {
             }
             .padding(.horizontal, DockLayout.compactInset)
             .frame(maxWidth: .infinity, minHeight: DockLayout.controlHeight)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                    Color.dockControlSurface)
+            )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -304,7 +324,10 @@ struct BotRosterPage: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
                     .padding(.horizontal, 10)
-                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                            Color.dockControlSurface)
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -317,14 +340,12 @@ struct BotRosterPage: View {
                 Button {
                     showsHiddenBots = false
                 } label: {
-                    if !showsHiddenBots { Label("Visible only", icon: .check) }
-                    else { Text("Visible only") }
+                    if !showsHiddenBots { Label("Visible only", icon: .check) } else { Text("Visible only") }
                 }
                 Button {
                     showsHiddenBots = true
                 } label: {
-                    if showsHiddenBots { Label("Include hidden", icon: .check) }
-                    else { Text("Include hidden") }
+                    if showsHiddenBots { Label("Include hidden", icon: .check) } else { Text("Include hidden") }
                 }
             } label: {
                 Label(showsHiddenBots ? "All Bots" : "Visible", icon: showsHiddenBots ? .eye : .eyeSlash)
@@ -332,7 +353,10 @@ struct BotRosterPage: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
                     .padding(.horizontal, 10)
-                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockControlSurface))
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                            Color.dockControlSurface)
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -386,7 +410,9 @@ struct BotRosterPage: View {
             isSelected: model.selectedProfileID == bot.id,
             onSelect: { onSelectBot(bot) },
             onOpenChat: { onOpenChat(bot) },
-            onOpenRecentSession: { if let session = bot.liveWorkerChat ?? bot.recentSession { onOpenRecentSession(bot, session) } },
+            onOpenRecentSession: {
+                if let session = bot.liveWorkerChat ?? bot.recentSession { onOpenRecentSession(bot, session) }
+            },
             onEdit: { editingBot = bot },
             onShowActivity: { activityBot = bot },
             onDuplicate: { duplicatingBot = bot },
@@ -478,11 +504,13 @@ struct BotRosterPage: View {
             Text(BotRosterPresentation.emptyStateTitle(isSearching: isSearching))
                 .dockFont(.navigation, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
-            Text(isSearching
-                ? "Try a different name, role, or description."
-                : "A Bot is a Hermes profile with its own model, memory, skills, and forever-chat. Create one to give it a role.")
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
+            Text(
+                isSearching
+                    ? "Try a different name, role, or description."
+                    : "A Bot is a Hermes profile with its own model, memory, skills, and forever-chat. Create one to give it a role."
+            )
+            .dockFont(.body)
+            .foregroundStyle(Color.dockSecondaryText)
             if !isSearching {
                 Button {
                     isShowingCreateSheet = true
@@ -566,18 +594,24 @@ struct BotCreationSheet: View {
     private var isValidName: Bool { BotCreationSheet.isValidProfileName(trimmedName) }
 
     static func isValidProfileName(_ value: String) -> Bool {
-        !value.isEmpty && value.count <= 64 && value.allSatisfy { ($0.isLetter && $0.isLowercase) || $0.isNumber || "-_".contains($0) }
+        !value.isEmpty && value.count <= 64
+            && value.allSatisfy { ($0.isLetter && $0.isLowercase) || $0.isNumber || "-_".contains($0) }
     }
 
     var body: some View {
-        DockModal(icon: .ghost, title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.", width: 420) {
+        DockModal(
+            icon: .ghost, title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.",
+            width: 420
+        ) {
             modalSection("IDENTITY") {
                 labeledField("Name", hint: "Lowercase letters, numbers, dashes, or underscores") {
                     DockTextField("e.g. researcher", text: $name)
                         .textFieldStyle(.dockGlass)
                 }
                 if !trimmedName.isEmpty && !isValidName {
-                    ModalNote(text: "Use lowercase letters, numbers, dashes, or underscores.", icon: .warning, tone: .dockWarning)
+                    ModalNote(
+                        text: "Use lowercase letters, numbers, dashes, or underscores.", icon: .warning,
+                        tone: .dockWarning)
                 }
                 labeledField("Title", hint: "Optional role label") {
                     DockTextField("e.g. Research Analyst", text: $title)
@@ -594,7 +628,10 @@ struct BotCreationSheet: View {
                 ModalNote(text: error, icon: .warning, tone: .dockWarning)
             }
         } footer: {
-            modalActions(primaryTitle: "Create Bot", pendingTitle: "Creating…", isDisabled: !isValidName || model.isCreatingBot, isPending: model.isCreatingBot, onCancel: { dismiss() }) {
+            modalActions(
+                primaryTitle: "Create Bot", pendingTitle: "Creating…", isDisabled: !isValidName || model.isCreatingBot,
+                isPending: model.isCreatingBot, onCancel: { dismiss() }
+            ) {
                 guard isValidName else { return }
                 Task {
                     if await model.createBot(
@@ -624,7 +661,10 @@ struct BotCreationSheet: View {
             }
             .buttonStyle(.dockPress)
             if showsAdvanced {
-                DockMenuPicker("Clone from", title: roster.first { $0.id == cloneFrom }?.name ?? "Fresh profile", selection: $cloneFrom) {
+                DockMenuPicker(
+                    "Clone from", title: roster.first { $0.id == cloneFrom }?.name ?? "Fresh profile",
+                    selection: $cloneFrom
+                ) {
                     DockMenuOption("Fresh profile", value: "")
                     ForEach(roster.filter { !$0.isDefault }) { bot in
                         DockMenuOption(bot.name, value: bot.id)
@@ -637,8 +677,6 @@ struct BotCreationSheet: View {
     }
 }
 
-
-
 /// Displays the Dock's retained records for explicit work dispatched to one
 /// Bot. Hermes does not provide a full activity-feed contract here, so this
 /// deliberately does not present chat previews as a complete audit trail.
@@ -648,7 +686,10 @@ private struct BotActivityHistorySheet: View {
     let onOpenChat: () -> Void
 
     var body: some View {
-        DockModal(icon: .clockCounterClockwise, title: "\(bot.name) activity", subtitle: "Work Herm dispatched to this Bot", width: nil, contentPadding: 0) {
+        DockModal(
+            icon: .clockCounterClockwise, title: "\(bot.name) activity", subtitle: "Work Herm dispatched to this Bot",
+            width: nil, contentPadding: 0
+        ) {
             if records.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("No recorded Bot activity")
@@ -764,7 +805,8 @@ enum BotRosterRowLayout {
 private enum BotRosterGrid {
     static func columns(for contentWidth: CGFloat) -> [GridItem] {
         Array(
-            repeating: GridItem(.flexible(minimum: BotRosterRowLayout.minimumCardWidth), spacing: BotRosterRowLayout.columnSpacing),
+            repeating: GridItem(
+                .flexible(minimum: BotRosterRowLayout.minimumCardWidth), spacing: BotRosterRowLayout.columnSpacing),
             count: BotRosterRowLayout.columnCount(contentWidth: contentWidth)
         )
     }
@@ -868,7 +910,13 @@ struct MissionControlBotRow: View, Equatable {
     @FocusState private var isFocused: Bool
     @State private var isHovering = false
 
-    init(bot: BotSummary, avatarData: Data? = nil, runtime: BotRuntimeConfig? = nil, counts: BotCapabilityCounts? = nil, isSelected: Bool = false, onSelect: @escaping () -> Void, onOpenChat: (() -> Void)? = nil, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil, onDelete: (() -> Void)? = nil, canDelete: Bool = false, isDeleting: Bool = false) {
+    init(
+        bot: BotSummary, avatarData: Data? = nil, runtime: BotRuntimeConfig? = nil, counts: BotCapabilityCounts? = nil,
+        isSelected: Bool = false, onSelect: @escaping () -> Void, onOpenChat: (() -> Void)? = nil,
+        onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil,
+        onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil, onDelete: (() -> Void)? = nil,
+        canDelete: Bool = false, isDeleting: Bool = false
+    ) {
         self.bot = bot
         self.avatarData = avatarData
         self.runtime = runtime
@@ -887,7 +935,8 @@ struct MissionControlBotRow: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.runtime == rhs.runtime && lhs.counts == rhs.counts && lhs.isSelected == rhs.isSelected && lhs.canDelete == rhs.canDelete && lhs.isDeleting == rhs.isDeleting
+        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.runtime == rhs.runtime && lhs.counts == rhs.counts
+            && lhs.isSelected == rhs.isSelected && lhs.canDelete == rhs.canDelete && lhs.isDeleting == rhs.isDeleting
     }
 
     var body: some View {
@@ -914,8 +963,14 @@ struct MissionControlBotRow: View, Equatable {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .dockHoverable().onTapGesture(perform: onSelect)
-        .onKeyPress(.return) { onSelect(); return .handled }
-        .onKeyPress(.space) { onSelect(); return .handled }
+        .onKeyPress(.return) {
+            onSelect()
+            return .handled
+        }
+        .onKeyPress(.space) {
+            onSelect()
+            return .handled
+        }
         .focusable()
         .focused($isFocused)
         .accessibilityAddTraits(.isButton)
@@ -967,8 +1022,11 @@ struct MissionControlBotRow: View, Equatable {
                 chip("Thinking \(effort.capitalized)", color: Color.dockAccent)
             }
             if let first = fallbacks.first {
-                chip("Fallback \(first.model)\(fallbacks.count > 1 ? " +\(fallbacks.count - 1)" : "")", color: Color.dockSecondaryText, monospaced: true)
-                    .help(fallbacks.map { "\($0.provider) / \($0.model)" }.joined(separator: "\n"))
+                chip(
+                    "Fallback \(first.model)\(fallbacks.count > 1 ? " +\(fallbacks.count - 1)" : "")",
+                    color: Color.dockSecondaryText, monospaced: true
+                )
+                .help(fallbacks.map { "\($0.provider) / \($0.model)" }.joined(separator: "\n"))
             }
             Spacer(minLength: 0)
         }
@@ -1034,7 +1092,9 @@ struct MissionControlBotRow: View, Equatable {
         if let onDelete {
             Button(isDeleting ? "Deleting…" : "Delete Bot…", role: .destructive, action: onDelete)
                 .disabled(!canDelete)
-                .help(bot.isDefault || bot.id.lowercased() == "default" ? "The default Bot cannot be deleted" : "Permanently delete this Hermes profile and its data")
+                .help(
+                    bot.isDefault || bot.id.lowercased() == "default"
+                        ? "The default Bot cannot be deleted" : "Permanently delete this Hermes profile and its data")
         }
     }
 
@@ -1048,18 +1108,18 @@ struct MissionControlBotRow: View, Equatable {
             Button("Edit Profile…", icon: .gear) { onEdit?() }
             Button("Duplicate…", icon: .copy) { onDuplicate?() }
             Divider()
-            Button(bot.isHidden ? "Unhide Bot" : "Hide Bot", icon: bot.isHidden ? .eye : .eyeSlash) { onToggleHidden?() }
-            deleteAction
-        }
-        label: {
-            Group {
-                if isDeleting { ProgressView().controlSize(.small) }
-                else { DockIcon(.dotsThree) }
+            Button(bot.isHidden ? "Unhide Bot" : "Hide Bot", icon: bot.isHidden ? .eye : .eyeSlash) {
+                onToggleHidden?()
             }
-                .dockFont(.conversation, weight: .medium)
-                .foregroundStyle(Color.dockSecondaryText)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            deleteAction
+        } label: {
+            Group {
+                if isDeleting { ProgressView().controlSize(.small) } else { DockIcon(.dotsThree) }
+            }
+            .dockFont(.conversation, weight: .medium)
+            .foregroundStyle(Color.dockSecondaryText)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
         }
         .dockHitTarget()
         .help("More actions for \(bot.name)")
@@ -1069,10 +1129,14 @@ struct MissionControlBotRow: View, Equatable {
 
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-            .fill(isHovering || isFocused ? Color.dockSurface4 : isSelected ? Color.dockAccentMuted : Color.dockSurface2)
+            .fill(
+                isHovering || isFocused ? Color.dockSurface4 : isSelected ? Color.dockAccentMuted : Color.dockSurface2
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .stroke(isFocused || isSelected ? Color.dockAccent : Color.dockBorderLight, lineWidth: isFocused || isSelected ? 1.5 : DockLayout.hairline)
+                    .stroke(
+                        isFocused || isSelected ? Color.dockAccent : Color.dockBorderLight,
+                        lineWidth: isFocused || isSelected ? 1.5 : DockLayout.hairline)
             }
     }
 }
@@ -1089,7 +1153,9 @@ private struct BotAvatarGeneratorTip: View {
     @State private var hovered: String?
 
     var body: some View {
-        let faces = pending.isEmpty ? samples.map { ($0, nil as String?) } : pending.prefix(4).map { ($0.id, Optional($0.name)) }
+        let faces =
+            pending.isEmpty
+            ? samples.map { ($0, nil as String?) } : pending.prefix(4).map { ($0.id, Optional($0.name)) }
         VStack(alignment: .leading, spacing: 10) {
             Text("Herm faces for your Bots")
                 .dockFont(.body, weight: .semibold)
@@ -1103,34 +1169,43 @@ private struct BotAvatarGeneratorTip: View {
                             .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
                             .onTapGesture {
                                 guard pending.isEmpty, let i = samples.firstIndex(of: id) else { return }
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { samples[i] = UUID().uuidString }
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+                                    samples[i] = UUID().uuidString
+                                }
                             }
                             .transition(.scale.combined(with: .opacity))
                         if let name {
-                            Text(name).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                            Text(name).dockFont(.compactStatus, weight: .regular).foregroundStyle(
+                                Color.dockSecondaryText
+                            ).lineLimit(1)
                         }
                     }
                     .frame(width: 56)
                 }
             }
-            Text(pending.isEmpty
-                 ? "Faces blink and glance, and a star orbits them while their Bot works. Click a sample to shuffle."
-                 : "Faces blink and glance, and a star orbits them while their Bot works.")
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                pending.isEmpty
+                    ? "Faces blink and glance, and a star orbits them while their Bot works. Click a sample to shuffle."
+                    : "Faces blink and glance, and a star orbits them while their Bot works."
+            )
+            .dockFont(.metadata)
+            .foregroundStyle(Color.dockSecondaryText)
+            .fixedSize(horizontal: false, vertical: true)
             Label("Uploaded images stay still. Animations only work on Herm faces.", icon: .info)
                 .dockFont(.compactStatus, weight: .regular)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
             VStack(spacing: 6) {
-                BotAvatarOptionCard(title: "Fill Missing",
-                                    detail: pending.isEmpty ? "Every Bot already has an avatar." : "Only Bots still using the placeholder.",
-                                    icon: .sparkle, badge: pending.isEmpty ? nil : "\(pending.count)",
-                                    done: pending.isEmpty, action: onFillMissing)
-                BotAvatarOptionCard(title: "Regenerate All", detail: "Replace every avatar so all Bots match and animate.",
-                                    icon: .arrowsClockwise, action: onRegenerateAll)
+                BotAvatarOptionCard(
+                    title: "Fill Missing",
+                    detail: pending.isEmpty
+                        ? "Every Bot already has an avatar." : "Only Bots still using the placeholder.",
+                    icon: .sparkle, badge: pending.isEmpty ? nil : "\(pending.count)",
+                    done: pending.isEmpty, action: onFillMissing)
+                BotAvatarOptionCard(
+                    title: "Regenerate All", detail: "Replace every avatar so all Bots match and animate.",
+                    icon: .arrowsClockwise, action: onRegenerateAll)
             }
         }
         .padding(14)
@@ -1154,8 +1229,10 @@ private struct BotAvatarOptionCard: View {
             HStack(spacing: 10) {
                 DockIcon(icon, size: 14, color: done ? .dockMetadataText : .dockAccent)
                     .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(done ? Color.dockSurface4 : Color.dockAccent.opacity(hovering ? 0.22 : 0.14)))
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(done ? Color.dockSurface4 : Color.dockAccent.opacity(hovering ? 0.22 : 0.14))
+                    )
                     .rotationEffect(.degrees(hovering && !done ? (icon == .arrowsClockwise ? 90 : 12) : 0))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -1183,10 +1260,16 @@ private struct BotAvatarOptionCard: View {
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .fill(hovering && !done ? Color.dockSurface6.opacity(0.8) : Color.dockSurface2.opacity(0.6)))
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(hovering && !done ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: DockLayout.hairline))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .fill(hovering && !done ? Color.dockSurface6.opacity(0.8) : Color.dockSurface2.opacity(0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .stroke(
+                        hovering && !done ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight,
+                        lineWidth: DockLayout.hairline)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

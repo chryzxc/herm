@@ -51,7 +51,11 @@ struct OfficeScenePalette: Equatable {
         switch theme.appearance {
         case .dark: dark = true
         case .light: dark = false
-        case .system: dark = isDark ?? ((NSApp?.effectiveAppearance ?? NSAppearance.currentDrawing()).bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+        case .system:
+            dark =
+                isDark
+                ?? ((NSApp?.effectiveAppearance ?? NSAppearance.currentDrawing()).bestMatch(from: [.darkAqua, .aqua])
+                    == .darkAqua)
         }
         return OfficeScenePalette(theme: theme, isDark: dark)
     }
@@ -73,7 +77,8 @@ struct OfficeScenePalette: Equatable {
         // fixed lightness, so every theme keeps the same contrast and only the
         // hue shifts. Furniture stays one honey-oak set; the accent tints glass,
         // neon and screens. Dark themes dim the materials; light follows the clock.
-        let honey = rgb(0.86, 0.66, 0.45), cream = rgb(0.97, 0.94, 0.90)
+        let honey = rgb(0.86, 0.66, 0.45)
+        let cream = rgb(0.97, 0.94, 0.90)
         let base = t.surface4
         if isDark {
             background = mix(t.bg, black, 0.35)
@@ -143,9 +148,10 @@ extension DockThemePalette {
 
     var resolved: Resolved {
         func ns(_ color: Color) -> NSColor { NSColor(color).usingColorSpace(.sRGB) ?? .gray }
-        return Resolved(bg: ns(background), surface: ns(surface), surface2: ns(surface2), surface4: ns(surface4),
-                        primary: ns(primaryText), secondary: ns(secondaryText), accent: ns(accent),
-                        selected: ns(selectedFill), success: ns(success))
+        return Resolved(
+            bg: ns(background), surface: ns(surface), surface2: ns(surface2), surface4: ns(surface4),
+            primary: ns(primaryText), secondary: ns(secondaryText), accent: ns(accent),
+            selected: ns(selectedFill), success: ns(success))
     }
 }
 
@@ -153,16 +159,22 @@ extension DockThemePalette {
 /// so strongly coloured themes tint the shell without flooding it.
 private func tone(_ base: NSColor, brightness: CGFloat, saturation: CGFloat, cap: CGFloat) -> NSColor {
     let c = base.usingColorSpace(.sRGB) ?? base
-    var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    var h: CGFloat = 0
+    var s: CGFloat = 0
+    var b: CGFloat = 0
+    var a: CGFloat = 0
     c.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-    let tinted = NSColor(colorSpace: .sRGB, hue: h, saturation: min(cap, s * saturation), brightness: brightness, alpha: 1)
+    let tinted = NSColor(
+        colorSpace: .sRGB, hue: h, saturation: min(cap, s * saturation), brightness: brightness, alpha: 1)
     return tinted.usingColorSpace(.sRGB) ?? tinted
 }
 
 private func mix(_ a: NSColor, _ b: NSColor, _ t: CGFloat) -> NSColor {
-    let a = a.usingColorSpace(.sRGB) ?? a, b = b.usingColorSpace(.sRGB) ?? b
-    return NSColor(srgbRed: a.redComponent + (b.redComponent - a.redComponent) * t,
-                   green: a.greenComponent + (b.greenComponent - a.greenComponent) * t,
-                   blue: a.blueComponent + (b.blueComponent - a.blueComponent) * t,
-                   alpha: a.alphaComponent + (b.alphaComponent - a.alphaComponent) * t)
+    let a = a.usingColorSpace(.sRGB) ?? a
+    let b = b.usingColorSpace(.sRGB) ?? b
+    return NSColor(
+        srgbRed: a.redComponent + (b.redComponent - a.redComponent) * t,
+        green: a.greenComponent + (b.greenComponent - a.greenComponent) * t,
+        blue: a.blueComponent + (b.blueComponent - a.blueComponent) * t,
+        alpha: a.alphaComponent + (b.alphaComponent - a.alphaComponent) * t)
 }

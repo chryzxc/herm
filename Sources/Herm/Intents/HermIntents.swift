@@ -17,7 +17,8 @@ struct AskHermIntent: AppIntent {
 
 struct HermShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: AskHermIntent(), phrases: ["Ask \(.applicationName)", "Open \(.applicationName)"],
-                    shortTitle: "Ask Herm", systemImageName: "bubble.left.and.text.bubble.right")
+        AppShortcut(
+            intent: AskHermIntent(), phrases: ["Ask \(.applicationName)", "Open \(.applicationName)"],
+            shortTitle: "Ask Herm", systemImageName: "bubble.left.and.text.bubble.right")
     }
 }

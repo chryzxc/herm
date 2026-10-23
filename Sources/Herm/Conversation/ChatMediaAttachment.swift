@@ -28,9 +28,14 @@ enum ChatMediaSegment: Equatable {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if let image = trimmed.range(of: #"^!\[[^\]]*\]\(([^)\s]+)\)$"#, options: .regularExpression) {
                 flush()
-                segments.append(.media(String(trimmed[image]).replacingOccurrences(of: #"^!\[[^\]]*\]\("#, with: "", options: .regularExpression).dropLast().description))
+                segments.append(
+                    .media(
+                        String(trimmed[image]).replacingOccurrences(
+                            of: #"^!\[[^\]]*\]\("#, with: "", options: .regularExpression
+                        ).dropLast().description))
             } else if trimmed.drop(while: { "`\"'".contains($0) }).hasPrefix("MEDIA:"),
-               let path = ArtifactService.mediaValues(trimmed).first, !path.isEmpty {
+                let path = ArtifactService.mediaValues(trimmed).first, !path.isEmpty
+            {
                 flush()
                 segments.append(.media(path))
             } else {
@@ -44,7 +49,9 @@ enum ChatMediaSegment: Equatable {
 
 enum ArtifactOpener {
     static func url(_ value: String) -> URL? {
-        if value.hasPrefix("http://") || value.hasPrefix("https://") || value.hasPrefix("data:image/") { return URL(string: value) }
+        if value.hasPrefix("http://") || value.hasPrefix("https://") || value.hasPrefix("data:image/") {
+            return URL(string: value)
+        }
         if value.hasPrefix("file://") { return URL(string: value) }
         return URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
     }
@@ -55,9 +62,10 @@ enum ArtifactOpener {
         // executable would run it. Reveal those in Finder instead.
         var isDirectory: ObjCBool = false
         if url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-           isDirectory.boolValue
-            ? NSWorkspace.shared.isFilePackage(atPath: url.path)
-            : FileManager.default.isExecutableFile(atPath: url.path) {
+            isDirectory.boolValue
+                ? NSWorkspace.shared.isFilePackage(atPath: url.path)
+                : FileManager.default.isExecutableFile(atPath: url.path)
+        {
             ExternalOpen.reveal([url])
             return
         }
@@ -72,7 +80,8 @@ enum ArtifactOpener {
     /// Copies a local file into ~/Downloads under a free name and returns it.
     static func download(_ value: String) throws -> URL {
         guard let source = url(value), source.isFileURL else { throw CocoaError(.fileNoSuchFile) }
-        let downloads = try FileManager.default.url(for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let downloads = try FileManager.default.url(
+            for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let base = source.deletingPathExtension().lastPathComponent
         let ext = source.pathExtension
         var destination = downloads.appendingPathComponent(source.lastPathComponent)
@@ -124,7 +133,11 @@ struct ChatMediaAttachmentCard: View {
             if url.isFileURL || url.scheme == "data" {
                 AttachmentThumbnailView(url: url).frame(maxWidth: 420).frame(height: 420)
             } else {
-                AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { ProgressView().controlSize(.small) }
+                AsyncImage(url: url) {
+                    $0.resizable().scaledToFit()
+                } placeholder: {
+                    ProgressView().controlSize(.small)
+                }
             }
         }
         .frame(maxWidth: 420, maxHeight: 420, alignment: .leading)
@@ -142,7 +155,11 @@ struct ChatMediaAttachmentCard: View {
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    if let subtitle = status ?? (changes.map { "\($0.files.first?.status.rawValue.capitalized ?? "Changed") · Current Git changes" } ?? (exists ? nil : "File not found")) {
+                    if let subtitle = status
+                        ?? (changes.map {
+                            "\($0.files.first?.status.rawValue.capitalized ?? "Changed") · Current Git changes"
+                        } ?? (exists ? nil : "File not found"))
+                    {
                         Text(subtitle)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockSecondaryText)
@@ -167,9 +184,11 @@ struct ChatMediaAttachmentCard: View {
                 cardButton(isLocal ? "Open preview" : "Open", icon: nil) {
                     if let url, FilePreviewKind(url: url) != nil {
                         FilePreviewCenter.shared.url = url
-                    } else { ArtifactOpener.open(path) }
+                    } else {
+                        ArtifactOpener.open(path)
+                    }
                 }
-                    .disabled(!exists)
+                .disabled(!exists)
                 if let changes {
                     cardButton("Open diff", icon: .gitBranch) {
                         FilePreviewCenter.shared.openDiff(changes)
@@ -179,8 +198,16 @@ struct ChatMediaAttachmentCard: View {
             .fixedSize(horizontal: true, vertical: false)
         }
         .padding(10)
-        .background(Color.dockSurface2.opacity(grouped ? 0 : 0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .overlay { if !grouped { RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5) } }
+        .background(
+            Color.dockSurface2.opacity(grouped ? 0 : 0.55),
+            in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+        )
+        .overlay {
+            if !grouped {
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                    Color.dockBorderLight, lineWidth: 0.5)
+            }
+        }
         .contextMenu {
             if isLocal { Button("Reveal in Finder") { ArtifactOpener.reveal(path) } }
             Button("Copy Path") {

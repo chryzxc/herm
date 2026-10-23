@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -35,10 +36,12 @@ struct WorkspaceStoreTests {
         defer { fixture.remove() }
         let store = WorkspaceStore(fileURL: fixture.fileURL)
 
-        store.attachProject(at: "/tmp/project", toSessions: [
-            SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
-            SessionSummary(id: "session-2", title: "Second", state: "idle", preview: nil)
-        ])
+        store.attachProject(
+            at: "/tmp/project",
+            toSessions: [
+                SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
+                SessionSummary(id: "session-2", title: "Second", state: "idle", preview: nil),
+            ])
 
         #expect(store.task(forSessionID: "session-1")?.projectPath == "/tmp/project")
         #expect(store.task(forSessionID: "session-2")?.projectPath == "/tmp/project")
@@ -48,10 +51,12 @@ struct WorkspaceStoreTests {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }
         let store = WorkspaceStore(fileURL: fixture.fileURL)
-        store.attachProject(at: "/tmp/project", toSessions: [
-            SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
-            SessionSummary(id: "session-2", title: "Second", state: "idle", preview: nil)
-        ])
+        store.attachProject(
+            at: "/tmp/project",
+            toSessions: [
+                SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
+                SessionSummary(id: "session-2", title: "Second", state: "idle", preview: nil),
+            ])
 
         store.setWorktreePath("/tmp/elsewhere/feature", forSessionID: "session-1", title: "First")
         store.setWorktreePath("/tmp/wt", forSessionID: "session-new", title: "New")
@@ -96,7 +101,9 @@ struct WorkspaceStoreTests {
 
         store.attachProject(at: "/tmp/global-project")
 
-        #expect(store.resolvedProjectPath(forSessionID: "project-session", hermesProjectPath: "/tmp/hermes-project") == "/tmp/hermes-project")
+        #expect(
+            store.resolvedProjectPath(forSessionID: "project-session", hermesProjectPath: "/tmp/hermes-project")
+                == "/tmp/hermes-project")
         #expect(store.resolvedProjectPath(forSessionID: "unbound-session", hermesProjectPath: nil) == nil)
         #expect(store.resolvedProjectPath(forSessionID: nil, hermesProjectPath: "/tmp/hermes-project") == nil)
     }
@@ -126,20 +133,37 @@ struct WorkspaceStoreTests {
         let store = WorkspaceStore(fileURL: fixture.fileURL)
         store.attachProject(at: "/tmp/unrelated")
 
-        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: nil, createdSessionProjectPath: "/tmp/created") == "/tmp/created")
-        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: "Project name", createdSessionProjectPath: "/tmp/created") == "/tmp/created")
-        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: "/tmp/reported", createdSessionProjectPath: "/tmp/created") == "/tmp/reported")
-        #expect(store.resolvedProjectPath(forSessionID: nil, hermesProjectPath: nil, createdSessionProjectPath: "/tmp/created") == nil)
-        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: nil, createdSessionProjectPath: "relative") == nil)
+        #expect(
+            store.resolvedProjectPath(
+                forSessionID: "new", hermesProjectPath: nil, createdSessionProjectPath: "/tmp/created")
+                == "/tmp/created")
+        #expect(
+            store.resolvedProjectPath(
+                forSessionID: "new", hermesProjectPath: "Project name", createdSessionProjectPath: "/tmp/created")
+                == "/tmp/created")
+        #expect(
+            store.resolvedProjectPath(
+                forSessionID: "new", hermesProjectPath: "/tmp/reported", createdSessionProjectPath: "/tmp/created")
+                == "/tmp/reported")
+        #expect(
+            store.resolvedProjectPath(
+                forSessionID: nil, hermesProjectPath: nil, createdSessionProjectPath: "/tmp/created") == nil)
+        #expect(
+            store.resolvedProjectPath(
+                forSessionID: "new", hermesProjectPath: nil, createdSessionProjectPath: "relative") == nil)
         store.attachProject(at: "/tmp/attached", toSessionID: "new")
-        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: "/tmp/reported", createdSessionProjectPath: "/tmp/created") == "/tmp/attached")
+        #expect(
+            store.resolvedProjectPath(
+                forSessionID: "new", hermesProjectPath: "/tmp/reported", createdSessionProjectPath: "/tmp/created")
+                == "/tmp/attached")
     }
 
     @Test func migratesLegacySessionTasksAndCreatesOneBackup() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }
 
-        let task = WorkspaceTask(title: "Legacy work", status: .done, projectPath: "/tmp/project", sessionID: "legacy-session")
+        let task = WorkspaceTask(
+            title: "Legacy work", status: .done, projectPath: "/tmp/project", sessionID: "legacy-session")
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(LegacyWorkspaceState(tasks: [task], agentRuns: [], projectPath: "/tmp/project"))
@@ -164,22 +188,26 @@ struct WorkspaceStoreTests {
 
         let task = WorkspaceTask(title: "Session work", projectPath: "/tmp/project", sessionID: "session-1")
         let references = [
-            ControlReference(source: .hermesSession, sourceID: "session-1", sessionID: "session-1", projectID: "/tmp/project"),
+            ControlReference(
+                source: .hermesSession, sourceID: "session-1", sessionID: "session-1", projectID: "/tmp/project"),
             ControlReference(source: .hermesProject, sourceID: "project-1", projectID: "project-1"),
-            ControlReference(source: .hermesCronJob, sourceID: "cron-1")
+            ControlReference(source: .hermesCronJob, sourceID: "cron-1"),
         ]
-        try JSONEncoder.workspaceFixture.encode(CurrentWorkspaceState(
-            schemaVersion: 2,
-            tasks: [task],
-            agentRuns: [],
-            projectPath: "/tmp/project",
-            controlReferences: references
-        )).write(to: fixture.fileURL)
+        try JSONEncoder.workspaceFixture.encode(
+            CurrentWorkspaceState(
+                schemaVersion: 2,
+                tasks: [task],
+                agentRuns: [],
+                projectPath: "/tmp/project",
+                controlReferences: references
+            )
+        ).write(to: fixture.fileURL)
 
         let firstLoad = WorkspaceStore(fileURL: fixture.fileURL)
         #expect(firstLoad.controlReferences == references)
 
-        let persisted = try JSONDecoder.workspaceFixture.decode(CurrentWorkspaceState.self, from: Data(contentsOf: fixture.fileURL))
+        let persisted = try JSONDecoder.workspaceFixture.decode(
+            CurrentWorkspaceState.self, from: Data(contentsOf: fixture.fileURL))
         #expect(persisted.controlReferences == references)
 
         let secondLoad = WorkspaceStore(fileURL: fixture.fileURL)
@@ -202,16 +230,16 @@ private struct CurrentWorkspaceState: Codable {
     let controlReferences: [ControlReference]
 }
 
-private extension JSONEncoder {
-    static var workspaceFixture: JSONEncoder {
+extension JSONEncoder {
+    fileprivate static var workspaceFixture: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return encoder
     }
 }
 
-private extension JSONDecoder {
-    static var workspaceFixture: JSONDecoder {
+extension JSONDecoder {
+    fileprivate static var workspaceFixture: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder

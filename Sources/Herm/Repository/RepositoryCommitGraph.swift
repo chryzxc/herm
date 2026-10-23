@@ -59,7 +59,9 @@ enum RepositoryCommitGraph {
                     nextColor += 1
                 }
             }
-            let bottom = next.enumerated().map { RepositoryCommitGraphRow.Segment(from: $1.origin, to: $0, color: $1.color) } + joins
+            let bottom =
+                next.enumerated().map { RepositoryCommitGraphRow.Segment(from: $1.origin, to: $0, color: $1.color) }
+                + joins
             lanes = next.map { ($0.hash, $0.color) }
             return RepositoryCommitGraphRow(lane: lane, color: color, top: top, bottom: bottom)
         }
@@ -90,7 +92,8 @@ struct RepositoryCommitReference: Equatable, Identifiable {
             } else if name.hasPrefix("tag: refs/tags/") {
                 references.append(.init(name: String(name.dropFirst("tag: refs/tags/".count)), kind: .tag))
             } else if name.hasPrefix("refs/heads/") {
-                references.append(.init(name: String(name.dropFirst("refs/heads/".count)), kind: .branch, isHead: isHead))
+                references.append(
+                    .init(name: String(name.dropFirst("refs/heads/".count)), kind: .branch, isHead: isHead))
             } else if name.hasPrefix("refs/remotes/"), !name.hasSuffix("/HEAD") {
                 references.append(.init(name: String(name.dropFirst("refs/remotes/".count)), kind: .remote))
             }
@@ -98,17 +101,21 @@ struct RepositoryCommitReference: Equatable, Identifiable {
         var syncedRemotes = Set<String>()
         for index in references.indices where references[index].kind == .branch {
             let suffix = "/" + references[index].name
-            if let remote = references.first(where: { $0.kind == .remote && $0.name.hasSuffix(suffix) && !syncedRemotes.contains($0.name) }) {
+            if let remote = references.first(where: {
+                $0.kind == .remote && $0.name.hasSuffix(suffix) && !syncedRemotes.contains($0.name)
+            }) {
                 references[index].isSynced = true
                 syncedRemotes.insert(remote.name)
             }
         }
-        return references.filter { $0.kind != .remote || !syncedRemotes.contains($0.name) }.sorted { ($0.isHead ? 0 : 1, $0.kind.order) < ($1.isHead ? 0 : 1, $1.kind.order) }
+        return references.filter { $0.kind != .remote || !syncedRemotes.contains($0.name) }.sorted {
+            ($0.isHead ? 0 : 1, $0.kind.order) < ($1.isHead ? 0 : 1, $1.kind.order)
+        }
     }
 }
 
-private extension RepositoryCommitReference.Kind {
-    var order: Int {
+extension RepositoryCommitReference.Kind {
+    fileprivate var order: Int {
         switch self {
         case .branch: 0
         case .remote: 1

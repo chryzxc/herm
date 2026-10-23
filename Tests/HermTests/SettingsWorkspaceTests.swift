@@ -1,12 +1,17 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @Suite("Settings workspace")
 struct SettingsWorkspaceTests {
     @Test("categories keep the documented order")
     func categoryOrder() {
-        #expect(SettingsCategory.allCases == [.general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .integrations, .session, .diagnostics, .updates])
+        #expect(
+            SettingsCategory.allCases == [
+                .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety,
+                .browser, .memory, .voice, .advanced, .integrations, .session, .diagnostics, .updates,
+            ])
         let grouped = SettingsCategoryGroup.allCases.flatMap(\.categories)
         #expect(grouped.count == Set(grouped).count)
         #expect(Set(grouped) == Set(SettingsCategory.allCases))
@@ -24,7 +29,8 @@ struct SettingsWorkspaceTests {
 
     @Test("badges expose only actionable states")
     func badgeKinds() {
-        #expect(SettingsCategoryBadge(kind: .dot, isWarning: true) != SettingsCategoryBadge(kind: .dot, isWarning: false))
+        #expect(
+            SettingsCategoryBadge(kind: .dot, isWarning: true) != SettingsCategoryBadge(kind: .dot, isWarning: false))
         #expect(SettingsCategoryBadge(kind: .count(2), isWarning: true).kind == .count(2))
     }
 

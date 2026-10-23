@@ -39,15 +39,17 @@ final class RepositoryWatchService {
             },
             copyDescription: nil
         )
-        guard let stream = FSEventStreamCreate(
-            kCFAllocatorDefault,
-            repositoryWatchFSEventCallback,
-            &context,
-            [repository.path] as CFArray,
-            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.75,
-            UInt32(kFSEventStreamCreateFlagFileEvents)
-        ) else { return }
+        guard
+            let stream = FSEventStreamCreate(
+                kCFAllocatorDefault,
+                repositoryWatchFSEventCallback,
+                &context,
+                [repository.path] as CFArray,
+                FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+                0.75,
+                UInt32(kFSEventStreamCreateFlagFileEvents)
+            )
+        else { return }
         registration.stream = stream
         registrations[repository.id] = registration
         FSEventStreamSetDispatchQueue(stream, watchQueue)
@@ -86,7 +88,8 @@ private func repositoryWatchFSEventCallback(
     _ eventIds: UnsafePointer<FSEventStreamEventId>
 ) {
     guard let clientCallBackInfo else { return }
-    let registration = Unmanaged<RepositoryWatchService.Registration>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
+    let registration = Unmanaged<RepositoryWatchService.Registration>.fromOpaque(clientCallBackInfo)
+        .takeUnretainedValue()
     let id = registration.repository.id
     // Runs on the watch queue, not the main queue; onEvent consumers hop to
     // the main actor themselves (see DeveloperWorkflowModel's watcher setup).

@@ -17,7 +17,9 @@ struct WorkActivityView: View {
     @FocusState private var gridFocused: Bool
 
     private let calendar = Calendar.current
-    private var jobNames: [String: String] { Dictionary(control.cronJobs.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }) }
+    private var jobNames: [String: String] {
+        Dictionary(control.cronJobs.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
     private var scope: CalendarScope { CalendarScope(rawValue: scopeRaw) ?? .day }
     private var scopeBinding: Binding<CalendarScope> { Binding(get: { scope }, set: { scopeRaw = $0.rawValue }) }
     /// The selected day's week, clamped to the loaded month by `WorkCalendarIndex.range`.
@@ -28,15 +30,17 @@ struct WorkActivityView: View {
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "work.calendar") }
     /// The published index can briefly belong to the previous month while a new one loads.
     private var loadedIndex: WorkCalendarIndex? {
-        guard let index = control.workCalendar, calendar.isDate(index.month, equalTo: month, toGranularity: .month) else { return nil }
+        guard let index = control.workCalendar, calendar.isDate(index.month, equalTo: month, toGranularity: .month)
+        else { return nil }
         return index
     }
     /// Once anything has loaded, stepping into another month keeps the grid on
     /// screen with empty cells instead of swapping the page for a spinner.
     private var index: WorkCalendarIndex? {
-        loadedIndex ?? control.workCalendar.map { _ in
-            WorkCalendarIndex.build(month: month, sessions: [], tasks: [], commits: [], runs: [], usage: [])
-        }
+        loadedIndex
+            ?? control.workCalendar.map { _ in
+                WorkCalendarIndex.build(month: month, sessions: [], tasks: [], commits: [], runs: [], usage: [])
+            }
     }
 
     var body: some View {
@@ -134,11 +138,13 @@ struct WorkActivityView: View {
                         .equatable()
                     case .week:
                         let bounds = weekBounds
-                        rangePane(index.range(from: bounds.start, to: bounds.end),
-                                  title: (bounds.start..<bounds.end).formatted(.interval.month(.abbreviated).day()))
+                        rangePane(
+                            index.range(from: bounds.start, to: bounds.end),
+                            title: (bounds.start..<bounds.end).formatted(.interval.month(.abbreviated).day()))
                     case .month:
-                        rangePane(index.range(from: index.month, to: .distantFuture),
-                                  title: month.formatted(.dateTime.month(.wide).year()))
+                        rangePane(
+                            index.range(from: index.month, to: .distantFuture),
+                            title: month.formatted(.dateTime.month(.wide).year()))
                     }
                 }
                 .padding(.bottom, 16)
@@ -153,7 +159,10 @@ struct WorkActivityView: View {
         CalendarRangePane(
             title: title, range: range, jobNames: jobNames, botsByID: botsByID, avatarImages: avatarImages,
             onOpenUsage: onOpenUsage,
-            onOpenDay: { select($0); scopeRaw = CalendarScope.day.rawValue },
+            onOpenDay: {
+                select($0)
+                scopeRaw = CalendarScope.day.rawValue
+            },
             onOpenTask: onOpenTask,
             onOpenSession: { [control] in control.openLatestActivitySession($0) }
         )
@@ -176,7 +185,9 @@ struct WorkActivityView: View {
                     .foregroundStyle(Color.dockMetadataText)
             }
             .padding(.leading, 4)
-            if !calendar.isDate(month, equalTo: Date(), toGranularity: .month) || selected != calendar.startOfDay(for: Date()) {
+            if !calendar.isDate(month, equalTo: Date(), toGranularity: .month)
+                || selected != calendar.startOfDay(for: Date())
+            {
                 Button("Today") { load(Date(), select: calendar.startOfDay(for: Date())) }
                     .buttonStyle(.dockSecondary)
                     .controlSize(.small)
@@ -302,15 +313,18 @@ private struct CalendarGridCard: View, Equatable {
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.month == rhs.month && lhs.selected == rhs.selected && lhs.today == rhs.today
-            && lhs.showsMonth == rhs.showsMonth && lhs.selectable == rhs.selectable && lhs.scopeWeek == rhs.scopeWeek && lhs.index == rhs.index
+            && lhs.showsMonth == rhs.showsMonth && lhs.selectable == rhs.selectable && lhs.scopeWeek == rhs.scopeWeek
+            && lhs.index == rhs.index
     }
 
     /// Calendar rows: leading/trailing blanks are nil, so every row has 7 slots.
     private var weeks: [[Date?]] {
         guard let interval = calendar.dateInterval(of: .month, for: month),
-              let count = calendar.range(of: .day, in: .month, for: month)?.count else { return [] }
+            let count = calendar.range(of: .day, in: .month, for: month)?.count
+        else { return [] }
         let lead = (calendar.component(.weekday, from: interval.start) - calendar.firstWeekday + 7) % 7
-        var slots: [Date?] = Array(repeating: nil, count: lead)
+        var slots: [Date?] =
+            Array(repeating: nil, count: lead)
             + (0..<count).map { calendar.date(byAdding: .day, value: $0, to: interval.start) }
         slots += Array(repeating: nil, count: (7 - slots.count % 7) % 7)
         return stride(from: 0, to: slots.count, by: 7).map { Array(slots[$0..<$0 + 7]) }
@@ -391,7 +405,8 @@ private struct CalendarGridCard: View, Equatable {
                 .frame(height: 4)
                 .overlay(alignment: .leading) {
                     GeometryReader { proxy in
-                        Capsule().fill(CalendarInk.shippedFill).frame(width: proxy.size.width * CGFloat(total) / CGFloat(max))
+                        Capsule().fill(CalendarInk.shippedFill).frame(
+                            width: proxy.size.width * CGFloat(total) / CGFloat(max))
                     }
                 }
                 .padding(.horizontal, 6)
@@ -444,12 +459,16 @@ private struct CalendarGridCard: View, Equatable {
     /// "Sep 28 – Oct 4" for the week holding the selected day.
     private var weekRange: String {
         guard let week = calendar.dateInterval(of: .weekOfYear, for: selected),
-              let last = calendar.date(byAdding: .day, value: 6, to: week.start) else { return "" }
+            let last = calendar.date(byAdding: .day, value: 6, to: week.start)
+        else { return "" }
         return (week.start..<last).formatted(.interval.month(.abbreviated).day())
     }
 
     private func legendSwatch(_ color: Color, _ label: String) -> some View {
-        HStack(spacing: 5) { Capsule().fill(color).frame(width: 12, height: 4); Text(label) }
+        HStack(spacing: 5) {
+            Capsule().fill(color).frame(width: 12, height: 4)
+            Text(label)
+        }
     }
 }
 
@@ -521,16 +540,21 @@ private struct CalendarRangePane: View, Equatable {
                 ForEach(order, id: \.self) { weekday in
                     let ratio = means[weekday] / peak
                     VStack(spacing: 5) {
-                        UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3, style: .continuous)
-                            .fill(CalendarInk.sessionsFill.opacity(ratio == 1 ? 1 : 0.35 + 0.5 * ratio))
-                            .frame(height: means[weekday] > 0 ? max(4, 40 * ratio) : 2)
-                            .frame(maxHeight: 40, alignment: .bottom)
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3,
+                            style: .continuous
+                        )
+                        .fill(CalendarInk.sessionsFill.opacity(ratio == 1 ? 1 : 0.35 + 0.5 * ratio))
+                        .frame(height: means[weekday] > 0 ? max(4, 40 * ratio) : 2)
+                        .frame(maxHeight: 40, alignment: .bottom)
                         Text(calendar.shortWeekdaySymbols[weekday])
                             .dockFont(.compactStatus)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     .frame(maxWidth: .infinity)
-                    .help("\(calendar.weekdaySymbols[weekday]) · \(means[weekday].formatted(.number.precision(.fractionLength(1)))) per day")
+                    .help(
+                        "\(calendar.weekdaySymbols[weekday]) · \(means[weekday].formatted(.number.precision(.fractionLength(1)))) per day"
+                    )
                 }
             }
         }
@@ -541,23 +565,36 @@ private struct CalendarRangePane: View, Equatable {
 
     /// Measured figures in the metric role; zero-value figures are left out so the page fits any kind of work.
     private var overview: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 0, alignment: .topLeading)], alignment: .leading, spacing: 0) {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 150), spacing: 0, alignment: .topLeading)], alignment: .leading,
+            spacing: 0
+        ) {
             if !range.pullRequests.isEmpty {
-                metric("PRs merged", "\(range.pullRequests.count)", detail: !range.commits.isEmpty ? "\(range.commits.count) commits" : nil)
+                metric(
+                    "PRs merged", "\(range.pullRequests.count)",
+                    detail: !range.commits.isEmpty ? "\(range.commits.count) commits" : nil)
             } else if !range.commits.isEmpty {
                 metric("Commits", "\(range.commits.count)", detail: nil)
             }
             if !range.tasks.isEmpty { metric("Tasks done", "\(range.tasks.count)", detail: nil) }
-            if !range.sessions.isEmpty { metric("Sessions", "\(range.sessions.count)", detail: "\(range.activeDays) active days") }
-            if range.activeHours > 0 {
-                metric("Active hours", "\(range.activeHours)h", detail: range.vsUsual.map { "\($0 > 0 ? "↑" : "↓") \(abs($0))% vs usual" })
+            if !range.sessions.isEmpty {
+                metric("Sessions", "\(range.sessions.count)", detail: "\(range.activeDays) active days")
             }
-            if range.longestStretch > 1 { metric("Longest stretch", "\(range.longestStretch)h", detail: "within a day") }
+            if range.activeHours > 0 {
+                metric(
+                    "Active hours", "\(range.activeHours)h",
+                    detail: range.vsUsual.map { "\($0 > 0 ? "↑" : "↓") \(abs($0))% vs usual" })
+            }
+            if range.longestStretch > 1 {
+                metric("Longest stretch", "\(range.longestStretch)h", detail: "within a day")
+            }
             if !range.runs.isEmpty { metric("Automation runs", "\(range.runs.count)", detail: nil) }
             if range.streak > 0 { metric("Streak", "\(range.streak)", detail: range.streak == 1 ? "day" : "days") }
             if range.cost > 0 {
-                metric("Spent", UsageWorkspaceView.cost(range.cost),
-                       detail: range.shippedItems > 0 ? "\(UsageWorkspaceView.cost(range.cost / Double(range.shippedItems))) per item" : nil)
+                metric(
+                    "Spent", UsageWorkspaceView.cost(range.cost),
+                    detail: range.shippedItems > 0
+                        ? "\(UsageWorkspaceView.cost(range.cost / Double(range.shippedItems))) per item" : nil)
             } else if range.tokens > 0 {
                 metric("Tokens", UsageWorkspaceView.tokens(range.tokens), detail: nil)
             }
@@ -593,26 +630,38 @@ private struct CalendarDayBars: View {
                     let day = calendar.component(.day, from: point.date)
                     VStack(spacing: 5) {
                         VStack(spacing: 1) {
-                            segment(point.runs, peak: peak, color: point.hasFailure ? CalendarInk.failedFill : CalendarInk.automationFill)
+                            segment(
+                                point.runs, peak: peak,
+                                color: point.hasFailure ? CalendarInk.failedFill : CalendarInk.automationFill)
                             segment(point.sessions, peak: peak, color: CalendarInk.sessionsFill)
                             segment(point.shipped, peak: peak, color: CalendarInk.shippedFill)
                             if point.total == 0 { Capsule().fill(Color.dockPrimaryText.opacity(0.06)).frame(height: 2) }
                         }
                         .frame(height: 64, alignment: .bottom)
-                        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3, style: .continuous))
-                        Text(dense ? (day == 1 || day % 5 == 0 ? "\(day)" : " ")
-                             : "\(point.date.formatted(.dateTime.weekday(.narrow))) \(day)")
-                            .dockFont(.compactStatus)
-                            .foregroundStyle(Color.dockMetadataText)
-                            .fixedSize()
-                            .frame(maxWidth: .infinity)
+                        .clipShape(
+                            UnevenRoundedRectangle(
+                                topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1,
+                                topTrailingRadius: 3, style: .continuous))
+                        Text(
+                            dense
+                                ? (day == 1 || day % 5 == 0 ? "\(day)" : " ")
+                                : "\(point.date.formatted(.dateTime.weekday(.narrow))) \(day)"
+                        )
+                        .dockFont(.compactStatus)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .fixedSize()
+                        .frame(maxWidth: .infinity)
                     }
                     .contentShape(Rectangle())
                     .dockHoverable()
                     .onTapGesture { onOpenDay(point.date) }
-                    .help("\(point.date.formatted(.dateTime.month(.abbreviated).day())) · \(point.shipped) shipped · \(point.sessions) sessions · \(point.runs) runs")
+                    .help(
+                        "\(point.date.formatted(.dateTime.month(.abbreviated).day())) · \(point.shipped) shipped · \(point.sessions) sessions · \(point.runs) runs"
+                    )
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(point.date.formatted(.dateTime.month().day())), \(point.total) items. Opens the day.")
+                    .accessibilityLabel(
+                        "\(point.date.formatted(.dateTime.month().day())), \(point.total) items. Opens the day."
+                    )
                     .accessibilityAddTraits(.isButton)
                 }
             }
@@ -654,7 +703,8 @@ private struct CalendarLeaderboard<Label: View>: View {
                         .frame(height: 6)
                         .overlay(alignment: .leading) {
                             GeometryReader { proxy in
-                                Capsule().fill(CalendarInk.shippedFill).frame(width: proxy.size.width * CGFloat(row.count) / CGFloat(top))
+                                Capsule().fill(CalendarInk.shippedFill).frame(
+                                    width: proxy.size.width * CGFloat(row.count) / CGFloat(top))
                             }
                         }
                     Text("\(row.count)")
@@ -691,7 +741,8 @@ private struct CalendarDayPane: View, Equatable {
     private var calendar: Calendar { .current }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.date == rhs.date && lhs.day == rhs.day && lhs.usualActivity == rhs.usualActivity && lhs.activity == rhs.activity && lhs.jobNames == rhs.jobNames
+        lhs.date == rhs.date && lhs.day == rhs.day && lhs.usualActivity == rhs.usualActivity
+            && lhs.activity == rhs.activity && lhs.jobNames == rhs.jobNames
             && lhs.botsByID == rhs.botsByID && lhs.avatarImages == rhs.avatarImages
     }
 
@@ -723,9 +774,13 @@ private struct CalendarDayPane: View, Equatable {
                 Spacer(minLength: 8)
                 Button {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(WorkCalendarIndex.standupMarkdown(for: date, day: day), forType: .string)
+                    NSPasteboard.general.setString(
+                        WorkCalendarIndex.standupMarkdown(for: date, day: day), forType: .string)
                     copied = true
-                    Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        copied = false
+                    }
                 } label: {
                     Label(copied ? "Copied" : "Copy standup", icon: copied ? .check : .copy)
                 }
@@ -736,9 +791,12 @@ private struct CalendarDayPane: View, Equatable {
             if day.isEmpty {
                 HStack(spacing: 8) {
                     DockIcon(.calendarBlank).dockFont(.conversation).foregroundStyle(Color.dockMetadataText)
-                    Text(date > calendar.startOfDay(for: Date()) ? "Nothing yet. This day is still ahead." : "A quiet day. Nothing was recorded.")
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockMetadataText)
+                    Text(
+                        date > calendar.startOfDay(for: Date())
+                            ? "Nothing yet. This day is still ahead." : "A quiet day. Nothing was recorded."
+                    )
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockMetadataText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 56)
             } else {
@@ -750,7 +808,8 @@ private struct CalendarDayPane: View, Equatable {
                             ForEach(day.assignees) { count in
                                 HStack(spacing: 3) {
                                     BotChip(id: count.id, botsByID: botsByID, avatarImages: avatarImages)
-                                    Text("×\(count.count)").dockFont(.machineMetadata).foregroundStyle(Color.dockMetadataText)
+                                    Text("×\(count.count)").dockFont(.machineMetadata).foregroundStyle(
+                                        Color.dockMetadataText)
                                 }
                             }
                         }
@@ -788,8 +847,10 @@ private struct CalendarDayPane: View, Equatable {
         if !day.commits.isEmpty { parts.append("\(day.commits.count) commits") }
         if !day.sessions.isEmpty { parts.append("\(day.sessions.count) sessions") }
         if let first = day.firstAt, let last = day.lastAt, last > first {
-            let span = Duration.seconds(last.timeIntervalSince(first)).formatted(.units(allowed: [.hours, .minutes], width: .narrow))
-            parts.append("\(first.formatted(.dateTime.hour().minute()))–\(last.formatted(.dateTime.hour().minute())) (\(span))")
+            let span = Duration.seconds(last.timeIntervalSince(first)).formatted(
+                .units(allowed: [.hours, .minutes], width: .narrow))
+            parts.append(
+                "\(first.formatted(.dateTime.hour().minute()))–\(last.formatted(.dateTime.hour().minute())) (\(span))")
         }
         return parts.isEmpty ? "No activity" : parts.joined(separator: " · ")
     }
@@ -802,7 +863,9 @@ private struct CalendarDayPane: View, Equatable {
         if day.activeHours > 0 || change != nil || perItem != nil || day.usage != nil {
             HStack(alignment: .top, spacing: 24) {
                 if day.activeHours > 0 {
-                    calendarStat("\(day.activeHours)h active", day.longestStretch > 1 ? "longest stretch \(day.longestStretch)h" : "focus time")
+                    calendarStat(
+                        "\(day.activeHours)h active",
+                        day.longestStretch > 1 ? "longest stretch \(day.longestStretch)h" : "focus time")
                 }
                 if let change { calendarStat("\(change > 0 ? "↑" : "↓") \(abs(change))%", "vs your usual day") }
                 if let perItem { calendarStat(UsageWorkspaceView.cost(perItem), "cost per item shipped") }
@@ -833,7 +896,8 @@ private struct CalendarActivityDetails: View {
     }
 
     private func timestamp(_ date: Date) -> String {
-        showsDates ? date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        showsDates
+            ? date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
             : date.formatted(.dateTime.hour().minute())
     }
 
@@ -844,12 +908,18 @@ private struct CalendarActivityDetails: View {
         VStack(alignment: .leading, spacing: 16) {
             if !activity.pullRequests.isEmpty {
                 section("Pull requests merged", count: activity.pullRequests.count) {
-                    CalendarLeaderboard(title: nil, rows: activity.pullRequestsByRepository, unit: "PRs merged", carded: false) { CalendarRepoLabel(id: $0) }
-                        .padding(.vertical, 4)
+                    CalendarLeaderboard(
+                        title: nil, rows: activity.pullRequestsByRepository, unit: "PRs merged", carded: false
+                    ) { CalendarRepoLabel(id: $0) }
+                    .padding(.vertical, 4)
                     capped("prs", activity.pullRequests) { pr in
-                        Button { if let url = pr.url { NSWorkspace.shared.open(url) } } label: {
-                            row(icon: .gitPullRequest, tint: .dockMerged, title: pr.title,
-                                meta: "\(pr.repo) #\(pr.number) · \(timestamp(pr.mergedAt))", trailingIcon: .arrowUpRight)
+                        Button {
+                            if let url = pr.url { NSWorkspace.shared.open(url) }
+                        } label: {
+                            row(
+                                icon: .gitPullRequest, tint: .dockMerged, title: pr.title,
+                                meta: "\(pr.repo) #\(pr.number) · \(timestamp(pr.mergedAt))",
+                                trailingIcon: .arrowUpRight)
                         }
                         .buttonStyle(CalendarRowButtonStyle())
                         .help("Open on GitHub")
@@ -863,10 +933,13 @@ private struct CalendarActivityDetails: View {
             }
             if !activity.commits.isEmpty {
                 section("Commits", count: activity.commits.count) {
-                    CalendarLeaderboard(title: nil, rows: activity.repos, unit: "commits", carded: false) { CalendarRepoLabel(id: $0) }
-                        .padding(.vertical, 4)
+                    CalendarLeaderboard(title: nil, rows: activity.repos, unit: "commits", carded: false) {
+                        CalendarRepoLabel(id: $0)
+                    }
+                    .padding(.vertical, 4)
                     capped("commits", activity.commits) { commit in
-                        row(icon: .gitCommit, tint: CalendarInk.shipped, title: commit.subject,
+                        row(
+                            icon: .gitCommit, tint: CalendarInk.shipped, title: commit.subject,
                             meta: "\(commit.repo) · \(commit.hash) · \(timestamp(commit.date))")
                     }
                 }
@@ -883,8 +956,11 @@ private struct CalendarActivityDetails: View {
             if !activity.sessions.isEmpty {
                 section("Sessions", count: activity.sessions.count) {
                     capped("sessions", activity.sessions) { session in
-                        Button { onOpenSession(session) } label: {
-                            row(icon: .chats, tint: CalendarInk.sessions, title: session.title,
+                        Button {
+                            onOpenSession(session)
+                        } label: {
+                            row(
+                                icon: .chats, tint: CalendarInk.sessions, title: session.title,
                                 meta: session.updatedAt.map { timestamp($0) }, trailingIcon: .arrowUpRight)
                         }
                         .buttonStyle(CalendarRowButtonStyle())
@@ -895,12 +971,15 @@ private struct CalendarActivityDetails: View {
             if !activity.runs.isEmpty {
                 section("Automations", count: activity.runs.count) {
                     capped("jobs", automationJobs(activity.runs)) { job in
-                        row(icon: job.failed > 0 ? .warningCircle : .clockCounterClockwise,
+                        row(
+                            icon: job.failed > 0 ? .warningCircle : .clockCounterClockwise,
                             tint: job.failed > 0 ? CalendarInk.failed : CalendarInk.automation,
                             title: jobNames[job.id] ?? job.id,
-                            meta: ["\(job.runs) runs", job.failed > 0 ? "\(job.failed) failed" : nil,
-                                   job.last.map { "last \(timestamp($0))" }]
-                                .compactMap { $0 }.joined(separator: " · "),
+                            meta: [
+                                "\(job.runs) runs", job.failed > 0 ? "\(job.failed) failed" : nil,
+                                job.last.map { "last \(timestamp($0))" },
+                            ]
+                            .compactMap { $0 }.joined(separator: " · "),
                             metaTint: job.failed > 0 ? .dockWarning : .dockMetadataText)
                     }
                 }
@@ -945,7 +1024,9 @@ private struct CalendarActivityDetails: View {
 
     /// First `rowCap` rows, with a toggle for the rest.
     @ViewBuilder
-    private func capped<Item: Identifiable, Row: View>(_ key: String, _ items: [Item], @ViewBuilder row: @escaping (Item) -> Row) -> some View {
+    private func capped<Item: Identifiable, Row: View>(
+        _ key: String, _ items: [Item], @ViewBuilder row: @escaping (Item) -> Row
+    ) -> some View {
         let open = expanded.contains(key)
         CalendarDivided(items: open ? items : Array(items.prefix(rowCap)), row: row)
         if items.count > rowCap {
@@ -962,7 +1043,9 @@ private struct CalendarActivityDetails: View {
     // MARK: Rows
 
     private func taskRow(_ task: KanbanTaskSummary) -> some View {
-        Button { onOpenTask(task) } label: {
+        Button {
+            onOpenTask(task)
+        } label: {
             HStack(spacing: 8) {
                 DockIcon(.checkCircle, size: 13, weight: .fill, color: DockStatusTone.complete.color)
                 Text(task.title)
@@ -987,14 +1070,18 @@ private struct CalendarActivityDetails: View {
         .help("Open in Kanban")
     }
 
-    private func section<Content: View>(_ title: String, count: Int?, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(_ title: String, count: Int?, @ViewBuilder content: () -> Content) -> some View
+    {
         VStack(alignment: .leading, spacing: 6) {
             DockSectionLabel(title: title, count: count)
             content()
         }
     }
 
-    private func row(icon: Ph, tint: Color, title: String, meta: String?, metaTint: Color = .dockMetadataText, trailingIcon: Ph? = nil) -> some View {
+    private func row(
+        icon: Ph, tint: Color, title: String, meta: String?, metaTint: Color = .dockMetadataText,
+        trailingIcon: Ph? = nil
+    ) -> some View {
         HStack(spacing: 8) {
             DockIcon(icon).dockFont(.body).foregroundStyle(tint).frame(width: 14)
             Text(title).dockFont(.rowTitle).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.tail)
@@ -1003,7 +1090,8 @@ private struct CalendarActivityDetails: View {
                 Text(meta).dockFont(.machineMetadata).foregroundStyle(metaTint).lineLimit(1)
             }
             if let trailingIcon {
-                DockIcon(trailingIcon).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockMetadataText)
+                DockIcon(trailingIcon).dockFont(.compactStatus, weight: .regular).foregroundStyle(
+                    Color.dockMetadataText)
             }
         }
         .padding(.vertical, 5)
@@ -1034,11 +1122,17 @@ private struct CalendarHourlyRhythm: View {
                     let count = hours[hour]
                     let ratio = Double(count) / Double(peak)
                     VStack(spacing: 5) {
-                        UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3, style: .continuous)
-                            .fill(count == 0 ? Color.dockPrimaryText.opacity(0.06)
-                                  : CalendarInk.sessionsFill.opacity(hour == peakHour ? 1 : 0.35 + 0.5 * ratio))
-                            .frame(height: count > 0 ? max(5, 44 * CGFloat(ratio)) : 2)
-                            .frame(maxHeight: 44, alignment: .bottom)
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 3, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 3,
+                            style: .continuous
+                        )
+                        .fill(
+                            count == 0
+                                ? Color.dockPrimaryText.opacity(0.06)
+                                : CalendarInk.sessionsFill.opacity(hour == peakHour ? 1 : 0.35 + 0.5 * ratio)
+                        )
+                        .frame(height: count > 0 ? max(5, 44 * CGFloat(ratio)) : 2)
+                        .frame(maxHeight: 44, alignment: .bottom)
                         // Ticks overflow their column so "12p" stays one line without widening the bar.
                         Text(ticks[hour] != nil ? Self.hourLabel(hour) : " ")
                             .dockFont(.compactStatus)
@@ -1076,7 +1170,9 @@ private struct CalendarRowButtonStyle: ButtonStyle {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 2, role: .control)
         return configuration.label
             .padding(.horizontal, 6)
-            .background(shape.fill(Color.dockPrimaryText.opacity(configuration.isPressed ? 0.08 : isHovering ? 0.05 : 0)))
+            .background(
+                shape.fill(Color.dockPrimaryText.opacity(configuration.isPressed ? 0.08 : isHovering ? 0.05 : 0))
+            )
             .padding(.horizontal, -6)
             .onHover { isHovering = $0 }
     }
@@ -1108,7 +1204,9 @@ private struct CalendarDayCell: View, Equatable {
             HStack(spacing: 0) {
                 Text("\(dayNumber)")
                     .dockFont(.body, weight: isToday ? .bold : .medium).monospacedDigit()
-                    .foregroundStyle(isToday ? Color.dockOnAccentText : isFuture ? Color.dockMetadataText : Color.dockPrimaryText)
+                    .foregroundStyle(
+                        isToday ? Color.dockOnAccentText : isFuture ? Color.dockMetadataText : Color.dockPrimaryText
+                    )
                     .frame(width: isToday ? 24 : nil, height: 24)
                     .background { if isToday { Circle().fill(Color.dockAccent) } }
                 if day?.hasFailedRun == true {
@@ -1123,13 +1221,21 @@ private struct CalendarDayCell: View, Equatable {
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
         .background(shape.fill(CalendarInk.shippedFill.opacity(heat > 0 ? 0.035 + heat * 0.035 : 0)))
         .background(shape.fill(Color.dockAccent.opacity(isToday || isInScope ? 0.1 : 0)))
-        .overlay(shape.stroke(isToday || isSelected ? Color.dockAccent : isInScope ? Color.dockAccent.opacity(0.4) : Color.dockBorderLight, lineWidth: isToday ? 2.5 : isSelected ? 1.5 : 1))
+        .overlay(
+            shape.stroke(
+                isToday || isSelected
+                    ? Color.dockAccent : isInScope ? Color.dockAccent.opacity(0.4) : Color.dockBorderLight,
+                lineWidth: isToday ? 2.5 : isSelected ? 1.5 : 1)
+        )
         .opacity(isFuture ? 0.55 : 1)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         // Debounced so sweeping across the grid opens nothing; the popover body is only built when shown.
         .task(id: isHovering) {
-            guard isHovering, day?.isEmpty == false else { showsPreview = false; return }
+            guard isHovering, day?.isEmpty == false else {
+                showsPreview = false
+                return
+            }
             try? await Task.sleep(for: .milliseconds(350))
             if !Task.isCancelled { showsPreview = true }
         }
@@ -1137,7 +1243,9 @@ private struct CalendarDayCell: View, Equatable {
             if let day { CalendarDayPreview(date: date, day: day) }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(isToday ? "Today, " : "")Day \(dayNumber), \(shipped) shipped, \(day?.sessions.count ?? 0) sessions")
+        .accessibilityLabel(
+            "\(isToday ? "Today, " : "")Day \(dayNumber), \(shipped) shipped, \(day?.sessions.count ?? 0) sessions"
+        )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -1146,7 +1254,7 @@ private struct CalendarDayCell: View, Equatable {
         let parts: [(Int, Color)] = [
             (day.doneTasks.count + day.commits.count, CalendarInk.shippedFill),
             (day.sessions.count, CalendarInk.sessionsFill),
-            (day.cronRuns.count, day.hasFailedRun ? CalendarInk.failedFill : CalendarInk.automationFill)
+            (day.cronRuns.count, day.hasFailedRun ? CalendarInk.failedFill : CalendarInk.automationFill),
         ].filter { $0.0 > 0 }
         let total = CGFloat(parts.reduce(0) { $0 + $1.0 })
         return GeometryReader { proxy in
@@ -1173,7 +1281,7 @@ private struct CalendarDayPreview: View {
             (.checkCircle, "Tasks done", day.doneTasks.count),
             (.gitCommit, "Commits", day.commits.count),
             (.chatCircle, "Sessions", day.sessions.count),
-            (.clockCounterClockwise, "Automations", day.cronRuns.count)
+            (.clockCounterClockwise, "Automations", day.cronRuns.count),
         ].filter { $0.2 > 0 }
         VStack(alignment: .leading, spacing: 8) {
             Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
@@ -1185,7 +1293,8 @@ private struct CalendarDayPreview: View {
                         DockIcon(icon).dockFont(.metadata).foregroundStyle(Color.dockMetadataText).frame(width: 14)
                         Text(label).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                         Spacer(minLength: 12)
-                        Text("\(value)").dockFont(.machineMetadata, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                        Text("\(value)").dockFont(.machineMetadata, weight: .semibold).foregroundStyle(
+                            Color.dockPrimaryText)
                     }
                 }
                 if failed > 0 {
@@ -1201,10 +1310,12 @@ private struct CalendarDayPreview: View {
                     .foregroundStyle(Color.dockMetadataText)
             }
             if let usage = day.usage, usage.inputTokens + usage.outputTokens > 0 {
-                Text("\(UsageWorkspaceView.tokens(usage.inputTokens + usage.outputTokens)) tokens"
-                     + (usage.estimatedCost > 0 ? " · \(UsageWorkspaceView.cost(usage.estimatedCost))" : ""))
-                    .dockFont(.machineMetadata)
-                    .foregroundStyle(Color.dockMetadataText)
+                Text(
+                    "\(UsageWorkspaceView.tokens(usage.inputTokens + usage.outputTokens)) tokens"
+                        + (usage.estimatedCost > 0 ? " · \(UsageWorkspaceView.cost(usage.estimatedCost))" : "")
+                )
+                .dockFont(.machineMetadata)
+                .foregroundStyle(Color.dockMetadataText)
             }
         }
         .padding(12)

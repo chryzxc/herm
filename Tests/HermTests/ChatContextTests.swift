@@ -1,8 +1,10 @@
 import Testing
+
 @testable import Herm
 
 @Test func attachedContextsPrecedeTheTypedPrompt() {
-    let task = KanbanTaskSummary(id: "t1", title: "Fix login", status: "ready", detail: "Users get 500", priority: nil, assignee: nil)
+    let task = KanbanTaskSummary(
+        id: "t1", title: "Fix login", status: "ready", detail: "Users get 500", priority: nil, assignee: nil)
     let context = ChatContext(kanbanTask: task)
     let prompt = ChatContext.prompt("Work on this task", contexts: [context])
     #expect(prompt.hasPrefix("Kanban task t1: \"Fix login\""))

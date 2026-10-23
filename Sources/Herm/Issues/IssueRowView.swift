@@ -16,7 +16,8 @@ struct GitHubIssueRowMetadata: Equatable {
     }
 
     static func make(repository: String, assignees: [String], updated: String?, viewer: String? = nil) -> Self {
-        let names = assignees
+        let names =
+            assignees
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .map { name in viewer.map { name.caseInsensitiveCompare($0) == .orderedSame } == true ? "you" : name }
         let assignment = names.isEmpty ? "Unassigned" : "Assigned to \(names.joined(separator: ", "))"
@@ -63,8 +64,13 @@ struct IssueRowView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius + 1)
-            .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear)))
+        .background(
+            DockThemeShape(cornerRadius: DockLayout.controlRadius + 1)
+                .dockSelectionFill(
+                    isSelected,
+                    fallback: isSelected
+                        ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
+        )
         .overlay(alignment: .leading) {
             if isSelected { Capsule().fill(Color.dockAccent).frame(width: 3).padding(.vertical, 12) }
         }
@@ -81,4 +87,3 @@ extension GitHubIssueRecord {
     var presentationIcon: Ph { isOpen ? .record : (state.lowercased() == "closed" ? .checkCircle : .question) }
     var isOpen: Bool { state.caseInsensitiveCompare("open") == .orderedSame }
 }
-

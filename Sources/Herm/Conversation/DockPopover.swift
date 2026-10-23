@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct DockPanelSurfaceShape: Shape {
@@ -285,11 +285,19 @@ struct DockPopover: View {
             .environment(\.chatContextRouter, chatContextRouter)
             .generativeUISession(model: model)
             // SwiftUI Text links would otherwise open in the default browser.
-            .environment(\.openURL, OpenURLAction { InAppBrowser.open($0); return .handled })
-            .environment(\.markdownOpenURL, OpenURLAction { url in
-                openMarkdownURL(url)
-                return .handled
-            })
+            .environment(
+                \.openURL,
+                OpenURLAction {
+                    InAppBrowser.open($0)
+                    return .handled
+                }
+            )
+            .environment(
+                \.markdownOpenURL,
+                OpenURLAction { url in
+                    openMarkdownURL(url)
+                    return .handled
+                })
     }
 
     /// The window's content runs under its transparent titlebar. Columns

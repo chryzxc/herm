@@ -70,9 +70,13 @@ struct GitHubPullRequestSummary: Equatable, Identifiable, Sendable {
         if !failed.isEmpty { reasons.append("Failed checks: \(failed.map(\.name).joined(separator: ", "))") }
         let pending = checks.filter { $0.status.lowercased() != "completed" }
         if !pending.isEmpty { reasons.append("Checks in progress: \(pending.map(\.name).joined(separator: ", "))") }
-        if reviews.contains(where: { $0.state.uppercased() == "CHANGES_REQUESTED" }) { reasons.append("Changes requested") }
+        if reviews.contains(where: { $0.state.uppercased() == "CHANGES_REQUESTED" }) {
+            reasons.append("Changes requested")
+        }
         if mergeable == false { reasons.append("Merge blocked") }
-        if !isDraft, reviews.isEmpty || !reviews.contains(where: { $0.state.uppercased() == "APPROVED" }) { reasons.append("Approval pending") }
+        if !isDraft, reviews.isEmpty || !reviews.contains(where: { $0.state.uppercased() == "APPROVED" }) {
+            reasons.append("Approval pending")
+        }
         return reasons
     }
 }
@@ -86,13 +90,17 @@ enum GitHubIntegrationState: Equatable, Sendable {
 }
 
 enum GitHubIntegrationPresentation {
-    static func state(repository: GitHubRepositoryReference?, hasLoaded: Bool, error: GitHubCodeHostError?) -> GitHubIntegrationState {
+    static func state(repository: GitHubRepositoryReference?, hasLoaded: Bool, error: GitHubCodeHostError?)
+        -> GitHubIntegrationState
+    {
         guard repository != nil else { return .noRemote }
         if let error { return hasLoaded ? .stale(error) : .unavailable(error) }
         return hasLoaded ? .available : .notLoaded
     }
 
-    static func shouldResetLoadedState(current: GitHubRepositoryReference?, resolved: GitHubRepositoryReference?) -> Bool {
+    static func shouldResetLoadedState(current: GitHubRepositoryReference?, resolved: GitHubRepositoryReference?)
+        -> Bool
+    {
         current != resolved
     }
 }
@@ -136,7 +144,7 @@ enum GitHubPullRequestMutationWire {
                 "body": mutation.body,
                 "head": mutation.headBranch ?? "",
                 "base": mutation.baseBranch ?? "",
-                "draft": true
+                "draft": true,
             ]
         case .updateTitleAndBody:
             return ["title": mutation.title, "body": mutation.body]
@@ -145,36 +153,54 @@ enum GitHubPullRequestMutationWire {
 }
 
 enum GitHubPullRequestMutationBuilder {
-    static func createDraft(repository: GitHubRepositoryReference?, title: String, body: String, headBranch: String, baseBranch: String) -> Result<GitHubPullRequestMutation, GitHubPullRequestMutationError> {
+    static func createDraft(
+        repository: GitHubRepositoryReference?, title: String, body: String, headBranch: String, baseBranch: String
+    ) -> Result<GitHubPullRequestMutation, GitHubPullRequestMutationError> {
         guard let repository else { return .failure(.missingRepository) }
         guard let title = valid(title, limit: 200) else { return .failure(.invalidTitle) }
         guard let body = validBody(body) else { return .failure(.invalidBody) }
-        guard let headBranch = validBranch(headBranch), let baseBranch = validBranch(baseBranch) else { return .failure(.invalidBranch) }
-        return .success(GitHubPullRequestMutation(kind: .createDraft, repository: repository, number: nil, title: title, body: body, headBranch: headBranch, baseBranch: baseBranch))
+        guard let headBranch = validBranch(headBranch), let baseBranch = validBranch(baseBranch) else {
+            return .failure(.invalidBranch)
+        }
+        return .success(
+            GitHubPullRequestMutation(
+                kind: .createDraft, repository: repository, number: nil, title: title, body: body,
+                headBranch: headBranch, baseBranch: baseBranch))
     }
 
-    static func update(repository: GitHubRepositoryReference?, number: Int, title: String, body: String) -> Result<GitHubPullRequestMutation, GitHubPullRequestMutationError> {
+    static func update(repository: GitHubRepositoryReference?, number: Int, title: String, body: String) -> Result<
+        GitHubPullRequestMutation, GitHubPullRequestMutationError
+    > {
         guard let repository else { return .failure(.missingRepository) }
         guard number > 0 else { return .failure(.missingRepository) }
         guard let title = valid(title, limit: 200) else { return .failure(.invalidTitle) }
         guard let body = validBody(body) else { return .failure(.invalidBody) }
-        return .success(GitHubPullRequestMutation(kind: .updateTitleAndBody, repository: repository, number: number, title: title, body: body, headBranch: nil, baseBranch: nil))
+        return .success(
+            GitHubPullRequestMutation(
+                kind: .updateTitleAndBody, repository: repository, number: number, title: title, body: body,
+                headBranch: nil, baseBranch: nil))
     }
 
     private static func valid(_ value: String, limit: Int) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= limit, trimmed.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        guard !trimmed.isEmpty, trimmed.count <= limit, trimmed.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
         return trimmed
     }
 
     private static func validBody(_ value: String) -> String? {
         let allowedWhitespace = CharacterSet(charactersIn: "\n\r\t")
-        guard value.count <= 10_000, value.rangeOfCharacter(from: CharacterSet.controlCharacters.subtracting(allowedWhitespace)) == nil else { return nil }
+        guard value.count <= 10_000,
+            value.rangeOfCharacter(from: CharacterSet.controlCharacters.subtracting(allowedWhitespace)) == nil
+        else { return nil }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func validBranch(_ value: String) -> String? {
-        guard let branch = valid(value, limit: 240), !branch.contains(".."), !branch.contains("~"), !branch.contains("^") else { return nil }
+        guard let branch = valid(value, limit: 240), !branch.contains(".."), !branch.contains("~"),
+            !branch.contains("^")
+        else { return nil }
         return branch
     }
 }
@@ -186,7 +212,9 @@ enum GitHubRemoteParser {
         let path: String
         if value.hasPrefix("git@github.com:") {
             path = String(value.dropFirst("git@github.com:".count))
-        } else if let url = URL(string: value), ["https", "http", "ssh"].contains(url.scheme?.lowercased()), url.host?.lowercased() == "github.com" {
+        } else if let url = URL(string: value), ["https", "http", "ssh"].contains(url.scheme?.lowercased()),
+            url.host?.lowercased() == "github.com"
+        {
             if url.scheme?.lowercased() == "ssh", url.user?.lowercased() != "git" { return nil }
             if ["https", "http"].contains(url.scheme?.lowercased()), url.user != nil { return nil }
             path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -196,21 +224,24 @@ enum GitHubRemoteParser {
         let normalizedPath = path.lowercased().hasSuffix(".git") ? String(path.dropLast(4)) : path
         let components = normalizedPath.split(separator: "/").map(String.init)
         guard components.count == 2,
-              components.allSatisfy({ isSafeComponent($0) }) else { return nil }
+            components.allSatisfy({ isSafeComponent($0) })
+        else { return nil }
         guard let webURL = URL(string: "https://github.com/\(components[0])/\(components[1])") else { return nil }
         return GitHubRepositoryReference(owner: components[0], name: components[1], webURL: webURL)
     }
 
     private static func isSafeComponent(_ value: String) -> Bool {
-        !value.isEmpty && value != "." && value != ".." && value.allSatisfy { $0.isLetter || $0.isNumber || "-_".contains($0) }
+        !value.isEmpty && value != "." && value != ".."
+            && value.allSatisfy { $0.isLetter || $0.isNumber || "-_".contains($0) }
     }
 }
 
 enum GitHubPullRequestParser {
     static func parse(_ payload: [String: Any]) -> GitHubPullRequestSummary? {
         guard let number = payload["number"] as? Int,
-              let title = bounded(payload["title"] as? String),
-              let state = bounded(payload["state"] as? String) else { return nil }
+            let title = bounded(payload["title"] as? String),
+            let state = bounded(payload["state"] as? String)
+        else { return nil }
         let head = (payload["head"] as? [String: Any])?["ref"] as? String
         let base = (payload["base"] as? [String: Any])?["ref"] as? String
         let url = (payload["html_url"] as? String).flatMap(URL.init)
@@ -218,31 +249,48 @@ enum GitHubPullRequestParser {
         let reviews = (payload["reviews"] as? [[String: Any]] ?? []).compactMap(parseReview)
         let headRevision = (payload["head"] as? [String: Any])?["sha"] as? String
         let changedFiles = (payload["changed_files"] as? Int).flatMap { $0 >= 0 && $0 <= 100_000 ? $0 : nil }
-        return GitHubPullRequestSummary(number: number, title: title, state: state, isDraft: payload["draft"] as? Bool ?? false, headBranch: head, baseBranch: base, headRevision: headRevision, webURL: url, changedFiles: changedFiles, mergeable: payload["mergeable"] as? Bool, checks: checks, reviews: reviews)
+        return GitHubPullRequestSummary(
+            number: number, title: title, state: state, isDraft: payload["draft"] as? Bool ?? false, headBranch: head,
+            baseBranch: base, headRevision: headRevision, webURL: url, changedFiles: changedFiles,
+            mergeable: payload["mergeable"] as? Bool, checks: checks, reviews: reviews)
     }
 
     private static func parseCheck(_ row: [String: Any]) -> GitHubCheckSummary? {
-        guard let id = bounded(String(describing: row["id"] ?? "")), let name = bounded(row["name"] as? String), let status = bounded(row["status"] as? String) else { return nil }
-        return GitHubCheckSummary(id: id, name: name, status: status, conclusion: bounded(row["conclusion"] as? String), detailsURL: (row["details_url"] as? String).flatMap(URL.init))
+        guard let id = bounded(String(describing: row["id"] ?? "")), let name = bounded(row["name"] as? String),
+            let status = bounded(row["status"] as? String)
+        else { return nil }
+        return GitHubCheckSummary(
+            id: id, name: name, status: status, conclusion: bounded(row["conclusion"] as? String),
+            detailsURL: (row["details_url"] as? String).flatMap(URL.init))
     }
 
     private static func parseReview(_ row: [String: Any]) -> GitHubReviewSummary? {
-        guard let id = bounded(String(describing: row["id"] ?? "")), let state = bounded(row["state"] as? String) else { return nil }
+        guard let id = bounded(String(describing: row["id"] ?? "")), let state = bounded(row["state"] as? String) else {
+            return nil
+        }
         let author = ((row["user"] as? [String: Any])?["login"] as? String).flatMap(bounded) ?? "Unknown reviewer"
         let submittedAt = (row["submitted_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
-        return GitHubReviewSummary(id: id, author: author, state: state, submittedAt: submittedAt, webURL: (row["html_url"] as? String).flatMap(URL.init), authorAvatarURL: ((row["user"] as? [String: Any])?["avatar_url"] as? String).flatMap(URL.init))
+        return GitHubReviewSummary(
+            id: id, author: author, state: state, submittedAt: submittedAt,
+            webURL: (row["html_url"] as? String).flatMap(URL.init),
+            authorAvatarURL: ((row["user"] as? [String: Any])?["avatar_url"] as? String).flatMap(URL.init))
     }
 
     private static func bounded(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= 240, trimmed.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        guard !trimmed.isEmpty, trimmed.count <= 240, trimmed.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
         return trimmed
     }
 }
 
 extension GitHubCheckSummary {
-    var isFailure: Bool { ["failure", "error", "cancelled", "timed_out", "action_required", "startup_failure", "stale"].contains(conclusion?.lowercased() ?? "") }
+    var isFailure: Bool {
+        ["failure", "error", "cancelled", "timed_out", "action_required", "startup_failure", "stale"].contains(
+            conclusion?.lowercased() ?? "")
+    }
     var isPending: Bool { status.lowercased() != "completed" || conclusion?.lowercased() == "pending" }
     var isSuccess: Bool { !isPending && ["success", "neutral", "skipped"].contains(conclusion?.lowercased() ?? "") }
 }

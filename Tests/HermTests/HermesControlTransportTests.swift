@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -117,7 +118,7 @@ struct HermesControlTransportTests {
     @Test func normalizesCurrentHermesSessionRESTEnvelopesForActivityProjection() async throws {
         let client = HTTPEnvelopeRPCClient(responses: [
             ["sessions": [["id": "session-1"]], "total": 2, "limit": 1, "offset": 0],
-            ["session_id": "session-1", "messages": [["id": "message-1", "role": "assistant"]], "pagination": [:]]
+            ["session_id": "session-1", "messages": [["id": "message-1", "role": "assistant"]], "pagination": [:]],
         ])
         let rpc = HermesControlRPC(client: client)
 
@@ -215,7 +216,11 @@ struct HermesControlTransportTests {
         _ = try await rpc.pauseDelegation(true)
         _ = try await rpc.interruptSubagent(subagentID: "a1")
 
-        #expect(client.calls.map(\.method) == ["project.facts", "verification.status", "prompt.background", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt"])
+        #expect(
+            client.calls.map(\.method) == [
+                "project.facts", "verification.status", "prompt.background", "session.undo", "session.redirect",
+                "delegation.pause", "subagent.interrupt",
+            ])
         #expect(client.calls.last?.params["subagent_id"] as? String == "a1")
     }
 
@@ -223,7 +228,9 @@ struct HermesControlTransportTests {
         let client = HermesOfflineFixtureRPCClient(scenario: .available)
         let result = try await HermesControlRPC(client: client).activeSessions()
 
-        #expect((result["sessions"] as? [[String: Any]])?.first?["id"] as? String == HermesOfflineContractFixtures.sessionID)
+        #expect(
+            (result["sessions"] as? [[String: Any]])?.first?["id"] as? String == HermesOfflineContractFixtures.sessionID
+        )
         #expect(client.calls.map(\.method) == ["session.active_list"])
     }
 
@@ -260,7 +267,8 @@ struct HermesControlTransportTests {
     @Test func offlineTransientFixtureDoesNotInventAResponse() async {
         let client = HermesOfflineFixtureRPCClient(scenario: .transient)
         do {
-            _ = try await HermesControlRPC(client: client).sessionUsage(sessionID: HermesOfflineContractFixtures.sessionID)
+            _ = try await HermesControlRPC(client: client).sessionUsage(
+                sessionID: HermesOfflineContractFixtures.sessionID)
             #expect(Bool(false), "expected transient fixture failure")
         } catch let error as HermesOfflineTransportError {
             #expect(error == .transient)
@@ -271,11 +279,13 @@ struct HermesControlTransportTests {
 
     @Test func viewsDoNotInvokeRawShellExec() throws {
         let testDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        let sourceDirectory = testDirectory
+        let sourceDirectory =
+            testDirectory
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/Herm")
-        let files = FileManager.default.enumerator(at: sourceDirectory, includingPropertiesForKeys: nil)?
+        let files =
+            FileManager.default.enumerator(at: sourceDirectory, includingPropertiesForKeys: nil)?
             .compactMap { $0 as? URL }
             .filter { $0.pathExtension == "swift" && $0.lastPathComponent.hasSuffix("View.swift") } ?? []
 
@@ -290,22 +300,25 @@ struct HermesControlTransportTests {
         let client = HermesOfflineFixtureRPCClient(scenario: .successAfterMutation)
         let rpc = HermesControlRPC(client: client)
 
-        _ = try await rpc.setSessionTitle(sessionID: HermesOfflineContractFixtures.sessionID, title: "Updated fixture title")
+        _ = try await rpc.setSessionTitle(
+            sessionID: HermesOfflineContractFixtures.sessionID, title: "Updated fixture title")
         let result = try await rpc.sessionTitle(sessionID: HermesOfflineContractFixtures.sessionID)
 
         #expect(result["title"] as? String == "Updated fixture title")
         #expect(client.calls.map(\.method) == ["session.title", "session.title"])
-        #expect(client.calls.allSatisfy { $0.params["session_id"] as? String == HermesOfflineContractFixtures.sessionID })
+        #expect(
+            client.calls.allSatisfy { $0.params["session_id"] as? String == HermesOfflineContractFixtures.sessionID })
     }
 }
 
 @MainActor
 struct HermesServerRequestTests {
     @Test func clarifyServerRequestBecomesClarifyEventKeyedByRequestID() throws {
-        let event = try #require(HermesGateway.event(forServerRequest: [
-            "jsonrpc": "2.0", "id": "srq-abc", "method": "clarify",
-            "params": ["session_id": "s1", "question": "Which env?", "choices": ["Staging"]]
-        ]))
+        let event = try #require(
+            HermesGateway.event(forServerRequest: [
+                "jsonrpc": "2.0", "id": "srq-abc", "method": "clarify",
+                "params": ["session_id": "s1", "question": "Which env?", "choices": ["Staging"]],
+            ]))
         let payload = try #require(event.params["payload"] as? [String: Any])
         #expect(event.type == "clarify.request")
         #expect(event.params["session_id"] as? String == "s1")
@@ -314,21 +327,26 @@ struct HermesServerRequestTests {
     }
 
     @Test func batchClarifyKeepsFirstQuestionMultiSelectForSingleQuestionSurfaces() throws {
-        let event = try #require(HermesGateway.event(forServerRequest: [
-            "id": "srq-b", "method": "clarify",
-            "params": ["session_id": "s1", "questions": [
-                ["qid": "q1", "question": "Which envs?", "choices": ["Staging", "Prod"], "multi_select": true]
-            ]]
-        ]))
+        let event = try #require(
+            HermesGateway.event(forServerRequest: [
+                "id": "srq-b", "method": "clarify",
+                "params": [
+                    "session_id": "s1",
+                    "questions": [
+                        ["qid": "q1", "question": "Which envs?", "choices": ["Staging", "Prod"], "multi_select": true]
+                    ],
+                ],
+            ]))
         let payload = try #require(event.params["payload"] as? [String: Any])
         #expect(payload["multi_select"] as? Bool == true)
     }
 
     @Test func approvalServerRequestKeepsItsPayloadAndUnknownMethodsAreRejected() throws {
-        let event = try #require(HermesGateway.event(forServerRequest: [
-            "id": "srq-1", "method": "approval",
-            "params": ["session_id": "s1", "request_id": "ap-1", "command": "rm -rf build"]
-        ]))
+        let event = try #require(
+            HermesGateway.event(forServerRequest: [
+                "id": "srq-1", "method": "approval",
+                "params": ["session_id": "s1", "request_id": "ap-1", "command": "rm -rf build"],
+            ]))
         #expect(event.type == "approval.request")
         #expect((event.params["payload"] as? [String: Any])?["command"] as? String == "rm -rf build")
         #expect(HermesGateway.event(forServerRequest: ["id": "srq-2", "method": "tour", "params": [:]]) == nil)
@@ -336,14 +354,18 @@ struct HermesServerRequestTests {
     }
 
     @Test func vaultSaveLoginAnswersWithIdentifierAndPasswordJSON() throws {
-        let event = try #require(HermesGateway.event(forServerRequest: [
-            "id": "srq-v", "method": "vault.save_login", "params": ["session_id": "s1", "origin": "https://x.dev", "site": "x.dev"]
-        ]))
+        let event = try #require(
+            HermesGateway.event(forServerRequest: [
+                "id": "srq-v", "method": "vault.save_login",
+                "params": ["session_id": "s1", "origin": "https://x.dev", "site": "x.dev"],
+            ]))
         #expect(event.type == "prompt.request")
         let payload = try #require(event.params["payload"] as? [String: Any])
         let prompt = try #require(ValuePrompt.from(payload: payload))
         #expect(prompt.asksForLogin)
-        let answer = try #require(JSONSerialization.jsonObject(with: Data(prompt.answer(value: "pw", identifier: "me").utf8)) as? [String: String])
+        let answer = try #require(
+            JSONSerialization.jsonObject(with: Data(prompt.answer(value: "pw", identifier: "me").utf8))
+                as? [String: String])
         #expect(answer == ["identifier": "me", "password": "pw"])
     }
 }
@@ -353,18 +375,26 @@ extension HermesControlTransportTests {
         let first = (0..<100).map { ["id": "s\($0)", "profile": "work"] }
         let client = HTTPEnvelopeRPCClient(responses: [
             ["sessions": first, "total": 101],
-            ["sessions": [["id": "older", "profile": "personal"]], "total": 101]
+            ["sessions": [["id": "older", "profile": "personal"]], "total": 101],
         ])
         let rows = try await HermesControlRPC(client: client).artifactSessions()
         #expect(rows.count == 101)
         #expect(rows.last?["profile"] as? String == "personal")
-        #expect(client.requestedPaths == [0, 100].map { "/api/profiles/sessions?limit=100&offset=\($0)&min_messages=1&archived=exclude&order=recent&profile=all" })
+        #expect(
+            client.requestedPaths
+                == [0, 100].map {
+                    "/api/profiles/sessions?limit=100&offset=\($0)&min_messages=1&archived=exclude&order=recent&profile=all"
+                })
     }
 
     @Test func artifactTranscriptsIncludeCompactedMessagesAndExplicitOffsets() async throws {
         let client = HTTPEnvelopeRPCClient(responses: [["messages": [], "pagination": ["limit": 100]]])
-        _ = try await HermesControlRPC(client: client).sessionMessages(sessionID: "s", profileID: "work", limit: 100, offset: 500, includeCompacted: true)
-        #expect(client.requestedPaths == ["/api/sessions/s/messages?limit=100&profile=work&offset=500&order=oldest&include_compacted=true"])
+        _ = try await HermesControlRPC(client: client).sessionMessages(
+            sessionID: "s", profileID: "work", limit: 100, offset: 500, includeCompacted: true)
+        #expect(
+            client.requestedPaths == [
+                "/api/sessions/s/messages?limit=100&profile=work&offset=500&order=oldest&include_compacted=true"
+            ])
     }
 
     @Test func incompleteProfileIndexFailsInsteadOfReportingCompleteResults() async {

@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 struct SourceControlTests {
@@ -16,7 +17,9 @@ struct SourceControlTests {
         snapshot = await RepositoryService.changeSnapshot(path: root.path)
         #expect(snapshot.stagedCount == 1)
         #expect(snapshot.files.first { $0.isStaged }?.path == "file [1].txt")
-        #expect(await RepositoryService.applySourceControl(.unstage(snapshot.files.filter(\.isStaged)), path: root.path) == nil)
+        #expect(
+            await RepositoryService.applySourceControl(.unstage(snapshot.files.filter(\.isStaged)), path: root.path)
+                == nil)
         #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent(literal.path).path))
         #expect(await RepositoryService.changeSnapshot(path: root.path).stagedCount == 0)
         #expect(await RepositoryService.applySourceControl(.stage([literal]), path: root.path) == nil)
@@ -31,7 +34,8 @@ struct SourceControlTests {
         #expect(snapshot.files.filter { $0.path == literal.path }.count == 2)
         #expect(await RepositoryService.applySourceControl(.commit("Staged only"), path: root.path) == nil)
         #expect(try git(root, ["show", "HEAD:file [1].txt"]) == "staged version\n")
-        #expect(try String(contentsOf: root.appendingPathComponent(literal.path), encoding: .utf8) == "unstaged version\n")
+        #expect(
+            try String(contentsOf: root.appendingPathComponent(literal.path), encoding: .utf8) == "unstaged version\n")
         #expect(await RepositoryService.applySourceControl(.commit("Nothing staged"), path: root.path) != nil)
         #expect(await RepositoryService.applySourceControl(.commit(" \n"), path: root.path) != nil)
         let invalid = RepositoryFileChange(path: "../outside", status: .untracked, isStaged: false, renameSource: nil)
@@ -92,27 +96,40 @@ struct SourceControlTests {
         _ = try git(root, ["add", "."])
         try write("unstaged\n", "file [1].txt", in: root)
         var snapshot = await RepositoryService.changeSnapshot(path: root.path)
-        #expect(await RepositoryService.applySourceControl(.discard(snapshot.files.filter(\.isStaged)), path: root.path) != nil)
-        #expect(await RepositoryService.applySourceControl(.discard(snapshot.files.filter { !$0.isStaged }), path: root.path) == nil)
+        #expect(
+            await RepositoryService.applySourceControl(.discard(snapshot.files.filter(\.isStaged)), path: root.path)
+                != nil)
+        #expect(
+            await RepositoryService.applySourceControl(
+                .discard(snapshot.files.filter { !$0.isStaged }), path: root.path) == nil)
         // Only the unstaged edit is dropped; the staged version survives.
         #expect(try String(contentsOf: root.appendingPathComponent("file [1].txt"), encoding: .utf8) == "staged\n")
         snapshot = await RepositoryService.changeSnapshot(path: root.path)
         #expect(snapshot.files.map(\.isStaged) == [true])
 
         try write("secret\n", "notes*.txt", in: root)
-        let untracked = try #require(await RepositoryService.changeSnapshot(path: root.path).files.first { $0.status == .untracked })
+        let untracked = try #require(
+            await RepositoryService.changeSnapshot(path: root.path).files.first { $0.status == .untracked })
         #expect(await RepositoryService.applySourceControl(.ignore([untracked]), path: root.path) == nil)
         #expect(await RepositoryService.applySourceControl(.ignore([untracked]), path: root.path) == nil)
         #expect(try String(contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8) == "/notes\\*.txt\n")
-        #expect(await RepositoryService.changeSnapshot(path: root.path).files.map(\.path).sorted() == [".gitignore", "file [1].txt"])
+        #expect(
+            await RepositoryService.changeSnapshot(path: root.path).files.map(\.path).sorted() == [
+                ".gitignore", "file [1].txt",
+            ])
         #expect(RepositoryService.gitignorePattern("dir/a [b]?.md ") == "/dir/a \\[b]\\?.md\\ ")
     }
 
     @Test func commitDetailParsesBodyEmailAndBinaryFiles() {
-        let detail = RepositoryService.parseCommitDetail("Subject\n\nBody line\n\0me@example.com\0\n\n3\t1\tsrc/a.swift\n-\t-\timage.png\n")
+        let detail = RepositoryService.parseCommitDetail(
+            "Subject\n\nBody line\n\0me@example.com\0\n\n3\t1\tsrc/a.swift\n-\t-\timage.png\n")
         #expect(detail?.body == "Subject\n\nBody line")
         #expect(detail?.email == "me@example.com")
-        #expect(detail?.files == [.init(path: "src/a.swift", additions: 3, deletions: 1), .init(path: "image.png", additions: nil, deletions: nil)])
+        #expect(
+            detail?.files == [
+                .init(path: "src/a.swift", additions: 3, deletions: 1),
+                .init(path: "image.png", additions: nil, deletions: nil),
+            ])
         #expect(RepositoryService.parseCommitDetail("no separators") == nil)
     }
 
@@ -121,7 +138,9 @@ struct SourceControlTests {
             RepositoryCommit(id: id, subject: id, author: "", date: .now, references: "", parents: parents)
         }
         // merge(m) of feature(f) into main(c); both fork from base(a).
-        let rows = RepositoryCommitGraph.layout([commit("m", ["c", "f"]), commit("f", ["a"]), commit("c", ["a"]), commit("a", [])])
+        let rows = RepositoryCommitGraph.layout([
+            commit("m", ["c", "f"]), commit("f", ["a"]), commit("c", ["a"]), commit("a", []),
+        ])
         #expect(rows.map(\.lane) == [0, 1, 0, 0])
         #expect(rows[0].top.isEmpty)
         #expect(rows[0].bottom.map { [$0.from, $0.to] } == [[0, 0], [0, 1]])
@@ -133,7 +152,9 @@ struct SourceControlTests {
     }
 
     @Test func decorationsMergeSyncedRemotesAndPutHeadFirst() {
-        let references = RepositoryCommitReference.parse("tag: refs/tags/v1.0, refs/remotes/origin/feature/x, HEAD -> refs/heads/main, refs/remotes/origin/main, refs/remotes/origin/HEAD, refs/heads/feature/y")
+        let references = RepositoryCommitReference.parse(
+            "tag: refs/tags/v1.0, refs/remotes/origin/feature/x, HEAD -> refs/heads/main, refs/remotes/origin/main, refs/remotes/origin/HEAD, refs/heads/feature/y"
+        )
         #expect(references.map(\.name) == ["main", "feature/y", "origin/feature/x", "v1.0"])
         #expect(references[0].isHead && references[0].isSynced)
         #expect(!references[1].isSynced)
@@ -169,7 +190,9 @@ struct SourceControlTests {
         _ = try git(root, ["add", "."])
         _ = try git(root, ["commit", "-qm", "Build the workspace shell"])
         try write("Saved draft\n", "draft.md", in: root)
-        #expect(await RepositoryService.createStash(path: root.path, message: "Save work in progress", includeUntracked: true) == nil)
+        #expect(
+            await RepositoryService.createStash(
+                path: root.path, message: "Save work in progress", includeUntracked: true) == nil)
         try write("# Project\nNew instructions\n", "README.md", in: root)
         _ = try git(root, ["add", "README.md"])
         try write("let value = 2\n", "App.swift", in: root)
@@ -184,8 +207,10 @@ struct SourceControlTests {
         let model = DockModel()
         defer { model.shutdown() }
         let view = ScrollView {
-            RepositoryChangesBrowser(model: model, workflow: workflow, projectPath: root.path, onRefresh: {}, isInspector: true)
-                .padding(12)
+            RepositoryChangesBrowser(
+                model: model, workflow: workflow, projectPath: root.path, onRefresh: {}, isInspector: true
+            )
+            .padding(12)
         }.frame(width: 440, height: 700).background(Color.dockCanvas)
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(x: 0, y: 0, width: 440, height: 700)
@@ -213,7 +238,9 @@ struct SourceControlTests {
         _ = try git(root, ["add", "."])
         try write("working\n", "file.txt", in: root)
         try write("draft\n", "untracked.txt", in: root)
-        #expect(await RepositoryService.applySourceControl(.createStash(message: "Draft with spaces", includeUntracked: true), path: root.path) == nil)
+        #expect(
+            await RepositoryService.applySourceControl(
+                .createStash(message: "Draft with spaces", includeUntracked: true), path: root.path) == nil)
         #expect(await RepositoryService.changeSnapshot(path: root.path).files.isEmpty)
         let stashes = try #require(await RepositoryService.stashes(path: root.path))
         let stash = try #require(stashes.first)
@@ -277,7 +304,9 @@ struct SourceControlTests {
         let invalid = RepositoryStash(hash: "--all", reference: "stash@{0}", subject: "Invalid", date: .now)
         #expect(await RepositoryService.updateStash(path: root.path, stash: invalid, operation: .drop) != nil)
         #expect(await RepositoryService.stashDiff(path: root.path, stash: invalid) == nil)
-        #expect(await RepositoryService.createStash(path: root.path, message: "bad\0message", includeUntracked: false) != nil)
+        #expect(
+            await RepositoryService.createStash(path: root.path, message: "bad\0message", includeUntracked: false)
+                != nil)
     }
 
     @MainActor @Test func stashMutationsRefreshWorkflowAndClearOnRepositorySwitch() async throws {
@@ -294,21 +323,30 @@ struct SourceControlTests {
         let workflow = DeveloperWorkflowModel()
         let control = ControlCenterModel()
         await workflow.setActiveRepository(path: root.path, preferences: preferences, control: control)
-        #expect(await workflow.applySourceControl(.createStash(message: "Workflow draft", includeUntracked: true), path: root.path, refresh: {
-            await workflow.refresh(preferences: preferences, control: control)
-        }))
+        #expect(
+            await workflow.applySourceControl(
+                .createStash(message: "Workflow draft", includeUntracked: true), path: root.path,
+                refresh: {
+                    await workflow.refresh(preferences: preferences, control: control)
+                }))
         #expect(workflow.stashes.count == 1)
         #expect(workflow.stashesError == nil)
         #expect(workflow.changes?.files.isEmpty == true)
         let stash = try #require(workflow.stashes.first)
-        #expect(await workflow.applySourceControl(.updateStash(stash, .pop), path: root.path, refresh: {
-            await workflow.refresh(preferences: preferences, control: control)
-        }))
+        #expect(
+            await workflow.applySourceControl(
+                .updateStash(stash, .pop), path: root.path,
+                refresh: {
+                    await workflow.refresh(preferences: preferences, control: control)
+                }))
         #expect(workflow.stashes.isEmpty)
         #expect(workflow.changes?.files.map(\.path) == ["file.txt"])
-        #expect(await workflow.applySourceControl(.createStash(message: "Before switching", includeUntracked: false), path: root.path, refresh: {
-            await workflow.refresh(preferences: preferences, control: control)
-        }))
+        #expect(
+            await workflow.applySourceControl(
+                .createStash(message: "Before switching", includeUntracked: false), path: root.path,
+                refresh: {
+                    await workflow.refresh(preferences: preferences, control: control)
+                }))
         #expect(workflow.stashes.count == 1)
         await workflow.setActiveRepository(path: nil, preferences: preferences, control: control)
         #expect(workflow.stashes.isEmpty)

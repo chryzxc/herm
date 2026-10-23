@@ -1,5 +1,6 @@
 import RealityKit
 import Testing
+
 @testable import Herm
 
 struct OfficeGardenNavigationTests {
@@ -26,11 +27,14 @@ struct OfficeGardenNavigationTests {
         #expect(abs(east.min.x - west.max.x - 3) < 0.01)
         #expect(abs(east.max.z - 16) < 0.01)
         #expect(root.findEntity(named: "east-wing-floor") != nil)
-        let exteriorTrees = root.findEntity(named: "exterior-landscape")?.children.filter { $0.name == "garden-tree" } ?? []
+        let exteriorTrees =
+            root.findEntity(named: "exterior-landscape")?.children.filter { $0.name == "garden-tree" } ?? []
         #expect(exteriorTrees.count == 4)
         for tree in exteriorTrees {
             let bounds = tree.visualBounds(relativeTo: root)
-            #expect(bounds.max.x < west.min.x || bounds.min.x > east.max.x || bounds.max.z < west.min.z || bounds.min.z > east.max.z)
+            #expect(
+                bounds.max.x < west.min.x || bounds.min.x > east.max.x || bounds.max.z < west.min.z
+                    || bounds.min.z > east.max.z)
         }
         #expect(authored.stations[.desk]?.filter { $0.position.x < 0 }.count == 14)
         #expect(authored.stations[.desk]?.filter { $0.position.x > 0 }.count == 9)
@@ -43,7 +47,7 @@ struct OfficeGardenNavigationTests {
             // Reach the usable interior of each converted specialist room,
             // not only its doorway: studio, QA, server aisle and Security Ops,
             // in front of its two console chairs.
-            [-23.5, 0, 0.5], [-24, 0, 6], [-25, 0, 11], [-20, 0, 11.1]
+            [-23.5, 0, 0.5], [-24, 0, 6], [-25, 0, 11], [-20, 0, 11.1],
         ].map { p in p + SIMD3<Float>(p.x <= -8 ? 6.5 : (p.x >= 8 ? -6.5 : 0), 0, 0) }
         authored.stations[.waitingArea] = destinations.map { .init(position: $0, approach: $0, yaw: 0, seated: false) }
         var layout = OfficePreviewLayout()
@@ -94,8 +98,9 @@ struct OfficeGardenNavigationTests {
                 let overlapX = min(a.max.x, b.max.x) - max(a.min.x, b.min.x)
                 let overlapZ = min(a.max.z, b.max.z) - max(a.min.z, b.min.z)
                 if overlapX > 0.001 && overlapZ > 0.001 {
-                    #expect(abs(a.max.y - b.max.y) > 0.01,
-                            "Coplanar floors: \(first.name) and \(second.name)")
+                    #expect(
+                        abs(a.max.y - b.max.y) > 0.01,
+                        "Coplanar floors: \(first.name) and \(second.name)")
                 }
             }
         }
@@ -115,10 +120,13 @@ struct OfficeGardenNavigationTests {
                 #expect(route.first == from)
                 #expect(route.last == to)
                 for node in route where !node.isStation {
-                    #expect(layout.isWalkable(layout.position(node)), "Blocked node for slot \(slot): \(layout.position(node))")
+                    #expect(
+                        layout.isWalkable(layout.position(node)),
+                        "Blocked node for slot \(slot): \(layout.position(node))")
                 }
                 for (a, b) in zip(route, route.dropFirst()) where !a.isStation && !b.isStation {
-                    let start = layout.position(a), end = layout.position(b)
+                    let start = layout.position(a)
+                    let end = layout.position(b)
                     for fraction: Float in [0.25, 0.5, 0.75] {
                         #expect(layout.isWalkable(start + (end - start) * fraction))
                     }

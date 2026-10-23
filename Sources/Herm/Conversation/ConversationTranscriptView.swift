@@ -97,27 +97,27 @@ struct ConversationTranscriptView: View, Equatable {
                                     VStack(spacing: 0) {
                                         messageRow(message, dispatches: dispatches, defaultBot: defaultBot)
                                     }
-                                        .background {
-                                            GeometryReader { geometry in
-                                                Color.clear.preference(
-                                                    key: ConversationTranscriptLayoutPreferenceKey.self,
-                                                    value: ConversationTranscriptLayout(
-                                                        sessionID: sessionID, generation: generation, range: range,
-                                                        rows: [
-                                                            MessageNavigatorViewport(
-                                                                target: MessageNavigatorTarget(
-                                                                    sessionID: sessionID ?? "", messageID: message.id),
-                                                                index: descriptor.index,
-                                                                minY: geometry.frame(
-                                                                    in: .named("conversation-document")
-                                                                ).minY,
-                                                                maxY: geometry.frame(
-                                                                    in: .named("conversation-document")
-                                                                ).maxY)
-                                                        ]))
-                                            }
+                                    .background {
+                                        GeometryReader { geometry in
+                                            Color.clear.preference(
+                                                key: ConversationTranscriptLayoutPreferenceKey.self,
+                                                value: ConversationTranscriptLayout(
+                                                    sessionID: sessionID, generation: generation, range: range,
+                                                    rows: [
+                                                        MessageNavigatorViewport(
+                                                            target: MessageNavigatorTarget(
+                                                                sessionID: sessionID ?? "", messageID: message.id),
+                                                            index: descriptor.index,
+                                                            minY: geometry.frame(
+                                                                in: .named("conversation-document")
+                                                            ).minY,
+                                                            maxY: geometry.frame(
+                                                                in: .named("conversation-document")
+                                                            ).maxY)
+                                                    ]))
                                         }
-                                        .id(message.id)
+                                    }
+                                    .id(message.id)
                                 }
                                 ConversationPromptRows(model: model, conversationMetrics: conversationMetrics)
                                 botHandoffRow
@@ -303,12 +303,14 @@ struct ConversationTranscriptView: View, Equatable {
         // An unknown or unset profile falls back to the default Bot, as the handoff row does.
         let workingBot = workingBotID.flatMap { botMode.botsByID[$0] } ?? defaultBot
         if message.role == .hermes, isStreaming || !activity.isEmpty {
-            let rowDispatches = Dictionary(activity.compactMap { call in
-                dispatches[call.id].map { (call.id, $0) }
-            }, uniquingKeysWith: { first, _ in first })
-            let rowSteps = Dictionary(rowDispatches.values.compactMap { record in
-                source.snapshot.context.botSteps[record.id].map { (record.id, $0) }
-            }, uniquingKeysWith: { first, _ in first })
+            let rowDispatches = Dictionary(
+                activity.compactMap { call in
+                    dispatches[call.id].map { (call.id, $0) }
+                }, uniquingKeysWith: { first, _ in first })
+            let rowSteps = Dictionary(
+                rowDispatches.values.compactMap { record in
+                    source.snapshot.context.botSteps[record.id].map { (record.id, $0) }
+                }, uniquingKeysWith: { first, _ in first })
             TurnActivityView(
                 activity: activity,
                 runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,

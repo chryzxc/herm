@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     enum KanbanRefreshTrigger {
@@ -21,7 +21,9 @@ extension ControlCenterModel {
         HermesDiagnosticsService.safeSummary(raw)
     }
 
-    func quotaReading(for provider: String?) -> (snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double)? {
+    func quotaReading(for provider: String?) -> (
+        snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double
+    )? {
         QuotaWorkspacePresentation.reading(providerQuotas, for: provider)
     }
 
@@ -70,9 +72,10 @@ extension ControlCenterModel {
                 isActive: index == 0
             )
         }
-        projectIDBySessionID = Dictionary(uniqueKeysWithValues: sessions.enumerated().map { offset, session in
-            (session.id, "scroll-fixture-project-\(offset % projectsPerGroup)")
-        })
+        projectIDBySessionID = Dictionary(
+            uniqueKeysWithValues: sessions.enumerated().map { offset, session in
+                (session.id, "scroll-fixture-project-\(offset % projectsPerGroup)")
+            })
         projectSessionsByProjectID = Dictionary(grouping: sessions) { session in
             projectIDBySessionID[session.id] ?? "scroll-fixture-project-0"
         }
@@ -152,8 +155,7 @@ extension ControlCenterModel {
     }
 
     func isCurrentRefresh(_ generation: UInt64, clientIdentity: ObjectIdentifier?) -> Bool {
-        refreshGeneration == generation &&
-            dockModel.map { ObjectIdentifier($0.controlRPCClient) } == clientIdentity
+        refreshGeneration == generation && dockModel.map { ObjectIdentifier($0.controlRPCClient) } == clientIdentity
     }
 
     func isCurrentClient(_ identity: ObjectIdentifier?, bindingGeneration: UInt64? = nil) -> Bool {
@@ -176,7 +178,8 @@ extension ControlCenterModel {
         if let previousState = projectionStates[projection] {
             switch previousState {
             case .ready(let count), .stale(let count, _):
-                projectionStates[projection] = .stale(count, safeMessage: "Hermes projection is refreshing. Refresh to try again.")
+                projectionStates[projection] = .stale(
+                    count, safeMessage: "Hermes projection is refreshing. Refresh to try again.")
             default:
                 projectionStates[projection] = .loading
             }
@@ -187,7 +190,8 @@ extension ControlCenterModel {
 
     func recordProjectionSuccess(_ projection: String, count: Int? = nil) {
         let resolvedCount = count ?? projectionCount(projection)
-        projectionRefreshStates[projection] = ProjectionRefreshState(lastSuccess: .now, error: nil, isStale: false, isRefreshing: false)
+        projectionRefreshStates[projection] = ProjectionRefreshState(
+            lastSuccess: .now, error: nil, isStale: false, isRefreshing: false)
         projectionStates[projection] = resolvedCount == 0 ? .empty : .ready(resolvedCount)
     }
 
@@ -195,8 +199,12 @@ extension ControlCenterModel {
     /// gateway to query. This is distinct from a failed request and keeps the
     /// UI from presenting an unsupported projection as an empty result.
     func recordProjectionUnavailable(_ projection: String) {
-        projectionRefreshStates[projection] = ProjectionRefreshState(lastSuccess: nil, error: nil, isStale: false, isRefreshing: false)
-        projectionStates[projection] = .unavailable(safeMessage: "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry.")
+        projectionRefreshStates[projection] = ProjectionRefreshState(
+            lastSuccess: nil, error: nil, isStale: false, isRefreshing: false)
+        projectionStates[projection] = .unavailable(
+            safeMessage:
+                "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."
+        )
     }
 
     func recordProjectionFailure(_ projection: String, error: String) {
@@ -211,7 +219,10 @@ extension ControlCenterModel {
         let capabilityDenied = ["unsupported", "unauthorized", "forbidden", "denied"]
             .contains { error.localizedCaseInsensitiveContains($0) }
         if capabilityDenied {
-            projectionStates[projection] = .unavailable(safeMessage: "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry.")
+            projectionStates[projection] = .unavailable(
+                safeMessage:
+                    "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."
+            )
             return
         }
         if let previousState = projectionStates[projection] {
@@ -245,11 +256,17 @@ extension ControlCenterModel {
 
     func cronActionID(_ action: String, job: CronSummary) -> String { "cron.\(action):\(job.id)" }
 
-    func kanbanActionID(_ action: KanbanTaskAction, task: KanbanTaskSummary) -> String { "kanban.\(action.rawValue):\(task.id)" }
+    func kanbanActionID(_ action: KanbanTaskAction, task: KanbanTaskSummary) -> String {
+        "kanban.\(action.rawValue):\(task.id)"
+    }
 
-    func kanbanActionID(_ action: KanbanMutationKind, task: KanbanTaskSummary) -> String { "kanban.\(action.rawValue):\(task.id)" }
+    func kanbanActionID(_ action: KanbanMutationKind, task: KanbanTaskSummary) -> String {
+        "kanban.\(action.rawValue):\(task.id)"
+    }
 
-    func attentionActionID(_ action: AttentionAction, item: AttentionItem) -> String { "attention.\(action.rawValue):\(item.id)" }
+    func attentionActionID(_ action: AttentionAction, item: AttentionItem) -> String {
+        "attention.\(action.rawValue):\(item.id)"
+    }
 
     func reminderActionID(_ reminder: ReminderSummary) -> String { "reminder.complete:\(reminder.id)" }
 

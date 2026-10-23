@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -27,15 +28,19 @@ struct RuntimeModelMutationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let defaults = try #require(UserDefaults(suiteName: "RuntimeMutation-\(UUID().uuidString)"))
         let rpc = RuntimeMutationRPC()
-        let model = DockModel(sessionAgentStateFileURL: directory.appendingPathComponent("agents.json"),
+        let model = DockModel(
+            sessionAgentStateFileURL: directory.appendingPathComponent("agents.json"),
             defaults: defaults, botActivityFileURL: directory.appendingPathComponent("bots.json"), rpcClient: rpc)
-        let value = HermesRuntimeConfiguration(agentName: "Fixture", model: "model", provider: "provider",
+        let value = HermesRuntimeConfiguration(
+            agentName: "Fixture", model: "model", provider: "provider",
             configPath: "/fixture/config.yaml", maxTurns: "10", terminalTimeout: "15",
             skills: [], skillsInventory: .supported([]), mcpServers: [], plugins: [])
         var reads = 0
         var readback: CheckedContinuation<Void, Never>?
-        model.runtimeConfigurationRefresh = HermesRuntimeConfigurationRefresh(scope: { "fixture" },
-            metadata: { _ in "same" }, reader: { _ in
+        model.runtimeConfigurationRefresh = HermesRuntimeConfigurationRefresh(
+            scope: { "fixture" },
+            metadata: { _ in "same" },
+            reader: { _ in
                 reads += 1
                 if reads == 2 { await withCheckedContinuation { readback = $0 } }
                 return .init(configuration: value, isComplete: true, initialSignature: "same")

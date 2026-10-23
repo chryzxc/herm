@@ -22,7 +22,8 @@ struct MessagingWorkspaceView: View {
     private var profile: BotSummary? { botMode.bots.first { $0.id == profileID } }
     private var filtered: [MessagingPlatform] {
         let needle = search.lowercased()
-        return needle.isEmpty ? model.platforms : model.platforms.filter { "\($0.id) \($0.name)".lowercased().contains(needle) }
+        return needle.isEmpty
+            ? model.platforms : model.platforms.filter { "\($0.id) \($0.name)".lowercased().contains(needle) }
     }
     private var current: MessagingPlatform? {
         model.platforms.first { $0.id == selection } ?? filtered.first
@@ -88,7 +89,9 @@ struct MessagingWorkspaceView: View {
                 .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
                 .padding(.horizontal, 10).frame(height: 26)
                 .background(Capsule().fill(selected ? Color.dockSurface : .clear))
-                .overlay(Capsule().stroke(selected ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: 0.5))
+                .overlay(
+                    Capsule().stroke(selected ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: 0.5)
+                )
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -102,7 +105,9 @@ struct MessagingWorkspaceView: View {
             LazyVStack(spacing: 2) {
                 ForEach(filtered) { platform in
                     let selected = platform.id == current?.id
-                    Button { selection = platform.id } label: {
+                    Button {
+                        selection = platform.id
+                    } label: {
                         HStack(spacing: 10) {
                             MessagingPlatformIcon(platform: platform)
                             Text(platform.name).dockFont(.navigation, weight: selected ? .semibold : .regular)
@@ -142,13 +147,19 @@ struct MessagingWorkspaceView: View {
                         Text(platform.description).dockFont(.navigation).foregroundStyle(Color.dockSecondaryText)
                     }
                     if let message = model.error {
-                        DockCallout(tone: .danger, icon: .warningCircle, title: "Couldn't update messaging", message: message) { EmptyView() }
+                        DockCallout(
+                            tone: .danger, icon: .warningCircle, title: "Couldn't update messaging", message: message
+                        ) { EmptyView() }
                     } else if let message = platform.errorMessage, !message.isEmpty {
-                        DockCallout(tone: .warning, icon: .warningCircle, title: "Gateway reported a problem", message: message) { EmptyView() }
+                        DockCallout(
+                            tone: .warning, icon: .warningCircle, title: "Gateway reported a problem", message: message
+                        ) { EmptyView() }
                     }
                     if let result = model.testResult {
-                        DockCallout(tone: result.ok ? .info : .warning, icon: result.ok ? .checkCircle : .warningCircle,
-                                    title: result.ok ? "Test passed" : "Test failed", message: result.message) { EmptyView() }
+                        DockCallout(
+                            tone: result.ok ? .info : .warning, icon: result.ok ? .checkCircle : .warningCircle,
+                            title: result.ok ? "Test passed" : "Test failed", message: result.message
+                        ) { EmptyView() }
                     }
                     if let notice = model.notice {
                         Text(notice).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
@@ -183,10 +194,12 @@ struct MessagingWorkspaceView: View {
                     Text("Quick setup").dockFont(.conversation, weight: .semibold)
                     DockStatusPill(tone: .complete, text: "Recommended")
                 }
-                Text(telegram
-                    ? "Scan a QR code and confirm in Telegram. Hermes creates the bot and detects your Telegram user ID automatically."
-                    : "Scan the QR code from WhatsApp → Linked devices. Hermes links this number and saves the setup.")
-                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                Text(
+                    telegram
+                        ? "Scan a QR code and confirm in Telegram. Hermes creates the bot and detects your Telegram user ID automatically."
+                        : "Scan the QR code from WhatsApp → Linked devices. Hermes links this number and saves the setup."
+                )
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 if let pairing = model.pairing, pairing.platform == platformID {
                     HStack(alignment: .top, spacing: 16) {
                         if let image = MessagingQRCode.image(pairing.qrPayload) {
@@ -196,10 +209,16 @@ struct MessagingWorkspaceView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 6) {
                                 ProgressView().controlSize(.small)
-                                Text(pairing.qrPayload.isEmpty ? "Preparing QR code…" : "Waiting for confirmation in \(telegram ? "Telegram" : "WhatsApp")…")
-                                    .dockFont(.body)
+                                Text(
+                                    pairing.qrPayload.isEmpty
+                                        ? "Preparing QR code…"
+                                        : "Waiting for confirmation in \(telegram ? "Telegram" : "WhatsApp")…"
+                                )
+                                .dockFont(.body)
                             }
-                            if let link = pairing.deepLink { Link("Open in Telegram", destination: link).buttonStyle(.dockLink) }
+                            if let link = pairing.deepLink {
+                                Link("Open in Telegram", destination: link).buttonStyle(.dockLink)
+                            }
                             Button("Cancel") { model.cancelQR() }.buttonStyle(.dockSecondary).controlSize(.small)
                         }
                     }
@@ -213,9 +232,16 @@ struct MessagingWorkspaceView: View {
                             .labelsHidden().fixedSize()
                         }
                         Button {
-                            Task { await model.startQR(platform: platformID, whatsappMode: whatsappMode, profileID: profileID) }
+                            Task {
+                                await model.startQR(
+                                    platform: platformID, whatsappMode: whatsappMode, profileID: profileID)
+                            }
                         } label: {
-                            Label { Text(telegram ? "Create with QR" : "Link with QR") } icon: { DockIcon(.qrCode, size: 13) }
+                            Label {
+                                Text(telegram ? "Create with QR" : "Link with QR")
+                            } icon: {
+                                DockIcon(.qrCode, size: 13)
+                            }
                         }
                         .buttonStyle(.dockPrimary).disabled(model.busy)
                     }
@@ -236,7 +262,10 @@ struct MessagingWorkspaceView: View {
                 if !text.isEmpty { Text(text).dockFont(.body).foregroundStyle(Color.dockSecondaryText) }
                 if let docs = platform.docsURL {
                     Link(destination: docs) {
-                        HStack(spacing: 4) { Text("Open setup guide"); DockIcon(.arrowSquareOut, size: 12) }
+                        HStack(spacing: 4) {
+                            Text("Open setup guide")
+                            DockIcon(.arrowSquareOut, size: 12)
+                        }
                     }.buttonStyle(.dockLink)
                 }
             }
@@ -266,10 +295,13 @@ struct MessagingWorkspaceView: View {
                     }
                     HStack(spacing: 8) {
                         if env.isPassword || (env.isSet && env.value == nil) {
-                            SecureField(env.isSet ? "Saved (\(env.redactedValue)) — leave blank to keep" : env.key, text: draft)
-                                .textFieldStyle(.dockGlass)
+                            SecureField(
+                                env.isSet ? "Saved (\(env.redactedValue)) — leave blank to keep" : env.key, text: draft
+                            )
+                            .textFieldStyle(.dockGlass)
                         } else {
-                            DockTextField(env.isList ? "Comma-separated" : env.key, text: draft).textFieldStyle(.dockGlass)
+                            DockTextField(env.isList ? "Comma-separated" : env.key, text: draft).textFieldStyle(
+                                .dockGlass)
                         }
                         if let url = env.url {
                             Link(destination: url) { DockIcon(.arrowSquareOut, size: 13, color: .dockSecondaryText) }
@@ -296,12 +328,18 @@ struct MessagingWorkspaceView: View {
             if ["pending_restart", "gateway_stopped", "startup_failed"].contains(platform.state) {
                 let start = platform.state == "gateway_stopped"
                 Button(start ? "Start gateway" : "Restart gateway") {
-                    Task { model.error = nil; await model.restartGateway(start: start, profileID: profileID) }
+                    Task {
+                        model.error = nil
+                        await model.restartGateway(start: start, profileID: profileID)
+                    }
                 }
                 .buttonStyle(.dockSecondary).disabled(model.busy)
             }
             Button("Test") {
-                Task { model.error = nil; await model.test(platform, profileID: profileID) }
+                Task {
+                    model.error = nil
+                    await model.test(platform, profileID: profileID)
+                }
             }
             .buttonStyle(.dockSecondary).disabled(model.busy || changed)
             .help(changed ? "Save changes before testing" : "Check this platform's connection")
@@ -314,7 +352,11 @@ struct MessagingWorkspaceView: View {
                     }
                 }
             } label: {
-                Label { Text("Save changes") } icon: { DockIcon(.floppyDisk, size: 13) }
+                Label {
+                    Text("Save changes")
+                } icon: {
+                    DockIcon(.floppyDisk, size: 13)
+                }
             }
             .buttonStyle(.dockPrimary).disabled(model.busy || !changed)
         }
@@ -356,13 +398,13 @@ private struct MessagingPlatformIcon: View {
     }
 }
 
-
 enum MessagingQRCode {
     static func image(_ payload: String) -> NSImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(payload.utf8)
         guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
-              let cgImage = CIContext().createCGImage(output, from: output.extent) else { return nil }
+            let cgImage = CIContext().createCGImage(output, from: output.extent)
+        else { return nil }
         return NSImage(cgImage: cgImage, size: output.extent.size)
     }
 }

@@ -161,7 +161,10 @@ enum VoiceAudioOutput {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return nil }
+        guard
+            AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+                == noErr
+        else { return nil }
         var running: UInt32 = 0
         size = UInt32(MemoryLayout<UInt32>.size)
         address.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere

@@ -16,26 +16,34 @@ enum ClaudeQuotaService {
         private var value: String?
 
         func get() -> String? {
-            lock.lock(); defer { lock.unlock() }
+            lock.lock()
+            defer { lock.unlock() }
             return value
         }
 
         func set(_ token: String?) {
-            lock.lock(); defer { lock.unlock() }
+            lock.lock()
+            defer { lock.unlock() }
             value = token
         }
     }
 
     static func read() async throws -> [String: Any] {
-        guard let token = await loadAccessToken() else { throw ClaudeQuotaError.unavailable("No Claude Code OAuth login was found.") }
+        guard let token = await loadAccessToken() else {
+            throw ClaudeQuotaError.unavailable("No Claude Code OAuth login was found.")
+        }
         let object: [String: Any]
-        switch await QuotaHTTP.getJSON(url: usageURL, headers: [
-            "Authorization": "Bearer \(token)",
-            "anthropic-beta": "oauth-2025-04-20"
-        ]) {
+        switch await QuotaHTTP.getJSON(
+            url: usageURL,
+            headers: [
+                "Authorization": "Bearer \(token)",
+                "anthropic-beta": "oauth-2025-04-20",
+            ])
+        {
         case .success(let value): object = value
         case .failure(.network): throw ClaudeQuotaError.unavailable("Claude Code usage could not be reached.")
-        case .failure(.status(429)): throw ClaudeQuotaError.unavailable("Claude usage is temporarily rate limited; try again later.")
+        case .failure(.status(429)):
+            throw ClaudeQuotaError.unavailable("Claude usage is temporarily rate limited; try again later.")
         case .failure(.status(let code)):
             if code == 401 || code == 403 {
                 // The cached token may be stale (e.g. after re-login); drop it
@@ -52,14 +60,18 @@ enum ClaudeQuotaService {
         case .failure(.invalidResponse): throw ClaudeQuotaError.invalidResponse
         }
         let normalized = normalize(object)
-        guard let windows = normalized["windows"] as? [[String: Any]], !windows.isEmpty else { throw ClaudeQuotaError.unavailable("Claude did not return any subscription quota windows.") }
+        guard let windows = normalized["windows"] as? [[String: Any]], !windows.isEmpty else {
+            throw ClaudeQuotaError.unavailable("Claude did not return any subscription quota windows.")
+        }
         return normalized
     }
 
     private static func loadAccessToken() async -> String? {
         if let cached = tokenCache.get() { return cached }
         let environment = ProcessInfo.processInfo.environment
-        if let token = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"].compactMap({ environment[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }).first(where: { !$0.isEmpty }) {
+        if let token = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"].compactMap({
+            environment[$0]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }).first(where: { !$0.isEmpty }) {
             tokenCache.set(token)
             return token
         }
@@ -67,14 +79,22 @@ enum ClaudeQuotaService {
         // Keychain (service "Claude Code-credentials"). Check it first: a leftover
         // dotfile from an older login holds a stale token that the usage endpoint
         // answers with a permanent 429.
-        if let data = await loadKeychainCredentialsData(), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let token = token(fromCredentialsJSON: json) {
+        if let data = await loadKeychainCredentialsData(),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let token = token(fromCredentialsJSON: json)
+        {
             tokenCache.set(token)
             return token
         }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let files = [home.appendingPathComponent(".claude/.credentials.json"), home.appendingPathComponent(".config/claude-code/.credentials.json")]
+        let files = [
+            home.appendingPathComponent(".claude/.credentials.json"),
+            home.appendingPathComponent(".config/claude-code/.credentials.json"),
+        ]
         for file in files {
-            guard let data = try? Data(contentsOf: file), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            guard let data = try? Data(contentsOf: file),
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
             if let token = token(fromCredentialsJSON: json) {
                 tokenCache.set(token)
                 return token
@@ -84,7 +104,11 @@ enum ClaudeQuotaService {
     }
 
     private static func token(fromCredentialsJSON json: [String: Any]) -> String? {
-        if let auth = json["claudeAiOauth"] as? [String: Any], let token = auth["accessToken"] as? String, !token.isEmpty { return token }
+        if let auth = json["claudeAiOauth"] as? [String: Any], let token = auth["accessToken"] as? String,
+            !token.isEmpty
+        {
+            return token
+        }
         if let token = json["accessToken"] as? String, !token.isEmpty { return token }
         return nil
     }
@@ -126,20 +150,35 @@ enum ClaudeQuotaService {
     }
 
     static func normalize(_ object: [String: Any], now: Date = .now) -> [String: Any] {
-        let rows: [(String, String)] = [("five_hour", "Session"), ("seven_day", "Weekly"), ("seven_day_opus", "Opus"), ("seven_day_sonnet", "Sonnet"), ("seven_day_fable", "Fable")]
+        let rows: [(String, String)] = [
+            ("five_hour", "Session"), ("seven_day", "Weekly"), ("seven_day_opus", "Opus"),
+            ("seven_day_sonnet", "Sonnet"), ("seven_day_fable", "Fable"),
+        ]
         var windows: [[String: Any]] = []
         for (id, label) in rows {
-            guard let raw = object[id] as? [String: Any], let used = QuotaJSON.number(raw["utilization"] ?? raw["used_percentage"] ?? raw["percentage"]) else { continue }
+            guard let raw = object[id] as? [String: Any],
+                let used = QuotaJSON.number(raw["utilization"] ?? raw["used_percentage"] ?? raw["percentage"])
+            else { continue }
             var row: [String: Any] = ["id": id, "label": label, "remaining_percent": max(0, min(100, 100 - used))]
-            if let reset = QuotaJSON.date(raw["resets_at"] ?? raw["reset_at"] ?? raw["resetsAt"]) { row["resets_at"] = QuotaJSON.iso8601String(from: reset) }
+            if let reset = QuotaJSON.date(raw["resets_at"] ?? raw["reset_at"] ?? raw["resetsAt"]) {
+                row["resets_at"] = QuotaJSON.iso8601String(from: reset)
+            }
             windows.append(row)
         }
-        return ["provider": "claude", "display_name": "Claude Code", "model": "Claude", "updated_at": QuotaJSON.iso8601String(from: now), "windows": windows, "safe_detail": "Subscription"]
+        return [
+            "provider": "claude", "display_name": "Claude Code", "model": "Claude",
+            "updated_at": QuotaJSON.iso8601String(from: now), "windows": windows, "safe_detail": "Subscription",
+        ]
     }
 }
 
 enum ClaudeQuotaError: LocalizedError {
     case unavailable(String)
     case invalidResponse
-    var errorDescription: String? { switch self { case .unavailable(let message): message; case .invalidResponse: "Claude returned an invalid quota snapshot." } }
+    var errorDescription: String? {
+        switch self {
+        case .unavailable(let message): message
+        case .invalidResponse: "Claude returned an invalid quota snapshot."
+        }
+    }
 }

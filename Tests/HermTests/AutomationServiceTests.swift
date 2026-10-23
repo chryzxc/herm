@@ -1,16 +1,24 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct AutomationServiceTests {
     @Test func parsesDistinctAutomationEntitiesOnlyFromStructuredEnvelopes() throws {
         let snapshot = try AutomationService.parseSnapshot([
-            "cron": ["jobs": [["id": "c1", "name": "Nightly", "schedule": "30m", "enabled": true, "skills": ["review"], "model": "gpt-5"]]],
+            "cron": [
+                "jobs": [
+                    [
+                        "id": "c1", "name": "Nightly", "schedule": "30m", "enabled": true, "skills": ["review"],
+                        "model": "gpt-5",
+                    ]
+                ]
+            ],
             "kanban": ["tasks": [["id": "k1", "title": "Ship", "status": "ready"]]],
             "goals": ["goals": [["id": "g1", "title": "Goal", "status": "active"]]],
             "loops": ["loops": [["id": "l1", "name": "Loop", "status": "running"]]],
-            "heartbeats": ["heartbeats": [["id": "h1", "status": "healthy", "last_seen": "2026-08-29T00:00:00Z"]]]
+            "heartbeats": ["heartbeats": [["id": "h1", "status": "healthy", "last_seen": "2026-08-29T00:00:00Z"]]],
         ])
 
         #expect(snapshot.cron.count == 1)
@@ -44,7 +52,8 @@ struct AutomationServiceTests {
     }
 
     @Test func unavailableProjectionExplainsUnsupportedAutomationWithoutClaimingSupport() {
-        let state = AutomationProjectionState.unavailable(.unsupported("Hermes 0.20.6 exposes no structured goals command."))
+        let state = AutomationProjectionState.unavailable(
+            .unsupported("Hermes 0.20.6 exposes no structured goals command."))
         #expect(state.isUnavailable)
         #expect(state.message.contains("no structured goals command"))
     }

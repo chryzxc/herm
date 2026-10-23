@@ -1,151 +1,158 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 extension DockPopover {
     func observerLayerOne<V: View>(_ view: V) -> some View {
         view
-        .onReceive(model.objectWillChange) { _ in
-            conversationPerformance.recordModelPublication()
-        }
-        .onChange(of: controlCenter.capabilities) { _, capabilities in
-            handleCapabilitiesChange(capabilities)
-        }
-        .task(id: model.kanbanSessionID) {
-            // Keeps chat kanban handoff notices current while the Activity
-            // panel (which polls on its own) is closed.
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
-                guard !Task.isCancelled, let sessionID = model.kanbanSessionID,
-                      controlCenter.capabilityAvailable("kanban") else { continue }
-                controlCenter.refreshSessionKanban(for: sessionID, quiet: true)
+            .onReceive(model.objectWillChange) { _ in
+                conversationPerformance.recordModelPublication()
             }
-        }
-        .onAppear {
-            configureWorkspaceOnAppear()
-            chatContextRouter.model = model
-            chatContextRouter.bots = botMode
-            chatContextRouter.onOpened = { sessionID in
-                missionControlNavigation.openPullRequestChat(sessionID: sessionID)
-                fullscreenSurface = .conversation
+            .onChange(of: controlCenter.capabilities) { _, capabilities in
+                handleCapabilitiesChange(capabilities)
+            }
+            .task(id: model.kanbanSessionID) {
+                // Keeps chat kanban handoff notices current while the Activity
+                // panel (which polls on its own) is closed.
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(15))
+                    guard !Task.isCancelled, let sessionID = model.kanbanSessionID,
+                        controlCenter.capabilityAvailable("kanban")
+                    else { continue }
+                    controlCenter.refreshSessionKanban(for: sessionID, quiet: true)
+                }
+            }
+            .onAppear {
+                configureWorkspaceOnAppear()
+                chatContextRouter.model = model
+                chatContextRouter.bots = botMode
+                chatContextRouter.onOpened = { sessionID in
+                    missionControlNavigation.openPullRequestChat(sessionID: sessionID)
+                    fullscreenSurface = .conversation
+                    inspectorScope = .session
+                }
+            }
+            .onChange(of: isWorkspaceVisible) { _, visible in
+                handleWorkspaceVisibilityChange(visible)
+            }
+            // Retain each session's browser and connect Hermes to the selected one.
+            .onChange(of: model.isHermesConnected, initial: true) { _, connected in
+                guard connected else { return }
+                SessionBrowserStore.shared.activate(model: model, reconnect: true)
+                Task { await botMode.refreshNow(force: true) }
+            }
+            .onChange(of: model.browserSessionKey) { _, _ in
+                guard model.isHermesConnected else { return }
+                SessionBrowserStore.shared.activate(model: model)
+            }
+            .onChange(of: model.activeBrowserCall != nil) { _, browsing in
+                if browsing { NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { notification in
+                if let url = notification.object as? URL {
+                    guard !InAppBrowser.handled else { return }
+                    InAppBrowser.handled = true
+                    SessionBrowserStore.shared.present(url, model: model)
+                } else {
+                    SessionBrowserStore.shared.present(nil, model: model)
+                }
                 inspectorScope = .session
+                if isFullscreen {
+                    isMissionInspectorVisible = true
+                } else if isNarrowLayout {
+                    isNarrowControlVisible = true
+                } else {
+                    isWorkspaceManuallyExpanded = true
+                }
             }
-        }
-        .onChange(of: isWorkspaceVisible) { _, visible in
-            handleWorkspaceVisibilityChange(visible)
-        }
-        // Retain each session's browser and connect Hermes to the selected one.
-        .onChange(of: model.isHermesConnected, initial: true) { _, connected in
-            guard connected else { return }
-            SessionBrowserStore.shared.activate(model: model, reconnect: true)
-            Task { await botMode.refreshNow(force: true) }
-        }
-        .onChange(of: model.browserSessionKey) { _, _ in
-            guard model.isHermesConnected else { return }
-            SessionBrowserStore.shared.activate(model: model)
-        }
-        .onChange(of: model.activeBrowserCall != nil) { _, browsing in
-            if browsing { NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil) }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { notification in
-            if let url = notification.object as? URL {
-                guard !InAppBrowser.handled else { return }
-                InAppBrowser.handled = true
-                SessionBrowserStore.shared.present(url, model: model)
-            } else {
-                SessionBrowserStore.shared.present(nil, model: model)
+            .onChange(of: botMode.selectedProfileID) { _, profileID in
+                handleProfileScopeChange(profileID)
             }
-            inspectorScope = .session
-            if isFullscreen { isMissionInspectorVisible = true }
-            else if isNarrowLayout { isNarrowControlVisible = true }
-            else { isWorkspaceManuallyExpanded = true }
-        }
-        .onChange(of: botMode.selectedProfileID) { _, profileID in
-            handleProfileScopeChange(profileID)
-        }
-        .onChange(of: speechInput.completedTranscript) { _, transcript in
-            handleCompletedTranscript(transcript)
-        }
-        .onChange(of: speechInput.isRecording) { _, isRecording in
-            handleRecordingChange(isRecording)
-        }
+            .onChange(of: speechInput.completedTranscript) { _, transcript in
+                handleCompletedTranscript(transcript)
+            }
+            .onChange(of: speechInput.isRecording) { _, isRecording in
+                handleRecordingChange(isRecording)
+            }
     }
 
     func observerLayerTwo<V: View>(_ view: V) -> some View {
         view
-        .onChange(of: filePreview.url) { _, _ in showFilePreview() }
-        .onReceive(filePreview.$attachmentDiff) { changes in
-            guard changes != nil else { return }
-            inspectorScope = .session
-            sessionWorkspaceMode = .chat
-            ensureInspectorPanelVisible()
-        }
-        .onChange(of: sessionWorkspaceMode) { previousMode, mode in
-            handleSessionModeChange(previousMode: previousMode, mode: mode)
-        }
-        .onChange(of: model.status) { _, status in
-            handleModelStatusChange(status)
-        }
-        .onChange(of: voiceOutput.isSpeaking) { _, isSpeaking in
-            handleVoicePlaybackChange(isSpeaking)
-        }
-        .onChange(of: model.voiceState) { _, state in
-            handleVoiceStateChange(state)
-        }
-        .onChange(of: model.voicePromptSpeech) { _, speech in
-            handleVoicePromptChange(speech)
-        }
-        .onDisappear {
-            // Leaving the session view while voice is live must still release the mic.
-            if sessionWorkspaceMode == .voice { releaseVoiceCapture() }
-        }
+            .onChange(of: filePreview.url) { _, _ in showFilePreview() }
+            .onReceive(filePreview.$attachmentDiff) { changes in
+                guard changes != nil else { return }
+                inspectorScope = .session
+                sessionWorkspaceMode = .chat
+                ensureInspectorPanelVisible()
+            }
+            .onChange(of: sessionWorkspaceMode) { previousMode, mode in
+                handleSessionModeChange(previousMode: previousMode, mode: mode)
+            }
+            .onChange(of: model.status) { _, status in
+                handleModelStatusChange(status)
+            }
+            .onChange(of: voiceOutput.isSpeaking) { _, isSpeaking in
+                handleVoicePlaybackChange(isSpeaking)
+            }
+            .onChange(of: model.voiceState) { _, state in
+                handleVoiceStateChange(state)
+            }
+            .onChange(of: model.voicePromptSpeech) { _, speech in
+                handleVoicePromptChange(speech)
+            }
+            .onDisappear {
+                // Leaving the session view while voice is live must still release the mic.
+                if sessionWorkspaceMode == .voice { releaseVoiceCapture() }
+            }
     }
 
     func observerLayerThree<V: View>(_ view: V) -> some View {
         view
-        .onChange(of: model.sessionID) { oldValue, newValue in
-            filePreview.attachmentDiff = nil
-            handleSessionIDChange(oldValue: oldValue, newValue: newValue)
-        }
-        .onChange(of: model.sessionID) { _, _ in
-            isShowingMessagePins = false
-            pinnedMessageJumpID = nil
-            handleSessionMetadataChange()
-        }
-        .onChange(of: model.messagePinError) { _, error in
-            if error != nil && model.messagePinsSupported { isShowingMessagePins = true }
-        }
-        .onChange(of: model.currentSessionTitle) { _, _ in handleWorkspaceChange() }
-        .onChange(of: controlCenter.projectSessions) { _, _ in
-            handleSessionMetadataChange()
-        }
-        .onChange(of: controlCenter.activeSessions) { _, _ in
-            handleSessionMetadataChange()
-        }
-        .onChange(of: activeSessionRepositoryIdentity) { _, _ in
-            clearSessionSurfaceSelections()
-            if activeSessionRepositoryScope == nil, sessionWorkspaceMode == .pullRequests || sessionWorkspaceMode == .issues {
-                selectSessionMode(.chat)
+            .onChange(of: model.sessionID) { oldValue, newValue in
+                filePreview.attachmentDiff = nil
+                handleSessionIDChange(oldValue: oldValue, newValue: newValue)
             }
-        }
+            .onChange(of: model.sessionID) { _, _ in
+                isShowingMessagePins = false
+                pinnedMessageJumpID = nil
+                handleSessionMetadataChange()
+            }
+            .onChange(of: model.messagePinError) { _, error in
+                if error != nil && model.messagePinsSupported { isShowingMessagePins = true }
+            }
+            .onChange(of: model.currentSessionTitle) { _, _ in handleWorkspaceChange() }
+            .onChange(of: controlCenter.projectSessions) { _, _ in
+                handleSessionMetadataChange()
+            }
+            .onChange(of: controlCenter.activeSessions) { _, _ in
+                handleSessionMetadataChange()
+            }
+            .onChange(of: activeSessionRepositoryIdentity) { _, _ in
+                clearSessionSurfaceSelections()
+                if activeSessionRepositoryScope == nil,
+                    sessionWorkspaceMode == .pullRequests || sessionWorkspaceMode == .issues
+                {
+                    selectSessionMode(.chat)
+                }
+            }
     }
 
     func observerLayerFour<V: View>(_ view: V) -> some View {
         view
-        // Refresh the cached project name whenever the membership map updates.
-        // This fires after the async resolveProjectMembership completes and
-        // ensures the label reappears even after a refresh cycle wiped it.
-        .onChange(of: controlCenter.projectIDBySessionID) { _, _ in
-            handleProjectMembershipChange()
-        }
-        .onChange(of: model.messages.count) { oldCount, newCount in
-            handleMessageCountChange(oldCount: oldCount, newCount: newCount)
-        }
-        .onChange(of: botMode.bots.first(where: \.isDefault)?.name, initial: true) { _, name in
-            model.defaultBotName = name
-        }
+            // Refresh the cached project name whenever the membership map updates.
+            // This fires after the async resolveProjectMembership completes and
+            // ensures the label reappears even after a refresh cycle wiped it.
+            .onChange(of: controlCenter.projectIDBySessionID) { _, _ in
+                handleProjectMembershipChange()
+            }
+            .onChange(of: model.messages.count) { oldCount, newCount in
+                handleMessageCountChange(oldCount: oldCount, newCount: newCount)
+            }
+            .onChange(of: botMode.bots.first(where: \.isDefault)?.name, initial: true) { _, name in
+                model.defaultBotName = name
+            }
     }
 
     var rootPopoverContent: some View {
@@ -153,124 +160,153 @@ extension DockPopover {
             // Replaces the shell instead of overlaying it: the AppKit split
             // panes draw above SwiftUI overlays, so side panels showed through.
             if isVoiceImmersive && sessionWorkspaceMode == .voice {
-                immersiveVoiceStage.padding(.top, titlebarInset).transition(.opacity.combined(with: .scale(scale: 1.02)))
+                immersiveVoiceStage.padding(.top, titlebarInset).transition(
+                    .opacity.combined(with: .scale(scale: 1.02)))
             } else {
                 layoutContent
             }
         }
-            .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
-            .frame(width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth), height: isFullscreen ? nil : panelPresentation.compactHeight)
-            .padding(panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen
-                     ? panelPresentation.edgeInsets
-                     : EdgeInsets())
-            .overlay(alignment: .top) {
-                if let status = panelPresentation.islandStatus, panelPresentation.edgeSide == .top,
-                   panelPresentation.isEdgeAttached, !usesWindowChrome, !isFullscreen {
-                    EdgeIslandStatusStrip(state: status, control: controlCenter,
-                        height: panelPresentation.edgeInsets.top - 8,
-                        openTask: panelPresentation.openIslandTask,
-                        openQuota: { panelPresentation.quotaRequest &+= 1 })
-                        .padding(.horizontal, EdgeDockLayout.islandSideInset + 12)
-                }
-            }
-            .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
-            .onChange(of: isGlobalSurfaceActive) { _, _ in synchronizePanelLayout() }
-            .onChange(of: panelPresentation.isFullscreen, initial: true) { _, fullscreen in
-                applyFullscreen(fullscreen)
-            }
-            .onChange(of: panelPresentation.kanbanRequest, initial: true) { _, request in
-                guard request > 0 else { return }
-                panelPresentation.kanbanRequest = 0
-                missionControlNavigation.selectGlobal(.kanban)
-                fullscreenGlobalTab = .kanban
-                fullscreenSurface = .global
-            }
-            .onChange(of: panelPresentation.quotaRequest, initial: true) { _, request in
-                guard request > 0 else { return }
-                panelPresentation.quotaRequest = 0
-                missionControlNavigation.selectGlobal(.quota)
-                fullscreenGlobalTab = .quota
-                fullscreenSurface = .global
-            }
-            .background { DockWindowBackground(shape: AnyShape(DockPanelSurfaceShape(
-                isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
-                cornerRadius: usesWindowChrome ? 0 : 22,
-                edgeSide: panelPresentation.edgeSide
-            ))) }
-            .clipShape(DockPanelSurfaceShape(
-                isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
-                cornerRadius: usesWindowChrome ? 0 : 22,
-                edgeSide: panelPresentation.edgeSide
-            ))
-            .overlay {
-                DockPanelSurfaceShape(
-                    isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
-                    cornerRadius: usesWindowChrome ? 0 : 22,
-                    edgeSide: panelPresentation.edgeSide
+        .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
+        .frame(
+            width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth),
+            height: isFullscreen ? nil : panelPresentation.compactHeight
+        )
+        .padding(
+            panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen
+                ? panelPresentation.edgeInsets
+                : EdgeInsets()
+        )
+        .overlay(alignment: .top) {
+            if let status = panelPresentation.islandStatus, panelPresentation.edgeSide == .top,
+                panelPresentation.isEdgeAttached, !usesWindowChrome, !isFullscreen
+            {
+                EdgeIslandStatusStrip(
+                    state: status, control: controlCenter,
+                    height: panelPresentation.edgeInsets.top - 8,
+                    openTask: panelPresentation.openIslandTask,
+                    openQuota: { panelPresentation.quotaRequest &+= 1 }
                 )
-                    .stroke(Color.dockBorderStrong, lineWidth: DockThemeStyle.current.material == .glass ? 0 : (panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline))
+                .padding(.horizontal, EdgeDockLayout.islandSideInset + 12)
             }
-            .modifier(EdgeSurfaceReveal(isActive: panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen,
-                                        side: panelPresentation.edgeSide, revealed: panelPresentation.isRevealed,
-                                        collapsed: panelPresentation.collapsedSize))
-            .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
-            .dockThemedRoot()
-            .modifier(ExpandedReviewHost(model: model, router: expandedReviewRouter,
-                titleRow: usesWindowChrome ? DockTitleRow(height: DockWindowChrome.titleRowHeight,
-                    leadingClearance: DockWindowChrome.fullWidthTrafficLightClearance) : nil))
-            .sheet(item: $selectedChatImage) { preview in
-                ChatImagePreviewModal(image: preview.image)
-            }
-            .sheet(item: $controlCenter.integrationDestination) { destination in
-                WorkflowIntegrationView(destination: destination, client: model.controlRPCClient)
-            }
-            .modifier(WorkflowWorkspaceNavigation(model: model, control: controlCenter,
-                openRepository: openRequestedRepositoryReview, openAutomation: openRequestedAutomation))
-            .confirmationDialog(
-                "Delete Session?",
-                isPresented: Binding(
-                    get: { sessionPendingDeletion != nil },
-                    set: { if !$0 { sessionPendingDeletion = nil } }
-                ),
-                presenting: sessionPendingDeletion
-            ) { session in
-                Button("Delete \(session.displayTitle)", role: .destructive) {
-                    sessionPendingDeletion = nil
-                    Task { @MainActor in
-                        if await model.deleteSession(session) {
-                            controlCenter.refreshProjectNavigation()
-                        }
+        }
+        .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
+        .onChange(of: isGlobalSurfaceActive) { _, _ in synchronizePanelLayout() }
+        .onChange(of: panelPresentation.isFullscreen, initial: true) { _, fullscreen in
+            applyFullscreen(fullscreen)
+        }
+        .onChange(of: panelPresentation.kanbanRequest, initial: true) { _, request in
+            guard request > 0 else { return }
+            panelPresentation.kanbanRequest = 0
+            missionControlNavigation.selectGlobal(.kanban)
+            fullscreenGlobalTab = .kanban
+            fullscreenSurface = .global
+        }
+        .onChange(of: panelPresentation.quotaRequest, initial: true) { _, request in
+            guard request > 0 else { return }
+            panelPresentation.quotaRequest = 0
+            missionControlNavigation.selectGlobal(.quota)
+            fullscreenGlobalTab = .quota
+            fullscreenSurface = .global
+        }
+        .background {
+            DockWindowBackground(
+                shape: AnyShape(
+                    DockPanelSurfaceShape(
+                        isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
+                        cornerRadius: usesWindowChrome ? 0 : 22,
+                        edgeSide: panelPresentation.edgeSide
+                    )))
+        }
+        .clipShape(
+            DockPanelSurfaceShape(
+                isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
+                cornerRadius: usesWindowChrome ? 0 : 22,
+                edgeSide: panelPresentation.edgeSide
+            )
+        )
+        .overlay {
+            DockPanelSurfaceShape(
+                isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
+                cornerRadius: usesWindowChrome ? 0 : 22,
+                edgeSide: panelPresentation.edgeSide
+            )
+            .stroke(
+                Color.dockBorderStrong,
+                lineWidth: DockThemeStyle.current.material == .glass
+                    ? 0 : (panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline))
+        }
+        .modifier(
+            EdgeSurfaceReveal(
+                isActive: panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen,
+                side: panelPresentation.edgeSide, revealed: panelPresentation.isRevealed,
+                collapsed: panelPresentation.collapsedSize)
+        )
+        .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
+        .dockThemedRoot()
+        .modifier(
+            ExpandedReviewHost(
+                model: model, router: expandedReviewRouter,
+                titleRow: usesWindowChrome
+                    ? DockTitleRow(
+                        height: DockWindowChrome.titleRowHeight,
+                        leadingClearance: DockWindowChrome.fullWidthTrafficLightClearance) : nil)
+        )
+        .sheet(item: $selectedChatImage) { preview in
+            ChatImagePreviewModal(image: preview.image)
+        }
+        .sheet(item: $controlCenter.integrationDestination) { destination in
+            WorkflowIntegrationView(destination: destination, client: model.controlRPCClient)
+        }
+        .modifier(
+            WorkflowWorkspaceNavigation(
+                model: model, control: controlCenter,
+                openRepository: openRequestedRepositoryReview, openAutomation: openRequestedAutomation)
+        )
+        .confirmationDialog(
+            "Delete Session?",
+            isPresented: Binding(
+                get: { sessionPendingDeletion != nil },
+                set: { if !$0 { sessionPendingDeletion = nil } }
+            ),
+            presenting: sessionPendingDeletion
+        ) { session in
+            Button("Delete \(session.displayTitle)", role: .destructive) {
+                sessionPendingDeletion = nil
+                Task { @MainActor in
+                    if await model.deleteSession(session) {
+                        controlCenter.refreshProjectNavigation()
                     }
                 }
-                Button("Cancel", role: .cancel) { sessionPendingDeletion = nil }
-            } message: { _ in
-                Text("This permanently deletes the saved conversation and its transcript.")
             }
-            .alert(
-                "Could Not Delete Session",
-                isPresented: Binding(
-                    get: { model.sessionDeletionError != nil },
-                    set: { if !$0 { model.clearSessionDeletionError() } }
-                )
-            ) {
-                Button("OK", role: .cancel) { model.clearSessionDeletionError() }
-            } message: {
-                Text(model.sessionDeletionError ?? "The session could not be deleted.")
-            }
-            .alert(
-                "Could Not Update Session Visibility",
-                isPresented: Binding(
-                    get: { model.sessionVisibilityError != nil },
-                    set: { if !$0 { model.clearSessionVisibilityError() } }
-                )
-            ) {
-                Button("OK", role: .cancel) { model.clearSessionVisibilityError() }
-            } message: {
-                Text(model.sessionVisibilityError ?? "The session visibility could not be updated.")
-            }
-            .task {
-                loadInitialModelConfiguration()
-            }
+            Button("Cancel", role: .cancel) { sessionPendingDeletion = nil }
+        } message: { _ in
+            Text("This permanently deletes the saved conversation and its transcript.")
+        }
+        .alert(
+            "Could Not Delete Session",
+            isPresented: Binding(
+                get: { model.sessionDeletionError != nil },
+                set: { if !$0 { model.clearSessionDeletionError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) { model.clearSessionDeletionError() }
+        } message: {
+            Text(model.sessionDeletionError ?? "The session could not be deleted.")
+        }
+        .alert(
+            "Could Not Update Session Visibility",
+            isPresented: Binding(
+                get: { model.sessionVisibilityError != nil },
+                set: { if !$0 { model.clearSessionVisibilityError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) { model.clearSessionVisibilityError() }
+        } message: {
+            Text(model.sessionVisibilityError ?? "The session visibility could not be updated.")
+        }
+        .task {
+            loadInitialModelConfiguration()
+        }
     }
 
     /// Fullscreen and the desktop panel must share this single
@@ -312,10 +348,12 @@ extension DockPopover {
     @ViewBuilder
     var globalSurfaceInTitleRow: some View {
         if usesWindowChrome, !showsChatsPanel {
-            fullscreenGlobalSurface.environment(\.dockTitleRow, DockTitleRow(
-                height: DockWindowChrome.titleRowHeight,
-                leadingClearance: DockWindowChrome.trafficLightClearance
-            ))
+            fullscreenGlobalSurface.environment(
+                \.dockTitleRow,
+                DockTitleRow(
+                    height: DockWindowChrome.titleRowHeight,
+                    leadingClearance: DockWindowChrome.trafficLightClearance
+                ))
         } else {
             fullscreenGlobalSurface.underTitlebar(titlebarInset)
         }
@@ -448,16 +486,21 @@ extension DockPopover {
             return AnyView(
                 FullscreenPanelSplitView(
                     leading: conversationColumn,
-                    trailing: contextPanel.environment(\.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty),
+                    trailing: contextPanel.environment(
+                        \.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty),
                     // Fraction of the *remaining* space after the outer
                     // queue split, chosen so the three visible columns land
                     // at the DesktopWorkspaceFractions targets (queue /
                     // conversation / inspector) rather than an even split.
-                    leadingFraction: sessionWorkspaceMode == .explorer ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
+                    leadingFraction: sessionWorkspaceMode == .explorer
+                        ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
                     initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
-                    minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : desktopConversationMinimumWidth,
-                    maximumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
-                    minimumTrailingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
+                    minimumLeadingWidth: sessionWorkspaceMode == .explorer
+                        ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : desktopConversationMinimumWidth,
+                    maximumLeadingWidth: sessionWorkspaceMode == .explorer
+                        ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
+                    minimumTrailingWidth: sessionWorkspaceMode == .explorer
+                        ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
                     leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
                     isTrailingCollapsed: !isVisible
                 )
@@ -543,7 +586,9 @@ extension DockPopover {
                         WorktreePicker(
                             worktrees: developerWorkflow.repository.isGitRepository
                                 ? developerWorkflow.worktrees.filter { tree in
-                                    activeSessionRepositoryPath.map { RepositoryWorktreeSummary.isPath(tree.path, within: $0) } ?? false
+                                    activeSessionRepositoryPath.map {
+                                        RepositoryWorktreeSummary.isPath(tree.path, within: $0)
+                                    } ?? false
                                 }
                                 : [],
                             mainPath: activeSessionRepositoryPath,

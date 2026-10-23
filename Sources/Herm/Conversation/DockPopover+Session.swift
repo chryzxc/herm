@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 extension DockPopover {
@@ -11,15 +11,17 @@ extension DockPopover {
                 Text(model.currentSessionTitle ?? "Untitled chat")
                     .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(style.primaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 DockIcon(.caretUpDown, size: 12, color: style.metadataText)
             }
             .padding(.horizontal, 8)
             .frame(minHeight: 40)
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                    .fill(model.isShowingSessions ? style.selectedFill : isSessionIdentityHovering ? style.surface4.opacity(0.6) : .clear)
+                    .fill(
+                        model.isShowingSessions
+                            ? style.selectedFill : isSessionIdentityHovering ? style.surface4.opacity(0.6) : .clear)
             )
             .contentShape(Rectangle())
         }
@@ -56,7 +58,8 @@ extension DockPopover {
                     renameDraft = session.displayTitle
                     isRenamingSession = true
                 }
-                Button(session.isHidden ? "Show in list" : "Hide from list", icon: session.isHidden ? .eye : .eyeSlash) {
+                Button(session.isHidden ? "Show in list" : "Hide from list", icon: session.isHidden ? .eye : .eyeSlash)
+                {
                     Task { @MainActor in
                         if await model.setSessionHidden(session, hidden: !session.isHidden) {
                             controlCenter.refreshProjectNavigation()
@@ -67,7 +70,8 @@ extension DockPopover {
                 if sessionWorkspaceMode == .chat || includesInspector { Divider() }
             }
             if sessionWorkspaceMode == .chat {
-                Button(isShowingMessageSearch ? "Close message search" : "Find in conversation", icon: .magnifyingGlass) {
+                Button(isShowingMessageSearch ? "Close message search" : "Find in conversation", icon: .magnifyingGlass)
+                {
                     isShowingMessageSearch.toggle()
                 }
                 if !model.messageNavigatorItems.isEmpty {
@@ -79,13 +83,16 @@ extension DockPopover {
                 Button(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector", action: toggleInspectorPanel)
             }
         } label: {
-            DockIcon(.dotsThree, size: DockLayout.toolbarIconSize, color: isSessionMenuHovering ? style.primaryText : style.secondaryText)
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                        .fill(isSessionMenuHovering ? style.surface4.opacity(0.7) : .clear)
-                )
-                .contentShape(Rectangle())
+            DockIcon(
+                .dotsThree, size: DockLayout.toolbarIconSize,
+                color: isSessionMenuHovering ? style.primaryText : style.secondaryText
+            )
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
+                    .fill(isSessionMenuHovering ? style.surface4.opacity(0.7) : .clear)
+            )
+            .contentShape(Rectangle())
         }
         .onHover { isSessionMenuHovering = $0 }
         .help("Conversation actions")
@@ -106,9 +113,10 @@ extension DockPopover {
     /// The open conversation as a session row, so list actions can target it.
     var currentSession: HermesSession? {
         guard let id = model.navigationSessionID else { return nil }
-        return model.sessions.first { $0.id == id } ?? HermesSession(
-            id: id, profileID: model.sessionProfileID, title: model.currentSessionTitle ?? "",
-            preview: "", startedAt: nil, messageCount: 0, source: "herm")
+        return model.sessions.first { $0.id == id }
+            ?? HermesSession(
+                id: id, profileID: model.sessionProfileID, title: model.currentSessionTitle ?? "",
+                preview: "", startedAt: nil, messageCount: 0, source: "herm")
     }
 
     func showFilePreview() {
@@ -153,8 +161,9 @@ extension DockPopover {
         Task {
             let diff = await RepositoryService.diff(path: scope.repositoryPath, file: file)
             guard sourceControlRequestID == requestID,
-                  activeSessionRepositoryScope == scope,
-                  selectedChange?.file.id == file.id else { return }
+                activeSessionRepositoryScope == scope,
+                selectedChange?.file.id == file.id
+            else { return }
             selectedChangeDiff = diff
             isLoadingChangeDiff = false
         }
@@ -210,7 +219,8 @@ extension DockPopover {
 
     var sessionModelDisplayName: String {
         if let id = model.sessionModelOptionID,
-           let option = model.runtimeModelOptions.first(where: { $0.id == id }) {
+            let option = model.runtimeModelOptions.first(where: { $0.id == id })
+        {
             return option.displayName
         }
         if let value = model.sessionModelValue, !value.isEmpty {
@@ -224,7 +234,8 @@ extension DockPopover {
     }
 
     var sessionReasoningDisplayName: String {
-        let reasoning = model.sessionID == nil
+        let reasoning =
+            model.sessionID == nil
             ? model.defaultReasoningVariant
             : model.sessionReasoningVariant
         return reasoning?.displayName ?? "LOADING…"
@@ -233,7 +244,8 @@ extension DockPopover {
     var selectedModelOptionID: String? {
         if let id = model.sessionModelOptionID { return id }
         guard model.sessionID == nil, let provider = model.runtimeConfiguration?.provider,
-              let modelName = model.runtimeConfiguration?.model else { return nil }
+            let modelName = model.runtimeConfiguration?.model
+        else { return nil }
         return HermesModelOption(provider: provider, model: modelName).id
     }
 
@@ -316,7 +328,10 @@ extension DockPopover {
             .accessibilityLabel("Thinking depth for \(configurationScopeLabel): \(sessionReasoningDisplayName)")
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                Color.dockSurface4)
+        )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -369,7 +384,8 @@ extension DockPopover {
         // Same resolver and seen state as the rail, so both show the same marks.
         let statuses = SidebarSessionStatusResolver.statuses(
             for: sessions,
-            snapshot: MissionControlSidebarSnapshot(inputs: MissionControlSidebarSnapshot.inputs(model: model, control: controlCenter)),
+            snapshot: MissionControlSidebarSnapshot(
+                inputs: MissionControlSidebarSnapshot.inputs(model: model, control: controlCenter)),
             seenStore: sidebarSessionSeenStore,
             fallbackProfileID: model.profileScopeID
         )
@@ -399,12 +415,14 @@ extension DockPopover {
             if model.sessions.isEmpty && model.isLoadingSessions {
                 DockLoadingState(title: "Loading conversations…", minHeight: 80)
             } else if sessions.isEmpty {
-                Text(model.sessions.isEmpty ? "No saved conversations" : "No conversations match “\(sessionPickerQuery)”")
-                    .dockFont(.body)
-                    .foregroundStyle(style.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                Text(
+                    model.sessions.isEmpty ? "No saved conversations" : "No conversations match “\(sessionPickerQuery)”"
+                )
+                .dockFont(.body)
+                .foregroundStyle(style.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
                 Spacer(minLength: 0)
             } else {
                 List {
@@ -464,7 +482,9 @@ extension DockPopover {
                 .foregroundStyle(style.primaryText)
                 .onExitCommand { sessionPickerQuery = "" }
             if !sessionPickerQuery.isEmpty {
-                Button { sessionPickerQuery = "" } label: {
+                Button {
+                    sessionPickerQuery = ""
+                } label: {
                     DockIcon(.xCircle, size: 12, color: style.metadataText)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
@@ -476,7 +496,10 @@ extension DockPopover {
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                Color.dockSurface4)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockBorder, lineWidth: 0.5)
@@ -485,8 +508,9 @@ extension DockPopover {
 
     func conversationProjectName(for session: HermesSession) -> String? {
         guard let project = controlCenter.project(forSessionID: session.id),
-              !project.name.isEmpty,
-              project.name != "__no_project__" else {
+            !project.name.isEmpty,
+            project.name != "__no_project__"
+        else {
             return nil
         }
 

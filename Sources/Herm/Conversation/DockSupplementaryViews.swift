@@ -1,7 +1,8 @@
 import AppKit
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
+
 struct StartupAssistantView: View {
     var hermFaceID: String?
     var onSuggestion: (String) -> Void = { _ in }
@@ -33,7 +34,10 @@ struct StartupAssistantView: View {
                     StartupSuggestionChip(icon: item.icon, text: item.text) { onSuggestion(item.text) }
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 10)
-                        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8).delay(0.25 + Double(index) * 0.08), value: appeared)
+                        .animation(
+                            reduceMotion
+                                ? nil : .spring(response: 0.5, dampingFraction: 0.8).delay(0.25 + Double(index) * 0.08),
+                            value: appeared)
                 }
             }
             .padding(.top, 14)
@@ -166,7 +170,8 @@ struct VoiceOrbView: View {
         } else {
             // Idle keeps a slow breathing cadence unless the pointer is engaging it.
             GeometryReader { proxy in
-                TimelineView(.animation(minimumInterval: mode == .idle && !isHovering ? 1.0 / 15.0 : 1.0 / 60.0)) { context in
+                TimelineView(.animation(minimumInterval: mode == .idle && !isHovering ? 1.0 / 15.0 : 1.0 / 60.0)) {
+                    context in
                     let time = context.date.timeIntervalSinceReferenceDate
                     orb(motion.advance(to: time, mode: mode, level: Double(audioLevel)), time: time)
                 }
@@ -185,9 +190,10 @@ struct VoiceOrbView: View {
                         isHovering = false
                     }
                 }
-                .simultaneousGesture(TapGesture().onEnded {
-                    motion.rippleStart = Date().timeIntervalSinceReferenceDate
-                })
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        motion.rippleStart = Date().timeIntervalSinceReferenceDate
+                    })
             }
         }
     }
@@ -195,10 +201,12 @@ struct VoiceOrbView: View {
     private func orb(_ frame: VoiceOrbMotion.Frame, time: TimeInterval) -> some View {
         ZStack {
             Circle()
-                .fill(RadialGradient(
-                    colors: [Color.dockAccent.opacity(0.08 + frame.glow * 0.14), .clear],
-                    center: .center, startRadius: 30, endRadius: 160
-                ))
+                .fill(
+                    RadialGradient(
+                        colors: [Color.dockAccent.opacity(0.08 + frame.glow * 0.14), .clear],
+                        center: .center, startRadius: 30, endRadius: 160
+                    )
+                )
                 .scaleEffect(1 + frame.energy * 0.08)
 
             Canvas { context, size in
@@ -218,15 +226,22 @@ struct VoiceOrbView: View {
         if let hermFaceID {
             // The energy-driven scale above carries the syllable envelope, so
             // the face visibly "talks" without its own audio input.
-            BotFaceMark(id: hermFaceID, size: 104, animated: !reduceMotion,
-                        busy: mode != .idle, mood: Self.faceMood(for: mode))
-                .shadow(color: Color.dockAccent.opacity(0.15 + frame.glow * 0.35), radius: 14 + frame.glow * 24)
+            BotFaceMark(
+                id: hermFaceID, size: 104, animated: !reduceMotion,
+                busy: mode != .idle, mood: Self.faceMood(for: mode)
+            )
+            .shadow(color: Color.dockAccent.opacity(0.15 + frame.glow * 0.35), radius: 14 + frame.glow * 24)
         } else {
             Circle()
-                .fill(RadialGradient(
-                    colors: [Color.white.opacity(0.10 + frame.glow * 0.12), Color.dockAccent.opacity(0.28), Color.dockAccent.opacity(0.06)],
-                    center: UnitPoint(x: 0.36, y: 0.3), startRadius: 1, endRadius: 58
-                ))
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color.white.opacity(0.10 + frame.glow * 0.12), Color.dockAccent.opacity(0.28),
+                            Color.dockAccent.opacity(0.06),
+                        ],
+                        center: UnitPoint(x: 0.36, y: 0.3), startRadius: 1, endRadius: 58
+                    )
+                )
                 .overlay(Circle().stroke(Color.dockAccent.opacity(0.2 + frame.glow * 0.3), lineWidth: 0.7))
                 .frame(width: 92, height: 92)
                 .shadow(color: Color.dockAccent.opacity(0.15 + frame.glow * 0.35), radius: 14 + frame.glow * 24)
@@ -249,7 +264,9 @@ struct VoiceOrbView: View {
 
     /// Rings, ticks, scanner arcs, and the voice membrane. Every angular term
     /// uses an integer harmonic so the shapes close without a seam.
-    private static func drawField(in context: inout GraphicsContext, size: CGSize, frame: VoiceOrbMotion.Frame, time: TimeInterval) {
+    private static func drawField(
+        in context: inout GraphicsContext, size: CGSize, frame: VoiceOrbMotion.Frame, time: TimeInterval
+    ) {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
         let accent = Color.dockAccent
 
@@ -259,14 +276,19 @@ struct VoiceOrbView: View {
                 let age = max(0, (frame.ripple - delay) / (1 - delay))
                 guard age > 0, age < 1 else { continue }
                 let radius = 50 + age * 110
-                let ring = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+                let ring = Path(
+                    ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+                )
                 context.stroke(ring, with: .color(accent.opacity(0.5 * (1 - age))), lineWidth: 1.5 * (1 - age) + 0.4)
             }
         }
 
         for (radius, opacity) in [(150.0, 0.07), (128.0, 0.05)] {
-            let ring = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-            context.stroke(ring, with: .color(accent.opacity(opacity + frame.glow * 0.05)), style: StrokeStyle(lineWidth: 0.6, dash: radius > 140 ? [] : [2, 6]))
+            let ring = Path(
+                ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+            context.stroke(
+                ring, with: .color(accent.opacity(opacity + frame.glow * 0.05)),
+                style: StrokeStyle(lineWidth: 0.6, dash: radius > 140 ? [] : [2, 6]))
         }
 
         // Scanner arcs sweep while Hermes transcribes or thinks.
@@ -274,8 +296,12 @@ struct VoiceOrbView: View {
             for (offset, length, width) in [(0.0, 0.9, 1.6), (.pi, 0.55, 1.0)] {
                 var arc = Path()
                 let start = frame.rotation + offset
-                arc.addArc(center: center, radius: 112, startAngle: .radians(start), endAngle: .radians(start + length), clockwise: false)
-                context.stroke(arc, with: .color(accent.opacity(0.75 * frame.scan)), style: StrokeStyle(lineWidth: width, lineCap: .round))
+                arc.addArc(
+                    center: center, radius: 112, startAngle: .radians(start), endAngle: .radians(start + length),
+                    clockwise: false)
+                context.stroke(
+                    arc, with: .color(accent.opacity(0.75 * frame.scan)),
+                    style: StrokeStyle(lineWidth: width, lineCap: .round))
             }
         }
 
@@ -287,12 +313,16 @@ struct VoiceOrbView: View {
             let sweep = pow(max(0, cos(angle - frame.rotation - 0.45)), 10) * frame.scan
             // Ticks facing the pointer stretch and brighten.
             let pointerAngle = atan2(frame.leanY, frame.leanX)
-            let attention = pow(max(0, cos(angle - pointerAngle)), 8) * frame.hover * min(1, hypot(frame.leanX, frame.leanY) * 1.5)
+            let attention =
+                pow(max(0, cos(angle - pointerAngle)), 8) * frame.hover * min(1, hypot(frame.leanX, frame.leanY) * 1.5)
             let tickLength = length + attention * 10
             var tick = Path()
             tick.move(to: CGPoint(x: center.x + cos(angle) * 96, y: center.y + sin(angle) * 96))
-            tick.addLine(to: CGPoint(x: center.x + cos(angle) * (96 + tickLength), y: center.y + sin(angle) * (96 + tickLength)))
-            context.stroke(tick, with: .color(accent.opacity(0.22 + frame.energy * 0.35 + sweep * 0.5 + attention * 0.45)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            tick.addLine(
+                to: CGPoint(x: center.x + cos(angle) * (96 + tickLength), y: center.y + sin(angle) * (96 + tickLength)))
+            context.stroke(
+                tick, with: .color(accent.opacity(0.22 + frame.energy * 0.35 + sweep * 0.5 + attention * 0.45)),
+                style: StrokeStyle(lineWidth: 2, lineCap: .round))
         }
 
         for (phase, width, opacity) in [(0.0, 1.6, 0.75), (2.1, 0.8, 0.35)] {
@@ -304,12 +334,16 @@ struct VoiceOrbView: View {
         }
     }
 
-    private static func membrane(center: CGPoint, radius: Double, frame: VoiceOrbMotion.Frame, time: TimeInterval) -> Path {
+    private static func membrane(center: CGPoint, radius: Double, frame: VoiceOrbMotion.Frame, time: TimeInterval)
+        -> Path
+    {
         var path = Path()
         let points = 120
         for index in 0...points {
             let angle = Double(index) / Double(points) * .pi * 2
-            let ripple = sin(angle * 3 + time * 1.3) * 0.5 + sin(angle * 5 - time * 1.9) * 0.3 + sin(angle * 7 + time * 2.7) * 0.2
+            let ripple =
+                sin(angle * 3 + time * 1.3) * 0.5 + sin(angle * 5 - time * 1.9) * 0.3 + sin(angle * 7 + time * 2.7)
+                * 0.2
             let r = radius + 1.5 * sin(angle * 2 + time * 0.6) + frame.energy * 16 * ripple
             let point = CGPoint(x: center.x + cos(angle) * r, y: center.y + sin(angle) * r)
             if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
@@ -351,7 +385,8 @@ struct VoiceCoreBars: View {
             case .speaking:
                 // Hermes plays TTS itself and does not stream its audio back, so
                 // the bars follow a syllable-like envelope, not the real audio.
-                let syllables = sin(time * 7.3 + phase) * 0.5 + sin(time * 11.9 + phase * 2) * 0.3 + sin(time * 3.1) * 0.35
+                let syllables =
+                    sin(time * 7.3 + phase) * 0.5 + sin(time * 11.9 + phase * 2) * 0.3 + sin(time * 3.1) * 0.35
                 let phrasePause = sin(time * 0.8) > -0.75 ? 1.0 : 0.1
                 return shape[index] * min(1, max(0.08, syllables + 0.35)) * phrasePause
             }
@@ -396,7 +431,10 @@ struct KanbanMutationEditor: View {
     @State private var reclaimFirst = false
     @State private var confirming = false
 
-    init(request: KanbanMutationRequest, assignees: [String], isPending: Bool, submit: @escaping (KanbanMutationRequest) -> Void) {
+    init(
+        request: KanbanMutationRequest, assignees: [String], isPending: Bool,
+        submit: @escaping (KanbanMutationRequest) -> Void
+    ) {
         self.request = request
         self.assignees = assignees
         self.isPending = isPending
@@ -419,7 +457,7 @@ struct KanbanMutationEditor: View {
             TextField(placeholder, text: $value, axis: .vertical)
                 .lineLimit(2...5)
                 .textFieldStyle(.dockGlass)
-            if (request.kind == .assign || request.kind == .reassign), !assignees.isEmpty {
+            if request.kind == .assign || request.kind == .reassign, !assignees.isEmpty {
                 DockMenu {
                     ForEach(assignees, id: \.self) { assignee in
                         Button(assignee) { value = assignee }
@@ -437,17 +475,25 @@ struct KanbanMutationEditor: View {
                     .dockFont(.body)
             }
         } footer: {
-            modalActions(primaryTitle: request.kind.title, pendingTitle: "Saving…", isDisabled: value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending, isPending: isPending, onCancel: { dismiss() }) {
+            modalActions(
+                primaryTitle: request.kind.title, pendingTitle: "Saving…",
+                isDisabled: value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending,
+                isPending: isPending, onCancel: { dismiss() }
+            ) {
                 confirming = true
             }
         }
         .confirmationDialog("Confirm Kanban change?", isPresented: $confirming) {
             Button(request.kind.title) {
-                submit(KanbanMutationRequest(task: request.task, kind: request.kind, value: value, reclaimFirst: reclaimFirst))
+                submit(
+                    KanbanMutationRequest(
+                        task: request.task, kind: request.kind, value: value, reclaimFirst: reclaimFirst))
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Hermes will persist this \(request.kind.rawValue) change on ‘\(request.task.title)’. Herm will refresh the authoritative task afterwards.")
+            Text(
+                "Hermes will persist this \(request.kind.rawValue) change on ‘\(request.task.title)’. Herm will refresh the authoritative task afterwards."
+            )
         }
     }
 }
@@ -515,15 +561,20 @@ struct CronEditEditor: View {
                         labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
                             DockTextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
                         }
-                        ModalNote(text: draft.schedule.isEmpty ? "Enter an interval or a cron expression." : CronScheduleFormatting.humanReadable(draft.schedule), icon: .clock)
-                            .frame(minHeight: 24, alignment: .leading)
+                        ModalNote(
+                            text: draft.schedule.isEmpty
+                                ? "Enter an interval or a cron expression."
+                                : CronScheduleFormatting.humanReadable(draft.schedule), icon: .clock
+                        )
+                        .frame(minHeight: 24, alignment: .leading)
                         if loadedJob?.details.noAgent != true {
                             labeledField("Request") {
                                 DockTextField("Request", text: $draft.prompt, axis: .vertical)
                                     .lineLimit(4...8).textFieldStyle(.dockGlass)
                             }
                         }
-                        CronConfigurationFields(draft: $draft.configuration, isScriptOnly: loadedJob?.details.noAgent == true)
+                        CronConfigurationFields(
+                            draft: $draft.configuration, isScriptOnly: loadedJob?.details.noAgent == true)
                     }.disabled(loadedJob == nil || isSaving)
                     if let error { ModalNote(text: error, icon: .warning, tone: .dockWarning) }
                     if !isLoading, loadedJob == nil {
@@ -532,7 +583,11 @@ struct CronEditEditor: View {
                 }
             }.frame(height: 440)
         } footer: {
-            modalActions(primaryTitle: "Save changes", isDisabled: loadedJob == nil || draft.changes(comparedTo: loadedJob ?? job).isEmpty || isSaving, isPending: isSaving, onCancel: { dismiss() }) {
+            modalActions(
+                primaryTitle: "Save changes",
+                isDisabled: loadedJob == nil || draft.changes(comparedTo: loadedJob ?? job).isEmpty || isSaving,
+                isPending: isSaving, onCancel: { dismiss() }
+            ) {
                 confirming = true
             }
         }
@@ -547,8 +602,11 @@ struct CronEditEditor: View {
                 }
                 isSaving = true
                 Task {
-                    if await control.editCron(loadedJob, draft: draft) { dismiss() }
-                    else { error = control.lastError ?? "Hermes could not save this automation." }
+                    if await control.editCron(loadedJob, draft: draft) {
+                        dismiss()
+                    } else {
+                        error = control.lastError ?? "Hermes could not save this automation."
+                    }
                     isSaving = false
                 }
             }
@@ -678,12 +736,19 @@ struct RepositoryFleetRow: View {
                 }
                 Spacer()
                 if isRefreshing { ProgressView().controlSize(.small) }
-                if path == activePath { Text("ACTIVE").dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent) }
+                if path == activePath {
+                    Text("ACTIVE").dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
+                }
             }
             if let snapshot, snapshot.isGitRepository {
-                Text("\(snapshot.changedFiles) changed · \(snapshot.aheadCount.map(String.init) ?? "—") ahead · \(snapshot.behindCount.map(String.init) ?? "—") behind")
-                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                if let operation = snapshot.operation { Text(operation.uppercased()).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockWarning) }
+                Text(
+                    "\(snapshot.changedFiles) changed · \(snapshot.aheadCount.map(String.init) ?? "—") ahead · \(snapshot.behindCount.map(String.init) ?? "—") behind"
+                )
+                .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                if let operation = snapshot.operation {
+                    Text(operation.uppercased()).dockFont(.metadata, weight: .semibold).foregroundStyle(
+                        Color.dockWarning)
+                }
             }
             HStack(spacing: 12) {
                 Button("SELECT") { select(path) }
@@ -718,7 +783,9 @@ struct DockActionPalette: View {
     }
 
     var body: some View {
-        DockModal(icon: .command, title: "Command Center", subtitle: "Search actions  ·  ⌘K", width: 480, contentPadding: 16) {
+        DockModal(
+            icon: .command, title: "Command Center", subtitle: "Search actions  ·  ⌘K", width: 480, contentPadding: 16
+        ) {
             DockTextField("Search actions", text: $query)
                 .textFieldStyle(.dockGlass)
             ScrollView {
@@ -734,8 +801,11 @@ struct DockActionPalette: View {
                                 DockIcon(command.icon).frame(width: 16)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(command.title).dockFont(.navigation, weight: .medium)
-                                    Text(command.isAvailable ? command.subtitle : (command.unavailableReason ?? command.subtitle))
-                                        .dockFont(.metadata).lineLimit(1)
+                                    Text(
+                                        command.isAvailable
+                                            ? command.subtitle : (command.unavailableReason ?? command.subtitle)
+                                    )
+                                    .dockFont(.metadata).lineLimit(1)
                                 }
                                 Spacer()
                                 Text(command.category.uppercased()).dockFont(.compactStatus, weight: .regular)

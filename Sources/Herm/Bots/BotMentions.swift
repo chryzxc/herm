@@ -39,8 +39,9 @@ enum BotMentions {
         let dark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let key = "\(bot.id)|\(dark)|\(DockThemeRuntime.revision)"
         if let cached = pills[key] { return cached }
-        let renderer = ImageRenderer(content: BotChip(id: bot.id, botsByID: botsByID, avatarImages: avatars)
-            .environment(\.colorScheme, dark ? .dark : .light))
+        let renderer = ImageRenderer(
+            content: BotChip(id: bot.id, botsByID: botsByID, avatarImages: avatars)
+                .environment(\.colorScheme, dark ? .dark : .light))
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
         let image = renderer.nsImage
         pills[key] = image
@@ -55,16 +56,20 @@ enum BotMentions {
         for (range, bot) in found.reversed() {
             let attributes = text.attributes(at: range.location, effectiveRange: nil)
             let font = attributes[.font] as? NSFont
-            let intent = (attributes[.inlinePresentationIntent] as? NSNumber).map { InlinePresentationIntent(rawValue: $0.uintValue) }
+            let intent = (attributes[.inlinePresentationIntent] as? NSNumber).map {
+                InlinePresentationIntent(rawValue: $0.uintValue)
+            }
             guard attributes[.link] == nil, intent?.contains(.code) != true,
-                  font?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true,
-                  let image = pill(for: bot) else { continue }
+                font?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true,
+                let image = pill(for: bot)
+            else { continue }
             let attachment = NSTextAttachment()
             attachment.image = image
             attachment.bounds = CGRect(x: 0, y: -4, width: image.size.width, height: image.size.height)
             let replacement = NSMutableAttributedString(attachment: attachment)
             if let style = attributes[.paragraphStyle] {
-                replacement.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: replacement.length))
+                replacement.addAttribute(
+                    .paragraphStyle, value: style, range: NSRange(location: 0, length: replacement.length))
             }
             result.replaceCharacters(in: range, with: replacement)
         }
@@ -82,7 +87,9 @@ extension Text {
         var text = Text("")
         var cursor = 0
         for (range, bot) in found {
-            let offset = { (utf16: Int) in plain.distance(from: plain.startIndex, to: String.Index(utf16Offset: utf16, in: plain)) }
+            let offset = { (utf16: Int) in
+                plain.distance(from: plain.startIndex, to: String.Index(utf16Offset: utf16, in: plain))
+            }
             let lower = value.characters.index(value.startIndex, offsetBy: offset(cursor))
             let upper = value.characters.index(value.startIndex, offsetBy: offset(range.location))
             text = text + Text(AttributedString(value[lower..<upper]))
@@ -93,7 +100,9 @@ extension Text {
             }
             cursor = NSMaxRange(range)
         }
-        let tail = value.characters.index(value.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: String.Index(utf16Offset: cursor, in: plain)))
+        let tail = value.characters.index(
+            value.startIndex,
+            offsetBy: plain.distance(from: plain.startIndex, to: String.Index(utf16Offset: cursor, in: plain)))
         return text + Text(AttributedString(value[tail...]))
     }
 }

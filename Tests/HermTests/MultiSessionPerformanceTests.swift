@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -15,10 +16,12 @@ struct MultiSessionPerformanceTests {
         let subscription = model.objectWillChange.sink { publications += 1 }
 
         for index in 0..<100 {
-            model.receiveGatewayEvent("tool.call", params: [
-                "session_id": "background-\(index % 5)",
-                "payload": ["name": "terminal", "args": ["command": "echo \(index)"]]
-            ])
+            model.receiveGatewayEvent(
+                "tool.call",
+                params: [
+                    "session_id": "background-\(index % 5)",
+                    "payload": ["name": "terminal", "args": ["command": "echo \(index)"]],
+                ])
         }
 
         #expect(publications == 0)

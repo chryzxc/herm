@@ -1,10 +1,13 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct RestoreCheckpointTests {
-    private func checkpoint(_ hash: String, session: String = "session-a", project: String? = nil, selection: String? = nil) -> RestoreCheckpoint {
+    private func checkpoint(
+        _ hash: String, session: String = "session-a", project: String? = nil, selection: String? = nil
+    ) -> RestoreCheckpoint {
         RestoreCheckpoint(
             sessionID: session,
             projectID: project,
@@ -20,7 +23,7 @@ struct RestoreCheckpointTests {
             checkpoint("one"),
             checkpoint("one"),
             checkpoint("other-session", session: "session-b"),
-            checkpoint("other-project", project: "project-b")
+            checkpoint("other-project", project: "project-b"),
         ]
 
         let eligible = RestoreCheckpointEligibility.eligible(
@@ -113,7 +116,7 @@ struct RestoreCheckpointTests {
         let client = RestoreCheckpointClient(result: ["success": true])
         client.listResult = [
             "enabled": true,
-            "checkpoints": [["hash": "live-hash", "timestamp": "now", "message": "Before restore"]]
+            "checkpoints": [["hash": "live-hash", "timestamp": "now", "message": "Before restore"]],
         ]
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
         model.refreshCheckpoints(sessionID: "session-a")
@@ -153,17 +156,18 @@ struct RestoreCheckpointTests {
             "enabled": true,
             "checkpoints": [
                 ["hash": "session-a-project-a-selection-a", "timestamp": "now", "message": "A"],
-                ["hash": "session-b", "timestamp": "now", "message": "B"]
-            ]
+                ["hash": "session-b", "timestamp": "now", "message": "B"],
+            ],
         ]
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
         let harness = RestoreCheckpointRenderedActionHarness(model: model)
 
         harness.renderList(sessionID: "session-a", projectID: "project-a", selectionID: "selection-a")
         await eventually { !model.restoreCheckpoints.isEmpty }
-        #expect(model.restoreCheckpoints.allSatisfy {
-            $0.sessionID == "session-a" && $0.projectID == "project-a" && $0.selectionID == "selection-a"
-        })
+        #expect(
+            model.restoreCheckpoints.allSatisfy {
+                $0.sessionID == "session-a" && $0.projectID == "project-a" && $0.selectionID == "selection-a"
+            })
         guard let selected = model.restoreCheckpoints.first else { return }
 
         harness.tapRestore(selected)
@@ -191,11 +195,12 @@ struct RestoreCheckpointTests {
                     && $0.selectionID == "selection-b"
             }
         }
-        #expect(model.restoreCheckpoints.allSatisfy {
-            $0.sessionID == "session-b"
-                && $0.projectID == "project-b"
-                && $0.selectionID == "selection-b"
-        })
+        #expect(
+            model.restoreCheckpoints.allSatisfy {
+                $0.sessionID == "session-b"
+                    && $0.projectID == "project-b"
+                    && $0.selectionID == "selection-b"
+            })
 
         client.result = ["success": false, "error": "retryable"]
         let retry = checkpoint("retry", session: "session-a")

@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import SwiftUI
+import Testing
+
 @testable import Herm
 
 struct GitHubIssueTests {
@@ -14,7 +15,7 @@ struct GitHubIssueTests {
             "updated_at": "2026-09-20T12:00:00Z",
             "user": ["login": "ada"],
             "repository": ["full_name": "owner/repo"],
-            "assignee": ["login": "ada"]
+            "assignee": ["login": "ada"],
         ])
         #expect(issue?.id == "github:owner/repo#19")
         #expect(issue?.body.contains("**Details**") == true)
@@ -23,9 +24,14 @@ struct GitHubIssueTests {
     }
 
     @MainActor @Test func issueFiltersAreGitHubAuthoritativeAndSearchable() {
-        let repository = GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
-        let authored = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 1, title: "Authored bug", body: "", state: "open", author: "ada", assignee: "bob", updatedAt: nil, webURL: nil)
-        let assigned = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 2, title: "Assigned task", body: "", state: "open", author: "bob", assignee: "ada", assignees: ["ada"], updatedAt: nil, webURL: nil)
+        let repository = GitHubRepositoryReference(
+            owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
+        let authored = GitHubIssueRecord(
+            repository: repository, localPath: "/repo", number: 1, title: "Authored bug", body: "", state: "open",
+            author: "ada", assignee: "bob", updatedAt: nil, webURL: nil)
+        let assigned = GitHubIssueRecord(
+            repository: repository, localPath: "/repo", number: 2, title: "Assigned task", body: "", state: "open",
+            author: "bob", assignee: "ada", assignees: ["ada"], updatedAt: nil, webURL: nil)
         let model = IssueCenterModel()
         model.records = [authored, assigned]
         model.viewerLogin = "ada"
@@ -42,9 +48,14 @@ struct GitHubIssueTests {
     }
 
     @MainActor @Test func issueVisibleRowsRemainNewestFirstAndResetFiltersRepairsSelection() {
-        let repository = GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
-        let older = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 1, title: "Older", body: "", state: "open", author: "ada", assignee: nil, updatedAt: Date(timeIntervalSince1970: 10), webURL: nil)
-        let newer = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 2, title: "Newer", body: "", state: "open", author: "ada", assignee: nil, updatedAt: Date(timeIntervalSince1970: 20), webURL: nil)
+        let repository = GitHubRepositoryReference(
+            owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
+        let older = GitHubIssueRecord(
+            repository: repository, localPath: "/repo", number: 1, title: "Older", body: "", state: "open",
+            author: "ada", assignee: nil, updatedAt: Date(timeIntervalSince1970: 10), webURL: nil)
+        let newer = GitHubIssueRecord(
+            repository: repository, localPath: "/repo", number: 2, title: "Newer", body: "", state: "open",
+            author: "ada", assignee: nil, updatedAt: Date(timeIntervalSince1970: 20), webURL: nil)
         let model = IssueCenterModel()
         model.records = [older, newer]
         model.selectedIssueID = older.id
@@ -61,7 +72,9 @@ struct GitHubIssueTests {
     }
 
     @Test func issueStateIconsKeepUnknownStateDistinct() {
-        var issue = GitHubIssueRecord(repository: GitHubReferenceParser.repository("owner/repo")!, localPath: "", number: 1, title: "Fixture", body: "", state: "OPEN", author: "ada", assignee: nil, updatedAt: nil, webURL: nil)
+        var issue = GitHubIssueRecord(
+            repository: GitHubReferenceParser.repository("owner/repo")!, localPath: "", number: 1, title: "Fixture",
+            body: "", state: "OPEN", author: "ada", assignee: nil, updatedAt: nil, webURL: nil)
         #expect(issue.presentationIcon == .record)
         #expect(issue.presentationColor == Color.dockInfo)
         issue.state = "closed"
@@ -73,11 +86,13 @@ struct GitHubIssueTests {
     }
 
     @Test func issueRowMetadataUsesSentenceCaseAssignmentAndOmitsMissingTime() {
-        let assigned = GitHubIssueRowMetadata.make(repository: "owner/repo", assignees: ["ada", "bob"], updated: "2 min ago")
+        let assigned = GitHubIssueRowMetadata.make(
+            repository: "owner/repo", assignees: ["ada", "bob"], updated: "2 min ago")
         #expect(assigned.values == ["owner/repo", "Assigned to ada, bob", "2 min ago"])
         let unassigned = GitHubIssueRowMetadata.make(repository: "owner/repo", assignees: [], updated: nil)
         #expect(unassigned.values == ["owner/repo", "Unassigned"])
-        let viewer = GitHubIssueRowMetadata.make(repository: "owner/repo", assignees: ["Ada", "bob"], updated: nil, viewer: "ada")
+        let viewer = GitHubIssueRowMetadata.make(
+            repository: "owner/repo", assignees: ["Ada", "bob"], updated: nil, viewer: "ada")
         #expect(viewer.assignment == "Assigned to you, bob")
     }
 
@@ -87,7 +102,7 @@ struct GitHubIssueTests {
             "repository": ["full_name": "owner/repo"],
             "user": ["login": "bob"],
             "assignees": [["login": "bob"], ["login": "ada"]],
-            "assignee": ["login": "bob"]
+            "assignee": ["login": "bob"],
         ])
         #expect(issue?.assignees == ["bob", "ada"])
 
@@ -101,16 +116,20 @@ struct GitHubIssueTests {
     @MainActor @Test func issueCenterUsesInjectedGitHubBoundaryForViewerSearchAndDetail() async {
         let transport = IssueTestTransport(responses: [
             "/user": ["login": "ada"],
-            "/search/issues": ["items": [[
-                "number": 19, "title": "From GitHub", "body": "summary", "state": "open",
-                "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
-                "assignee": ["login": "ada"], "html_url": "https://github.com/owner/repo/issues/19"
-            ]]],
+            "/search/issues": [
+                "items": [
+                    [
+                        "number": 19, "title": "From GitHub", "body": "summary", "state": "open",
+                        "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
+                        "assignee": ["login": "ada"], "html_url": "https://github.com/owner/repo/issues/19",
+                    ]
+                ]
+            ],
             "/repos/owner/repo/issues/19": [
                 "number": 19, "title": "Detailed GitHub issue", "body": "details", "state": "open",
                 "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
-                "assignee": ["login": "ada"]
-            ]
+                "assignee": ["login": "ada"],
+            ],
         ])
         let model = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
 
@@ -123,10 +142,11 @@ struct GitHubIssueTests {
         #expect(transport.paths.contains("/user"))
         #expect(transport.paths.contains("/search/issues"))
         #expect(transport.paths.contains("/repos/owner/repo/issues/19"))
-        #expect(Set(transport.searchQueries) == [
-            "is:issue is:open author:ada",
-            "is:issue is:open assignee:ada"
-        ])
+        #expect(
+            Set(transport.searchQueries) == [
+                "is:issue is:open author:ada",
+                "is:issue is:open assignee:ada",
+            ])
         #expect(transport.searchQueries.contains("is:issue is:open") == false)
     }
 
@@ -139,8 +159,11 @@ struct GitHubIssueTests {
     }
 
     @MainActor @Test func issueDetailFailureRetainsSelectedSummaryAndPublishesInlineError() async {
-        let repository = GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
-        let issue = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 1, title: "Summary", body: "Search summary", state: "open", author: "ada", assignee: nil, updatedAt: nil, webURL: nil)
+        let repository = GitHubRepositoryReference(
+            owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
+        let issue = GitHubIssueRecord(
+            repository: repository, localPath: "/repo", number: 1, title: "Summary", body: "Search summary",
+            state: "open", author: "ada", assignee: nil, updatedAt: nil, webURL: nil)
         let model = IssueCenterModel(api: GitHubIssueCenterAPI(transport: IssueTestTransport(failing: true)))
         model.records = [issue]
         model.selectedIssueID = issue.id
@@ -153,10 +176,14 @@ struct GitHubIssueTests {
     @MainActor @Test func issueCenterKeepsViewerFailureUnavailableEvenWhenSearchSucceeds() async {
         let transport = IssueTestTransport(
             responses: [
-                "/search/issues": ["items": [[
-                    "number": 21, "title": "Unscoped result", "state": "open",
-                    "repository": ["full_name": "owner/repo"], "user": ["login": "ada"]
-                ]]]
+                "/search/issues": [
+                    "items": [
+                        [
+                            "number": 21, "title": "Unscoped result", "state": "open",
+                            "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
+                        ]
+                    ]
+                ]
             ],
             failingPaths: ["/user"]
         )
@@ -179,7 +206,8 @@ struct GitHubIssueTests {
                 return nil
             }
         )
-        let project = ProjectSummary(id: "project", name: "repo", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: true)
+        let project = ProjectSummary(
+            id: "project", name: "repo", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: true)
         let refresh = Task { await model.refresh(projects: [project]) }
 
         try? await Task.sleep(nanoseconds: 20_000_000)
@@ -188,7 +216,9 @@ struct GitHubIssueTests {
     }
 
     @Test func issueContextIsStableAndExplicit() {
-        let context = IssueContext(repositoryID: "owner/repo", number: 19, title: "Add issue workspace", webURL: URL(string: "https://github.com/owner/repo/issues/19"))
+        let context = IssueContext(
+            repositoryID: "owner/repo", number: 19, title: "Add issue workspace",
+            webURL: URL(string: "https://github.com/owner/repo/issues/19"))
         #expect(context.id == "github:owner/repo#19")
         #expect(context.prompt.contains("Issue #19"))
         #expect(context.prompt.contains("Do not modify files unless I ask"))
@@ -215,8 +245,11 @@ private final class IssueTestTransport: GitHubIssueTransport, @unchecked Sendabl
         let path = request.url?.path ?? ""
         lock.withLock { recordedPaths.append(path) }
         if path == "/search/issues",
-           let url = request.url,
-           let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "q" })?.value {
+            let url = request.url,
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: {
+                $0.name == "q"
+            })?.value
+        {
             lock.withLock { recordedQueries.append(query) }
         }
         if failing || failingPaths.contains(path) { throw GitHubCodeHostError.unavailable }

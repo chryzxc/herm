@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -18,7 +19,8 @@ private final class ModelPickerRefreshRPCClient: HermesRPCClientProtocol {
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requests.append((method, params))
-        let response = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Response, Error>) in
+        let response = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Response, Error>) in
             waiters.append(continuation)
         }
         return response.value
@@ -45,7 +47,7 @@ struct ModelPickerTests {
         let catalog = ModelPickerCatalog(options: [
             HermesModelOption(provider: "openai", model: "gpt-5"),
             HermesModelOption(provider: "openai", model: "gpt-4.1"),
-            HermesModelOption(provider: "anthropic", model: "claude-sonnet")
+            HermesModelOption(provider: "anthropic", model: "claude-sonnet"),
         ])
 
         let groups = catalog.groups(matching: "sonnet")
@@ -59,7 +61,7 @@ struct ModelPickerTests {
         let selected = "openai|gpt-5"
         let refreshed = [
             HermesModelOption(provider: "anthropic", model: "claude-sonnet"),
-            HermesModelOption(provider: "openai", model: "gpt-5")
+            HermesModelOption(provider: "openai", model: "gpt-5"),
         ]
 
         #expect(ModelPickerCatalog.reconciledSelection(selectedID: selected, options: refreshed) == selected)
@@ -90,7 +92,7 @@ struct ModelPickerTests {
         let preferences = ModelPickerPreferences(defaults: defaults)
         let options = [
             HermesModelOption(provider: "openai", model: "gpt-5"),
-            HermesModelOption(provider: "anthropic", model: "claude-sonnet")
+            HermesModelOption(provider: "anthropic", model: "claude-sonnet"),
         ]
         preferences.setEnabled(false, for: "other|hidden")
         preferences.setEnabled(false, for: options[0].id)
@@ -99,8 +101,9 @@ struct ModelPickerTests {
 
         #expect(disabled == ["other|hidden", options[1].id])
         #expect(ModelPickerPreferences(defaults: defaults).disabledIDs == disabled)
-        #expect(ModelPickerCatalog(options: options).groups(disabledIDs: disabled, activeID: options[0].id)
-            .flatMap(\.models).map(\.id) == [options[0].id])
+        #expect(
+            ModelPickerCatalog(options: options).groups(disabledIDs: disabled, activeID: options[0].id)
+                .flatMap(\.models).map(\.id) == [options[0].id])
 
         let allDisabled = preferences.unselectAll(options: options, activeID: nil)
         #expect(allDisabled == ["other|hidden", options[0].id, options[1].id])
@@ -139,7 +142,10 @@ struct ModelPickerTests {
     func activeModelIsRemovedFromPersistedDisabledIDsWhenItBecomesActive() {
         let activeID = "openai|gpt-5"
 
-        #expect(ModelPickerCatalog.reconciledDisabledIDs([activeID, "anthropic|claude"], activeID: activeID) == ["anthropic|claude"])
+        #expect(
+            ModelPickerCatalog.reconciledDisabledIDs([activeID, "anthropic|claude"], activeID: activeID) == [
+                "anthropic|claude"
+            ])
     }
 
     @Test
@@ -172,7 +178,7 @@ struct ModelPickerTests {
         client.releaseNext(with: [
             "provider": "openai",
             "model": "gpt-5",
-            "providers": [["slug": "openai", "models": ["gpt-5"]]]
+            "providers": [["slug": "openai", "models": ["gpt-5"]]],
         ])
         while model.isLoadingRuntimeModelOptions { await Task.yield() }
 

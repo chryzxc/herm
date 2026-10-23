@@ -577,7 +577,9 @@ struct AutomationWorkspaceView: View {
                 Button("Edit") { editingJob = job }
                     .buttonStyle(.dockSecondary)
                     .disabled(!control.cronControlAvailable)
-                    .help(control.cronControlAvailable ? "Edit this automation" : "Editing is unavailable through this Hermes gateway.")
+                    .help(
+                        control.cronControlAvailable
+                            ? "Edit this automation" : "Editing is unavailable through this Hermes gateway.")
                 Button {
                     runRequest = job
                     isShowingRunConfirmation = true

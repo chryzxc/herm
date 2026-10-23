@@ -1,11 +1,14 @@
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct OperationsStatusTests {
     @Test func failedRefreshKeepsLastSnapshotAndMarksCardsStale() {
         let snapshot = OperationsStatusSnapshot(cards: [
-            OperationsStatusCard(id: "gateway", title: "Gateway server", status: .running, detail: "Listening", formatSupport: .structured)
+            OperationsStatusCard(
+                id: "gateway", title: "Gateway server", status: .running, detail: "Listening",
+                formatSupport: .structured)
         ])
         var projection = OperationsStatusProjection(snapshot: snapshot)
 
@@ -18,7 +21,8 @@ struct OperationsStatusTests {
 
     @Test func successfulEmptyRefreshReplacesPriorSnapshot() {
         let previous = OperationsStatusSnapshot(cards: [
-            OperationsStatusCard(id: "logs", title: "Logs", status: .ready, detail: "Available", formatSupport: .structured)
+            OperationsStatusCard(
+                id: "logs", title: "Logs", status: .ready, detail: "Available", formatSupport: .structured)
         ])
         var projection = OperationsStatusProjection(snapshot: previous)
 
@@ -47,7 +51,8 @@ struct OperationsStatusTests {
         let first = projection.beginRefresh()
         let second = projection.beginRefresh()
         let newer = OperationsStatusSnapshot(cards: [
-            OperationsStatusCard(id: "api", title: "API server", status: .ready, detail: "Available", formatSupport: .structured)
+            OperationsStatusCard(
+                id: "api", title: "API server", status: .ready, detail: "Available", formatSupport: .structured)
         ])
 
         let accepted = projection.succeed(with: newer, generation: second)
@@ -59,11 +64,19 @@ struct OperationsStatusTests {
 
     @Test func startAndStopRequireConfirmationIdentityAndReadBack() {
         let identity = OperationsProcessIdentity(kind: .gatewayServer, instanceID: "gateway-1")
-        let request = OperationsControlRequest(action: .start, identity: identity, timeout: .seconds(5), confirmed: true)
+        let request = OperationsControlRequest(
+            action: .start, identity: identity, timeout: .seconds(5), confirmed: true)
 
         #expect(OperationsControlGate.validate(request: request, observed: nil) == .awaitingReadBack)
         #expect(OperationsControlGate.validate(request: request, observed: identity) == .accepted)
-        #expect(OperationsControlGate.validate(request: request, observed: OperationsProcessIdentity(kind: .gatewayServer, instanceID: "other")) == .identityMismatch)
-        #expect(OperationsControlGate.validate(request: OperationsControlRequest(action: .stop, identity: identity, timeout: .seconds(5), confirmed: false), observed: identity) == .confirmationRequired)
+        #expect(
+            OperationsControlGate.validate(
+                request: request, observed: OperationsProcessIdentity(kind: .gatewayServer, instanceID: "other"))
+                == .identityMismatch)
+        #expect(
+            OperationsControlGate.validate(
+                request: OperationsControlRequest(
+                    action: .stop, identity: identity, timeout: .seconds(5), confirmed: false), observed: identity)
+                == .confirmationRequired)
     }
 }

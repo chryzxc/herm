@@ -16,11 +16,18 @@ struct ArtifactService {
     private static let pathPattern = regex(#"(?:^|[\s("'`])((?:/|~[\\/]|\.\.?[\\/])[^\s"'`<>]+)"#)
     private static let screenshotPattern = regex(#"Screenshot path:\s*([^\r\n<>]+)"#)
     private static let imageExtension = regex(#"\.(?:png|jpe?g|gif|webp|svg|bmp)(?:\?.*)?$"#)
-    private static let fileExtension = regex(#"\.(?:png|jpe?g|gif|webp|svg|bmp|pdf|txt|json|md|csv|xlsx?|docx?|pptx?|html|zip|tar|gz|avi|flac|m4a|mkv|mp3|ogg|opus|wav|webm|mp4|mov)(?:\?.*)?$"#)
+    private static let fileExtension = regex(
+        #"\.(?:png|jpe?g|gif|webp|svg|bmp|pdf|txt|json|md|csv|xlsx?|docx?|pptx?|html|zip|tar|gz|avi|flac|m4a|mkv|mp3|ogg|opus|wav|webm|mp4|mov)(?:\?.*)?$"#
+    )
     private static let filePathPrefix = regex(#"^(?:file:|/|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\)"#)
-    private static let producerTool = regex(#"(?:^|_)(?:creat(?:e|ion)|download|export|generat(?:e|ion)|render|save|speech|tts|write)(?:_|$)"#)
-    private static let strongKey = regex(#"^(?:artifact_(?:file|image|path|url)|files?_(?:created|modified|written)|generated_(?:file|image|path|url)|media_tag|output_(?:file|path|url)|result_(?:file|path|url)|saved_to|screenshot_path)$"#)
-    private static let producerKey = regex(#"^(?:artifact(?:s|_(?:file|image|path|url))?|attachment(?:s|_(?:file|image|path|url))?|download(?:s|_(?:file|path|url))?|(?:audio|image|video)(?:_(?:file|path|url))?|file_path|local_path|media(?:_(?:file|path|url))?|path)$"#)
+    private static let producerTool = regex(
+        #"(?:^|_)(?:creat(?:e|ion)|download|export|generat(?:e|ion)|render|save|speech|tts|write)(?:_|$)"#)
+    private static let strongKey = regex(
+        #"^(?:artifact_(?:file|image|path|url)|files?_(?:created|modified|written)|generated_(?:file|image|path|url)|media_tag|output_(?:file|path|url)|result_(?:file|path|url)|saved_to|screenshot_path)$"#
+    )
+    private static let producerKey = regex(
+        #"^(?:artifact(?:s|_(?:file|image|path|url))?|attachment(?:s|_(?:file|image|path|url))?|download(?:s|_(?:file|path|url))?|(?:audio|image|video)(?:_(?:file|path|url))?|file_path|local_path|media(?:_(?:file|path|url))?|path)$"#
+    )
 
     struct PageResult: Sendable {
         let records: [ArtifactRecord]
@@ -29,7 +36,9 @@ struct ArtifactService {
     }
 
     // Consume the entire response off the main actor; retain only compact artifact records.
-    nonisolated static func extractPageInBackground(session: HermesSession, page: sending [String: Any]) async throws -> PageResult {
+    nonisolated static func extractPageInBackground(session: HermesSession, page: sending [String: Any]) async throws
+        -> PageResult
+    {
         try Task.checkCancellation()
         guard let messages = page["data"] as? [[String: Any]] ?? page["messages"] as? [[String: Any]] else {
             throw HermesGateway.GatewayError.malformedResponse
@@ -41,8 +50,9 @@ struct ArtifactService {
         }
         let records = extract(session: session, messages: messages)
         try Task.checkCancellation()
-        return PageResult(records: records, messageCount: messages.count,
-                          hasMore: limit.map { messages.count >= $0 } ?? false)
+        return PageResult(
+            records: records, messageCount: messages.count,
+            hasMore: limit.map { messages.count >= $0 } ?? false)
     }
 
     static func extract(session: HermesSession, messages: [[String: Any]]) -> [ArtifactRecord] {
@@ -52,13 +62,17 @@ struct ArtifactService {
         for message in messages {
             guard !Task.isCancelled else { return [] }
             let role = (message["role"] as? String ?? "").lowercased()
-            let date = (message["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0 < 10_000_000_000 ? $0 : $0 / 1000) } ?? fallback
+            let date =
+                (message["timestamp"] as? Double).map {
+                    Date(timeIntervalSince1970: $0 < 10_000_000_000 ? $0 : $0 / 1000)
+                } ?? fallback
             // First mention wins, like Desktop.
             func push(_ raw: String, explicit: Bool = false) {
                 let value = normalize(raw)
                 guard !value.isEmpty, found[value] == nil, looksLikeArtifact(value, explicit: explicit) else { return }
-                found[value] = ArtifactRecord(value: value, sessionID: session.id, sessionTitle: session.displayTitle,
-                                              timestamp: date, origin: role == "tool" ? .generated : .shared, profileID: session.profileID)
+                found[value] = ArtifactRecord(
+                    value: value, sessionID: session.id, sessionTitle: session.displayTitle,
+                    timestamp: date, origin: role == "tool" ? .generated : .shared, profileID: session.profileID)
             }
             let text = messageText(message)
 
@@ -68,7 +82,9 @@ struct ArtifactService {
             }
             guard role == "tool" else { continue }
 
-            let name = ((message["tool_name"] as? String) ?? (message["name"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let name = ((message["tool_name"] as? String) ?? (message["name"] as? String) ?? "").trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ).lowercased()
             let producer = test(producerTool, name) || name.hasPrefix("bfl_flux3_")
             if producer || name == "terminal" { collectText(text, push) }
             if name == "browser_vision" { matches(screenshotPattern, in: text).forEach { push($0) } }
@@ -80,8 +96,13 @@ struct ArtifactService {
             }
             for payload in payloads {
                 collectStrings(payload, keyPath: "tool_result") { value, keyPath in
-                    let shellOutput = name == "terminal" && keyPath.split(separator: ".").contains { ["output", "stdout", "path"].contains(String($0)) }
-                    if shellOutput { collectText(value, push); return }
+                    let shellOutput =
+                        name == "terminal"
+                        && keyPath.split(separator: ".").contains { ["output", "stdout", "path"].contains(String($0)) }
+                    if shellOutput {
+                        collectText(value, push)
+                        return
+                    }
                     guard explicitKey(keyPath, producer: producer) else { return }
                     mediaValues(value).forEach { push($0, explicit: true) }
                     push(value)
@@ -102,7 +123,9 @@ struct ArtifactService {
             guard producer, let text = call.result else { continue }
             func push(_ raw: String, explicit: Bool) {
                 let value = normalize(raw)
-                guard !value.isEmpty, looksLikeArtifact(value, explicit: explicit), seen.insert(value).inserted else { return }
+                guard !value.isEmpty, looksLikeArtifact(value, explicit: explicit), seen.insert(value).inserted else {
+                    return
+                }
                 out.append(value)
             }
             mediaValues(text).forEach { push($0, explicit: true) }
@@ -119,8 +142,10 @@ struct ArtifactService {
     static func filter(_ records: [ArtifactRecord], query: String = "", kind: ArtifactKind? = nil) -> [ArtifactRecord] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return records.filter { record in
-            (kind == nil || record.kind == kind) &&
-            (normalized.isEmpty || record.label.lowercased().contains(normalized) || record.value.lowercased().contains(normalized) || record.sessionTitle.lowercased().contains(normalized))
+            (kind == nil || record.kind == kind)
+                && (normalized.isEmpty || record.label.lowercased().contains(normalized)
+                    || record.value.lowercased().contains(normalized)
+                    || record.sessionTitle.lowercased().contains(normalized))
         }
     }
 
@@ -133,11 +158,23 @@ struct ArtifactService {
 
     private static func looksLikeArtifact(_ value: String, explicit: Bool) -> Bool {
         if !explicit {
-            let path = (URL(string: value)?.path.removingPercentEncoding ?? value).replacingOccurrences(of: "\\", with: "/").lowercased()
-            if path.contains("/.cache/pip/") || path.contains("/library/caches/pip/") || path.contains("/appdata/local/pip/cache/") ||
-                path.hasSuffix(".whl") || path.hasSuffix(".whl.metadata") { return false }
+            let path = (URL(string: value)?.path.removingPercentEncoding ?? value).replacingOccurrences(
+                of: "\\", with: "/"
+            ).lowercased()
+            if path.contains("/.cache/pip/") || path.contains("/library/caches/pip/")
+                || path.contains("/appdata/local/pip/cache/") || path.hasSuffix(".whl")
+                || path.hasSuffix(".whl.metadata")
+            {
+                return false
+            }
             if value.lowercased().hasPrefix("http"), path.contains("/packages/"),
-               [".tar.gz", ".tar.bz2", ".zip", ".egg", ".zip.metadata", ".egg.metadata", ".tar.gz.metadata", ".tar.bz2.metadata"].contains(where: path.hasSuffix) { return false }
+                [
+                    ".tar.gz", ".tar.bz2", ".zip", ".egg", ".zip.metadata", ".egg.metadata", ".tar.gz.metadata",
+                    ".tar.bz2.metadata",
+                ].contains(where: path.hasSuffix)
+            {
+                return false
+            }
         }
         if value.hasPrefix("http://") || value.hasPrefix("https://") || value.hasPrefix("data:image/") { return true }
         guard isFilePath(value) else { return false }
@@ -177,7 +214,9 @@ struct ArtifactService {
 
     private static func messageText(_ message: [String: Any]) -> String {
         for key in ["content", "text", "context"] {
-            if let text = message[key] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
+            if let text = message[key] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return text
+            }
         }
         return ""
     }
@@ -185,8 +224,10 @@ struct ArtifactService {
     private static func untrustedPayload(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("<untrusted_tool_result"), let open = trimmed.firstIndex(of: ">"),
-              let close = trimmed.range(of: "</untrusted_tool_result>", options: .backwards), open < close.lowerBound else { return nil }
-        let wrapped = trimmed[trimmed.index(after: open)..<close.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            let close = trimmed.range(of: "</untrusted_tool_result>", options: .backwards), open < close.lowerBound
+        else { return nil }
+        let wrapped = trimmed[trimmed.index(after: open)..<close.lowerBound].trimmingCharacters(
+            in: .whitespacesAndNewlines)
         return wrapped.range(of: "\n\n").map { String(wrapped[$0.upperBound...]) } ?? wrapped
     }
 
@@ -197,8 +238,14 @@ struct ArtifactService {
 
     private static func collectStrings(_ value: Any, keyPath: String, _ collector: (String, String) -> Void) {
         if let string = value as? String { collector(string, keyPath) }
-        if let array = value as? [Any] { for (index, child) in array.enumerated() { collectStrings(child, keyPath: "\(keyPath).\(index)", collector) } }
-        if let object = value as? [String: Any] { for (key, child) in object { collectStrings(child, keyPath: "\(keyPath).\(key)", collector) } }
+        if let array = value as? [Any] {
+            for (index, child) in array.enumerated() {
+                collectStrings(child, keyPath: "\(keyPath).\(index)", collector)
+            }
+        }
+        if let object = value as? [String: Any] {
+            for (key, child) in object { collectStrings(child, keyPath: "\(keyPath).\(key)", collector) }
+        }
     }
 
     private static func test(_ pattern: NSRegularExpression, _ text: String) -> Bool {
@@ -219,7 +266,9 @@ struct ArtifactService {
         }
         trimmed = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
         for _ in 0..<3 {
-            guard let quote = trimmed.first, "\"'`".contains(quote), trimmed.count > 1, trimmed.last == quote else { break }
+            guard let quote = trimmed.first, "\"'`".contains(quote), trimmed.count > 1, trimmed.last == quote else {
+                break
+            }
             trimmed = String(trimmed.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         trimmed = trimmed.replacingOccurrences(of: #"[`*]+$"#, with: "", options: .regularExpression)

@@ -14,16 +14,17 @@ extension DockModel {
         let sessionID = rowSessionID(rawSessionID)
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
             guard sessionID == navigationSessionID else { return }
-            sessions.insert(HermesSession(
-                id: sessionID,
-                profileID: sessionProfileID ?? profileScopeID,
-                title: currentSessionTitle ?? "",
-                preview: preview ?? "",
-                startedAt: date,
-                updatedAt: date,
-                messageCount: 0,
-                source: "herm"
-            ), at: 0)
+            sessions.insert(
+                HermesSession(
+                    id: sessionID,
+                    profileID: sessionProfileID ?? profileScopeID,
+                    title: currentSessionTitle ?? "",
+                    preview: preview ?? "",
+                    startedAt: date,
+                    updatedAt: date,
+                    messageCount: 0,
+                    source: "herm"
+                ), at: 0)
             return
         }
         let session = sessions[index]
@@ -77,10 +78,13 @@ extension DockModel {
         let sessionID = rowSessionID(rawSessionID)
         switch type {
         case "tool.call", "tool.start", "tool.use", "tool_use":
-            let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "tool"
+            let name =
+                (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String)
+                ?? "tool"
             let step = ToolStep.describe(name: name, args: Self.textArgs(Self.parseArgsDict(payload["args"])) ?? [:])
             let preview = (payload["tool_preview"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            sessionActivityLabels[sessionID] = [step.title, step.detail ?? (preview.isEmpty ? nil : preview)].compactMap { $0 }.joined(separator: ": ")
+            sessionActivityLabels[sessionID] = [step.title, step.detail ?? (preview.isEmpty ? nil : preview)].compactMap
+            { $0 }.joined(separator: ": ")
         case "message.start":
             sessionActivityLabels[sessionID] = nil
         default:
@@ -115,7 +119,8 @@ extension DockModel {
         guard let id = sessionID, !id.isEmpty else { return }
         Task { @MainActor [weak self] in
             guard let result = try? await self?.interruptRPC.sessionUsage(sessionID: id),
-                  let self, self.sessionID == id else { return }
+                let self, self.sessionID == id
+            else { return }
             self.sessionTokenUsage = (id, ControlCenterModel.parseSessionUsage(result).totalTokens)
             self.applyContextUsage(result, sessionID: id)
         }
@@ -123,8 +128,9 @@ extension DockModel {
 
     func fetchSessionContextDetails() async -> SessionContextSummary? {
         guard let id = sessionID, !id.isEmpty,
-              let result = try? await interruptRPC.sessionContextBreakdown(sessionID: id),
-              sessionID == id else { return nil }
+            let result = try? await interruptRPC.sessionContextBreakdown(sessionID: id),
+            sessionID == id
+        else { return nil }
         return ControlCenterModel.parseSessionContext(result)
     }
 
@@ -154,7 +160,7 @@ extension DockModel {
     static func isUnreadUpdateEvent(_ type: String) -> Bool {
         switch type {
         case "background.complete", "message.complete", "approval.request",
-             "clarification.request", "clarify.request", "error":
+            "clarification.request", "clarify.request", "error":
             true
         default:
             false
@@ -225,11 +231,13 @@ extension DockModel {
                 // wait), so settle now like Hermes Desktop instead of waiting on
                 // the unwinding turn's terminal frame, which can lag or never come.
                 guard self.interruptGeneration == requestGeneration, self.sessionID == sessionID,
-                      self.interruptState == .requesting else { return }
+                    self.interruptState == .requesting
+                else { return }
                 settleStoppedTurn()
             } catch {
                 guard self.interruptGeneration == requestGeneration, self.sessionID == sessionID,
-                      self.interruptState == .requesting else { return }
+                    self.interruptState == .requesting
+                else { return }
                 interruptState = .failed("Hermes could not be interrupted. Try again.")
                 DebugLog.write("model: interrupt failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
@@ -240,9 +248,14 @@ extension DockModel {
         try await gateway.request(method.rawValue, params: params)
     }
 
-    func registerBackgroundTask(id: String, prompt: String, parentSessionID: String, kind: HermesBackgroundTaskKind = .general) {
+    func registerBackgroundTask(
+        id: String, prompt: String, parentSessionID: String, kind: HermesBackgroundTaskKind = .general
+    ) {
         guard !id.isEmpty, !backgroundTasks.contains(where: { $0.id == id }) else { return }
-        backgroundTasks.append(HermesBackgroundTask(id: id, parentSessionID: parentSessionID, prompt: prompt, kind: kind, status: .running, output: nil, startedAt: .now, completedAt: nil))
+        backgroundTasks.append(
+            HermesBackgroundTask(
+                id: id, parentSessionID: parentSessionID, prompt: prompt, kind: kind, status: .running, output: nil,
+                startedAt: .now, completedAt: nil))
         if backgroundTasks.count > 50 { backgroundTasks.removeFirst(backgroundTasks.count - 50) }
     }
 
@@ -252,40 +265,58 @@ extension DockModel {
 
     func submitControlPrompt(_ text: String) async throws {
         guard !isRestoringSession else {
-            throw NSError(domain: "Herm", code: 409, userInfo: [NSLocalizedDescriptionKey: "The previous conversation is still loading."])
+            throw NSError(
+                domain: "Herm", code: 409,
+                userInfo: [NSLocalizedDescriptionKey: "The previous conversation is still loading."])
         }
         try await gateway.connect()
         if sessionID == nil {
             _ = try await createAuthorizedSession(source: "herm-control")
         }
         guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
-        _ = try await gateway.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": sessionID, "text": text])
+        _ = try await gateway.request(
+            HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": sessionID, "text": text])
     }
 
     func interruptionNotice(_ kind: HermNotice.Kind, owner: String? = nil, eventID: String? = nil) -> HermNotice {
         let raw = owner ?? navigationSessionID ?? "activity"
         let stable = rowSessionID(raw)
-        let profile = quickSessionOwners[raw]?.profileID ?? sessions.first(where: { $0.id == stable })?.profileID
+        let profile =
+            quickSessionOwners[raw]?.profileID ?? sessions.first(where: { $0.id == stable })?.profileID
             ?? (currentSessionIDs.contains(raw) ? sessionProfileID ?? profileScopeID : nil)
         let request = sessionAttention[raw]?.responseTarget
-        let identity = eventID ?? ([HermNotice.Kind.completion, .failure].contains(kind) ? completionNoticeIDs[stable] : nil)
+        let identity =
+            eventID ?? ([HermNotice.Kind.completion, .failure].contains(kind) ? completionNoticeIDs[stable] : nil)
             ?? (kind.blocking ? request?.requestID : nil) ?? messages.last?.id.uuidString ?? UUID().uuidString
-        return HermNotice(kind: kind, source: raw == "activity" ? .activity : .session,
-                          profileID: profile, sourceID: stable, eventID: identity)
+        return HermNotice(
+            kind: kind, source: raw == "activity" ? .activity : .session,
+            profileID: profile, sourceID: stable, eventID: identity)
     }
 
     func publishWorkflowNotice(_ notice: HermNotice, body: String, openURL: URL? = nil) {
         if interruptionCoordinator?.admit(notice, channel: .system) == false { return }
-        guard defaults.bool(forKey: completionNotificationsKey), !isPopoverVisible, HermesAppRuntime.supportsUserNotifications else { return }
+        guard defaults.bool(forKey: completionNotificationsKey), !isPopoverVisible,
+            HermesAppRuntime.supportsUserNotifications
+        else { return }
         let content = UNMutableNotificationContent()
-        content.title = notice.kind.title; content.body = String(body.prefix(240)); content.sound = .default
-        if let openURL, openURL.scheme == "https", openURL.host == "github.com" { content.userInfo["herm.open-pr"] = openURL.absoluteString }
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil))
+        content.title = notice.kind.title
+        content.body = String(body.prefix(240))
+        content.sound = .default
+        if let openURL, openURL.scheme == "https", openURL.host == "github.com" {
+            content.userInfo["herm.open-pr"] = openURL.absoluteString
+        }
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: notice.id, content: content, trigger: nil))
     }
 
-    func notify(title: String, body: String, identifier: String, approvalRequestID: String? = nil, replyRequestID: String? = nil) {
-        let kind: HermNotice.Kind = identifier.hasPrefix("completed:") ? .completion
-            : identifier.hasPrefix("failure:") ? .failure : identifier.hasPrefix("approval:") ? .approval : .clarification
+    func notify(
+        title: String, body: String, identifier: String, approvalRequestID: String? = nil, replyRequestID: String? = nil
+    ) {
+        let kind: HermNotice.Kind =
+            identifier.hasPrefix("completed:")
+            ? .completion
+            : identifier.hasPrefix("failure:")
+                ? .failure : identifier.hasPrefix("approval:") ? .approval : .clarification
         let owner = identifier.split(separator: ":", maxSplits: 1).last.map(String.init)
         if interruptionCoordinator?.admit(interruptionNotice(kind, owner: owner), channel: .system) == false { return }
         guard !isPopoverVisible, HermesAppRuntime.supportsUserNotifications else { return }
@@ -303,14 +334,18 @@ extension DockModel {
         }
         // A stable ID lets the on-device explanation below replace this banner in place.
         let requestIdentifier = "\(identifier)-\(approvalRequestID ?? UUID().uuidString)"
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: requestIdentifier, content: content, trigger: nil))
-        guard kind == .approval, approvalRequestID != nil, defaults.bool(forKey: OnDeviceAssist.explainApprovalsKey) else { return }
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: requestIdentifier, content: content, trigger: nil))
+        guard kind == .approval, approvalRequestID != nil, defaults.bool(forKey: OnDeviceAssist.explainApprovalsKey)
+        else { return }
         Task {
             guard let explanation = await OnDeviceAssist.explainApproval(title: title, detail: body),
-                  let updated = content.mutableCopy() as? UNMutableNotificationContent else { return }
+                let updated = content.mutableCopy() as? UNMutableNotificationContent
+            else { return }
             updated.subtitle = "\(OnDeviceAssist.attribution) · \(explanation)"
             updated.sound = nil
-            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: requestIdentifier, content: updated, trigger: nil))
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: requestIdentifier, content: updated, trigger: nil))
         }
     }
 }
@@ -325,14 +360,21 @@ enum HermNotificationAction {
     static let requestIDKey = "approval_request_id"
 
     static var categories: Set<UNNotificationCategory> {
-        [UNNotificationCategory(identifier: approvalCategory, actions: [
-            UNNotificationAction(identifier: approve, title: "Approve once", options: []),
-            UNNotificationAction(identifier: deny, title: "Deny", options: [.destructive])
-        ], intentIdentifiers: []),
-         UNNotificationCategory(identifier: clarifyCategory, actions: [
-            UNTextInputNotificationAction(identifier: reply, title: "Reply", options: [],
-                                          textInputButtonTitle: "Send", textInputPlaceholder: "Your answer")
-        ], intentIdentifiers: [])]
+        [
+            UNNotificationCategory(
+                identifier: approvalCategory,
+                actions: [
+                    UNNotificationAction(identifier: approve, title: "Approve once", options: []),
+                    UNNotificationAction(identifier: deny, title: "Deny", options: [.destructive]),
+                ], intentIdentifiers: []),
+            UNNotificationCategory(
+                identifier: clarifyCategory,
+                actions: [
+                    UNTextInputNotificationAction(
+                        identifier: reply, title: "Reply", options: [],
+                        textInputButtonTitle: "Send", textInputPlaceholder: "Your answer")
+                ], intentIdentifiers: []),
+        ]
     }
 
     static func choice(for actionIdentifier: String) -> String? {
@@ -347,7 +389,11 @@ enum HermNotificationAction {
 extension DockModel {
     /// Answers the approval a banner announced; a no-op once that request is no longer pending.
     func answerApproval(requestID: String, choice: String) {
-        guard let request = sessionAttention.values.compactMap(\.responseTarget).first(where: { $0.requestID == requestID }) else { return }
+        guard
+            let request = sessionAttention.values.compactMap(\.responseTarget).first(where: {
+                $0.requestID == requestID
+            })
+        else { return }
         answerAttention(request, choice: choice)
     }
 
@@ -355,7 +401,10 @@ extension DockModel {
     func answerClarification(requestID: String, text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty,
-              let request = sessionAttention.values.compactMap(\.responseTarget).first(where: { $0.requestID == requestID }) else { return }
+            let request = sessionAttention.values.compactMap(\.responseTarget).first(where: {
+                $0.requestID == requestID
+            })
+        else { return }
         answerAttention(request, choice: text, freeText: true)
     }
 }

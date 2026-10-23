@@ -70,13 +70,14 @@ enum VerificationRecipeBuilder {
     static func normalizedCommand(_ raw: String) -> String? {
         let command = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty, command.count <= 240,
-              command.rangeOfCharacter(from: .controlCharacters) == nil,
-              !command.contains("\n"), !command.contains("\r"),
-              command.rangeOfCharacter(from: CharacterSet(charactersIn: ";&|<>$`")) == nil else { return nil }
+            command.rangeOfCharacter(from: .controlCharacters) == nil,
+            !command.contains("\n"), !command.contains("\r"),
+            command.rangeOfCharacter(from: CharacterSet(charactersIn: ";&|<>$`")) == nil
+        else { return nil }
         let prefixes = [
             "swift test", "swift build", "npm test", "npm run", "pnpm test", "pnpm run",
             "yarn test", "yarn run", "cargo test", "go test", "pytest", "python -m pytest",
-            "make test", "xcodebuild test", "xcodebuild build"
+            "make test", "xcodebuild test", "xcodebuild build",
         ]
         guard prefixes.contains(where: { command == $0 || command.hasPrefix($0 + " ") }) else { return nil }
         if command.hasPrefix("npm run ") || command.hasPrefix("pnpm run ") || command.hasPrefix("yarn run ") {

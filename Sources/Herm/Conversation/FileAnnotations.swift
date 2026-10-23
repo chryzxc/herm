@@ -46,10 +46,13 @@ final class FilePreviewCenter: ObservableObject {
     private let saveQueue = DispatchQueue(label: "io.github.chryzxc.Herm.file-reviews-save", qos: .utility)
 
     init(fileURL: URL? = nil) {
-        let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let supportRoot =
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support", isDirectory: true)
         self.fileURL = fileURL ?? supportRoot.appendingPathComponent("Herm/file-reviews.json")
-        self.reviews = (try? Data(contentsOf: self.fileURL))
+        self.reviews =
+            (try? Data(contentsOf: self.fileURL))
             .flatMap { try? JSONDecoder().decode([String: FileReview].self, from: $0) } ?? [:]
     }
 
@@ -103,7 +106,8 @@ final class FilePreviewCenter: ObservableObject {
         let snapshot = reviews
         saveQueue.async { [fileURL] in
             guard let data = try? JSONEncoder().encode(snapshot) else { return }
-            try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: fileURL, options: .atomic)
         }
     }
@@ -116,7 +120,9 @@ enum FileAnnotationText {
     /// Lowercased alphanumerics with single spaces, so rendered selections
     /// (which have lost `**`, backticks, link syntax) match the raw Markdown.
     static func normalized(_ text: String) -> String {
-        let mapped = text.lowercased().unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : " " }
+        let mapped = text.lowercased().unicodeScalars.map {
+            CharacterSet.alphanumerics.contains($0) ? Character($0) : " "
+        }
         return String(mapped).split(separator: " ").joined(separator: " ")
     }
 
@@ -142,7 +148,9 @@ enum FileAnnotationText {
     }
 
     static func prompt(path: String, annotations: [FileAnnotation]) -> String {
-        var lines = ["Please revise `\(path)` in place based on my review notes. Leave everything I didn't comment on unchanged."]
+        var lines = [
+            "Please revise `\(path)` in place based on my review notes. Leave everything I didn't comment on unchanged."
+        ]
         for (index, annotation) in annotations.enumerated() {
             let quote = annotation.quote.map { "\"\($0.replacingOccurrences(of: "\n", with: " "))\"" }
             let line = quote.map { "\($0) → \(annotation.note)" } ?? "[General] \(annotation.note)"

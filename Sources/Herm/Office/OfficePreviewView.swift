@@ -29,9 +29,14 @@ struct OfficePreviewView: View {
     // Not observed here: only the hover card and the scene read it.
     @State private var music = OfficeMusicService()
 
-    init(kanbanTasks: [KanbanTaskSummary] = [], bots: [BotSummary] = [], mainSessions: [OfficeMainSession] = [], onOpenSession: @escaping (String) -> Void = { _ in }, avatarImages: [String: Data] = [:], canAssignTasks: Bool = false, isDataCurrent: Bool = true,
-         subtitle: String = "Live bot assignments in a simulated 3D office", onRefresh: @escaping () -> Void = {}, isRefreshing: Bool = false,
-         onAssignTask: ((KanbanTaskSummary, String) -> Void)? = nil) {
+    init(
+        kanbanTasks: [KanbanTaskSummary] = [], bots: [BotSummary] = [], mainSessions: [OfficeMainSession] = [],
+        onOpenSession: @escaping (String) -> Void = { _ in }, avatarImages: [String: Data] = [:],
+        canAssignTasks: Bool = false, isDataCurrent: Bool = true,
+        subtitle: String = "Live bot assignments in a simulated 3D office", onRefresh: @escaping () -> Void = {},
+        isRefreshing: Bool = false,
+        onAssignTask: ((KanbanTaskSummary, String) -> Void)? = nil
+    ) {
         self.kanbanTasks = kanbanTasks
         self.bots = bots
         self.mainSessions = mainSessions
@@ -43,13 +48,15 @@ struct OfficePreviewView: View {
         self.onRefresh = onRefresh
         self.isRefreshing = isRefreshing
         self.onAssignTask = onAssignTask
-        _simulation = StateObject(wrappedValue: OfficePreviewSimulation(bots: bots, tasks: kanbanTasks, sessions: mainSessions))
+        _simulation = StateObject(
+            wrappedValue: OfficePreviewSimulation(bots: bots, tasks: kanbanTasks, sessions: mainSessions))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DockPageHeader(title: "Office", subtitle: subtitle,
-                           onRefresh: onRefresh, isRefreshing: isRefreshing)
+            DockPageHeader(
+                title: "Office", subtitle: subtitle,
+                onRefresh: onRefresh, isRefreshing: isRefreshing)
 
             GeometryReader { geometry in
                 ZStack {
@@ -249,7 +256,9 @@ private struct OfficeCrewStatusBar: View {
         OfficeHUDPanel {
             HStack(spacing: 2) {
                 ForEach(counts, id: \.0) { status, count in
-                    Button { onSelect(status) } label: {
+                    Button {
+                        onSelect(status)
+                    } label: {
                         HStack(spacing: 6) {
                             OfficeStatusDot(status: status)
                             Text(status.label)
@@ -265,7 +274,10 @@ private struct OfficeCrewStatusBar: View {
                     }
                     .buttonStyle(.dockCompact)
                     .disabled(count == 0)
-                    .help(count > 0 ? "Focus the next \(status.label.lowercased()) bot" : "No \(status.label.lowercased()) bots")
+                    .help(
+                        count > 0
+                            ? "Focus the next \(status.label.lowercased()) bot" : "No \(status.label.lowercased()) bots"
+                    )
                     .accessibilityLabel("\(status.label): \(count) bots")
                 }
             }
@@ -320,7 +332,9 @@ private struct OfficeRosterPanel: View {
     private func row(_ agent: OfficePreviewAgentPresentation) -> some View {
         let status = OfficeAgentStatus(agent: agent, isDataCurrent: isDataCurrent)
         let isSelected = agent.id == selectedID
-        return Button { onSelect(agent.id) } label: {
+        return Button {
+            onSelect(agent.id)
+        } label: {
             HStack(spacing: 9) {
                 OfficeStatusDot(status: status, size: 8)
                 VStack(alignment: .leading, spacing: 2) {
@@ -340,8 +354,14 @@ private struct OfficeRosterPanel: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 44)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isSelected ? Color.dockAccentMuted : Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius).stroke(isSelected ? Color.dockAccent.opacity(0.5) : .clear, lineWidth: 1))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(
+                    isSelected ? Color.dockAccentMuted : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius).stroke(
+                    isSelected ? Color.dockAccent.opacity(0.5) : .clear, lineWidth: 1)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -362,11 +382,13 @@ private struct OfficeToolbar: View {
     var body: some View {
         OfficeHUDPanel {
             HStack(spacing: 4) {
-                iconButton(.users, help: showsAgents ? "Hide bots" : "Show bots",
-                           isOn: showsAgents, action: onToggleAgents)
+                iconButton(
+                    .users, help: showsAgents ? "Hide bots" : "Show bots",
+                    isOn: showsAgents, action: onToggleAgents)
                 if canShowRoster {
-                    iconButton(.sidebarSimple, help: showsRoster ? "Hide crew roster" : "Show crew roster",
-                               isOn: showsRoster, action: onToggleRoster)
+                    iconButton(
+                        .sidebarSimple, help: showsRoster ? "Hide crew roster" : "Show crew roster",
+                        isOn: showsRoster, action: onToggleRoster)
                 }
                 iconButton(.kanban, help: "Kanban task board", isOn: boardSelected, action: onShowBoard)
                 separator
@@ -387,7 +409,9 @@ private struct OfficeToolbar: View {
                 .dockFont(.navigation, weight: .medium)
                 .foregroundStyle(isOn ? Color.dockAccent : Color.dockSecondaryText)
                 .frame(width: 44, height: 44)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isOn ? Color.dockAccentMuted : .clear))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isOn ? Color.dockAccentMuted : .clear)
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -447,8 +471,10 @@ private struct OfficeAgentInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            OfficeInspectorHeader(title: agent.name, subtitle: agent.mainSession != nil ? "Main session" : "Bot",
-                                  onClose: onClose) {
+            OfficeInspectorHeader(
+                title: agent.name, subtitle: agent.mainSession != nil ? "Main session" : "Bot",
+                onClose: onClose
+            ) {
                 ZStack(alignment: .bottomTrailing) {
                     if let bot {
                         BotAvatarView(bot: bot, imageData: avatarData, size: 34)
@@ -466,7 +492,10 @@ private struct OfficeAgentInspector: View {
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    OfficeStatusPill(status: status, text: agent.mainSession != nil || isDataCurrent ? agent.availabilityLabel : "Kanban status not current")
+                    OfficeStatusPill(
+                        status: status,
+                        text: agent.mainSession != nil || isDataCurrent
+                            ? agent.availabilityLabel : "Kanban status not current")
                     if let session = agent.mainSession {
                         sessionContent(session)
                     } else {
@@ -481,7 +510,9 @@ private struct OfficeAgentInspector: View {
 
     @ViewBuilder
     private func sessionContent(_ session: OfficeMainSession) -> some View {
-        Button { onOpenSession(session.id) } label: {
+        Button {
+            onOpenSession(session.id)
+        } label: {
             Label("Open conversation", icon: .chats)
                 .frame(maxWidth: .infinity)
         }
@@ -531,9 +562,13 @@ private struct OfficeAgentInspector: View {
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 if task.lane == .running, let started = task.startedAt {
-                    Label { Text("Running for ") + Text(started, style: .relative) } icon: { DockIcon(.clock) }
-                        .dockFont(.metadata).monospacedDigit()
-                        .foregroundStyle(Color.dockSecondaryText)
+                    Label {
+                        Text("Running for ") + Text(started, style: .relative)
+                    } icon: {
+                        DockIcon(.clock)
+                    }
+                    .dockFont(.metadata).monospacedDigit()
+                    .foregroundStyle(Color.dockSecondaryText)
                 }
             }
             OfficeCard(title: "Task details") { OfficeTaskFields(task: task) }
@@ -550,7 +585,10 @@ private struct OfficeAgentInspector: View {
             Label("Assign existing task…", icon: .plusCircle)
         }
         .disabled(!isDataCurrent || !canAssignTasks || assignableTasks.isEmpty)
-        .help(canAssignTasks ? "Choose an unassigned Kanban task; confirm through Hermes." : "Task assignment is unavailable through the installed Hermes CLI.")
+        .help(
+            canAssignTasks
+                ? "Choose an unassigned Kanban task; confirm through Hermes."
+                : "Task assignment is unavailable through the installed Hermes CLI.")
         OfficeCard(title: "In the office") {
             OfficeField(label: "Activity", value: agent.phase.rawValue.capitalized)
             OfficeField(label: "Destination", value: agent.location.rawValue)
@@ -638,7 +676,9 @@ private struct OfficeBoardInspector: View {
                         Text("No tasks").dockFont(.body).foregroundStyle(Color.dockMetadataText)
                     }
                     ForEach(lane.tasks) { task in
-                        Button { selectedTaskID = selectedTaskID == task.id ? nil : task.id } label: {
+                        Button {
+                            selectedTaskID = selectedTaskID == task.id ? nil : task.id
+                        } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(task.title)
                                     .dockFont(.body, weight: .semibold)
@@ -650,7 +690,9 @@ private struct OfficeBoardInspector: View {
                             }
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface2))
+                            .background(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface2)
+                            )
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)
@@ -661,7 +703,8 @@ private struct OfficeBoardInspector: View {
             }
         }
         .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 
     static func status(for lane: OfficePreviewLane) -> OfficeAgentStatus {
@@ -697,7 +740,8 @@ private struct OfficeCard<Content: View>: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 }
 

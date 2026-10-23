@@ -1,4 +1,5 @@
 import Testing
+
 @testable import Herm
 
 @Suite struct ApprovalChoiceTests {
@@ -11,15 +12,18 @@ import Testing
     @Test func alwaysAllowCaptionNamesTheCommand() {
         let presentation = ApprovalPresentation(title: "Run command", detail: "swift test", detailIsCommand: true)
 
-        #expect(ApprovalPresentation.alwaysAllowCaption(for: presentation)
-            == "Always allow persists this command in Hermes' allowlist. Never ask again for: swift test")
+        #expect(
+            ApprovalPresentation.alwaysAllowCaption(for: presentation)
+                == "Always allow persists this command in Hermes' allowlist. Never ask again for: swift test")
     }
 
     @Test func alwaysAllowCaptionFallsBackForContentFindings() {
-        let presentation = ApprovalPresentation(title: "Review requested action", detail: "recursive delete", detailIsCommand: false)
+        let presentation = ApprovalPresentation(
+            title: "Review requested action", detail: "recursive delete", detailIsCommand: false)
 
-        #expect(ApprovalPresentation.alwaysAllowCaption(for: presentation)
-            == "Hermes may limit this to the current session for content findings.")
+        #expect(
+            ApprovalPresentation.alwaysAllowCaption(for: presentation)
+                == "Hermes may limit this to the current session for content findings.")
     }
 
     @Test func presentationFollowsOfferedChoicesAndReason() {
@@ -42,8 +46,10 @@ import Testing
     @Test func parseCommandAllowlistReadsJSONAndYAML() {
         #expect(ControlCenterModel.parseCommandAllowlist("[]") == [])
         #expect(ControlCenterModel.parseCommandAllowlist("null") == [])
-        #expect(ControlCenterModel.parseCommandAllowlist("[\"swift test *\",\"podman *\"]") == ["swift test *", "podman *"])
-        #expect(ControlCenterModel.parseCommandAllowlist("- 'swift test *'\n- podman *\n") == ["swift test *", "podman *"])
+        #expect(
+            ControlCenterModel.parseCommandAllowlist("[\"swift test *\",\"podman *\"]") == ["swift test *", "podman *"])
+        #expect(
+            ControlCenterModel.parseCommandAllowlist("- 'swift test *'\n- podman *\n") == ["swift test *", "podman *"])
         #expect(ControlCenterModel.parseCommandAllowlist("") == [])
     }
 }

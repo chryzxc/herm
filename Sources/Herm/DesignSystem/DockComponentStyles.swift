@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 
 private func dockAdaptiveColor(light: NSColor, dark: NSColor) -> Color {
-    Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-    })
+    Color(
+        nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        })
 }
 
 extension Color {
@@ -26,9 +27,13 @@ extension Color {
     static var dockSurface6: Color { DockThemePalette(theme: DockThemeRuntime.current).surface6 }
     static var dockSurface8: Color { DockThemePalette(theme: DockThemeRuntime.current).surface8 }
     static var dockMessageBubble: Color { dockSurface }
-    static var dockUserMessageBubble: Color { DockThemeStyle.current.neutralUserBubble ? dockSurface4 : dockAccent.opacity(0.12) }
+    static var dockUserMessageBubble: Color {
+        DockThemeStyle.current.neutralUserBubble ? dockSurface4 : dockAccent.opacity(0.12)
+    }
     /// Opaque panel fill for popovers/overlays: system window colour for the translucent native skins, the skin canvas otherwise.
-    static var dockOpaqueCanvas: Color { DockThemeRuntime.current.usesNativeMaterial ? Color(nsColor: .windowBackgroundColor) : dockCanvas }
+    static var dockOpaqueCanvas: Color {
+        DockThemeRuntime.current.usesNativeMaterial ? Color(nsColor: .windowBackgroundColor) : dockCanvas
+    }
     static var dockControlSurface: Color { dockSurface4 }
     static var dockBorderStrong: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.95) }
     static var dockBorder: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.72) }
@@ -136,7 +141,8 @@ struct DockThemeShape: Shape {
 
 extension DockThemeShape {
     private func pixelPath(in r: CGRect) -> Path {
-        let s = min(role.step, min(r.width, r.height) / 5), d = s * 2
+        let s = min(role.step, min(r.width, r.height) / 5)
+        let d = s * 2
         var p = Path()
         p.addLines([
             CGPoint(x: r.minX + d, y: r.minY), CGPoint(x: r.maxX - d, y: r.minY),
@@ -148,7 +154,7 @@ extension DockThemeShape {
             CGPoint(x: r.minX + d, y: r.maxY - s), CGPoint(x: r.minX + s, y: r.maxY - s),
             CGPoint(x: r.minX + s, y: r.maxY - d), CGPoint(x: r.minX, y: r.maxY - d),
             CGPoint(x: r.minX, y: r.minY + d), CGPoint(x: r.minX + s, y: r.minY + d),
-            CGPoint(x: r.minX + s, y: r.minY + s), CGPoint(x: r.minX + d, y: r.minY + s)
+            CGPoint(x: r.minX + s, y: r.minY + s), CGPoint(x: r.minX + d, y: r.minY + s),
         ])
         p.closeSubpath()
         return p
@@ -161,7 +167,7 @@ extension DockThemeShape {
         p.addLines([
             CGPoint(x: r.minX + c, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
             CGPoint(x: r.maxX, y: r.maxY - c), CGPoint(x: r.maxX - c, y: r.maxY),
-            CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.minX, y: r.minY + c)
+            CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.minX, y: r.minY + c),
         ])
         p.closeSubpath()
         return p
@@ -170,7 +176,8 @@ extension DockThemeShape {
     /// A smoothed closed curve through jittered edge points. The jitter is a
     /// pure function of the rect size, so a shape never shimmers on redraw.
     private func sketchPath(in r: CGRect) -> Path {
-        let inset = max(cornerRadius, 6), amp: CGFloat = 1.3
+        let inset = max(cornerRadius, 6)
+        let amp: CGFloat = 1.3
         func jitter(_ i: Int) -> CGFloat {
             let v = sin(Double(i) * 12.9898 + Double(Int(r.width)) * 0.37 + Double(Int(r.height)) * 0.71) * 43758.5453
             return CGFloat(v - v.rounded(.down)) * 2 - 1
@@ -179,7 +186,7 @@ extension DockThemeShape {
             CGPoint(x: r.minX + inset, y: r.minY), CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX - inset, y: r.minY),
             CGPoint(x: r.maxX, y: r.minY + inset), CGPoint(x: r.maxX, y: r.midY), CGPoint(x: r.maxX, y: r.maxY - inset),
             CGPoint(x: r.maxX - inset, y: r.maxY), CGPoint(x: r.midX, y: r.maxY), CGPoint(x: r.minX + inset, y: r.maxY),
-            CGPoint(x: r.minX, y: r.maxY - inset), CGPoint(x: r.minX, y: r.midY), CGPoint(x: r.minX, y: r.minY + inset)
+            CGPoint(x: r.minX, y: r.maxY - inset), CGPoint(x: r.minX, y: r.midY), CGPoint(x: r.minX, y: r.minY + inset),
         ]
         let pts = base.enumerated().map { CGPoint(x: $1.x + jitter($0 * 2) * amp, y: $1.y + jitter($0 * 2 + 1) * amp) }
         func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
@@ -196,8 +203,10 @@ private struct DockCornerBrackets: Shape {
     var length: CGFloat = 10
     func path(in r: CGRect) -> Path {
         var p = Path()
-        for (corner, dx, dy) in [(CGPoint(x: r.minX, y: r.minY), 1.0, 1.0), (CGPoint(x: r.maxX, y: r.minY), -1.0, 1.0),
-                                 (CGPoint(x: r.minX, y: r.maxY), 1.0, -1.0), (CGPoint(x: r.maxX, y: r.maxY), -1.0, -1.0)] {
+        for (corner, dx, dy) in [
+            (CGPoint(x: r.minX, y: r.minY), 1.0, 1.0), (CGPoint(x: r.maxX, y: r.minY), -1.0, 1.0),
+            (CGPoint(x: r.minX, y: r.maxY), 1.0, -1.0), (CGPoint(x: r.maxX, y: r.maxY), -1.0, -1.0),
+        ] {
             p.move(to: CGPoint(x: corner.x + dx * length, y: corner.y))
             p.addLine(to: corner)
             p.addLine(to: CGPoint(x: corner.x, y: corner.y + dy * length))
@@ -237,21 +246,24 @@ struct DockBackdrop: View {
             .accessibilityHidden(true)
         } else if kind != .none && kind != .etching {
             Canvas { context, size in
-                let step: CGFloat = switch kind {
-                case .none, .grid: style.geometry == .pixel ? 16 : 32
-                case .ruled: 28
-                case .dots: 16
-                case .scanlines: 4
-                case .crosshairs: 40
-                case .rain: 24
-                case .etching: 0
-                }
+                let step: CGFloat =
+                    switch kind {
+                    case .none, .grid: style.geometry == .pixel ? 16 : 32
+                    case .ruled: 28
+                    case .dots: 16
+                    case .scanlines: 4
+                    case .crosshairs: 40
+                    case .rain: 24
+                    case .etching: 0
+                    }
                 var path = Path()
                 if kind == .rain {
                     // Sparse slanted streaks; a fixed lattice hash keeps them static.
                     for (row, y) in stride(from: 0, to: size.height, by: step).enumerated() {
-                        for (column, x) in stride(from: 0, to: size.width, by: step).enumerated() where (row * 7 + column * 3) % 5 == 0 {
-                            let x = x + CGFloat((row * 11) % 17), length = CGFloat(6 + (column * 5 + row) % 9)
+                        for (column, x) in stride(from: 0, to: size.width, by: step).enumerated()
+                        where (row * 7 + column * 3) % 5 == 0 {
+                            let x = x + CGFloat((row * 11) % 17)
+                            let length = CGFloat(6 + (column * 5 + row) % 9)
                             path.move(to: CGPoint(x: x, y: y))
                             path.addLine(to: CGPoint(x: x - length * 0.3, y: y + length))
                         }
@@ -284,19 +296,30 @@ struct DockBackdrop: View {
                 if kind == .rain {
                     // Night city: horizon haze and a low skyline with a few lit windows.
                     let horizon = size.height * 0.45
-                    context.fill(Path(CGRect(x: 0, y: horizon, width: size.width, height: size.height - horizon)),
-                                 with: .linearGradient(Gradient(colors: [accent.opacity(0), accent.opacity(0.07)]), startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: 0, y: size.height)))
-                    var towers = Path(), windows = Path(), x: CGFloat = 0, index = 0
+                    context.fill(
+                        Path(CGRect(x: 0, y: horizon, width: size.width, height: size.height - horizon)),
+                        with: .linearGradient(
+                            Gradient(colors: [accent.opacity(0), accent.opacity(0.07)]),
+                            startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: 0, y: size.height)))
+                    var towers = Path()
+                    var windows = Path()
+                    var x: CGFloat = 0
+                    var index = 0
                     // Tall enough that the roofline clears the floating chat composer.
                     let maxHeight = min(380, size.height * 0.5)
                     while x < size.width {
                         // Scattered heights and open lots keep it a skyline, not a wall.
-                        let width = CGFloat(22 + (index * 29) % 26), height = maxHeight * CGFloat(30 + (index * 37) % 71) / 100
-                        defer { x += width + CGFloat(8 + (index * 13) % 40); index += 1 }
+                        let width = CGFloat(22 + (index * 29) % 26)
+                        let height = maxHeight * CGFloat(30 + (index * 37) % 71) / 100
+                        defer {
+                            x += width + CGFloat(8 + (index * 13) % 40)
+                            index += 1
+                        }
                         if index % 3 == 2 { continue }
                         towers.addRect(CGRect(x: x, y: size.height - height, width: width - 2, height: height))
                         for wy in stride(from: size.height - height + 6, to: size.height - 4, by: 7) {
-                            for wx in stride(from: x + 4, to: x + width - 6, by: 6) where (Int(wx) * 3 + Int(wy) * 7 + index) % 9 == 0 {
+                            for wx in stride(from: x + 4, to: x + width - 6, by: 6)
+                            where (Int(wx) * 3 + Int(wy) * 7 + index) % 9 == 0 {
                                 windows.addRect(CGRect(x: wx, y: wy, width: 2, height: 3))
                             }
                         }
@@ -304,7 +327,8 @@ struct DockBackdrop: View {
                     context.fill(towers, with: .color(.black.opacity(0.22)))
                     context.fill(windows, with: .color(accent.opacity(0.28)))
                 }
-                let opacity: Double = kind == .scanlines ? 0.045 : kind == .crosshairs ? 0.18 : kind == .rain ? 0.16 : 0.09
+                let opacity: Double =
+                    kind == .scanlines ? 0.045 : kind == .crosshairs ? 0.18 : kind == .rain ? 0.16 : 0.09
                 context.stroke(path, with: .color(accent.opacity(opacity)), lineWidth: kind == .dots ? 1 : 0.5)
             }
             .allowsHitTesting(false)
@@ -376,7 +400,9 @@ extension View {
     /// Marks an active/hovered tab, row, or control per the theme's selection
     /// style: tinted fill, inverted ink, or an accent underline. `allowsInvert`
     /// is false for containers whose children set their own text colors.
-    func dockSelectionBackground<S: Shape>(_ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true, theme: DockThemeID = DockThemeRuntime.current) -> some View {
+    func dockSelectionBackground<S: Shape>(
+        _ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true, theme: DockThemeID = DockThemeRuntime.current
+    ) -> some View {
         let mode = theme.style.selection
         let palette = DockThemePalette(theme: theme)
         return background {
@@ -396,8 +422,12 @@ extension View {
                 }
             case .neon where !palette.neonHues.isEmpty:
                 if active {
-                    shape.fill(LinearGradient(colors: [palette.neonHues[0].opacity(0.24), palette.neonHues[1].opacity(0.06)], startPoint: .leading, endPoint: .trailing))
-                        .overlay(shape.stroke(palette.neonHues[0].opacity(0.22), lineWidth: 0.5))
+                    shape.fill(
+                        LinearGradient(
+                            colors: [palette.neonHues[0].opacity(0.24), palette.neonHues[1].opacity(0.06)],
+                            startPoint: .leading, endPoint: .trailing)
+                    )
+                    .overlay(shape.stroke(palette.neonHues[0].opacity(0.22), lineWidth: 0.5))
                 }
             default:
                 shape.fill(active ? fill : .clear)
@@ -419,7 +449,9 @@ extension View {
 
     /// Clay look: paired light and dark soft shadows behind the shape. Pressing
     /// flattens them so the control reads as pushed in.
-    func dockEmboss<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current) -> some View {
+    func dockEmboss<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current)
+        -> some View
+    {
         let depth = theme.style.emboss * (pressed ? 0.3 : 1)
         return background {
             if depth > 0 {
@@ -431,7 +463,9 @@ extension View {
     }
 
     /// Retro look: two-pixel light/dark edges. `pressed` (also used for inset fields) swaps them.
-    func dockBevel(pressed: Bool = false, enabled: Bool = DockThemeStyle.current.bevel) -> some View { overlay(DockBevel(pressed: pressed, enabled: enabled)) }
+    func dockBevel(pressed: Bool = false, enabled: Bool = DockThemeStyle.current.bevel) -> some View {
+        overlay(DockBevel(pressed: pressed, enabled: enabled))
+    }
 
     /// Corner brackets (HUD) or a strip of tape (Notebook) on cards.
     func dockCardMarks(theme: DockThemeID = DockThemeRuntime.current) -> some View {
@@ -441,17 +475,24 @@ extension View {
             if !neon.isEmpty {
                 // Neon rim: a faint gradient outline with a brighter lit top edge.
                 let rim = DockThemeShape(cornerRadius: theme.style.paneRadius, role: .pane, geometry: geometry)
-                rim.stroke(LinearGradient(colors: neon.map { $0.opacity(0.35) }, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-                    .overlay {
-                        rim.stroke(LinearGradient(colors: neon, startPoint: .leading, endPoint: .trailing), lineWidth: 1)
-                            .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.25)))
-                    }
-                    .allowsHitTesting(false)
+                rim.stroke(
+                    LinearGradient(
+                        colors: neon.map { $0.opacity(0.35) }, startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1
+                )
+                .overlay {
+                    rim.stroke(LinearGradient(colors: neon, startPoint: .leading, endPoint: .trailing), lineWidth: 1)
+                        .mask(
+                            LinearGradient(
+                                colors: [.white, .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.25)))
+                }
+                .allowsHitTesting(false)
             }
         }
         .overlay {
             if geometry == .chamfered {
-                DockCornerBrackets().stroke(DockThemePalette(theme: theme).accent, lineWidth: 1.5).allowsHitTesting(false)
+                DockCornerBrackets().stroke(DockThemePalette(theme: theme).accent, lineWidth: 1.5).allowsHitTesting(
+                    false)
             }
         }
         .overlay(alignment: .top) {
@@ -469,7 +510,9 @@ extension View {
     /// view. Themes without a sticker shadow draw nothing. An opaque canvas
     /// copy sits between the ink and the view so translucent fills don't
     /// blend with the shadow into a muddy tone.
-    func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current) -> some View {
+    func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current)
+        -> some View
+    {
         let offset = theme.style.stickerShadow * (pressed ? 0.35 : 1)
         return background {
             if offset > 0 {
@@ -489,7 +532,10 @@ extension View {
                 let crease = DockFoldCrease(size: DockThemeShapeRole.pane.foldSize)
                 crease
                     .fill(DockThemePalette(theme: theme).background.opacity(0.72))
-                    .overlay(crease.stroke(DockThemePalette(theme: theme).divider.opacity(0.75), lineWidth: DockLayout.hairline))
+                    .overlay(
+                        crease.stroke(
+                            DockThemePalette(theme: theme).divider.opacity(0.75), lineWidth: DockLayout.hairline)
+                    )
                     .allowsHitTesting(false)
             }
         }
@@ -650,7 +696,10 @@ struct DockHoverButtonStyle: ButtonStyle {
             .opacity(isEnabled ? 1 : 0.42)
             // Squash on press, spring back on release.
             .scaleEffect(configuration.isPressed && !reduceMotion ? DockThemeStyle.current.pressScale : 1)
-            .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed, duration: 0.2), value: configuration.isPressed)
+            .animation(
+                reduceMotion ? nil : .dockFeedback(configuration.isPressed, duration: 0.2),
+                value: configuration.isPressed
+            )
             .animation(reduceMotion ? nil : .dockFeedback(isHovering, duration: 0.12), value: isHovering)
             .onHover { isHovering = $0 }
     }
@@ -689,21 +738,36 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .dockFont(.control)
             .foregroundStyle(Self.foregroundColor)
             .padding(.horizontal, DockWorkspaceScale.points(isCompact ? 10 : 12, scale: workspaceScale))
-            .frame(minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale))
+            .frame(
+                minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale)
+            )
             .background {
                 if isGlass {
-                    Color.clear.dockLiquidGlass(shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true, elevated: true)
+                    Color.clear.dockLiquidGlass(
+                        shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true, elevated: true)
                 } else if !neon.isEmpty {
                     // Neon skins: a solid accent-to-magenta fill that glows brighter on hover.
-                    shape.fill(LinearGradient(colors: configuration.role == .destructive ? [tint, tint] : [neon[0], neon[1]], startPoint: .leading, endPoint: .trailing))
-                        .brightness(configuration.isPressed ? -0.08 : highlighted ? 0.05 : 0)
-                        .shadow(color: (configuration.role == .destructive ? tint : neon[1]).opacity(highlighted ? 0.55 : 0.3), radius: highlighted ? 10 : 6)
+                    shape.fill(
+                        LinearGradient(
+                            colors: configuration.role == .destructive ? [tint, tint] : [neon[0], neon[1]],
+                            startPoint: .leading, endPoint: .trailing)
+                    )
+                    .brightness(configuration.isPressed ? -0.08 : highlighted ? 0.05 : 0)
+                    .shadow(
+                        color: (configuration.role == .destructive ? tint : neon[1]).opacity(highlighted ? 0.55 : 0.3),
+                        radius: highlighted ? 10 : 6)
                 } else {
                     shape.fill(tint.opacity(configuration.isPressed ? 0.30 : highlighted ? 0.24 : 0.14))
                         .background(shape.fill(Color.dockCanvas))
                         .overlay(shape.stroke(tint.opacity(highlighted ? 0.6 : 0.35), lineWidth: DockLayout.outline))
                         // Glossy skins add a top-down sheen.
-                        .overlay { if DockThemeStyle.current.accentGradient { shape.fill(LinearGradient(colors: [.white.opacity(0.16), .clear], startPoint: .top, endPoint: .center)) } }
+                        .overlay {
+                            if DockThemeStyle.current.accentGradient {
+                                shape.fill(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.16), .clear], startPoint: .top, endPoint: .center))
+                            }
+                        }
                 }
             }
             .dockStickerShadow(shape, pressed: configuration.isPressed)
@@ -735,14 +799,20 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .dockFont(.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(.horizontal, DockWorkspaceScale.points(isCompact ? 10 : 12, scale: workspaceScale))
-            .frame(minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale))
+            .frame(
+                minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale)
+            )
             .background {
                 // Glass matches macOS `.glass`: interactive glass supplies hover/press and rim, so no outline.
                 if DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(shape, interactive: true, elevated: true)
                 } else {
-                    shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6))
-                        .overlay(shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, DockLayout.outline)))
+                    shape.fill(
+                        configuration.isPressed
+                            ? Color.dockSurface6
+                            : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)
+                    )
+                    .overlay(shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, DockLayout.outline)))
                 }
             }
             .dockStickerShadow(shape, pressed: configuration.isPressed)
@@ -774,7 +844,9 @@ struct DockToggleStyle: ToggleStyle {
                         .fill(configuration.isOn ? Color.dockAccent.opacity(0.24) : Color.dockSurface6)
                         .overlay {
                             Capsule()
-                                .stroke(configuration.isOn ? Color.dockAccent.opacity(0.72) : Color.dockBorderStrong, lineWidth: max(0.7, DockLayout.outline))
+                                .stroke(
+                                    configuration.isOn ? Color.dockAccent.opacity(0.72) : Color.dockBorderStrong,
+                                    lineWidth: max(0.7, DockLayout.outline))
                         }
                     Circle()
                         .fill(configuration.isOn ? Color.dockAccent : Color.dockSecondaryText)
@@ -873,8 +945,9 @@ struct DockPageHeader<Trailing: View>: View {
     private var refreshButton: some View {
         Group {
             if let onRefresh {
-                DockIconButton(icon: .arrowsClockwise, label: "Refresh", isBusy: isRefreshing,
-                               style: DockThemePalette(theme: DockThemeRuntime.current), action: onRefresh)
+                DockIconButton(
+                    icon: .arrowsClockwise, label: "Refresh", isBusy: isRefreshing,
+                    style: DockThemePalette(theme: DockThemeRuntime.current), action: onRefresh)
             }
         }
     }
@@ -959,8 +1032,14 @@ extension EnvironmentValues {
 }
 
 extension DockPageHeader where Trailing == EmptyView {
-    init(title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false, sidebarCollapsed: Binding<Bool>? = nil) {
-        self.init(title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing, sidebarCollapsed: sidebarCollapsed) { EmptyView() }
+    init(
+        title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false,
+        sidebarCollapsed: Binding<Bool>? = nil
+    ) {
+        self.init(
+            title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing,
+            sidebarCollapsed: sidebarCollapsed
+        ) { EmptyView() }
     }
 }
 
@@ -995,10 +1074,14 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
 }
 
 extension DockExpandedPage where Trailing == EmptyView {
-    init(title: String, subtitle: String, help: String? = nil, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false,
-         close: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
-        self.init(title: title, subtitle: subtitle, help: help, onRefresh: onRefresh, isRefreshing: isRefreshing,
-                  close: close, trailing: { EmptyView() }, content: content)
+    init(
+        title: String, subtitle: String, help: String? = nil, onRefresh: (() -> Void)? = nil,
+        isRefreshing: Bool = false,
+        close: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.init(
+            title: title, subtitle: subtitle, help: help, onRefresh: onRefresh, isRefreshing: isRefreshing,
+            close: close, trailing: { EmptyView() }, content: content)
     }
 }
 
@@ -1351,7 +1434,10 @@ extension Shape {
     /// Neutral outlines are dropped on glass (native glass has its own rim);
     /// pass `strokeOnGlass` for strokes that carry state such as focus or tint.
     @MainActor @ViewBuilder
-    func dockSurfaceFill(_ fallback: Color, interactive: Bool = false, stroke: Color? = nil, lineWidth: CGFloat = DockLayout.hairline, strokeOnGlass: Bool = false) -> some View {
+    func dockSurfaceFill(
+        _ fallback: Color, interactive: Bool = false, stroke: Color? = nil, lineWidth: CGFloat = DockLayout.hairline,
+        strokeOnGlass: Bool = false
+    ) -> some View {
         if DockThemeStyle.current.material == .glass {
             Color.clear.dockLiquidGlass(self, interactive: interactive)
                 .overlay { if strokeOnGlass, let stroke { self.stroke(stroke, lineWidth: lineWidth) } }
@@ -1391,33 +1477,49 @@ extension View {
     /// older systems get a blurred body with a specular rim and top sheen, so
     /// rows of chips and cards never smear their shadows together.
     @ViewBuilder
-    func dockLiquidGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = false, elevated: Bool = false) -> some View {
+    func dockLiquidGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = false, elevated: Bool = false)
+        -> some View
+    {
         if elevated, #available(macOS 26.0, *) {
-            self.glassEffect({ var g = Glass.regular; if let tint { g = g.tint(tint) }; return interactive ? g.interactive() : g }(), in: shape)
+            self.glassEffect(
+                {
+                    var g = Glass.regular
+                    if let tint { g = g.tint(tint) }
+                    return interactive ? g.interactive() : g
+                }(), in: shape)
         } else {
             // Translucent surface body: materials alone vanish over the clear glass window.
             self
                 .background(shape.fill(.thinMaterial))
                 .background(shape.fill((tint ?? .clear).opacity(0.55)))
                 .background(shape.fill(Color.dockSurface))
-                .background(shape.fill(LinearGradient(colors: [.white.opacity(0.14), .clear], startPoint: .top, endPoint: .center)))
+                .background(
+                    shape.fill(
+                        LinearGradient(colors: [.white.opacity(0.14), .clear], startPoint: .top, endPoint: .center))
+                )
                 .background(shape.fill(Color.dockLightGlassLift))
                 .overlay(shape.stroke(Color.dockLightGlassEdge, lineWidth: DockLayout.hairline))
-                .overlay(shape.stroke(
-                    LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1
-                ))
+                .overlay(
+                    shape.stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1
+                    ))
         }
     }
 
     /// Floating panels (menus, popovers, navigators): Liquid Glass on the glass
     /// skin; elsewhere an opaque canvas so content beneath never bleeds through.
     @ViewBuilder
-    func dockFloatingSurface<S: Shape>(_ shape: S, tint: Color = .clear, stroke: Color = .dockBorder, lineWidth: CGFloat = DockLayout.hairline) -> some View {
+    func dockFloatingSurface<S: Shape>(
+        _ shape: S, tint: Color = .clear, stroke: Color = .dockBorder, lineWidth: CGFloat = DockLayout.hairline
+    ) -> some View {
         if DockThemeStyle.current.material == .glass {
             dockLiquidGlass(shape, elevated: true)
         } else {
-            background(shape.fill(tint)).background(shape.fill(Color.dockOpaqueCanvas)).overlay(shape.stroke(stroke, lineWidth: lineWidth))
+            background(shape.fill(tint)).background(shape.fill(Color.dockOpaqueCanvas)).overlay(
+                shape.stroke(stroke, lineWidth: lineWidth))
         }
     }
 
@@ -1434,11 +1536,14 @@ extension View {
     /// into a separate card.
     func dockListRow(isHighlighted: Bool = false) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
-        return self
+        return
+            self
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
-            .dockSelectionBackground(shape, active: isHighlighted, fill: Color.dockAccent.opacity(0.10), allowsInvert: false)
+            .dockSelectionBackground(
+                shape, active: isHighlighted, fill: Color.dockAccent.opacity(0.10), allowsInvert: false
+            )
             .overlay(alignment: .bottom) {
                 Color.dockBorderLight
                     .opacity(isHighlighted ? 0 : 1)
@@ -1465,7 +1570,12 @@ extension View {
                 .padding(padding)
                 .background(shape.fill(Color.dockSurface.opacity(style.cardFill)))
                 // A 0-width stroke still draws a hairline, so outline-free skins skip it.
-                .overlay(shape.stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline).opacity(DockLayout.outline > 0 ? 1 : 0))
+                .overlay(
+                    shape.stroke(
+                        DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72),
+                        lineWidth: DockLayout.outline
+                    ).opacity(DockLayout.outline > 0 ? 1 : 0)
+                )
                 .dockStickerShadow(shape)
                 .dockFoldCrease()
                 .dockEmboss(shape)
@@ -1478,8 +1588,11 @@ extension View {
     /// Soft drop shadow and accent halo for themes that opt in; both are 0 by default.
     func dockCardDepth() -> some View {
         let style = DockThemeStyle.current
-        return shadow(color: Color.black.opacity(style.cardShadow > 0 ? 0.14 : 0), radius: style.cardShadow, y: style.cardShadow / 3)
-            .shadow(color: Color.dockAccent.opacity(style.glow > 0 ? 0.22 : 0), radius: style.glow)
+        return shadow(
+            color: Color.black.opacity(style.cardShadow > 0 ? 0.14 : 0), radius: style.cardShadow,
+            y: style.cardShadow / 3
+        )
+        .shadow(color: Color.dockAccent.opacity(style.glow > 0 ? 0.22 : 0), radius: style.glow)
     }
 }
 
@@ -1494,12 +1607,26 @@ struct DockTabButton: View {
         Button(action: action) {
             Text(title)
                 .dockFont(.metadata, weight: isSelected ? .medium : .regular)
-                .foregroundStyle(isSelected ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText) : Color.dockSecondaryText)
+                .foregroundStyle(
+                    isSelected
+                        ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
+                        : Color.dockSecondaryText
+                )
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .dockSelectionBackground(shape, active: isSelected, fill: DockThemeStyle.current.material == .glass ? .clear : Color.dockSurface4)
-                .background { if isSelected && DockThemeStyle.current.material == .glass { Color.clear.dockLiquidGlass(shape, interactive: true) } }
-                .overlay(shape.stroke(isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
+                .dockSelectionBackground(
+                    shape, active: isSelected,
+                    fill: DockThemeStyle.current.material == .glass ? .clear : Color.dockSurface4
+                )
+                .background {
+                    if isSelected && DockThemeStyle.current.material == .glass {
+                        Color.clear.dockLiquidGlass(shape, interactive: true)
+                    }
+                }
+                .overlay(
+                    shape.stroke(
+                        isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear,
+                        lineWidth: DockLayout.outline))
         }
         .buttonStyle(.dockHover)
         .contentShape(shape)
@@ -1551,11 +1678,12 @@ private struct DockPinnedColorScheme: ViewModifier {
     @Environment(\.colorScheme) private var systemColorScheme
 
     func body(content: Content) -> some View {
-        let colorScheme: ColorScheme = switch DockThemeRuntime.current.appearance {
-        case .light: .light
-        case .dark: .dark
-        case .system: systemColorScheme
-        }
+        let colorScheme: ColorScheme =
+            switch DockThemeRuntime.current.appearance {
+            case .light: .light
+            case .dark: .dark
+            case .system: systemColorScheme
+            }
         // Keep content identity stable so skin changes preserve navigation and drafts.
         return content.environment(\.colorScheme, colorScheme)
     }
@@ -1568,14 +1696,19 @@ struct DockBevel: View {
     var body: some View {
         if enabled {
             Canvas { context, size in
-                let w = size.width, h = size.height
-                let light = Color.white, dark = Color.black.opacity(0.55)
+                let w = size.width
+                let h = size.height
+                let light = Color.white
+                let dark = Color.black.opacity(0.55)
                 func edge(_ points: [CGPoint], _ color: Color) {
-                    var path = Path(); path.addLines(points)
+                    var path = Path()
+                    path.addLines(points)
                     context.stroke(path, with: .color(color), lineWidth: 2)
                 }
                 edge([CGPoint(x: 1, y: h - 1), CGPoint(x: 1, y: 1), CGPoint(x: w - 1, y: 1)], pressed ? dark : light)
-                edge([CGPoint(x: w - 1, y: 1), CGPoint(x: w - 1, y: h - 1), CGPoint(x: 1, y: h - 1)], pressed ? light : dark)
+                edge(
+                    [CGPoint(x: w - 1, y: 1), CGPoint(x: w - 1, y: h - 1), CGPoint(x: 1, y: h - 1)],
+                    pressed ? light : dark)
             }
             .allowsHitTesting(false)
         }
@@ -1600,9 +1733,15 @@ struct DockTextField: View {
     }
 }
 
-private extension Color {
+extension Color {
     /// Light appearance only: the white rim and sheen vanish on a pale window,
     /// so inline glass gets a whiter body and a faint dark edge. Dark is untouched.
-    static let dockLightGlassLift = Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white.withAlphaComponent(0.5) : .clear })
-    static let dockLightGlassEdge = Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.black.withAlphaComponent(0.12) : .clear })
+    fileprivate static let dockLightGlassLift = Color(
+        nsColor: NSColor(name: nil) {
+            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white.withAlphaComponent(0.5) : .clear
+        })
+    fileprivate static let dockLightGlassEdge = Color(
+        nsColor: NSColor(name: nil) {
+            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.black.withAlphaComponent(0.12) : .clear
+        })
 }

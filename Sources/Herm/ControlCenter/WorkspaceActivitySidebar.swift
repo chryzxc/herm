@@ -1,7 +1,7 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 struct WorkspaceActivitySidebar: View {
@@ -21,7 +21,9 @@ struct WorkspaceActivitySidebar: View {
             return jobs.first?.id
         }
 
-        static func runs(_ runs: [CronRunSummary], scope: AutomationHistoryScope, selectedJobID: String?) -> [CronRunSummary] {
+        static func runs(_ runs: [CronRunSummary], scope: AutomationHistoryScope, selectedJobID: String?)
+            -> [CronRunSummary]
+        {
             guard scope == .selected, let selectedJobID else { return runs }
             return runs.filter { $0.jobID == selectedJobID }
         }
@@ -205,220 +207,268 @@ struct WorkspaceActivitySidebar: View {
 
     var body: some View {
         observedSidebar
-        .sheet(isPresented: $isShowingCommandPalette) {
-            DockActionPalette(repositoryAvailable: activeRepositoryPath != nil, isWorking: model.status == .working) { command in
-                run(command)
-                isShowingCommandPalette = false
-            }
-        }
-        .sheet(item: $kanbanMutationRequest) { request in
-            KanbanMutationEditor(request: request, assignees: control.kanbanAssignees, isPending: control.isActionPending(control.kanbanActionID(request.kind, task: request.task))) { updated in
-                control.mutateKanban(updated)
-            }
-        }
-        .sheet(item: $cronEditJob) { job in
-            CronEditEditor(job: job, control: control)
-        }
-        .sheet(item: $cronReportRequest) { request in
-            CronReportDetailSheet(request: request, control: control)
-        }
-        .sheet(isPresented: $isShowingAutomationComposer) {
-            automationComposer
-        }
-        .confirmationDialog("Remove Scheduled Job?", isPresented: $isShowingCronRemovalConfirmation) {
-            if let job = cronRemovalRequest {
-                Button("Remove Job", role: .destructive) { control.removeCron(job) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let job = cronRemovalRequest {
-                Text("Hermes will remove ‘\(job.name)’ from the scheduler.")
-            }
-        }
-        .confirmationDialog("Run Scheduled Job Now?", isPresented: $isShowingCronRunConfirmation) {
-            if let job = cronRunRequest {
-                Button("Run Job Now") { control.runCronNow(job) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let job = cronRunRequest {
-                Text("Hermes will start ‘\(job.name)’ immediately, in addition to its normal schedule.")
-            }
-        }
-        .confirmationDialog("Create Scheduled Job?", isPresented: $isShowingAutomationConfirmation) {
-            Button("Create Job") {
-                Task {
-                    if await control.createCron(name: automationName, schedule: automationSchedule, prompt: automationPrompt) {
-                        automationName = ""
-                        automationSchedule = ""
-                        automationPrompt = ""
-                        isShowingAutomationComposer = false
-                        control.refresh()
-                        control.refreshCronRuns()
-                        reconcileSelectedCronJob()
-                    }
+            .sheet(isPresented: $isShowingCommandPalette) {
+                DockActionPalette(repositoryAvailable: activeRepositoryPath != nil, isWorking: model.status == .working)
+                { command in
+                    run(command)
+                    isShowingCommandPalette = false
                 }
             }
-            .disabled(control.isActionPending("cron.create"))
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will create ‘\(automationName)’ on schedule ‘\(automationSchedule)’." )
-        }
-        .confirmationDialog("Reload MCP Tools?", isPresented: $isShowingMCPReloadConfirmation) {
-            Button("Reload MCP Tools") { control.reloadMCP() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will invalidate the active session's cached MCP tool snapshot and reload configured servers.")
-        }
-        .confirmationDialog("Create Kanban Task?", isPresented: $isShowingKanbanConfirmation) {
-            Button("Create Kanban Task") {
-                Task {
-                    if await control.createKanbanTask(title: kanbanTitle, body: kanbanBody) {
-                        kanbanTitle = ""
-                        kanbanBody = ""
-                        isShowingKanbanComposer = false
-                    }
+            .sheet(item: $kanbanMutationRequest) { request in
+                KanbanMutationEditor(
+                    request: request, assignees: control.kanbanAssignees,
+                    isPending: control.isActionPending(control.kanbanActionID(request.kind, task: request.task))
+                ) { updated in
+                    control.mutateKanban(updated)
                 }
             }
-            .disabled(control.isCreatingKanbanTask)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will create this task in the authoritative Kanban board through its CLI.")
-        }
-        .confirmationDialog("Change Kanban Task?", isPresented: $isShowingKanbanChangeConfirmation) {
-            if let request = kanbanChangeRequest {
-                Button(kanbanActionTitle(for: request.action)) {
-                    control.updateKanbanTask(request.task, action: request.action)
+            .sheet(item: $cronEditJob) { job in
+                CronEditEditor(job: job, control: control)
+            }
+            .sheet(item: $cronReportRequest) { request in
+                CronReportDetailSheet(request: request, control: control)
+            }
+            .sheet(isPresented: $isShowingAutomationComposer) {
+                automationComposer
+            }
+            .confirmationDialog("Remove Scheduled Job?", isPresented: $isShowingCronRemovalConfirmation) {
+                if let job = cronRemovalRequest {
+                    Button("Remove Job", role: .destructive) { control.removeCron(job) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let job = cronRemovalRequest {
+                    Text("Hermes will remove ‘\(job.name)’ from the scheduler.")
                 }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let request = kanbanChangeRequest {
-                let action = request.action.rawValue
-                let title = request.task.title
-                Text(verbatim: "Hermes will " + action + " ‘" + title + "’ on the authoritative Kanban board.")
-            }
-        }
-        .confirmationDialog("Undo Last Turn?", isPresented: $isShowingUndoConfirmation) {
-            Button("Undo Last Turn", role: .destructive) { Task { _ = await control.undoActiveSession() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will remove the latest real user turn and its following output. This cannot be recovered through Herm.")
-        }
-        .confirmationDialog("Create Session Branch?", isPresented: $isShowingBranchConfirmation) {
-            Button("Create Branch") { Task { _ = await control.branchActiveSession(name: sessionBranchName) } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will create a new session branch from the current conversation.")
-        }
-        .confirmationDialog("Compress Session Context?", isPresented: $isShowingCompressConfirmation) {
-            Button("Compress Context") { Task { _ = await control.compressActiveSession(focusTopic: sessionCompressTopic) } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will summarize the current session context. The session remains authoritative.")
-        }
-        .confirmationDialog("Create Hermes Handoff?", isPresented: $isShowingHandoffConfirmation) {
-            Button("Create Handoff") {
-                let prompt = workflow.handoffPrompt(focus: handoffFocus, verification: control.verification, review: workflow.review)
-                Task {
-                    if await control.startBackgroundTask(prompt, kind: .handoff) {
-                        handoffFocus = ""
-                    }
+            .confirmationDialog("Run Scheduled Job Now?", isPresented: $isShowingCronRunConfirmation) {
+                if let job = cronRunRequest {
+                    Button("Run Job Now") { control.runCronNow(job) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let job = cronRunRequest {
+                    Text("Hermes will start ‘\(job.name)’ immediately, in addition to its normal schedule.")
                 }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will prepare a no-edit Markdown handoff in the current session. The result stays in the current Herm runtime until you copy or explicitly send it elsewhere.")
-        }
-        .confirmationDialog("Change Global Delegation?", isPresented: $isShowingDelegationConfirmation) {
-            Button(control.delegationPaused ? "Resume Delegation" : "Pause Delegation") {
-                Task { _ = await control.pauseDelegation(!control.delegationPaused) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This changes delegation for Hermes globally, not only for the current session.")
-        }
-        .confirmationDialog("Pause New Hermes Work?", isPresented: $isShowingEmergencyStopConfirmation) {
-            Button("Pause New Work", role: .destructive) {
-                control.engageEmergencyStop(reason: "Paused from Herm")
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will stop new cron, Kanban, and gateway turns. In-flight work will continue.")
-        }
-        .confirmationDialog("Resume New Hermes Work?", isPresented: $isShowingEmergencyResumeConfirmation) {
-            Button("Resume New Work") {
-                control.releaseEmergencyStop()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Hermes will resume accepting new cron, Kanban, and gateway turns globally.")
-        }
-        .confirmationDialog("Restore Session Checkpoint?", isPresented: Binding(get: { checkpointForRestore != nil }, set: { if !$0 { control.cancelRestoreCheckpoint(); checkpointForRestore = nil } })) {
-            if let checkpoint = checkpointForRestore {
-                Button("Restore Checkpoint", role: .destructive) {
+            .confirmationDialog("Create Scheduled Job?", isPresented: $isShowingAutomationConfirmation) {
+                Button("Create Job") {
                     Task {
-                        _ = await control.restoreCheckpoint(checkpoint)
-                        checkpointForRestore = nil
+                        if await control.createCron(
+                            name: automationName, schedule: automationSchedule, prompt: automationPrompt)
+                        {
+                            automationName = ""
+                            automationSchedule = ""
+                            automationPrompt = ""
+                            isShowingAutomationComposer = false
+                            control.refresh()
+                            control.refreshCronRuns()
+                            reconcileSelectedCronJob()
+                        }
                     }
                 }
+                .disabled(control.isActionPending("cron.create"))
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Hermes will create ‘\(automationName)’ on schedule ‘\(automationSchedule)’.")
             }
-            Button("Cancel", role: .cancel) { control.cancelRestoreCheckpoint(); checkpointForRestore = nil }
-        } message: {
-            if let checkpoint = checkpointForRestore {
-                Text("Hermes will restore this session to checkpoint \(checkpoint.hash). Changes after that checkpoint cannot be recovered through Herm.")
+            .confirmationDialog("Reload MCP Tools?", isPresented: $isShowingMCPReloadConfirmation) {
+                Button("Reload MCP Tools") { control.reloadMCP() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Hermes will invalidate the active session's cached MCP tool snapshot and reload configured servers."
+                )
             }
-        }
-        .confirmationDialog("Change Project?", isPresented: $isShowingProjectMutationConfirmation) {
-            if let mutation = pendingProjectMutation, let project = control.selectedProject {
-                switch mutation {
-                case .activate:
-                    Button("Set Active Project") { Task { _ = await control.setActiveProject(project) } }
-                case .archive:
-                    Button("Archive Project", role: .destructive) { Task { _ = await control.archiveProject(project) } }
-                case .delete:
-                    Button("Delete Project", role: .destructive) { Task { _ = await control.deleteProject(project) } }
+            .confirmationDialog("Create Kanban Task?", isPresented: $isShowingKanbanConfirmation) {
+                Button("Create Kanban Task") {
+                    Task {
+                        if await control.createKanbanTask(title: kanbanTitle, body: kanbanBody) {
+                            kanbanTitle = ""
+                            kanbanBody = ""
+                            isShowingKanbanComposer = false
+                        }
+                    }
+                }
+                .disabled(control.isCreatingKanbanTask)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Hermes will create this task in the authoritative Kanban board through its CLI.")
+            }
+            .confirmationDialog("Change Kanban Task?", isPresented: $isShowingKanbanChangeConfirmation) {
+                if let request = kanbanChangeRequest {
+                    Button(kanbanActionTitle(for: request.action)) {
+                        control.updateKanbanTask(request.task, action: request.action)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let request = kanbanChangeRequest {
+                    let action = request.action.rawValue
+                    let title = request.task.title
+                    Text(verbatim: "Hermes will " + action + " ‘" + title + "’ on the authoritative Kanban board.")
                 }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let mutation = pendingProjectMutation, let project = control.selectedProject {
-                Text(projectMutationMessage(mutation, project: project))
+            .confirmationDialog("Undo Last Turn?", isPresented: $isShowingUndoConfirmation) {
+                Button("Undo Last Turn", role: .destructive) { Task { _ = await control.undoActiveSession() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Hermes will remove the latest real user turn and its following output. This cannot be recovered through Herm."
+                )
             }
-        }
-        .confirmationDialog("Create Project?", isPresented: $isShowingProjectCreationConfirmation) {
-            if let folder = pendingProjectFolder {
-                Button("Create Project") {
-                    let name = folder.lastPathComponent
-                    Task { _ = await control.createProject(name: name, folder: folder.path) }
+            .confirmationDialog("Create Session Branch?", isPresented: $isShowingBranchConfirmation) {
+                Button("Create Branch") { Task { _ = await control.branchActiveSession(name: sessionBranchName) } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Hermes will create a new session branch from the current conversation.")
+            }
+            .confirmationDialog("Compress Session Context?", isPresented: $isShowingCompressConfirmation) {
+                Button("Compress Context") {
+                    Task { _ = await control.compressActiveSession(focusTopic: sessionCompressTopic) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Hermes will summarize the current session context. The session remains authoritative.")
+            }
+            .confirmationDialog("Create Hermes Handoff?", isPresented: $isShowingHandoffConfirmation) {
+                Button("Create Handoff") {
+                    let prompt = workflow.handoffPrompt(
+                        focus: handoffFocus, verification: control.verification, review: workflow.review)
+                    Task {
+                        if await control.startBackgroundTask(prompt, kind: .handoff) {
+                            handoffFocus = ""
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Hermes will prepare a no-edit Markdown handoff in the current session. The result stays in the current Herm runtime until you copy or explicitly send it elsewhere."
+                )
+            }
+            .confirmationDialog("Change Global Delegation?", isPresented: $isShowingDelegationConfirmation) {
+                Button(control.delegationPaused ? "Resume Delegation" : "Pause Delegation") {
+                    Task { _ = await control.pauseDelegation(!control.delegationPaused) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This changes delegation for Hermes globally, not only for the current session.")
+            }
+            .confirmationDialog("Pause New Hermes Work?", isPresented: $isShowingEmergencyStopConfirmation) {
+                Button("Pause New Work", role: .destructive) {
+                    control.engageEmergencyStop(reason: "Paused from Herm")
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Hermes will stop new cron, Kanban, and gateway turns. In-flight work will continue.")
+            }
+            .confirmationDialog("Resume New Hermes Work?", isPresented: $isShowingEmergencyResumeConfirmation) {
+                Button("Resume New Work") {
+                    control.releaseEmergencyStop()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Hermes will resume accepting new cron, Kanban, and gateway turns globally.")
+            }
+            .confirmationDialog(
+                "Restore Session Checkpoint?",
+                isPresented: Binding(
+                    get: { checkpointForRestore != nil },
+                    set: {
+                        if !$0 {
+                            control.cancelRestoreCheckpoint()
+                            checkpointForRestore = nil
+                        }
+                    })
+            ) {
+                if let checkpoint = checkpointForRestore {
+                    Button("Restore Checkpoint", role: .destructive) {
+                        Task {
+                            _ = await control.restoreCheckpoint(checkpoint)
+                            checkpointForRestore = nil
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    control.cancelRestoreCheckpoint()
+                    checkpointForRestore = nil
+                }
+            } message: {
+                if let checkpoint = checkpointForRestore {
+                    Text(
+                        "Hermes will restore this session to checkpoint \(checkpoint.hash). Changes after that checkpoint cannot be recovered through Herm."
+                    )
                 }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let folder = pendingProjectFolder {
-                Text("Hermes will create a project named \(folder.lastPathComponent) for this folder.")
-            }
-        }
-        .confirmationDialog("Stop Hermes Process?", isPresented: Binding(get: { pendingProcess != nil }, set: { if !$0 { pendingProcess = nil } })) {
-            if let process = pendingProcess {
-                Button("Stop \(process.name)", role: .destructive) {
-                    Task { _ = await control.killProcess(process); pendingProcess = nil }
+            .confirmationDialog("Change Project?", isPresented: $isShowingProjectMutationConfirmation) {
+                if let mutation = pendingProjectMutation, let project = control.selectedProject {
+                    switch mutation {
+                    case .activate:
+                        Button("Set Active Project") { Task { _ = await control.setActiveProject(project) } }
+                    case .archive:
+                        Button("Archive Project", role: .destructive) {
+                            Task { _ = await control.archiveProject(project) }
+                        }
+                    case .delete:
+                        Button("Delete Project", role: .destructive) {
+                            Task { _ = await control.deleteProject(project) }
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let mutation = pendingProjectMutation, let project = control.selectedProject {
+                    Text(projectMutationMessage(mutation, project: project))
                 }
             }
-            Button("Cancel", role: .cancel) { pendingProcess = nil }
-        } message: {
-            Text("Hermes will terminate only the selected process in the active session.")
-        }
-        .confirmationDialog("Interrupt Hermes Agent?", isPresented: Binding(get: { pendingAgentID != nil }, set: { if !$0 { pendingAgentID = nil } })) {
-            if let agentID = pendingAgentID {
-                Button("Interrupt Agent", role: .destructive) {
-                    Task { _ = await control.interruptSubagent(agentID); pendingAgentID = nil }
+            .confirmationDialog("Create Project?", isPresented: $isShowingProjectCreationConfirmation) {
+                if let folder = pendingProjectFolder {
+                    Button("Create Project") {
+                        let name = folder.lastPathComponent
+                        Task { _ = await control.createProject(name: name, folder: folder.path) }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let folder = pendingProjectFolder {
+                    Text("Hermes will create a project named \(folder.lastPathComponent) for this folder.")
                 }
             }
-            Button("Cancel", role: .cancel) { pendingAgentID = nil }
-        } message: {
-            Text("Hermes will interrupt the selected native subagent. Synthesized placeholders are not interruptible.")
-        }
+            .confirmationDialog(
+                "Stop Hermes Process?",
+                isPresented: Binding(get: { pendingProcess != nil }, set: { if !$0 { pendingProcess = nil } })
+            ) {
+                if let process = pendingProcess {
+                    Button("Stop \(process.name)", role: .destructive) {
+                        Task {
+                            _ = await control.killProcess(process)
+                            pendingProcess = nil
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingProcess = nil }
+            } message: {
+                Text("Hermes will terminate only the selected process in the active session.")
+            }
+            .confirmationDialog(
+                "Interrupt Hermes Agent?",
+                isPresented: Binding(get: { pendingAgentID != nil }, set: { if !$0 { pendingAgentID = nil } })
+            ) {
+                if let agentID = pendingAgentID {
+                    Button("Interrupt Agent", role: .destructive) {
+                        Task {
+                            _ = await control.interruptSubagent(agentID)
+                            pendingAgentID = nil
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingAgentID = nil }
+            } message: {
+                Text(
+                    "Hermes will interrupt the selected native subagent. Synthesized placeholders are not interruptible."
+                )
+            }
     }
 
     static let kanbanCardActionPrefixes: [String] =

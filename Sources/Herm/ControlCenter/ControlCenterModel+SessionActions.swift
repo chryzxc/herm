@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func refreshPromptBudget() {
@@ -12,12 +12,16 @@ extension ControlCenterModel {
                 let result = try await cli.promptSize()
                 guard generation == promptBudgetGeneration else { return }
                 guard result.succeeded,
-                      let data = result.stdout.data(using: .utf8),
-                      let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    let data = result.stdout.data(using: .utf8),
+                    let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else {
                     recordProjectionFailure("prompt.budget", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
-                promptBudget = PromptBudgetSummary(totalTokens: Self.intValue(row["total_tokens"] ?? row["total"]), tokenLimit: Self.optionalIntValue(row["token_limit"] ?? row["context_max"]), percent: Self.doubleValue(row["percent"] ?? row["context_percent"]), model: row["model"] as? String)
+                promptBudget = PromptBudgetSummary(
+                    totalTokens: Self.intValue(row["total_tokens"] ?? row["total"]),
+                    tokenLimit: Self.optionalIntValue(row["token_limit"] ?? row["context_max"]),
+                    percent: Self.doubleValue(row["percent"] ?? row["context_percent"]), model: row["model"] as? String)
                 recordProjectionSuccess("prompt.budget")
             } catch {
                 guard generation == promptBudgetGeneration else { return }
@@ -43,29 +47,36 @@ extension ControlCenterModel {
             do {
                 let factsResult = try await rpc.projectFacts(cwd: repository.path)
                 guard factsGeneration == self.projectFactsGeneration,
-                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 projectFacts = Self.parseProjectFacts(factsResult)
             } catch {
                 guard factsGeneration == self.projectFactsGeneration,
-                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 projectFacts = nil
             }
             do {
                 let result = try await rpc.verificationStatus(sessionID: sessionID, cwd: repository.path)
                 guard verificationGeneration == self.verificationGeneration,
-                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 verification = Self.parseVerification(result)
             } catch {
                 guard verificationGeneration == self.verificationGeneration,
-                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                    self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
                 verification = VerificationSummary(state: .unknown, evidence: nil)
             }
         }
     }
 
     func startBackgroundTask(_ prompt: String, kind: HermesBackgroundTaskKind = .general) async -> Bool {
-        guard capabilityAvailable("gateway"), let rpc, let dockModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else {
-            lastError = capabilityAvailable("gateway")
+        guard capabilityAvailable("gateway"), let rpc, let dockModel, let sessionID = dockModel.sessionID,
+            !sessionID.isEmpty
+        else {
+            lastError =
+                capabilityAvailable("gateway")
                 ? "Open a Hermes session before starting a background task."
                 : "Background tasks are unavailable in this Hermes installation."
             return false
@@ -107,8 +118,11 @@ extension ControlCenterModel {
         do {
             let result = try await rpc.redirect(sessionID: sessionID, text: clean)
             guard let raw = result["status"] as? String,
-                  let status = SessionTextActionStatus(rawValue: raw.lowercased()),
-                  let acceptedStatus = [SessionTextActionStatus.queued, .redirected, .rejected].first(where: { $0 == status }) else {
+                let status = SessionTextActionStatus(rawValue: raw.lowercased()),
+                let acceptedStatus = [SessionTextActionStatus.queued, .redirected, .rejected].first(where: {
+                    $0 == status
+                })
+            else {
                 lastError = "Hermes returned an invalid redirect response."
                 return nil
             }
@@ -125,7 +139,10 @@ extension ControlCenterModel {
         guard let rpc, let dockModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else { return false }
         do {
             _ = try await rpc.undo(sessionID: sessionID)
-            dockModel.resumeSession(HermesSession(id: sessionID, title: dockModel.currentSessionTitle ?? "Hermes session", preview: "", startedAt: nil, messageCount: 0, source: "hermes"))
+            dockModel.resumeSession(
+                HermesSession(
+                    id: sessionID, title: dockModel.currentSessionTitle ?? "Hermes session", preview: "",
+                    startedAt: nil, messageCount: 0, source: "hermes"))
             refresh()
             return true
         } catch {
@@ -135,7 +152,8 @@ extension ControlCenterModel {
     }
 
     func compressActiveSession(focusTopic: String? = nil) async -> Bool {
-        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else {
+        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty
+        else {
             lastError = "Session compression is unavailable in this Hermes installation."
             return false
         }
@@ -150,14 +168,19 @@ extension ControlCenterModel {
     }
 
     func branchActiveSession(name: String? = nil) async -> Bool {
-        guard capabilityAvailable("rpc-sessions"), let rpc, let dockModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else {
+        guard capabilityAvailable("rpc-sessions"), let rpc, let dockModel, let sessionID = dockModel.sessionID,
+            !sessionID.isEmpty
+        else {
             lastError = "Session branching is unavailable in this Hermes installation."
             return false
         }
         do {
             let result = try await rpc.branch(sessionID: sessionID, name: name)
             if let branchID = result["session_id"] as? String {
-                dockModel.resumeSession(HermesSession(id: branchID, title: name ?? "Hermes branch", preview: "", startedAt: nil, messageCount: 0, source: "branch"))
+                dockModel.resumeSession(
+                    HermesSession(
+                        id: branchID, title: name ?? "Hermes branch", preview: "", startedAt: nil, messageCount: 0,
+                        source: "branch"))
             }
             refresh()
             return true
@@ -197,9 +220,10 @@ extension ControlCenterModel {
     /// Cheap `process.list`-only refresh for the composer strip while a turn runs.
     func pollProcesses() async {
         guard let rpc, capabilityAvailable("rpc-activity"),
-              let sessionID = dockModel?.sessionID, !sessionID.isEmpty,
-              let result = try? await rpc.processes(sessionID: sessionID),
-              dockModel?.sessionID == sessionID else { return }
+            let sessionID = dockModel?.sessionID, !sessionID.isEmpty,
+            let result = try? await rpc.processes(sessionID: sessionID),
+            dockModel?.sessionID == sessionID
+        else { return }
         let parsed = Self.parseProcesses(result)
         if parsed != processes { processes = parsed }
     }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct NotificationActionTests {
@@ -45,13 +46,17 @@ struct OnDeviceAssistTests {
         #expect(OnDeviceAssist.cleanTitle("\"Fix login bug.\"\nBecause...") == "Fix login bug")
         #expect(OnDeviceAssist.cleanTitle("  ") == nil)
         #expect(OnDeviceAssist.cleanTitle(nil) == nil)
-        #expect((OnDeviceAssist.cleanTitle(String(repeating: "word ", count: 40))?.count ?? 99) <= OnDeviceAssist.maxTitleLength)
+        #expect(
+            (OnDeviceAssist.cleanTitle(String(repeating: "word ", count: 40))?.count ?? 99)
+                <= OnDeviceAssist.maxTitleLength)
     }
 }
 
 @Suite @MainActor struct SessionSpotlightTests {
     @Test func identifierRoundTripsAndEntryIsCapped() {
-        let session = HermesSession(id: "abc|1", profileID: "work", title: "", preview: String(repeating: "x", count: 400), startedAt: nil, messageCount: 1, source: "herm")
+        let session = HermesSession(
+            id: "abc|1", profileID: "work", title: "", preview: String(repeating: "x", count: 400), startedAt: nil,
+            messageCount: 1, source: "herm")
         let id = SessionSpotlightIndex.identifier(for: session)
         #expect(id == "work|abc|1")
         #expect(SessionSpotlightIndex.sessionID(from: id) == "abc|1")

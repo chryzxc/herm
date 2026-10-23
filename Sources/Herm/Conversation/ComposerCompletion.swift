@@ -46,7 +46,8 @@ struct ComposerSlashCommand: Equatable {
         let body = trimmed.dropFirst()
         let token = body.prefix { !$0.isWhitespace }
         guard let first = token.first, first.isLetter,
-              token.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }) else { return nil }
+            token.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" })
+        else { return nil }
         name = token.lowercased()
         arg = body.dropFirst(token.count).trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -55,7 +56,8 @@ struct ComposerSlashCommand: Equatable {
 /// `/command` and inline `/skill` tokens, highlighted in the composer and in
 /// sent messages. Paths (`/usr/bin`, `/a.txt`) and `and/or` are not tokens.
 enum SlashCommandTokens {
-    private static let pattern = try! NSRegularExpression(pattern: #"(?<!\S)/[A-Za-z][\w-]*(?::[\w-]+)*(?![\w/-]|:[\w-]|\.\w)"#)
+    private static let pattern = try! NSRegularExpression(
+        pattern: #"(?<!\S)/[A-Za-z][\w-]*(?::[\w-]+)*(?![\w/-]|:[\w-]|\.\w)"#)
 
     static func ranges(in text: String) -> [NSRange] {
         guard text.contains("/") else { return [] }
@@ -92,7 +94,8 @@ enum ComposerCompletion {
         }
         let order = ["Commands", "Skills", "Options"]
         let sorted = items.enumerated().sorted {
-            let lhs = order.firstIndex(of: $0.element.group) ?? 0, rhs = order.firstIndex(of: $1.element.group) ?? 0
+            let lhs = order.firstIndex(of: $0.element.group) ?? 0
+            let rhs = order.firstIndex(of: $1.element.group) ?? 0
             return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
         }.map(\.element)
         return Result(items: sorted, replaceFrom: replaceFrom)
@@ -103,7 +106,8 @@ enum ComposerCompletion {
     static func mentionResult(from payload: [String: Any], bots: [ComposerCompletionItem]) -> Result {
         let rows = (payload["items"] as? [[String: Any]] ?? []).compactMap { row -> ComposerCompletionItem? in
             guard let text = row["text"] as? String, !text.isEmpty else { return nil }
-            return ComposerCompletionItem(text: text, display: row["display"] as? String ?? text, meta: row["meta"] as? String ?? "", group: "")
+            return ComposerCompletionItem(
+                text: text, display: row["display"] as? String ?? text, meta: row["meta"] as? String ?? "", group: "")
         }
         var seen = Set<String>()
         let items = (bots + rows).filter { seen.insert($0.text.lowercased()).inserted }
@@ -114,7 +118,9 @@ enum ComposerCompletion {
     /// send, like desktop's `pathifyRefs`. A `/` is required so `@name`
     /// handles stay Bot mentions.
     static func pathifyingBareRefs(_ text: String) -> String {
-        text.replacing(#/(^|[^\w@\/])@((?!(?:file|folder|url|image|tool|line|terminal|session|git):)[^\s@:]*\/[^\s@:]*)/#) { match in
+        text.replacing(
+            #/(^|[^\w@\/])@((?!(?:file|folder|url|image|tool|line|terminal|session|git):)[^\s@:]*\/[^\s@:]*)/#
+        ) { match in
             let (lead, path) = (match.1, match.2)
             return lead + (path.hasSuffix("/") ? "@folder:" : "@file:") + path
         }
@@ -193,18 +199,26 @@ struct ComposerCompletionPopover: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), stroke: .clear)
+        .dockFloatingSurface(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), stroke: .clear
+        )
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
         }
         .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.18), radius: 12, y: 5)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel({ if case .mention = trigger { return "Mentions and references" }; return "Slash commands" }())
+        .accessibilityLabel(
+            {
+                if case .mention = trigger { return "Mentions and references" }
+                return "Slash commands"
+            }())
     }
 
     private func row(_ item: ComposerCompletionItem, isSelected: Bool) -> some View {
-        Button { onSelect(item) } label: {
+        Button {
+            onSelect(item)
+        } label: {
             HStack(spacing: 10) {
                 if let bot = item.bot {
                     BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18, orbits: false)

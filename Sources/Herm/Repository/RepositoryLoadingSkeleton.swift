@@ -47,10 +47,11 @@ struct RepositoryShimmerBlock: View {
                                 width: RepositoryShimmerMotion.bandWidth(for: renderedWidth),
                                 height: geometry.size.height
                             )
-                            .offset(x: RepositoryShimmerMotion.offset(
-                                containerWidth: renderedWidth,
-                                at: context.date.timeIntervalSinceReferenceDate
-                            ))
+                            .offset(
+                                x: RepositoryShimmerMotion.offset(
+                                    containerWidth: renderedWidth,
+                                    at: context.date.timeIntervalSinceReferenceDate
+                                ))
                         }
                     }
                 }

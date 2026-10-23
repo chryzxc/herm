@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -12,11 +13,14 @@ struct ConversationRenderOptimizationTests {
         for earlier in [true, false, true, false] {
             for _ in 0..<500 {
                 let previous = range
-                let visible = earlier
+                let visible =
+                    earlier
                     ? previous.lowerBound...min(previous.lowerBound + 2, previous.upperBound - 1)
                     : max(previous.lowerBound, previous.upperBound - 3)...(previous.upperBound - 1)
-                range = earlier
-                    ? ConversationMessageWindow.revealEarlier(previous, totalCount: messages.count, visibleSpan: visible)
+                range =
+                    earlier
+                    ? ConversationMessageWindow.revealEarlier(
+                        previous, totalCount: messages.count, visibleSpan: visible)
                     : ConversationMessageWindow.revealLater(previous, totalCount: messages.count, visibleSpan: visible)
                 let added = Set(range).subtracting(previous)
                 #expect(added.count <= 8)
@@ -38,18 +42,22 @@ struct ConversationRenderOptimizationTests {
     }
 
     @Test func windowPagingProtectsOversizedVisibleSpans() {
-        #expect(ConversationMessageWindow.revealEarlier(
-            100..<150, totalCount: 500, visibleSpan: 100...149
-        ) == 92..<150)
-        #expect(ConversationMessageWindow.revealLater(
-            100..<150, totalCount: 500, visibleSpan: 100...149
-        ) == 100..<158)
-        #expect(ConversationMessageWindow.revealEarlier(
-            2..<14, totalCount: 500, visibleSpan: nil
-        ) == 0..<14)
-        #expect(ConversationMessageWindow.revealLater(
-            486..<498, totalCount: 500, visibleSpan: nil
-        ) == 486..<500)
+        #expect(
+            ConversationMessageWindow.revealEarlier(
+                100..<150, totalCount: 500, visibleSpan: 100...149
+            ) == 92..<150)
+        #expect(
+            ConversationMessageWindow.revealLater(
+                100..<150, totalCount: 500, visibleSpan: 100...149
+            ) == 100..<158)
+        #expect(
+            ConversationMessageWindow.revealEarlier(
+                2..<14, totalCount: 500, visibleSpan: nil
+            ) == 0..<14)
+        #expect(
+            ConversationMessageWindow.revealLater(
+                486..<498, totalCount: 500, visibleSpan: nil
+            ) == 486..<500)
     }
 
     @Test func windowInitialJumpAndBackstopRemainIndependentOfPaging() throws {
@@ -58,16 +66,19 @@ struct ConversationRenderOptimizationTests {
         #expect(ConversationMessageWindow.rangeForSessionReplacement(totalCount: 500) == 488..<500)
         #expect(ConversationMessageWindow.compactedRange(totalCount: 500) == 488..<500)
         let items = ConversationMessageWindow.navigatorItems(messages: messages, sessionID: "history")
-        let jump = try #require(ConversationMessageWindow.jumpPlan(
-            for: items[250], sessionID: "history", messages: messages))
+        let jump = try #require(
+            ConversationMessageWindow.jumpPlan(
+                for: items[250], sessionID: "history", messages: messages))
         #expect(jump.messageID == messages[250].id)
         #expect(jump.windowRange == 238..<263)
         #expect(ConversationMessageWindow.jumpWindow(aroundIndex: 0, totalCount: 500) == 0..<13)
         #expect(ConversationMessageWindow.jumpWindow(aroundIndex: 499, totalCount: 500) == 487..<500)
-        #expect(ConversationMessageWindow.revealEarlier(
-            200..<236, totalCount: 500, visibleSpan: nil) == 192..<228)
-        #expect(ConversationMessageWindow.revealLater(
-            200..<236, totalCount: 500, visibleSpan: nil) == 208..<244)
+        #expect(
+            ConversationMessageWindow.revealEarlier(
+                200..<236, totalCount: 500, visibleSpan: nil) == 192..<228)
+        #expect(
+            ConversationMessageWindow.revealLater(
+                200..<236, totalCount: 500, visibleSpan: nil) == 208..<244)
     }
 
     @Test func windowPagingClampsShrinkAndRetainsPrependIdentity() {
@@ -82,13 +93,16 @@ struct ConversationRenderOptimizationTests {
         // The transcript's prepend hook shifts the mounted indices before paging.
         let shifted = 220..<245
         #expect(prepended[shifted].map(\.id) == messages[200..<225].map(\.id))
-        let revealed = ConversationMessageWindow.revealEarlier(shifted, totalCount: prepended.count, visibleSpan: 220...224)
+        let revealed = ConversationMessageWindow.revealEarlier(
+            shifted, totalCount: prepended.count, visibleSpan: 220...224)
         #expect(revealed == 212..<233)
         #expect(prepended[220..<225].map(\.id) == messages[200..<205].map(\.id))
-        #expect(ConversationMessageWindow.rangeAfterCountChange(
-            200..<225, oldCount: 500, newCount: 501, isAtBottom: false) == 200..<225)
-        #expect(ConversationMessageWindow.rangeAfterCountChange(
-            488..<500, oldCount: 500, newCount: 501, isAtBottom: true) == 489..<501)
+        #expect(
+            ConversationMessageWindow.rangeAfterCountChange(
+                200..<225, oldCount: 500, newCount: 501, isAtBottom: false) == 200..<225)
+        #expect(
+            ConversationMessageWindow.rangeAfterCountChange(
+                488..<500, oldCount: 500, newCount: 501, isAtBottom: true) == 489..<501)
     }
 
     @Test func navigatorProjectionTracksCanonicalEditsAndSessionReplacement() {
@@ -161,17 +175,17 @@ struct ConversationRenderOptimizationTests {
     @Test func mergedListAndQuoteLinesShareOneSectionUntilBlockChanges() {
         let key = MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1)
         let source = """
-        Intro paragraph.
+            Intro paragraph.
 
-        - one
-        - two
-        - three
+            - one
+            - two
+            - three
 
-        > quoted line one
-        > quoted line two
+            > quoted line one
+            > quoted line two
 
-        - four
-        """
+            - four
+            """
         let document = MarkdownRenderDocumentBuilder.build(source: source, key: key)
 
         let listSections = document.sections.filter { if case .list = $0.kind { true } else { false } }
@@ -274,24 +288,27 @@ struct ConversationRenderOptimizationTests {
 
     @Test func completedMessageRetainsNativeTableLayoutAmongProse() throws {
         let markdown = """
-        I checked the current source:
+            I checked the current source:
 
-        | Area | Existing coverage |
-        | --- | --- |
-        | **Design** | Planning instructions and safe decomposition. |
-        | Review | Independent review and regression analysis. |
+            | Area | Existing coverage |
+            | --- | --- |
+            | **Design** | Planning instructions and safe decomposition. |
+            | Review | Independent review and regression analysis. |
 
-        > Preserve the existing principles.
+            > Preserve the existing principles.
 
-        The distinction follows.
-        """
+            The distinction follows.
+            """
         let view = NativeMarkdownTextSectionView()
         view.update(markdown: markdown, kind: .prose)
         let text = try #require(view.textStorage)
         var cells: [NSTextTableBlock] = []
         text.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: text.length)) { value, _, _ in
             if let block = (value as? NSParagraphStyle)?.textBlocks.first as? NSTextTableBlock,
-               !cells.contains(where: { $0 === block }) { cells.append(block) }
+                !cells.contains(where: { $0 === block })
+            {
+                cells.append(block)
+            }
         }
         #expect(cells.count == 6)
         #expect(cells.allSatisfy { $0.table === cells.first?.table && $0.table.numberOfColumns == 2 })
@@ -320,7 +337,7 @@ struct ConversationRenderOptimizationTests {
         let key = MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1)
         for table in [
             "Area | Coverage\n--- | ---\n**Design** | Planning\nReview | Tests",
-            "| Area | Coverage\n| --- | --- |\nDesign | Planning |\n| Review | Tests |"
+            "| Area | Coverage\n| --- | --- |\nDesign | Planning |\n| Review | Tests |",
         ] {
             let source = "Intro.\n\n" + table + "\n\nAfter."
             let document = MarkdownRenderDocumentBuilder.build(source: source, key: key)
@@ -333,10 +350,13 @@ struct ConversationRenderOptimizationTests {
             #expect((style?.textBlocks.first as? NSTextTableBlock)?.table.numberOfColumns == 2)
             #expect(!output.string.contains("---"))
             let rows = MarkdownMessageView.renderBlocks(for: source).filter {
-                if case .tableRow = $0 { return true }; return false
+                if case .tableRow = $0 { return true }
+                return false
             }
             #expect(rows.count == 3)
-            let chunks = [StreamingPresentationChunk(id: 0, text: table, revision: 0, isMutableTail: false, context: .paragraph)]
+            let chunks = [
+                StreamingPresentationChunk(id: 0, text: table, revision: 0, isMutableTail: false, context: .paragraph)
+            ]
             #expect(MarkdownRenderDocumentBuilder.sections(for: chunks).first?.kind == .table)
         }
         #expect(!NativeMarkdownAttributedTextBuilder.isPureTable("Use a | b in prose."))
@@ -354,7 +374,7 @@ struct ConversationRenderOptimizationTests {
         let chunks = [
             StreamingPresentationChunk(
                 id: 0, text: "```swift\nlet x = 1\n```\nDone here.\n", revision: 0, isMutableTail: false,
-                context: .fencedCode(marker: "`", length: 3, language: "swift")),
+                context: .fencedCode(marker: "`", length: 3, language: "swift"))
         ]
 
         let sections = MarkdownRenderDocumentBuilder.sections(for: chunks)
@@ -394,18 +414,21 @@ struct ConversationRenderOptimizationTests {
     func sizingProbesKeepRenderedResponseAtItsAssignedWidth(theme: DockThemeID) throws {
         let savedTheme = DockThemeRuntime.current
         let savedRevision = DockThemeRuntime.revision
-        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision = savedRevision
+        }
         DockThemeRuntime.current = theme
         DockThemeRuntime.revision &+= 1
         let source = """
-        ## A useful structure when a question surprises you
+            ## A useful structure when a question surprises you
 
-        **Clarify → propose the simplest solution → explain failure cases → discuss trade-offs → describe verification.**
+            **Clarify → propose the simplest solution → explain failure cases → discuss trade-offs → describe verification.**
 
-        For example:
+            For example:
 
-        > Before choosing a design, I’d clarify the expected traffic and consistency requirements. I’d start with the existing database and a straightforward API. The main risks are concurrent writes and unsafe retries, so I’d protect those with atomic operations and idempotency. I’d add infrastructure only if measurements or requirements justify it.
-        """
+            > Before choosing a design, I’d clarify the expected traffic and consistency requirements. I’d start with the existing database and a straightforward API. The main risks are concurrent writes and unsafe retries, so I’d protect those with atomic operations and idempotency. I’d add infrastructure only if measurements or requirements justify it.
+            """
         let document = MarkdownRenderDocumentBuilder.build(
             source: source, key: MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1))
         let container = NativeMarkdownDocumentContainerView(frame: .zero)

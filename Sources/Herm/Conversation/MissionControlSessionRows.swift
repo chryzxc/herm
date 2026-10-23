@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct MissionControlConversationSessionRow: View, Equatable {
@@ -23,7 +23,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-            lhs.session == rhs.session
+        lhs.session == rhs.session
             && lhs.isSelected == rhs.isSelected
             && lhs.isProjectLinked == rhs.isProjectLinked
             && lhs.projectName == rhs.projectName
@@ -42,14 +42,17 @@ struct MissionControlConversationSessionRow: View, Equatable {
 
             Button(action: onTogglePin) {
                 DockIcon(.pushPin, size: 13, color: isPinned ? style.accent : style.metadataText)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
             .help(isPinned ? "Unpin conversation" : "Pin conversation")
         }
-        .background(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).dockSelectionFill(isSelected, fallback: isSelected ? style.selectedFill : Color.clear))
+        .background(
+            RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).dockSelectionFill(
+                isSelected, fallback: isSelected ? style.selectedFill : Color.clear)
+        )
         .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
     }
 
@@ -94,9 +97,9 @@ struct MissionControlConversationSessionRow: View, Equatable {
             }
             if let timestamp = session.lastUpdatedAt {
                 Text(timestamp, style: .relative)
-                .dockFont(.metadata)
-                .foregroundStyle(style.metadataText)
-                .lineLimit(1)
+                    .dockFont(.metadata)
+                    .foregroundStyle(style.metadataText)
+                    .lineLimit(1)
             }
         }
         .padding(.leading, 12)
@@ -186,7 +189,8 @@ struct MissionControlProjectList: View {
     @ViewBuilder
     var body: some View {
         DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
-            DockIconButton(icon: .plus, label: "New project or add folder", size: 24, style: style, action: onAddProject)
+            DockIconButton(
+                icon: .plus, label: "New project or add folder", size: 24, style: style, action: onAddProject)
             DockIconButton(
                 icon: .arrowsClockwise,
                 label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
@@ -211,7 +215,8 @@ struct MissionControlProjectList: View {
     @ViewBuilder
     private func projectGroup(_ group: MissionControlConversationGroup) -> some View {
         let sessionCount = max(group.declaredSessionCount, group.sessions.count)
-        let isCollapsed = disclosureState.isCollapsed(projectID: group.id, isEmpty: sessionCount == 0 && group.sessions.isEmpty)
+        let isCollapsed = disclosureState.isCollapsed(
+            projectID: group.id, isEmpty: sessionCount == 0 && group.sessions.isEmpty)
         let sessions = disclosureState.visibleSessions(group.sessions, projectID: group.id, limit: sessionLimit)
         let isActiveProject = group.sessions.contains { $0.id == selectedSessionID }
         let isCreatingHere = creatingProjectPath != nil && creatingProjectPath == group.projectPath
@@ -262,7 +267,9 @@ struct MissionControlProjectList: View {
                                 if isCreatingHere {
                                     ProgressView().controlSize(.small)
                                 } else {
-                                    DockIcon(.chatTeardropText, size: 15, color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
+                                    DockIcon(
+                                        .chatTeardropText, size: 15,
+                                        color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
                                 }
                             }
                             .frame(width: 32, height: 44)
@@ -273,12 +280,15 @@ struct MissionControlProjectList: View {
                         .help("New chat in \(group.title)")
                         .accessibilityLabel("New chat in \(group.title)")
                         .onHover { isHovered in
-                            hoveredNewChatProjectID = isHovered
+                            hoveredNewChatProjectID =
+                                isHovered
                                 ? group.id
                                 : (hoveredNewChatProjectID == group.id ? nil : hoveredNewChatProjectID)
                         }
 
-                        DockMenu { projectActions(group, projectPath: projectPath) } label: {
+                        DockMenu {
+                            projectActions(group, projectPath: projectPath)
+                        } label: {
                             Ph.dotsThree.image(size: 15, color: NSColor(style.secondaryText))
                                 .frame(width: 32, height: 44)
                                 .contentShape(Rectangle())
@@ -294,20 +304,25 @@ struct MissionControlProjectList: View {
             .frame(width: 64)
         }
         .onHover { isHovered in
-            hoveredProjectRowID = isHovered
+            hoveredProjectRowID =
+                isHovered
                 ? group.id
                 : (hoveredProjectRowID == group.id ? nil : hoveredProjectRowID)
         }
         .background(Color.clear)
         .dockContextMenu {
-            if let projectPath = group.projectPath, !projectPath.isEmpty { projectActions(group, projectPath: projectPath) }
+            if let projectPath = group.projectPath, !projectPath.isEmpty {
+                projectActions(group, projectPath: projectPath)
+            }
         }
         if !isCollapsed {
             if group.sessions.isEmpty {
                 projectStatusRow(sessionCount == 0 ? "No conversations yet" : "Loading linked sessions…", leading: 0)
                     .padding(.leading, 12)
             } else {
-                ForEach(sessions, id: \.[sidebarSection: group.id]) { session in sessionRow(session).padding(.leading, 12) }
+                ForEach(sessions, id: \.[sidebarSection: group.id]) { session in
+                    sessionRow(session).padding(.leading, 12)
+                }
                 if group.sessions.count > sessionLimit {
                     Button {
                         withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
@@ -315,10 +330,13 @@ struct MissionControlProjectList: View {
                         }
                     } label: {
                         HStack(spacing: 5) {
-                            Text(disclosureState.showsAllSessions(projectID: group.id)
-                                 ? "Show recent"
-                                 : "Show \(group.sessions.count - sessionLimit) more")
-                            DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.metadataText)
+                            Text(
+                                disclosureState.showsAllSessions(projectID: group.id)
+                                    ? "Show recent"
+                                    : "Show \(group.sessions.count - sessionLimit) more")
+                            DockIcon(
+                                disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10,
+                                color: style.metadataText)
                         }
                         .dockFont(.control)
                         .foregroundStyle(style.secondaryText)
@@ -326,9 +344,11 @@ struct MissionControlProjectList: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.dockLink)
-                    .accessibilityLabel(disclosureState.showsAllSessions(projectID: group.id)
-                                        ? "Show recent sessions for \(group.title)"
-                                        : "Show \(group.sessions.count - sessionLimit) more sessions for \(group.title)")
+                    .accessibilityLabel(
+                        disclosureState.showsAllSessions(projectID: group.id)
+                            ? "Show recent sessions for \(group.title)"
+                            : "Show \(group.sessions.count - sessionLimit) more sessions for \(group.title)"
+                    )
                     .padding(.leading, 12)
                 }
             }
@@ -569,13 +589,13 @@ struct MissionControlSidebarSessionRow: View, Equatable {
                                 Text(source)
                                     .dockFont(.metadata, weight: .medium)
                             }
-                                .foregroundStyle(Color.dockDiscord)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(Capsule().fill(Color.dockDiscord.opacity(0.16)))
-                                .fixedSize()
-                                .accessibilityLabel("Source: \(source)")
-                                .help("Session from \(source)")
+                            .foregroundStyle(Color.dockDiscord)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.dockDiscord.opacity(0.16)))
+                            .fixedSize()
+                            .accessibilityLabel("Source: \(source)")
+                            .help("Session from \(source)")
                         }
                         if let repository { repositoryPill(repository) }
                         if let preview {
@@ -626,9 +646,13 @@ struct MissionControlSidebarSessionRow: View, Equatable {
             }
         }
         .onChange(of: titleFieldFocused) { _, focused in
-            if focused { titleFieldDidFocus = true }
+            if focused {
+                titleFieldDidFocus = true
+            }
             // Only treat blur as cancel once the field actually had focus.
-            else if titleFieldDidFocus, isEditingTitle, pendingAction == nil { cancelRename() }
+            else if titleFieldDidFocus, isEditingTitle, pendingAction == nil {
+                cancelRename()
+            }
         }
     }
 
@@ -741,7 +765,9 @@ struct MissionControlSidebarSessionRow: View, Equatable {
 
     private var actionSurface: some View {
         HStack(spacing: 0) {
-            Button { onTogglePin(session) } label: {
+            Button {
+                onTogglePin(session)
+            } label: {
                 DockIcon(.pushPin, size: 12, color: isPinned ? style.accent : style.metadataText)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
@@ -754,7 +780,9 @@ struct MissionControlSidebarSessionRow: View, Equatable {
                 ProgressView().controlSize(.mini).frame(width: 24, height: 24)
             } else {
                 // Menu labels on macOS only reliably render Text/Image.
-                DockMenu { contextActions } label: {
+                DockMenu {
+                    contextActions
+                } label: {
                     Ph.dotsThree.image(size: 13, color: NSColor(Color.dockSecondaryText))
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())

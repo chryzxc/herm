@@ -21,7 +21,8 @@ struct GroupChatSidebarSection: View {
     var body: some View {
         if store.isAvailable {
             VStack(alignment: .leading, spacing: 2) {
-                DockSectionHeader(title: "Group Chats", count: store.rooms.count, isExpanded: $isExpanded, style: style) {
+                DockSectionHeader(title: "Group Chats", count: store.rooms.count, isExpanded: $isExpanded, style: style)
+                {
                     DockIconButton(icon: .plus, label: "New group chat", size: 24, style: style, action: onCreate)
                 }
                 .padding(.top, style.sectionSpacing)
@@ -86,7 +87,9 @@ private struct GroupChatSidebarRow: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if isHovered {
-                        DockMenu { actions } label: {
+                        DockMenu {
+                            actions
+                        } label: {
                             Ph.dotsThree.image(size: 13, color: NSColor(Color.dockSecondaryText))
                                 .frame(width: 24, height: 24)
                                 .contentShape(Rectangle())
@@ -115,8 +118,12 @@ private struct GroupChatSidebarRow: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
-            .dockSelectionFill(isSelected, fallback: isSelected ? style.selectedFill : isHovered ? style.selectedFill.opacity(0.4) : .clear))
+        .background(
+            RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+                .dockSelectionFill(
+                    isSelected,
+                    fallback: isSelected ? style.selectedFill : isHovered ? style.selectedFill.opacity(0.4) : .clear)
+        )
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         .dockHoverable().onTapGesture(perform: onOpen)
         .onHover { isHovered = $0 }
@@ -138,7 +145,10 @@ private struct GroupChatSidebarRow: View {
     /// Hermes rooms support rename, stop and disband; there is no archive.
     @ViewBuilder
     private var actions: some View {
-        Button("Rename…", icon: .pencilSimple) { renameText = room.name; isRenaming = true }
+        Button("Rename…", icon: .pencilSimple) {
+            renameText = room.name
+            isRenaming = true
+        }
         if isWorking {
             Button("Stop All Turns", icon: .stop) { Task { await store.stop(room.id) } }
         }
@@ -221,20 +231,25 @@ struct NewGroupChatSheet: View {
         DockModal(
             icon: .users,
             title: mode == .create ? "New Group Chat" : "Share a Bot",
-            subtitle: mode == .create ? "Bring several Bots into one conversation." : "Answer another Mac's request with one of your Bots.",
+            subtitle: mode == .create
+                ? "Bring several Bots into one conversation." : "Answer another Mac's request with one of your Bots.",
             width: 440
         ) {
             if store.isRoomLinkEnabled {
-                DockSegmentedPicker(selection: $mode, options: [(Mode.create, "Create a group"), (Mode.share, "Join from another Mac")])
+                DockSegmentedPicker(
+                    selection: $mode, options: [(Mode.create, "Create a group"), (Mode.share, "Join from another Mac")])
             }
             if mode == .create { createForm } else { ShareBotForm(store: store, bots: bots) }
             if let message = store.errorMessage { ModalNote(text: message, icon: .warning, tone: .dockDestructive) }
         } footer: {
             if mode == .create {
-                modalActions(primaryTitle: "Create", pendingTitle: "Creating…", isDisabled: !canCreate, isPending: isCreating, onCancel: { dismiss() }, onPrimary: create)
+                modalActions(
+                    primaryTitle: "Create", pendingTitle: "Creating…", isDisabled: !canCreate, isPending: isCreating,
+                    onCancel: { dismiss() }, onPrimary: create)
             } else {
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).buttonStyle(DockModalButtonStyle(isPrimary: true))
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).buttonStyle(
+                    DockModalButtonStyle(isPrimary: true))
             }
         }
     }
@@ -262,10 +277,12 @@ struct NewGroupChatSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(bots) { bot in
-                        Toggle(isOn: Binding(
-                            get: { selected.contains(bot.id) },
-                            set: { if $0 { selected.insert(bot.id) } else { selected.remove(bot.id) } }
-                        )) {
+                        Toggle(
+                            isOn: Binding(
+                                get: { selected.contains(bot.id) },
+                                set: { if $0 { selected.insert(bot.id) } else { selected.remove(bot.id) } }
+                            )
+                        ) {
                             Text(bot.name) + Text("  @\(bot.id)").foregroundColor(Color.dockMetadataText)
                         }
                         .toggleStyle(.checkbox)
@@ -277,33 +294,46 @@ struct NewGroupChatSheet: View {
             .frame(maxHeight: 220)
             if store.isRoomLinkEnabled, let installID = store.installID {
                 ForEach($remote) { $seat in remoteSeat($seat, installID: installID) }
-                Button { remote.append(RemoteDraft()) } label: { DockIconLabel("Add a bot from another Mac", icon: .plugsConnected) }
-                    .buttonStyle(.dockCompact)
-                    .disabled(memberCount >= GroupChatStore.memberLimits.upperBound)
+                Button {
+                    remote.append(RemoteDraft())
+                } label: {
+                    DockIconLabel("Add a bot from another Mac", icon: .plugsConnected)
+                }
+                .buttonStyle(.dockCompact)
+                .disabled(memberCount >= GroupChatStore.memberLimits.upperBound)
             }
         }
     }
 
     private func remoteSeat(_ seat: Binding<RemoteDraft>, installID: String) -> some View {
         let handle = seat.wrappedValue.handle.trimmingCharacters(in: .whitespaces).lowercased()
-        let request = RoomLinkCode.encode(RemoteMemberRequest(roomID: roomID, homeInstallID: installID,
-                                                               memberID: seat.wrappedValue.id, handle: handle))
+        let request = RoomLinkCode.encode(
+            RemoteMemberRequest(
+                roomID: roomID, homeInstallID: installID,
+                memberID: seat.wrappedValue.id, handle: handle))
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 DockTextField("Handle, e.g. scout", text: seat.handle).textFieldStyle(.dockGlass)
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(request, forType: .string)
-                } label: { DockIconLabel("Copy request", icon: .copy) }
+                } label: {
+                    DockIconLabel("Copy request", icon: .copy)
+                }
                 .disabled(handle.isEmpty)
-                Button { remote.removeAll { $0.id == seat.wrappedValue.id } } label: { DockIcon(.x) }
-                    .buttonStyle(.dockHover)
+                Button {
+                    remote.removeAll { $0.id == seat.wrappedValue.id }
+                } label: {
+                    DockIcon(.x)
+                }
+                .buttonStyle(.dockHover)
             }
             DockTextField("Paste the invite from the other Mac", text: seat.reply).textFieldStyle(.dockGlass)
             if !seat.wrappedValue.reply.isEmpty, seat.wrappedValue.invite == nil {
                 Text("That invite isn't for this seat.").dockFont(.metadata).foregroundStyle(Color.dockWarning)
             } else if let invite = seat.wrappedValue.invite {
-                Text("\(invite.displayName) joins as @\(invite.handle)").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                Text("\(invite.displayName) joins as @\(invite.handle)").dockFont(.metadata).foregroundStyle(
+                    Color.dockMetadataText)
             }
         }
         .padding(10)
@@ -325,10 +355,12 @@ private struct ShareBotForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Paste the request copied on the Mac that's creating the group, pick a bot to share, then send the invite back.")
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Paste the request copied on the Mac that's creating the group, pick a bot to share, then send the invite back."
+            )
+            .dockFont(.metadata)
+            .foregroundStyle(Color.dockMetadataText)
+            .fixedSize(horizontal: false, vertical: true)
             DockTextField("Request code", text: $requestCode).textFieldStyle(.dockGlass)
             DockMenuPicker("Bot", title: bots.first { $0.id == botID }?.name ?? "Choose…", selection: $botID) {
                 DockMenuOption("Choose…", value: String?.none)
@@ -337,13 +369,19 @@ private struct ShareBotForm: View {
             Button(isWorking ? "Creating invite…" : "Create invite") {
                 guard let request, let bot = bots.first(where: { $0.id == botID }) else { return }
                 isWorking = true
-                Task { invite = await store.invite(request, bot: bot); isWorking = false }
+                Task {
+                    invite = await store.invite(request, bot: bot)
+                    isWorking = false
+                }
             }
             .disabled(request == nil || botID == nil || isWorking)
             if let invite {
                 HStack {
                     Text(invite).dockFont(.machineMetadata).lineLimit(2).truncationMode(.middle)
-                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(invite, forType: .string) } label: {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(invite, forType: .string)
+                    } label: {
                         DockIconLabel("Copy invite", icon: .copy)
                     }
                 }
@@ -366,7 +404,10 @@ struct GroupChatView: View {
     // Not @State: the editor consumes it during a view update, where a state write is dropped and the caret keeps snapping back.
     private final class CaretBox { var value: Int? }
     private let pendingCaretBox = CaretBox()
-    private var pendingCaret: Int? { get { pendingCaretBox.value } nonmutating set { pendingCaretBox.value = newValue } }
+    private var pendingCaret: Int? {
+        get { pendingCaretBox.value }
+        nonmutating set { pendingCaretBox.value = newValue }
+    }
     @State private var editorHeight = ComposerLayout.minHeight
     @State private var isEditorFocused = true
     @State private var renameText = ""
@@ -383,7 +424,9 @@ struct GroupChatView: View {
     private var allEvents: [GroupRoomEvent] { store.events[roomID] ?? [] }
     /// The selected thread plus room-wide notices. Events from before threads carry no id and stay in Main.
     private var events: [GroupRoomEvent] {
-        allEvents.filter { ($0.threadID ?? GroupChatStore.mainThreadID) == thread || ($0.threadID == nil && $0.kind == .notice) }
+        allEvents.filter {
+            ($0.threadID ?? GroupChatStore.mainThreadID) == thread || ($0.threadID == nil && $0.kind == .notice)
+        }
     }
 
     /// Threads in first-seen order; Hermes has no thread names, so each is titled by its first message.
@@ -429,23 +472,40 @@ struct GroupChatView: View {
                 approvalBanner(approval)
             }
             ForEach(store.retries[roomID] ?? [], id: \.self) { taskID in
-                banner(icon: .warning, text: "A member's turn was interrupted and its result is unknown. Retrying may repeat work it already did.") {
+                banner(
+                    icon: .warning,
+                    text:
+                        "A member's turn was interrupted and its result is unknown. Retrying may repeat work it already did."
+                ) {
                     Button("Retry") { Task { await store.retry(taskID, in: roomID) } }
                         .buttonStyle(.dockPrimary)
                 }
             }
             if store.blockedRooms.contains(roomID), (store.retries[roomID] ?? []).isEmpty {
-                banner(icon: .pause, text: "The room is paused while Hermes settles a stopped or interrupted turn.") { EmptyView() }
+                banner(icon: .pause, text: "The room is paused while Hermes settles a stopped or interrupted turn.") {
+                    EmptyView()
+                }
             }
             composer
         }
         .background(Color.dockCanvas)
-        .onChange(of: roomID) { thread = GroupChatStore.mainThreadID; newThreads = [] }
+        .onChange(of: roomID) {
+            thread = GroupChatStore.mainThreadID
+            newThreads = []
+        }
         .onChange(of: room == nil) { _, gone in if gone, store.isAvailable { onDisbanded() } }
-        .task { modelOptions = await botMode.modelOptions().flatMap { group in group.models.map { HermesModelOption(provider: group.provider, model: $0) } } }
-        .alert("Confirm model", isPresented: Binding(get: { pendingModel != nil }, set: { if !$0 { pendingModel = nil } })) {
+        .task {
+            modelOptions = await botMode.modelOptions().flatMap { group in
+                group.models.map { HermesModelOption(provider: group.provider, model: $0) }
+            }
+        }
+        .alert(
+            "Confirm model", isPresented: Binding(get: { pendingModel != nil }, set: { if !$0 { pendingModel = nil } })
+        ) {
             Button("Cancel", role: .cancel) {}
-            Button("Use model") { if let detail = pendingModel?.detail { Task { await applyModel(detail, confirmed: true) } } }
+            Button("Use model") {
+                if let detail = pendingModel?.detail { Task { await applyModel(detail, confirmed: true) } }
+            }
         } message: {
             Text(pendingModel?.message ?? "")
         }
@@ -491,9 +551,15 @@ struct GroupChatView: View {
             }
             Spacer(minLength: 12)
             if isWorking {
-                Button { Task { await store.stop(roomID) } } label: { DockIconLabel("Stop", icon: .stop) }
+                Button {
+                    Task { await store.stop(roomID) }
+                } label: {
+                    DockIconLabel("Stop", icon: .stop)
+                }
             }
-            Button { Task { await store.poll(roomID) } } label: {
+            Button {
+                Task { await store.poll(roomID) }
+            } label: {
                 DockIcon(.arrowsClockwise)
                     .dockFont(.conversation, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -503,7 +569,10 @@ struct GroupChatView: View {
             .help("Refresh")
             DockMenu {
                 Button("New thread") { startThread() }
-                Button("Rename…") { renameText = room?.name ?? ""; isRenaming = true }
+                Button("Rename…") {
+                    renameText = room?.name ?? ""
+                    isRenaming = true
+                }
                 Button("Disband…", role: .destructive) { isConfirmingDisband = true }
             } label: {
                 DockIcon(.dotsThree)
@@ -522,7 +591,10 @@ struct GroupChatView: View {
     private var headerSubtitle: String {
         guard let room else { return "" }
         let thinking = thinkingMembers.map(\.displayName)
-        if !thinking.isEmpty { return "\(ListFormatter.localizedString(byJoining: thinking)) \(thinking.count == 1 ? "is" : "are") replying" }
+        if !thinking.isEmpty {
+            return
+                "\(ListFormatter.localizedString(byJoining: thinking)) \(thinking.count == 1 ? "is" : "are") replying"
+        }
         return "\(room.members.count) members"
     }
 
@@ -534,7 +606,9 @@ struct GroupChatView: View {
                 ZStack {
                     Circle().fill(Color.dockSurface)
                     if let bot = botMode.botsByID[member.profile] {
-                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 22, orbits: thinking.contains(member.memberID))
+                        BotAvatarView(
+                            bot: bot, imageData: botMode.avatarImages[bot.id], size: 22,
+                            orbits: thinking.contains(member.memberID))
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
                             .dockFont(.body, weight: .semibold)
@@ -542,7 +616,10 @@ struct GroupChatView: View {
                     }
                 }
                 .frame(width: 26, height: 26)
-                .overlay(Circle().stroke(thinking.contains(member.memberID) ? Color.dockAccent : Color.dockBorderLight, lineWidth: 1))
+                .overlay(
+                    Circle().stroke(
+                        thinking.contains(member.memberID) ? Color.dockAccent : Color.dockBorderLight, lineWidth: 1)
+                )
                 .background(Circle().stroke(Color.dockCanvas, lineWidth: 3))
                 .help("\(member.displayName) · @\(member.handle)")
             }
@@ -553,7 +630,9 @@ struct GroupChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(threads, id: \.id) { item in
-                    Button { thread = item.id } label: {
+                    Button {
+                        thread = item.id
+                    } label: {
                         Text(item.title)
                             .dockFont(.body, weight: item.id == thread ? .semibold : .regular)
                             .lineLimit(1)
@@ -564,9 +643,13 @@ struct GroupChatView: View {
                     }
                     .buttonStyle(.dockHover)
                 }
-                Button { startThread() } label: { DockIcon(.plus, size: 12, color: Color.dockSecondaryText).frame(width: 24, height: 24) }
-                    .buttonStyle(.dockHover)
-                    .help("New thread — members only see messages in the same thread")
+                Button {
+                    startThread()
+                } label: {
+                    DockIcon(.plus, size: 12, color: Color.dockSecondaryText).frame(width: 24, height: 24)
+                }
+                .buttonStyle(.dockHover)
+                .help("New thread — members only see messages in the same thread")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
@@ -586,11 +669,13 @@ struct GroupChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if events.isEmpty {
-                        Text("Mention a member with @handle, or address everyone with @all. With no mention, every member may reply.")
-                            .dockFont(.body)
-                            .foregroundStyle(Color.dockMetadataText)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
+                        Text(
+                            "Mention a member with @handle, or address everyone with @all. With no mention, every member may reply."
+                        )
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
                     }
                     if (store.earliestLoadedSeq[roomID] ?? 0) > 0 {
                         Button("Load earlier messages") { Task { await store.loadEarlier(roomID) } }
@@ -638,12 +723,15 @@ struct GroupChatView: View {
                 let split = ReplyQuote.split(GenerativeUIIntegration.displayUserText(event.text))
                 VStack(alignment: .leading, spacing: 6) {
                     if let quote = split?.quote { ReplyQuoteChip(quote: quote) }
-                    Text.withFileIcons(AttributedString(split?.body ?? GenerativeUIIntegration.displayUserText(event.text)), iconSize: 13)
-                        .textSelection(.enabled)
+                    Text.withFileIcons(
+                        AttributedString(split?.body ?? GenerativeUIIntegration.displayUserText(event.text)),
+                        iconSize: 13
+                    )
+                    .textSelection(.enabled)
                 }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.dockAccentMuted))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.dockAccentMuted))
             }
         case .member(let memberID):
             let member = room?.member(memberID)
@@ -660,14 +748,17 @@ struct GroupChatView: View {
                     GenerativeUIIntegration.renderReply(event.text) {
                         MarkdownMessageView(markdown: event.text, cacheKey: event.id)
                     }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     replyActions(for: event, author: member?.displayName ?? memberID)
                 }
             }
         case .failed(let memberID):
-            Label("\(room?.member(memberID)?.displayName ?? "A member"): \(event.text)", systemImage: "exclamationmark.triangle")
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockWarning)
+            Label(
+                "\(room?.member(memberID)?.displayName ?? "A member"): \(event.text)",
+                systemImage: "exclamationmark.triangle"
+            )
+            .dockFont(.metadata)
+            .foregroundStyle(Color.dockWarning)
         case .notice:
             Text(event.text)
                 .dockFont(.metadata)
@@ -682,17 +773,23 @@ struct GroupChatView: View {
     private func replyActions(for event: GroupRoomEvent, author: String) -> some View {
         let isSpeaking = voiceOutput.isSpeaking && speakingEventID == event.id
         return HStack(spacing: 0) {
-            DockCopyButton(GenerativeUIIntegration.plainText(event.text), accessibilityLabel: "Copy message", presentation: .icon, iconSize: 12)
-                .buttonStyle(DockPressButtonStyle())
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+            DockCopyButton(
+                GenerativeUIIntegration.plainText(event.text), accessibilityLabel: "Copy message", presentation: .icon,
+                iconSize: 12
+            )
+            .buttonStyle(DockPressButtonStyle())
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
             Button {
-                if isSpeaking { voiceOutput.stop() } else {
+                if isSpeaking {
+                    voiceOutput.stop()
+                } else {
                     speakingEventID = event.id
                     voiceOutput.speak(messageID: UUID(), text: event.text)
                 }
             } label: {
-                DockIcon(isSpeaking ? .stop : .speakerHigh, size: 12, color: isSpeaking ? .dockAccent : .dockSecondaryText)
+                DockIcon(
+                    isSpeaking ? .stop : .speakerHigh, size: 12, color: isSpeaking ? .dockAccent : .dockSecondaryText)
             }
             .buttonStyle(DockPressButtonStyle())
             .frame(width: 28, height: 28)
@@ -722,7 +819,7 @@ struct GroupChatView: View {
 
     private func turnDuration(ending event: GroupRoomEvent) -> TimeInterval? {
         guard case .member(let memberID) = event.kind,
-              let start = events.last(where: { $0.seq < event.seq && $0.kind == .started(memberID: memberID) })
+            let start = events.last(where: { $0.seq < event.seq && $0.kind == .started(memberID: memberID) })
         else { return nil }
         return event.createdAt.timeIntervalSince(start.createdAt)
     }
@@ -773,12 +870,19 @@ struct GroupChatView: View {
     private var mentionItems: [ComposerCompletionItem] {
         guard let token = mentionToken, token != dismissedMentionToken, let room else { return [] }
         let query = token.dropFirst().lowercased()
-        let rows = room.members.map {
-            ComposerCompletionItem(text: "@\($0.handle)", display: "@\($0.handle)", meta: memberDescription($0), group: "Members", bot: botMode.botsByID[$0.profile])
-        } + [ComposerCompletionItem(text: "@all", display: "@all", meta: "Everyone", group: "Members")]
+        let rows =
+            room.members.map {
+                ComposerCompletionItem(
+                    text: "@\($0.handle)", display: "@\($0.handle)", meta: memberDescription($0), group: "Members",
+                    bot: botMode.botsByID[$0.profile])
+            } + [ComposerCompletionItem(text: "@all", display: "@all", meta: "Everyone", group: "Members")]
         guard !query.isEmpty else { return rows }
-        let names = Dictionary(room.members.map { ("@\($0.handle)", $0.displayName.lowercased()) }, uniquingKeysWith: { first, _ in first })
-        return rows.filter { $0.text.dropFirst().lowercased().hasPrefix(query) || names[$0.text]?.hasPrefix(query) == true }
+        let names = Dictionary(
+            room.members.map { ("@\($0.handle)", $0.displayName.lowercased()) }, uniquingKeysWith: { first, _ in first }
+        )
+        return rows.filter {
+            $0.text.dropFirst().lowercased().hasPrefix(query) || names[$0.text]?.hasPrefix(query) == true
+        }
     }
 
     /// The bot's description (what it does), like the main composer; the handle already names it.
@@ -835,7 +939,10 @@ struct GroupChatView: View {
                         onCompletionKey: handleMentionKey,
                         onFocusChanged: { isEditorFocused = $0 },
                         onCaretMoved: { _, _ in },
-                        takePendingCaret: { defer { pendingCaret = nil }; return pendingCaret },
+                        takePendingCaret: {
+                            defer { pendingCaret = nil }
+                            return pendingCaret
+                        },
                         onTextChanged: { _, _ in mentionIndex = 0 },
                         onContentHeightChanged: { editorHeight = ComposerLayout.height(for: $0) }
                     )
@@ -853,11 +960,14 @@ struct GroupChatView: View {
                 .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
 
                 HStack(spacing: 8) {
-                    Button { showingInsertPopover = true } label: {
+                    Button {
+                        showingInsertPopover = true
+                    } label: {
                         DockIcon(.plus, size: 14, color: Color.dockSecondaryText)
                             .frame(width: 28, height: 28)
-                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .fill(DockSkinPresentation.current.composerControlFill))
+                            .background(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                    .fill(DockSkinPresentation.current.composerControlFill))
                     }
                     .buttonStyle(.dockHover)
                     .help("Insert a URL or snippet")
@@ -866,18 +976,28 @@ struct GroupChatView: View {
                             pasteImageAvailable: false,
                             onSelect: { _ in },
                             onInsertURL: { raw in
-                                if let updated = AttachmentPopoverPresentation.insertingURL(raw, into: draft) { draft = updated }
+                                if let updated = AttachmentPopoverPresentation.insertingURL(raw, into: draft) {
+                                    draft = updated
+                                }
                                 showingInsertPopover = false
                             },
-                            onSelectSnippet: { draft = AttachmentPopoverPresentation.insertingSnippet($0, into: draft); showingInsertPopover = false },
+                            onSelectSnippet: {
+                                draft = AttachmentPopoverPresentation.insertingSnippet($0, into: draft)
+                                showingInsertPopover = false
+                            },
                             actions: [.url, .promptSnippets]
                         )
                     }
-                    Button { draft += (draft.isEmpty || draft.hasSuffix(" ") ? "@" : " @"); pendingCaret = (draft as NSString).length; isEditorFocused = true } label: {
+                    Button {
+                        draft += (draft.isEmpty || draft.hasSuffix(" ") ? "@" : " @")
+                        pendingCaret = (draft as NSString).length
+                        isEditorFocused = true
+                    } label: {
                         DockIcon(.at, size: 14, color: Color.dockSecondaryText)
                             .frame(width: 28, height: 28)
-                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .fill(DockSkinPresentation.current.composerControlFill))
+                            .background(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                    .fill(DockSkinPresentation.current.composerControlFill))
                     }
                     .buttonStyle(.dockHover)
                     .help("Mention a member")
@@ -895,7 +1015,8 @@ struct GroupChatView: View {
                             } else {
                                 DockIcon(.arrowUp)
                                     .dockFont(.body, weight: .semibold)
-                                    .foregroundStyle(canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
+                                    .foregroundStyle(
+                                        canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
                             }
                         }
                     }
@@ -912,7 +1033,11 @@ struct GroupChatView: View {
                 let shape = DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane)
                 shape
                     .dockInputFill()
-                    .overlay { shape.stroke(isEditorFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder, lineWidth: DockLayout.hairline) }
+                    .overlay {
+                        shape.stroke(
+                            isEditorFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder,
+                            lineWidth: DockLayout.hairline)
+                    }
             }
         }
         .frame(maxWidth: 820)
@@ -926,14 +1051,17 @@ struct GroupChatView: View {
     private var memberModelPicker: some View {
         let locals = (room?.members ?? []).filter { !$0.isRemote && botMode.botsByID[$0.profile] != nil }
         if let member = locals.first(where: { $0.memberID == modelMemberID }) ?? locals.first,
-           let bot = botMode.botsByID[member.profile] {
+            let bot = botMode.botsByID[member.profile]
+        {
             HStack(spacing: 2) {
                 DockMenu {
                     ForEach(locals, id: \.memberID) { item in
                         Button(item.displayName) { modelMemberID = item.memberID }
                     }
                 } label: {
-                    BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 18, orbits: thinkingMembers.contains { $0.memberID == member.memberID })
+                    BotAvatarView(
+                        bot: bot, imageData: botMode.avatarImages[bot.id], size: 18,
+                        orbits: thinkingMembers.contains { $0.memberID == member.memberID })
                 }
                 .buttonStyle(.dockHover)
                 .fixedSize()
@@ -943,7 +1071,13 @@ struct GroupChatView: View {
                     selectedID: bot.provider.flatMap { provider in bot.model.map { "\(provider)|\($0)" } },
                     isRefreshing: false,
                     refreshError: nil,
-                    onRefresh: { Task { modelOptions = await botMode.modelOptions().flatMap { group in group.models.map { HermesModelOption(provider: group.provider, model: $0) } } } },
+                    onRefresh: {
+                        Task {
+                            modelOptions = await botMode.modelOptions().flatMap { group in
+                                group.models.map { HermesModelOption(provider: group.provider, model: $0) }
+                            }
+                        }
+                    },
                     onSelect: { option in
                         Task {
                             guard var detail = await botMode.profileDetail(for: bot) else { return }
@@ -958,8 +1092,10 @@ struct GroupChatView: View {
             .foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .fill(DockSkinPresentation.current.composerControlFill))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .fill(DockSkinPresentation.current.composerControlFill)
+            )
             .help("\(member.displayName)'s model — changes the bot everywhere")
         }
     }

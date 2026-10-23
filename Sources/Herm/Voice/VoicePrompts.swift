@@ -6,11 +6,14 @@ enum VoicePrompts {
     static func approvalSpeech(title: String, detail: String, choices: [String]) -> String {
         let detail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
         let spokenDetail = detail.count > 160 ? String(detail.prefix(160)) + "…" : detail
-        let session = choices.contains(ApprovalChoice.session) ? " Say \"this session\" to allow it for the rest of the chat." : ""
+        let session =
+            choices.contains(ApprovalChoice.session)
+            ? " Say \"this session\" to allow it for the rest of the chat." : ""
         return "Approval needed. \(title). \(spokenDetail). Say yes to allow it, or no to deny it.\(session)"
     }
 
-    static func clarificationSpeech(question: String, choices: [String], multiSelect: Bool, progress: String?) -> String {
+    static func clarificationSpeech(question: String, choices: [String], multiSelect: Bool, progress: String?) -> String
+    {
         var parts = [progress.map { $0 + "." }, question].compactMap { $0 }
         if !choices.isEmpty {
             let options = choices.prefix(6).enumerated().map { "\($0.offset + 1): \($0.element)." }
@@ -26,8 +29,14 @@ enum VoicePrompts {
     /// permanently allowlist a command. That choice stays on the card.
     static func approvalChoice(for spoken: String, choices: [String]) -> String? {
         let words = Set(tokens(spoken))
-        let deny: Set = ["no", "nope", "nah", "deny", "don't", "don’t", "dont", "stop", "cancel", "reject", "decline", "never", "not"]
-        let allow: Set = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "approve", "allow", "go", "proceed", "run", "fine", "continue", "do"]
+        let deny: Set = [
+            "no", "nope", "nah", "deny", "don't", "don’t", "dont", "stop", "cancel", "reject", "decline", "never",
+            "not",
+        ]
+        let allow: Set = [
+            "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "approve", "allow", "go", "proceed", "run", "fine",
+            "continue", "do",
+        ]
         if !words.isDisjoint(with: deny) { return ApprovalChoice.deny }
         if words.contains("session"), choices.contains(ApprovalChoice.session) { return ApprovalChoice.session }
         if !words.isDisjoint(with: allow), choices.contains(ApprovalChoice.once) { return ApprovalChoice.once }
@@ -36,14 +45,16 @@ enum VoicePrompts {
 
     /// Matches option text first, then "one"/"second"/"option 3"; anything else
     /// is a free-text answer, like typing into the clarify field.
-    static func clarificationAnswer(for spoken: String, choices: [String], multiSelect: Bool) -> (answer: String, display: String) {
+    static func clarificationAnswer(for spoken: String, choices: [String], multiSelect: Bool) -> (
+        answer: String, display: String
+    ) {
         let text = " " + tokens(spoken).joined(separator: " ") + " "
         var picked = choices.filter { choice in
             let normalized = tokens(choice).joined(separator: " ")
             return !normalized.isEmpty && text.contains(" \(normalized) ")
         }
         // Only short replies count numbers, so "I need two copies" stays free text.
-        if (picked.isEmpty || multiSelect), tokens(spoken).count <= 4 {
+        if picked.isEmpty || multiSelect, tokens(spoken).count <= 4 {
             // "one" is usually a pronoun ("the second one") unless it's the only number.
             let words = tokens(spoken).filter { ordinals[$0] != nil }
             let counted = !multiSelect && words.contains { $0 != "one" } ? words.filter { $0 != "one" } : words
@@ -62,7 +73,8 @@ enum VoicePrompts {
     /// What follows "hey <name>" in a sleeping utterance: nil when the wake
     /// phrase was not said, empty when it was said on its own.
     static func afterWakePhrase(_ spoken: String, name: String) -> String? {
-        let pattern = #"\b(hey|hi|hello|ok|okay)[\s,]+"# + NSRegularExpression.escapedPattern(for: name) + #"\b[\s,.!?]*"#
+        let pattern =
+            #"\b(hey|hi|hello|ok|okay)[\s,]+"# + NSRegularExpression.escapedPattern(for: name) + #"\b[\s,.!?]*"#
         guard let range = spoken.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else { return nil }
         return String(spoken[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -88,7 +100,7 @@ enum VoicePrompts {
 
     private static let ordinals: [String: Int] = [
         "1": 0, "one": 0, "first": 0, "2": 1, "two": 1, "second": 1, "3": 2, "three": 2, "third": 2,
-        "4": 3, "four": 3, "fourth": 3, "5": 4, "five": 4, "fifth": 4, "6": 5, "six": 5, "sixth": 5
+        "4": 3, "four": 3, "fourth": 3, "5": 4, "five": 4, "fifth": 4, "6": 5, "six": 5, "sixth": 5,
     ]
 
     private static func tokens(_ text: String) -> [String] {

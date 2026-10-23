@@ -61,7 +61,8 @@ struct OfficePreviewCameraState: Equatable, Sendable {
 
     var position: SIMD3<Float> {
         let horizontal = cos(elevation) * distance
-        return orbitTarget + SIMD3<Float>(sin(azimuth) * horizontal, sin(elevation) * distance, cos(azimuth) * horizontal)
+        return orbitTarget
+            + SIMD3<Float>(sin(azimuth) * horizontal, sin(elevation) * distance, cos(azimuth) * horizontal)
     }
 
     mutating func applyDrag(deltaX: CGFloat, deltaY: CGFloat) {
@@ -71,7 +72,10 @@ struct OfficePreviewCameraState: Equatable, Sendable {
         elevation = clamped(elevation - Float(deltaY) * 0.008, to: Self.elevationRange)
     }
 
-    mutating func applyGroundPan(deltaX: CGFloat, deltaY: CGFloat, xRange: ClosedRange<Float> = Self.panXRange, zRange: ClosedRange<Float> = Self.panZRange) {
+    mutating func applyGroundPan(
+        deltaX: CGFloat, deltaY: CGFloat, xRange: ClosedRange<Float> = Self.panXRange,
+        zRange: ClosedRange<Float> = Self.panZRange
+    ) {
         let speed = max(0.012, distance * 0.00115)
         let right = SIMD3<Float>(cos(azimuth), 0, -sin(azimuth))
         let forward = SIMD3<Float>(-sin(azimuth), 0, -cos(azimuth))
@@ -89,10 +93,12 @@ struct OfficePreviewCameraState: Equatable, Sendable {
 
     /// Frame-time based controls preserve speed across refresh rates. Diagonal
     /// movement is normalized and always relative to the current camera heading.
-    mutating func advance(input: OfficePreviewCameraInput, delta: TimeInterval,
-                          xRange: ClosedRange<Float> = Self.panXRange,
-                          zRange: ClosedRange<Float> = Self.panZRange,
-                          maximumDistance: Float = Self.distanceRange.max) {
+    mutating func advance(
+        input: OfficePreviewCameraInput, delta: TimeInterval,
+        xRange: ClosedRange<Float> = Self.panXRange,
+        zRange: ClosedRange<Float> = Self.panZRange,
+        maximumDistance: Float = Self.distanceRange.max
+    ) {
         let dt = Float(min(0.05, max(0, delta)))
         let boost: Float = input.fast ? 2.5 : 1
         azimuth = wrappedAngle(azimuth + input.orbit * dt * 1.3)
@@ -104,7 +110,9 @@ struct OfficePreviewCameraState: Equatable, Sendable {
         orbitTarget += (right * input.right + forward * input.forward) / length * speed * dt
         orbitTarget.x = clamped(orbitTarget.x, to: (xRange.lowerBound, xRange.upperBound))
         orbitTarget.z = clamped(orbitTarget.z, to: (zRange.lowerBound, zRange.upperBound))
-        if input.zoom != 0 { applyZoom(delta: CGFloat(input.zoom * dt * 100 * boost), maximumDistance: maximumDistance) }
+        if input.zoom != 0 {
+            applyZoom(delta: CGFloat(input.zoom * dt * 100 * boost), maximumDistance: maximumDistance)
+        }
     }
 
     mutating func easeZoom(toward target: Float, delta: TimeInterval) {
@@ -146,7 +154,9 @@ enum OfficePreviewLocation: String, CaseIterable, Sendable {
 
     /// Rooms entered only for a running task's work kind. They exist only in
     /// the authored office; a full or missing room falls back to the desk.
-    static let workZones: [OfficePreviewLocation] = [.library, .qaLab, .securityOps, .serverRoom, .designStudio, .assemblyBay, .missionWall]
+    static let workZones: [OfficePreviewLocation] = [
+        .library, .qaLab, .securityOps, .serverRoom, .designStudio, .assemblyBay, .missionWall,
+    ]
     var isWorkZone: Bool { Self.workZones.contains(self) }
 }
 
@@ -269,7 +279,9 @@ struct OfficeMainSession: Equatable, Sendable, Identifiable {
         switch state.lowercased() {
         case "idle", "completed", "done": .done
         case "working", "running", "active", "busy", "streaming": .running
-        case "needs_approval", "needs_clarification", "blocked", "failed", "error", "waiting_for_approval", "waiting_for_input": .blocked
+        case "needs_approval", "needs_clarification", "blocked", "failed", "error", "waiting_for_approval",
+            "waiting_for_input":
+            .blocked
         default: .unknown
         }
     }
@@ -285,7 +297,9 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
     var activityLane: OfficePreviewLane? { mainSession?.lane ?? taskData?.lane }
     var taskData: OfficePreviewTaskData? { tasks.first }
     var phase: OfficePreviewPhase {
-        if let mainSession { return mainSession.lane == .running ? .implementing : mainSession.lane == .done ? .resting : .waiting }
+        if let mainSession {
+            return mainSession.lane == .running ? .implementing : mainSession.lane == .done ? .resting : .waiting
+        }
         guard let taskData else { return .resting }
         return taskData.lane == .running ? (work?.kind.phase ?? .implementing) : taskData.phase
     }
@@ -302,7 +316,9 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
     }
     /// Availability here describes the loaded Kanban queue, not runtime capacity.
     var hasNoPendingTasks: Bool { mainSession == nil && tasks.allSatisfy { $0.lane == .done } }
-    var canWander: Bool { mainSession.map { $0.lane == .done } ?? tasks.allSatisfy { [.todo, .scheduled, .done].contains($0.lane) } }
+    var canWander: Bool {
+        mainSession.map { $0.lane == .done } ?? tasks.allSatisfy { [.todo, .scheduled, .done].contains($0.lane) }
+    }
     var availabilityLabel: String {
         if let mainSession { return "Orchestrator · \(mainSession.state.replacingOccurrences(of: "_", with: " "))" }
         if hasNoPendingTasks { return "No pending Kanban tasks" }
@@ -344,7 +360,7 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
     }
     // FNV-1a is deterministic across launches; Swift Hasher deliberately is not.
     var identitySeed: UInt64 {
-        id.utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
+        id.utf8.reduce(UInt64(14_695_981_039_346_656_037)) { ($0 ^ UInt64($1)) &* 1_099_511_628_211 }
     }
     var identityHue: Double { mainSession == nil ? Double(identitySeed % 360) / 360 : 0.56 }
 }
@@ -353,21 +369,26 @@ enum OfficePreviewResolver {
     static func ordered(_ tasks: [OfficePreviewTaskData]) -> [OfficePreviewTaskData] {
         tasks.sorted {
             if $0.lane.rank != $1.lane.rank { return $0.lane.rank < $1.lane.rank }
-            if $0.latestEventAt != $1.latestEventAt { return ($0.latestEventAt ?? .distantPast) > ($1.latestEventAt ?? .distantPast) }
+            if $0.latestEventAt != $1.latestEventAt {
+                return ($0.latestEventAt ?? .distantPast) > ($1.latestEventAt ?? .distantPast)
+            }
             if $0.startedAt != $1.startedAt { return ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
             if $0.title != $1.title { return $0.title < $1.title }
             return $0.id < $1.id
         }
     }
 
-    static func agents(bots: [BotSummary], tasks: [KanbanTaskSummary], includeDefault: Bool = false) -> [OfficePreviewAgentPresentation] {
+    static func agents(bots: [BotSummary], tasks: [KanbanTaskSummary], includeDefault: Bool = false)
+        -> [OfficePreviewAgentPresentation]
+    {
         let byAssignee = Dictionary(grouping: tasks.map(OfficePreviewTaskData.init), by: { $0.assignee ?? "" })
         var seen = Set<String>()
         // The office is a roster view: hidden profiles remain intentionally
         // absent from selectors but keep their physical desk here.
-        return bots.filter { (includeDefault || !$0.isDefault) && seen.insert($0.id).inserted }.sorted { $0.id < $1.id }.map {
-            OfficePreviewAgentPresentation(id: $0.id, name: $0.name, tasks: ordered(byAssignee[$0.id] ?? []))
-        }
+        return bots.filter { (includeDefault || !$0.isDefault) && seen.insert($0.id).inserted }.sorted { $0.id < $1.id }
+            .map {
+                OfficePreviewAgentPresentation(id: $0.id, name: $0.name, tasks: ordered(byAssignee[$0.id] ?? []))
+            }
     }
 
     static func board(tasks: [KanbanTaskSummary]) -> [OfficePreviewBoardLane] {
@@ -395,14 +416,18 @@ final class OfficePreviewSimulation: ObservableObject {
         update(bots: bots, tasks: tasks, sessions: sessions)
     }
 
-    func update(bots: [BotSummary], tasks: [KanbanTaskSummary], sessions: [OfficeMainSession] = [], now: Date = Date()) {
+    func update(bots: [BotSummary], tasks: [KanbanTaskSummary], sessions: [OfficeMainSession] = [], now: Date = Date())
+    {
         var seen = Set<String>()
         // The default bot's current name; users can rename it in Hermes.
         let orchestrator = bots.first(where: \.isDefault)?.name ?? "Hermes"
-        let main = sessions.filter { seen.insert($0.id).inserted && ($0.isCurrent || [.running, .blocked].contains($0.lane)) }
-            .sorted { $0.id < $1.id }.map {
-                OfficePreviewAgentPresentation(id: "main-session:\($0.id)", name: "\(orchestrator) · \($0.title)", tasks: [], mainSession: $0)
-            }
+        let main = sessions.filter {
+            seen.insert($0.id).inserted && ($0.isCurrent || [.running, .blocked].contains($0.lane))
+        }
+        .sorted { $0.id < $1.id }.map {
+            OfficePreviewAgentPresentation(
+                id: "main-session:\($0.id)", name: "\(orchestrator) · \($0.title)", tasks: [], mainSession: $0)
+        }
         var next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: main.isEmpty)
         var keys = Set<String>()
         for index in next.indices {
@@ -426,7 +451,8 @@ struct OfficePreviewInteractionPlan {
 
     /// `zoneCapacity` is the authored seat count per work room. Bots beyond it
     /// have no seat and work at their own desk; a seat is never shared.
-    static func make(agents: [OfficePreviewAgentPresentation], zoneCapacity: [OfficePreviewLocation: Int] = [:]) -> Self {
+    static func make(agents: [OfficePreviewAgentPresentation], zoneCapacity: [OfficePreviewLocation: Int] = [:]) -> Self
+    {
         var plan = Self()
         for zone in OfficePreviewLocation.workZones {
             let capacity = zoneCapacity[zone] ?? 0
@@ -456,7 +482,8 @@ struct OfficePreviewInteractionPlan {
                 plan.stations[first.id] = seat
                 seat += 1
                 guard let board = first.taskData?.boardSlug, !board.isEmpty,
-                      let index = remaining.firstIndex(where: { $0.taskData?.boardSlug == board }) else { continue }
+                    let index = remaining.firstIndex(where: { $0.taskData?.boardSlug == board })
+                else { continue }
                 let second = remaining.remove(at: index)
                 plan.stations[second.id] = seat
                 seat += 1

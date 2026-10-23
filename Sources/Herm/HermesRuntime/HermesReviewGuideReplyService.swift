@@ -14,10 +14,12 @@ struct HermesReviewGuideReplyService {
             if let profile = session.profileID { scope["profile"] = profile }
             let active = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: scope)
             let rows = active?["sessions"] as? [[String: Any]] ?? []
-            guard rows.contains(where: {
-                $0["session_key"] as? String == session.id
-                    && ["starting", "working", "waiting"].contains($0["status"] as? String ?? "")
-            }) else { throw HermesGateway.GatewayError.httpError(404) }
+            guard
+                rows.contains(where: {
+                    $0["session_key"] as? String == session.id
+                        && ["starting", "working", "waiting"].contains($0["status"] as? String ?? "")
+                })
+            else { throw HermesGateway.GatewayError.httpError(404) }
             return nil
         }
         if let owner = result["session_id"] as? String, owner != session.id {

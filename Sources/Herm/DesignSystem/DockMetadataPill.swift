@@ -16,13 +16,15 @@ struct DockMetadataPill: View {
                 DockIcon(navigationIcon, size: 12, color: .dockAccent)
             }
         }
-            .dockFont(.body)
-            .fontWeight(.regular)
-            .foregroundStyle(navigationIcon == nil ? (labelColor?.foreground ?? Color.dockPrimaryText) : Color.dockAccent)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(labelColor?.background ?? Color.dockSurface4))
-            .overlay(Capsule().stroke(labelColor?.foreground.opacity(0.18) ?? Color.dockBorderLight, lineWidth: DockLayout.hairline))
+        .dockFont(.body)
+        .fontWeight(.regular)
+        .foregroundStyle(navigationIcon == nil ? (labelColor?.foreground ?? Color.dockPrimaryText) : Color.dockAccent)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(labelColor?.background ?? Color.dockSurface4))
+        .overlay(
+            Capsule().stroke(
+                labelColor?.foreground.opacity(0.18) ?? Color.dockBorderLight, lineWidth: DockLayout.hairline))
     }
 }
 
@@ -38,12 +40,16 @@ struct DockMetadataPillColor {
     var foreground: Color { usesWhiteText ? .white : .black }
     init?(hex: String) {
         let value = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        guard value.count == 6, value.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }),
-              let rgb = UInt32(value, radix: 16) else { return nil }
+        guard value.count == 6,
+            value.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }),
+            let rgb = UInt32(value, radix: 16)
+        else { return nil }
         red = Double((rgb >> 16) & 255) / 255
         green = Double((rgb >> 8) & 255) / 255
         blue = Double(rgb & 255) / 255
-        func linear(_ channel: Double) -> Double { channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4) }
+        func linear(_ channel: Double) -> Double {
+            channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
         luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
     }
 }
@@ -59,15 +65,23 @@ struct DockChipFlow: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         for (index, origin) in arrange(width: bounds.width, subviews).origins.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: ProposedViewSize(width: min(bounds.width, subviews[index].sizeThatFits(.unspecified).width), height: nil))
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                proposal: ProposedViewSize(
+                    width: min(bounds.width, subviews[index].sizeThatFits(.unspecified).width), height: nil))
         }
     }
 
-    private func arrange(width: CGFloat, _ subviews: Subviews) -> (origins: [CGPoint], width: CGFloat, height: CGFloat) {
+    private func arrange(width: CGFloat, _ subviews: Subviews) -> (origins: [CGPoint], width: CGFloat, height: CGFloat)
+    {
         var origins: [CGPoint] = []
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var maxX: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(ProposedViewSize(width: min(width, subview.sizeThatFits(.unspecified).width), height: nil))
+            let size = subview.sizeThatFits(
+                ProposedViewSize(width: min(width, subview.sizeThatFits(.unspecified).width), height: nil))
             if x > 0, x + size.width > width {
                 x = 0
                 y += rowHeight + spacing

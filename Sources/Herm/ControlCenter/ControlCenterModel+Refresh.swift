@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     func bind(to model: DockModel) {
@@ -197,7 +197,10 @@ extension ControlCenterModel {
         // cards empty merely because no view-local change event fired.
         refreshGlobalKanban()
         if remindersAdapter != nil { beginProjectionRefresh("reminders") }
-        if rpc != nil { ["cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects"].forEach(beginProjectionRefresh) }
+        if rpc != nil {
+            ["cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects"].forEach(
+                beginProjectionRefresh)
+        }
         if dockModel != nil { beginProjectionRefresh("core") }
         if rpc == nil {
             ["cron.jobs", "sessions", "latest.activity", "agents", "projects"].forEach(recordProjectionUnavailable)
@@ -223,7 +226,8 @@ extension ControlCenterModel {
                     recordProjectionSuccess("reminders")
                 } catch {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                    let message = HermesDiagnosticsService.safeSummary(
+                        Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("reminders", error: message)
                     lastError = message
                 }
@@ -240,18 +244,28 @@ extension ControlCenterModel {
                     }
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     guard dockModel?.profileScopeID == scope else { return }
-                    if routineProfileID != scope { cronRunsByJob = [:]; cronRuns = [] }
+                    if routineProfileID != scope {
+                        cronRunsByJob = [:]
+                        cronRuns = []
+                    }
                     routineProfileID = scope
-                    cronJobs = jobs.map { job in var job = job; job.owner = CronOwner(profileID: scope); return job }
+                    cronJobs = jobs.map { job in
+                        var job = job
+                        job.owner = CronOwner(profileID: scope)
+                        return job
+                    }
                     triggeredRoutineIDs = triggeredRoutineIDs.filter { id in
-                        guard let prior = jobs.first(where: { "routine/\(scope ?? "")/\($0.id)" == id }) else { return false }
+                        guard let prior = jobs.first(where: { "routine/\(scope ?? "")/\($0.id)" == id }) else {
+                            return false
+                        }
                         return (prior.lastRunAt ?? "") == triggeredRoutineRevisions[id]
                             || ["running", "pending", "claimed"].contains(prior.lastStatus ?? "")
                     }
                     recordProjectionSuccess("cron.jobs")
                 } catch {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                    let message = HermesDiagnosticsService.safeSummary(
+                        Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("cron.jobs", error: message)
                     lastError = message
                 }
@@ -267,7 +281,8 @@ extension ControlCenterModel {
                     recordProjectionSuccess("sessions")
                 } catch {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                    let message = HermesDiagnosticsService.safeSummary(
+                        Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("sessions", error: message)
                     lastError = message
                 }
@@ -278,7 +293,8 @@ extension ControlCenterModel {
                     recordProjectionSuccess("latest.activity")
                 } catch {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                    let message = HermesDiagnosticsService.safeSummary(
+                        Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("latest.activity", error: message)
                 }
 
@@ -290,7 +306,8 @@ extension ControlCenterModel {
                     recordProjectionSuccess("agents")
                 } catch {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                    let message = HermesDiagnosticsService.safeSummary(
+                        Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("agents", error: message)
                     lastError = message
                 }
@@ -305,7 +322,8 @@ extension ControlCenterModel {
                         }
                     } catch {
                         guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                        let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                        let message = HermesDiagnosticsService.safeSummary(
+                            Self.safeUserDiagnostic(error.localizedDescription))
                         recordProjectionFailure("processes", error: message)
                         lastError = message
                     }
@@ -324,45 +342,50 @@ extension ControlCenterModel {
                     selectedProject = nil
                     recordProjectionSuccess("projects")
                 } else {
-                do {
-                    let result = try await rpc.projectsTree(profileID: projectProfileID)
-                    let parsedProjects = Self.parseProjects(result)
-                    let refreshedProjects = Self.reconcileProjectRefresh(current: projects, incoming: parsedProjects)
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    projects = refreshedProjects
-                    let validProjectIDs = Set(refreshedProjects.map(\.id))
-                    projectSessionsByProjectID = projectSessionsByProjectID.filter { validProjectIDs.contains($0.key) }
-                    // A compact tree response may provide only session counts.
-                    // Keep memberships already verified through
-                    // `projects.project_sessions` as long as their project is
-                    // still present, then enrich them with inline rows.
-                    var memberships = resolvedProjectIDBySessionID.filter { validProjectIDs.contains($0.value) }
-                    for project in refreshedProjects {
-                        for sessionID in project.sessionIDs {
-                            memberships[sessionID] = project.id
+                    do {
+                        let result = try await rpc.projectsTree(profileID: projectProfileID)
+                        let parsedProjects = Self.parseProjects(result)
+                        let refreshedProjects = Self.reconcileProjectRefresh(
+                            current: projects, incoming: parsedProjects)
+                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                        projects = refreshedProjects
+                        let validProjectIDs = Set(refreshedProjects.map(\.id))
+                        projectSessionsByProjectID = projectSessionsByProjectID.filter {
+                            validProjectIDs.contains($0.key)
                         }
+                        // A compact tree response may provide only session counts.
+                        // Keep memberships already verified through
+                        // `projects.project_sessions` as long as their project is
+                        // still present, then enrich them with inline rows.
+                        var memberships = resolvedProjectIDBySessionID.filter { validProjectIDs.contains($0.value) }
+                        for project in refreshedProjects {
+                            for sessionID in project.sessionIDs {
+                                memberships[sessionID] = project.id
+                            }
+                        }
+                        resolvedProjectIDBySessionID = memberships
+                        projectIDBySessionID = memberships
+                        if let selectedProjectID,
+                            let refreshedSelection = refreshedProjects.first(where: { $0.id == selectedProjectID })
+                        {
+                            selectedProject = refreshedSelection
+                        }
+                        // The projects projection can complete after focus was
+                        // set (or before a dock model is bound). Resolve against
+                        // the focused session, which is the authoritative UI
+                        // selection for this model.
+                        resolveProjectMembership(for: currentFocus?.sessionID)
+                        if !refreshedProjects.isEmpty, projectProfileID != nil {
+                            refreshProjectNavigation(refreshProjects: false)
+                        }
+                        recordProjectionSuccess("projects")
+                    } catch {
+                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                        let message = HermesDiagnosticsService.safeSummary(
+                            Self.safeUserDiagnostic(error.localizedDescription))
+                        recordProjectionFailure("projects", error: message)
+                        lastError = message
                     }
-                    resolvedProjectIDBySessionID = memberships
-                    projectIDBySessionID = memberships
-                    if let selectedProjectID,
-                       let refreshedSelection = refreshedProjects.first(where: { $0.id == selectedProjectID }) {
-                        selectedProject = refreshedSelection
-                    }
-                    // The projects projection can complete after focus was
-                    // set (or before a dock model is bound). Resolve against
-                    // the focused session, which is the authoritative UI
-                    // selection for this model.
-                    resolveProjectMembership(for: currentFocus?.sessionID)
-                    if !refreshedProjects.isEmpty, projectProfileID != nil {
-                        refreshProjectNavigation(refreshProjects: false)
-                    }
-                    recordProjectionSuccess("projects")
-                } catch {
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
-                    recordProjectionFailure("projects", error: message)
-                    lastError = message
-                }
                 }
             }
             refreshCronRuns(refreshGeneration: generation, clientIdentity: clientIdentity)

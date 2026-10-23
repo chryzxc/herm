@@ -1,7 +1,11 @@
 import Foundation
 
 enum WorkflowIntegrationSection: String, CaseIterable, Identifiable {
-    case skills = "Skills", tools = "Tools", connectors = "Connectors", plugins = "Plugins", mcp = "MCP"
+    case skills = "Skills"
+    case tools = "Tools"
+    case connectors = "Connectors"
+    case plugins = "Plugins"
+    case mcp = "MCP"
     var id: String { rawValue }
 }
 
@@ -22,7 +26,8 @@ struct WorkflowPluginCatalogIndex {
         let rows = catalog.filter {
             !$0.installed && !installed.contains($0.id) && seen.insert($0.id).inserted
         }.map {
-            Row(entry: $0, search: "\($0.id) \($0.title) \($0.detail)".lowercased(),
+            Row(
+                entry: $0, search: "\($0.id) \($0.title) \($0.detail)".lowercased(),
                 stars: $0.githubSlug.flatMap { stars[$0] } ?? -1)
         }
         categories = Array(Set(rows.map { $0.entry.category })).sorted()
@@ -41,8 +46,9 @@ struct WorkflowPluginCatalogIndex {
         -> [WorkflowPluginCatalogEntry]
     {
         let needle = query.lowercased()
-        return Array((byStars ? popular : alphabetical).lazy.filter {
-            (category.isEmpty || $0.entry.category == category) && (needle.isEmpty || $0.search.contains(needle))
-        }.prefix(max(0, limit)).map(\.entry))
+        return Array(
+            (byStars ? popular : alphabetical).lazy.filter {
+                (category.isEmpty || $0.entry.category == category) && (needle.isEmpty || $0.search.contains(needle))
+            }.prefix(max(0, limit)).map(\.entry))
     }
 }

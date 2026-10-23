@@ -21,11 +21,14 @@ final class AppleRemindersAdapter {
     }
 
     func today() async throws -> [ReminderSummary] {
-        let result = try await client.request(HermesFeatureIDs.ID.shellExec.rawValue, params: [
-            "command": "remindctl today --json"
-        ])
+        let result = try await client.request(
+            HermesFeatureIDs.ID.shellExec.rawValue,
+            params: [
+                "command": "remindctl today --json"
+            ])
         guard Self.shellResultSucceeded(result) else {
-            throw AdapterError.unavailable((result["stderr"] as? String) ?? "remindctl could not access Apple Reminders.")
+            throw AdapterError.unavailable(
+                (result["stderr"] as? String) ?? "remindctl could not access Apple Reminders.")
         }
         guard let output = result["stdout"] as? String else {
             throw AdapterError.malformedResponse
@@ -35,7 +38,8 @@ final class AppleRemindersAdapter {
 
     static func parse(_ output: String) -> [ReminderSummary] {
         guard let data = output.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
+            let object = try? JSONSerialization.jsonObject(with: data)
+        else { return [] }
         let rows: [[String: Any]]
         if let array = object as? [[String: Any]] {
             rows = array
@@ -51,7 +55,8 @@ final class AppleRemindersAdapter {
             let dueValue = (row["dueDate"] as? String) ?? (row["due_date"] as? String)
             let dueDate = dueValue.flatMap { ISO8601DateFormatter().date(from: $0) }
             let overdue = (row["isOverdue"] as? Bool) ?? (row["overdue"] as? Bool) ?? false
-            return ReminderSummary(id: id, title: title, list: row["list"] as? String, dueDate: dueDate, isOverdue: overdue)
+            return ReminderSummary(
+                id: id, title: title, list: row["list"] as? String, dueDate: dueDate, isOverdue: overdue)
         }
         .sorted { lhs, rhs in
             if lhs.isOverdue != rhs.isOverdue { return lhs.isOverdue }

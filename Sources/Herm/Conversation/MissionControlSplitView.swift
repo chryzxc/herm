@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// A three-region fullscreen shell: queue, focused workspace, and contextual
@@ -31,14 +31,18 @@ struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: View>: N
     }
 
     func updateNSView(_ splitView: NSSplitView, context: Context) {
-        context.coordinator.queueHost.rootView = AnyView(queue.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
-        context.coordinator.workspaceHost.rootView = AnyView(workspace.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
-        context.coordinator.inspectorHost.rootView = AnyView(inspector.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
+        context.coordinator.queueHost.rootView = AnyView(
+            queue.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
+        context.coordinator.workspaceHost.rootView = AnyView(
+            workspace.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
+        context.coordinator.inspectorHost.rootView = AnyView(
+            inspector.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
 
         guard !context.coordinator.hasSetInitialPositions else { return }
         DispatchQueue.main.async {
             guard !context.coordinator.hasSetInitialPositions,
-                  splitView.bounds.width > 0 else { return }
+                splitView.bounds.width > 0
+            else { return }
             // Mission Control deliberately gives the queue, work surface, and
             // inspector equal outer weight at launch. Users may still resize
             // either divider for a chat- or operations-heavy session.
@@ -202,7 +206,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         guard !context.coordinator.hasSetInitialPosition else { return }
         DispatchQueue.main.async {
             guard !context.coordinator.hasSetInitialPosition,
-                  splitView.bounds.width > 0 else { return }
+                splitView.bounds.width > 0
+            else { return }
             let proposed = initialLeadingWidth ?? (splitView.bounds.width * (leadingFraction ?? 0.30))
             let minimum = context.coordinator.minimumLeadingPosition(in: splitView)
             let maximum = context.coordinator.maximumLeadingPosition(in: splitView)
@@ -242,14 +247,18 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
 
         func minimumLeadingPosition(in splitView: NSSplitView) -> CGFloat {
             (splitView as? FractionPreservingSplitView)?.minimumLeadingPosition
-                ?? min(minimumLeadingWidth, max(0, splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth))
+                ?? min(
+                    minimumLeadingWidth,
+                    max(0, splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth))
         }
 
         func maximumLeadingPosition(in splitView: NSSplitView) -> CGFloat {
             if let splitView = splitView as? FractionPreservingSplitView {
                 return splitView.maximumLeadingPosition
             }
-            let availableMaximum = max(minimumLeadingPosition(in: splitView), splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth)
+            let availableMaximum = max(
+                minimumLeadingPosition(in: splitView),
+                splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth)
             return min(maximumLeadingWidth ?? availableMaximum, availableMaximum)
         }
 
@@ -272,7 +281,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         func splitViewDidResizeSubviews(_ notification: Notification) {
             guard let leadingWidth else { return }
             guard let splitView = notification.object as? NSSplitView,
-                  (splitView as? FractionPreservingSplitView)?.isTrailingCollapsed != true else { return }
+                (splitView as? FractionPreservingSplitView)?.isTrailingCollapsed != true
+            else { return }
             leadingWidth.wrappedValue = splitView.subviews.first?.frame.width ?? leadingWidth.wrappedValue
         }
     }

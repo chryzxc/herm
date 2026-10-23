@@ -75,9 +75,10 @@ extension ProviderMark {
         (["ai-gateway", "vercel"], "vercel"),
     ]
 
-    private static let bundle: Bundle = Bundle.main.resourceURL.flatMap {
-        Bundle(url: $0.appendingPathComponent("Herm_Herm.bundle"))
-    } ?? Bundle.module
+    private static let bundle: Bundle =
+        Bundle.main.resourceURL.flatMap {
+            Bundle(url: $0.appendingPathComponent("Herm_Herm.bundle"))
+        } ?? Bundle.module
 
     // NSCache is thread-safe; images are read-only once cached.
     nonisolated(unsafe) private static let cache = NSCache<NSString, NSImage>()
@@ -85,7 +86,8 @@ extension ProviderMark {
     static func image(named name: String) -> NSImage? {
         if let cached = cache.object(forKey: name as NSString) { return cached }
         guard let url = bundle.url(forResource: name, withExtension: "svg", subdirectory: "ProviderIcons"),
-              let image = NSImage(contentsOf: url) else { return nil }
+            let image = NSImage(contentsOf: url)
+        else { return nil }
         image.isTemplate = !name.hasSuffix("-color")
         cache.setObject(image, forKey: name as NSString)
         return image

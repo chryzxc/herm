@@ -101,7 +101,14 @@ struct ForwardToBotPopover: View {
         let text = typed.isEmpty ? body : "\(typed)\n\n\(body)"
         model.forwardMessage(text, toProfile: bot.id) { failure, result in
             isForwarding = false
-            if let failure { error = failure } else if let result { output = result } else { dismiss(); environmentDismiss() }
+            if let failure {
+                error = failure
+            } else if let result {
+                output = result
+            } else {
+                dismiss()
+                environmentDismiss()
+            }
         }
     }
 }

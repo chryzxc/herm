@@ -20,7 +20,9 @@ struct ConversationTranscriptIntegrationTests {
                     transcript.equatable()
                     SessionTraceView(model: model, trace: timeline).equatable().frame(width: 400)
                 }
-            } else { transcript.equatable() }
+            } else {
+                transcript.equatable()
+            }
         }
     }
 
@@ -60,18 +62,23 @@ struct ConversationTranscriptIntegrationTests {
         let window: NSWindow
         var layoutWorkMS = 0.0
 
-        init(source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil, includeTimeline: Bool = false) {
+        init(
+            source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil,
+            includeTimeline: Bool = false
+        ) {
             timeline = includeTimeline ? SessionTraceModel() : nil
             coordinator = ConversationTranscriptCoordinator(controller: controller)
             _ = NSApplication.shared
             model = DockModel(initialSessionID: "scroll-integration")
-            model.messages = messages ?? (0..<500).map { index in
-                ChatMessage(
-                    role: .hermes,
-                    text: ((index.isMultiple(of: 5) ? source : nil)
-                        ?? String(repeating: "Paragraph **content** with `code` and wrapping text.\n\n", count: 6))
-                        + "\nMessage \(index)")
-            }
+            model.messages =
+                messages
+                ?? (0..<500).map { index in
+                    ChatMessage(
+                        role: .hermes,
+                        text: ((index.isMultiple(of: 5) ? source : nil)
+                            ?? String(repeating: "Paragraph **content** with `code` and wrapping text.\n\n", count: 6))
+                            + "\nMessage \(index)")
+                }
             if streaming {
                 model.streamingMessageID = model.messages.last?.id
                 model.streamingText.appendPresentation(source ?? "A streaming reply")
@@ -85,7 +92,8 @@ struct ConversationTranscriptIntegrationTests {
                 selectedChatImage: .constant(nil), coordinator: transcriptCoordinator
             )
             host = NSHostingView(
-                rootView: Root(parent: Parent(model: model, transcript: view, timeline: timeline), evaluations: evaluations))
+                rootView: Root(
+                    parent: Parent(model: model, transcript: view, timeline: timeline), evaluations: evaluations))
             host.sizingOptions = []
             host.frame = NSRect(x: 0, y: 0, width: includeTimeline ? 1040 : 640, height: 600)
             window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -120,7 +128,8 @@ struct ConversationTranscriptIntegrationTests {
     }
 
     @Test func largerPagesPreserveAnchorsAcrossTallMarkdownAndCodeRows() async throws {
-        let source = String(repeating: "A tall **Markdown** paragraph with `inline code`.\n\n", count: 240)
+        let source =
+            String(repeating: "A tall **Markdown** paragraph with `inline code`.\n\n", count: 240)
             + "```swift\n" + String(repeating: "let value = 42 // source line\n", count: 500) + "```\n"
         try await checkProductionPaging(source: source, streaming: true)
     }
@@ -128,12 +137,17 @@ struct ConversationTranscriptIntegrationTests {
     @Test(arguments: [false, true])
     func activityAndHiddenRowsStillAllowEarlierPaging(includesHiddenRows: Bool) async throws {
         let messages = (0..<60).map { index in
-            let activity: [ActiveToolCall] = index.isMultiple(of: 3) ? [
-                ActiveToolCall(id: "tool-\(index)", name: "terminal", input: "Synthetic command", context: "",
-                               startedAt: .distantPast, result: "Done", isComplete: true)
-            ] : []
-            return ChatMessage(role: .hermes,
-                text: includesHiddenRows && index % 3 == 1 ? "" : String(repeating: "History message \(index).\n\n", count: 8),
+            let activity: [ActiveToolCall] =
+                index.isMultiple(of: 3)
+                ? [
+                    ActiveToolCall(
+                        id: "tool-\(index)", name: "terminal", input: "Synthetic command", context: "",
+                        startedAt: .distantPast, result: "Done", isComplete: true)
+                ] : []
+            return ChatMessage(
+                role: .hermes,
+                text: includesHiddenRows && index % 3 == 1
+                    ? "" : String(repeating: "History message \(index).\n\n", count: 8),
                 activity: activity)
         }
         let fixture = Fixture(messages: messages)
@@ -141,8 +155,9 @@ struct ConversationTranscriptIntegrationTests {
         try await fixture.settle()
         #expect(fixture.coordinator.rowViewports.count == fixture.coordinator.mountedRange.count)
         let previousRange = fixture.coordinator.mountedRange
-        let anchor = try #require(fixture.coordinator.rowViewports
-            .filter { $0.maxY > $0.minY }.min { $0.index < $1.index })
+        let anchor = try #require(
+            fixture.coordinator.rowViewports
+                .filter { $0.maxY > $0.minY }.min { $0.index < $1.index })
         try fixture.move(to: anchor.minY + 40)
         try fixture.move(to: anchor.minY + 20)
         let offset = anchor.minY - (try #require(fixture.controller.geometry)).visibleTop
@@ -155,9 +170,13 @@ struct ConversationTranscriptIntegrationTests {
 
     @Test func storedHistoryPrependBecomesVisibleWithActivityRows() async throws {
         let messages = (0..<12).map { index in
-            ChatMessage(role: .hermes, text: String(repeating: "Loaded reply \(index).\n\n", count: 8),
-                activity: [ActiveToolCall(id: "loaded-\(index)", name: "terminal", input: "Synthetic command",
-                    context: "", startedAt: .distantPast, result: "Done", isComplete: true)])
+            ChatMessage(
+                role: .hermes, text: String(repeating: "Loaded reply \(index).\n\n", count: 8),
+                activity: [
+                    ActiveToolCall(
+                        id: "loaded-\(index)", name: "terminal", input: "Synthetic command",
+                        context: "", startedAt: .distantPast, result: "Done", isComplete: true)
+                ])
         }
         let fixture = Fixture(messages: messages)
         defer { fixture.window.orderOut(nil) }
@@ -207,7 +226,8 @@ struct ConversationTranscriptIntegrationTests {
             #expect(fixture.coordinator.rowViewports.count <= ConversationMessageWindow.maxMountedRowCount)
             #expect(fixture.coordinator.pendingPage == nil)
             let range = fixture.coordinator.mountedRange
-            let revealed = earlier ? previousRange.lowerBound - range.lowerBound : range.upperBound - previousRange.upperBound
+            let revealed =
+                earlier ? previousRange.lowerBound - range.lowerBound : range.upperBound - previousRange.upperBound
             let remaining = earlier ? previousRange.lowerBound : fixture.model.messages.count - previousRange.upperBound
             #expect(revealed == min(8, remaining))
             #expect(fixture.coordinator.performance.pageTransactions == previousPages + 1)
@@ -250,7 +270,8 @@ struct ConversationTranscriptIntegrationTests {
             streaming: true)
         defer { fixture.window.orderOut(nil) }
         fixture.model.sessions = (0..<8).map {
-            HermesSession(id: "background-\($0)", title: "Background \($0)", preview: "", startedAt: nil,
+            HermesSession(
+                id: "background-\($0)", title: "Background \($0)", preview: "", startedAt: nil,
                 messageCount: 500, source: "test", isWorking: true)
         }
         try await fixture.settle()
@@ -275,20 +296,28 @@ struct ConversationTranscriptIntegrationTests {
         for batch in 0..<5 {
             for index in 0..<200 {
                 let owner = "background-\(index % 8)"
-                fixture.model.receiveGatewayEvent("message.delta", params: [
-                    "session_id": owner, "payload": ["delta": "Background chunk \(index)"]
-                ])
-                fixture.model.receiveGatewayEvent("tool.call", params: [
-                    "session_id": owner,
-                    "payload": ["id": "\(batch)-\(index)", "name": "terminal", "args": ["command": "echo synthetic"]]
-                ])
+                fixture.model.receiveGatewayEvent(
+                    "message.delta",
+                    params: [
+                        "session_id": owner, "payload": ["delta": "Background chunk \(index)"],
+                    ])
+                fixture.model.receiveGatewayEvent(
+                    "tool.call",
+                    params: [
+                        "session_id": owner,
+                        "payload": [
+                            "id": "\(batch)-\(index)", "name": "terminal", "args": ["command": "echo synthetic"],
+                        ],
+                    ])
                 fixture.model.botLiveSteps[owner] = "Background step \(batch)-\(index)"
             }
             let delta = "\n\nVisible-session chunk \(batch)."
             receivedText += delta
             fixture.model.streamingText.appendPresentation(delta)
-            fixture.model.activeToolCalls.append(ActiveToolCall(id: "current-\(batch)", name: "terminal",
-                input: "Selected-session tool", context: "", startedAt: .distantPast, isComplete: false))
+            fixture.model.activeToolCalls.append(
+                ActiveToolCall(
+                    id: "current-\(batch)", name: "terminal",
+                    input: "Selected-session tool", context: "", startedAt: .distantPast, isComplete: false))
             fixture.model.isLoadingSessions.toggle()
             try await fixture.settle()
         }
@@ -321,14 +350,18 @@ struct ConversationTranscriptIntegrationTests {
 
     @Test func botStepUpdatesOnlyEvaluateTheirOwningActivityRow() async throws {
         let messages = (0..<60).map { index in
-            ChatMessage(role: .hermes, text: "Completed reply \(index)", activity: [
-                ActiveToolCall(id: "call-\(index)", name: "terminal", input: "Synthetic tool",
-                    context: "", startedAt: .distantPast, isComplete: true)
-            ])
+            ChatMessage(
+                role: .hermes, text: "Completed reply \(index)",
+                activity: [
+                    ActiveToolCall(
+                        id: "call-\(index)", name: "terminal", input: "Synthetic tool",
+                        context: "", startedAt: .distantPast, isComplete: true)
+                ])
         }
         let fixture = Fixture(messages: messages)
         defer { fixture.window.orderOut(nil) }
-        let record = BotActivityRecord(id: "bot-dispatch:call-59", originSessionID: "scroll-integration",
+        let record = BotActivityRecord(
+            id: "bot-dispatch:call-59", originSessionID: "scroll-integration",
             botID: "fixture-bot", botName: "Bot", summary: "Waiting for input", state: .waiting)
         fixture.model.botActivityBySessionID = ["scroll-integration": [record]]
         fixture.model.botLiveSteps = [record.id: "Original step"]
@@ -379,12 +412,18 @@ struct ConversationTranscriptIntegrationTests {
     @Test func timelineAndChatStayIsolatedDuringLiveActivityAndHistoryPaging() async throws {
         let start = Date().addingTimeInterval(-1_000)
         let messages = (0..<500).map { index in
-            ChatMessage(role: index.isMultiple(of: 2) ? .user : .hermes,
+            ChatMessage(
+                role: index.isMultiple(of: 2) ? .user : .hermes,
                 text: String(repeating: "Message \(index), **Markdown** and `code`.\n\n", count: 6),
                 timestamp: start.addingTimeInterval(Double(index)),
-                activity: index.isMultiple(of: 2) ? [] : [ActiveToolCall(id: "old-\(index)", name: "terminal",
-                    input: "Saved tool", context: "", startedAt: start.addingTimeInterval(Double(index)),
-                    isComplete: true, traceDuration: 1, traceTiming: .runtime)])
+                activity: index.isMultiple(of: 2)
+                    ? []
+                    : [
+                        ActiveToolCall(
+                            id: "old-\(index)", name: "terminal",
+                            input: "Saved tool", context: "", startedAt: start.addingTimeInterval(Double(index)),
+                            isComplete: true, traceDuration: 1, traceTiming: .runtime)
+                    ])
         }
         let fixture = Fixture(streaming: true, messages: messages, includeTimeline: true)
         defer { fixture.window.orderOut(nil) }
@@ -393,7 +432,8 @@ struct ConversationTranscriptIntegrationTests {
         fixture.model.streamingMessageSessionID = fixture.model.sessionID
         fixture.model.streamingResponseStartedAt = Date()
         fixture.model.activeSubagents = (0..<8).map {
-            HermesSubagent(id: "worker-\($0)", name: "Worker \($0)", goal: "Selected-session work",
+            HermesSubagent(
+                id: "worker-\($0)", name: "Worker \($0)", goal: "Selected-session work",
                 status: "running", startedAt: Date())
         }
         try await fixture.settle()
@@ -408,14 +448,18 @@ struct ConversationTranscriptIntegrationTests {
         let scans = timeline.historyScanCount
         for batch in 0..<5 {
             for index in 0..<200 {
-                fixture.model.receiveGatewayEvent("tool.call", params: [
-                    "session_id": "background-\(index % 8)",
-                    "payload": ["id": "\(batch)-\(index)", "name": "terminal"]
-                ])
+                fixture.model.receiveGatewayEvent(
+                    "tool.call",
+                    params: [
+                        "session_id": "background-\(index % 8)",
+                        "payload": ["id": "\(batch)-\(index)", "name": "terminal"],
+                    ])
             }
             fixture.model.streamingText.appendPresentation("\n\nIncoming chunk \(batch).")
-            fixture.model.activeToolCalls.append(ActiveToolCall(id: "selected-\(batch)", name: "terminal",
-                input: "Selected tool", context: "", startedAt: Date(), isComplete: false, traceTiming: .observed))
+            fixture.model.activeToolCalls.append(
+                ActiveToolCall(
+                    id: "selected-\(batch)", name: "terminal",
+                    input: "Selected tool", context: "", startedAt: Date(), isComplete: false, traceTiming: .observed))
             fixture.model.isLoadingSessions.toggle()
             try await fixture.settle()
         }

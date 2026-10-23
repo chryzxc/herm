@@ -42,7 +42,8 @@ final class ConversationMessageActionState: ObservableObject {
             let range = NSRange(result.startIndex..<result.endIndex, in: result)
             for match in codeRegex.matches(in: result, range: range).reversed() {
                 guard let codeRange = Range(match.range(at: 1), in: result),
-                      let fullRange = Range(match.range, in: result) else { continue }
+                    let fullRange = Range(match.range, in: result)
+                else { continue }
                 codeSpans.append(String(result[codeRange]))
                 result.replaceSubrange(fullRange, with: "\u{001E}\(codeSpans.count - 1)\u{001F}")
             }

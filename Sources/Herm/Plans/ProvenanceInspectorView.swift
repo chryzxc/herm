@@ -22,7 +22,8 @@ struct ProvenanceInspectorView: View {
 
     private func provenanceRow(_ label: String, _ value: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(label).dockFont(.compactStatus, weight: .medium).foregroundStyle(Color.dockMetadataText).frame(width: 72, alignment: .leading)
+            Text(label).dockFont(.compactStatus, weight: .medium).foregroundStyle(Color.dockMetadataText).frame(
+                width: 72, alignment: .leading)
             Text(value).dockFont(.metadata).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
         }
     }

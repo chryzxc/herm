@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 extension DockPopover {
@@ -11,10 +11,14 @@ extension DockPopover {
         let profile = owner?.profileID ?? "default"
         if owner != nil, (model.profileScopeID ?? "default") != profile {
             await botMode.refreshNow(force: true)
-            guard controlCenter.requestedAutomationJobID == id, controlCenter.requestedAutomationOwner == owner else { return }
+            guard controlCenter.requestedAutomationJobID == id, controlCenter.requestedAutomationOwner == owner else {
+                return
+            }
             guard botMode.bots.contains(where: { $0.id == profile && !$0.isHidden }) else {
-                controlCenter.automationNavigationError = "The routine belongs to \(profile). Refresh the profile inventory or reopen its notch detail; Herm did not select another profile's routine."
-                controlCenter.requestedAutomationJobID = nil; controlCenter.requestedAutomationOwner = nil
+                controlCenter.automationNavigationError =
+                    "The routine belongs to \(profile). Refresh the profile inventory or reopen its notch detail; Herm did not select another profile's routine."
+                controlCenter.requestedAutomationJobID = nil
+                controlCenter.requestedAutomationOwner = nil
                 return
             }
             botMode.selectProfile(profile)
@@ -22,19 +26,26 @@ extension DockPopover {
         }
         controlCenter.refresh()
         missionControlNavigation.selectGlobal(.automations)
-        fullscreenGlobalTab = .automations; fullscreenSurface = .global
+        fullscreenGlobalTab = .automations
+        fullscreenSurface = .global
         controlCenter.requestedAutomationDidNavigate = true
     }
 
     func openRequestedRepositoryReview() {
         guard let request = controlCenter.requestedRepositoryReview, let id = request.sessionID,
-              let path = request.projectPath, !model.isRestoringSession,
-              model.currentSessionIDs.contains(id), model.workflowSession?.profileID == request.profileID else { return }
+            let path = request.projectPath, !model.isRestoringSession,
+            model.currentSessionIDs.contains(id), model.workflowSession?.profileID == request.profileID
+        else { return }
         controlCenter.requestedRepositoryReview = nil
-        missionControlNavigation.openSession(id); fullscreenSurface = .conversation; inspectorScope = .session
+        missionControlNavigation.openSession(id)
+        fullscreenSurface = .conversation
+        inspectorScope = .session
         cachedSessionRepositoryPath = path
         selectSessionMode(.sourceControl)
-        Task { await developerWorkflow.setActiveRepository(path: path, preferences: repositoryPreferences, control: controlCenter) }
+        Task {
+            await developerWorkflow.setActiveRepository(
+                path: path, preferences: repositoryPreferences, control: controlCenter)
+        }
     }
 
     func loadInitialModelConfiguration() {
@@ -140,9 +151,10 @@ extension DockPopover {
     }
 
     func handleCapabilitiesChange(_ capabilities: [CapabilityState]) {
-        let available = capabilities.first { capability in
-            capability.id == HermesFeatureIDs.ID.bots.rawValue
-        }?.isAvailable == true
+        let available =
+            capabilities.first { capability in
+                capability.id == HermesFeatureIDs.ID.bots.rawValue
+            }?.isAvailable == true
         botMode.setCapabilityAvailable(available)
         if available { botMode.refresh() }
     }
@@ -154,9 +166,10 @@ extension DockPopover {
             Task { await refreshSessionWorkflow() }
         }
         guard case .localFallback = model.voiceState, model.voiceSessionID == model.sessionID,
-              sessionWorkspaceMode == .voice,
-              status == .idle,
-              !model.voiceState.isNativeConversationActive else { return }
+            sessionWorkspaceMode == .voice,
+            status == .idle,
+            !model.voiceState.isNativeConversationActive
+        else { return }
         if suppressNextVoiceResponse {
             suppressNextVoiceResponse = false
             resumeVoiceConversationIfReady()
@@ -175,7 +188,9 @@ extension DockPopover {
     }
 
     func handleSessionIDChange(oldValue: String?, newValue: String?) {
-        DebugLog.writeDiagnostic("session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")")
+        DebugLog.writeDiagnostic(
+            "session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")"
+        )
         synchronizeWorkspace()
         controlCenter.focus(sessionID: newValue)
         missionControlNavigation.synchronizeActiveSession(model.navigationSessionID)
@@ -199,7 +214,9 @@ extension DockPopover {
     }
 
     func handleProjectMembershipChange() {
-        DebugLog.writeDiagnostic("session.membership_changed session=\(model.sessionID ?? "nil") project=\(contextProjectName ?? "nil") cachedProject=\(cachedProjectName ?? "nil")")
+        DebugLog.writeDiagnostic(
+            "session.membership_changed session=\(model.sessionID ?? "nil") project=\(contextProjectName ?? "nil") cachedProject=\(cachedProjectName ?? "nil")"
+        )
         refreshCachedProjectName()
         cacheSessionRepositoryPath()
         synchronizeSessionMetadataFromControlCenter()
@@ -236,7 +253,9 @@ extension DockPopover {
         // Reissue its durable, read-only projection after binding so an early
         // unbound attempt cannot leave the visible session permanently empty.
         controlCenter.refreshSessionKanban(for: model.kanbanSessionID)
-        botMode.bind(to: model.controlRPCClient, capabilityAvailable: controlCenter.capabilityAvailable(HermesFeatureIDs.ID.bots.rawValue))
+        botMode.bind(
+            to: model.controlRPCClient,
+            capabilityAvailable: controlCenter.capabilityAvailable(HermesFeatureIDs.ID.bots.rawValue))
         agentUpdateService.checkForUpdates()
         Task { @MainActor in
             await botMode.refreshNow(force: true)

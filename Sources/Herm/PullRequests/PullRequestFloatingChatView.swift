@@ -21,9 +21,14 @@ struct PullRequestFloatingChatView: View {
                     Text("· #\(record.displayNumber)").dockFont(.body).foregroundStyle(Color.dockMetadataText)
                     Spacer(minLength: 0)
                     if chat.destination?.session != nil {
-                        DockIconButton(icon: .arrowSquareOut, label: "Open PR conversation", size: 28, style: style, action: openConversation)
+                        DockIconButton(
+                            icon: .arrowSquareOut, label: "Open PR conversation", size: 28, style: style,
+                            action: openConversation)
                     }
-                    DockIconButton(icon: .caretDown, label: "Minimize PR chat", size: 28, style: style) { expanded = false; focused = false }
+                    DockIconButton(icon: .caretDown, label: "Minimize PR chat", size: 28, style: style) {
+                        expanded = false
+                        focused = false
+                    }
                 }.padding(.horizontal, 14).padding(.vertical, 10)
                 Color.dockBorderLight.frame(height: DockLayout.hairline)
                 transcript
@@ -31,7 +36,10 @@ struct PullRequestFloatingChatView: View {
             }
             HStack(alignment: .center, spacing: 8) {
                 if !expanded {
-                    DockIconButton(icon: .chatCircleText, label: "Show PR chat", size: 28, style: style) { expanded = true; focused = true }
+                    DockIconButton(icon: .chatCircleText, label: "Show PR chat", size: 28, style: style) {
+                        expanded = true
+                        focused = true
+                    }
                 }
                 DockTextField("Ask about this pull request", text: $chat.text, axis: .vertical)
                     .textFieldStyle(.plain).dockFont(.body).lineLimit(1...4).focused($focused)
@@ -41,8 +49,11 @@ struct PullRequestFloatingChatView: View {
                     .padding(.vertical, 7)
                 Button(action: submit) {
                     Group {
-                        if chat.sending { ProgressView().controlSize(.small) }
-                        else { DockIcon(.arrowUp, size: 18, color: .dockPrimaryText) }
+                        if chat.sending {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            DockIcon(.arrowUp, size: 18, color: .dockPrimaryText)
+                        }
                     }
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(Color.dockSurface4))
@@ -56,10 +67,14 @@ struct PullRequestFloatingChatView: View {
             .padding(.horizontal, 10).padding(.vertical, 9)
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .background(DockThemeShape(cornerRadius: expanded ? DockLayout.paneRadius : 28).dockSurfaceFill(Color.dockCanvas))
+        .background(
+            DockThemeShape(cornerRadius: expanded ? DockLayout.paneRadius : 28).dockSurfaceFill(Color.dockCanvas)
+        )
         .clipShape(DockThemeShape(cornerRadius: expanded ? DockLayout.paneRadius : 28))
-        .overlay(DockThemeShape(cornerRadius: expanded ? DockLayout.paneRadius : 28)
-            .stroke(focused ? Color.dockAccent : Color.dockBorder, lineWidth: DockLayout.hairline))
+        .overlay(
+            DockThemeShape(cornerRadius: expanded ? DockLayout.paneRadius : 28)
+                .stroke(focused ? Color.dockAccent : Color.dockBorder, lineWidth: DockLayout.hairline)
+        )
         .shadow(color: Color.dockPrimaryText.opacity(0.08), radius: 16, y: 4)
         .frame(idealWidth: 520, maxWidth: 620)
         .animation(reduceMotion ? nil : .dockEase(duration: 0.2), value: expanded)
@@ -67,15 +82,16 @@ struct PullRequestFloatingChatView: View {
         .task(id: chat.destination?.sessionKey) {
             while !Task.isCancelled, chat.destination?.session != nil {
                 await chat.refresh(client: runtime.controlRPCClient)
-                do { try await Task.sleep(for: .seconds(expanded || chat.running ? 2 : 10)) }
-                catch { return }
+                do { try await Task.sleep(for: .seconds(expanded || chat.running ? 2 : 10)) } catch { return }
             }
         }
         .confirmationDialog("Have you checked this message in its conversation?", isPresented: $reviewingDelivery) {
             Button("I checked; allow deliberate retry") { chat.allowDeliberateRetry() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The last submission was not confirmed. If it arrived, continue in its conversation. Only retry here if it did not arrive.")
+            Text(
+                "The last submission was not confirmed. If it arrived, continue in its conversation. Only retry here if it did not arrive."
+            )
         }
     }
 
@@ -85,7 +101,8 @@ struct PullRequestFloatingChatView: View {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     if chat.messages.isEmpty {
                         Text("Ask about this pull request").dockFont(.body, weight: .semibold)
-                        Text("This pull request is included as context.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        Text("This pull request is included as context.").dockFont(.body).foregroundStyle(
+                            Color.dockSecondaryText)
                     }
                     ForEach(chat.messages) { message in
                         VStack(alignment: .leading, spacing: 6) {
@@ -99,7 +116,10 @@ struct PullRequestFloatingChatView: View {
                     if chat.running || chat.sending {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
-                            Text(chat.needsAttention ? "Your response is needed in the conversation" : chat.sending ? "Sending…" : "Working…")
+                            Text(
+                                chat.needsAttention
+                                    ? "Your response is needed in the conversation"
+                                    : chat.sending ? "Sending…" : "Working…")
                         }.dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
                     if let error = chat.error ?? unavailable {

@@ -35,7 +35,8 @@ final class SystemCalendarService: ObservableObject {
 
     init() {
         readAccess()
-        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
+        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) {
+            [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
     }
@@ -108,7 +109,9 @@ final class SystemCalendarService: ObservableObject {
         let raw = item.id.split(separator: ":", maxSplits: 1)
         guard raw.count == 2 else { return }
         let id = String(raw[1]).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String(raw[1])
-        let link = raw[0] == "event" ? "ical://ekevent/\(id)?method=show&options=more" : "x-apple-reminderkit://REMCDReminder/\(id)"
+        let link =
+            raw[0] == "event"
+            ? "ical://ekevent/\(id)?method=show&options=more" : "x-apple-reminderkit://REMCDReminder/\(id)"
         if let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
 
@@ -137,7 +140,10 @@ final class SystemCalendarService: ObservableObject {
         var events: [CalendarItem] = []
         if eventAccess == .granted {
             let calendars = store.calendars(for: .event)
-            sources += calendars.map { Source(id: $0.calendarIdentifier, title: $0.title, color: Color(cgColor: $0.cgColor), isReminders: false) }
+            sources += calendars.map {
+                Source(
+                    id: $0.calendarIdentifier, title: $0.title, color: Color(cgColor: $0.cgColor), isReminders: false)
+            }
             let predicate = store.predicateForEvents(withStart: range.start, end: range.end, calendars: calendars)
             events = store.events(matching: predicate).map(Self.item)
         }
@@ -147,9 +153,12 @@ final class SystemCalendarService: ObservableObject {
             return
         }
         let lists = store.calendars(for: .reminder)
-        sources += lists.map { Source(id: $0.calendarIdentifier, title: $0.title, color: Color(cgColor: $0.cgColor), isReminders: true) }
+        sources += lists.map {
+            Source(id: $0.calendarIdentifier, title: $0.title, color: Color(cgColor: $0.cgColor), isReminders: true)
+        }
         self.sources = sources
-        let predicate = store.predicateForIncompleteReminders(withDueDateStarting: range.start, ending: range.end, calendars: lists)
+        let predicate = store.predicateForIncompleteReminders(
+            withDueDateStarting: range.start, ending: range.end, calendars: lists)
         store.fetchReminders(matching: predicate) { reminders in
             let fetched = (reminders ?? []).compactMap(Self.item)
             Task { @MainActor [weak self] in
@@ -166,7 +175,9 @@ final class SystemCalendarService: ObservableObject {
             kind: .event(
                 calendar: event.calendar.title,
                 location: event.location,
-                attendees: (event.attendees ?? []).compactMap { $0.name ?? $0.url.absoluteString.replacingOccurrences(of: "mailto:", with: "") },
+                attendees: (event.attendees ?? []).compactMap {
+                    $0.name ?? $0.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
+                },
                 url: event.url
             ),
             title: event.title ?? "Untitled event",
@@ -180,7 +191,9 @@ final class SystemCalendarService: ObservableObject {
     }
 
     nonisolated private static func item(_ reminder: EKReminder) -> CalendarItem? {
-        guard let components = reminder.dueDateComponents, let due = Calendar.current.date(from: components) else { return nil }
+        guard let components = reminder.dueDateComponents, let due = Calendar.current.date(from: components) else {
+            return nil
+        }
         return CalendarItem(
             id: "reminder:\(reminder.calendarItemIdentifier)",
             kind: .reminder(list: reminder.calendar.title),

@@ -24,7 +24,7 @@ enum GenerativeUIIntegration {
 
     static func displayUserText(_ text: String) -> String {
         guard text.hasSuffix("\n[/Herm rendering context]"),
-              let context = text.range(of: "\n\n[Herm rendering context v1]\n", options: .backwards)
+            let context = text.range(of: "\n\n[Herm rendering context v1]\n", options: .backwards)
         else { return text }
         return String(text[..<context.lowerBound])
     }
@@ -65,20 +65,33 @@ private struct GenerativeReply<Content: View>: View {
         let request = RichDocumentParseRequest(text, streaming: streaming, identity: identity)
         Group {
             if let request, let document = parsed, parsedRequest == request {
-                if override ?? enabled { RichDocumentView(document: document) }
-                else { MarkdownMessageView(markdown: document.plainText) }
+                if override ?? enabled {
+                    RichDocumentView(document: document)
+                } else {
+                    MarkdownMessageView(markdown: document.plainText)
+                }
             } else if request != nil {
                 if override ?? enabled {
-                    Text("Preparing visual reply…").dockFont(.body).foregroundStyle(Color.dockSecondaryText).frame(minHeight: 44)
-                } else { MarkdownMessageView(markdown: GenerativeUIIntegration.plainText(text)) }
-            } else { fallback }
+                    Text("Preparing visual reply…").dockFont(.body).foregroundStyle(Color.dockSecondaryText).frame(
+                        minHeight: 44)
+                } else {
+                    MarkdownMessageView(markdown: GenerativeUIIntegration.plainText(text))
+                }
+            } else {
+                fallback
+            }
         }
         .task(id: request) {
-            guard let request else { parsed = nil; parsedRequest = nil; return }
+            guard let request else {
+                parsed = nil
+                parsedRequest = nil
+                return
+            }
             let value = await RichDocumentCache.shared.document(
                 request.source, identity: request.identity, streaming: request.streaming)
             guard !Task.isCancelled else { return }
-            parsed = value; parsedRequest = request
+            parsed = value
+            parsedRequest = request
         }
         .onChange(of: enabled) { _, value in
             if !value { GeneratedHTMLCoordinator.shared.close() }

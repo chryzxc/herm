@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 /// The small, semantic state marker shared by every session row in the
 /// fullscreen navigation rail. It intentionally contains no view concerns so
@@ -84,22 +84,24 @@ enum SidebarSessionStatusResolver {
         seenStore: SidebarSessionSeenStore,
         fallbackProfileID: String?
     ) -> [String: SidebarSessionStatus] {
-        let summaries = Dictionary(snapshot.inputs.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let summaries = Dictionary(
+            snapshot.inputs.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let profileID = snapshot.inputs.profileScopeID ?? fallbackProfileID
         let activeID = snapshot.inputs.activeSessionID
-        return Dictionary(sessions.map { session in
-            let sessionProfileID = session.profileID ?? profileID
-            let status = resolve(
-                session: session,
-                summary: summaries[session.id],
-                activeSessionID: activeID,
-                activeStatus: session.id == activeID ? snapshot.inputs.activeStatus : nil,
-                attention: snapshot.attentionDots[session.id],
-                seenAt: seenStore.seenAt(profileID: sessionProfileID, sessionID: session.id),
-                isProfileBaselined: seenStore.isBaselined(profileID: sessionProfileID)
-            )
-            return (session.id, status)
-        }, uniquingKeysWith: { first, _ in first })
+        return Dictionary(
+            sessions.map { session in
+                let sessionProfileID = session.profileID ?? profileID
+                let status = resolve(
+                    session: session,
+                    summary: summaries[session.id],
+                    activeSessionID: activeID,
+                    activeStatus: session.id == activeID ? snapshot.inputs.activeStatus : nil,
+                    attention: snapshot.attentionDots[session.id],
+                    seenAt: seenStore.seenAt(profileID: sessionProfileID, sessionID: session.id),
+                    isProfileBaselined: seenStore.isBaselined(profileID: sessionProfileID)
+                )
+                return (session.id, status)
+            }, uniquingKeysWith: { first, _ in first })
     }
 }
 
@@ -124,7 +126,8 @@ final class SidebarSessionSeenStore: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         if let data = defaults.data(forKey: storageKey),
-           let payload = try? JSONDecoder().decode(Payload.self, from: data) {
+            let payload = try? JSONDecoder().decode(Payload.self, from: data)
+        {
             seenAtByKey = payload.seenAt
             baselinedProfiles = payload.baselinedProfiles
         } else {

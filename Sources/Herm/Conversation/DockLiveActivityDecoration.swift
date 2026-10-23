@@ -17,10 +17,12 @@ struct DockLiveActivityDecoration<Content: View>: View {
                     DockBotFrameClock { frame in
                         if frame.moves {
                             GeometryReader { proxy in
-                                LinearGradient(colors: [.clear, Color.dockPrimaryText.opacity(0.3), .clear],
-                                               startPoint: .leading, endPoint: .trailing)
-                                    .frame(width: proxy.size.width * 0.45, height: 1)
-                                    .offset(x: proxy.size.width * (1.45 * frame.sweep - 0.45), y: proxy.size.height - 1)
+                                LinearGradient(
+                                    colors: [.clear, Color.dockPrimaryText.opacity(0.3), .clear],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                                .frame(width: proxy.size.width * 0.45, height: 1)
+                                .offset(x: proxy.size.width * (1.45 * frame.sweep - 0.45), y: proxy.size.height - 1)
                             }
                             .clipped()
                         }

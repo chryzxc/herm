@@ -33,7 +33,9 @@ struct PullRequestMergeButton: View {
         .overlay(alignment: .trailing) {
             DockMenu {
                 ForEach(methods) { option in
-                    Button { method = option } label: {
+                    Button {
+                        method = option
+                    } label: {
                         HStack(alignment: .top, spacing: 8) {
                             DockIcon(.check, size: 14).opacity(method == option ? 1 : 0)
                             VStack(alignment: .leading, spacing: 4) {
@@ -55,7 +57,10 @@ struct PullRequestMergeButton: View {
             } label: {
                 DockIcon(.caretDown, size: 12)
                     .foregroundStyle(DockPrimaryButtonStyle.foregroundColor)
-                    .frame(width: DockWorkspaceScale.points(28, scale: scale), height: DockWorkspaceScale.points(26, scale: scale))
+                    .frame(
+                        width: DockWorkspaceScale.points(28, scale: scale),
+                        height: DockWorkspaceScale.points(26, scale: scale)
+                    )
                     .overlay(alignment: .leading) {
                         DockPrimaryButtonStyle.foregroundColor.opacity(0.3)
                             .frame(width: 1, height: DockWorkspaceScale.points(14, scale: scale))

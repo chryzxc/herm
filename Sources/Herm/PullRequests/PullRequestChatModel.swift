@@ -26,16 +26,29 @@ final class PullRequestChatModel: ObservableObject {
     private var refreshing = false
     private var submissionRevision = 0
 
-    var canSend: Bool { !sending && !running && !needsReview && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var canSend: Bool {
+        !sending && !running && !needsReview && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
-    func submit(_ pr: PullRequestRecord, client: HermesRPCClientProtocol, drafts: QuickDraftStore = .shared,
-                remember: (QuickDestination) -> Void = { _ in }) async {
+    func submit(
+        _ pr: PullRequestRecord, client: HermesRPCClientProtocol, drafts: QuickDraftStore = .shared,
+        remember: (QuickDestination) -> Void = { _ in }
+    ) async {
         guard canSend else { return }
-        var record = recovery ?? QuickDraftRecord(destination: destination ?? QuickDestination(
-            profileID: "default", title: "PR #\(pr.displayNumber)", projectPath: pr.localPath.isEmpty ? nil : pr.localPath))
+        var record =
+            recovery
+            ?? QuickDraftRecord(
+                destination: destination
+                    ?? QuickDestination(
+                        profileID: "default", title: "PR #\(pr.displayNumber)",
+                        projectPath: pr.localPath.isEmpty ? nil : pr.localPath))
         record.text = text
-        record.contexts = [ChatContext(id: pr.id, title: "PR #\(pr.displayNumber)", body:
-            "<pull_request_context>\n" + ChatContext(pullRequest: pr).body + "\n</pull_request_context>")]
+        record.contexts = [
+            ChatContext(
+                id: pr.id, title: "PR #\(pr.displayNumber)",
+                body:
+                    "<pull_request_context>\n" + ChatContext(pullRequest: pr).body + "\n</pull_request_context>")
+        ]
         record.requestsVisualReply = false
         record.delivery = .submitting
         sending = true
@@ -46,14 +59,16 @@ final class PullRequestChatModel: ObservableObject {
             drafts.save(record)
             drafts.flush()
             if let error = drafts.error { throw QuickDraftError.message(error) }
-            let sent = try await QuickDraftSubmission.send(record, client: client, progress: { updated in
-                record = updated
-                destination = updated.destination
-                remember(updated.destination)
-                drafts.save(updated)
-                drafts.flush()
-                if let error = drafts.error { throw QuickDraftError.message(error) }
-            })
+            let sent = try await QuickDraftSubmission.send(
+                record, client: client,
+                progress: { updated in
+                    record = updated
+                    destination = updated.destination
+                    remember(updated.destination)
+                    drafts.save(updated)
+                    drafts.flush()
+                    if let error = drafts.error { throw QuickDraftError.message(error) }
+                })
             destination = sent.destination
             remember(sent.destination)
             recovery = nil

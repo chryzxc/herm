@@ -17,11 +17,20 @@ struct RepositoryStashSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DockSectionHeader(title: "Stash", count: workflow.stashes.count, isExpanded: $isExpanded, style: style, icon: .archive, tint: .dockSecondaryText) {
-                DockIconButton(icon: .plus, label: "Stash changes", isBusy: workflow.isMutatingSourceControl, size: 22, style: style) {
+            DockSectionHeader(
+                title: "Stash", count: workflow.stashes.count, isExpanded: $isExpanded, style: style, icon: .archive,
+                tint: .dockSecondaryText
+            ) {
+                DockIconButton(
+                    icon: .plus, label: "Stash changes", isBusy: workflow.isMutatingSourceControl, size: 22,
+                    style: style
+                ) {
                     showingCreate = true
                 }
-                .disabled(actionsDisabled || workflow.changes?.files.isEmpty != false || (workflow.changes?.conflictedCount ?? 0) > 0)
+                .disabled(
+                    actionsDisabled || workflow.changes?.files.isEmpty != false
+                        || (workflow.changes?.conflictedCount ?? 0) > 0
+                )
                 .popover(isPresented: $showingCreate, arrowEdge: .bottom) { createPopover }
             }
             if isExpanded {
@@ -34,7 +43,9 @@ struct RepositoryStashSection: View {
                     } else {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(workflow.stashes) { stash in
-                                RepositoryStashRow(path: workflow.repository.path, stash: stash, actionsDisabled: actionsDisabled) { requestedOperation in
+                                RepositoryStashRow(
+                                    path: workflow.repository.path, stash: stash, actionsDisabled: actionsDisabled
+                                ) { requestedOperation in
                                     selectedStash = stash
                                     operation = requestedOperation
                                     showingConfirmation = true
@@ -47,7 +58,9 @@ struct RepositoryStashSection: View {
             }
         }
         .padding(.top, 12)
-        .confirmationDialog("\(operation.rawValue) stash?", isPresented: $showingConfirmation, titleVisibility: .visible) {
+        .confirmationDialog(
+            "\(operation.rawValue) stash?", isPresented: $showingConfirmation, titleVisibility: .visible
+        ) {
             Button("\(operation.rawValue) Stash", role: operation == .drop ? .destructive : nil) {
                 if let selectedStash { perform(.updateStash(selectedStash, operation)) }
                 selectedStash = nil
@@ -61,9 +74,14 @@ struct RepositoryStashSection: View {
     private var confirmationMessage: String {
         let subject = selectedStash?.subject ?? ""
         switch operation {
-        case .apply: return "Restore “\(subject)” into the selected worktree, including its staged state. The stash will be kept."
-        case .pop: return "Restore “\(subject)” into the selected worktree, including its staged state, then delete the stash if restoration succeeds. Conflicts keep the stash."
-        case .drop: return "Permanently delete “\(subject)” from this repository’s stash list. This cannot be undone in Herm."
+        case .apply:
+            return
+                "Restore “\(subject)” into the selected worktree, including its staged state. The stash will be kept."
+        case .pop:
+            return
+                "Restore “\(subject)” into the selected worktree, including its staged state, then delete the stash if restoration succeeds. Conflicts keep the stash."
+        case .drop:
+            return "Permanently delete “\(subject)” from this repository’s stash list. This cannot be undone in Herm."
         }
     }
 
@@ -102,7 +120,9 @@ private struct RepositoryStashRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { isExpanded.toggle() } label: {
+            Button {
+                isExpanded.toggle()
+            } label: {
                 HStack(spacing: 6) {
                     DockIcon(isExpanded ? .caretDown : .caretRight, size: 11, color: .dockMetadataText)
                     Text(stash.reference).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
@@ -115,7 +135,9 @@ private struct RepositoryStashRow: View {
             }
             .buttonStyle(.dockHover)
             .help("\(stash.subject) · \(stash.date.formatted())")
-            .accessibilityLabel("\(stash.reference), \(stash.subject). \(isExpanded ? "Collapse" : "Show") stash changes")
+            .accessibilityLabel(
+                "\(stash.reference), \(stash.subject). \(isExpanded ? "Collapse" : "Show") stash changes"
+            )
             .contextMenu {
                 Button("Apply Stash") { requestOperation(.apply) }.disabled(actionsDisabled)
                 Button("Pop Stash") { requestOperation(.pop) }.disabled(actionsDisabled)
@@ -134,13 +156,15 @@ private struct RepositoryStashRow: View {
                         ProgressView().controlSize(.small)
                     } else if let patch {
                         if patch.isEmpty {
-                            Text("No textual changes in this stash.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
+                            Text("No textual changes in this stash.").dockFont(.body).foregroundStyle(
+                                Color.dockMetadataText)
                         } else {
                             SharedDiffView(patch: patch, path: stash.reference)
                                 .frame(maxHeight: 360)
                         }
                         if isTruncated {
-                            Text("Diff truncated for safe display.").dockFont(.metadata).foregroundStyle(Color.dockWarning)
+                            Text("Diff truncated for safe display.").dockFont(.metadata).foregroundStyle(
+                                Color.dockWarning)
                         }
                     } else {
                         Text("Stash changes are unavailable.").dockFont(.body).foregroundStyle(Color.dockWarning)

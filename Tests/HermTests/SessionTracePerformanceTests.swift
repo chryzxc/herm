@@ -15,16 +15,19 @@ struct SessionTracePerformanceTests {
         #if DEBUG
             let start = Date(timeIntervalSince1970: 1_000)
             let rows = (0..<1_000).map { index in
-                SessionTraceRow(id: "row-\(index)", kind: .tool, title: "Tool \(index)",
+                SessionTraceRow(
+                    id: "row-\(index)", kind: .tool, title: "Tool \(index)",
                     start: start.addingTimeInterval(Double(index)), duration: 1, timing: .runtime)
             }
             let evaluations = Evaluations()
-            let root = SessionTraceCanvas(turns: [.init(id: "long", title: "Long request", start: start, rows: rows)],
-                connected: true)
-                .environment(\.conversationRowEvaluation) { name, _ in
-                    if name == "timeline-label" { evaluations.labels += 1 }
-                    if name == "timeline-bar" { evaluations.bars += 1 }
-                }
+            let root = SessionTraceCanvas(
+                turns: [.init(id: "long", title: "Long request", start: start, rows: rows)],
+                connected: true
+            )
+            .environment(\.conversationRowEvaluation) { name, _ in
+                if name == "timeline-label" { evaluations.labels += 1 }
+                if name == "timeline-bar" { evaluations.bars += 1 }
+            }
             let host = NSHostingView(rootView: root)
             host.sizingOptions = []
             host.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
@@ -66,8 +69,10 @@ struct SessionTracePerformanceTests {
         trace.update(model)
         let before = trace.historyScanCount
         for index in 0..<5 {
-            model.streamingTurnActivity.append(ActiveToolCall(id: "call-\(index)", name: "terminal",
-                input: "Synthetic tool", context: "", startedAt: Date(), isComplete: false))
+            model.streamingTurnActivity.append(
+                ActiveToolCall(
+                    id: "call-\(index)", name: "terminal",
+                    input: "Synthetic tool", context: "", startedAt: Date(), isComplete: false))
             trace.update(model)
         }
         #expect(trace.historyScanCount == before)
@@ -91,8 +96,11 @@ struct SessionTracePerformanceTests {
         }
         try await Task.sleep(for: .milliseconds(300))
         #expect(trace.updateCount == before)
-        model.activeToolCalls = [ActiveToolCall(id: "live", name: "terminal", input: "Synthetic tool",
-            context: "", startedAt: Date(), isComplete: false)]
+        model.activeToolCalls = [
+            ActiveToolCall(
+                id: "live", name: "terminal", input: "Synthetic tool",
+                context: "", startedAt: Date(), isComplete: false)
+        ]
         try await Task.sleep(for: .milliseconds(450))
         #expect(trace.turns.last?.toolCount == 1)
         let updated = trace.updateCount
@@ -108,11 +116,14 @@ struct SessionTracePerformanceTests {
 
     @Test func clockBoundsMatchFullRowCalculationAndWindowRangesStayBounded() {
         let origin = Date(timeIntervalSince1970: 1_000)
-        let turn = SessionTraceTurn(id: "t", title: "T", start: origin, rows: [
-            SessionTraceRow(id: "done", kind: .tool, title: "Done", start: origin, duration: 30, timing: .runtime),
-            SessionTraceRow(id: "live", kind: .agent, title: "Live", start: origin.addingTimeInterval(5),
-                timing: .observed, active: true, shift: 10)
-        ])
+        let turn = SessionTraceTurn(
+            id: "t", title: "T", start: origin,
+            rows: [
+                SessionTraceRow(id: "done", kind: .tool, title: "Done", start: origin, duration: 30, timing: .runtime),
+                SessionTraceRow(
+                    id: "live", kind: .agent, title: "Live", start: origin.addingTimeInterval(5),
+                    timing: .observed, active: true, shift: 10),
+            ])
         let bounds = SessionTraceTimeBounds(turn)
         for offset in [0.0, 20, 100] {
             let now = origin.addingTimeInterval(offset)
@@ -120,7 +131,8 @@ struct SessionTracePerformanceTests {
             #expect(bounds.span(at: now) == max(1, finish.timeIntervalSince(origin)))
         }
         for top in [-100.0, 0, 17_000, 33_900] {
-            let range = SessionTraceRowViewport.range(count: 1_000,
+            let range = SessionTraceRowViewport.range(
+                count: 1_000,
                 rect: CGRect(x: 0, y: top, width: 760, height: 360))
             #expect(range.count <= 34 && range.lowerBound >= 0 && range.upperBound <= 1_000)
         }

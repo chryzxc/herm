@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct DockBotIndicatorFrameTests {
@@ -43,10 +44,13 @@ struct DockBotIndicatorFrameTests {
             #expect(active.rotation == Array(0...count))
             #expect(done.rotation == Array(0..<count).map { $0 + 1 })
             for tick in 0..<20 {
-                let frame = DockBotIndicatorFrame(date: Date(timeIntervalSinceReferenceDate: Double(tick) * DockBotHuddleLayout.turnLength), moves: true)
+                let frame = DockBotIndicatorFrame(
+                    date: Date(timeIntervalSinceReferenceDate: Double(tick) * DockBotHuddleLayout.turnLength),
+                    moves: true)
                 let turn = done.turn(at: frame)
-                if count == 0 { #expect(turn.active == -1) }
-                else {
+                if count == 0 {
+                    #expect(turn.active == -1)
+                } else {
                     #expect((1...count).contains(turn.active))
                     #expect((1...count).contains(turn.next))
                 }

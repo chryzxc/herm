@@ -10,7 +10,10 @@ extension DockModel {
         guard !hasLoadedSlashCatalog else { return }
         var params: [String: Any] = [:]
         if let sessionID { params["session_id"] = sessionID }
-        guard let catalog = try? await sessionRPCClient.request(HermesFeatureIDs.ID.commandsCatalog.rawValue, params: params) else { return }
+        guard
+            let catalog = try? await sessionRPCClient.request(
+                HermesFeatureIDs.ID.commandsCatalog.rawValue, params: params)
+        else { return }
         let commands = catalog["commands"] as? [String: [String: Any]] ?? [:]
         slashCommandDispositions = commands.compactMapValues { $0["desktop"] as? String }
             .reduce(into: [:]) { $0[$1.key.lowercased()] = $1.value }
@@ -23,7 +26,10 @@ extension DockModel {
 
     func slashDispositions(forProfile profile: String) async -> [String: String] {
         if let cached = profileSlashDispositions[profile] { return cached }
-        guard let catalog = try? await sessionRPCClient.request(HermesFeatureIDs.ID.commandsCatalog.rawValue, params: ["profile": profile]) else { return [:] }
+        guard
+            let catalog = try? await sessionRPCClient.request(
+                HermesFeatureIDs.ID.commandsCatalog.rawValue, params: ["profile": profile])
+        else { return [:] }
         let commands = catalog["commands"] as? [String: [String: Any]] ?? [:]
         let result = commands.compactMapValues { $0["desktop"] as? String }
             .reduce(into: [String: String]()) { $0[$1.key.lowercased()] = $1.value }
@@ -33,7 +39,9 @@ extension DockModel {
 
     /// `profile` scopes completions to another bot (the forward box); the open
     /// session belongs to a different profile, so it is left out of the params.
-    func composerCompletions(for trigger: ComposerCompletionTrigger, bots: [ComposerCompletionItem], profile: String? = nil) async -> ComposerCompletion.Result {
+    func composerCompletions(
+        for trigger: ComposerCompletionTrigger, bots: [ComposerCompletionItem], profile: String? = nil
+    ) async -> ComposerCompletion.Result {
         do {
             try await sessionRPCClient.connect()
             var params: [String: Any] = [:]
@@ -49,23 +57,29 @@ extension DockModel {
                 params["text"] = text
                 if let profile {
                     let dispositions = await slashDispositions(forProfile: profile)
-                    let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
-                    return ComposerCompletion.slashResult(from: payload, hidden: { dispositions[$0] != nil || ComposerCompletion.terminalOnlyCommands.contains($0) })
+                    let payload = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
+                    return ComposerCompletion.slashResult(
+                        from: payload,
+                        hidden: { dispositions[$0] != nil || ComposerCompletion.terminalOnlyCommands.contains($0) })
                 }
                 // The catalog only filters rows, so fetch it alongside the completion.
                 async let catalog: Void = loadSlashCatalogIfNeeded()
-                let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
+                let payload = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
                 await catalog
                 return ComposerCompletion.slashResult(from: payload, hidden: isSlashCommandHidden)
             case .skill(let token):
                 params["text"] = token
-                let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
+                let payload = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
                 var result = ComposerCompletion.slashResult(from: payload) { _ in false }
                 result.items.removeAll { $0.group != "Skills" }
                 return result
             case .mention(let word):
                 params["word"] = word
-                let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completePath.rawValue, params: params)
+                let payload = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.completePath.rawValue, params: params)
                 return ComposerCompletion.mentionResult(from: payload, bots: bots)
             }
         } catch {
@@ -88,12 +102,16 @@ extension DockModel {
         case "resume":
             let query = command.arg.lowercased()
             guard !query.isEmpty,
-                  let session = sessions.first(where: { $0.id == command.arg || $0.title.lowercased() == query })
-                    ?? sessions.first(where: { $0.id.hasPrefix(command.arg) || $0.title.lowercased().contains(query) }) else {
+                let session = sessions.first(where: { $0.id == command.arg || $0.title.lowercased() == query })
+                    ?? sessions.first(where: { $0.id.hasPrefix(command.arg) || $0.title.lowercased().contains(query) })
+            else {
                 messages.append(ChatMessage(role: .user, text: echo))
-                messages.append(ChatMessage(role: .hermes, text: command.arg.isEmpty
-                    ? "Pick a session from the sidebar, or type `/resume <title>`."
-                    : "No session matches “\(command.arg)”.", isError: !command.arg.isEmpty))
+                messages.append(
+                    ChatMessage(
+                        role: .hermes,
+                        text: command.arg.isEmpty
+                            ? "Pick a session from the sidebar, or type `/resume <title>`."
+                            : "No session matches “\(command.arg)”.", isError: !command.arg.isEmpty))
                 return
             }
             resumeSession(session)
@@ -106,14 +124,26 @@ extension DockModel {
         if command.name == "model" {
             // Desktop opens its picker here (`desktop="hidden"` in the catalog); Herm matches the arg.
             // ponytail: `--global` is ignored, the pick is session-scoped like Herm's model menu.
-            let query = command.arg.split(separator: " ").filter { !$0.hasPrefix("--") }.joined(separator: " ").lowercased()
+            let query = command.arg.split(separator: " ").filter { !$0.hasPrefix("--") }.joined(separator: " ")
+                .lowercased()
             guard !query.isEmpty else {
-                messages.append(ChatMessage(role: .hermes, text: "Model: \(sessionModelValue ?? "Hermes default"). Type `/model <name>` or use the model menu."))
+                messages.append(
+                    ChatMessage(
+                        role: .hermes,
+                        text:
+                            "Model: \(sessionModelValue ?? "Hermes default"). Type `/model <name>` or use the model menu."
+                    ))
                 return
             }
-            guard let option = runtimeModelOptions.first(where: { $0.model.lowercased() == query })
-                    ?? runtimeModelOptions.first(where: { $0.displayName.lowercased().contains(query) }) else {
-                messages.append(ChatMessage(role: .hermes, text: "No model matches “\(query)”. Open the model menu to see what’s available.", isError: true))
+            guard
+                let option = runtimeModelOptions.first(where: { $0.model.lowercased() == query })
+                    ?? runtimeModelOptions.first(where: { $0.displayName.lowercased().contains(query) })
+            else {
+                messages.append(
+                    ChatMessage(
+                        role: .hermes,
+                        text: "No model matches “\(query)”. Open the model menu to see what’s available.", isError: true
+                    ))
                 return
             }
             updateSessionModel(option)
@@ -122,7 +152,8 @@ extension DockModel {
         }
         if isSlashCommandHidden(key) {
             let reason = slashCommandDispositions[key] ?? "terminal"
-            messages.append(ChatMessage(role: .hermes, text: "`\(key)` isn’t available in Herm (\(reason)-only).", isError: true))
+            messages.append(
+                ChatMessage(role: .hermes, text: "`\(key)` isn’t available in Herm (\(reason)-only).", isError: true))
             return
         }
 
@@ -137,7 +168,8 @@ extension DockModel {
                 // The agent builds lazily and slash.exec doesn't start it, so a plugin
                 // command that submits a turn on a fresh session is refused ("could not
                 // start the assistant"). Any waiting session RPC blocks on the build.
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": sessionID])
+                _ = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": sessionID])
                 guard self.sessionResumeGeneration == generation else { return }
                 switch command.name {
                 case "compress", "compact":
@@ -168,12 +200,15 @@ extension DockModel {
                     }
                     slashSideTaskIDs.insert(taskID)
                     if !isBtw { registerBackgroundTask(id: taskID, prompt: command.arg, parentSessionID: sessionID) }
-                    appendSlashOutput(isBtw ? "Asking on the side…" : "Started in the background.", generation: generation)
+                    appendSlashOutput(
+                        isBtw ? "Asking on the side…" : "Started in the background.", generation: generation)
                 default:
                     try await execSlashCommand(command, sessionID: sessionID, generation: generation)
                 }
             } catch {
-                appendSlashOutput("`\(key)` failed: \(Self.safeUserDiagnostic(error.localizedDescription))", generation: generation, isError: true)
+                appendSlashOutput(
+                    "`\(key)` failed: \(Self.safeUserDiagnostic(error.localizedDescription))", generation: generation,
+                    isError: true)
             }
         }
     }
@@ -196,7 +231,8 @@ extension DockModel {
         guard self.sessionResumeGeneration == generation else { return }
 
         let message = (payload["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if let notice = (payload["notice"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !notice.isEmpty {
+        if let notice = (payload["notice"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !notice.isEmpty
+        {
             appendSlashOutput(notice, generation: generation)
         }
         switch payload["type"] as? String {

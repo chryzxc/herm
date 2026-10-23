@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -58,7 +59,10 @@ struct HermesCLIAdapterTests {
 
         let result = try await adapter.kanbanList(filter: KanbanListFilter(status: "ready"))
 
-        #expect(client.httpPaths == ["/api/plugins/kanban/boards", "/api/plugins/kanban/board?board=default&include_archived=true"])
+        #expect(
+            client.httpPaths == [
+                "/api/plugins/kanban/boards", "/api/plugins/kanban/board?board=default&include_archived=true",
+            ])
         #expect(result.succeeded)
         #expect(result.stdout.contains("ready-task"))
         #expect(result.stdout.contains("\"board_slug\":\"default\""))
@@ -99,7 +103,9 @@ struct HermesCLIAdapterTests {
 
         _ = try await adapter.kanbanAttributeSession(taskID: "t_abc123", sessionID: "session-1")
 
-        #expect(client.commands.last == "'bash' '\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh' 't_abc123' 'session-1'")
+        #expect(
+            client.commands.last
+                == "'bash' '\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh' 't_abc123' 'session-1'")
     }
 
     @Test func configGetCommandAllowlistUsesTypedConfigPath() async throws {
@@ -137,7 +143,8 @@ struct HermesCLIAdapterTests {
         let path = "/api/plugins/kanban/board?board=client-board&include_archived=true"
 
         _ = try await adapter.kanbanList(boardSlug: "client-board")
-        _ = try await adapter.kanbanList(boardSlug: "client-board", filter: KanbanListFilter(includeArchived: true), background: true)
+        _ = try await adapter.kanbanList(
+            boardSlug: "client-board", filter: KanbanListFilter(includeArchived: true), background: true)
         _ = try await adapter.kanbanShow(boardSlug: "client-board", taskID: "t_1")
         _ = try await adapter.kanbanList(boardSlug: "client-board", background: true)
         #expect(client.httpPaths == [path])
@@ -155,11 +162,12 @@ struct HermesCLIAdapterTests {
 
         let result = try await adapter.kanbanList(filter: KanbanListFilter(includeArchived: true))
 
-        #expect(client.httpPaths == [
-            "/api/plugins/kanban/boards",
-            "/api/plugins/kanban/board?board=default&include_archived=true",
-            "/api/plugins/kanban/board?board=archived-board&include_archived=true"
-        ])
+        #expect(
+            client.httpPaths == [
+                "/api/plugins/kanban/boards",
+                "/api/plugins/kanban/board?board=default&include_archived=true",
+                "/api/plugins/kanban/board?board=archived-board&include_archived=true",
+            ])
         #expect(result.stdout.contains("archived-task"))
     }
 
@@ -181,12 +189,14 @@ struct HermesCLIAdapterTests {
         let created = try await adapter.kanbanList(filter: KanbanListFilter(sort: "created-desc"))
         let createdData = try #require(created.stdout.data(using: .utf8))
         let createdRows = try #require(JSONSerialization.jsonObject(with: createdData) as? [[String: Any]])
-        #expect(createdRows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
+        #expect(
+            createdRows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
 
         let priority = try await adapter.kanbanList(filter: KanbanListFilter(sort: "priority-desc"))
         let priorityData = try #require(priority.stdout.data(using: .utf8))
         let priorityRows = try #require(JSONSerialization.jsonObject(with: priorityData) as? [[String: Any]])
-        #expect(priorityRows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
+        #expect(
+            priorityRows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
     }
 
     @Test func largeISODatedBoardSortsWithoutMultiSecondStalls() async throws {
@@ -194,8 +204,10 @@ struct HermesCLIAdapterTests {
         let formatter = ISO8601DateFormatter()
         client.boardTasks = (0..<500).map { index in
             let rank = (index * 7919) % 500
-            return ["id": "task-\(rank)", "title": "Work", "status": "ready",
-                    "updated_at": formatter.string(from: Date(timeIntervalSince1970: 1_750_000_000 + Double(rank)))]
+            return [
+                "id": "task-\(rank)", "title": "Work", "status": "ready",
+                "updated_at": formatter.string(from: Date(timeIntervalSince1970: 1_750_000_000 + Double(rank))),
+            ]
         }
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
         let start = ContinuousClock.now
@@ -211,10 +223,19 @@ struct HermesCLIAdapterTests {
     @Test func isoDatesAndNumericStringsKeepStableDateOrdering() async throws {
         let client = CLITestRPCClient()
         client.boardTasks = [
-            ["id": "first", "title": "First", "status": "ready", "updated_at": "2025-01-01T00:00:00Z", "created_at": "2025-01-01T00:00:00Z"],
+            [
+                "id": "first", "title": "First", "status": "ready", "updated_at": "2025-01-01T00:00:00Z",
+                "created_at": "2025-01-01T00:00:00Z",
+            ],
             ["id": "undated", "title": "Undated", "status": "ready"],
-            ["id": "equal", "title": "Equal", "status": "ready", "updated_at": "1735689600", "created_at": "1735689600"],
-            ["id": "newest", "title": "Newest", "status": "ready", "updated_at": "2025-01-02T00:00:00Z", "created_at": "2025-01-02T00:00:00Z"]
+            [
+                "id": "equal", "title": "Equal", "status": "ready", "updated_at": "1735689600",
+                "created_at": "1735689600",
+            ],
+            [
+                "id": "newest", "title": "Newest", "status": "ready", "updated_at": "2025-01-02T00:00:00Z",
+                "created_at": "2025-01-02T00:00:00Z",
+            ],
         ]
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
         for sort in ["updated", "created-desc"] {
@@ -229,7 +250,10 @@ struct HermesCLIAdapterTests {
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
 
         _ = try await adapter.kanbanDiagnostics(boardSlug: "client-board", severity: "error", taskID: "task-1")
-        #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'diagnostics' '--json' '--severity' 'error' '--task' 'task-1'")
+        #expect(
+            client.commands.last
+                == "'hermes' 'kanban' '--board' 'client-board' 'diagnostics' '--json' '--severity' 'error' '--task' 'task-1'"
+        )
 
         _ = try await adapter.kanbanAttachments(boardSlug: "client-board", taskID: "task-1")
         #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'attachments' '--json' 'task-1'")
@@ -270,23 +294,47 @@ private final class CLITestRPCClient: HermesRPCClientProtocol {
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         httpPaths.append(path)
         if path == "/api/plugins/kanban/boards" {
-            return ["boards": [
-                ["slug": "default", "archived": false],
-                ["slug": "archived-board", "archived": true]
-            ]]
+            return [
+                "boards": [
+                    ["slug": "default", "archived": false],
+                    ["slug": "archived-board", "archived": true],
+                ]
+            ]
         }
         if path.contains("archived-board") {
-            return ["columns": [["name": "archived", "tasks": [[
-                "id": "archived-task", "title": "Archived task", "status": "archived"
-            ]]]]]
+            return [
+                "columns": [
+                    [
+                        "name": "archived",
+                        "tasks": [
+                            [
+                                "id": "archived-task", "title": "Archived task", "status": "archived",
+                            ]
+                        ],
+                    ]
+                ]
+            ]
         }
         if let boardTasks { return ["columns": [["tasks": boardTasks]]] }
-        return ["columns": [["name": "ready", "tasks": [
-            ["id": "ready-task", "title": "Ready task", "status": "ready"],
-            ["id": "new-task", "title": "New task", "status": "ready", "updated_at": 200, "created_at": 200, "priority": 80],
-            ["id": "old-task", "title": "Old task", "status": "ready", "updated_at": 100, "created_at": 100, "priority": 10],
-            ["id": "undated-task", "title": "Undated task", "status": "ready"]
-        ]]]]
+        return [
+            "columns": [
+                [
+                    "name": "ready",
+                    "tasks": [
+                        ["id": "ready-task", "title": "Ready task", "status": "ready"],
+                        [
+                            "id": "new-task", "title": "New task", "status": "ready", "updated_at": 200,
+                            "created_at": 200, "priority": 80,
+                        ],
+                        [
+                            "id": "old-task", "title": "Old task", "status": "ready", "updated_at": 100,
+                            "created_at": 100, "priority": 10,
+                        ],
+                        ["id": "undated-task", "title": "Undated task", "status": "ready"],
+                    ],
+                ]
+            ]
+        ]
     }
 
     private(set) var httpWrites: [(method: String, path: String, body: [String: Any])] = []

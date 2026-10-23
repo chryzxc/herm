@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -10,7 +11,8 @@ struct HermesGatewayResponseTests {
 
     @Test func largeTranscriptPreservesNestedJSONValues() async throws {
         let messages = (0..<2000).map { index in
-            ["index": index, "text": "message \(index) — 世界", "nested": ["values": [true, 3.25, NSNull()]]] as [String: Any]
+            ["index": index, "text": "message \(index) — 世界", "nested": ["values": [true, 3.25, NSNull()]]]
+                as [String: Any]
         }
         let data = try JSONSerialization.data(withJSONObject: ["id": 1, "result": ["messages": messages]])
         let decoded = try frame(String(decoding: data, as: UTF8.self))
@@ -160,7 +162,7 @@ struct HermesGatewayResponseTests {
             #"{"method":"event","params":{"type":"message.complete"}}"#,
             #"{"method":"event","params":{"type":"agent.terminal.output"}}"#,
             #"{"id":"srq-1","method":"clarify","params":{"question":"Which?"}}"#,
-            #"{"id":"srq-2","method":"approval","params":{}}"#
+            #"{"id":"srq-2","method":"approval","params":{}}"#,
         ] {
             gateway.handle(try frame(text))
         }
@@ -169,8 +171,10 @@ struct HermesGatewayResponseTests {
 
     @Test func largeTranscriptDeliveryDecodesOnceWithoutResultSerialization() async throws {
         let messages = (0..<2000).map { index in
-            ["index": index, "text": "message \(index) — 世界",
-             "nested": ["values": [true, 3.25, NSNull()]]] as [String: Any]
+            [
+                "index": index, "text": "message \(index) — 世界",
+                "nested": ["values": [true, 3.25, NSNull()]],
+            ] as [String: Any]
         }
         let data = try JSONSerialization.data(withJSONObject: ["id": 1, "result": ["messages": messages]])
         let gateway = HermesGateway()
@@ -178,8 +182,9 @@ struct HermesGatewayResponseTests {
         let response: HermesGatewayResponse = try await withCheckedThrowingContinuation { continuation in
             gateway.pending[1] = continuation
             Task {
-                await gateway.receive(.string(String(decoding: data, as: UTF8.self)),
-                                      jsonSerialization: ResponseCodecProbe.self)
+                await gateway.receive(
+                    .string(String(decoding: data, as: UTF8.self)),
+                    jsonSerialization: ResponseCodecProbe.self)
             }
         }
         let actual = try #require(response.object["messages"] as? [[String: Any]])

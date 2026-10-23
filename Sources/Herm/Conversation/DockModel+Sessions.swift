@@ -24,8 +24,11 @@ extension DockModel {
         }
         profileScopeID = next
         profileScopeUnavailable = nextUnavailable
-        if let next { defaults.set(next, forKey: profileScopeKey) }
-        else { defaults.removeObject(forKey: profileScopeKey) }
+        if let next {
+            defaults.set(next, forKey: profileScopeKey)
+        } else {
+            defaults.removeObject(forKey: profileScopeKey)
+        }
         sessionLoadGeneration &+= 1
         sessionLoadTask?.cancel()
         sessionLoadTask = nil
@@ -42,7 +45,8 @@ extension DockModel {
         var seen = Set<ProfileScopedID>()
         return rows.compactMap { row in
             guard let session = Self.parseSession(row, profileID: row["profile"] as? String),
-                  seen.insert(session.scopedID).inserted else { return nil }
+                seen.insert(session.scopedID).inserted
+            else { return nil }
             return session
         }
     }
@@ -50,23 +54,26 @@ extension DockModel {
     func artifactMessages(for session: HermesSession, offset: Int) async throws -> [String: Any] {
         // Include pre-compaction output and page through the entire transcript.
         do {
-            return try await interruptRPC.sessionMessages(sessionID: session.id, profileID: session.profileID,
-                                                       limit: 100, offset: offset, includeCompacted: true)
+            return try await interruptRPC.sessionMessages(
+                sessionID: session.id, profileID: session.profileID,
+                limit: 100, offset: offset, includeCompacted: true)
         } catch HermesGateway.GatewayError.httpError(404) {
-            return ["data": []] // pruned since the session list was read
+            return ["data": []]  // pruned since the session list was read
         }
     }
 
     func resultPeek(for session: HermesSession) async throws -> EdgeResultContent? {
         let started = Date()
         defer { DebugLog.write("workflow: result.read_ms=\(Int(Date().timeIntervalSince(started) * 1000))") }
-        let result = try await interruptRPC.sessionMessages(sessionID: session.id, profileID: session.profileID, latest: true)
+        let result = try await interruptRPC.sessionMessages(
+            sessionID: session.id, profileID: session.profileID, latest: true)
         return try EdgeResultContent.parse(result, session: session)
     }
 
     func markQuickResultReviewed(_ snapshot: HermesSession) {
         guard let live = sessions.first(where: { $0.id == snapshot.id && $0.profileID == snapshot.profileID }),
-              !live.isWorking, live.lastUpdatedAt == snapshot.lastUpdatedAt else { return }
+            !live.isWorking, live.lastUpdatedAt == snapshot.lastUpdatedAt
+        else { return }
         updateSessionActivity(sessionID: live.id, unread: false)
         if currentSessionIDs.contains(live.id), status == .idle { hasUnreadResponse = false }
     }
@@ -76,10 +83,11 @@ extension DockModel {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalized = trimmed.lowercased()
         guard !trimmed.isEmpty,
-              normalized != "untitled",
-              normalized != "untitled chat",
-              normalized != "untitled session",
-              normalized != "hermes session" else { return }
+            normalized != "untitled",
+            normalized != "untitled chat",
+            normalized != "untitled session",
+            normalized != "hermes session"
+        else { return }
         currentSessionTitle = trimmed
     }
 
@@ -104,7 +112,8 @@ extension DockModel {
                 try await sessionRPCClient.connect()
                 var params: [String: Any] = ["limit": 50]
                 if let scope, !scope.isEmpty { params["profile"] = scope }
-                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: params)
+                let result = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.sessionList.rawValue, params: params)
                 guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
                 guard let rawSessions = result["sessions"] as? [[String: Any]] else {
                     throw HermesGateway.GatewayError.malformedResponse
@@ -123,19 +132,23 @@ extension DockModel {
                 // Events delivered during the read are newer than its snapshot.
                 let working = activityGeneration == sessionActivityGeneration ? index?.working : nil
                 if let index {
-                    pinnedSessions = Self.mergingSessionIndex(index.pinned, with: sessions + pinnedSessions, working: working)
+                    pinnedSessions = Self.mergingSessionIndex(
+                        index.pinned, with: sessions + pinnedSessions, working: working)
                 }
                 // The session index can lag behind the live gateway stream.
                 // Keep a newer event timestamp until Hermes publishes an equal
                 // or newer canonical row, so navigation never regresses its
                 // visible “Updated” time after a completed message.
-                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions, keeping: self.navigationSessionID, working: working))
+                let merged = self.applyPersistedUnreadState(
+                    Self.mergingSessionIndex(
+                        loaded, with: sessions, keeping: self.navigationSessionID, working: working))
                 sessions = merged
                 sessionProjectionState = merged.isEmpty ? .empty : .ready(merged)
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
             } catch {
                 guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
-                sessionProjectionState = Self.failedOrStale(previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
+                sessionProjectionState = Self.failedOrStale(
+                    previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
                 DebugLog.write("model: session list failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
@@ -161,20 +174,23 @@ extension DockModel {
             for row in (live?["sessions"] as? [[String: Any]]) ?? []
             where row["session_key"] as? String == session.id && (row["status"] as? String ?? "idle") == "idle" {
                 if let liveID = row["session_id"] as? String {
-                    _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.sessionClose.rawValue, params: ["session_id": liveID])
+                    _ = try? await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.sessionClose.rawValue, params: ["session_id": liveID])
                 }
             }
             var params: [String: Any] = ["session_id": session.id]
             if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
-            discardComposerDraft(for: SessionComposerDraft.Key(
-                profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id
-            ))
+            discardComposerDraft(
+                for: SessionComposerDraft.Key(
+                    profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id
+                ))
             sessions.removeAll { $0.id == session.id }
             DebugLog.write("model: deleted saved session \(session.id)")
             return true
         } catch {
-            sessionDeletionError = "Could not delete the session: \(Self.safeUserDiagnostic(error.localizedDescription))"
+            sessionDeletionError =
+                "Could not delete the session: \(Self.safeUserDiagnostic(error.localizedDescription))"
             DebugLog.write("model: session delete failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
@@ -212,8 +228,9 @@ extension DockModel {
         pinningSessionID = session.id
         defer { pinningSessionID = nil }
         do {
-            try await Self.writeSessionPin(client: sessionRPCClient, sessionID: session.id,
-                                           profileID: session.profileID ?? profileScopeID, pinned: pinned)
+            try await Self.writeSessionPin(
+                client: sessionRPCClient, sessionID: session.id,
+                profileID: session.profileID ?? profileScopeID, pinned: pinned)
             // ponytail: optimistic local flip; a list page already in flight can
             // briefly show the old pin until the next load (Desktop fences this).
             if pinned { pinnedSessions.append(session) } else { pinnedSessions.removeAll { $0.id == session.id } }
@@ -237,35 +254,45 @@ extension DockModel {
         return ((row["model"] as? String) ?? "").isEmpty
     }
 
-    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>, working: Set<String>?) {
+    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (
+        pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>, working: Set<String>?
+    ) {
         var path = "/api/sessions?limit=100&order=recent"
         if let profileID, !profileID.isEmpty,
-           let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
+            let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+        {
             path += "&profile=\(encoded)"
         }
         guard let rows = try await client.fetchHTTP(path)["sessions"] as? [[String: Any]] else {
             throw HermesGateway.GatewayError.malformedResponse
         }
-        let lastActive = Dictionary(rows.compactMap { row in
-            parseSession(row, profileID: profileID).flatMap { session in session.updatedAt.map { (session.id, $0) } }
-        }, uniquingKeysWith: max)
+        let lastActive = Dictionary(
+            rows.compactMap { row in
+                parseSession(row, profileID: profileID).flatMap { session in session.updatedAt.map { (session.id, $0) }
+                }
+            }, uniquingKeysWith: max)
         let feedIDs = Set(rows.filter(isModellessFeed).compactMap { $0["id"] as? String })
         // REST `is_active` means recently written, not executing. The live RPC
         // covers unopened sessions too, including long turns without new writes.
         let live = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
         let working = (live?["sessions"] as? [[String: Any]]).map { sessions in
-            Set(sessions.compactMap { row -> String? in
-                guard let status = row["status"] as? String,
-                      ["starting", "working", "streaming", "waiting"].contains(status) else { return nil }
-                return row["session_key"] as? String
-            })
+            Set(
+                sessions.compactMap { row -> String? in
+                    guard let status = row["status"] as? String,
+                        ["starting", "working", "streaming", "waiting"].contains(status)
+                    else { return nil }
+                    return row["session_key"] as? String
+                })
         }
-        let pinned = rows.filter { $0["pinned"] as? Bool == true }.compactMap { parseSession($0, profileID: profileID) }.map { session in
-            guard working?.contains(session.id) == true else { return session }
-            return HermesSession(id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
-                                 startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
-                                 source: session.source, isHidden: session.isHidden, isWorking: true, hasUnreadUpdate: session.hasUnreadUpdate)
-        }
+        let pinned = rows.filter { $0["pinned"] as? Bool == true }.compactMap { parseSession($0, profileID: profileID) }
+            .map { session in
+                guard working?.contains(session.id) == true else { return session }
+                return HermesSession(
+                    id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
+                    startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
+                    source: session.source, isHidden: session.isHidden, isWorking: true,
+                    hasUnreadUpdate: session.hasUnreadUpdate)
+            }
         return (pinned, lastActive, feedIDs, working)
     }
 
@@ -286,8 +313,13 @@ extension DockModel {
         )
     }
 
-    static func writeSessionPin(client: HermesRPCClientProtocol, sessionID: String, profileID: String?, pinned: Bool) async throws {
-        guard let encoded = sessionID.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_."))) else {
+    static func writeSessionPin(client: HermesRPCClientProtocol, sessionID: String, profileID: String?, pinned: Bool)
+        async throws
+    {
+        guard
+            let encoded = sessionID.addingPercentEncoding(
+                withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_.")))
+        else {
             throw HermesGateway.GatewayError.malformedResponse
         }
         var body: [String: Any] = ["pinned": pinned]
@@ -300,14 +332,16 @@ extension DockModel {
     func migrateLegacyLocalPins() async {
         let key = "hermes.dock.pinned-sessions.v1"
         guard let data = defaults.data(forKey: key),
-              let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let references = saved["references"] as? [[String: String]] else { return }
+            let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let references = saved["references"] as? [[String: String]]
+        else { return }
         var remaining: [[String: String]] = []
         for reference in references {
             guard let sessionID = reference["sessionID"] else { continue }
             do {
-                try await Self.writeSessionPin(client: sessionRPCClient, sessionID: sessionID,
-                                               profileID: reference["profileID"], pinned: true)
+                try await Self.writeSessionPin(
+                    client: sessionRPCClient, sessionID: sessionID,
+                    profileID: reference["profileID"], pinned: true)
             } catch HermesGateway.GatewayError.httpError(404), HermesGateway.GatewayError.httpRefused(404, _) {
                 continue
             } catch {
@@ -370,13 +404,18 @@ extension DockModel {
                 try await sessionRPCClient.connect()
                 let scopedLastSessionKey = lastSessionIDKey(for: scope)
                 if let savedSessionID = defaults.string(forKey: scopedLastSessionKey),
-                   !savedSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   await resumeSession(HermesSession(id: savedSessionID, title: "", preview: "", startedAt: nil, messageCount: 0, source: ""), reportFailure: false) {
+                    !savedSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    await resumeSession(
+                        HermesSession(
+                            id: savedSessionID, title: "", preview: "", startedAt: nil, messageCount: 0, source: ""),
+                        reportFailure: false)
+                {
                     return
                 }
                 var listParams: [String: Any] = ["limit": 1]
                 if let scope, !scope.isEmpty { listParams["profile"] = scope }
-                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: listParams)
+                let result = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.sessionList.rawValue, params: listParams)
                 guard generation == restoreGeneration else { return }
                 guard let rawSessions = result["sessions"] as? [[String: Any]] else {
                     throw HermesGateway.GatewayError.malformedResponse
@@ -396,8 +435,10 @@ extension DockModel {
                 _ = await resumeSession(latest, reportFailure: true)
             } catch {
                 guard generation == restoreGeneration else { return }
-                sessionProjectionState = Self.failedOrStale(previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
-                DebugLog.write("model: latest session restore failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                sessionProjectionState = Self.failedOrStale(
+                    previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
+                DebugLog.write(
+                    "model: latest session restore failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -429,8 +470,9 @@ extension DockModel {
     /// unchanged and the returned branch is the only conversation selected.
     func branchConversation(from message: ChatMessage) async {
         guard let sessionID, !sessionID.isEmpty,
-              message.role == .hermes,
-              message.hasBodyText else { return }
+            message.role == .hermes,
+            message.hasBodyText
+        else { return }
         // Hermes has no message anchor: it keeps the first `count` visible
         // rows. Count them locally, with older paged history loaded first.
         await loadTranscriptHistory(through: nil)
@@ -440,20 +482,25 @@ extension DockModel {
         var rowCount = 0
         var position: Int?
         var previousWasKanban = false
-        for candidate in messages where (candidate.role == .user || candidate.role == .hermes)
-            && (candidate.hasBodyText || !candidate.images.isEmpty) && !candidate.isError {
+        for candidate in messages
+        where (candidate.role == .user || candidate.role == .hermes)
+            && (candidate.hasBodyText || !candidate.images.isEmpty) && !candidate.isError
+        {
             if let event = candidate.systemEvent, event.isFeed || event.label == "System" { continue }
             let continuesKanbanRow = candidate.kanbanNotice != nil && previousWasKanban
             previousWasKanban = candidate.kanbanNotice != nil
             if !continuesKanbanRow { rowCount += 1 }
-            if candidate.id == message.id { position = rowCount - 1; break }
+            if candidate.id == message.id {
+                position = rowCount - 1
+                break
+            }
         }
         guard let position else { return }
         let count = await storedBranchCount(through: message) ?? position + 1
         do {
             var params: [String: Any] = [
                 "session_id": sessionID,
-                "count": count
+                "count": count,
             ]
             if let profileID = sessionProfileID ?? profileScopeID, !profileID.isEmpty {
                 params["profile"] = profileID
@@ -463,20 +510,22 @@ extension DockModel {
                 params: params
             )
             // `session_id` is a live runtime handle; resume needs the stored key.
-            let branchID = Self.stableSessionID(from: result)
+            let branchID =
+                Self.stableSessionID(from: result)
                 ?? (result["session_id"] as? String)
                 ?? (result["branch_session_id"] as? String)
                 ?? (result["id"] as? String)
             guard let branchID, !branchID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            _ = await resumeSession(HermesSession(
-                id: branchID,
-                profileID: sessionProfileID ?? profileScopeID,
-                title: "",
-                preview: "",
-                startedAt: nil,
-                messageCount: 0,
-                source: "herm"
-            ), reportFailure: true)
+            _ = await resumeSession(
+                HermesSession(
+                    id: branchID,
+                    profileID: sessionProfileID ?? profileScopeID,
+                    title: "",
+                    preview: "",
+                    startedAt: nil,
+                    messageCount: 0,
+                    source: "herm"
+                ), reportFailure: true)
         } catch {
             DebugLog.write("model: message branch failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
         }
@@ -487,23 +536,32 @@ extension DockModel {
     /// compaction summaries), so the displayed position undercounts. Count the
     /// stored rows instead; nil falls back to the displayed position.
     func storedBranchCount(through message: ChatMessage) async -> Int? {
-        guard let target = storedMessageReferences[message.id]?.rowID, let storageID = sessionStorageID else { return nil }
+        guard let target = storedMessageReferences[message.id]?.rowID, let storageID = sessionStorageID else {
+            return nil
+        }
         var cursor = TranscriptHistoryCursor(storageSessionID: storageID, profileID: sessionProfileID ?? profileScopeID)
         var rows: [[String: Any]] = []
         do {
             while cursor.hasMore {
-                guard let path = TranscriptHistoryPaging.pagePath(
-                    sessionID: storageID, profileID: cursor.profileID,
-                    limit: TranscriptHistoryPaging.maximumPageRowLimit, offset: cursor.nextOffset
-                ), let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path)) else { return nil }
-                rows = TranscriptHistoryPaging.advance(&cursor, with: page, limit: TranscriptHistoryPaging.maximumPageRowLimit) + rows
+                guard
+                    let path = TranscriptHistoryPaging.pagePath(
+                        sessionID: storageID, profileID: cursor.profileID,
+                        limit: TranscriptHistoryPaging.maximumPageRowLimit, offset: cursor.nextOffset
+                    ), let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path))
+                else { return nil }
+                rows =
+                    TranscriptHistoryPaging.advance(
+                        &cursor, with: page, limit: TranscriptHistoryPaging.maximumPageRowLimit) + rows
             }
         } catch { return nil }
         var count = 0
         for row in rows {
             guard let role = row["role"] as? String, role == "user" || role == "assistant" else { continue }
             let content = row["content"]
-            let text = (content as? String) ?? ((content as? [[String: Any]])?.compactMap { ($0["text"] as? String) ?? ($0["content"] as? String) }.joined() ?? "")
+            let text =
+                (content as? String)
+                ?? ((content as? [[String: Any]])?.compactMap { ($0["text"] as? String) ?? ($0["content"] as? String) }
+                    .joined() ?? "")
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
             count += 1
             if TranscriptHistoryPaging.rowID(row) == target { return count }
@@ -517,7 +575,8 @@ extension DockModel {
         // The session queue uses Hermes' durable storage identity, whereas a
         // resume can expose a different runtime identity. Both identify the
         // same active conversation and must retain its unsent composer text.
-        let isRefreshingActiveSession = (session.id == sessionID || session.id == sessionStorageID)
+        let isRefreshingActiveSession =
+            (session.id == sessionID || session.id == sessionStorageID)
             && owningProfileID == Self.normalizedProfileID(sessionProfileID)
         if let sessionStorageID, streamingMessageID != nil {
             inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
@@ -613,7 +672,8 @@ extension DockModel {
                 "omit_messages": true,
             ]
             if let owningProfileID, !owningProfileID.isEmpty { resumeParams["profile"] = owningProfileID }
-            let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
+            let result = try await sessionRPCClient.request(
+                HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
             let reportedSessionID = (result["session_id"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -623,17 +683,23 @@ extension DockModel {
             // resolve `session.resume` to that active session; adopting its
             // identity and transcript here would project one session's
             // conversation into another, so fail closed instead.
-            guard Self.resumeResponseProvesSessionOwnership(
-                requestedSessionID: session.id,
-                resolvedSessionID: resolvedSessionID,
-                result: result
-            ) else {
+            guard
+                Self.resumeResponseProvesSessionOwnership(
+                    requestedSessionID: session.id,
+                    resolvedSessionID: resolvedSessionID,
+                    result: result
+                )
+            else {
                 guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
                 let safeMessage = "Hermes returned a different session than the one requested. Try opening it again."
                 sessionProjectionState = Self.failedOrStale(sessionProjectionState, safeMessage: safeMessage)
                 if reportFailure {
                     status = .offline
-                    messages = [ChatMessage(role: .hermes, text: "I couldn't load that conversation: \(safeMessage)", modelName: currentModelName)]
+                    messages = [
+                        ChatMessage(
+                            role: .hermes, text: "I couldn't load that conversation: \(safeMessage)",
+                            modelName: currentModelName)
+                    ]
                     scrollToLatestMessageRequest &+= 1
                 }
                 DebugLog.write("model: session resume mismatch: requested \(session.id), resolved \(resolvedSessionID)")
@@ -660,7 +726,8 @@ extension DockModel {
             }
             var transcriptRows = result["messages"]
             if TranscriptHistoryPaging.resumeResponseDefersTranscript(result),
-               let storageID = sessionStorageID {
+                let storageID = sessionStorageID
+            {
                 let tail = try await loadTranscriptTail(
                     storageSessionID: storageID,
                     profileID: owningProfileID,
@@ -682,13 +749,18 @@ extension DockModel {
             // A turn that went live while the transcript loaded keeps its row.
             let liveRow = streamingMessageID.flatMap { id in messages.first { $0.id == id } }
             // Mid-turn messages Hermes has not stored yet stay until it does.
-            let pendingUserMessages = sessionStorageID
+            let pendingUserMessages =
+                sessionStorageID
                 .flatMap { unconfirmedUserMessagesBySessionID.removeValue(forKey: $0) }
                 .map { Self.missingUserMessages($0, from: restored.messages) } ?? []
             messages = restored.messages + [liveRow].compactMap { $0 }
-            let stashedTurnActivity = sessionStorageID.flatMap { inFlightTurnActivityBySessionID.removeValue(forKey: $0) }
+            let stashedTurnActivity = sessionStorageID.flatMap {
+                inFlightTurnActivityBySessionID.removeValue(forKey: $0)
+            }
             if liveRow == nil, (result["running"] as? Bool) == true {
-                adoptRunningTurn(inflight: result["inflight"] as? [String: Any], activity: stashedTurnActivity ?? restored.trailingActivity)
+                adoptRunningTurn(
+                    inflight: result["inflight"] as? [String: Any],
+                    activity: stashedTurnActivity ?? restored.trailingActivity)
             } else if liveRow == nil, !restored.trailingActivity.isEmpty {
                 showExternalTurn(restored.trailingActivity, generation: resumeGeneration)
             }
@@ -716,8 +788,9 @@ extension DockModel {
             restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
             projectBotMessagesIntoActivity()
-            restoreBotDispatches(calls: restored.messages.flatMap(\.activity) + restored.trailingActivity,
-                                 rows: transcriptRows as? [[String: Any]] ?? [])
+            restoreBotDispatches(
+                calls: restored.messages.flatMap(\.activity) + restored.trailingActivity,
+                rows: transcriptRows as? [[String: Any]] ?? [])
             // Hermes' authoritative plan; todo events missed while detached never replay.
             if let todos = (result["todo_state"] as? [String: Any])?["todos"] as? [[String: Any]] {
                 applyTodos(todos, sessionID: resolvedSessionID)
@@ -729,15 +802,24 @@ extension DockModel {
             if approvalText == nil, clarificationQuestion == nil, streamingMessageID == nil {
                 status = .idle
             }
-            DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)")
+            DebugLog.write(
+                "model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)"
+            )
             Task { await refreshMessagePins() }
             return true
         } catch {
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
-            sessionProjectionState = Self.failedOrStale(sessionProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
+            sessionProjectionState = Self.failedOrStale(
+                sessionProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
             if reportFailure, !isRefreshingActiveSession {
                 status = .offline
-                messages = [ChatMessage(role: .hermes, text: "I couldn't load that conversation: \(Self.safeUserDiagnostic(error.localizedDescription))", modelName: currentModelName)]
+                messages = [
+                    ChatMessage(
+                        role: .hermes,
+                        text:
+                            "I couldn't load that conversation: \(Self.safeUserDiagnostic(error.localizedDescription))",
+                        modelName: currentModelName)
+                ]
                 scrollToLatestMessageRequest &+= 1
             } else if reportFailure {
                 status = .offline
@@ -828,11 +910,14 @@ extension DockModel {
             _ = try await createAuthorizedSession(source: "herm")
         } catch {
             sessionProjectionState = .failed(safeMessage: "Hermes could not start a new session. Try again.")
-            DebugLog.write("model: project chat creation failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            DebugLog.write(
+                "model: project chat creation failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
         }
     }
 
-    static func failedOrStale<Value: Equatable & Sendable>(_ state: HermesProjectionState<Value>, safeMessage: String) -> HermesProjectionState<Value> {
+    static func failedOrStale<Value: Equatable & Sendable>(_ state: HermesProjectionState<Value>, safeMessage: String)
+        -> HermesProjectionState<Value>
+    {
         switch state {
         case .ready(let value), .stale(let value, _): return .stale(value, safeMessage: safeMessage)
         default: return .failed(safeMessage: safeMessage)
@@ -841,7 +926,9 @@ extension DockModel {
 
     /// Background session refreshes keep the last authoritative list visible.
     /// Only a projection without a successful value may enter the loading state.
-    static func refreshingProjectionState<Value: Equatable & Sendable>(_ state: HermesProjectionState<Value>) -> HermesProjectionState<Value> {
+    static func refreshingProjectionState<Value: Equatable & Sendable>(_ state: HermesProjectionState<Value>)
+        -> HermesProjectionState<Value>
+    {
         switch state {
         case .ready(let value), .stale(let value, _):
             return .stale(value, safeMessage: "Refreshing conversations…")

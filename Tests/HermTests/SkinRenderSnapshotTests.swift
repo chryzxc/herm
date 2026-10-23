@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 /// Opt-in visual proof for every skin, plus simultaneous gallery specimens.
@@ -9,8 +10,12 @@ struct SkinRenderSnapshotTests {
     @Test func renderSkins() async throws {
         guard let dir = ProcessInfo.processInfo.environment["SKIN_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
-        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let savedTheme = DockThemeRuntime.current
+        let savedRevision = DockThemeRuntime.revision
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision = savedRevision
+        }
         for theme in DockThemeID.allCases {
             let modes: [Bool] = theme.appearance == .system ? [false, true] : [theme.appearance == .dark]
             for dark in modes {
@@ -28,8 +33,10 @@ struct SkinRenderSnapshotTests {
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Surface & typography").font(DockTypography.rowTitle)
-                        Text("The quick brown fox jumps over the lazy dog.").font(DockTypography.body).fixedSize(horizontal: false, vertical: true)
-                        Text("0123456789 · Aa Bb Cc").font(DockTypography.machineMetadata).foregroundStyle(Color.dockMetadataText)
+                        Text("The quick brown fox jumps over the lazy dog.").font(DockTypography.body).fixedSize(
+                            horizontal: false, vertical: true)
+                        Text("0123456789 · Aa Bb Cc").font(DockTypography.machineMetadata).foregroundStyle(
+                            Color.dockMetadataText)
                     }.frame(maxWidth: .infinity, alignment: .leading).dockCard()
                     HStack {
                         Button("Primary") {}.buttonStyle(.dockPrimary)
@@ -43,7 +50,10 @@ struct SkinRenderSnapshotTests {
                 .background(dark ? Color.black : Color.white)
                 .dockThemedRoot()
                 .environment(\.colorScheme, dark ? .dark : .light)
-                try await render(content, dark: dark, to: URL(fileURLWithPath: dir).appendingPathComponent("\(theme.rawValue)-\(dark ? "dark" : "light").png"))
+                try await render(
+                    content, dark: dark,
+                    to: URL(fileURLWithPath: dir).appendingPathComponent(
+                        "\(theme.rawValue)-\(dark ? "dark" : "light").png"))
             }
         }
         for dark in [false, true] {
@@ -62,7 +72,9 @@ struct SkinRenderSnapshotTests {
             .foregroundStyle(dark ? Color.white : Color.black)
             .background(dark ? Color.black : Color.white)
             .environment(\.colorScheme, dark ? .dark : .light)
-            try await render(gallery, dark: dark, to: URL(fileURLWithPath: dir).appendingPathComponent("gallery-\(dark ? "dark" : "light").png"))
+            try await render(
+                gallery, dark: dark,
+                to: URL(fileURLWithPath: dir).appendingPathComponent("gallery-\(dark ? "dark" : "light").png"))
         }
     }
 
@@ -89,8 +101,10 @@ struct SkinRenderSnapshotTests {
                 .background(dark ? Color.black : Color.white)
                 .environment(\.colorScheme, dark ? .dark : .light)
                 .environment(\.dockWorkspaceScale, DockWorkspaceScale.window)
-                try await render(gallery, dark: dark, to: URL(fileURLWithPath: dir)
-                    .appendingPathComponent("responsive-\(Int(width))-\(dark ? "dark" : "light").png"))
+                try await render(
+                    gallery, dark: dark,
+                    to: URL(fileURLWithPath: dir)
+                        .appendingPathComponent("responsive-\(Int(width))-\(dark ? "dark" : "light").png"))
             }
         }
     }

@@ -58,7 +58,9 @@ struct CalendarWorkspaceView: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            calendarPane(agenda).frame(height: proxy.size.width < 560 ? (scope == .month ? 440 : 240) : (scope == .month ? 600 : 420))
+                            calendarPane(agenda).frame(
+                                height: proxy.size.width < 560
+                                    ? (scope == .month ? 440 : 240) : (scope == .month ? 600 : 420))
                             detail(agenda).frame(height: 380)
                         }
                     }
@@ -75,14 +77,18 @@ struct CalendarWorkspaceView: View {
         }
         .onChange(of: useSystem) { _, enabled in system.setEnabled(enabled) }
         // Access granted in System Settings shows up when Herm comes back.
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in system.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            system.refresh()
+        }
         .onChange(of: selected) { _, _ in
             selectedItemID = nil
             actionStatus = nil
         }
         .onChange(of: selectedItemID) { _, _ in actionStatus = nil }
         .sheet(item: $prepItem) { item in
-            CalendarPrepSheet(item: item, control: control) { actionStatus = "Prep scheduled. It shows here once Hermes lists it." }
+            CalendarPrepSheet(item: item, control: control) {
+                actionStatus = "Prep scheduled. It shows here once Hermes lists it."
+            }
         }
     }
 
@@ -111,7 +117,9 @@ struct CalendarWorkspaceView: View {
                 .dockFont(.pageTitle)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
-            DockIconButton(icon: .caretLeft, label: "Previous \(scope.rawValue.lowercased())", style: style) { shift(-1) }
+            DockIconButton(icon: .caretLeft, label: "Previous \(scope.rawValue.lowercased())", style: style) {
+                shift(-1)
+            }
             DockIconButton(icon: .caretRight, label: "Next \(scope.rawValue.lowercased())", style: style) { shift(1) }
             Button("Today") { selected = today }
                 .buttonStyle(.dockCompact)
@@ -190,14 +198,16 @@ struct CalendarWorkspaceView: View {
     }
 
     private func sourceToggle(_ source: SystemCalendarService.Source) -> some View {
-        Toggle(source.title, isOn: Binding(
-            get: { !hidden.contains(source.id) },
-            set: { show in
-                var next = hidden
-                if show { next.remove(source.id) } else { next.insert(source.id) }
-                hiddenRaw = next.sorted().joined(separator: "\n")
-            }
-        ))
+        Toggle(
+            source.title,
+            isOn: Binding(
+                get: { !hidden.contains(source.id) },
+                set: { show in
+                    var next = hidden
+                    if show { next.remove(source.id) } else { next.insert(source.id) }
+                    hiddenRaw = next.sorted().joined(separator: "\n")
+                }
+            ))
     }
 
     private var eventSources: [SystemCalendarService.Source] { system.sources.filter { !$0.isReminders } }
@@ -206,11 +216,13 @@ struct CalendarWorkspaceView: View {
     /// Checked only while Mac events are actually readable. Checking it asks
     /// macOS for access right here, like Connect.
     private var useSystemBinding: Binding<Bool> {
-        Binding(get: { useSystem && system.eventAccess == .granted }, set: { enabled in
-            useSystem = enabled
-            guard enabled, !system.allGranted else { return }
-            Task { await system.requestAccess() }
-        })
+        Binding(
+            get: { useSystem && system.eventAccess == .granted },
+            set: { enabled in
+                useSystem = enabled
+                guard enabled, !system.allGranted else { return }
+                Task { await system.requestAccess() }
+            })
     }
 
     private func shift(_ delta: Int) {
@@ -273,12 +285,17 @@ struct CalendarWorkspaceView: View {
         let isToday = day == today
         let isSelected = day == selected
         let outside = scope == .month && !calendar.isDate(day, equalTo: selected, toGranularity: .month)
-        return Button { selected = day } label: {
+        return Button {
+            selected = day
+        } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("\(calendar.component(.day, from: day))")
                         .dockFont(.body, weight: isToday ? .bold : .medium).monospacedDigit()
-                        .foregroundStyle(isToday ? Color.dockOnAccentText : (outside ? Color.dockMetadataText : Color.dockPrimaryText))
+                        .foregroundStyle(
+                            isToday
+                                ? Color.dockOnAccentText : (outside ? Color.dockMetadataText : Color.dockPrimaryText)
+                        )
                         .frame(minWidth: 22, minHeight: 22)
                         .background { if isToday { Circle().fill(Color.dockAccent) } }
                     Spacer(minLength: 0)
@@ -307,7 +324,9 @@ struct CalendarWorkspaceView: View {
             }
             .padding(8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(isSelected ? Color.dockAccentMuted : (calendar.isDateInWeekend(day) ? Color.dockSurface2 : Color.clear))
+            .background(
+                isSelected ? Color.dockAccentMuted : (calendar.isDateInWeekend(day) ? Color.dockSurface2 : Color.clear)
+            )
             .overlay(alignment: .top) {
                 if isSelected { Color.dockAccent.frame(height: 2) }
             }
@@ -454,7 +473,9 @@ struct CalendarWorkspaceView: View {
     private func itemRow(_ item: CalendarItem) -> some View {
         let isSelected = item.id == selectedItemID
         return VStack(alignment: .leading, spacing: 0) {
-            Button { selectedItemID = isSelected ? nil : item.id } label: {
+            Button {
+                selectedItemID = isSelected ? nil : item.id
+            } label: {
                 HStack(alignment: .top, spacing: 12) {
                     Text(item.isAllDay ? "All day" : item.start.formatted(.dateTime.hour().minute()))
                         .dockFont(.metadata)
@@ -541,12 +562,17 @@ struct CalendarWorkspaceView: View {
         case .event, .reminder:
             createTaskButton(item)
             if item.isEvent, !item.isAllDay {
-                let canSchedule = control.cronControlAvailable && CalendarAgenda.prepSchedule(before: item.start, leadMinutes: 15) != nil
+                let canSchedule =
+                    control.cronControlAvailable
+                    && CalendarAgenda.prepSchedule(before: item.start, leadMinutes: 15) != nil
                 Button("Schedule prep…") { prepItem = item }
                     .buttonStyle(.dockSecondary)
                     .controlSize(.small)
                     .disabled(!canSchedule)
-                    .help(control.cronControlAvailable ? "Have Hermes run a one-time prep before this event" : "Automation control is unavailable through this Hermes gateway")
+                    .help(
+                        control.cronControlAvailable
+                            ? "Have Hermes run a one-time prep before this event"
+                            : "Automation control is unavailable through this Hermes gateway")
             }
         case .automation, .task:
             EmptyView()
@@ -584,7 +610,9 @@ struct CalendarWorkspaceView: View {
             .buttonStyle(.dockSecondary)
             .controlSize(.small)
             .disabled(!control.capabilityAvailable("kanban.create"))
-            .help(control.capabilityAvailable("kanban.create") ? "Create a Hermes Kanban task from this item" : "Kanban is unavailable in this Hermes runtime")
+            .help(
+                control.capabilityAvailable("kanban.create")
+                    ? "Create a Hermes Kanban task from this item" : "Kanban is unavailable in this Hermes runtime")
     }
 
     private func createTask(_ item: CalendarItem) {
@@ -644,7 +672,10 @@ private struct CalendarPrepSheet: View {
         self.item = item
         self.control = control
         self.onScheduled = onScheduled
-        _prompt = State(initialValue: "Prepare a short brief for this event: what it is about, open questions, and anything I should read first.\n\n" + item.chatBody)
+        _prompt = State(
+            initialValue:
+                "Prepare a short brief for this event: what it is about, open questions, and anything I should read first.\n\n"
+                + item.chatBody)
     }
 
     private var schedule: String? { CalendarAgenda.prepSchedule(before: item.start, leadMinutes: lead) }
@@ -662,7 +693,9 @@ private struct CalendarPrepSheet: View {
                 .frame(minHeight: 160)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
+                        Color.dockControlSurface.opacity(0.6)))
             Text(error ?? (schedule == nil ? "That time has already passed. Pick a shorter lead." : " "))
                 .dockFont(.metadata)
                 .foregroundStyle(Color.dockWarning)
@@ -674,7 +707,8 @@ private struct CalendarPrepSheet: View {
                 Button(isSaving ? "Scheduling…" : "Schedule") { save() }
                     .buttonStyle(.dockPrimary)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(schedule == nil || isSaving || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(
+                        schedule == nil || isSaving || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(16)

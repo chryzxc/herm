@@ -120,7 +120,8 @@ final class SpeechInput: ObservableObject {
             return
         }
         guard hasUsageDescription("NSSpeechRecognitionUsageDescription"),
-              hasUsageDescription("NSMicrophoneUsageDescription") else {
+            hasUsageDescription("NSMicrophoneUsageDescription")
+        else {
             isStarting = false
             isUnavailable = true
             errorMessage = "This app build is missing voice permissions. Rebuild the Herm app bundle."
@@ -231,7 +232,9 @@ final class SpeechInput: ObservableObject {
                     transcript = result.bestTranscription.formattedString
                     scheduleAutomaticSubmit(after: transcript)
                 }
-                switch VoiceRecognitionCompletion.resolve(transcript, isFinal: result?.isFinal == true, hasError: error != nil) {
+                switch VoiceRecognitionCompletion.resolve(
+                    transcript, isFinal: result?.isFinal == true, hasError: error != nil)
+                {
                 case .listening:
                     break
                 case .finished(let text):
@@ -268,9 +271,10 @@ final class SpeechInput: ObservableObject {
         silenceTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))
             guard !Task.isCancelled,
-                  let self,
-                  self.isRecording,
-                  self.transcript == transcript else { return }
+                let self,
+                self.isRecording,
+                self.transcript == transcript
+            else { return }
             completedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             stop()
         }
@@ -351,7 +355,8 @@ final class MicLevelMeter: ObservableObject {
     /// Asks once, so the first voice turn can already transcribe on-device.
     static func askForSpeechPermission() async {
         guard Bundle.main.bundleURL.pathExtension == "app",
-              SFSpeechRecognizer.authorizationStatus() == .notDetermined else { return }
+            SFSpeechRecognizer.authorizationStatus() == .notDetermined
+        else { return }
         _ = await SpeechInput.requestSpeechAuthorization()
     }
 
@@ -424,7 +429,9 @@ final class MicLevelMeter: ObservableObject {
     }
 
     private func beginRecognitionRequest() {
-        guard isEndpointing || isWatchingForBarge, recognitionFailures <= 2, Self.canTranscribe, let recognizer else { return }
+        guard isEndpointing || isWatchingForBarge, recognitionFailures <= 2, Self.canTranscribe, let recognizer else {
+            return
+        }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.taskHint = .dictation
@@ -455,7 +462,9 @@ final class MicLevelMeter: ObservableObject {
                 // detected") after a few seconds; counting those switched voice
                 // to Hermes' recorder for good. Only instant failures count.
                 let lived = ProcessInfo.processInfo.systemUptime - self.requestStartedAt
-                if VoiceEndpointDetector.isRecognizerFailure(heardSpeech: self.requestHeardSpeech, failed: error != nil, lived: lived) {
+                if VoiceEndpointDetector.isRecognizerFailure(
+                    heardSpeech: self.requestHeardSpeech, failed: error != nil, lived: lived)
+                {
                     self.recognitionFailures += 1
                 }
                 self.committedTranscript = self.transcript
@@ -491,9 +500,15 @@ final class MicLevelMeter: ObservableObject {
                     self.turnVerdict = nil
                 }
                 self.askTurnModel(at: now)
-                let progress = self.endpoint.isHearingSpeech || (self.utteranceTranscript ?? "").isEmpty ? 0
-                    : min(1, (now - self.lastWordAt) / VoiceEndpointDetector.turnHold(
-                        self.utteranceTranscript ?? "", quietSince: self.pendingEndSince, finished: self.turnVerdict))
+                let progress =
+                    self.endpoint.isHearingSpeech || (self.utteranceTranscript ?? "").isEmpty
+                    ? 0
+                    : min(
+                        1,
+                        (now - self.lastWordAt)
+                            / VoiceEndpointDetector.turnHold(
+                                self.utteranceTranscript ?? "", quietSince: self.pendingEndSince,
+                                finished: self.turnVerdict))
                 if abs(progress - self.turnProgress) > 0.03 || (progress == 0) != (self.turnProgress == 0) {
                     self.turnProgress = progress
                 }
@@ -509,7 +524,8 @@ final class MicLevelMeter: ObservableObject {
                     // heard while asleep never pile up into the next one.
                     if self.isEndpointing { self.restartRecognition() }
                 } else if self.pendingEndSince == nil, self.transcript.isEmpty,
-                          self.endpoint.heardNothing(for: self.idleLimit, at: now) {
+                    self.endpoint.heardNothing(for: self.idleLimit, at: now)
+                {
                     self.onIdle?()
                 }
             }
@@ -536,7 +552,7 @@ final class MicLevelMeter: ObservableObject {
         let input = engine.inputNode
         guard (try? input.setVoiceProcessingEnabled(true)) != nil, input.isVoiceProcessingEnabled else { return }
         input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
-        _ = engine.mainMixerNode // joins the output node, which carries the echo reference
+        _ = engine.mainMixerNode  // joins the output node, which carries the echo reference
     }
 
     /// Once per pause, asks the smart-turn model (if downloaded) whether the
@@ -544,7 +560,8 @@ final class MicLevelMeter: ObservableObject {
     private func askTurnModel(at now: TimeInterval) {
         let pause = max(lastLoudAt, lastWordAt)
         guard let predictor = TurnModelStore.shared.predictor, !transcript.isEmpty, !endpoint.isHearingSpeech,
-              now - pause >= 0.25, checkedPause != pause else { return }
+            now - pause >= 0.25, checkedPause != pause
+        else { return }
         checkedPause = pause
         predictor.isComplete(turnAudio.snapshot()) { complete in
             Task { @MainActor [weak self] in
@@ -566,7 +583,8 @@ final class MicLevelMeter: ObservableObject {
     }
 
     private nonisolated static func installTap(
-        on input: AVAudioInputNode, feed: RecognitionFeed, turnAudio: TurnAudio, onLevel: @escaping @Sendable (CGFloat) -> Void
+        on input: AVAudioInputNode, feed: RecognitionFeed, turnAudio: TurnAudio,
+        onLevel: @escaping @Sendable (CGFloat) -> Void
     ) {
         let firstChannelOnly = input.isVoiceProcessingEnabled
         input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
@@ -582,9 +600,11 @@ final class MicLevelMeter: ObservableObject {
     nonisolated static func firstChannel(of buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         guard buffer.format.channelCount > 1 else { return buffer }
         guard let source = buffer.floatChannelData, !buffer.format.isInterleaved,
-              let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
-              let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
-              let target = out.floatChannelData else { return nil }
+            let mono = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
+            let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
+            let target = out.floatChannelData
+        else { return nil }
         out.frameLength = buffer.frameLength
         target[0].update(from: source[0], count: Int(buffer.frameLength))
         return out
@@ -685,7 +705,9 @@ struct VoiceEndpointDetector {
 
     /// Whether the last word leaves the sentence hanging.
     static func trailsOff(_ transcript: String) -> Bool {
-        guard let last = transcript.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).last else { return false }
+        guard let last = transcript.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).last else {
+            return false
+        }
         return unfinishedEndings.contains(String(last))
     }
 
@@ -694,7 +716,7 @@ struct VoiceEndpointDetector {
         "the", "a", "an", "my", "your", "our", "their", "this", "these", "those", "some", "any",
         "to", "of", "for", "with", "in", "on", "at", "about", "from", "into", "like", "as", "by",
         "is", "are", "was", "were", "be", "can", "could", "should", "would", "will", "want", "need",
-        "um", "uh", "uhm", "hmm", "er", "erm", "also", "maybe", "just", "i", "i'm", "we", "you"
+        "um", "uh", "uhm", "hmm", "er", "erm", "also", "maybe", "just", "i", "i'm", "we", "you",
     ]
 
     /// A request that errors before hearing anything, within a second of

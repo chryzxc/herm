@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 private actor GitHubPageTransport: GitHubIssueTransport {
@@ -54,7 +55,7 @@ struct GitHubPageLoadingTests {
         let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
         var responses: [String: Any] = [
             "/user": ["login": "ada"],
-            "/repos/owner/repo/pulls": [searchRow]
+            "/repos/owner/repo/pulls": [searchRow],
         ]
         if historyAvailable {
             responses["/search/issues?is:pr is:merged repo:owner/repo merged:>=\(since)"] = ["items": [merged]]
@@ -74,9 +75,11 @@ struct GitHubPageLoadingTests {
     }
 
     private var searchRow: [String: Any] {
-        ["number": 19, "title": "Improve loading", "state": "open", "body": "Summary",
-         "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
-         "updated_at": "2026-10-01T00:00:00Z"]
+        [
+            "number": 19, "title": "Improve loading", "state": "open", "body": "Summary",
+            "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
+            "updated_at": "2026-10-01T00:00:00Z",
+        ]
     }
 
     private func pullRequestTransport() throws -> GitHubPageTransport {
@@ -89,16 +92,18 @@ struct GitHubPageLoadingTests {
             "/repos/owner/repo/pulls/19": [
                 "number": 19, "title": "Improve loading", "user": ["login": "ada"],
                 "head": ["ref": "feature", "sha": "abc"], "base": ["ref": "main", "sha": "base"],
-                "changed_files": 1, "requested_reviewers": [["login": "ada"]]
+                "changed_files": 1, "requested_reviewers": [["login": "ada"]],
             ],
-            "/repos/owner/repo/commits/abc/check-runs": ["check_runs": [
-                ["id": 1, "name": "Tests", "status": "completed", "conclusion": "failure"]
-            ]],
+            "/repos/owner/repo/commits/abc/check-runs": [
+                "check_runs": [
+                    ["id": 1, "name": "Tests", "status": "completed", "conclusion": "failure"]
+                ]
+            ],
             "/repos/owner/repo/pulls/19/reviews": [["id": 2, "state": "APPROVED", "user": ["login": "bob"]]],
             "/repos/owner/repo/pulls/19/files": [["filename": "README.md", "status": "modified"]],
             "/repos/owner/repo/issues/19/comments": [],
             "/repos/owner/repo/pulls/19/commits": [],
-            "/repos/owner/repo/issues/19/events": []
+            "/repos/owner/repo/issues/19/events": [],
         ])
     }
 
@@ -156,7 +161,7 @@ struct GitHubPageLoadingTests {
             "/user": ["login": "ada"],
             "/search/issues?is:issue is:open author:ada": ["items": [assigned]],
             "/search/issues?is:issue is:open assignee:ada": ["items": [assigned]],
-            "/repos/owner/repo/issues/19": assigned
+            "/repos/owner/repo/issues/19": assigned,
         ])
         let center = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
         async let first: Void = center.refresh(projects: [])
@@ -172,7 +177,7 @@ struct GitHubPageLoadingTests {
         await center.loadSelectedDetail()
         #expect(await transport.count("/repos/owner/repo/issues/19") == 1)
         await center.refresh(projects: [])
-        #expect(center.detailByID.count == 1) // Retain stale content until replacement succeeds.
+        #expect(center.detailByID.count == 1)  // Retain stale content until replacement succeeds.
         await center.loadSelectedDetail()
         #expect(await transport.count("/repos/owner/repo/issues/19") == 2)
     }
@@ -181,7 +186,7 @@ struct GitHubPageLoadingTests {
         let transport = try GitHubPageTransport(responses: [
             "/user": ["login": "ada"],
             "/search/issues?is:pr is:open author:ada": ["items": []],
-            "/search/issues?is:pr is:open review-requested:ada": ["items": []]
+            "/search/issues?is:pr is:open review-requested:ada": ["items": []],
         ])
         let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
         async let first: Void = center.refresh(projects: [])

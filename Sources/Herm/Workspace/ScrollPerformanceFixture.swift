@@ -28,7 +28,7 @@ struct ScrollPerformanceFixture: Sendable {
             "# Fixture response\n\nA paragraph with **strong** and `inline code`.",
             "```swift\nlet result = await worker.run()\nprint(result)\n```",
             "| Column | Value |\n| --- | --- |\n| latency | 16ms |\n| rows | 36 |",
-            "![fixture image](https://example.invalid/fixture.png)"
+            "![fixture image](https://example.invalid/fixture.png)",
         ]
     }
 
@@ -38,7 +38,8 @@ struct ScrollPerformanceFixture: Sendable {
     var idleLongMarkdown: String {
         var value = "# Long fixture response\n\n"
         while value.utf8.count < streamingBytes {
-            value += "A long fixture paragraph with **strong text**, `inline code`, and [a safe link](https://example.invalid/docs). "
+            value +=
+                "A long fixture paragraph with **strong text**, `inline code`, and [a safe link](https://example.invalid/docs). "
             value += "The transcript remains continuous while the renderer keeps stable sections immutable.\n\n"
             value += "- Stable list item\n- Another list item\n\n"
             value += "> A quoted fixture line remains selectable.\n\n"
@@ -88,10 +89,12 @@ struct ScrollPerformanceFixture: Sendable {
             }
         }
         guard !Task.isCancelled else { return }
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": sessionID,
-            "payload": ["text": streamingLongMarkdown, "session_id": sessionID]
-        ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": sessionID,
+                "payload": ["text": streamingLongMarkdown, "session_id": sessionID],
+            ])
     }
 
     var sessions: [HermesSession] {

@@ -16,13 +16,17 @@ struct SessionModeTabStrip: View {
         HStack(spacing: 0) {
             ForEach(modes) { mode in
                 let isSelected = mode == selectedMode
-                Button { onSelect(mode) } label: {
+                Button {
+                    onSelect(mode)
+                } label: {
                     Text(mode == .pullRequests ? "PRs" : mode.label)
                         .dockFont(.body, weight: isSelected ? .semibold : .medium)
                         .foregroundStyle(isSelected ? selectedInk : style.secondaryText)
                         .padding(.horizontal, 10)
                         .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight)
-                        .dockSelectionBackground(segment, active: isSelected, fill: style.selectedFill, theme: style.theme)
+                        .dockSelectionBackground(
+                            segment, active: isSelected, fill: style.selectedFill, theme: style.theme
+                        )
                         .overlay(alignment: .bottom) {
                             if isSelected && selection != .underline {
                                 Capsule().fill(selection == .invert ? selectedInk : style.accent)

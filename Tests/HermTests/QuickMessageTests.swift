@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -27,14 +28,16 @@ private final class QuickMessageRPC: HermesRPCClientProtocol {
 struct QuickMessageTests {
     private func makeModel(_ rpc: QuickMessageRPC, sessionID: String? = "current-chat") -> DockModel {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        return DockModel(sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
-                         defaults: UserDefaults(suiteName: UUID().uuidString)!,
-                         initialSessionID: sessionID,
-                         botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: rpc)
+        return DockModel(
+            sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            initialSessionID: sessionID,
+            botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: rpc)
     }
 
     private func session(_ id: String, profile: String? = nil) -> HermesSession {
-        HermesSession(id: id, profileID: profile, title: id, preview: "", startedAt: nil, messageCount: 0, source: "herm")
+        HermesSession(
+            id: id, profileID: profile, title: id, preview: "", startedAt: nil, messageCount: 0, source: "herm")
     }
 
     @Test func sendsToCurrentChatWithoutConsumingWorkspaceDraftOrPDF() async throws {
@@ -46,7 +49,9 @@ struct QuickMessageTests {
         defer { try? FileManager.default.removeItem(at: pdf) }
         model.stagePDFFile(at: pdf)
         let error: String? = await withCheckedContinuation { continuation in
-            model.sendQuickMessage("  Quick request  ", to: session("current-chat")) { continuation.resume(returning: $0) }
+            model.sendQuickMessage("  Quick request  ", to: session("current-chat")) {
+                continuation.resume(returning: $0)
+            }
         }
         #expect(error == nil)
         let request = rpc.requests.first { $0.0 == "prompt.submit" }
@@ -106,7 +111,9 @@ struct QuickMessageTests {
         let model = makeModel(rpc)
         model.draft = "Workspace draft"
         let error: String? = await withCheckedContinuation { continuation in
-            model.sendQuickMessage("Reply", to: session("other-chat", profile: "builder")) { continuation.resume(returning: $0) }
+            model.sendQuickMessage("Reply", to: session("other-chat", profile: "builder")) {
+                continuation.resume(returning: $0)
+            }
         }
         #expect(error == nil)
         let request = rpc.requests.first { $0.0 == "prompt.submit" }
@@ -153,7 +160,8 @@ struct QuickMessageTests {
     @Test func draftsStayWithTheirTargetsAndReplyRowStaysVisible() {
         let state = EdgeNotchState()
         state.quickDraft = "New session draft"
-        let task = EdgeNotchTask(id: "other-chat", title: "Other", phase: .finished,
+        let task = EdgeNotchTask(
+            id: "other-chat", title: "Other", phase: .finished,
             statusLabel: "Finished", detail: nil, updatedAt: nil, isCurrent: false,
             isStatusCurrent: true, session: session("other-chat"))
         state.selectQuickTarget(task.session, task: task)

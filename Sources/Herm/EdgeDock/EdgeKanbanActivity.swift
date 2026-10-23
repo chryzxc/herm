@@ -19,7 +19,10 @@ struct EdgeKanbanActivity {
         for (identity, task) in current {
             guard previous[identity] != task else { continue }
             // Queued cards are not running work, so the preview never shows them.
-            guard Self.phase(task.status) != nil else { changes.removeValue(forKey: identity); continue }
+            guard Self.phase(task.status) != nil else {
+                changes.removeValue(forKey: identity)
+                continue
+            }
             let old = previous[identity]
             let detail: String
             if let old, old.status != task.status {
@@ -31,11 +34,12 @@ struct EdgeKanbanActivity {
             changed = true
         }
         // A bounded unread window, independent of the board's active work.
-        let retained = Set(changes.keys.sorted {
-            let lhs = changes[$0]!.observedAt
-            let rhs = changes[$1]!.observedAt
-            return lhs == rhs ? Self.rowID($0) < Self.rowID($1) : lhs > rhs
-        }.prefix(30))
+        let retained = Set(
+            changes.keys.sorted {
+                let lhs = changes[$0]!.observedAt
+                let rhs = changes[$1]!.observedAt
+                return lhs == rhs ? Self.rowID($0) < Self.rowID($1) : lhs > rhs
+            }.prefix(30))
         changes = changes.filter { retained.contains($0.key) }
         return changed
     }
@@ -52,10 +56,12 @@ struct EdgeKanbanActivity {
             // The default board is implied; only name boards the user created.
             let board = task.boardSlug == "default" ? nil : task.boardSlug
             let context = [change?.detail, board, task.assignee].compactMap { $0 }.filter { !$0.isEmpty }
-            result.append(EdgeNotchTask(id: Self.rowID(identity), title: task.title, phase: phase,
-                statusLabel: Self.label(task.status), detail: context.joined(separator: " · "),
-                updatedAt: change?.observedAt ?? task.latestEventAt ?? task.startedAt,
-                isCurrent: false, isStatusCurrent: isCurrent, session: nil, kanbanTask: task))
+            result.append(
+                EdgeNotchTask(
+                    id: Self.rowID(identity), title: task.title, phase: phase,
+                    statusLabel: Self.label(task.status), detail: context.joined(separator: " · "),
+                    updatedAt: change?.observedAt ?? task.latestEventAt ?? task.startedAt,
+                    isCurrent: false, isStatusCurrent: isCurrent, session: nil, kanbanTask: task))
         }
         let changedIDs = Set(changes.keys.map(Self.rowID))
         return result.sorted {

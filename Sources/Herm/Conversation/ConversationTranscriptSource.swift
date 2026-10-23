@@ -210,9 +210,10 @@ final class ConversationTranscriptSource: ObservableObject {
         let workingBots = model.workingBotDispatches
         let mentions = model.pendingBotMentions
         let botRecordIDs = Set(dispatches.values.map(\.id) + workingBots.map(\.id) + mentions.map(\.id))
-        let botSteps = Dictionary(uniqueKeysWithValues: botRecordIDs.compactMap { id in
-            model.botLiveSteps[id].map { (id, $0) }
-        })
+        let botSteps = Dictionary(
+            uniqueKeysWithValues: botRecordIDs.compactMap { id in
+                model.botLiveSteps[id].map { (id, $0) }
+            })
         return ConversationTranscriptSnapshot(
             sessionID: model.sessionID, layoutGeneration: generation, messages: model.messages, range: range,
             rows: range.map { .init(index: $0, message: model.messages[$0]) },

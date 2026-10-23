@@ -1,5 +1,6 @@
 import Testing
 import simd
+
 @testable import Herm
 
 struct OfficeNavigationCacheTests {
@@ -13,7 +14,8 @@ struct OfficeNavigationCacheTests {
             let obstacles = layout.walls + layout.furniture
             for x in stride(from: layout.minX, through: layout.maxX, by: 0.5) {
                 for z in stride(from: layout.back, through: layout.front, by: 0.5) {
-                    let inside = x >= layout.minX + 0.6 && x <= layout.maxX - 0.6
+                    let inside =
+                        x >= layout.minX + 0.6 && x <= layout.maxX - 0.6
                         && z >= layout.back + 0.6 && z <= layout.front - 0.6
                         && !(x > 12 && z > layout.hallBottom + 5)
                     let expected = inside && !obstacles.contains { $0.contains([x, z], clearance: 0.36) }

@@ -251,7 +251,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             ConversationMessageWindow.rangeAfterCountChange(
                 mountedRange, oldCount: oldCount, newCount: newCount, isAtBottom: presentation.isAtBottom),
             totalCount: newCount)
-        let lostWindow = newCount < oldCount
+        let lostWindow =
+            newCount < oldCount
             && (newCount <= ConversationMessageWindow.initialLimit || mountedRange.lowerBound >= newCount)
         let range = lostWindow ? ConversationMessageWindow.tailRange(totalCount: newCount) : clamped
         if range != mountedRange {

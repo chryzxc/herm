@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Window resizes (e.g. entering fullscreen, moving to a larger display, or
@@ -68,12 +68,14 @@ final class FractionPreservingSplitView: NSSplitView {
         // setPosition() when width actually changes, not on every layout pass.
         // This prevents cascading layout invalidations that cause stuttering.
         guard bounds.width > 0, bounds.width != lastAppliedWidth,
-              arrangedSubviews.count >= 2 else { return }
+            arrangedSubviews.count >= 2
+        else { return }
         lastAppliedWidth = bounds.width
         // Passing an out-of-range fraction lets AppKit clamp the subview but
         // leaves its drawn divider at the requested coordinate. This happens
         // when the inspector closes and the window narrows to 720pt.
-        let proposed = userAdjusted || fraction == nil
+        let proposed =
+            userAdjusted || fraction == nil
             ? arrangedSubviews[0].frame.width
             : bounds.width * (fraction ?? 0.30)
         let position = min(max(proposed, minimumLeadingPosition), maximumLeadingPosition)

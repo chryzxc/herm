@@ -94,21 +94,52 @@ enum MissionControlSnapshotBuilder {
     ) -> MissionControlSnapshot {
         let openAttention = attention.filter { $0.state == .open }.sorted { priority($0.kind) < priority($1.kind) }
         let needsMe = openAttention.map {
-            MissionControlWorkItem(id: "attention:\($0.id)", kind: .attention($0), title: $0.title, detail: $0.detail, isUrgent: isUrgent($0.kind))
+            MissionControlWorkItem(
+                id: "attention:\($0.id)", kind: .attention($0), title: $0.title, detail: $0.detail,
+                isUrgent: isUrgent($0.kind))
         }
         let otherSessions = sessions.filter { $0.id != activeSessionID }
-        let running = agents.map { MissionControlWorkItem(id: "agent:\($0.id)", kind: .agent($0), title: $0.name, detail: $0.state.uppercased(), isUrgent: false) }
-            + processes.map { MissionControlWorkItem(id: "process:\($0.id)", kind: .process($0), title: $0.name, detail: $0.state.uppercased(), isUrgent: false) }
-            + backgroundTasks.filter { $0.status == .running }.map { MissionControlWorkItem(id: "background:\($0.id)", kind: .background($0), title: $0.prompt, detail: "BACKGROUND TASK", isUrgent: false) }
-            + otherSessions.map { MissionControlWorkItem(id: "session:\($0.id)", kind: .session($0), title: $0.title, detail: $0.state.uppercased(), isUrgent: false) }
-        let changed = activities.suffix(4).reversed().map {
-            MissionControlWorkItem(id: "activity:\($0.id.uuidString)", kind: .activity($0), title: $0.kind.replacingOccurrences(of: "subagent.", with: "").uppercased(), detail: $0.text, isUrgent: false)
-        } + cronRuns.prefix(3).map {
-            MissionControlWorkItem(id: "cron:\($0.id)", kind: .cron($0), title: "AUTOMATION · \($0.status.uppercased())", detail: $0.jobID ?? "Scheduled job", isUrgent: $0.status.lowercased().contains("fail"))
-        }
-        let readiness = readiness(repository: repository, attention: openAttention, verification: verification, context: context)
+        let running =
+            agents.map {
+                MissionControlWorkItem(
+                    id: "agent:\($0.id)", kind: .agent($0), title: $0.name, detail: $0.state.uppercased(),
+                    isUrgent: false)
+            }
+            + processes.map {
+                MissionControlWorkItem(
+                    id: "process:\($0.id)", kind: .process($0), title: $0.name, detail: $0.state.uppercased(),
+                    isUrgent: false)
+            }
+            + backgroundTasks.filter { $0.status == .running }.map {
+                MissionControlWorkItem(
+                    id: "background:\($0.id)", kind: .background($0), title: $0.prompt, detail: "BACKGROUND TASK",
+                    isUrgent: false)
+            }
+            + otherSessions.map {
+                MissionControlWorkItem(
+                    id: "session:\($0.id)", kind: .session($0), title: $0.title, detail: $0.state.uppercased(),
+                    isUrgent: false)
+            }
+        let changed =
+            activities.suffix(4).reversed().map {
+                MissionControlWorkItem(
+                    id: "activity:\($0.id.uuidString)", kind: .activity($0),
+                    title: $0.kind.replacingOccurrences(of: "subagent.", with: "").uppercased(), detail: $0.text,
+                    isUrgent: false)
+            }
+            + cronRuns.prefix(3).map {
+                MissionControlWorkItem(
+                    id: "cron:\($0.id)", kind: .cron($0), title: "AUTOMATION · \($0.status.uppercased())",
+                    detail: $0.jobID ?? "Scheduled job", isUrgent: $0.status.lowercased().contains("fail"))
+            }
+        let readiness = readiness(
+            repository: repository, attention: openAttention, verification: verification, context: context)
         return MissionControlSnapshot(
-            focus: MissionControlFocus(sessionTitle: sessionTitle, branch: repository?.isGitRepository == true ? repository?.branch : nil, model: model, contextPercent: context?.contextPercent, changedFiles: repository?.isGitRepository == true ? repository?.changedFiles : nil, runningCount: running.count),
+            focus: MissionControlFocus(
+                sessionTitle: sessionTitle, branch: repository?.isGitRepository == true ? repository?.branch : nil,
+                model: model, contextPercent: context?.contextPercent,
+                changedFiles: repository?.isGitRepository == true ? repository?.changedFiles : nil,
+                runningCount: running.count),
             needsMe: needsMe,
             runningNow: running,
             changed: Array(changed),
@@ -130,19 +161,31 @@ enum MissionControlSnapshotBuilder {
         kind == .approval || kind == .clarification || kind == .failure
     }
 
-    private static func readiness(repository: RepositorySnapshot?, attention: [AttentionItem], verification: VerificationSummary?, context: SessionContextSummary?) -> ReadinessSummary {
+    private static func readiness(
+        repository: RepositorySnapshot?, attention: [AttentionItem], verification: VerificationSummary?,
+        context: SessionContextSummary?
+    ) -> ReadinessSummary {
         guard let repository, repository.isGitRepository else {
             return ReadinessSummary(state: .notApplicable, detail: "No active repository", verificationScope: nil)
         }
         if verification?.state == .failed || attention.contains(where: { $0.kind == .failure }) {
-            return ReadinessSummary(state: .blocked, detail: "Resolve failures before shipping", verificationScope: verification?.evidence?.scope)
+            return ReadinessSummary(
+                state: .blocked, detail: "Resolve failures before shipping",
+                verificationScope: verification?.evidence?.scope)
         }
         let scope = verification?.evidence?.scope?.lowercased()
-        if repository.changedFiles > 0 || verification?.state != .passed || scope == "targeted" || (context?.contextPercent ?? 0) >= 80 {
-            let detail = scope == "targeted" ? "Targeted verification needs broader review" : "Review repository state and verification"
-            return ReadinessSummary(state: .needsReview, detail: detail, verificationScope: verification?.evidence?.scope)
+        if repository.changedFiles > 0 || verification?.state != .passed || scope == "targeted"
+            || (context?.contextPercent ?? 0) >= 80
+        {
+            let detail =
+                scope == "targeted"
+                ? "Targeted verification needs broader review" : "Review repository state and verification"
+            return ReadinessSummary(
+                state: .needsReview, detail: detail, verificationScope: verification?.evidence?.scope)
         }
-        return ReadinessSummary(state: .ready, detail: "Clean tree with repository-wide verification", verificationScope: verification?.evidence?.scope)
+        return ReadinessSummary(
+            state: .ready, detail: "Clean tree with repository-wide verification",
+            verificationScope: verification?.evidence?.scope)
     }
 }
 
@@ -173,11 +216,16 @@ enum WorkflowRecipe: String, CaseIterable, Identifiable {
     var requiresRepository: Bool { self != .endOfDay }
     var prompt: String {
         switch self {
-        case .preflight: "Inspect the current repository changes. Run only Hermes-provided verification commands that apply. Do not edit files. Report exact evidence, scope, and blockers."
-        case .prReady: "Review the current repository change for pull-request readiness. Run applicable Hermes-provided verification commands. Do not edit files or create a PR. Report a concise summary, risks, and verification evidence."
-        case .bugTriage: "Triage the reported issue in the current repository. Reproduce or inspect safely, identify likely code, and propose a plan. Do not edit files."
-        case .reviewChanges: "Review the current working-tree changes. Do not edit files. Report correctness risks, missing tests, and a concise change summary."
-        case .endOfDay: "Summarize the current Hermes work, completed work, open attention, and next available actions. Do not edit files."
+        case .preflight:
+            "Inspect the current repository changes. Run only Hermes-provided verification commands that apply. Do not edit files. Report exact evidence, scope, and blockers."
+        case .prReady:
+            "Review the current repository change for pull-request readiness. Run applicable Hermes-provided verification commands. Do not edit files or create a PR. Report a concise summary, risks, and verification evidence."
+        case .bugTriage:
+            "Triage the reported issue in the current repository. Reproduce or inspect safely, identify likely code, and propose a plan. Do not edit files."
+        case .reviewChanges:
+            "Review the current working-tree changes. Do not edit files. Report correctness risks, missing tests, and a concise change summary."
+        case .endOfDay:
+            "Summarize the current Hermes work, completed work, open attention, and next available actions. Do not edit files."
         }
     }
 }
@@ -219,28 +267,67 @@ struct DockActionDescriptor: Identifiable, Equatable {
 enum DockActionRegistry {
     static func make(repositoryAvailable: Bool, isWorking: Bool) -> [DockActionDescriptor] {
         let tabs = ControlTab.allCases.map { tab in
-            DockActionDescriptor(action: .tab(tab), title: "Open \(tab.tabLabel)", subtitle: "Navigate to \(tab.tabLabel)", icon: tab.icon, category: "Navigation", keywords: [tab.rawValue], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
+            DockActionDescriptor(
+                action: .tab(tab), title: "Open \(tab.tabLabel)", subtitle: "Navigate to \(tab.tabLabel)",
+                icon: tab.icon, category: "Navigation", keywords: [tab.rawValue], isAvailable: true,
+                unavailableReason: nil, requiresConfirmation: false)
         }
         let basics = [
-            DockActionDescriptor(action: .captureWindow, title: "Capture window", subtitle: "Attach the last active app window to your draft", icon: .image, category: "Context", keywords: ["screenshot", "window", "capture"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
-            DockActionDescriptor(action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: .notePencil, category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
-            DockActionDescriptor(action: .focusComposer, title: "Focus composer", subtitle: "Return to Ask", icon: .cursorText, category: "Session", keywords: ["ask", "prompt"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
-            DockActionDescriptor(action: .stop, title: "Stop active request", subtitle: "Interrupt the active Hermes turn", icon: .stopCircle, category: "Session", keywords: ["interrupt", "cancel"], isAvailable: isWorking, unavailableReason: isWorking ? nil : "No active request", requiresConfirmation: false),
-            DockActionDescriptor(action: .voice, title: "Start voice", subtitle: "Start a voice conversation", icon: .microphone, category: "Session", keywords: ["talk", "microphone"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
-            DockActionDescriptor(action: .refresh, title: "Refresh command center", subtitle: "Refresh live Hermes projections", icon: .arrowsClockwise, category: "Control", keywords: ["reload", "update"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
-            DockActionDescriptor(action: .restartDock, title: "Restart Herm", subtitle: "Reload Codex account credentials and restart Hermes", icon: .arrowClockwise, category: "System", keywords: ["restart", "relaunch", "account", "credentials", "codex"], isAvailable: true, unavailableReason: nil, requiresConfirmation: true),
-            DockActionDescriptor(action: .artifacts, title: "Open artifacts", subtitle: "Browse generated images, files, and links from recent sessions", icon: .squaresFour, category: "Navigation", keywords: ["artifacts", "images", "files", "links", "outputs"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
+            DockActionDescriptor(
+                action: .captureWindow, title: "Capture window",
+                subtitle: "Attach the last active app window to your draft", icon: .image, category: "Context",
+                keywords: ["screenshot", "window", "capture"], isAvailable: true, unavailableReason: nil,
+                requiresConfirmation: false),
+            DockActionDescriptor(
+                action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: .notePencil,
+                category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil,
+                requiresConfirmation: false),
+            DockActionDescriptor(
+                action: .focusComposer, title: "Focus composer", subtitle: "Return to Ask", icon: .cursorText,
+                category: "Session", keywords: ["ask", "prompt"], isAvailable: true, unavailableReason: nil,
+                requiresConfirmation: false),
+            DockActionDescriptor(
+                action: .stop, title: "Stop active request", subtitle: "Interrupt the active Hermes turn",
+                icon: .stopCircle, category: "Session", keywords: ["interrupt", "cancel"], isAvailable: isWorking,
+                unavailableReason: isWorking ? nil : "No active request", requiresConfirmation: false),
+            DockActionDescriptor(
+                action: .voice, title: "Start voice", subtitle: "Start a voice conversation", icon: .microphone,
+                category: "Session", keywords: ["talk", "microphone"], isAvailable: true, unavailableReason: nil,
+                requiresConfirmation: false),
+            DockActionDescriptor(
+                action: .refresh, title: "Refresh command center", subtitle: "Refresh live Hermes projections",
+                icon: .arrowsClockwise, category: "Control", keywords: ["reload", "update"], isAvailable: true,
+                unavailableReason: nil, requiresConfirmation: false),
+            DockActionDescriptor(
+                action: .restartDock, title: "Restart Herm",
+                subtitle: "Reload Codex account credentials and restart Hermes", icon: .arrowClockwise,
+                category: "System", keywords: ["restart", "relaunch", "account", "credentials", "codex"],
+                isAvailable: true, unavailableReason: nil, requiresConfirmation: true),
+            DockActionDescriptor(
+                action: .artifacts, title: "Open artifacts",
+                subtitle: "Browse generated images, files, and links from recent sessions", icon: .squaresFour,
+                category: "Navigation", keywords: ["artifacts", "images", "files", "links", "outputs"],
+                isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
         ]
         let workflows = WorkflowRecipe.allCases.map { recipe in
-            DockActionDescriptor(action: .workflow(recipe), title: recipe.title, subtitle: recipe.explanation, icon: .magicWand, category: "Workflow", keywords: ["recipe", "review", "verification"], isAvailable: !recipe.requiresRepository || repositoryAvailable, unavailableReason: recipe.requiresRepository && !repositoryAvailable ? "Select a local folder for the active project session first" : nil, requiresConfirmation: false)
+            DockActionDescriptor(
+                action: .workflow(recipe), title: recipe.title, subtitle: recipe.explanation, icon: .magicWand,
+                category: "Workflow", keywords: ["recipe", "review", "verification"],
+                isAvailable: !recipe.requiresRepository || repositoryAvailable,
+                unavailableReason: recipe.requiresRepository && !repositoryAvailable
+                    ? "Select a local folder for the active project session first" : nil, requiresConfirmation: false)
         }
         return tabs + basics + workflows
     }
 
-    static func search(_ query: String, descriptors: [DockActionDescriptor], recentIDs: [String]) -> [DockActionDescriptor] {
+    static func search(_ query: String, descriptors: [DockActionDescriptor], recentIDs: [String])
+        -> [DockActionDescriptor]
+    {
         let terms = query.lowercased().split(whereSeparator: { $0.isWhitespace }).map(String.init)
         let scored = descriptors.compactMap { descriptor -> (DockActionDescriptor, Int)? in
-            let haystack = ([descriptor.title, descriptor.subtitle, descriptor.category] + descriptor.keywords).joined(separator: " ").lowercased()
+            let haystack = ([descriptor.title, descriptor.subtitle, descriptor.category] + descriptor.keywords).joined(
+                separator: " "
+            ).lowercased()
             guard terms.allSatisfy({ haystack.contains($0) }) else { return nil }
             var score = descriptor.title.lowercased().hasPrefix(query.lowercased()) ? 100 : 0
             if descriptor.isAvailable { score += 20 }

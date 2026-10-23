@@ -1,10 +1,13 @@
-import Foundation
 import Combine
+import Foundation
 
 extension ControlCenterModel {
     var routineReferences: [RoutineReference] {
-        cronJobs.map { job in RoutineReference(profileID: routineProfileID, job: job,
-            run: (cronRunsByJob[job.id] ?? cronRuns.filter { $0.jobID == job.id }).first) }
+        cronJobs.map { job in
+            RoutineReference(
+                profileID: routineProfileID, job: job,
+                run: (cronRunsByJob[job.id] ?? cronRuns.filter { $0.jobID == job.id }).first)
+        }
     }
 
     func profileForRoutine(_ job: CronSummary) -> String? {
@@ -29,41 +32,57 @@ extension ControlCenterModel {
     }
 
     func canTriggerRoutine(_ reference: RoutineReference) -> Bool {
-        (cronControlAvailable || capabilityAvailable("cron.runNow")) && !unavailableRoutineActions.contains("run") && !reference.running && !routineActions.contains(reference.id) && !triggeredRoutineIDs.contains(reference.id)
+        (cronControlAvailable || capabilityAvailable("cron.runNow")) && !unavailableRoutineActions.contains("run")
+            && !reference.running && !routineActions.contains(reference.id)
+            && !triggeredRoutineIDs.contains(reference.id)
     }
 
-    func routineNeedsReview(_ reference: RoutineReference) -> Bool { triggeredRoutineIDs.contains(reference.id) && !routineActions.contains(reference.id) }
+    func routineNeedsReview(_ reference: RoutineReference) -> Bool {
+        triggeredRoutineIDs.contains(reference.id) && !routineActions.contains(reference.id)
+    }
 
     func confirmRoutineReview(_ reference: RoutineReference) async {
-        guard routineNeedsReview(reference), let service = routineService(profileID: reference.profileID) else { return }
-        routineActions.insert(reference.id); defer { routineActions.remove(reference.id) }
+        guard routineNeedsReview(reference), let service = routineService(profileID: reference.profileID) else {
+            return
+        }
+        routineActions.insert(reference.id)
+        defer { routineActions.remove(reference.id) }
         do {
             let jobs = try await service.routineJobs()
-            guard let job = jobs.first(where: { $0.id == reference.job.id }), !["running", "pending", "claimed"].contains(job.lastStatus ?? "") else {
+            guard let job = jobs.first(where: { $0.id == reference.job.id }),
+                !["running", "pending", "claimed"].contains(job.lastStatus ?? "")
+            else {
                 throw QuickDraftError.message("This routine still has a known active run. Inspect Automation.")
             }
-            triggeredRoutineIDs.remove(reference.id); triggeredRoutineRevisions.removeValue(forKey: reference.id)
-            routineActionErrors[reference.id] = "Review recorded. Starting another run remains a separate confirmed action."
+            triggeredRoutineIDs.remove(reference.id)
+            triggeredRoutineRevisions.removeValue(forKey: reference.id)
+            routineActionErrors[reference.id] =
+                "Review recorded. Starting another run remains a separate confirmed action."
             if reference.profileID == routineProfileID { cronJobs = jobs }
         } catch { routineActionErrors[reference.id] = Self.safeUserDiagnostic(error.localizedDescription) }
     }
 
     func recoverRoutine(_ reference: RoutineReference, run: Bool, paused: Bool = false) async {
-        guard !routineActions.contains(reference.id), let service = routineService(profileID: reference.profileID) else { return }
+        guard !routineActions.contains(reference.id), let service = routineService(profileID: reference.profileID)
+        else { return }
         if run, !canTriggerRoutine(reference) { return }
         let bindingGeneration = clientBindingGeneration
-        routineActions.insert(reference.id); routineActionErrors[reference.id] = nil
+        routineActions.insert(reference.id)
+        routineActionErrors[reference.id] = nil
         defer { if clientBindingGeneration == bindingGeneration { routineActions.remove(reference.id) } }
         do {
             let jobs = try await service.routineJobs()
             guard clientBindingGeneration == bindingGeneration else { return }
-            guard let current = jobs.first(where: { $0.id == reference.job.id }), !run || !["running", "pending", "claimed"].contains(current.lastStatus ?? "") else { throw HermesGateway.GatewayError.malformedResponse }
+            guard let current = jobs.first(where: { $0.id == reference.job.id }),
+                !run || !["running", "pending", "claimed"].contains(current.lastStatus ?? "")
+            else { throw HermesGateway.GatewayError.malformedResponse }
             if run {
                 triggeredRoutineIDs.insert(reference.id)
                 triggeredRoutineRevisions[reference.id] = reference.job.lastRunAt ?? ""
                 try await service.runRoutine(reference.job.id)
+            } else {
+                try await service.setRoutinePaused(reference.job.id, paused: paused)
             }
-            else { try await service.setRoutinePaused(reference.job.id, paused: paused) }
             let fresh = try await service.routineJobs()
             guard clientBindingGeneration == bindingGeneration else { return }
             if reference.profileID == routineProfileID {
@@ -73,9 +92,14 @@ extension ControlCenterModel {
             }
         } catch {
             guard clientBindingGeneration == bindingGeneration else { return }
-            if BotService.isUnsupportedMethod(error) { unavailableRoutineActions.insert(run ? "run" : paused ? "pause" : "resume") }
+            if BotService.isUnsupportedMethod(error) {
+                unavailableRoutineActions.insert(run ? "run" : paused ? "pause" : "resume")
+            }
             DebugLog.write("workflow: routine mutation failed or uncertain")
-            routineActionErrors[reference.id] = run ? "The new run could not be confirmed. Review Automation before triggering again." : Self.safeUserDiagnostic(error.localizedDescription)
+            routineActionErrors[reference.id] =
+                run
+                ? "The new run could not be confirmed. Review Automation before triggering again."
+                : Self.safeUserDiagnostic(error.localizedDescription)
         }
     }
 
@@ -86,7 +110,9 @@ extension ControlCenterModel {
         Task {
             defer { finishAction(actionID) }
             do {
-                try await dockModel.submitControlPrompt("Using the apple-reminders skill, complete exactly this Apple Reminder and no other reminder. Reminder id: \(reminder.id). Title: \(reminder.title). Report the result after the source confirms completion.")
+                try await dockModel.submitControlPrompt(
+                    "Using the apple-reminders skill, complete exactly this Apple Reminder and no other reminder. Reminder id: \(reminder.id). Title: \(reminder.title). Report the result after the source confirms completion."
+                )
                 try? await Task.sleep(for: .milliseconds(600))
                 refresh()
             } catch {
@@ -114,8 +140,13 @@ extension ControlCenterModel {
     }
 
     func runCronNow(_ job: CronSummary) {
-        let reference = RoutineReference(profileID: profileForRoutine(job), job: job, run: cronRunsByJob[job.id]?.first ?? cronRuns.first { $0.jobID == job.id })
-        guard canTriggerRoutine(reference) else { lastError = "Run-now is unavailable or a run needs review."; return }
+        let reference = RoutineReference(
+            profileID: profileForRoutine(job), job: job,
+            run: cronRunsByJob[job.id]?.first ?? cronRuns.first { $0.jobID == job.id })
+        guard canTriggerRoutine(reference) else {
+            lastError = "Run-now is unavailable or a run needs review."
+            return
+        }
         Task { await recoverRoutine(reference, run: true) }
     }
 
@@ -140,7 +171,10 @@ extension ControlCenterModel {
                 guard generation == cronRunsGeneration, isCurrent(), routineProfileID == profile else { return }
                 cronHistoryAvailable = result.succeeded
                 guard cronHistoryAvailable else {
-                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes automation history is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
+                    let message =
+                        Self.safeUserDiagnostic(result.stderr).isEmpty
+                        ? "Hermes automation history is temporarily unavailable."
+                        : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("cron.history", error: message)
                     lastError = message
                     return
@@ -170,11 +204,13 @@ extension ControlCenterModel {
         Task {
             do {
                 let runs = try await rpc.cronJobRuns(jobID: jobID, profileID: profile)
-                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile else { return }
+                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile
+                else { return }
                 cronRunsByJob[jobID] = runs
                 recordProjectionSuccess(key)
             } catch {
-                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile else { return }
+                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile
+                else { return }
                 recordProjectionFailure(key, error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
@@ -186,7 +222,9 @@ extension ControlCenterModel {
         // Intentionally empty.
     }
 
-    func createCron(name: String, schedule: String, prompt: String, configuration: CronConfigurationDraft? = nil) async -> Bool {
+    func createCron(name: String, schedule: String, prompt: String, configuration: CronConfigurationDraft? = nil) async
+        -> Bool
+    {
         guard cronControlAvailable else {
             lastError = "Automation control is unavailable through this Hermes gateway."
             return false
@@ -194,7 +232,9 @@ extension ControlCenterModel {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let originalSchedule = schedule
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanName.isEmpty, !originalSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !cleanPrompt.isEmpty else {
+        guard !cleanName.isEmpty, !originalSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !cleanPrompt.isEmpty
+        else {
             lastError = "Name, schedule, and request are required to create an automation."
             return false
         }
@@ -212,20 +252,27 @@ extension ControlCenterModel {
         do {
             guard let rpc else { return false }
             if let configuration {
-                let created = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, configuration: configuration, profileID: profile)
+                let created = try await rpc.createCron(
+                    name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, configuration: configuration,
+                    profileID: profile)
                 if clientBindingGeneration == bindingGeneration, routineProfileID == profile {
                     lastCreatedCronJobID = created.id
                     cronJobs.removeAll { $0.id == created.id }
                     cronJobs.append(created)
                 }
             } else {
-                let result = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, profileID: profile)
-                if clientBindingGeneration == bindingGeneration, routineProfileID == profile { lastCreatedCronJobID = result["job_id"] as? String }
+                let result = try await rpc.createCron(
+                    name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, profileID: profile)
+                if clientBindingGeneration == bindingGeneration, routineProfileID == profile {
+                    lastCreatedCronJobID = result["job_id"] as? String
+                }
             }
             if clientBindingGeneration == bindingGeneration, routineProfileID == profile { refresh() }
             return true
         } catch {
-            if clientBindingGeneration == bindingGeneration { lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)) }
+            if clientBindingGeneration == bindingGeneration {
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
             return false
         }
     }
@@ -259,15 +306,16 @@ extension ControlCenterModel {
 
     func openCronSession(_ job: CronSummary) {
         guard let sessionID = job.sessionID, let dockModel else { return }
-        dockModel.resumeSession(HermesSession(
-            id: sessionID,
-            profileID: profileForRoutine(job),
-            title: "Automation · \(job.name)",
-            preview: "",
-            startedAt: nil,
-            messageCount: 0,
-            source: "cron"
-        ))
+        dockModel.resumeSession(
+            HermesSession(
+                id: sessionID,
+                profileID: profileForRoutine(job),
+                title: "Automation · \(job.name)",
+                preview: "",
+                startedAt: nil,
+                messageCount: 0,
+                source: "cron"
+            ))
         focus(sessionID: sessionID)
         dockModel.requestComposerFocus()
     }
@@ -293,8 +341,9 @@ extension ControlCenterModel {
 
     func cronReportRequest(for run: CronRunSummary) -> CronReportRequest? {
         guard let jobID = run.jobID,
-              let sessionID = run.sessionID,
-              let job = cronJobs.first(where: { $0.id == jobID }) else { return nil }
+            let sessionID = run.sessionID,
+            let job = cronJobs.first(where: { $0.id == jobID })
+        else { return nil }
         return CronReportRequest(profileID: profileForRoutine(job), job: job, sessionID: sessionID)
     }
 
@@ -304,13 +353,21 @@ extension ControlCenterModel {
     }
 
     func editCron(_ job: CronSummary, draft: CronEditDraft) async -> Bool {
-        guard let rpc else { lastError = "Automation editing is unavailable through this Hermes gateway."; return false }
+        guard let rpc else {
+            lastError = "Automation editing is unavailable through this Hermes gateway."
+            return false
+        }
         let changes = draft.changes(comparedTo: job)
-        guard !changes.isEmpty else { lastError = "Change at least one field before saving."; return false }
+        guard !changes.isEmpty else {
+            lastError = "Change at least one field before saving."
+            return false
+        }
         guard !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              CronSchedule.isValid(draft.schedule),
-              changes[.prompt]?.trimmingCharacters(in: .whitespacesAndNewlines) != "" || job.details.noAgent == true || !job.details.skills.isEmpty,
-              !draft.configuration.delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            CronSchedule.isValid(draft.schedule),
+            changes[.prompt]?.trimmingCharacters(in: .whitespacesAndNewlines) != "" || job.details.noAgent == true
+                || !job.details.skills.isEmpty,
+            !draft.configuration.delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             lastError = "Name, schedule, delivery, and agent request cannot be empty."
             return false
         }

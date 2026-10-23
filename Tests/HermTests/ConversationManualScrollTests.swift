@@ -2,14 +2,17 @@ import AppKit
 import Darwin
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct ConversationManualScrollTests {
-    private static let source = "# Response\n\n" + String(
-        repeating: "A paragraph with **strong text** and `inline code` that wraps naturally.\n\n",
-        count: 32
-    ) + "```swift\nlet value = 42\n```\n"
+    private static let source =
+        "# Response\n\n"
+        + String(
+            repeating: "A paragraph with **strong text** and `inline code` that wraps naturally.\n\n",
+            count: 32
+        ) + "```swift\nlet value = 42\n```\n"
 
     @MainActor
     private final class NativeFixture {
@@ -151,7 +154,8 @@ struct ConversationManualScrollTests {
         controller.shiftVisibleTop(by: -75)
         anchor.recordUserScroll(delta: -75)
         document.setFrameSize(NSSize(width: 640, height: 10_000))
-        controller.shiftVisibleTop(by: anchor.correction(rowMinY: 2_900, visibleTop: try #require(controller.geometry).visibleTop))
+        controller.shiftVisibleTop(
+            by: anchor.correction(rowMinY: 2_900, visibleTop: try #require(controller.geometry).visibleTop))
         #expect(try #require(controller.geometry).visibleTop == 2_925)
         // Evicting earlier rows preserves movement in the other direction too.
         var laterAnchor = ConversationScrollAnchor(messageID: anchor.messageID, offset: -25)
@@ -160,9 +164,10 @@ struct ConversationManualScrollTests {
         // AppKit may clamp the origin before the new row frames arrive.
         document.setFrameSize(NSSize(width: 640, height: 2_000))
         scroll.contentView.scroll(to: NSPoint(x: 0, y: 1_600))
-        controller.shiftVisibleTop(by: laterAnchor.correction(
-            rowMinY: 900, visibleTop: try #require(controller.geometry).visibleTop
-        ))
+        controller.shiftVisibleTop(
+            by: laterAnchor.correction(
+                rowMinY: 900, visibleTop: try #require(controller.geometry).visibleTop
+            ))
         #expect(try #require(controller.geometry).visibleTop == 975)
     }
 
@@ -203,9 +208,10 @@ struct ConversationManualScrollTests {
         #expect(fixture.scroll.contentView.bounds.origin == before)
         #expect(first.superview === fixture.document)
         fixture.scroll(to: fixture.document.frame.height - fixture.scroll.contentView.bounds.height)
-        #expect(fixture.document.subviews.compactMap { $0 as? NativeMarkdownTextSectionView }.contains {
-            $0.string.contains("More streamed text.")
-        })
+        #expect(
+            fixture.document.subviews.compactMap { $0 as? NativeMarkdownTextSectionView }.contains {
+                $0.string.contains("More streamed text.")
+            })
     }
 
     private final class Metrics {
@@ -231,29 +237,34 @@ struct ConversationManualScrollTests {
                         ConversationMessageRow(
                             message: ChatMessage(
                                 id: messageIDs[index], role: .hermes,
-                                text: index == 11 && streaming != nil ? ""
-                                    : rowSource?(index) ?? (index == 11 ? longMarkdown : nil) ?? (source + "\nResponse \(index)")
+                                text: index == 11 && streaming != nil
+                                    ? ""
+                                    : rowSource?(index) ?? (index == 11 ? longMarkdown : nil)
+                                        ?? (source + "\nResponse \(index)")
                             ),
                             isStreamingMessage: index == 11 && streaming != nil,
                             streamingText: streaming, activeBotProfileID: nil,
                             botsByID: [:], avatarImages: [:], botRosterRevision: 0,
                             onImagePreview: { _ in }
                         )
-                            .equatable()
-                            .background {
-                                GeometryReader { geometry in
-                                    let _ = { metrics.geometryReads += 1 }()
-                                    Color.clear.preference(
-                                        key: MessageNavigatorViewportPreferenceKey.self,
-                                        value: [MessageNavigatorViewport(
-                                            target: MessageNavigatorTarget(sessionID: "fixture", messageID: messageIDs[index]),
+                        .equatable()
+                        .background {
+                            GeometryReader { geometry in
+                                let _ = { metrics.geometryReads += 1 }()
+                                Color.clear.preference(
+                                    key: MessageNavigatorViewportPreferenceKey.self,
+                                    value: [
+                                        MessageNavigatorViewport(
+                                            target: MessageNavigatorTarget(
+                                                sessionID: "fixture", messageID: messageIDs[index]),
                                             index: index,
                                             minY: geometry.frame(in: .named("document")).minY,
                                             maxY: geometry.frame(in: .named("document")).maxY
-                                        )]
-                                    )
-                                }
+                                        )
+                                    ]
+                                )
                             }
+                        }
                     }
                 }
                 .background {
@@ -285,10 +296,11 @@ struct ConversationManualScrollTests {
         let source = ScrollPerformanceFixture.standard.idleLongMarkdown
         let controller = ConversationScrollController()
         let metrics = Metrics()
-        let host = NSHostingView(rootView: Transcript(
-            controller: controller, metrics: metrics, longMarkdown: source,
-            indices: 11..<12
-        ))
+        let host = NSHostingView(
+            rootView: Transcript(
+                controller: controller, metrics: metrics, longMarkdown: source,
+                indices: 11..<12
+            ))
         host.sizingOptions = []
         host.frame = NSRect(x: 0, y: 0, width: 640, height: 600)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -302,8 +314,9 @@ struct ConversationManualScrollTests {
             if let document = view as? NativeMarkdownDocumentContainerView { return [document] }
             return view.subviews.flatMap { documents(in: $0) }
         }
-        let document = try #require(documents(in: host).first,
-                                    "A real long assistant row must use the viewport-aware renderer")
+        let document = try #require(
+            documents(in: host).first,
+            "A real long assistant row must use the viewport-aware renderer")
         let height = document.intrinsicContentSize.height
         #expect(height > 10_000)
         if !NSApp.isFullKeyboardAccessEnabled {
@@ -329,10 +342,14 @@ struct ConversationManualScrollTests {
     func measureLongMarkdownScrollWork() async throws {
         let fixture = ScrollPerformanceFixture.standard
         try await profile(keepsAllSections: false, longMarkdown: fixture.idleLongMarkdown)
-        let code = "# Large code response\n\n```swift\n" + String(repeating: "let value = 42 // A complete source line.\n", count: 6_000) + "```\n"
+        let code =
+            "# Large code response\n\n```swift\n"
+            + String(repeating: "let value = 42 // A complete source line.\n", count: 6_000) + "```\n"
         try await profile(keepsAllSections: false, longMarkdown: code, scenario: "large-fence")
         for defersStreaming in [false, true, true, false] {
-            try await profile(keepsAllSections: false, longMarkdown: fixture.idleLongMarkdown, streams: true, defersStreaming: defersStreaming)
+            try await profile(
+                keepsAllSections: false, longMarkdown: fixture.idleLongMarkdown, streams: true,
+                defersStreaming: defersStreaming)
         }
     }
 
@@ -343,17 +360,24 @@ struct ConversationManualScrollTests {
         )
     }
 
-    private func profile(keepsAllSections: Bool, longMarkdown: String? = nil, streams: Bool = false, defersStreaming: Bool = true, scenario: String = "rich") async throws {
+    private func profile(
+        keepsAllSections: Bool, longMarkdown: String? = nil, streams: Bool = false, defersStreaming: Bool = true,
+        scenario: String = "rich"
+    ) async throws {
         let streaming = streams ? StreamingText() : nil
-        let deltas = longMarkdown.map { value in
-            stride(from: 0, to: value.count, by: 4_096).map { String(value.dropFirst($0).prefix(4_096)) }
-        } ?? []
+        let deltas =
+            longMarkdown.map { value in
+                stride(from: 0, to: value.count, by: 4_096).map { String(value.dropFirst($0).prefix(4_096)) }
+            } ?? []
         let half = deltas.count / 2
         streaming?.appendPresentation(deltas.prefix(half).joined())
         let setupStarted = DispatchTime.now().uptimeNanoseconds
         let controller = ConversationScrollController()
         let metrics = Metrics()
-        let host = NSHostingView(rootView: Transcript(controller: controller, metrics: metrics, longMarkdown: longMarkdown, streaming: streaming, defersStreaming: defersStreaming))
+        let host = NSHostingView(
+            rootView: Transcript(
+                controller: controller, metrics: metrics, longMarkdown: longMarkdown, streaming: streaming,
+                defersStreaming: defersStreaming))
         host.sizingOptions = []
         host.frame = NSRect(x: 0, y: 0, width: 640, height: 600)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -366,7 +390,9 @@ struct ConversationManualScrollTests {
         }
         let initial = try #require(controller.geometry)
         #expect(initial.documentHeight > initial.visibleHeight)
-        let top = longMarkdown == nil ? min(5_000, initial.documentHeight / 2)
+        let top =
+            longMarkdown == nil
+            ? min(5_000, initial.documentHeight / 2)
             : try #require(metrics.viewports.first { $0.index == 11 }).minY + 2_000
         controller.shiftVisibleTop(by: top)
         host.layoutSubtreeIfNeeded()
@@ -411,20 +437,33 @@ struct ConversationManualScrollTests {
             #expect(containers.reduce(0) { $0 + $1.subviews.count } == mounted)
         }
         let sortedSteps = stepMS.sorted()
-        let mode = longMarkdown == nil ? (keepsAllSections ? "all-sections" : "viewport-sections") : (streams ? (defersStreaming ? "rich-streaming-deferred" : "rich-streaming-live") : "\(scenario)-completed")
-        print("manual_scroll_latency mode=\(mode) source_bytes=\(longMarkdown?.utf8.count ?? Self.source.utf8.count) setup_ms=\(String(format: "%.1f", setupMS)) p95_step_ms=\(String(format: "%.1f", sortedSteps[Int(Double(sortedSteps.count - 1) * 0.95)])) max_step_ms=\(String(format: "%.1f", sortedSteps.last ?? 0))")
-        print("manual_scroll_fixture mode=\(mode) steps=120 cpu_ms=\(String(format: "%.1f", cpuMS)) mounted_sections=\(mounted) row_geometry_reads=\(metrics.geometryReads - readsBefore)")
+        let mode =
+            longMarkdown == nil
+            ? (keepsAllSections ? "all-sections" : "viewport-sections")
+            : (streams
+                ? (defersStreaming ? "rich-streaming-deferred" : "rich-streaming-live") : "\(scenario)-completed")
+        print(
+            "manual_scroll_latency mode=\(mode) source_bytes=\(longMarkdown?.utf8.count ?? Self.source.utf8.count) setup_ms=\(String(format: "%.1f", setupMS)) p95_step_ms=\(String(format: "%.1f", sortedSteps[Int(Double(sortedSteps.count - 1) * 0.95)])) max_step_ms=\(String(format: "%.1f", sortedSteps.last ?? 0))"
+        )
+        print(
+            "manual_scroll_fixture mode=\(mode) steps=120 cpu_ms=\(String(format: "%.1f", cpuMS)) mounted_sections=\(mounted) row_geometry_reads=\(metrics.geometryReads - readsBefore)"
+        )
         try await Task.sleep(for: .milliseconds(150))
         host.layoutSubtreeIfNeeded()
         #expect(!controller.isUserScrolling)
-        #expect(abs((controller.geometry?.visibleTop ?? 0) - top) < 1,
-                "Applying deferred text must preserve the reader's position above the bottom")
+        #expect(
+            abs((controller.geometry?.visibleTop ?? 0) - top) < 1,
+            "Applying deferred text must preserve the reader's position above the bottom")
         if let streaming {
             let expected = NativeMarkdownDocumentContainerView()
-            NativeStreamingMarkdownView.Coordinator().update(expected, chunks: streaming.chunks, source: streaming.text, themeRevision: DockThemeRuntime.revision)
+            NativeStreamingMarkdownView.Coordinator().update(
+                expected, chunks: streaming.chunks, source: streaming.text, themeRevision: DockThemeRuntime.revision)
             let live = try #require(containers.max { $0.frame.height < $1.frame.height })
-            #expect(abs(live.measuredHeight(forWidth: live.bounds.width) - expected.measuredHeight(forWidth: live.bounds.width)) < 1,
-                    "Settling must render every chunk received during the gesture")
+            #expect(
+                abs(
+                    live.measuredHeight(forWidth: live.bounds.width)
+                        - expected.measuredHeight(forWidth: live.bounds.width)) < 1,
+                "Settling must render every chunk received during the gesture")
         }
     }
 }

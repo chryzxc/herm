@@ -1,10 +1,13 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct CapabilityStateTests {
     @Test func recoveryCommandIsOptionalMetadata() {
-        let state = CapabilityState(id: "gateway", title: "Gateway", detail: "Offline", isAvailable: false, recovery: "Start Hermes", recoveryCommand: "hermes gateway start")
+        let state = CapabilityState(
+            id: "gateway", title: "Gateway", detail: "Offline", isAvailable: false, recovery: "Start Hermes",
+            recoveryCommand: "hermes gateway start")
 
         #expect(state.recoveryCommand == "hermes gateway start")
         #expect(state.availability == .unsupported)
@@ -12,9 +15,12 @@ struct CapabilityStateTests {
     }
 
     @Test func capabilitySnapshotLooksUpStableIDs() {
-        let snapshot = CapabilitySnapshot(states: [
-            CapabilityState(id: "kanban.taskDetails", title: "Details", detail: "Available", isAvailable: true, recovery: nil, source: .cli)
-        ], generatedAt: Date())
+        let snapshot = CapabilitySnapshot(
+            states: [
+                CapabilityState(
+                    id: "kanban.taskDetails", title: "Details", detail: "Available", isAvailable: true, recovery: nil,
+                    source: .cli)
+            ], generatedAt: Date())
 
         #expect(snapshot.state(for: "kanban.taskDetails")?.isAvailable == true)
         #expect(snapshot.state(for: "missing") == nil)
@@ -114,35 +120,50 @@ struct CapabilityStateTests {
     }
 
     @Test func unsupportedAvailabilityAlwaysNormalizesProbeStateToUnsupported() {
-        let state = CapabilityState(id: "unsupported", title: "Unsupported", detail: "", isAvailable: false, recovery: nil, availability: .unsupported, probeState: .missing)
+        let state = CapabilityState(
+            id: "unsupported", title: "Unsupported", detail: "", isAvailable: false, recovery: nil,
+            availability: .unsupported, probeState: .missing)
         #expect(state.availability == .unsupported)
         #expect(state.probeState == .unsupported)
     }
 
     @Test func unavailableAvailabilityAlwaysNormalizesProbeStateToMissing() {
-        let state = CapabilityState(id: "unavailable", title: "Unavailable", detail: "", isAvailable: false, recovery: nil, availability: .unavailable, probeState: .unsupported)
+        let state = CapabilityState(
+            id: "unavailable", title: "Unavailable", detail: "", isAvailable: false, recovery: nil,
+            availability: .unavailable, probeState: .unsupported)
         #expect(state.availability == .unavailable)
         #expect(state.probeState == .missing)
     }
 
     @Test func sourceAndAccessAreAuthoritativeForCompatibilityMetadata() {
-        let state = CapabilityState(id: "metadata", title: "Metadata", detail: "", isAvailable: true, recovery: nil, source: .cli, access: .confirmedMutation, provenance: .localTool, accessClassification: .safeReadOnly)
+        let state = CapabilityState(
+            id: "metadata", title: "Metadata", detail: "", isAvailable: true, recovery: nil, source: .cli,
+            access: .confirmedMutation, provenance: .localTool, accessClassification: .safeReadOnly)
         #expect(state.provenance == .hermesCLI)
         #expect(state.accessClassification == .confirmedMutation)
     }
 
     @Test func omittedCategoryUsesDeterministicReadinessTaxonomy() {
-        #expect(CapabilityState(id: "kanban.create", title: "Create", detail: "", isAvailable: true, recovery: nil).category == .integration)
-        #expect(CapabilityState(id: "security.gitleaks", title: "Gitleaks", detail: "", isAvailable: false, recovery: nil).category == .security)
-        #expect(CapabilityState(id: "code-review.ocr", title: "OCR", detail: "", isAvailable: true, recovery: nil).category == .review)
+        #expect(
+            CapabilityState(id: "kanban.create", title: "Create", detail: "", isAvailable: true, recovery: nil).category
+                == .integration)
+        #expect(
+            CapabilityState(id: "security.gitleaks", title: "Gitleaks", detail: "", isAvailable: false, recovery: nil)
+                .category == .security)
+        #expect(
+            CapabilityState(id: "code-review.ocr", title: "OCR", detail: "", isAvailable: true, recovery: nil).category
+                == .review)
     }
 
     @Test func capabilityReadinessSortsAndGroupsDeterministically() {
         let states = [
-            CapabilityState(id: "semgrep", title: "Semgrep", detail: "", isAvailable: true, recovery: nil, category: .security),
-            CapabilityState(id: "gateway", title: "Gateway", detail: "", isAvailable: true, recovery: nil, category: .core),
+            CapabilityState(
+                id: "semgrep", title: "Semgrep", detail: "", isAvailable: true, recovery: nil, category: .security),
+            CapabilityState(
+                id: "gateway", title: "Gateway", detail: "", isAvailable: true, recovery: nil, category: .core),
             CapabilityState(id: "ocr", title: "OCR", detail: "", isAvailable: true, recovery: nil, category: .review),
-            CapabilityState(id: "hermes", title: "Hermes", detail: "", isAvailable: true, recovery: nil, category: .core)
+            CapabilityState(
+                id: "hermes", title: "Hermes", detail: "", isAvailable: true, recovery: nil, category: .core),
         ]
         let snapshot = CapabilitySnapshot(states: states, generatedAt: .now)
 

@@ -1,17 +1,23 @@
 import AppKit
 import Testing
+
 @testable import Herm
 
 struct EdgeNotchTests {
     @MainActor @Test func pendingRequestsStayVisibleUntilResolved() {
         let model = DockModel()
-        model.receiveGatewayEvent("approval.request", params: ["session_id": "approval", "payload": ["title": "Run migration", "request_id": "a1"]])
-        model.receiveGatewayEvent("clarify.request", params: ["session_id": "question", "payload": ["question": "Which environment?", "request_id": "q1"]])
+        model.receiveGatewayEvent(
+            "approval.request",
+            params: ["session_id": "approval", "payload": ["title": "Run migration", "request_id": "a1"]])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: ["session_id": "question", "payload": ["question": "Which environment?", "request_id": "q1"]])
         let sessions = ["approval", "question"].map {
             HermesSession(id: $0, title: $0, preview: "", startedAt: nil, messageCount: 1, source: "herm")
         }
-        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: true,
-                                        attention: model.sessionAttention)
+        let tasks = EdgeNotchTask.build(
+            current: nil, sessions: sessions, currentSessionIDs: [], isOnline: true,
+            attention: model.sessionAttention)
         #expect(tasks.count == 2)
         #expect(tasks.allSatisfy { $0.phase == .attention })
         #expect(tasks.first { $0.id == "approval" }?.displayStatus == "Needs your approval")
@@ -20,29 +26,41 @@ struct EdgeNotchTests {
         state.tasks = tasks
         #expect(state.railActivity.attention)
         #expect(state.railActivity.title == "Needs your attention")
-        let stale = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: false,
-                                        attention: model.sessionAttention)
+        let stale = EdgeNotchTask.build(
+            current: nil, sessions: sessions, currentSessionIDs: [], isOnline: false,
+            attention: model.sessionAttention)
         #expect(stale.allSatisfy { $0.displayStatus == "Status not current" })
         model.resolveApproval(for: "approval")
         #expect(model.sessionAttention["approval"] == nil)
         #expect(model.sessionAttention["question"] != nil)
-        model.receiveGatewayEvent("clarify.expire", params: ["session_id": "question", "payload": ["request_id": "q1"]])
+        model.receiveGatewayEvent(
+            "clarify.expire", params: ["session_id": "question", "payload": ["request_id": "q1"]])
         #expect(model.sessionAttention.isEmpty)
     }
 
     @MainActor @Test func attentionRowsCarryOneTapAnswers() throws {
         let model = DockModel()
-        model.receiveGatewayEvent("approval.request", params: ["session_id": "a", "payload": ["title": "Run migration", "request_id": "a1"]])
-        model.receiveGatewayEvent("clarify.request", params: ["session_id": "q", "payload": ["question": "Which env?", "choices": ["staging", "prod"], "request_id": "q1"]])
-        let sessions = ["a", "q"].map { HermesSession(id: $0, title: $0, preview: "", startedAt: nil, messageCount: 1, source: "herm") }
-        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: true, attention: model.sessionAttention)
+        model.receiveGatewayEvent(
+            "approval.request", params: ["session_id": "a", "payload": ["title": "Run migration", "request_id": "a1"]])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "q",
+                "payload": ["question": "Which env?", "choices": ["staging", "prod"], "request_id": "q1"],
+            ])
+        let sessions = ["a", "q"].map {
+            HermesSession(id: $0, title: $0, preview: "", startedAt: nil, messageCount: 1, source: "herm")
+        }
+        let tasks = EdgeNotchTask.build(
+            current: nil, sessions: sessions, currentSessionIDs: [], isOnline: true, attention: model.sessionAttention)
         #expect(tasks.first { $0.id == "a" }?.choices.map(EdgeNotchTask.choiceLabel) == ["Allow once", "Deny"])
         #expect(tasks.first { $0.id == "q" }?.choices == ["staging", "prod"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        try #"{"task_id": "t_1234abcd", "session_id": "bot", "profile": "default", "questions": [{"question": "Ship it?", "choices": ["Yes", "No"]}]}"#
+        try
+            #"{"task_id": "t_1234abcd", "session_id": "bot", "profile": "default", "questions": [{"question": "Ship it?", "choices": ["Yes", "No"]}]}"#
             .write(to: dir.appendingPathComponent("t_1234abcd.json"), atomically: true, encoding: .utf8)
         let question = try #require(EdgeDeliveryQuestion.load(from: dir).first)
         #expect(question.row.phase == .attention)
@@ -75,8 +93,9 @@ struct EdgeNotchTests {
     }
 
     @MainActor @Test func taskAndQuotaAnnouncedTogetherShareTheStatusView() {
-        let snapshot = ProviderQuotaSnapshot(provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
-                                             windows: [], safeDetail: nil)
+        let snapshot = ProviderQuotaSnapshot(
+            provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
+            windows: [], safeDetail: nil)
         let state = EdgeNotchState()
         state.quotaChange = EdgeQuotaChange(previous: snapshot, current: snapshot)
         state.showingAnnouncement = true
@@ -90,21 +109,30 @@ struct EdgeNotchTests {
 
     @Test func backgroundSessionFinishingAnnouncesOnce() {
         func task(_ id: String, _ phase: EdgeNotchTask.Phase, current: Bool = false) -> EdgeNotchTask {
-            EdgeNotchTask(id: id, title: id, phase: phase, statusLabel: "", detail: nil, updatedAt: nil,
-                          isCurrent: current, isStatusCurrent: true, session: nil)
+            EdgeNotchTask(
+                id: id, title: id, phase: phase, statusLabel: "", detail: nil, updatedAt: nil,
+                isCurrent: current, isStatusCurrent: true, session: nil)
         }
         #expect(EdgeNotchTask.newlyFinished(from: [task("a", .working)], to: [task("a", .finished)]))
         #expect(!EdgeNotchTask.newlyFinished(from: [task("a", .finished)], to: [task("a", .finished)]))
         #expect(!EdgeNotchTask.newlyFinished(from: [], to: [task("a", .finished)]))
-        #expect(!EdgeNotchTask.newlyFinished(from: [task("a", .working, current: true)], to: [task("a", .finished, current: true)]))
+        #expect(
+            !EdgeNotchTask.newlyFinished(
+                from: [task("a", .working, current: true)], to: [task("a", .finished, current: true)]))
     }
 
     @Test func quotaAnnouncesOnlyWhenAWindowDropsABand() {
         func quota(_ remaining: Double?) -> [ProviderQuotaSnapshot] {
-            [ProviderQuotaSnapshot(provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
-                windows: [ProviderQuotaWindow(id: "session", label: "Session", remainingPercent: remaining,
-                    remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)],
-                safeDetail: nil)]
+            [
+                ProviderQuotaSnapshot(
+                    provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
+                    windows: [
+                        ProviderQuotaWindow(
+                            id: "session", label: "Session", remainingPercent: remaining,
+                            remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
+                    ],
+                    safeDetail: nil)
+            ]
         }
         let full = EdgeQuotaBands.bands(quota(100))
         #expect(!EdgeQuotaBands.dropped(from: full, to: EdgeQuotaBands.bands(quota(91))))
@@ -115,8 +143,10 @@ struct EdgeNotchTests {
         #expect(EdgeQuotaBands.movedProviders(from: quota(80), to: quota(79)) == ["codex"])
         #expect(EdgeQuotaBands.movedProviders(from: quota(80), to: quota(80)).isEmpty)
         #expect(EdgeQuotaBands.movedProviders(from: quota(10), to: quota(100)).isEmpty)
-        #expect(EdgeQuotaBands.droppedProvider(from: ["codex/5h": 10, "glm/5h": 10, "glm/7d": 9],
-                                               to: ["codex/5h": 9, "glm/5h": 8, "glm/7d": 9]) == "glm")
+        #expect(
+            EdgeQuotaBands.droppedProvider(
+                from: ["codex/5h": 10, "glm/5h": 10, "glm/7d": 9],
+                to: ["codex/5h": 9, "glm/5h": 8, "glm/7d": 9]) == "glm")
     }
 
     @Test func attentionTakesPriorityOverUnreadAndWork() {
@@ -193,16 +223,22 @@ struct EdgeNotchTests {
         #expect(frame.maxY == screen.maxY)
         #expect(top.workspaceInsets.top == 40)
         // The top corners away from the camera still dock to the side.
-        #expect(EdgeDockPlacement.dragged(to: NSPoint(x: 1550, y: 990), screenFrame: screen, visibleFrame: visible).side == .right)
+        #expect(
+            EdgeDockPlacement.dragged(to: NSPoint(x: 1550, y: 990), screenFrame: screen, visibleFrame: visible).side
+                == .right)
         // Secondary displays never get the island.
-        #expect(EdgeDockPlacement.dragged(to: NSPoint(x: 820, y: 990), screenFrame: screen, visibleFrame: visible, allowsTop: false).side == .right)
+        #expect(
+            EdgeDockPlacement.dragged(
+                to: NSPoint(x: 820, y: 990), screenFrame: screen, visibleFrame: visible, allowsTop: false
+            ).side == .right)
     }
 
     @MainActor @Test func announcementGlimpsesOnlyTheUpdatedRow() {
         let state = EdgeNotchState()
         state.tasks = ["a", "b", "c"].map {
-            EdgeNotchTask(id: $0, title: $0, phase: .working, statusLabel: "", detail: nil, updatedAt: nil,
-                          isCurrent: false, isStatusCurrent: true, session: nil)
+            EdgeNotchTask(
+                id: $0, title: $0, phase: .working, statusLabel: "", detail: nil, updatedAt: nil,
+                isCurrent: false, isStatusCurrent: true, session: nil)
         }
         state.showingAnnouncement = true
         state.announcesTasks = true
@@ -221,7 +257,9 @@ struct EdgeNotchTests {
         #expect(state.collapsedSize == CGSize(width: 200 + 50 * 2, height: 32))
         #expect(state.panelSize == state.collapsedSize)
         state.expanded = true
-        #expect(state.panelSize == CGSize(width: EdgeNotchState.islandSize.width, height: EdgeNotchState.islandSize.height + 32))
+        #expect(
+            state.panelSize
+                == CGSize(width: EdgeNotchState.islandSize.width, height: EdgeNotchState.islandSize.height + 32))
     }
 
     @MainActor @Test func quietNotchDoesNotExposePassiveLabelsOrLargeRail() {
@@ -247,10 +285,12 @@ struct EdgeNotchTests {
         )
         for side in [EdgeDockSide.left, .right] {
             let shape = EdgeNotchShape(side: side).path(in: bounds)
-            for point in [CGPoint(x: content.minX, y: content.minY),
-                          CGPoint(x: content.maxX, y: content.minY),
-                          CGPoint(x: content.minX, y: content.maxY),
-                          CGPoint(x: content.maxX, y: content.maxY)] {
+            for point in [
+                CGPoint(x: content.minX, y: content.minY),
+                CGPoint(x: content.maxX, y: content.minY),
+                CGPoint(x: content.minX, y: content.maxY),
+                CGPoint(x: content.maxX, y: content.maxY),
+            ] {
                 #expect(shape.contains(point))
             }
         }
@@ -266,13 +306,19 @@ struct EdgeNotchTests {
 
     @Test func quotaPreviewPicksSessionAndWeeklyWindows() {
         func window(_ id: String, _ label: String) -> ProviderQuotaWindow {
-            ProviderQuotaWindow(id: id, label: label, remainingPercent: 50, remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
+            ProviderQuotaWindow(
+                id: id, label: label, remainingPercent: 50, remainingDisplay: nil, limitDisplay: nil, resetsAt: nil,
+                resetsDisplay: nil)
         }
-        let claude = EdgeQuotaPreview.compactWindows([window("opus", "Opus"), window("weekly", "Weekly"), window("session", "Session")])
+        let claude = EdgeQuotaPreview.compactWindows([
+            window("opus", "Opus"), window("weekly", "Weekly"), window("session", "Session"),
+        ])
         #expect(claude.map { $0.label } == ["5h", "7d", "Opus"])
         #expect(claude.map { $0.window.id } == ["session", "weekly", "opus"])
 
-        let other = EdgeQuotaPreview.compactWindows([window("a", "Daily"), window("b", "Monthly"), window("c", "Search")])
+        let other = EdgeQuotaPreview.compactWindows([
+            window("a", "Daily"), window("b", "Monthly"), window("c", "Search"),
+        ])
         #expect(other.map { $0.label } == ["Daily", "Monthly", "Search"])
         #expect(EdgeQuotaPreview.compactWindows([]).isEmpty)
     }
@@ -308,18 +354,22 @@ struct EdgeNotchTests {
     @Test func tasksListEveryRunningAndUnopenedSessionInPriorityOrder() {
         let now = Date()
         func session(_ id: String, working: Bool = false, unread: Bool = false, age: TimeInterval) -> HermesSession {
-            HermesSession(id: id, title: id, preview: "", startedAt: nil, updatedAt: now.addingTimeInterval(-age),
-                          messageCount: 1, source: "cli", isWorking: working, hasUnreadUpdate: unread)
+            HermesSession(
+                id: id, title: id, preview: "", startedAt: nil, updatedAt: now.addingTimeInterval(-age),
+                messageCount: 1, source: "cli", isWorking: working, hasUnreadUpdate: unread)
         }
-        let sessions = (0..<8).map { session("done-\($0)", unread: true, age: TimeInterval($0 * 60)) } + [
-            session("old-work", working: true, age: 600),
-            session("new-work", working: true, age: 30),
-            session("seen", age: 5),
-            session("open", working: true, age: 1),
-        ]
-        let current = EdgeNotchTask(id: "open", title: "Open", phase: .attention, statusLabel: "Needs your approval",
-                                    detail: nil, updatedAt: nil, isCurrent: true, isStatusCurrent: true, session: nil)
-        let tasks = EdgeNotchTask.build(current: current, sessions: sessions, currentSessionIDs: ["open"], isOnline: true)
+        let sessions =
+            (0..<8).map { session("done-\($0)", unread: true, age: TimeInterval($0 * 60)) } + [
+                session("old-work", working: true, age: 600),
+                session("new-work", working: true, age: 30),
+                session("seen", age: 5),
+                session("open", working: true, age: 1),
+            ]
+        let current = EdgeNotchTask(
+            id: "open", title: "Open", phase: .attention, statusLabel: "Needs your approval",
+            detail: nil, updatedAt: nil, isCurrent: true, isStatusCurrent: true, session: nil)
+        let tasks = EdgeNotchTask.build(
+            current: current, sessions: sessions, currentSessionIDs: ["open"], isOnline: true)
         #expect(tasks.map(\.id).prefix(3) == ["open", "new-work", "old-work"])
         #expect(tasks.filter { !$0.isInProgress }.count == 8)
         #expect(!tasks.contains { $0.id == "seen" })
@@ -329,31 +379,43 @@ struct EdgeNotchTests {
 
     @Test func openSessionKnownByRuntimeAliasIsNotListedTwice() {
         let sessions = [
-            HermesSession(id: "20260926_183044_1083e6", title: "Clarify recipients", preview: "", startedAt: nil,
-                          messageCount: 1, source: "herm", isWorking: true),
-            HermesSession(id: "other", title: "Other", preview: "", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
+            HermesSession(
+                id: "20260926_183044_1083e6", title: "Clarify recipients", preview: "", startedAt: nil,
+                messageCount: 1, source: "herm", isWorking: true),
+            HermesSession(
+                id: "other", title: "Other", preview: "", startedAt: nil, messageCount: 1, source: "cli",
+                isWorking: true),
         ]
-        let current = EdgeNotchTask(id: "893ad513", title: "Clarify recipients", phase: .working, statusLabel: "Working",
-                                    detail: nil, updatedAt: nil, isCurrent: true, isStatusCurrent: true, session: nil)
-        let tasks = EdgeNotchTask.build(current: current, sessions: sessions, currentSessionIDs: ["893ad513"], isOnline: true)
+        let current = EdgeNotchTask(
+            id: "893ad513", title: "Clarify recipients", phase: .working, statusLabel: "Working",
+            detail: nil, updatedAt: nil, isCurrent: true, isStatusCurrent: true, session: nil)
+        let tasks = EdgeNotchTask.build(
+            current: current, sessions: sessions, currentSessionIDs: ["893ad513"], isOnline: true)
         #expect(tasks.map(\.id) == ["893ad513", "other"])
     }
 
     @Test func workingTaskShowsLatestActivityNotItsOpeningPrompt() {
         let sessions = [
-            HermesSession(id: "a", title: "A", preview: "first prompt", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
-            HermesSession(id: "b", title: "B", preview: "first prompt", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
+            HermesSession(
+                id: "a", title: "A", preview: "first prompt", startedAt: nil, messageCount: 1, source: "cli",
+                isWorking: true),
+            HermesSession(
+                id: "b", title: "B", preview: "first prompt", startedAt: nil, messageCount: 1, source: "cli",
+                isWorking: true),
         ]
-        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, activity: ["a": "terminal: git checkout"],
-                                        currentSessionIDs: [], isOnline: true)
+        let tasks = EdgeNotchTask.build(
+            current: nil, sessions: sessions, activity: ["a": "terminal: git checkout"],
+            currentSessionIDs: [], isOnline: true)
         #expect(tasks.first { $0.id == "a" }?.detail == "terminal: git checkout")
         #expect(tasks.first { $0.id == "b" }?.detail == nil)
     }
 
     @Test func offlineTasksKeepResultsButStopClaimingLiveStatus() {
         let sessions = [
-            HermesSession(id: "a", title: "A", preview: "", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
-            HermesSession(id: "b", title: "B", preview: "", startedAt: nil, messageCount: 1, source: "cli", hasUnreadUpdate: true),
+            HermesSession(
+                id: "a", title: "A", preview: "", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
+            HermesSession(
+                id: "b", title: "B", preview: "", startedAt: nil, messageCount: 1, source: "cli", hasUnreadUpdate: true),
         ]
         let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: false)
         #expect(tasks.first { $0.id == "a" }?.tone == .inactive)
@@ -370,18 +432,22 @@ struct EdgeNotchTests {
 
     @Test func messagedBotsGetTheirOwnRows() {
         let now = Date()
-        func record(_ id: String, _ state: BotActivityState, age: TimeInterval = 60, card: String? = nil, session: String? = nil) -> BotActivityRecord {
-            BotActivityRecord(id: id, originSessionID: "s", botID: "forge", botName: "Forge", summary: "Brief \(id)", state: state,
-                              createdAt: now.addingTimeInterval(-age), updatedAt: now.addingTimeInterval(-age),
-                              result: "Build green\nmore", linkedCardID: card, botChatSessionID: session)
+        func record(
+            _ id: String, _ state: BotActivityState, age: TimeInterval = 60, card: String? = nil, session: String? = nil
+        ) -> BotActivityRecord {
+            BotActivityRecord(
+                id: id, originSessionID: "s", botID: "forge", botName: "Forge", summary: "Brief \(id)", state: state,
+                createdAt: now.addingTimeInterval(-age), updatedAt: now.addingTimeInterval(-age),
+                result: "Build green\nmore", linkedCardID: card, botChatSessionID: session)
         }
-        let rows = EdgeNotchTask.botRows(records: [
-            record("live", .working, session: "forge-1"),
-            record("done", .completed),
-            record("old", .completed, age: 3600),
-            record("card", .working, card: "t_1"),
-            record("listed", .working, session: "forge-2"),
-        ], steps: ["live": "Running swift build"], isOnline: true, listedSessionIDs: ["forge-2"], now: now)
+        let rows = EdgeNotchTask.botRows(
+            records: [
+                record("live", .working, session: "forge-1"),
+                record("done", .completed),
+                record("old", .completed, age: 3600),
+                record("card", .working, card: "t_1"),
+                record("listed", .working, session: "forge-2"),
+            ], steps: ["live": "Running swift build"], isOnline: true, listedSessionIDs: ["forge-2"], now: now)
         #expect(rows.map(\.id) == ["bot:live", "bot:done"])
         #expect(rows[0].phase == .working && rows[0].detail == "Forge · Running swift build")
         #expect(rows[0].session?.profileID == "forge" && rows[0].profileID == "forge")

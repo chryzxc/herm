@@ -21,7 +21,8 @@ struct NativeWorkflowFeatureTests {
         defer { model.shutdown() }
         model.status = .working
         model.isSending = true
-        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queue-edit-\(UUID().uuidString).png")
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "queue-edit-\(UUID().uuidString).png")
         model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
         model.draft = "First"
         model.queueDraft()

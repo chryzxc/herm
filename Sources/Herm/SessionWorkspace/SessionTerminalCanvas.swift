@@ -1,6 +1,6 @@
 import AppKit
-import SwiftUI
 import SwiftTerm
+import SwiftUI
 
 /// Each shell retains its screen and scrollback when switching tabs.
 @MainActor
@@ -10,8 +10,9 @@ final class SessionTerminalEmulator: NSObject, @preconcurrency TerminalViewDeleg
 
     init(session: LocalTerminalSession) {
         self.session = session
-        view = ContextTerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 12, weight: .regular),
-                            options: TerminalOptions(scrollback: LocalTerminalSession.maxOutputLines))
+        view = ContextTerminalView(
+            frame: .zero, font: .monospacedSystemFont(ofSize: 12, weight: .regular),
+            options: TerminalOptions(scrollback: LocalTerminalSession.maxOutputLines))
         super.init()
         view.terminalDelegate = self
         view.setAccessibilityLabel("Terminal. Type commands at the shell prompt.")
@@ -53,18 +54,22 @@ struct SessionTerminalCanvas: NSViewRepresentable {
         view.nativeBackgroundColor = NSColor(Color.dockCanvas)
         view.nativeForegroundColor = NSColor(Color.dockPrimaryText)
         guard let themed = view as? ContextTerminalView,
-              themed.paletteRevision != DockThemeRuntime.revision else { return }
+            themed.paletteRevision != DockThemeRuntime.revision
+        else { return }
         themed.paletteRevision = DockThemeRuntime.revision
         view.caretColor = NSColor(Color.dockAccent)
         view.caretTextColor = NSColor(Color.dockOnAccentText)
         view.selectedTextBackgroundColor = NSColor(Color.dockAccentMuted)
         view.selectedTextForegroundColor = NSColor(Color.dockPrimaryText)
         // Keep ANSI meanings; explicit RGB output remains owned by the terminal program.
-        let normal: [SwiftUI.Color] = [.dockSecondaryText, .dockDestructive, .dockSuccess,
-            DockAccentColor.amber.color, .dockInfo, .dockMerged, DockAccentColor.cyan.color, .dockPrimaryText]
+        let normal: [SwiftUI.Color] = [
+            .dockSecondaryText, .dockDestructive, .dockSuccess,
+            DockAccentColor.amber.color, .dockInfo, .dockMerged, DockAccentColor.cyan.color, .dockPrimaryText,
+        ]
         let colors = (normal + normal).map { color -> SwiftTerm.Color in
             let rgb = NSColor(color).usingColorSpace(.sRGB) ?? .gray
-            return SwiftTerm.Color(red: UInt16(rgb.redComponent * 65535),
+            return SwiftTerm.Color(
+                red: UInt16(rgb.redComponent * 65535),
                 green: UInt16(rgb.greenComponent * 65535), blue: UInt16(rgb.blueComponent * 65535))
         }
         view.installColors(colors)
@@ -77,7 +82,8 @@ final class ContextTerminalView: TerminalView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
         let item = NSMenuItem(title: "Attach to chat", action: #selector(attachSelection), keyEquivalent: "")
-        item.target = self; item.isEnabled = !selection.getSelectedText().isEmpty && onAttach != nil
+        item.target = self
+        item.isEnabled = !selection.getSelectedText().isEmpty && onAttach != nil
         menu.addItem(item)
         return menu
     }

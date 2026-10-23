@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -161,9 +162,10 @@ struct ConversationScrollObserverTests {
         let content = TranscriptContent()
         let controller = ConversationScrollController()
         let presentation = ConversationScrollPresentationState()
-        let host = NSHostingView(rootView: GrowingTranscript(
-            content: content, controller: controller, presentation: presentation
-        ))
+        let host = NSHostingView(
+            rootView: GrowingTranscript(
+                content: content, controller: controller, presentation: presentation
+            ))
         host.frame = NSRect(x: 0, y: 0, width: 300, height: 400)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host
@@ -177,12 +179,18 @@ struct ConversationScrollObserverTests {
                 if condition() { return }
                 try await Task.sleep(for: .milliseconds(10))
             } while Date() < deadline
-            #expect(condition(), "\(stage): geometry=\(String(describing: controller.geometry)), following=\(presentation.isAtBottom)")
+            #expect(
+                condition(),
+                "\(stage): geometry=\(String(describing: controller.geometry)), following=\(presentation.isAtBottom)")
         }
 
-        try await waitForLayout("Initial bottom") { controller.geometry.map { $0.documentHeight > 1_000 && $0.distanceToBottom < 1 } ?? false }
+        try await waitForLayout("Initial bottom") {
+            controller.geometry.map { $0.documentHeight > 1_000 && $0.distanceToBottom < 1 } ?? false
+        }
         content.tailHeight += 2_000
-        try await waitForLayout("Follow growth") { controller.geometry.map { $0.documentHeight > 3_000 && $0.distanceToBottom < 1 } ?? false }
+        try await waitForLayout("Follow growth") {
+            controller.geometry.map { $0.documentHeight > 3_000 && $0.distanceToBottom < 1 } ?? false
+        }
         #expect(presentation.isAtBottom)
 
         content.viewportHeight = 320
@@ -209,7 +217,9 @@ struct ConversationScrollObserverTests {
         clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: bottom))
         #expect(presentation.isAtBottom, "Returning to the bottom must resume follow before another delta arrives")
         content.tailHeight += 400
-        try await waitForLayout("Follow after returning to bottom") { controller.geometry.map { $0.documentHeight > 3_800 && $0.distanceToBottom < 1 } ?? false }
+        try await waitForLayout("Follow after returning to bottom") {
+            controller.geometry.map { $0.documentHeight > 3_800 && $0.distanceToBottom < 1 } ?? false
+        }
         #expect(presentation.isAtBottom)
     }
 }

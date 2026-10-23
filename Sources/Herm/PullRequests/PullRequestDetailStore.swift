@@ -27,7 +27,9 @@ extension PullRequestRecord {
     func retainingMergedState(from previous: PullRequestRecord?) -> PullRequestRecord {
         guard let previous, let mergedAt = previous.mergedAt else { return self }
         var value = self
-        value.mergedAt = mergedAt; value.state = "closed"; value.isDraft = false
+        value.mergedAt = mergedAt
+        value.state = "closed"
+        value.isDraft = false
         value.updatedAt = max(updatedAt ?? .distantPast, previous.updatedAt ?? .distantPast)
         return value
     }

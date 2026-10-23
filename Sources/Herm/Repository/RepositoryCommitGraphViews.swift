@@ -2,7 +2,9 @@ import SwiftUI
 
 /// Approved accents in lane order; the first lane is the checked-out history.
 enum RepositoryCommitGraphPalette {
-    static let lanes: [DockAccentColor] = [.blue, .violet, .pink, .amber, .teal, .coral, .green, .cyan, .orange, .indigo]
+    static let lanes: [DockAccentColor] = [
+        .blue, .violet, .pink, .amber, .teal, .coral, .green, .cyan, .orange, .indigo,
+    ]
     static func accent(_ index: Int) -> DockAccentColor { lanes[index % lanes.count] }
 }
 
@@ -22,26 +24,33 @@ struct RepositoryCommitGraphLanes: View {
         Canvas { context, size in
             func x(_ lane: Int) -> CGFloat { Self.laneSpacing / 2 + CGFloat(lane) * Self.laneSpacing + 2 }
             func stroke(_ path: Path, _ color: Int) {
-                context.stroke(path, with: .color(RepositoryCommitGraphPalette.accent(color).fill), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                context.stroke(
+                    path, with: .color(RepositoryCommitGraphPalette.accent(color).fill),
+                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
             }
             let node = Self.nodeY
             for segment in row.top {
                 var path = Path()
                 path.move(to: CGPoint(x: x(segment.from), y: 0))
-                path.addCurve(to: CGPoint(x: x(segment.to), y: node), control1: CGPoint(x: x(segment.from), y: node / 2), control2: CGPoint(x: x(segment.to), y: node / 2))
+                path.addCurve(
+                    to: CGPoint(x: x(segment.to), y: node), control1: CGPoint(x: x(segment.from), y: node / 2),
+                    control2: CGPoint(x: x(segment.to), y: node / 2))
                 stroke(path, segment.color)
             }
             for segment in row.bottom {
                 let turn = min(size.height, node * 2)
                 var path = Path()
                 path.move(to: CGPoint(x: x(segment.from), y: node))
-                path.addCurve(to: CGPoint(x: x(segment.to), y: turn), control1: CGPoint(x: x(segment.from), y: (node + turn) / 2), control2: CGPoint(x: x(segment.to), y: (node + turn) / 2))
+                path.addCurve(
+                    to: CGPoint(x: x(segment.to), y: turn), control1: CGPoint(x: x(segment.from), y: (node + turn) / 2),
+                    control2: CGPoint(x: x(segment.to), y: (node + turn) / 2))
                 path.addLine(to: CGPoint(x: x(segment.to), y: size.height))
                 stroke(path, segment.color)
             }
             let color = RepositoryCommitGraphPalette.accent(row.color).fill
             func circle(_ radius: CGFloat) -> Path {
-                Path(ellipseIn: CGRect(x: x(row.lane) - radius, y: node - radius, width: radius * 2, height: radius * 2))
+                Path(
+                    ellipseIn: CGRect(x: x(row.lane) - radius, y: node - radius, width: radius * 2, height: radius * 2))
             }
             if isHead || isMerge {
                 // HEAD and merges read as rings, like VS Code's graph; merges keep a center dot.
@@ -76,7 +85,9 @@ struct RepositoryCommitReferencePill: View {
         .padding(.horizontal, 6)
         .frame(height: 18)
         .background(Capsule().fill(accent.fill.opacity(0.14)))
-        .overlay(Capsule().stroke(accent.fill.opacity(reference.isHead ? 0.7 : 0.3), lineWidth: reference.isHead ? 1 : 0.5))
+        .overlay(
+            Capsule().stroke(accent.fill.opacity(reference.isHead ? 0.7 : 0.3), lineWidth: reference.isHead ? 1 : 0.5)
+        )
         .help(help)
     }
 
@@ -89,11 +100,12 @@ struct RepositoryCommitReferencePill: View {
     }
 
     private var help: String {
-        let kind = switch reference.kind {
-        case .branch: reference.isHead ? "Checked-out branch" : "Branch"
-        case .remote: "Remote branch"
-        case .tag: "Tag"
-        }
+        let kind =
+            switch reference.kind {
+            case .branch: reference.isHead ? "Checked-out branch" : "Branch"
+            case .remote: "Remote branch"
+            case .tag: "Tag"
+            }
         return "\(kind) \(reference.name)\(reference.isSynced ? ", in sync with its remote" : "")"
     }
 }

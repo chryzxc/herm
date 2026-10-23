@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -25,7 +26,9 @@ private final class AutomationClient: HermesRPCClientProtocol {
         calls.append((method, path, body, nil))
         return httpResult
     }
-    func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
+    func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String:
+        Any]
+    {
         calls.append((method, path, body, timeout))
         return httpResult
     }
@@ -34,9 +37,12 @@ private final class AutomationClient: HermesRPCClientProtocol {
 @MainActor
 struct AutomationContractTests {
     private func control(_ client: AutomationClient) -> ControlCenterModel {
-        ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [
-            CapabilityState(id: "rpc-scheduling", title: "Cron", detail: "Available", isAvailable: true, recovery: nil)
-        ])
+        ControlCenterModel(
+            rpc: HermesControlRPC(client: client),
+            capabilities: [
+                CapabilityState(
+                    id: "rpc-scheduling", title: "Cron", detail: "Available", isAvailable: true, recovery: nil)
+            ])
     }
     private var job: CronSummary {
         var job = CronSummary(id: "job", name: "Review", schedule: "0 9 * * *", enabled: true, nextRun: nil)
@@ -44,18 +50,25 @@ struct AutomationContractTests {
         return job
     }
     private var detail: [String: Any] {
-        ["id": "job", "name": "Review", "schedule": ["kind": "cron", "expr": "0 9 * * *", "display": "Every day"],
-         "prompt": String(repeating: "A complete instruction. ", count: 20), "deliver": "local", "model": "old", "provider": "configured"]
+        [
+            "id": "job", "name": "Review", "schedule": ["kind": "cron", "expr": "0 9 * * *", "display": "Every day"],
+            "prompt": String(repeating: "A complete instruction. ", count: 20), "deliver": "local", "model": "old",
+            "provider": "configured",
+        ]
     }
     private func refuses(_ operation: () async throws -> Void) async {
-        do { try await operation(); Issue.record("Expected Hermes rejection") } catch {}
+        do {
+            try await operation()
+            Issue.record("Expected Hermes rejection")
+        } catch {}
     }
 
     @Test func reportLoadsThroughTheRealNormalizedHTTPEnvelope() async throws {
         let client = AutomationClient()
         client.httpResult = ["messages": [["role": "assistant", "content": "# Completed report"]]]
         let model = control(client)
-        let report = try await model.cronReport(for: CronReportRequest(profileID: "research", job: job, sessionID: "actual-session"))
+        let report = try await model.cronReport(
+            for: CronReportRequest(profileID: "research", job: job, sessionID: "actual-session"))
         #expect(report.markdown == "# Completed report")
         #expect(client.calls.first?.1.contains("profile=research") == true)
     }
@@ -85,7 +98,9 @@ struct AutomationContractTests {
         client.httpResult = ["success": false]
         await refuses { try await HermesWorkflowRPC(client: client, profileID: "research").runRoutine("job") }
         #expect(client.calls.allSatisfy { $0.0 == "POST" })
-        #expect(try HermesControlRPC.cronPath(jobID: "job", suffix: "/trigger", profileID: nil) == "/api/cron/jobs/job/trigger")
+        #expect(
+            try HermesControlRPC.cronPath(jobID: "job", suffix: "/trigger", profileID: nil)
+                == "/api/cron/jobs/job/trigger")
     }
 
     @Test func editingLoadsFullInstructionsAndOnlySendsChangedFields() async throws {
@@ -113,8 +128,10 @@ struct AutomationContractTests {
         client.httpResult = detail
         let model = control(client)
         model.routineProfileID = "research"
-        let configuration = CronConfigurationDraft(delivery: "telegram", workdir: "/tmp/work", model: "configured-model", provider: "configured-provider")
-        #expect(await model.createCron(name: "Review", schedule: "daily", prompt: "Review", configuration: configuration))
+        let configuration = CronConfigurationDraft(
+            delivery: "telegram", workdir: "/tmp/work", model: "configured-model", provider: "configured-provider")
+        #expect(
+            await model.createCron(name: "Review", schedule: "daily", prompt: "Review", configuration: configuration))
         let call = client.calls.first { $0.0 == "POST" }
         #expect(call?.1 == "/api/cron/jobs?profile=research")
         #expect(call?.2["deliver"] as? String == "telegram")
@@ -124,8 +141,14 @@ struct AutomationContractTests {
 
     @Test func structuredRunsUseRealIdentitiesAndKeepScriptPreviewsWithoutInventingSuccess() throws {
         let rows: [[String: Any]] = [
-            ["id": "cron_job_20261018_090005", "source": "cron", "started_at": 1_792_287_005, "ended_at": 1_792_287_050],
-            ["id": "cron_output:job:20261018_090100", "source": "cron_output", "started_at": 1_792_287_060, "ended_at": 1_792_287_060, "preview": "Script wrote the daily report"]
+            [
+                "id": "cron_job_20261018_090005", "source": "cron", "started_at": 1_792_287_005,
+                "ended_at": 1_792_287_050,
+            ],
+            [
+                "id": "cron_output:job:20261018_090100", "source": "cron_output", "started_at": 1_792_287_060,
+                "ended_at": 1_792_287_060, "preview": "Script wrote the daily report",
+            ],
         ]
         let runs = try ControlCenterModel.parseStructuredCronRuns(["runs": rows], jobID: "job")
         #expect(runs[0].sessionID == "cron_job_20261018_090005")
@@ -182,7 +205,8 @@ struct AutomationContractTests {
         let client = AutomationClient()
         client.httpResult = ["runs": [["id": "cron_other_20261018_090005", "source": "cron", "started_at": 100]]]
         let model = control(client)
-        let cached = CronRunSummary(id: "cached", status: "completed", jobID: "job", source: "cron", claimedAt: nil, error: nil)
+        let cached = CronRunSummary(
+            id: "cached", status: "completed", jobID: "job", source: "cron", claimedAt: nil, error: nil)
         model.cronRunsByJob["job"] = [cached]
         model.refreshCronRuns(jobID: "job")
         let key = model.cronRunsProjectionKey(jobID: "job")

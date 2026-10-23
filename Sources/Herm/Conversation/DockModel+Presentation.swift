@@ -103,15 +103,17 @@ extension DockModel {
 
     func refreshSessionAttention() {
         var requests = pendingClarificationsBySessionID.mapValues {
-            SessionAttention(status: .needsClarification, summary: String($0.transcriptText.prefix(180)), requestID: $0.requestID,
-                             choices: $0.batch.count > 1 || $0.multiSelect ? [] : $0.choices,
-                             responseTarget: $0.responseTarget)
+            SessionAttention(
+                status: .needsClarification, summary: String($0.transcriptText.prefix(180)), requestID: $0.requestID,
+                choices: $0.batch.count > 1 || $0.multiSelect ? [] : $0.choices,
+                responseTarget: $0.responseTarget)
         }
         for (id, approval) in pendingApprovalsBySessionID {
             let what = approval.detail.isEmpty ? approval.title : "\(approval.title): \(approval.detail)"
-            requests[id] = SessionAttention(status: .needsApproval, summary: String(what.prefix(180)),
-                                            requestID: approval.presentation.requestID,
-                                            choices: [ApprovalChoice.once, ApprovalChoice.deny], responseTarget: approval.responseTarget)
+            requests[id] = SessionAttention(
+                status: .needsApproval, summary: String(what.prefix(180)),
+                requestID: approval.presentation.requestID,
+                choices: [ApprovalChoice.once, ApprovalChoice.deny], responseTarget: approval.responseTarget)
         }
         let liveRequests = Set(requests.values.compactMap(\.responseTarget))
         let answers = attentionAnswers.filter { liveRequests.contains($0.key) }
@@ -124,14 +126,19 @@ extension DockModel {
             return name
         }
         if let name = runtimeConfiguration?.agentName,
-           !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
             return name
         }
         return "Hermes"
     }
 
     var workflowSession: HermesSession? {
-        navigationSessionID.map { HermesSession(id: $0, profileID: sessionProfileID, title: currentSessionTitle ?? "Session", preview: "", startedAt: nil, messageCount: 0, source: "herm") }
+        navigationSessionID.map {
+            HermesSession(
+                id: $0, profileID: sessionProfileID, title: currentSessionTitle ?? "Session", preview: "",
+                startedAt: nil, messageCount: 0, source: "herm")
+        }
     }
 
     /// The rail subscribes only to fields it renders. Keeping this publisher
@@ -171,7 +178,8 @@ extension DockModel {
 
     /// Maps the open chat's runtime alias onto its stored row id.
     func rowSessionID(_ id: String) -> String {
-        quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : storageIDsByRuntimeID[id] ?? id)
+        quickSessionOwners[id]?.sessionID
+            ?? (id == sessionID ? (sessionStorageID ?? id) : storageIDsByRuntimeID[id] ?? id)
     }
 
     var kanbanSessionID: String? {
@@ -198,7 +206,8 @@ extension DockModel {
             let references = botActivityBySessionID[alias, default: []].filter(\.isKanbanReference)
             // Older builds archived every ID a listing printed, all in the same
             // instant; a lone reference is the only exact one.
-            let batchSizes = Dictionary(grouping: references) { Int($0.createdAt.timeIntervalSince1970) }.mapValues(\.count)
+            let batchSizes = Dictionary(grouping: references) { Int($0.createdAt.timeIntervalSince1970) }.mapValues(
+                \.count)
             ids.formUnion(
                 references
                     .filter { batchSizes[Int($0.createdAt.timeIntervalSince1970)] == 1 }
@@ -210,7 +219,8 @@ extension DockModel {
         // `recentEvents` is the bounded, persisted activity history. Include
         // it so a completed terminal command observed before this view opens
         // can still recover its exact Kanban card after session restoration.
-        let values = agentActivities.map(\.text)
+        let values =
+            agentActivities.map(\.text)
             + activeToolCalls.map { $0.input + " " + $0.context }
             + recentEvents.map(\.detail)
         // These are truncated previews, so a cut-off listing can show one ID;
@@ -239,7 +249,8 @@ extension DockModel {
 
     var displayedSubagents: [HermesSubagent] {
         let liveIDs = Set(activeSubagents.map(\.id))
-        let historical = sessionAgents
+        let historical =
+            sessionAgents
             .filter { !liveIDs.contains($0.id) }
             .map { agent -> HermesSubagent in
                 guard !Self.isTerminalAgentStatus(agent.status) else { return agent }
@@ -254,10 +265,11 @@ extension DockModel {
         let displayed = displayedSubagents
         let inputs = (displayed, agentActivities, activeToolCalls)
         if let cachedAgentSnapshot,
-           let cachedAgentSnapshotInputs,
-           cachedAgentSnapshotInputs.0 == inputs.0,
-           cachedAgentSnapshotInputs.1 == inputs.1,
-           cachedAgentSnapshotInputs.2 == inputs.2 {
+            let cachedAgentSnapshotInputs,
+            cachedAgentSnapshotInputs.0 == inputs.0,
+            cachedAgentSnapshotInputs.1 == inputs.1,
+            cachedAgentSnapshotInputs.2 == inputs.2
+        {
             return cachedAgentSnapshot
         }
         let pipeline = AgentActivityPresentation.pipeline(
@@ -273,7 +285,8 @@ extension DockModel {
             displayedSubagents: displayed,
             pipeline: pipeline,
             activityCountsByAgentID: counts,
-            activeAgentIDs: Set(activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.map(\.id)),
+            activeAgentIDs: Set(
+                activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.map(\.id)),
             revision: agentSnapshotRevision &+ 1
         )
         agentSnapshotRevision &+= 1

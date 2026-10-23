@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -19,15 +20,20 @@ struct SessionModeTabVisualTests {
                 DockPageHeader(title: "Calendar", subtitle: "Your Mac calendar, reminders, and scheduled work")
                     .environment(\.dockTitleRow, DockTitleRow(height: 52, leadingClearance: 28))
                 ForEach([false, true], id: \.self) { collapsed in
-                    DockPageHeader(title: "Pull requests", subtitle: "Review your GitHub work", sidebarCollapsed: .constant(collapsed))
-                        .environment(\.dockTitleRow, DockTitleRow(height: 52, leadingClearance: 28))
+                    DockPageHeader(
+                        title: "Pull requests", subtitle: "Review your GitHub work",
+                        sidebarCollapsed: .constant(collapsed)
+                    )
+                    .environment(\.dockTitleRow, DockTitleRow(height: 52, leadingClearance: 28))
                 }
                 ForEach([DockPopover.SessionWorkspaceMode.chat, .voice, .pullRequests]) { mode in
                     header(style: style, selected: mode).frame(width: 520)
                 }
                 header(style: style, selected: .chat).frame(width: 360)
                 SessionModeTabStrip(modes: [.chat, .voice], selectedMode: .chat, style: style, onSelect: { _ in })
-                SessionModeTabStrip(modes: [.chat, .voice, .pullRequests], selectedMode: .voice, style: style, onSelect: { _ in }).disabled(true)
+                SessionModeTabStrip(
+                    modes: [.chat, .voice, .pullRequests], selectedMode: .voice, style: style, onSelect: { _ in }
+                ).disabled(true)
             }
             .padding(16)
             .foregroundStyle(style.primaryText)
@@ -47,7 +53,9 @@ struct SessionModeTabVisualTests {
             let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let data = try #require(bitmap.representation(using: .png, properties: [:]))
-            try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(theme.rawValue)-\(dark ? "dark" : "light").png"))
+            try data.write(
+                to: URL(fileURLWithPath: directory).appendingPathComponent(
+                    "\(theme.rawValue)-\(dark ? "dark" : "light").png"))
             window.orderOut(nil)
         }
     }
@@ -59,7 +67,8 @@ struct SessionModeTabVisualTests {
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
             Spacer(minLength: 12)
-            SessionModeTabStrip(modes: [.chat, .voice, .pullRequests], selectedMode: selected, style: style, onSelect: { _ in })
+            SessionModeTabStrip(
+                modes: [.chat, .voice, .pullRequests], selectedMode: selected, style: style, onSelect: { _ in })
             DockIcon(.dotsThree, size: 14, color: style.secondaryText).frame(width: 28, height: 28)
             DockSidebarToggle(isCollapsed: true, edge: .trailing, action: {})
         }

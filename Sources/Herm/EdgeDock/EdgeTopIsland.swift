@@ -11,7 +11,8 @@ enum EdgeIslandTheme {
             defaults.set(store.selectedThemeID.rawValue, forKey: previousThemeKey)
             store.selectedThemeID = .island
         } else if store.selectedThemeID == .island,
-                  let previous = defaults.string(forKey: previousThemeKey).flatMap(DockThemeID.init(rawValue:)) {
+            let previous = defaults.string(forKey: previousThemeKey).flatMap(DockThemeID.init(rawValue:))
+        {
             defaults.removeObject(forKey: previousThemeKey)
             store.selectedThemeID = previous
         }
@@ -77,9 +78,12 @@ struct EdgeIslandStatusStrip: View {
     var body: some View {
         HStack(spacing: 0) {
             let headline = headline
-            Button { headline.task.map(openTask) } label: {
+            Button {
+                headline.task.map(openTask)
+            } label: {
                 HStack(spacing: 6) {
-                    EdgeNotchStatusIndicator(activity: state.railActivity, style: displayStyle, axis: .horizontal, part: .primary)
+                    EdgeNotchStatusIndicator(
+                        activity: state.railActivity, style: displayStyle, axis: .horizontal, part: .primary)
                     Text(headline.text).lineLimit(1).truncationMode(.tail)
                         .contentTransition(.opacity)
                         .animation(.dockEase(duration: 0.25), value: headline.text)
@@ -96,9 +100,11 @@ struct EdgeIslandStatusStrip: View {
                         .help("\(attention.count) need\(attention.count == 1 ? "s" : "") your attention")
                 }
                 if let quota {
-                    chip("gauge.with.dots.needle.33percent", "\(Int(quota.percent.rounded()))%",
-                         tint: quota.percent < 20 ? .dockWarning : .dockSecondaryText, action: openQuota)
-                        .help("\(quota.provider): \(Int(quota.percent.rounded()))% quota left")
+                    chip(
+                        "gauge.with.dots.needle.33percent", "\(Int(quota.percent.rounded()))%",
+                        tint: quota.percent < 20 ? .dockWarning : .dockSecondaryText, action: openQuota
+                    )
+                    .help("\(quota.provider): \(Int(quota.percent.rounded()))% quota left")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)

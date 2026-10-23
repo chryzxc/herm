@@ -1,14 +1,17 @@
-import Foundation
 import AppKit
+import Foundation
 import Testing
 import UniformTypeIdentifiers
+
 @testable import Herm
 
 struct AttachmentPopoverTests {
     @Test func exposesAttachmentActionsInStableOrder() {
-        #expect(AttachmentPopoverAction.allCases.map(\.id) == [
-            "files", "folder", "capture-window", "saved-prompts", "conversation", "images", "paste-image", "url", "prompt-snippets"
-        ])
+        #expect(
+            AttachmentPopoverAction.allCases.map(\.id) == [
+                "files", "folder", "capture-window", "saved-prompts", "conversation", "images", "paste-image", "url",
+                "prompt-snippets",
+            ])
     }
 
     @Test func sharedPickerUsesTheSelectedAttachmentKind() {
@@ -21,7 +24,9 @@ struct AttachmentPopoverTests {
     }
 
     @Test func acceptsOnlyHTTPAndHTTPSURLsWithAHost() {
-        #expect(AttachmentPopoverPresentation.validatedURL(from: "https://example.com/path")?.absoluteString == "https://example.com/path")
+        #expect(
+            AttachmentPopoverPresentation.validatedURL(from: "https://example.com/path")?.absoluteString
+                == "https://example.com/path")
         #expect(AttachmentPopoverPresentation.validatedURL(from: "http://localhost:8080")?.host == "localhost")
         #expect(AttachmentPopoverPresentation.validatedURL(from: "file:///private/secret") == nil)
         #expect(AttachmentPopoverPresentation.validatedURL(from: "javascript:alert(1)") == nil)
@@ -31,18 +36,27 @@ struct AttachmentPopoverTests {
     @Test func treatsPickerCancellationAsNoError() {
         let cancellation = NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
         #expect(AttachmentPopoverPresentation.importerErrorMessage(cancellation) == nil)
-        #expect(AttachmentPopoverPresentation.importerErrorMessage(NSError(domain: NSCocoaErrorDomain, code: 257)) == "Could not choose attachments: The file couldn’t be opened because you don’t have permission to view it.")
+        #expect(
+            AttachmentPopoverPresentation.importerErrorMessage(NSError(domain: NSCocoaErrorDomain, code: 257))
+                == "Could not choose attachments: The file couldn’t be opened because you don’t have permission to view it."
+        )
     }
 
     @Test func insertsAValidatedURLWithoutChangingTheExistingDraft() {
-        #expect(AttachmentPopoverPresentation.insertingURL("https://example.com", into: "Keep this draft") == "Keep this draft\nhttps://example.com")
+        #expect(
+            AttachmentPopoverPresentation.insertingURL("https://example.com", into: "Keep this draft")
+                == "Keep this draft\nhttps://example.com")
         #expect(AttachmentPopoverPresentation.insertingURL(" https://example.com ", into: "") == "https://example.com")
-        #expect(AttachmentPopoverPresentation.insertingURL("https://example.com", into: "  Keep this draft  ") == "  Keep this draft  \nhttps://example.com")
+        #expect(
+            AttachmentPopoverPresentation.insertingURL("https://example.com", into: "  Keep this draft  ")
+                == "  Keep this draft  \nhttps://example.com")
         #expect(AttachmentPopoverPresentation.insertingURL("file:///tmp/a", into: "draft") == nil)
     }
 
     @Test func insertsPromptSnippetWithoutChangingDraftWhitespace() {
-        #expect(AttachmentPopoverPresentation.insertingSnippet("Summarize this.", into: "  Keep this draft  ") == "  Keep this draft  \nSummarize this.")
+        #expect(
+            AttachmentPopoverPresentation.insertingSnippet("Summarize this.", into: "  Keep this draft  ")
+                == "  Keep this draft  \nSummarize this.")
     }
 
     @Test func routesMarkdownAndTextFilesToGenericAttachments() {
@@ -73,7 +87,8 @@ struct AttachmentPopoverTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("README.md")
         try Data("# Read me".utf8).write(to: url)
-        AttachmentPopoverFileSelection.process([url, url], stageImage: model.stageImageFile,
+        AttachmentPopoverFileSelection.process(
+            [url, url], stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile, stageFile: model.stageFile, reportError: model.reportAttachmentError)
         let context = try #require(model.attachedContexts.first)
         #expect(model.attachedContexts.count == 1)
@@ -116,16 +131,21 @@ struct AttachmentPopoverTests {
         #expect(AttachmentPopoverFileSelection.fileURLs(from: pasteboard) == [url])
         for supported in [true, false] {
             let rpc = ComposerFileAttachmentRPC(supported: supported)
-            let model = DockModel(sessionAgentStateFileURL: directory.appendingPathComponent("state.json"),
+            let model = DockModel(
+                sessionAgentStateFileURL: directory.appendingPathComponent("state.json"),
                 defaults: UserDefaults(suiteName: "AttachmentUpload-\(UUID())")!,
                 approvalSoundPlayer: {}, initialSessionID: "file-session", rpcClient: rpc)
-            AttachmentPopoverFileSelection.process(AttachmentPopoverFileSelection.fileURLs(from: pasteboard),
+            AttachmentPopoverFileSelection.process(
+                AttachmentPopoverFileSelection.fileURLs(from: pasteboard),
                 stageImage: model.stageImageFile, stagePDF: model.stagePDFFile,
                 stageFile: model.stageFile, reportError: model.reportAttachmentError)
             #expect(model.pendingImages.isEmpty)
             var finished = false
             var submissionError: String?
-            model.send(onSubmission: { submissionError = $0; finished = true })
+            model.send(onSubmission: {
+                submissionError = $0
+                finished = true
+            })
             for _ in 0..<200 where !finished { try await Task.sleep(for: .milliseconds(10)) }
             #expect(finished)
             let uploads = rpc.calls.filter { $0.0 == "file.attach" }
@@ -133,8 +153,13 @@ struct AttachmentPopoverTests {
                 let upload = try #require(uploads.first?.1)
                 #expect(upload["session_id"] as? String == "file-session")
                 #expect(upload["name"] as? String == "README.md")
-                #expect(upload["data_url"] as? String == "data:application/octet-stream;base64," + bytes.base64EncodedString())
-                #expect(rpc.calls.contains { $0.0 == "prompt.submit" && ($0.1["text"] as? String)?.contains("@file:README.md") == true })
+                #expect(
+                    upload["data_url"] as? String == "data:application/octet-stream;base64,"
+                        + bytes.base64EncodedString())
+                #expect(
+                    rpc.calls.contains {
+                        $0.0 == "prompt.submit" && ($0.1["text"] as? String)?.contains("@file:README.md") == true
+                    })
                 #expect(submissionError == nil)
             } else {
                 #expect(uploads.isEmpty)
@@ -186,7 +211,8 @@ struct AttachmentPopoverTests {
         )
 
         #expect(model.pendingImages.isEmpty)
-        #expect(model.pendingAttachmentError == "Could not attach image: attachment-popover-corrupt.png could not be read.")
+        #expect(
+            model.pendingAttachmentError == "Could not attach image: attachment-popover-corrupt.png could not be read.")
     }
 
     @Test @MainActor func mixedSelectionKeepsEarlierAttachmentFailureVisible() throws {
@@ -202,8 +228,9 @@ struct AttachmentPopoverTests {
         NSRect(x: 0, y: 0, width: 1, height: 1).fill()
         image.unlockFocus()
         guard let tiff = image.tiffRepresentation,
-              let representation = NSBitmapImageRep(data: tiff),
-              let data = representation.representation(using: .png, properties: [:]) else {
+            let representation = NSBitmapImageRep(data: tiff),
+            let data = representation.representation(using: .png, properties: [:])
+        else {
             Issue.record("Could not create test image")
             return
         }
@@ -250,7 +277,10 @@ struct AttachmentPopoverTests {
     }
 
     @Test func promptSnippetsAreNonEmptyAndHaveStableLabels() {
-        #expect(AttachmentPopoverPresentation.promptSnippets.map(\.label) == ["Summarize", "Extract action items", "Review this"])
+        #expect(
+            AttachmentPopoverPresentation.promptSnippets.map(\.label) == [
+                "Summarize", "Extract action items", "Review this",
+            ])
         #expect(AttachmentPopoverPresentation.promptSnippets.allSatisfy { !$0.text.isEmpty })
     }
 }

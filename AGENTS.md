@@ -25,12 +25,16 @@ If `graphify-out/` or `.codegraph/` exists locally, query it before grepping.
 ```sh
 make build                     # debug build
 swift test --disable-automatic-resolution --filter <SuiteName>   # iterate
-make lint                      # swift-format check (pre-existing debt is reported, not fatal)
-make check                     # full gate: lint + tests + smoke + release build (CI runs this)
+make guard                     # fast deterministic gate: strict lint + colors + diff checks
+make format                    # fix mechanical Swift formatting
+make check                     # full gate: guard + tests + smoke + release build (CI runs this)
 ```
 
 - Run the relevant filtered suite locally. Do not run the full suite or
   `make package` (DMG) locally unless asked; CI runs `make check`.
+- Run `make guard` before review. Fix its file/line diagnostics first; use AI
+  review for behavior, ownership, concurrency, and UI decisions. Do not weaken
+  lint rules or expand color exceptions just to make a check pass.
 - Never run `make run` / `Scripts/run-debug-app.sh` unless asked. Relaunching
   kills the user's live Herm agents.
 

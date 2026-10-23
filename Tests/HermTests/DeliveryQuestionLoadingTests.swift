@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct DeliveryQuestionLoadingTests {
@@ -10,7 +11,7 @@ struct DeliveryQuestionLoadingTests {
         for name in ["b", "a"] {
             let data = try JSONSerialization.data(withJSONObject: [
                 "task_id": name, "session_id": "session-\(name)", "profile": "bot",
-                "questions": [["question": "Choose \(name)", "choices": ["Yes", "No"]]]
+                "questions": [["question": "Choose \(name)", "choices": ["Yes", "No"]]],
             ])
             try data.write(to: directory.appendingPathComponent("\(name).json"))
         }
@@ -24,7 +25,7 @@ struct DeliveryQuestionLoadingTests {
 
         let replacement = try JSONSerialization.data(withJSONObject: [
             "task_id": "b", "session_id": "session-b", "profile": "bot",
-            "questions": [["question": "A newer question", "choices": ["Continue"]]]
+            "questions": [["question": "A newer question", "choices": ["Continue"]]],
         ])
         try replacement.write(to: questions[1].file)
         #expect(try await !questions[1].removeIfCurrent())

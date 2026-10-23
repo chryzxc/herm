@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -82,7 +83,6 @@ private final class LatestActivityProjectionRPCClient: HermesRPCClientProtocol {
     func close() {}
 }
 
-
 @MainActor
 private final class ControllableInterruptRPCClient: HermesRPCClientProtocol {
     enum TestError: Error { case rejected }
@@ -121,14 +121,16 @@ private final class ControllableInterruptRPCClient: HermesRPCClientProtocol {
 struct DockNotificationTests {
     @Test func clarificationRequestStopsWorkingStateAndPreservesChoices() {
         let model = DockModel(initialSessionID: "session-clarify")
-        model.receiveGatewayEvent("clarify.request", params: [
-            "session_id": "session-clarify",
-            "payload": [
-                "question": "Which task list should I check?",
-                "request_id": "clarify-123",
-                "choices": ["Personal", "Work"]
-            ]
-        ])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": [
+                    "question": "Which task list should I check?",
+                    "request_id": "clarify-123",
+                    "choices": ["Personal", "Work"],
+                ],
+            ])
 
         #expect(model.status == .needsClarification)
         #expect(model.clarificationQuestion == "Which task list should I check?")
@@ -143,10 +145,12 @@ struct DockNotificationTests {
     @Test func clarificationReplyUsesHermesRequestIDAndAnswerFields() async throws {
         let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
-        model.receiveGatewayEvent("clarify.request", params: [
-            "session_id": "session-clarify",
-            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
-        ])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": ["request_id": "clarify-123", "question": "Which task list?"],
+            ])
 
         model.respondToClarification("Work")
         await Task.yield()
@@ -160,13 +164,18 @@ struct DockNotificationTests {
     @Test func batchClarificationLocksEachAnswerAndAdvances() async throws {
         let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
-        model.receiveGatewayEvent("clarify.request", params: [
-            "session_id": "session-clarify",
-            "payload": ["request_id": "srq-batch", "question": "Which env?", "questions": [
-                ["qid": "env", "question": "Which env?", "choices": ["Staging", "Prod"]],
-                ["qid": "tags", "question": "Which tags?", "choices": ["a", "b"], "multi_select": true],
-            ]]
-        ])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": [
+                    "request_id": "srq-batch", "question": "Which env?",
+                    "questions": [
+                        ["qid": "env", "question": "Which env?", "choices": ["Staging", "Prod"]],
+                        ["qid": "tags", "question": "Which tags?", "choices": ["a", "b"], "multi_select": true],
+                    ],
+                ],
+            ])
         #expect(model.clarificationProgress == "Question 1 of 2")
 
         model.respondToClarification("Staging")
@@ -187,9 +196,11 @@ struct DockNotificationTests {
     @Test func valuePromptAnswersWithValueAndClearsOnCancel() async throws {
         let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
-        let sudo = try #require(HermesGateway.event(forServerRequest: [
-            "id": "srq-sudo", "method": "sudo", "params": ["session_id": "session-clarify", "command": "apt install x"]
-        ]))
+        let sudo = try #require(
+            HermesGateway.event(forServerRequest: [
+                "id": "srq-sudo", "method": "sudo",
+                "params": ["session_id": "session-clarify", "command": "apt install x"],
+            ]))
         model.receiveGatewayEvent(sudo.type, params: sudo.params)
         #expect(model.valuePrompt?.isSecret == true)
 
@@ -200,29 +211,42 @@ struct DockNotificationTests {
         #expect((answer.params["result"] as? [String: Any])?["value"] as? String == "hunter2")
         #expect(model.valuePrompt == nil)
 
-        model.receiveGatewayEvent("prompt.request", params: ["session_id": "session-clarify", "payload": [
-            "request_id": "srq-code", "method": "vault.code", "site": "github.com"]])
+        model.receiveGatewayEvent(
+            "prompt.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": [
+                    "request_id": "srq-code", "method": "vault.code", "site": "github.com",
+                ],
+            ])
         #expect(model.valuePrompt?.title == "Verification code for github.com")
-        model.receiveGatewayEvent("prompt.expire", params: ["session_id": "session-clarify", "payload": ["request_id": "srq-code"]])
+        model.receiveGatewayEvent(
+            "prompt.expire", params: ["session_id": "session-clarify", "payload": ["request_id": "srq-code"]])
         #expect(model.valuePrompt == nil)
     }
 
     @Test func clarificationResumeAppendsTheNextHermesReplyAfterTheAnswer() {
         let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
-        model.receiveGatewayEvent("clarify.request", params: [
-            "session_id": "session-clarify",
-            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
-        ])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": ["request_id": "clarify-123", "question": "Which task list?"],
+            ])
 
         model.respondToClarification("Work")
-        model.receiveGatewayEvent("message.delta", params: [
-            "session_id": "session-clarify",
-            "payload": ["delta": "I'll check Work."]
-        ])
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-clarify", "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.delta",
+            params: [
+                "session_id": "session-clarify",
+                "payload": ["delta": "I'll check Work."],
+            ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "session-clarify", "payload": [:],
+            ])
 
         #expect(model.messages.map(\.text) == ["Which task list?", "Work", "I'll check Work."])
     }
@@ -230,21 +254,29 @@ struct DockNotificationTests {
     @Test func clarificationResumeDoesNotDuplicateAnAssistantRowWhenMessageStartArrivesLate() {
         let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
-        model.receiveGatewayEvent("clarify.request", params: [
-            "session_id": "session-clarify",
-            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
-        ])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": ["request_id": "clarify-123", "question": "Which task list?"],
+            ])
 
         model.respondToClarification("Work")
-        model.receiveGatewayEvent("message.delta", params: [
-            "session_id": "session-clarify", "payload": ["delta": "I'll check Work."]
-        ])
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "session-clarify", "payload": [:]
-        ])
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-clarify", "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.delta",
+            params: [
+                "session_id": "session-clarify", "payload": ["delta": "I'll check Work."],
+            ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "session-clarify", "payload": [:],
+            ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "session-clarify", "payload": [:],
+            ])
 
         #expect(model.messages.map(\.text) == ["Which task list?", "Work", "I'll check Work."])
     }
@@ -252,10 +284,12 @@ struct DockNotificationTests {
     @Test func completedAssistantMessageProjectsWhenCompletionArrivesWithoutStreamingEvents() {
         let model = DockModel(initialSessionID: "session-complete")
 
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-complete",
-            "payload": ["text": "The completed answer arrived."]
-        ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "session-complete",
+                "payload": ["text": "The completed answer arrived."],
+            ])
 
         #expect(model.messages.map(\.text) == ["The completed answer arrived."])
         #expect(model.messages.last?.role == .hermes)
@@ -265,17 +299,23 @@ struct DockNotificationTests {
     @Test func completedAssistantMessageReplacesPartialStreamWithAuthoritativeText() {
         let model = DockModel(initialSessionID: "session-complete")
 
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "session-complete", "payload": [:]
-        ])
-        model.receiveGatewayEvent("message.delta", params: [
-            "session_id": "session-complete",
-            "payload": ["delta": "Partial answer"]
-        ])
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-complete",
-            "payload": ["text": "The complete authoritative answer."]
-        ])
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "session-complete", "payload": [:],
+            ])
+        model.receiveGatewayEvent(
+            "message.delta",
+            params: [
+                "session_id": "session-complete",
+                "payload": ["delta": "Partial answer"],
+            ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "session-complete",
+                "payload": ["text": "The complete authoritative answer."],
+            ])
 
         #expect(model.messages.map(\.text) == ["The complete authoritative answer."])
         #expect(model.messages.filter { $0.role == .hermes }.count == 1)
@@ -286,7 +326,7 @@ struct DockNotificationTests {
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
         let event: [String: Any] = [
             "session_id": "session-clarify",
-            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
+            "payload": ["request_id": "clarify-123", "question": "Which task list?"],
         ]
 
         model.receiveGatewayEvent("clarify.request", params: event)
@@ -302,10 +342,12 @@ struct DockNotificationTests {
             initialSessionID: "session-clarify",
             rpcClient: InterruptTestRPCClient(result: .success(["accepted": true]))
         )
-        model.receiveGatewayEvent("clarify.request", params: [
-            "session_id": "session-clarify",
-            "payload": ["question": "Which task list?"]
-        ])
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": ["question": "Which task list?"],
+            ])
         #expect(model.status == .needsClarification)
 
         let task = model.stop()
@@ -319,15 +361,20 @@ struct DockNotificationTests {
     @Test func rejectedInterruptPreservesActiveConversationState() async {
         let client = InterruptTestRPCClient(result: .failure(InterruptTestRPCClient.TestError.rejected))
         let model = DockModel(initialSessionID: "session-interrupt", rpcClient: client)
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "session-interrupt",
-            "payload": [:]
-        ])
-        model.receiveGatewayEvent("approval.request", params: [
-            "session_id": "session-interrupt",
-            "payload": ["command": "git push"]
-        ])
-        let tool = ActiveToolCall(id: "tool-1", name: "shell", input: "{}", context: "", startedAt: .now, result: nil, isComplete: false)
+        model.receiveGatewayEvent(
+            "message.start",
+            params: [
+                "session_id": "session-interrupt",
+                "payload": [:],
+            ])
+        model.receiveGatewayEvent(
+            "approval.request",
+            params: [
+                "session_id": "session-interrupt",
+                "payload": ["command": "git push"],
+            ])
+        let tool = ActiveToolCall(
+            id: "tool-1", name: "shell", input: "{}", context: "", startedAt: .now, result: nil, isComplete: false)
         model.activeToolCalls = [tool]
 
         let task = model.stop()
@@ -377,10 +424,12 @@ struct DockNotificationTests {
         let task = model.stop()
         await client.waitUntilInterruptStarts()
 
-        model.receiveGatewayEvent("error", params: [
-            "session_id": "session-interrupt",
-            "payload": ["message": "Turn cancelled before the agent was ready"]
-        ])
+        model.receiveGatewayEvent(
+            "error",
+            params: [
+                "session_id": "session-interrupt",
+                "payload": ["message": "Turn cancelled before the agent was ready"],
+            ])
         client.releaseInterrupt()
         await task?.value
 
@@ -420,10 +469,12 @@ struct DockNotificationTests {
     @Test func unselectedSessionCannotProjectGatewayActivity() {
         let model = DockModel()
 
-        model.receiveGatewayEvent("approval.request", params: [
-            "session_id": "other-session",
-            "payload": ["command": "git push"]
-        ])
+        model.receiveGatewayEvent(
+            "approval.request",
+            params: [
+                "session_id": "other-session",
+                "payload": ["command": "git push"],
+            ])
 
         #expect(model.approvalText == nil)
         #expect(model.recentEvents.isEmpty)
@@ -431,10 +482,12 @@ struct DockNotificationTests {
 
     @Test func switchingSessionsClearsPendingApprovalFromPreviousSession() {
         let model = DockModel(initialSessionID: "session-approval")
-        model.receiveGatewayEvent("approval.request", params: [
-            "session_id": "session-approval",
-            "payload": ["command": "git push"]
-        ])
+        model.receiveGatewayEvent(
+            "approval.request",
+            params: [
+                "session_id": "session-approval",
+                "payload": ["command": "git push"],
+            ])
 
         #expect(model.approvalText == "git push")
 
@@ -524,10 +577,12 @@ struct DockNotificationTests {
         let model = DockModel()
         model.markPopoverHidden()
 
-        model.receiveGatewayEvent("background.complete", params: [
-            "session_id": "another-session",
-            "payload": ["task_id": "background-task", "text": "Finished"]
-        ])
+        model.receiveGatewayEvent(
+            "background.complete",
+            params: [
+                "session_id": "another-session",
+                "payload": ["task_id": "background-task", "text": "Finished"],
+            ])
 
         #expect(model.hasUnreadResponse)
     }
@@ -536,10 +591,12 @@ struct DockNotificationTests {
         let model = DockModel()
         model.markPopoverHidden()
 
-        model.receiveGatewayEvent("message.delta", params: [
-            "session_id": "another-session",
-            "payload": ["delta": "Still working"]
-        ])
+        model.receiveGatewayEvent(
+            "message.delta",
+            params: [
+                "session_id": "another-session",
+                "payload": ["delta": "Still working"],
+            ])
 
         #expect(!model.hasUnreadResponse)
     }
@@ -564,7 +621,8 @@ struct DockNotificationTests {
         await task?.value
 
         #expect(model.sessions.isEmpty)
-        #expect(model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
+        #expect(
+            model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
     }
 
     @Test func nonArraySessionsResponseRetainsPriorProjectionAsStale() async {
@@ -582,13 +640,18 @@ struct DockNotificationTests {
         let refreshTask = model.loadSessions()
         await refreshTask?.value
 
-        #expect(model.sessionProjectionState == .stale(previousSessions, safeMessage: "Hermes session data is unavailable. Try refreshing."))
+        #expect(
+            model.sessionProjectionState
+                == .stale(previousSessions, safeMessage: "Hermes session data is unavailable. Try refreshing."))
     }
 
     @Test func backgroundSessionRefreshKeepsLoadedProjectionVisible() {
-        let session = HermesSession(id: "session-1", title: "Project", preview: "Latest", startedAt: nil, messageCount: 1, source: "")
+        let session = HermesSession(
+            id: "session-1", title: "Project", preview: "Latest", startedAt: nil, messageCount: 1, source: "")
 
-        #expect(DockModel.refreshingProjectionState(.ready([session])) == .stale([session], safeMessage: "Refreshing conversations…"))
+        #expect(
+            DockModel.refreshingProjectionState(.ready([session]))
+                == .stale([session], safeMessage: "Refreshing conversations…"))
         #expect(DockModel.refreshingProjectionState(HermesProjectionState<[HermesSession]>.empty) == .loading)
     }
 
@@ -597,7 +660,7 @@ struct DockNotificationTests {
             "id": "session-1",
             "title": "Latest conversation",
             "preview": "The completed response",
-            "updated_at": 1_789_000_000
+            "updated_at": 1_789_000_000,
         ]
         let client = SessionProjectionTestRPCClient(results: [
             "session.list": [.success(["sessions": [latestSession]])]
@@ -614,12 +677,18 @@ struct DockNotificationTests {
 
     @Test func sessionIndexUsesCanonicalLastActivityTimestamp() async {
         let client = SessionProjectionTestRPCClient(results: [
-            "session.list": [.success(["sessions": [[
-                "id": "session-1",
-                "title": "Conversation",
-                "updated_at": 100,
-                "last_activity_at": 200
-            ]]])]
+            "session.list": [
+                .success([
+                    "sessions": [
+                        [
+                            "id": "session-1",
+                            "title": "Conversation",
+                            "updated_at": 100,
+                            "last_activity_at": 200,
+                        ]
+                    ]
+                ])
+            ]
         ])
         let model = DockModel(rpcClient: client)
 
@@ -647,29 +716,31 @@ struct DockNotificationTests {
             "id": "session-1",
             "title": "Conversation",
             "preview": "Earlier response",
-            "updated_at": 100
+            "updated_at": 100,
         ]
         let delayedIndexRow: [String: Any] = [
             "id": "session-1",
             "title": "Conversation",
             "preview": "Earlier response",
-            "updated_at": 100
+            "updated_at": 100,
         ]
         let client = SessionProjectionTestRPCClient(results: [
             "session.list": [
                 .success(["sessions": [initialSession]]),
-                .success(["sessions": [delayedIndexRow]])
+                .success(["sessions": [delayedIndexRow]]),
             ]
         ])
         let model = DockModel(initialSessionID: "session-1", rpcClient: client)
 
         let initialTask = model.loadSessions()
         await initialTask?.value
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-1",
-            "timestamp": 200,
-            "payload": [:]
-        ])
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: [
+                "session_id": "session-1",
+                "timestamp": 200,
+                "payload": [:],
+            ])
         for _ in 0..<10 { await Task.yield() }
 
         #expect(model.sessions.first?.lastUpdatedAt == Date(timeIntervalSince1970: 200))
@@ -680,7 +751,7 @@ struct DockNotificationTests {
         defaults.set("saved-session", forKey: "hermes.session.last-active.v1")
         let client = SessionProjectionTestRPCClient(results: [
             "session.resume": [.failure(.rejected)],
-            "session.list": [.success(["sessions": NSNull()])]
+            "session.list": [.success(["sessions": NSNull()])],
         ])
         let model = DockModel(defaults: defaults, rpcClient: client)
 
@@ -688,7 +759,8 @@ struct DockNotificationTests {
         await task?.value
 
         #expect(defaults.string(forKey: "hermes.session.last-active.v1") == "saved-session")
-        #expect(model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
+        #expect(
+            model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
         #expect(model.messages.allSatisfy { !$0.text.contains("rejected") })
     }
 
@@ -699,7 +771,8 @@ struct DockNotificationTests {
         await task?.value
 
         #expect(model.sessions.isEmpty)
-        #expect(model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
+        #expect(
+            model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
     }
 
     @Test func failedSessionRestorePublishesFailedProjection() async {
@@ -710,7 +783,8 @@ struct DockNotificationTests {
         let task = model.restoreLatestSessionIfNeeded()
         await task?.value
 
-        #expect(model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
+        #expect(
+            model.sessionProjectionState == .failed(safeMessage: "Hermes session data is unavailable. Try refreshing."))
     }
 
     @Test func failedNewSessionCreationPublishesFailedProjection() async {
@@ -718,7 +792,8 @@ struct DockNotificationTests {
 
         await model.startNewChat(in: "/tmp/project")
 
-        #expect(model.sessionProjectionState == .failed(safeMessage: "Hermes could not start a new session. Try again."))
+        #expect(
+            model.sessionProjectionState == .failed(safeMessage: "Hermes could not start a new session. Try again."))
     }
 
     @Test func unsupportedProjectionFailurePublishesUnavailableState() {
@@ -726,7 +801,12 @@ struct DockNotificationTests {
 
         model.recordProjectionFailure("sessions", error: "RPC method unsupported")
 
-        #expect(model.projectionState(for: "sessions") == .unavailable(safeMessage: "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."))
+        #expect(
+            model.projectionState(for: "sessions")
+                == .unavailable(
+                    safeMessage:
+                        "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."
+                ))
     }
 
     @Test func refreshWithoutBoundGatewayPublishesUnavailableProjection() {
@@ -734,7 +814,12 @@ struct DockNotificationTests {
 
         model.refresh()
 
-        #expect(model.projectionState(for: "sessions") == .unavailable(safeMessage: "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."))
+        #expect(
+            model.projectionState(for: "sessions")
+                == .unavailable(
+                    safeMessage:
+                        "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."
+                ))
         #expect(model.projectionState(for: "sessions") != .empty)
     }
 
@@ -745,7 +830,9 @@ struct DockNotificationTests {
         model.recordProjectionSuccess("sessions", count: 0)
         #expect(model.projectionState(for: "sessions") == .empty)
         model.recordProjectionFailure("sessions", error: "token=secret-value")
-        #expect(model.projectionState(for: "sessions") == .stale(0, safeMessage: "Hermes projection is unavailable. Refresh to try again."))
+        #expect(
+            model.projectionState(for: "sessions")
+                == .stale(0, safeMessage: "Hermes projection is unavailable. Refresh to try again."))
         #expect(model.refreshState(for: "sessions")?.error?.contains("secret-value") == false)
     }
 
@@ -755,7 +842,9 @@ struct DockNotificationTests {
         model.recordProjectionFailure("latest.activity", error: "activity request failed")
 
         #expect(model.latestActivities.isEmpty)
-        #expect(model.projectionState(for: "latest.activity") == .failed(safeMessage: "Hermes projection is unavailable. Refresh to try again."))
+        #expect(
+            model.projectionState(for: "latest.activity")
+                == .failed(safeMessage: "Hermes projection is unavailable. Refresh to try again."))
     }
 
     @Test func latestActivityAcceptsHermesNumericMessageIDs() {
@@ -771,7 +860,7 @@ struct DockNotificationTests {
         let client = LatestActivityProjectionRPCClient(
             pages: [
                 ["data": [["id": "session-1", "title": "Project"]], "has_more": true],
-                ["data": [["id": "session-2", "title": "Project"]], "has_more": false]
+                ["data": [["id": "session-2", "title": "Project"]], "has_more": false],
             ],
             messages: ["data": [["id": "activity-1", "role": "assistant"]]]
         )
@@ -781,17 +870,18 @@ struct DockNotificationTests {
         for _ in 0..<20 { await Task.yield() }
 
         #expect(model.latestActivities.count == 2)
-        #expect(client.sessionPagePaths == [
-            "/api/sessions?limit=100&offset=0",
-            "/api/sessions?limit=100&offset=1"
-        ])
+        #expect(
+            client.sessionPagePaths == [
+                "/api/sessions?limit=100&offset=0",
+                "/api/sessions?limit=100&offset=1",
+            ])
     }
 
     @Test func emptyPageWithMoreResultsRetainsPriorActivityAndPublishesStaleFailure() async {
         let client = LatestActivityProjectionRPCClient(
             pages: [
                 ["data": [["id": "session-1", "title": "Project"]], "has_more": false],
-                ["data": [], "has_more": true]
+                ["data": [], "has_more": true],
             ],
             messages: ["data": [["id": "activity-1", "role": "assistant"]]]
         )
@@ -831,7 +921,9 @@ struct DockNotificationTests {
         model.recordProjectionSuccess("latest.activity", count: 2)
         #expect(model.projectionState(for: "latest.activity") == .ready(2))
 
-        let projectionNames = ["reminders", "cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects"]
+        let projectionNames = [
+            "reminders", "cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects",
+        ]
         for projection in projectionNames {
             model.recordProjectionSuccess(projection, count: 2)
         }
@@ -851,7 +943,6 @@ struct DockNotificationTests {
         }
         #expect(model.latestActivities.isEmpty)
     }
-
 
     @Test func kanbanStderrIsSanitizedBeforeBecomingLastError() {
         let diagnostic = ControlCenterModel.safeUserDiagnostic("token=secret-value at /Users/example/private")

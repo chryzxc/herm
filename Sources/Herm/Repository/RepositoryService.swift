@@ -232,25 +232,44 @@ enum RepositoryDiffAuditor {
         var result: [RepositoryDiffAuditFinding] = []
 
         if trimmed.hasPrefix("<<<<<<<") || trimmed.hasPrefix("=======") || trimmed.hasPrefix(">>>>>>>") {
-            result.append(finding("conflict-marker", .blocker, path, line, "Conflict marker added", "Resolve the merge marker before committing."))
+            result.append(
+                finding(
+                    "conflict-marker", .blocker, path, line, "Conflict marker added",
+                    "Resolve the merge marker before committing."))
         }
         if looksLikeCredentialAssignment(lower) {
-            result.append(finding("credential-assignment", .blocker, path, line, "Possible credential added", "Inspect this line for a hardcoded secret. The value is intentionally hidden."))
+            result.append(
+                finding(
+                    "credential-assignment", .blocker, path, line, "Possible credential added",
+                    "Inspect this line for a hardcoded secret. The value is intentionally hidden."))
         }
-        if lower.contains("console.log(") || lower.contains("debugger;") || lower.contains("breakpoint()") || lower.contains("nslog(") || lower.contains("print(") {
-            result.append(finding("debug-statement", .warning, path, line, "Debug statement added", "Confirm the diagnostic output is intentional."))
+        if lower.contains("console.log(") || lower.contains("debugger;") || lower.contains("breakpoint()")
+            || lower.contains("nslog(") || lower.contains("print(")
+        {
+            result.append(
+                finding(
+                    "debug-statement", .warning, path, line, "Debug statement added",
+                    "Confirm the diagnostic output is intentional."))
         }
         if lower.contains("todo") || lower.contains("fixme") {
-            result.append(finding("unfinished-marker", .note, path, line, "Unfinished-work marker added", "Review the TODO or FIXME before shipping."))
+            result.append(
+                finding(
+                    "unfinished-marker", .note, path, line, "Unfinished-work marker added",
+                    "Review the TODO or FIXME before shipping."))
         }
         if lower.range(of: #"^except\s*:"#, options: .regularExpression) != nil {
-            result.append(finding("bare-except", .warning, path, line, "Bare except clause added", "Catch a specific exception or document why a broad catch is required."))
+            result.append(
+                finding(
+                    "bare-except", .warning, path, line, "Bare except clause added",
+                    "Catch a specific exception or document why a broad catch is required."))
         }
         return result
     }
 
     private static func looksLikeCredentialAssignment(_ lower: String) -> Bool {
-        let keyTerms = ["api_key", "api-key", "apikey", "secret", "password", "passwd", "access_token", "auth_token", "private_key"]
+        let keyTerms = [
+            "api_key", "api-key", "apikey", "secret", "password", "passwd", "access_token", "auth_token", "private_key",
+        ]
         guard keyTerms.contains(where: lower.contains) else { return false }
         return lower.contains("=") || lower.contains(":")
     }
@@ -262,8 +281,12 @@ enum RepositoryDiffAuditor {
         return Int(digits)
     }
 
-    private static func finding(_ ruleID: String, _ severity: RepositoryDiffAuditSeverity, _ path: String, _ line: Int, _ title: String, _ detail: String) -> RepositoryDiffAuditFinding {
-        RepositoryDiffAuditFinding(ruleID: ruleID, severity: severity, path: path, line: line, title: title, detail: detail)
+    private static func finding(
+        _ ruleID: String, _ severity: RepositoryDiffAuditSeverity, _ path: String, _ line: Int, _ title: String,
+        _ detail: String
+    ) -> RepositoryDiffAuditFinding {
+        RepositoryDiffAuditFinding(
+            ruleID: ruleID, severity: severity, path: path, line: line, title: title, detail: detail)
     }
 }
 
@@ -287,7 +310,13 @@ struct RepositorySnapshot: Equatable {
     var refreshedAt: Date
     var isStale: Bool
 
-    init(path: String, branch: String, changedFiles: Int, latestCommit: String, isGitRepository: Bool, repositoryID: String? = nil, headRevision: String? = nil, stagedFiles: Int = 0, unstagedFiles: Int = 0, untrackedFiles: Int = 0, conflictedFiles: Int = 0, aheadCount: Int? = nil, behindCount: Int? = nil, worktreeCount: Int = 0, stashCount: Int = 0, operation: String? = nil, refreshedAt: Date = .now, isStale: Bool = false) {
+    init(
+        path: String, branch: String, changedFiles: Int, latestCommit: String, isGitRepository: Bool,
+        repositoryID: String? = nil, headRevision: String? = nil, stagedFiles: Int = 0, unstagedFiles: Int = 0,
+        untrackedFiles: Int = 0, conflictedFiles: Int = 0, aheadCount: Int? = nil, behindCount: Int? = nil,
+        worktreeCount: Int = 0, stashCount: Int = 0, operation: String? = nil, refreshedAt: Date = .now,
+        isStale: Bool = false
+    ) {
         self.path = path
         self.branch = branch
         self.changedFiles = changedFiles
@@ -308,7 +337,8 @@ struct RepositorySnapshot: Equatable {
         self.isStale = isStale
     }
 
-    static let empty = RepositorySnapshot(path: "", branch: "No repository selected", changedFiles: 0, latestCommit: "", isGitRepository: false)
+    static let empty = RepositorySnapshot(
+        path: "", branch: "No repository selected", changedFiles: 0, latestCommit: "", isGitRepository: false)
 
     static func stableID(path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.path
@@ -318,26 +348,50 @@ struct RepositorySnapshot: Equatable {
 enum RepositoryService {
     static func createTaskWorktree(path: String, id: UUID, storage: URL? = nil) async throws -> String {
         let snapshot = await inspect(path: path)
-        guard snapshot.isGitRepository, let head = snapshot.headRevision else { throw QuickDraftError.message("Select a Git repository with a committed HEAD.") }
-        let root = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Herm/Worktrees")
+        guard snapshot.isGitRepository, let head = snapshot.headRevision else {
+            throw QuickDraftError.message("Select a Git repository with a committed HEAD.")
+        }
+        let root =
+            storage
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Herm/Worktrees")
         let destination = root.appendingPathComponent(id.uuidString)
-        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let result = await runGit(path: path, arguments: ["worktree", "add", "-b", "herm/task-\(id.uuidString.lowercased())", destination.path, head])
-        guard result.exitCode == 0 else { throw QuickDraftError.message("Git could not create the worktree. Any partially created directory is preserved at \(destination.path).") }
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let result = await runGit(
+            path: path,
+            arguments: ["worktree", "add", "-b", "herm/task-\(id.uuidString.lowercased())", destination.path, head])
+        guard result.exitCode == 0 else {
+            throw QuickDraftError.message(
+                "Git could not create the worktree. Any partially created directory is preserved at \(destination.path)."
+            )
+        }
         let fresh = await inspect(path: destination.path)
-        guard fresh.isGitRepository else { throw QuickDraftError.message("The created directory could not be verified. It is preserved at \(destination.path).") }
+        guard fresh.isGitRepository else {
+            throw QuickDraftError.message(
+                "The created directory could not be verified. It is preserved at \(destination.path).")
+        }
         return fresh.path
     }
     static func changesSince(path: String, head: String) async throws -> [String] {
-        guard !head.isEmpty, head.allSatisfy({ $0.isHexDigit }) else { throw QuickDraftError.message("A valid turn baseline is unavailable.") }
-        let result = await runGit(path: path, arguments: ["diff", "--no-ext-diff", "--name-only", "-z", head], trimOutput: false)
-        guard result.exitCode == 0 else { throw QuickDraftError.message("The turn baseline is no longer accessible. Open repository review.") }
-        let untracked = await runGit(path: path, arguments: ["ls-files", "--others", "--exclude-standard", "-z"], trimOutput: false)
+        guard !head.isEmpty, head.allSatisfy({ $0.isHexDigit }) else {
+            throw QuickDraftError.message("A valid turn baseline is unavailable.")
+        }
+        let result = await runGit(
+            path: path, arguments: ["diff", "--no-ext-diff", "--name-only", "-z", head], trimOutput: false)
+        guard result.exitCode == 0 else {
+            throw QuickDraftError.message("The turn baseline is no longer accessible. Open repository review.")
+        }
+        let untracked = await runGit(
+            path: path, arguments: ["ls-files", "--others", "--exclude-standard", "-z"], trimOutput: false)
         return Array(Set((result.output + untracked.output).split(separator: "\0").map(String.init))).sorted()
     }
     static func diffSince(path: String, head: String, file: String) async throws -> String {
-        guard !head.isEmpty, head.allSatisfy({ $0.isHexDigit }), isSafeRelativePath(file) else { throw QuickDraftError.message("The selected change cannot be compared safely.") }
-        let result = await runGit(path: path, arguments: ["diff", "--no-ext-diff", "--unified=3", head, "--", file], trimOutput: false)
+        guard !head.isEmpty, head.allSatisfy({ $0.isHexDigit }), isSafeRelativePath(file) else {
+            throw QuickDraftError.message("The selected change cannot be compared safely.")
+        }
+        let result = await runGit(
+            path: path, arguments: ["diff", "--no-ext-diff", "--unified=3", head, "--", file], trimOutput: false)
         guard result.exitCode == 0 else { throw QuickDraftError.message("The comparison could not be read.") }
         return boundDiff(result.output).text
     }
@@ -353,12 +407,15 @@ enum RepositoryService {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         let branchResult = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
         guard branchResult.exitCode == 0 else {
-            return RepositorySnapshot(path: normalizedPath, branch: "Not a Git repository", changedFiles: 0, latestCommit: "", isGitRepository: false)
+            return RepositorySnapshot(
+                path: normalizedPath, branch: "Not a Git repository", changedFiles: 0, latestCommit: "",
+                isGitRepository: false)
         }
         async let changes = changeSnapshot(path: normalizedPath)
         async let head = runGit(path: normalizedPath, arguments: ["rev-parse", "--short", "HEAD"])
         async let commit = runGit(path: normalizedPath, arguments: ["log", "-1", "--pretty=format:%h %s"])
-        async let upstream = runGit(path: normalizedPath, arguments: ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+        async let upstream = runGit(
+            path: normalizedPath, arguments: ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
         async let worktrees = runGit(path: normalizedPath, arguments: ["worktree", "list", "--porcelain"])
         async let stashes = runGit(path: normalizedPath, arguments: ["stash", "list"])
         async let operation = operationState(path: normalizedPath)
@@ -415,7 +472,10 @@ enum RepositoryService {
             }
             var unique: [String: (String, GitHubRepositoryReference)] = [:]
             while let (path, remote) = await group.next() {
-                guard !Task.isCancelled else { group.cancelAll(); break }
+                guard !Task.isCancelled else {
+                    group.cancelAll()
+                    break
+                }
                 if let remote, unique[remote.id] == nil { unique[remote.id] = (path, remote) }
                 if let path = remaining.next() { group.addTask { (path, await resolve(path)) } }
             }
@@ -437,16 +497,22 @@ enum RepositoryService {
             return (false, "Invalid branch name")
         }
         let result = await runGit(path: normalizedPath, arguments: ["switch", "--no-guess", "--", branch])
-        return result.exitCode == 0 ? (true, nil) : (false, result.output.isEmpty ? "Git could not switch branches" : result.output)
+        return result.exitCode == 0
+            ? (true, nil) : (false, result.output.isEmpty ? "Git could not switch branches" : result.output)
     }
 
     static func changeSnapshot(path: String) async -> RepositoryChangeSnapshot {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        let status = await runGit(path: normalizedPath, arguments: ["status", "--porcelain=v1", "--untracked-files=all", "-z"], trimOutput: false)
+        let status = await runGit(
+            path: normalizedPath, arguments: ["status", "--porcelain=v1", "--untracked-files=all", "-z"],
+            trimOutput: false)
         let branch = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
         let head = await runGit(path: normalizedPath, arguments: ["rev-parse", "--short", "HEAD"])
         let files = status.exitCode == 0 ? parsePorcelainV1(status.output) : []
-        return RepositoryChangeSnapshot(repositoryID: RepositorySnapshot.stableID(path: normalizedPath), headRevision: head.exitCode == 0 ? head.output : nil, branch: branch.output.isEmpty ? "detached HEAD" : branch.output, files: files, refreshedAt: .now)
+        return RepositoryChangeSnapshot(
+            repositoryID: RepositorySnapshot.stableID(path: normalizedPath),
+            headRevision: head.exitCode == 0 ? head.output : nil,
+            branch: branch.output.isEmpty ? "detached HEAD" : branch.output, files: files, refreshedAt: .now)
     }
 
     static func applySourceControl(_ action: RepositorySourceControlAction, path: String) async -> String? {
@@ -463,7 +529,8 @@ enum RepositoryService {
             } else {
                 let head = await runGit(path: path, arguments: ["rev-parse", "--verify", "HEAD"])
                 // An unborn branch has no HEAD to restore from. Only remove index entries.
-                arguments = head.exitCode == 0
+                arguments =
+                    head.exitCode == 0
                     ? ["reset", "--quiet", "HEAD", "--"] + literals
                     : ["rm", "--cached", "-r", "--force", "--"] + literals
             }
@@ -474,7 +541,9 @@ enum RepositoryService {
             let staged = await runGit(path: path, arguments: ["diff", "--cached", "--quiet", "--exit-code"])
             guard staged.exitCode == 1 else { return "Stage changes before committing." }
             let conflicts = await runGit(path: path, arguments: ["ls-files", "--unmerged", "-z"])
-            guard conflicts.exitCode == 0, conflicts.output.isEmpty else { return "Resolve conflicts before committing." }
+            guard conflicts.exitCode == 0, conflicts.output.isEmpty else {
+                return "Resolve conflicts before committing."
+            }
             arguments = ["commit", "-m", message]
         case .createStash(let message, let includeUntracked):
             return await createStash(path: path, message: message, includeUntracked: includeUntracked)
@@ -489,12 +558,16 @@ enum RepositoryService {
             arguments = ["push", "--quiet"]
         case .discard(let files):
             let targets = files.filter { !$0.isStaged && $0.status != .conflicted }
-            guard !targets.isEmpty, targets.allSatisfy({ isSafeRelativePath($0.path) }) else { return "No discardable changes selected." }
+            guard !targets.isEmpty, targets.allSatisfy({ isSafeRelativePath($0.path) }) else {
+                return "No discardable changes selected."
+            }
             // Status paths are relative to the repository root, not the selected folder.
             guard let root = await topLevel(path: path) else { return "Git could not locate the repository root." }
             for file in targets where file.status == .untracked {
                 // Git has no copy of an untracked file; the Trash keeps it recoverable.
-                do { try FileManager.default.trashItem(at: root.appendingPathComponent(file.path), resultingItemURL: nil) } catch {
+                do {
+                    try FileManager.default.trashItem(at: root.appendingPathComponent(file.path), resultingItemURL: nil)
+                } catch {
                     return "Could not move an untracked file to the Trash. Check file permissions, then retry."
                 }
             }
@@ -504,7 +577,9 @@ enum RepositoryService {
             arguments = ["restore", "--worktree", "--"] + tracked
         case .ignore(let files):
             let paths = files.filter { $0.status == .untracked }.map(\.path)
-            guard !paths.isEmpty, paths.allSatisfy(isSafeRelativePath) else { return "Only untracked files can be added to .gitignore." }
+            guard !paths.isEmpty, paths.allSatisfy(isSafeRelativePath) else {
+                return "Only untracked files can be added to .gitignore."
+            }
             guard let root = await topLevel(path: path) else { return "Git could not locate the repository root." }
             let url = root.appendingPathComponent(".gitignore")
             let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
@@ -512,7 +587,10 @@ enum RepositoryService {
             let additions = paths.map(gitignorePattern).filter { !known.contains($0) }
             guard !additions.isEmpty else { return nil }
             let separator = existing.isEmpty || existing.hasSuffix("\n") ? "" : "\n"
-            do { try (existing + separator + additions.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8) } catch {
+            do {
+                try (existing + separator + additions.joined(separator: "\n") + "\n").write(
+                    to: url, atomically: true, encoding: .utf8)
+            } catch {
                 return "Could not update .gitignore. Check file permissions, then retry."
             }
             return nil
@@ -523,9 +601,13 @@ enum RepositoryService {
         switch action {
         case .fetch: return "Fetch failed. Check the network connection and remote credentials, then retry."
         case .pull: return "Pull could not fast-forward. Resolve divergence or local changes in Terminal, then retry."
-        case .push: return "Push was rejected. Pull the latest upstream changes or check remote credentials, then retry."
-        case .discard: return "Git could not discard these changes. Check repository permissions or index locks, then retry."
-        default: return "Git could not complete this action. Check repository permissions, index locks, identity, or commit hooks in Terminal, then retry."
+        case .push:
+            return "Push was rejected. Pull the latest upstream changes or check remote credentials, then retry."
+        case .discard:
+            return "Git could not discard these changes. Check repository permissions or index locks, then retry."
+        default:
+            return
+                "Git could not complete this action. Check repository permissions, index locks, identity, or commit hooks in Terminal, then retry."
         }
     }
 
@@ -533,10 +615,17 @@ enum RepositoryService {
         // The upstream joins the graph so incoming commits show as their own lane.
         let upstream = await runGit(path: path, arguments: ["rev-parse", "--verify", "--quiet", "@{upstream}"])
         let revisions = upstream.exitCode == 0 ? ["HEAD", "@{upstream}"] : ["HEAD"]
-        let result = await runGit(path: path, arguments: ["log", "-50", "--topo-order", "--decorate=full", "--format=%H%x00%s%x00%an%x00%at%x00%D%x00%P%x00"] + revisions, trimOutput: false)
+        let result = await runGit(
+            path: path,
+            arguments: [
+                "log", "-50", "--topo-order", "--decorate=full", "--format=%H%x00%s%x00%an%x00%at%x00%D%x00%P%x00",
+            ] + revisions, trimOutput: false)
         guard result.exitCode == 0 else {
             let branch = await runGit(path: path, arguments: ["symbolic-ref", "--quiet", "HEAD"])
-            let ref = branch.exitCode == 0 ? await runGit(path: path, arguments: ["show-ref", "--verify", "--quiet", branch.output]) : (output: "", exitCode: Int32(2))
+            let ref =
+                branch.exitCode == 0
+                ? await runGit(path: path, arguments: ["show-ref", "--verify", "--quiet", branch.output])
+                : (output: "", exitCode: Int32(2))
             return ref.exitCode == 1 ? [] : nil
         }
         return parseCommits(result.output)
@@ -546,14 +635,23 @@ enum RepositoryService {
         let fields = output.components(separatedBy: "\0")
         return stride(from: 0, to: max(0, fields.count - 5), by: 6).compactMap { index in
             let hash = fields[index].trimmingCharacters(in: .whitespacesAndNewlines)
-            guard hash.count >= 40, hash.allSatisfy(\.isHexDigit), let timestamp = TimeInterval(fields[index + 3]) else { return nil }
-            return RepositoryCommit(id: hash, subject: fields[index + 1], author: fields[index + 2], date: Date(timeIntervalSince1970: timestamp), references: fields[index + 4], parents: fields[index + 5].split(separator: " ").map(String.init))
+            guard hash.count >= 40, hash.allSatisfy(\.isHexDigit), let timestamp = TimeInterval(fields[index + 3])
+            else { return nil }
+            return RepositoryCommit(
+                id: hash, subject: fields[index + 1], author: fields[index + 2],
+                date: Date(timeIntervalSince1970: timestamp), references: fields[index + 4],
+                parents: fields[index + 5].split(separator: " ").map(String.init))
         }
     }
 
     static func commitDetail(path: String, hash: String) async -> RepositoryCommitDetail? {
         guard hash.count >= 40, hash.allSatisfy(\.isHexDigit) else { return nil }
-        let result = await runGit(path: path, arguments: ["show", "--no-ext-diff", "--no-renames", "--diff-merges=first-parent", "--numstat", "--format=%B%x00%ae%x00", hash], trimOutput: false)
+        let result = await runGit(
+            path: path,
+            arguments: [
+                "show", "--no-ext-diff", "--no-renames", "--diff-merges=first-parent", "--numstat",
+                "--format=%B%x00%ae%x00", hash,
+            ], trimOutput: false)
         return result.exitCode == 0 ? parseCommitDetail(result.output) : nil
     }
 
@@ -565,7 +663,8 @@ enum RepositoryService {
             guard columns.count == 3 else { return nil }
             return RepositoryCommitDetail.File(path: columns[2], additions: Int(columns[0]), deletions: Int(columns[1]))
         }
-        return RepositoryCommitDetail(body: parts[0].trimmingCharacters(in: .whitespacesAndNewlines), email: parts[1], files: files)
+        return RepositoryCommitDetail(
+            body: parts[0].trimmingCharacters(in: .whitespacesAndNewlines), email: parts[1], files: files)
     }
 
     static func explorerEntries(for files: [RepositoryFileChange]) -> [RepositoryExplorerEntry] {
@@ -577,10 +676,13 @@ enum RepositoryService {
             for index in components.indices.dropLast() {
                 let directory = components[...index].joined(separator: "/")
                 if knownDirectories.insert(directory).inserted {
-                    entries.append(RepositoryExplorerEntry(path: directory, depth: index, isDirectory: true, change: nil))
+                    entries.append(
+                        RepositoryExplorerEntry(path: directory, depth: index, isDirectory: true, change: nil))
                 }
             }
-            entries.append(RepositoryExplorerEntry(path: file.path, depth: max(0, components.count - 1), isDirectory: false, change: file))
+            entries.append(
+                RepositoryExplorerEntry(
+                    path: file.path, depth: max(0, components.count - 1), isDirectory: false, change: file))
         }
         return entries
     }
@@ -622,11 +724,14 @@ enum RepositoryService {
     }
 
     /// Direct children of one project folder, loaded when the Explorer expands it.
-    static func projectDirectory(path: String, directory: String, includeGenerated: Bool = false) async -> [ProjectFileEntry] {
+    static func projectDirectory(path: String, directory: String, includeGenerated: Bool = false) async
+        -> [ProjectFileEntry]
+    {
         guard isSafeRelativePath(directory) else { return [] }
         let root = explorerRoot(path)
         return await Task.detached(priority: .utility) {
-            explorerChildren(of: root.appendingPathComponent(directory), root: root, includeGenerated: includeGenerated).map(\.0)
+            explorerChildren(of: root.appendingPathComponent(directory), root: root, includeGenerated: includeGenerated)
+                .map(\.0)
         }.value
     }
 
@@ -640,15 +745,20 @@ enum RepositoryService {
         } ?? standardized
     }
 
-    private static func explorerChildren(of directory: URL, root: URL, includeGenerated: Bool) -> [(ProjectFileEntry, URL)] {
+    private static func explorerChildren(of directory: URL, root: URL, includeGenerated: Bool) -> [(
+        ProjectFileEntry, URL
+    )] {
         let skippedTrees = Set([".git"])
         let generatedTrees = Set([".cache", ".build", "DerivedData", "node_modules", "build", "dist", "coverage"])
-        guard let children = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-            options: []
-        ) else { return [] }
-        return children
+        guard
+            let children = try? FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+                options: []
+            )
+        else { return [] }
+        return
+            children
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             .compactMap { url in
                 let name = url.lastPathComponent
@@ -661,7 +771,10 @@ enum RepositoryService {
                 let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
                 let components = relative.split(separator: "/")
                 guard !components.isEmpty else { return nil }
-                return (ProjectFileEntry(path: relative, depth: components.count - 1, isDirectory: values?.isDirectory == true), url)
+                return (
+                    ProjectFileEntry(
+                        path: relative, depth: components.count - 1, isDirectory: values?.isDirectory == true), url
+                )
             }
     }
 
@@ -671,7 +784,8 @@ enum RepositoryService {
         let result = await runGit(path: path, arguments: command.arguments)
         guard command.successCodes.contains(result.exitCode) else { return nil }
         let bounded = boundDiff(result.output)
-        return RepositoryDiff(path: file.path, text: bounded.text, isTruncated: bounded.isTruncated, isStaged: file.isStaged)
+        return RepositoryDiff(
+            path: file.path, text: bounded.text, isTruncated: bounded.isTruncated, isStaged: file.isStaged)
     }
 
     /// Resolve the attachment against its own worktree, including staged and
@@ -679,8 +793,9 @@ enum RepositoryService {
     static func attachmentChanges(url: URL) async -> RepositoryAttachmentChanges? {
         guard url.isFileURL else { return nil }
         let fileURL = url.resolvingSymlinksInPath().standardizedFileURL
-        let root = await runGit(path: fileURL.deletingLastPathComponent().path,
-                                arguments: ["rev-parse", "--show-toplevel"])
+        let root = await runGit(
+            path: fileURL.deletingLastPathComponent().path,
+            arguments: ["rev-parse", "--show-toplevel"])
         guard root.exitCode == 0, !root.output.isEmpty else { return nil }
         let snapshot = await changeSnapshot(path: root.output)
         let files = snapshot.files.filter {
@@ -694,10 +809,11 @@ enum RepositoryService {
         guard let url = documentURL(repositoryPath: repositoryPath, filePath: filePath) else { return nil }
         return await Task.detached(priority: .utility) {
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                  attributes[.type] as? FileAttributeType == .typeRegular,
-                  let data = try? Data(contentsOf: url),
-                  data.count <= maxDocumentBytes,
-                  let contents = String(data: data, encoding: .utf8) else { return nil }
+                attributes[.type] as? FileAttributeType == .typeRegular,
+                let data = try? Data(contentsOf: url),
+                data.count <= maxDocumentBytes,
+                let contents = String(data: data, encoding: .utf8)
+            else { return nil }
             return RepositoryFileDocument(path: filePath, contents: contents, byteCount: data.count)
         }.value
     }
@@ -730,10 +846,12 @@ enum RepositoryService {
     /// caller refreshes Git projections afterwards; no editor state is stored.
     static func saveDocument(path repositoryPath: String, filePath: String, contents: String) async -> Bool {
         guard let url = documentURL(repositoryPath: repositoryPath, filePath: filePath),
-              contents.lengthOfBytes(using: .utf8) <= maxDocumentBytes else { return false }
+            contents.lengthOfBytes(using: .utf8) <= maxDocumentBytes
+        else { return false }
         return await Task.detached(priority: .utility) {
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                  attributes[.type] as? FileAttributeType == .typeRegular else { return false }
+                attributes[.type] as? FileAttributeType == .typeRegular
+            else { return false }
             do {
                 try Data(contents.utf8).write(to: url, options: .atomic)
                 return true
@@ -773,7 +891,9 @@ enum RepositoryService {
         results.sort { $0.change.id < $1.change.id }
         let partial = omitted > 0 || results.contains { !$0.isReadable || $0.isTruncated || $0.isBinary }
         let fingerprint = await canonicalFingerprint(path: path, changes: changes)
-        return RepositoryReviewSnapshot(repositoryID: changes.repositoryID, headRevision: changes.headRevision, fingerprint: fingerprint, files: results, completeness: partial ? .partial : .complete, refreshedAt: .now, omittedFileCount: omitted)
+        return RepositoryReviewSnapshot(
+            repositoryID: changes.repositoryID, headRevision: changes.headRevision, fingerprint: fingerprint,
+            files: results, completeness: partial ? .partial : .complete, refreshedAt: .now, omittedFileCount: omitted)
     }
 
     /// Stable, content-free identity for baseline invalidation and watch events.
@@ -787,19 +907,24 @@ enum RepositoryService {
             var iterator = changes.files.makeIterator()
             for _ in 0..<min(4, changes.files.count) {
                 if let file = iterator.next() {
-                    group.addTask { "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")" }
+                    group.addTask {
+                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")"
+                    }
                 }
             }
             var values: [String] = []
             while let value = await group.next() {
                 values.append(value)
                 if let file = iterator.next() {
-                    group.addTask { "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")" }
+                    group.addTask {
+                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")"
+                    }
                 }
             }
             return values
         }
-        return fingerprint(repositoryID: changes.repositoryID, headRevision: changes.headRevision, identities: identities)
+        return fingerprint(
+            repositoryID: changes.repositoryID, headRevision: changes.headRevision, identities: identities)
     }
 
     static func fingerprint(repositoryID: String, headRevision: String?, identities: [String]) -> String {
@@ -816,17 +941,27 @@ enum RepositoryService {
             if record.hasPrefix("worktree "), !rows.last!.isEmpty { rows.append([]) }
             rows[rows.count - 1].append(record)
         }
-        return await withTaskGroup(of: RepositoryWorktreeSummary?.self, returning: [RepositoryWorktreeSummary].self) { group in
+        return await withTaskGroup(of: RepositoryWorktreeSummary?.self, returning: [RepositoryWorktreeSummary].self) {
+            group in
             var iterator = rows.makeIterator()
             func add(_ row: [String]) {
                 group.addTask {
                     guard let worktree = row.first(where: { $0.hasPrefix("worktree ") }) else { return nil }
                     let worktreePath = String(worktree.dropFirst("worktree ".count))
                     let branchRow = row.first(where: { $0.hasPrefix("branch ") })
-                    let branch = branchRow.map { URL(fileURLWithPath: String($0.dropFirst("branch ".count))).lastPathComponent }
-                    let head = row.first(where: { $0.hasPrefix("HEAD ") }).map { String($0.dropFirst("HEAD ".count).prefix(12)) }
+                    let branch = branchRow.map {
+                        URL(fileURLWithPath: String($0.dropFirst("branch ".count))).lastPathComponent
+                    }
+                    let head = row.first(where: { $0.hasPrefix("HEAD ") }).map {
+                        String($0.dropFirst("HEAD ".count).prefix(12))
+                    }
                     let snapshot = await inspect(path: worktreePath)
-                    return RepositoryWorktreeSummary(path: worktreePath, displayName: URL(fileURLWithPath: worktreePath).lastPathComponent, branch: branch, headRevision: head, isDetached: branch == nil, isLocked: row.contains(where: { $0 == "locked" || $0.hasPrefix("locked ") }), isPrunable: row.contains(where: { $0.hasPrefix("prunable") }), snapshot: snapshot.isGitRepository ? snapshot : nil)
+                    return RepositoryWorktreeSummary(
+                        path: worktreePath, displayName: URL(fileURLWithPath: worktreePath).lastPathComponent,
+                        branch: branch, headRevision: head, isDetached: branch == nil,
+                        isLocked: row.contains(where: { $0 == "locked" || $0.hasPrefix("locked ") }),
+                        isPrunable: row.contains(where: { $0.hasPrefix("prunable") }),
+                        snapshot: snapshot.isGitRepository ? snapshot : nil)
                 }
             }
             for _ in 0..<min(maxConcurrentWorktreeInspections, rows.count) {
@@ -845,7 +980,10 @@ enum RepositoryService {
         let loaded = await diff(path: path, file: file)
         let binary = loaded?.text.contains("Binary files") == true
         let identity = await fileIdentity(path: path, file: file)
-        return RepositoryReviewFile(change: file, findings: loaded.map(RepositoryDiffAuditor.audit) ?? [], isTruncated: loaded?.isTruncated ?? false, isBinary: binary, isReadable: loaded != nil, contentIdentity: identity)
+        return RepositoryReviewFile(
+            change: file, findings: loaded.map(RepositoryDiffAuditor.audit) ?? [],
+            isTruncated: loaded?.isTruncated ?? false, isBinary: binary, isReadable: loaded != nil,
+            contentIdentity: identity)
     }
 
     private static func fileIdentity(path: String, file: RepositoryFileChange) async -> String? {
@@ -866,7 +1004,9 @@ enum RepositoryService {
             // read-only while producing a normal bounded unified diff.
             return (["diff", "--no-index", "--no-ext-diff", "--unified=3", "--", "/dev/null", file.path], [0, 1])
         }
-        return ((file.isStaged ? ["diff", "--cached"] : ["diff"]) + ["--no-ext-diff", "--unified=3", "--", file.path], [0])
+        return (
+            (file.isStaged ? ["diff", "--cached"] : ["diff"]) + ["--no-ext-diff", "--unified=3", "--", file.path], [0]
+        )
     }
 
     static func parsePorcelainV1(_ output: String) -> [RepositoryFileChange] {
@@ -875,7 +1015,10 @@ enum RepositoryService {
         var index = 0
         while index < records.count {
             let row = records[index]
-            guard row.count >= 4 else { index += 1; continue }
+            guard row.count >= 4 else {
+                index += 1
+                continue
+            }
             let chars = Array(row)
             let indexCode = chars[0]
             let worktreeCode = chars[1]
@@ -886,11 +1029,23 @@ enum RepositoryService {
             let worktree = worktreeCode != " " && worktreeCode != "?"
             if indexCode == "?" && worktreeCode == "?" {
                 result.append(RepositoryFileChange(path: path, status: .untracked, isStaged: false, renameSource: nil))
-            } else if indexCode == "U" || worktreeCode == "U" || (indexCode == "A" && worktreeCode == "A") || (indexCode == "D" && worktreeCode == "D") {
-                result.append(RepositoryFileChange(path: path, status: .conflicted, isStaged: false, renameSource: renameSource))
+            } else if indexCode == "U" || worktreeCode == "U" || (indexCode == "A" && worktreeCode == "A")
+                || (indexCode == "D" && worktreeCode == "D")
+            {
+                result.append(
+                    RepositoryFileChange(path: path, status: .conflicted, isStaged: false, renameSource: renameSource))
             } else {
-                if staged { result.append(RepositoryFileChange(path: path, status: status(for: indexCode), isStaged: true, renameSource: renameSource)) }
-                if worktree { result.append(RepositoryFileChange(path: path, status: status(for: worktreeCode), isStaged: false, renameSource: worktreeCode == "R" || worktreeCode == "C" ? renameSource : nil)) }
+                if staged {
+                    result.append(
+                        RepositoryFileChange(
+                            path: path, status: status(for: indexCode), isStaged: true, renameSource: renameSource))
+                }
+                if worktree {
+                    result.append(
+                        RepositoryFileChange(
+                            path: path, status: status(for: worktreeCode), isStaged: false,
+                            renameSource: worktreeCode == "R" || worktreeCode == "C" ? renameSource : nil))
+                }
             }
             index += isRename ? 2 : 1
         }
@@ -917,8 +1072,9 @@ enum RepositoryService {
                 break
             }
             guard fields.count >= 3,
-                  fields[0].count == 40,
-                  Int(fields[2]) != nil else {
+                fields[0].count == 40,
+                Int(fields[2]) != nil
+            else {
                 return nil
             }
 
@@ -940,7 +1096,8 @@ enum RepositoryService {
                 if row.hasPrefix("author ") {
                     author = String(row.dropFirst("author ".count))
                 } else if row.hasPrefix("author-time ") {
-                    authoredAt = Date(timeIntervalSince1970: TimeInterval(String(row.dropFirst("author-time ".count))) ?? 0)
+                    authoredAt = Date(
+                        timeIntervalSince1970: TimeInterval(String(row.dropFirst("author-time ".count))) ?? 0)
                 } else if row.hasPrefix("summary ") {
                     summary = String(row.dropFirst("summary ".count))
                 }
@@ -991,7 +1148,10 @@ enum RepositoryService {
     }
 
     private static func operationState(path: String) async -> String? {
-        for (file, name) in [("MERGE_HEAD", "Merge"), ("CHERRY_PICK_HEAD", "Cherry-pick"), ("REVERT_HEAD", "Revert"), ("rebase-merge", "Rebase"), ("rebase-apply", "Rebase")] {
+        for (file, name) in [
+            ("MERGE_HEAD", "Merge"), ("CHERRY_PICK_HEAD", "Cherry-pick"), ("REVERT_HEAD", "Revert"),
+            ("rebase-merge", "Rebase"), ("rebase-apply", "Rebase"),
+        ] {
             let result = await runGit(path: path, arguments: ["rev-parse", "--git-path", file])
             guard result.exitCode == 0, !result.output.isEmpty else { continue }
             let resolved = URL(fileURLWithPath: path).appendingPathComponent(result.output).path
@@ -1007,10 +1167,12 @@ enum RepositoryService {
 
     /// An anchored, literal `.gitignore` entry for one repository-relative path.
     static func gitignorePattern(_ path: String) -> String {
-        var pattern = "/" + path.reduce(into: "") { result, character in
-            if "\\*?[".contains(character) { result.append("\\") }
-            result.append(character)
-        }
+        var pattern =
+            "/"
+            + path.reduce(into: "") { result, character in
+                if "\\*?[".contains(character) { result.append("\\") }
+                result.append(character)
+            }
         // Git strips trailing spaces up to the last escaped one.
         if pattern.hasSuffix(" ") {
             pattern.removeLast()
@@ -1043,11 +1205,13 @@ enum RepositoryService {
         // Only the user's own commits: a pulled upstream (e.g. a cloned dependency) is not their work.
         let email = await runGit(path: root, arguments: ["config", "user.email"])
         let me = email.exitCode == 0 ? email.output.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        let result = await runGit(path: root, arguments: [
-            "log", "--branches", "--no-merges", "--max-count=500",
-            "--since=\(iso.string(from: since))", "--until=\(iso.string(from: until))",
-            "--pretty=format:%h%x1f%s%x1f%aI"
-        ] + (me.isEmpty ? [] : ["--author=\(me)", "--fixed-strings"]))
+        let result = await runGit(
+            path: root,
+            arguments: [
+                "log", "--branches", "--no-merges", "--max-count=500",
+                "--since=\(iso.string(from: since))", "--until=\(iso.string(from: until))",
+                "--pretty=format:%h%x1f%s%x1f%aI",
+            ] + (me.isEmpty ? [] : ["--author=\(me)", "--fixed-strings"]))
         guard result.exitCode == 0 else { return [] }
         return result.output.split(separator: "\n").compactMap { line in
             let fields = line.split(separator: "\u{1f}", omittingEmptySubsequences: false)
@@ -1079,7 +1243,9 @@ enum RepositoryService {
         return nil
     }
 
-    static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (output: String, exitCode: Int32) {
+    static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (
+        output: String, exitCode: Int32
+    ) {
         guard !Task.isCancelled else { return ("", 1) }
         return await Task.detached(priority: .utility) {
             let process = Process()

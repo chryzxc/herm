@@ -80,8 +80,10 @@ struct OfficePreviewLayout {
         case .desk:
             let pod = slot / 4
             let x: Float = pod.isMultiple(of: 2) ? 3 : 10
-            return [x + (slot.isMultiple(of: 2) ? -0.85 : 0.85), 0,
-                    -3 + Float(pod / 2) * 6 + (slot % 4 < 2 ? -1.3 : 1.3)]
+            return [
+                x + (slot.isMultiple(of: 2) ? -0.85 : 0.85), 0,
+                -3 + Float(pod / 2) * 6 + (slot % 4 < 2 ? -1.3 : 1.3),
+            ]
         case .reviewTable:
             return [slot.isMultiple(of: 2) ? -8 : -3, 0, -5.5 + Float(slot / 2) * 1.5]
         case .kanbanBoard:
@@ -89,8 +91,10 @@ struct OfficePreviewLayout {
         case .waitingArea:
             return [slot.isMultiple(of: 2) ? -3.5 : -1.5, 0, hallBottom + 1.5 + Float(slot / 2) * 1.5]
         case .lounge:
-            return [3.2 + (slot.isMultiple(of: 2) ? -0.8 : 0.8), 0,
-                    hallBottom + 2 + Float(slot / 4) * 3.8 + (slot % 4 < 2 ? -1.05 : 1.05)]
+            return [
+                3.2 + (slot.isMultiple(of: 2) ? -0.8 : 0.8), 0,
+                hallBottom + 2 + Float(slot / 4) * 3.8 + (slot % 4 < 2 ? -1.05 : 1.05),
+            ]
         default:
             // Work rooms are authored-only; the generated fallback office uses desks.
             return station(slot: slot, location: .desk)
@@ -113,8 +117,7 @@ struct OfficePreviewLayout {
         let center: SIMD2<Float>
         let size: SIMD2<Float>
         func contains(_ point: SIMD2<Float>, clearance: Float = 0) -> Bool {
-            abs(point.x - center.x) < size.x / 2 + clearance &&
-            abs(point.y - center.y) < size.y / 2 + clearance
+            abs(point.x - center.x) < size.x / 2 + clearance && abs(point.y - center.y) < size.y / 2 + clearance
         }
     }
 
@@ -123,25 +126,30 @@ struct OfficePreviewLayout {
         return [
             // A glazed meeting room opens onto the central cross corridor.
             Footprint(name: "meeting-front", center: [-6.25, workBottom], size: [7.5, 0.15]),
-            Footprint(name: "meeting-divider", center: [-0.5, (back + workBottom) / 2], size: [0.15, workBottom - back]),
-            Footprint(name: "planning-help-divider", center: [-5, (hallBottom + front) / 2], size: [0.15, front - hallBottom]),
-            Footprint(name: "help-lounge-divider", center: [0, (hallBottom + front) / 2], size: [0.15, front - hallBottom]),
+            Footprint(
+                name: "meeting-divider", center: [-0.5, (back + workBottom) / 2], size: [0.15, workBottom - back]),
+            Footprint(
+                name: "planning-help-divider", center: [-5, (hallBottom + front) / 2], size: [0.15, front - hallBottom]),
+            Footprint(
+                name: "help-lounge-divider", center: [0, (hallBottom + front) / 2], size: [0.15, front - hallBottom]),
             // The front rooms have open doorways facing the cross corridor.
             Footprint(name: "planning-front", center: [-9.25, hallBottom], size: [1.5, 0.15]),
             Footprint(name: "help-front", center: [-4.25, hallBottom], size: [1.5, 0.15]),
-            Footprint(name: "lounge-front", center: [5.5, hallBottom], size: [7, 0.15])
+            Footprint(name: "lounge-front", center: [5.5, hallBottom], size: [7, 0.15]),
         ]
     }
 
     var furniture: [Footprint] {
         if authored != nil { return [] }
         var result = [
-            Footprint(name: "conference-table", center: [-5.5, -5.5 + Float((capacity + 1) / 2 - 1) * 0.75],
-                      size: [2.6, Float((capacity + 1) / 2) * 1.5]),
-            Footprint(name: "coffee-counter", center: [14, hallBottom + 2], size: [2.2, 0.7])
+            Footprint(
+                name: "conference-table", center: [-5.5, -5.5 + Float((capacity + 1) / 2 - 1) * 0.75],
+                size: [2.6, Float((capacity + 1) / 2) * 1.5]),
+            Footprint(name: "coffee-counter", center: [14, hallBottom + 2], size: [2.2, 0.7]),
         ]
         for group in 0..<((capacity + 3) / 4) {
-            result.append(Footprint(name: "lounge-table", center: [3.2, hallBottom + 2 + Float(group) * 3.8], size: [1.5, 0.65]))
+            result.append(
+                Footprint(name: "lounge-table", center: [3.2, hallBottom + 2 + Float(group) * 3.8], size: [1.5, 0.65]))
         }
         result += fixtures
         for slot in 0..<capacity {
@@ -164,13 +172,14 @@ struct OfficePreviewLayout {
             Footprint(name: "plant", center: [10.8, front - 1.5], size: [0.8, 0.8]),
             Footprint(name: "shelf", center: [14.5, -2], size: [1.25, 0.42]),
             Footprint(name: "shelf", center: [-2.5, front - 1], size: [1.25, 0.42]),
-            Footprint(name: "shelf", center: [-7.5, front - 1], size: [1.25, 0.42])
+            Footprint(name: "shelf", center: [-7.5, front - 1], size: [1.25, 0.42]),
         ]
     }
 
     func isWalkable(_ point: SIMD3<Float>) -> Bool {
         guard point.x >= minX + 0.6, point.x <= maxX - 0.6,
-              point.z >= back + 0.6, point.z <= front - 0.6 else { return false }
+            point.z >= back + 0.6, point.z <= front - 0.6
+        else { return false }
         // L-shaped cutaway: the coffee nook ends before the front lounge.
         if authored == nil && point.x > 12 && point.z > hallBottom + 5 { return false }
         return !navigationObstacles.contains { $0.contains([point.x, point.z], clearance: 0.36) }
@@ -188,8 +197,10 @@ struct OfficePreviewLayout {
             if authored == nil {
                 if !isWalkable(p) { return false }
             } else {
-                let x0 = Int((p.x * 4).rounded(.down)), z0 = Int((p.z * 4).rounded(.down))
-                for cell in [SIMD2<Int>(x0, z0), [x0 + 1, z0], [x0, z0 + 1], [x0 + 1, z0 + 1]] where blockedGrid.contains(cell) { return false }
+                let x0 = Int((p.x * 4).rounded(.down))
+                let z0 = Int((p.z * 4).rounded(.down))
+                for cell in [SIMD2<Int>(x0, z0), [x0 + 1, z0], [x0, z0 + 1], [x0 + 1, z0 + 1]]
+                where blockedGrid.contains(cell) { return false }
             }
             if occupied.contains(where: { abs($0.x - p.x) < 0.8 && abs($0.z - p.z) < 0.8 }) { return false }
         }
@@ -207,7 +218,9 @@ struct OfficePreviewLayout {
         while index < route.count {
             let node = route[index]
             let isFixed = index == 0 || node.isStation || node.isApproach || index == route.count - 1
-            if !isFixed, index + 1 < route.count, isClear(from: anchor, to: position(route[index + 1]), avoiding: occupied) {
+            if !isFixed, index + 1 < route.count,
+                isClear(from: anchor, to: position(route[index + 1]), avoiding: occupied)
+            {
                 index += 1
                 continue
             }
@@ -256,17 +269,26 @@ struct OfficePreviewLayout {
     /// furniture and wall footprints used by the renderer.
     func route(from start: Node, to end: Node, avoiding occupied: [SIMD3<Float>] = []) -> [Node] {
         if start == end { return [start] }
-        let first = start.isStation ? Node(slot: start.slot, index: start.index, isStation: false, isApproach: true, leisureIndex: start.leisureIndex) : start
-        let last = Node(slot: end.slot, index: end.index, isStation: false, isApproach: true, leisureIndex: end.leisureIndex)
+        let first =
+            start.isStation
+            ? Node(
+                slot: start.slot, index: start.index, isStation: false, isApproach: true,
+                leisureIndex: start.leisureIndex) : start
+        let last = Node(
+            slot: end.slot, index: end.index, isStation: false, isApproach: true, leisureIndex: end.leisureIndex)
         func grid(_ point: SIMD3<Float>) -> SIMD2<Int> { [Int((point.x * 4).rounded()), Int((point.z * 4).rounded())] }
-        let source = grid(position(first)), goal = grid(position(last))
+        let source = grid(position(first))
+        let goal = grid(position(last))
         func heuristic(_ p: SIMD2<Int>) -> Int { abs(p.x - goal.x) + abs(p.y - goal.y) }
         let obstacles = authored == nil ? navigationObstacles : []
         func allowed(_ p: SIMD2<Int>) -> Bool {
-            let x = Float(p.x) / 4, z = Float(p.y) / 4
+            let x = Float(p.x) / 4
+            let z = Float(p.y) / 4
             guard x >= minX + 0.6, x <= maxX - 0.6, z >= back + 0.6, z <= front - 0.6 else { return false }
             if authored == nil && x > 12 && z > hallBottom + 5 { return false }
-            if blockedGrid.contains(p) || obstacles.contains(where: { $0.contains([x, z], clearance: 0.36) }) { return false }
+            if blockedGrid.contains(p) || obstacles.contains(where: { $0.contains([x, z], clearance: 0.36) }) {
+                return false
+            }
             return !occupied.contains { abs($0.x - x) < 0.8 && abs($0.z - z) < 0.8 }
         }
         // An occupied destination cannot be reached. Don't flood-search the
@@ -300,7 +322,8 @@ struct OfficePreviewLayout {
             open[0] = open.removeLast()
             var index = 0
             while index * 2 + 1 < open.count {
-                let left = index * 2 + 1, right = left + 1
+                let left = index * 2 + 1
+                let right = left + 1
                 let child = right < open.count && precedes(open[right], open[left]) ? right : left
                 guard precedes(open[child], open[index]) else { break }
                 open.swapAt(index, child)
@@ -331,29 +354,35 @@ struct OfficePreviewLayout {
                         let clear = segments.allSatisfy { start, end in
                             [Float(0), 0.25, 0.5, 0.75, 1].allSatisfy { fraction in
                                 let p = start + (end - start) * fraction
-                                return isWalkable(p) && !occupied.contains { abs($0.x - p.x) < 0.8 && abs($0.z - p.z) < 0.8 }
+                                return isWalkable(p)
+                                    && !occupied.contains { abs($0.x - p.x) < 0.8 && abs($0.z - p.z) < 0.8 }
                             }
                         }
                         if clear {
-                            return bend == a || bend == b ? [] : [Node(slot: -1, index: 0, isStation: false, connectorPosition: bend)]
+                            return bend == a || bend == b
+                                ? [] : [Node(slot: -1, index: 0, isStation: false, connectorPosition: bend)]
                         }
                     }
                     return nil
                 }
                 guard let head = connector(from: position(first), to: position(gridNodes[0])),
-                      let tail = connector(from: position(gridNodes[gridNodes.count - 1]), to: position(last)) else { return [] }
+                    let tail = connector(from: position(gridNodes[gridNodes.count - 1]), to: position(last))
+                else { return [] }
                 var nodes: [Node] = start.isStation ? [start, first] : [first]
                 for node in head + gridNodes + tail {
                     if position(nodes.last!) != position(node) { nodes.append(node) }
                 }
-                if nodes.last == last { /* already at the destination approach */ }
-                else if position(nodes.last!) == position(last) && nodes.last != first { nodes[nodes.count - 1] = last }
-                else { nodes.append(last) }
+                if nodes.last == last { /* already at the destination approach */
+                } else if position(nodes.last!) == position(last) && nodes.last != first {
+                    nodes[nodes.count - 1] = last
+                } else {
+                    nodes.append(last)
+                }
                 nodes.append(end)
                 return nodes
             }
             closed.insert(current)
-            for delta in [SIMD2<Int>(1,0), [-1,0], [0,1], [0,-1]] {
+            for delta in [SIMD2<Int>(1, 0), [-1, 0], [0, 1], [0, -1]] {
                 let candidate = current &+ delta
                 guard !closed.contains(candidate), allowed(candidate) else { continue }
                 let score = costs[current, default: 0] + 1

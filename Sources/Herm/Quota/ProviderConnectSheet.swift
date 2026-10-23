@@ -28,7 +28,8 @@ final class ProviderLoginModel: ObservableObject {
         let arguments = command.split(separator: " ").map(String.init)
         let searchDirectories = Self.defaultSearchDirectories()
         guard let executablePath = Self.executablePath(command: command, searchDirectories: searchDirectories) else {
-            failureText = "The \(arguments.first ?? "provider") command was not found on this Mac. Install it and try again."
+            failureText =
+                "The \(arguments.first ?? "provider") command was not found on this Mac. Install it and try again."
             return
         }
 
@@ -111,14 +112,19 @@ final class ProviderLoginModel: ObservableObject {
 
     // MARK: - Pure helpers
 
-    static func cappedLines(_ existing: [String], newLines: [String], lineLimit: Int = 400, characterLimit: Int = 16_000) -> [String] {
+    static func cappedLines(
+        _ existing: [String], newLines: [String], lineLimit: Int = 400, characterLimit: Int = 16_000
+    ) -> [String] {
         var lines = existing + newLines.map(HermesRuntimeInspector.stripANSI)
         while lines.count > lineLimit { lines.removeFirst(lines.count - lineLimit) }
         while lines.joined(separator: "\n").count > characterLimit && lines.count > 1 { lines.removeFirst(1) }
         return lines
     }
 
-    static func executablePath(command: String, searchDirectories: [String], fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> String? {
+    static func executablePath(
+        command: String, searchDirectories: [String],
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> String? {
         let name = command.split(separator: " ").first.map(String.init) ?? command
         guard !name.isEmpty else { return nil }
         if name.contains("/") {
@@ -143,7 +149,7 @@ final class ProviderLoginModel: ObservableObject {
         directories += [
             "\(homePath)/.local/bin",
             "\(homePath)/bin",
-            "\(homePath)/.volta/bin"
+            "\(homePath)/.volta/bin",
         ]
         let nvmVersions = nodeDirectory ?? "\(homePath)/.nvm/versions/node"
         if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmVersions) {
@@ -177,7 +183,9 @@ struct ProviderConnectSheet: View {
 
     var body: some View {
         DockModal(
-            badge: AnyView(ProviderMarkBadge(mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName), size: 32)),
+            badge: AnyView(
+                ProviderMarkBadge(
+                    mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName), size: 32)),
             title: "Connect \(descriptor.displayName)",
             subtitle: descriptor.summary
         ) {
@@ -218,12 +226,12 @@ struct ProviderConnectSheet: View {
                 } else if login.exitStatus == nil && login.failureText == nil {
                     Button("Log In") { login.start(command: command) }
                         .buttonStyle(.dockPrimary)
-                    .keyboardShortcut(.defaultAction)
+                        .keyboardShortcut(.defaultAction)
                 }
             case .openApp(let applicationName, _):
                 Button("Open \(applicationName)") { control.openProviderApplication(named: applicationName) }
                     .buttonStyle(.dockPrimary)
-                .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .onAppear { refreshStoredKeyState() }
@@ -291,12 +299,20 @@ struct ProviderConnectSheet: View {
         // The Hermes save runs before the quota read starts; judging now would
         // report the previous read's "no key" error.
         guard !isSaving, let started = testStartedAt?.addingTimeInterval(-1) else { return nil }
-        if let snapshot = control.providerQuotas.first(where: { $0.provider == descriptor.id }), snapshot.updatedAt >= started {
-            let first = snapshot.windows.first.map { " · \($0.label): \($0.remainingDisplay ?? $0.remainingPercent.map { "\(Int($0))% left" } ?? "reported")" }
+        if let snapshot = control.providerQuotas.first(where: { $0.provider == descriptor.id }),
+            snapshot.updatedAt >= started
+        {
+            let first = snapshot.windows.first.map {
+                " · \($0.label): \($0.remainingDisplay ?? $0.remainingPercent.map { "\(Int($0))% left" } ?? "reported")"
+            }
             return (true, "Connected\(first ?? "")")
         }
         if control.refreshState(for: "provider.quota")?.isRefreshing != true {
-            return (false, control.providerQuotaDiagnostics[descriptor.id] ?? "The key was saved, but quota couldn't be read with it.")
+            return (
+                false,
+                control.providerQuotaDiagnostics[descriptor.id]
+                    ?? "The key was saved, but quota couldn't be read with it."
+            )
         }
         return nil
     }
@@ -305,14 +321,19 @@ struct ProviderConnectSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             instructionText(instruction)
             labeledField("API key") {
-                SecureField(hasStoredKey ? "Paste a new key to replace the stored one" : "Paste your API key", text: $apiKeyInput)
-                    .textFieldStyle(.dockGlass)
-                    .onSubmit { saveAPIKey() }
+                SecureField(
+                    hasStoredKey ? "Paste a new key to replace the stored one" : "Paste your API key",
+                    text: $apiKeyInput
+                )
+                .textFieldStyle(.dockGlass)
+                .onSubmit { saveAPIKey() }
             }
             VStack(alignment: .leading, spacing: 6) {
                 if testStartedAt != nil {
                     if let result = testResult {
-                        ModalNote(text: result.text, icon: result.ok ? .checkCircle : .warning, tone: result.ok ? .dockSuccess : .dockWarning)
+                        ModalNote(
+                            text: result.text, icon: result.ok ? .checkCircle : .warning,
+                            tone: result.ok ? .dockSuccess : .dockWarning)
                     } else {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.mini)
@@ -320,11 +341,14 @@ struct ProviderConnectSheet: View {
                         }
                     }
                 } else if hasStoredKey {
-                    ModalNote(text: "A key is already stored for this provider.", icon: .checkCircle, tone: .dockSuccess)
+                    ModalNote(
+                        text: "A key is already stored for this provider.", icon: .checkCircle, tone: .dockSuccess)
                 }
                 if let saveError { ModalNote(text: saveError, icon: .warning, tone: .dockWarning) }
                 ModalNote(
-                    text: hermesRow.map { "Saved by Hermes in its own .env\($0.keyEnv.map { " as \($0)" } ?? ""), the same key as Settings → Providers." }
+                    text: hermesRow.map {
+                        "Saved by Hermes in its own .env\($0.keyEnv.map { " as \($0)" } ?? ""), the same key as Settings → Providers."
+                    }
                         ?? "Stored in ~/.config/herm/providers.json with owner-only permissions. Never displayed or logged, and used only to read quota.",
                     icon: .lockSimple
                 )
@@ -364,7 +388,8 @@ struct ProviderConnectSheet: View {
                     .frame(minHeight: DockLayout.controlHeight)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
+                            .dockSurfaceFill(
+                                Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
                     )
                 }
             }
@@ -374,7 +399,9 @@ struct ProviderConnectSheet: View {
     private func openAppSection(_ instruction: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             instructionText(instruction)
-            ModalNote(text: "After you sign in, quota appears on refresh and stays live while the app is running.", icon: .info)
+            ModalNote(
+                text: "After you sign in, quota appears on refresh and stays live while the app is running.",
+                icon: .info)
         }
     }
 

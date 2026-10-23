@@ -1,13 +1,14 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 struct WorkspaceActivitySidebarTests {
     @MainActor
     @Test func kanbanBoardScrollsLanesHorizontallyAndCardsPerLane() throws {
         let capabilities = [
-            "kanban.taskDetails", "kanban.complete", "kanban.block", "kanban.archive", "kanban.unblock"
+            "kanban.taskDetails", "kanban.complete", "kanban.block", "kanban.archive", "kanban.unblock",
         ].map {
             CapabilityState(id: $0, title: $0, detail: "test", isAvailable: true, recovery: nil)
         }
@@ -56,17 +57,19 @@ struct WorkspaceActivitySidebarTests {
 
         let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
         // The board scrolls horizontally to reach trailing lanes.
-        let boardScrollView = try #require(scrollViews.first {
-            $0.hasHorizontalScroller && !$0.hasVerticalScroller
-        })
+        let boardScrollView = try #require(
+            scrollViews.first {
+                $0.hasHorizontalScroller && !$0.hasVerticalScroller
+            })
         #expect(boardScrollView.documentView!.frame.width > boardScrollView.contentView.bounds.width)
 
         // A lane with more cards than fit scrolls vertically on its own.
-        let laneScrollView = try #require(scrollViews.first {
-            $0.hasVerticalScroller && !$0.hasHorizontalScroller
-                && $0.documentView != nil
-                && $0.documentView!.frame.height > $0.contentView.bounds.height
-        })
+        let laneScrollView = try #require(
+            scrollViews.first {
+                $0.hasVerticalScroller && !$0.hasHorizontalScroller
+                    && $0.documentView != nil
+                    && $0.documentView!.frame.height > $0.contentView.bounds.height
+            })
         #expect(laneScrollView.frame.height <= hostingView.frame.height)
         window.close()
     }
@@ -75,23 +78,26 @@ struct WorkspaceActivitySidebarTests {
     @Test func pluginsPageBuildsAndRendersInWorkspace() throws {
         let sidebar = WorkspaceActivitySidebar(
             model: DockModel(), botMode: BotModeModel(),
-            store: WorkspaceStore(fileURL: FileManager.default.temporaryDirectory
-                .appendingPathComponent("herm-plugins-\(UUID().uuidString).json")),
+            store: WorkspaceStore(
+                fileURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("herm-plugins-\(UUID().uuidString).json")),
             control: ControlCenterModel(), workflow: DeveloperWorkflowModel(),
             initialMode: .capabilities, agentUpdateService: HermesUpdateService()
         )
         let pages = [
             AnyView(sidebar),
-            AnyView(WorkflowIntegrationView(
-                destination: IntegrationDestination(profileID: nil),
-                client: sidebar.model.controlRPCClient, pageSection: .constant(.plugins)
-            ))
+            AnyView(
+                WorkflowIntegrationView(
+                    destination: IntegrationDestination(profileID: nil),
+                    client: sidebar.model.controlRPCClient, pageSection: .constant(.plugins)
+                )),
         ]
         for page in pages {
             let host = NSHostingView(rootView: page)
             host.frame = NSRect(x: 0, y: 0, width: 1000, height: 650)
-            let window = NSWindow(contentRect: host.frame, styleMask: .borderless,
-                                  backing: .buffered, defer: false)
+            let window = NSWindow(
+                contentRect: host.frame, styleMask: .borderless,
+                backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = host
             defer { window.close() }

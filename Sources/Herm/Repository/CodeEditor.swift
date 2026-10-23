@@ -116,12 +116,15 @@ final class CodeEditorContainerView: NSView {
         scheduleHighlight()
 
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: NSText.didChangeNotification, object: textView, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.textDidChange() }
-        })
-        observers.append(center.addObserver(forName: NSTextView.didChangeSelectionNotification, object: textView, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.selectionDidChange() }
-        })
+        observers.append(
+            center.addObserver(forName: NSText.didChangeNotification, object: textView, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.textDidChange() }
+            })
+        observers.append(
+            center.addObserver(forName: NSTextView.didChangeSelectionNotification, object: textView, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.selectionDidChange() }
+            })
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -150,7 +153,9 @@ final class CodeEditorContainerView: NSView {
         textView.backgroundColor = .codeCanvas
         scrollView.backgroundColor = .codeCanvas
         textView.insertionPointColor = .codeAccent
-        textView.selectedTextAttributes = [.backgroundColor: NSColor(Color.dockAccentMuted), .foregroundColor: NSColor(Color.dockPrimaryText)]
+        textView.selectedTextAttributes = [
+            .backgroundColor: NSColor(Color.dockAccentMuted), .foregroundColor: NSColor(Color.dockPrimaryText),
+        ]
         scheduleHighlight()
         gutter.needsDisplay = true
     }
@@ -234,7 +239,8 @@ final class CodeEditorContainerView: NSView {
                 work.cancel()
             }
             guard !Task.isCancelled, let self,
-                  self.filePath == path, self.textView.string == source else { return }
+                self.filePath == path, self.textView.string == source
+            else { return }
             CodeSyntaxHighlighter.apply(to: self.textView, tokens: tokens)
         }
     }
@@ -243,7 +249,8 @@ final class CodeEditorContainerView: NSView {
         let selection = textView.selectedRange()
         let line = textView.lineNumber(at: selection.location)
         let lineStart = textView.lineStarts[line - 1]
-        let cursor = CodeEditorCursor(line: line, column: selection.location - lineStart + 1, selectedCharacters: selection.length)
+        let cursor = CodeEditorCursor(
+            line: line, column: selection.location - lineStart + 1, selectedCharacters: selection.length)
         if textView.currentLine != line || textView.currentLine > textView.lineStarts.count {
             textView.currentLine = line
             gutter.needsDisplay = true
@@ -268,7 +275,8 @@ final class CodeTextView: NSTextView {
 
     /// 1-based line containing the UTF-16 offset.
     func lineNumber(at offset: Int) -> Int {
-        var low = 0, high = lineStarts.count - 1
+        var low = 0
+        var high = lineStarts.count - 1
         while low < high {
             let mid = (low + high + 1) / 2
             if lineStarts[mid] <= offset { low = mid } else { high = mid - 1 }
@@ -283,13 +291,15 @@ final class CodeTextView: NSTextView {
         let text = string as NSString
         let caret = selectedRange().location
         if caret >= text.length, !layoutManager.extraLineFragmentRect.isEmpty,
-           text.length == 0 || text.character(at: text.length - 1) == 10 {
+            text.length == 0 || text.character(at: text.length - 1) == 10
+        {
             return layoutManager.extraLineFragmentRect.offsetBy(dx: 0, dy: textContainerOrigin.y)
         }
         let lineRange = text.lineRange(for: NSRange(location: min(caret, max(0, text.length - 1)), length: 0))
         let glyphs = layoutManager.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
         guard glyphs.length > 0 else { return nil }
-        return layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer).offsetBy(dx: 0, dy: textContainerOrigin.y)
+        return layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer).offsetBy(
+            dx: 0, dy: textContainerOrigin.y)
     }
 
     override func drawBackground(in rect: NSRect) {
@@ -309,9 +319,10 @@ final class CodeTextView: NSTextView {
     /// GitLens-style ghost text after the caret line.
     private func drawInlineBlame() {
         guard selectedRange().length == 0,
-              currentLine <= lineStarts.count,
-              let blame = blameByLine[currentLine],
-              let layoutManager else { return }
+            currentLine <= lineStarts.count,
+            let blame = blameByLine[currentLine],
+            let layoutManager
+        else { return }
         let text = string as NSString
         let start = lineStarts[currentLine - 1]
         let lineRange = text.lineRange(for: NSRange(location: min(start, text.length), length: 0))
@@ -321,7 +332,8 @@ final class CodeTextView: NSTextView {
         let lastGlyph = layoutManager.glyphIndexForCharacter(at: contentEnd - 1)
         let used = layoutManager.lineFragmentUsedRect(forGlyphAt: lastGlyph, effectiveRange: nil)
         let commit = blame.commit
-        let label = commit.isUncommitted
+        let label =
+            commit.isUncommitted
             ? "You · Uncommitted changes"
             : "\(commit.author), \(commit.authoredAt.map { HumanDateFormatting.relative($0) } ?? "unknown date") · \(commit.summary)"
         // Share the code's baseline and font so the ghost text sits on the line.
@@ -329,10 +341,12 @@ final class CodeTextView: NSTextView {
         let fragment = layoutManager.lineFragmentRect(forGlyphAt: lastGlyph, effectiveRange: nil)
         let baseline = fragment.minY + layoutManager.location(forGlyphAt: lastGlyph).y + textContainerOrigin.y
         let origin = NSPoint(x: used.maxX + textContainerOrigin.x + 28, y: baseline - font.ascender)
-        NSString(string: label).draw(at: origin, withAttributes: [
-            .font: font,
-            .foregroundColor: NSColor.codeGhost
-        ])
+        NSString(string: label).draw(
+            at: origin,
+            withAttributes: [
+                .font: font,
+                .foregroundColor: NSColor.codeGhost,
+            ])
     }
 
     override func insertNewline(_ sender: Any?) {
@@ -375,8 +389,11 @@ final class CodeGutterView: NSRulerView {
     func setBlame(_ blame: RepositoryBlameDocument?, showsBlame: Bool) {
         self.blame = blame
         self.showsBlame = showsBlame
-        blameByLine = Dictionary(blame?.lines.map { ($0.lineNumber, $0) } ?? [], uniquingKeysWith: { first, _ in first })
-        let dates = blame?.lines.compactMap { $0.commit.isUncommitted ? nil : $0.commit.authoredAt?.timeIntervalSince1970 } ?? []
+        blameByLine = Dictionary(
+            blame?.lines.map { ($0.lineNumber, $0) } ?? [], uniquingKeysWith: { first, _ in first })
+        let dates =
+            blame?.lines.compactMap { $0.commit.isUncommitted ? nil : $0.commit.authoredAt?.timeIntervalSince1970 }
+            ?? []
         ageRange = dates.min().flatMap { low in dates.max().map { low...$0 } }
         updateThickness()
         needsDisplay = true
@@ -398,7 +415,8 @@ final class CodeGutterView: NSRulerView {
     }
 
     override func drawHashMarksAndLabels(in rect: NSRect) {
-        guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+        guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer
+        else { return }
         let text = textView.string as NSString
         let numberFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         let blameFont = NSFont.systemFont(ofSize: 11, weight: .regular)
@@ -415,7 +433,8 @@ final class CodeGutterView: NSRulerView {
                 guard !layoutManager.extraLineFragmentRect.isEmpty else { break }
                 fragment = layoutManager.extraLineFragmentRect
             } else {
-                fragment = layoutManager.lineFragmentRect(forGlyphAt: layoutManager.glyphIndexForCharacter(at: start), effectiveRange: nil)
+                fragment = layoutManager.lineFragmentRect(
+                    forGlyphAt: layoutManager.glyphIndexForCharacter(at: start), effectiveRange: nil)
             }
             let y = convert(NSPoint(x: 0, y: fragment.minY + textView.textContainerOrigin.y), from: textView).y
             // Empty lines report the newline glyph's baseline at the fragment
@@ -423,22 +442,27 @@ final class CodeGutterView: NSRulerView {
             let baseline = y + layoutManager.defaultBaselineOffset(for: CodeSyntaxHighlighter.font)
 
             let isCurrent = line == textView.currentLine
-            let number = NSAttributedString(string: "\(line)", attributes: [
-                .font: numberFont,
-                .foregroundColor: isCurrent ? NSColor.codeLineNumberActive : NSColor.codeLineNumber
-            ])
+            let number = NSAttributedString(
+                string: "\(line)",
+                attributes: [
+                    .font: numberFont,
+                    .foregroundColor: isCurrent ? NSColor.codeLineNumberActive : NSColor.codeLineNumber,
+                ])
             let numberX = blameColumnWidth + numberColumnWidth - number.size().width - 14
             number.draw(at: NSPoint(x: numberX, y: baseline - numberFont.ascender))
 
             if blameColumnWidth > 0, let entry = blameByLine[line] {
-                drawBlame(entry, startsBlock: blameByLine[line - 1]?.commit.hash != entry.commit.hash,
-                          y: y, height: fragment.height, baseline: baseline, font: blameFont)
+                drawBlame(
+                    entry, startsBlock: blameByLine[line - 1]?.commit.hash != entry.commit.hash,
+                    y: y, height: fragment.height, baseline: baseline, font: blameFont)
             }
             line += 1
         }
     }
 
-    private func drawBlame(_ entry: RepositoryBlameLine, startsBlock: Bool, y: CGFloat, height: CGFloat, baseline: CGFloat, font: NSFont) {
+    private func drawBlame(
+        _ entry: RepositoryBlameLine, startsBlock: Bool, y: CGFloat, height: CGFloat, baseline: CGFloat, font: NSFont
+    ) {
         let commit = entry.commit
         let isHovered = hoveredLine.flatMap { blameByLine[$0]?.commit.hash } == commit.hash
         if isHovered {
@@ -454,23 +478,30 @@ final class CodeGutterView: NSRulerView {
         NSRect(x: 0, y: y, width: blameColumnWidth, height: 0.5).fill()
         let date = commit.isUncommitted ? "now" : commit.authoredAt.map { Self.shortAge($0) } ?? ""
         let author = commit.isUncommitted ? "Uncommitted" : commit.author
-        let dateText = NSAttributedString(string: date, attributes: [.font: font, .foregroundColor: NSColor.codeLineNumber])
+        let dateText = NSAttributedString(
+            string: date, attributes: [.font: font, .foregroundColor: NSColor.codeLineNumber])
         let dateWidth = dateText.size().width
         let textY = baseline - font.ascender
         let lineHeight = height
         dateText.draw(at: NSPoint(x: blameColumnWidth - dateWidth - 10, y: textY))
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
-        NSAttributedString(string: author, attributes: [
-            .font: font,
-            .foregroundColor: commit.isUncommitted ? NSColor.codeWarning : (isHovered ? NSColor.codeLineNumberActive : NSColor.codeBlameText),
-            .paragraphStyle: paragraph
-        ]).draw(in: NSRect(x: 12, y: textY, width: blameColumnWidth - dateWidth - 28, height: lineHeight))
+        NSAttributedString(
+            string: author,
+            attributes: [
+                .font: font,
+                .foregroundColor: commit.isUncommitted
+                    ? NSColor.codeWarning : (isHovered ? NSColor.codeLineNumberActive : NSColor.codeBlameText),
+                .paragraphStyle: paragraph,
+            ]
+        ).draw(in: NSRect(x: 12, y: textY, width: blameColumnWidth - dateWidth - 28, height: lineHeight))
     }
 
     private func ageColor(for commit: RepositoryBlameCommit) -> NSColor {
         if commit.isUncommitted { return .codeWarning }
-        guard let range = ageRange, let date = commit.authoredAt?.timeIntervalSince1970, range.upperBound > range.lowerBound else {
+        guard let range = ageRange, let date = commit.authoredAt?.timeIntervalSince1970,
+            range.upperBound > range.lowerBound
+        else {
             return NSColor.codeAccent.withAlphaComponent(0.6)
         }
         let freshness = (date - range.lowerBound) / (range.upperBound - range.lowerBound)
@@ -493,16 +524,20 @@ final class CodeGutterView: NSRulerView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self
+        )
         addTrackingArea(area)
         trackingArea = area
     }
 
     private func line(at event: NSEvent) -> (line: Int, y: CGFloat)? {
-        guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
+        guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer
+        else { return nil }
         let point = textView.convert(event.locationInWindow, from: nil)
         guard textView.string.utf16.count > 0 else { return nil }
-        let glyph = layoutManager.glyphIndex(for: NSPoint(x: 0, y: point.y - textView.textContainerOrigin.y), in: textContainer)
+        let glyph = layoutManager.glyphIndex(
+            for: NSPoint(x: 0, y: point.y - textView.textContainerOrigin.y), in: textContainer)
         let character = layoutManager.characterIndexForGlyph(at: glyph)
         let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
         guard point.y <= fragment.maxY + textView.textContainerOrigin.y else { return nil }
@@ -538,7 +573,9 @@ final class CodeGutterView: NSRulerView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let hit = line(at: event), let entry = blameByLine[hit.line], !entry.commit.isUncommitted else { return nil }
+        guard let hit = line(at: event), let entry = blameByLine[hit.line], !entry.commit.isUncommitted else {
+            return nil
+        }
         let menu = NSMenu()
         menu.addItem(CodeMenuItem("Copy Commit Hash") { Self.copy(entry.commit.hash) })
         menu.addItem(CodeMenuItem("Copy Commit Message") { Self.copy(entry.commit.summary) })
@@ -623,9 +660,17 @@ struct CodeLanguage: Equatable, Sendable {
     var yamlKeys = false
     var isMarkdown = false
 
-    private static let cFamily = ["if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue", "return", "true", "false", "null", "const", "static", "struct", "enum", "void", "new", "this", "class", "public", "private", "protected", "import", "try", "catch", "throw", "finally"]
+    private static let cFamily = [
+        "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue", "return", "true", "false",
+        "null", "const", "static", "struct", "enum", "void", "new", "this", "class", "public", "private", "protected",
+        "import", "try", "catch", "throw", "finally",
+    ]
 
-    init(name: String, keywords: [String] = [], lineComments: [String] = [], blockComments: Bool = false, tripleQuotes: Bool = false, backtickStrings: Bool = false, keysBeforeColon: Bool = false, yamlKeys: Bool = false, isMarkdown: Bool = false) {
+    init(
+        name: String, keywords: [String] = [], lineComments: [String] = [], blockComments: Bool = false,
+        tripleQuotes: Bool = false, backtickStrings: Bool = false, keysBeforeColon: Bool = false,
+        yamlKeys: Bool = false, isMarkdown: Bool = false
+    ) {
         self.name = name
         self.keywords = keywords
         self.lineComments = lineComments
@@ -644,38 +689,100 @@ struct CodeLanguage: Equatable, Sendable {
         let c = Self.cFamily
         switch ext {
         case "swift":
-            self.init(name: "Swift", keywords: c + ["func", "let", "var", "guard", "in", "self", "Self", "nil", "init", "deinit", "extension", "protocol", "internal", "fileprivate", "final", "override", "async", "await", "throws", "rethrows", "some", "any", "where", "inout", "mutating", "lazy", "weak", "typealias", "defer", "repeat", "is", "as"], lineComments: ["//"], blockComments: true, tripleQuotes: true)
+            self.init(
+                name: "Swift",
+                keywords: c + [
+                    "func", "let", "var", "guard", "in", "self", "Self", "nil", "init", "deinit", "extension",
+                    "protocol", "internal", "fileprivate", "final", "override", "async", "await", "throws", "rethrows",
+                    "some", "any", "where", "inout", "mutating", "lazy", "weak", "typealias", "defer", "repeat", "is",
+                    "as",
+                ], lineComments: ["//"], blockComments: true, tripleQuotes: true)
         case "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts":
-            self.init(name: ext.hasPrefix("t") ? "TypeScript" : "JavaScript", keywords: c + ["function", "let", "var", "async", "await", "export", "from", "of", "in", "typeof", "instanceof", "undefined", "yield", "extends", "interface", "type", "implements", "readonly", "as", "delete", "super"], lineComments: ["//"], blockComments: true, backtickStrings: true)
+            self.init(
+                name: ext.hasPrefix("t") ? "TypeScript" : "JavaScript",
+                keywords: c + [
+                    "function", "let", "var", "async", "await", "export", "from", "of", "in", "typeof", "instanceof",
+                    "undefined", "yield", "extends", "interface", "type", "implements", "readonly", "as", "delete",
+                    "super",
+                ], lineComments: ["//"], blockComments: true, backtickStrings: true)
         case "json", "jsonc":
-            self.init(name: "JSON", keywords: ["true", "false", "null"], lineComments: ext == "jsonc" ? ["//"] : [], blockComments: ext == "jsonc", keysBeforeColon: true)
+            self.init(
+                name: "JSON", keywords: ["true", "false", "null"], lineComments: ext == "jsonc" ? ["//"] : [],
+                blockComments: ext == "jsonc", keysBeforeColon: true)
         case "py":
-            self.init(name: "Python", keywords: ["def", "class", "if", "elif", "else", "for", "while", "return", "import", "from", "as", "with", "try", "except", "finally", "raise", "pass", "break", "continue", "lambda", "yield", "async", "await", "in", "is", "not", "and", "or", "None", "True", "False", "self", "global", "nonlocal"], lineComments: ["#"], tripleQuotes: true)
+            self.init(
+                name: "Python",
+                keywords: [
+                    "def", "class", "if", "elif", "else", "for", "while", "return", "import", "from", "as", "with",
+                    "try", "except", "finally", "raise", "pass", "break", "continue", "lambda", "yield", "async",
+                    "await", "in", "is", "not", "and", "or", "None", "True", "False", "self", "global", "nonlocal",
+                ], lineComments: ["#"], tripleQuotes: true)
         case "rb":
-            self.init(name: "Ruby", keywords: ["def", "class", "module", "if", "elsif", "else", "unless", "end", "do", "while", "return", "require", "yield", "nil", "true", "false", "self", "begin", "rescue", "ensure"], lineComments: ["#"])
+            self.init(
+                name: "Ruby",
+                keywords: [
+                    "def", "class", "module", "if", "elsif", "else", "unless", "end", "do", "while", "return",
+                    "require", "yield", "nil", "true", "false", "self", "begin", "rescue", "ensure",
+                ], lineComments: ["#"])
         case "go":
-            self.init(name: "Go", keywords: c + ["func", "package", "var", "type", "interface", "map", "chan", "go", "defer", "range", "select", "nil", "fallthrough"], lineComments: ["//"], blockComments: true, backtickStrings: true)
+            self.init(
+                name: "Go",
+                keywords: c + [
+                    "func", "package", "var", "type", "interface", "map", "chan", "go", "defer", "range", "select",
+                    "nil", "fallthrough",
+                ], lineComments: ["//"], blockComments: true, backtickStrings: true)
         case "rs":
-            self.init(name: "Rust", keywords: c + ["fn", "let", "mut", "impl", "trait", "pub", "use", "mod", "crate", "self", "Self", "match", "loop", "where", "as", "ref", "move", "async", "await", "dyn", "unsafe", "Some", "None", "Ok", "Err"], lineComments: ["//"], blockComments: true)
+            self.init(
+                name: "Rust",
+                keywords: c + [
+                    "fn", "let", "mut", "impl", "trait", "pub", "use", "mod", "crate", "self", "Self", "match", "loop",
+                    "where", "as", "ref", "move", "async", "await", "dyn", "unsafe", "Some", "None", "Ok", "Err",
+                ], lineComments: ["//"], blockComments: true)
         case "c", "h", "cpp", "cc", "hpp", "m", "mm", "java", "kt", "kts", "cs", "dart", "scala":
-            self.init(name: ext.uppercased(), keywords: c + ["int", "char", "float", "double", "long", "unsigned", "bool", "auto", "namespace", "using", "template", "typename", "virtual", "override", "fun", "val", "var", "package", "interface", "extends", "implements", "nil", "self", "final", "abstract"], lineComments: ["//"], blockComments: true)
+            self.init(
+                name: ext.uppercased(),
+                keywords: c + [
+                    "int", "char", "float", "double", "long", "unsigned", "bool", "auto", "namespace", "using",
+                    "template", "typename", "virtual", "override", "fun", "val", "var", "package", "interface",
+                    "extends", "implements", "nil", "self", "final", "abstract",
+                ], lineComments: ["//"], blockComments: true)
         case "css", "scss", "less":
-            self.init(name: "CSS", keywords: ["important", "media", "import", "keyframes"], lineComments: ext == "css" ? [] : ["//"], blockComments: true)
+            self.init(
+                name: "CSS", keywords: ["important", "media", "import", "keyframes"],
+                lineComments: ext == "css" ? [] : ["//"], blockComments: true)
         case "sh", "bash", "zsh", "fish":
-            self.init(name: "Shell", keywords: ["if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "function", "return", "export", "local", "in", "echo", "set"], lineComments: ["#"])
+            self.init(
+                name: "Shell",
+                keywords: [
+                    "if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "function",
+                    "return", "export", "local", "in", "echo", "set",
+                ], lineComments: ["#"])
         case "yml", "yaml":
-            self.init(name: "YAML", keywords: ["true", "false", "null", "yes", "no"], lineComments: ["#"], yamlKeys: true)
+            self.init(
+                name: "YAML", keywords: ["true", "false", "null", "yes", "no"], lineComments: ["#"], yamlKeys: true)
         case "toml", "ini", "cfg", "conf", "properties":
             self.init(name: ext.uppercased(), keywords: ["true", "false"], lineComments: ["#", ";"], yamlKeys: true)
         case "sql":
-            self.init(name: "SQL", keywords: ["select", "from", "where", "insert", "into", "update", "delete", "create", "table", "join", "left", "right", "inner", "on", "and", "or", "not", "null", "as", "order", "by", "group", "limit", "values", "set", "SELECT", "FROM", "WHERE", "INSERT", "INTO", "UPDATE", "DELETE", "CREATE", "TABLE", "JOIN", "ON", "AND", "OR", "NOT", "NULL", "AS", "ORDER", "BY", "GROUP", "LIMIT", "VALUES", "SET"], lineComments: ["--"], blockComments: true)
+            self.init(
+                name: "SQL",
+                keywords: [
+                    "select", "from", "where", "insert", "into", "update", "delete", "create", "table", "join", "left",
+                    "right", "inner", "on", "and", "or", "not", "null", "as", "order", "by", "group", "limit", "values",
+                    "set", "SELECT", "FROM", "WHERE", "INSERT", "INTO", "UPDATE", "DELETE", "CREATE", "TABLE", "JOIN",
+                    "ON", "AND", "OR", "NOT", "NULL", "AS", "ORDER", "BY", "GROUP", "LIMIT", "VALUES", "SET",
+                ], lineComments: ["--"], blockComments: true)
         case "md", "markdown", "mdx":
             self.init(name: "Markdown", isMarkdown: true)
         case "html", "htm", "xml", "svg", "plist", "vue":
             self.init(name: ext.uppercased(), blockComments: false)
         default:
-            if ["dockerfile", "makefile", "gemfile", "podfile", ".gitignore", ".env", ".zshrc", ".bashrc"].contains(name) || name.hasPrefix(".env") {
-                self.init(name: name.capitalized, keywords: ["FROM", "RUN", "COPY", "CMD", "ENV", "WORKDIR", "EXPOSE", "ARG", "ENTRYPOINT"], lineComments: ["#"])
+            if ["dockerfile", "makefile", "gemfile", "podfile", ".gitignore", ".env", ".zshrc", ".bashrc"].contains(
+                name) || name.hasPrefix(".env")
+            {
+                self.init(
+                    name: name.capitalized,
+                    keywords: ["FROM", "RUN", "COPY", "CMD", "ENV", "WORKDIR", "EXPOSE", "ARG", "ENTRYPOINT"],
+                    lineComments: ["#"])
             } else {
                 self.init(name: "Plain Text")
             }
@@ -692,8 +799,13 @@ enum CodeTokenizer {
         let full = NSRange(location: 0, length: text.length)
         var result: [(NSRange, CodeToken)] = []
 
-        func add(_ pattern: String, _ token: CodeToken, group: Int = 0, options: NSRegularExpression.Options = [.anchorsMatchLines]) {
-            guard !Task.isCancelled, let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return }
+        func add(
+            _ pattern: String, _ token: CodeToken, group: Int = 0,
+            options: NSRegularExpression.Options = [.anchorsMatchLines]
+        ) {
+            guard !Task.isCancelled, let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+                return
+            }
             for match in regex.matches(in: source, range: full) where match.range(at: group).location != NSNotFound {
                 guard !Task.isCancelled else { return }
                 result.append((match.range(at: group), token))
@@ -734,7 +846,10 @@ enum CodeTokenizer {
         alternatives.append(#"(?<s>"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')"#)
         if language.backtickStrings { alternatives.append(#"(?<bt>`(?:\\.|[^`\\])*`)"#) }
 
-        if !Task.isCancelled, let regex = try? NSRegularExpression(pattern: alternatives.joined(separator: "|"), options: [.anchorsMatchLines]) {
+        if !Task.isCancelled,
+            let regex = try? NSRegularExpression(
+                pattern: alternatives.joined(separator: "|"), options: [.anchorsMatchLines])
+        {
             for match in regex.matches(in: source, range: full) {
                 guard !Task.isCancelled else { break }
                 let isComment = ["cb", "cl"].contains { match.range(withName: $0).location != NSNotFound }
@@ -762,24 +877,24 @@ enum CodeTokenizer {
 
 // MARK: - Colors
 
-private extension NSColor {
-    static var codeKeyword: NSColor { NSColor(DockAccentColor.violet.color) }
-    static var codeString: NSColor { NSColor(DockAccentColor.orange.color) }
-    static var codeNumber: NSColor { NSColor(DockAccentColor.green.color) }
-    static var codeComment: NSColor { NSColor(Color.dockSecondaryText) }
-    static var codeType: NSColor { NSColor(DockAccentColor.teal.color) }
-    static var codeFunction: NSColor { NSColor(DockAccentColor.amber.color) }
-    static var codeProperty: NSColor { NSColor(DockAccentColor.blue.color) }
+extension NSColor {
+    fileprivate static var codeKeyword: NSColor { NSColor(DockAccentColor.violet.color) }
+    fileprivate static var codeString: NSColor { NSColor(DockAccentColor.orange.color) }
+    fileprivate static var codeNumber: NSColor { NSColor(DockAccentColor.green.color) }
+    fileprivate static var codeComment: NSColor { NSColor(Color.dockSecondaryText) }
+    fileprivate static var codeType: NSColor { NSColor(DockAccentColor.teal.color) }
+    fileprivate static var codeFunction: NSColor { NSColor(DockAccentColor.amber.color) }
+    fileprivate static var codeProperty: NSColor { NSColor(DockAccentColor.blue.color) }
 
-    static var codeCanvas: NSColor { NSColor(Color.dockCanvas) }
-    static var codeText: NSColor { NSColor(Color.dockMarkdownText) }
-    static var codeAccent: NSColor { NSColor(Color.dockAccent) }
-    static var codeWarning: NSColor { NSColor(Color.dockWarning) }
-    static var codeBorder: NSColor { NSColor(Color.dockBorderLight) }
-    static var codeLineNumber: NSColor { NSColor(Color.dockMetadataText).withAlphaComponent(0.7) }
-    static var codeLineNumberActive: NSColor { NSColor(Color.dockPrimaryText) }
-    static var codeBlameText: NSColor { NSColor(Color.dockSecondaryText) }
-    static var codeGhost: NSColor { NSColor(Color.dockMetadataText).withAlphaComponent(0.55) }
-    static var codeCurrentLine: NSColor { NSColor(Color.dockPrimaryText).withAlphaComponent(0.045) }
-    static var codeGutterBlame: NSColor { NSColor(Color.dockPrimaryText).withAlphaComponent(0.025) }
+    fileprivate static var codeCanvas: NSColor { NSColor(Color.dockCanvas) }
+    fileprivate static var codeText: NSColor { NSColor(Color.dockMarkdownText) }
+    fileprivate static var codeAccent: NSColor { NSColor(Color.dockAccent) }
+    fileprivate static var codeWarning: NSColor { NSColor(Color.dockWarning) }
+    fileprivate static var codeBorder: NSColor { NSColor(Color.dockBorderLight) }
+    fileprivate static var codeLineNumber: NSColor { NSColor(Color.dockMetadataText).withAlphaComponent(0.7) }
+    fileprivate static var codeLineNumberActive: NSColor { NSColor(Color.dockPrimaryText) }
+    fileprivate static var codeBlameText: NSColor { NSColor(Color.dockSecondaryText) }
+    fileprivate static var codeGhost: NSColor { NSColor(Color.dockMetadataText).withAlphaComponent(0.55) }
+    fileprivate static var codeCurrentLine: NSColor { NSColor(Color.dockPrimaryText).withAlphaComponent(0.045) }
+    fileprivate static var codeGutterBlame: NSColor { NSColor(Color.dockPrimaryText).withAlphaComponent(0.025) }
 }

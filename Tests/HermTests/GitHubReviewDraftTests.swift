@@ -114,13 +114,17 @@ struct GitHubReviewDraftTests {
     @Test func submissionPolicyExplainsMissingFeedbackAndStaleDrafts() {
         let model = PullRequestReviewModel(client: GitHubClient(transport: BatchReviewTransport(.accepted)))
         let record = record()
-        #expect(model.submissionUnavailableReason(record: record, viewer: "reviewer")?.contains("Add a summary") == true)
+        #expect(
+            model.submissionUnavailableReason(record: record, viewer: "reviewer")?.contains("Add a summary") == true)
         stage(model, record: record)
         #expect(model.submissionUnavailableReason(record: record, viewer: "reviewer") == nil)
         #expect(model.submissionUnavailableReason(record: record, viewer: nil) != nil)
-        model.pendingComments.append(PendingReviewComment(
-            target: GitHubInlineCommentTarget(path: "file.swift", line: 1, side: "RIGHT", revision: "old"), body: "Old draft"))
-        #expect(model.submissionUnavailableReason(record: record, viewer: "reviewer")?.contains("earlier revision") == true)
+        model.pendingComments.append(
+            PendingReviewComment(
+                target: GitHubInlineCommentTarget(path: "file.swift", line: 1, side: "RIGHT", revision: "old"),
+                body: "Old draft"))
+        #expect(
+            model.submissionUnavailableReason(record: record, viewer: "reviewer")?.contains("earlier revision") == true)
     }
 
     @Test func lineContextResolvesTheCorrectDiffSide() {

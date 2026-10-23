@@ -11,7 +11,10 @@ public struct AppearanceSkin: Codable, Equatable, Sendable {
     public let isActive: Bool
 
     public init(id: String, name: String, isActive: Bool, source: String? = nil) {
-        self.id = id; self.name = name; self.source = source; self.isActive = isActive
+        self.id = id
+        self.name = name
+        self.source = source
+        self.isActive = isActive
     }
 }
 
@@ -21,7 +24,9 @@ public struct AppearancePet: Codable, Equatable, Sendable {
     public let isActive: Bool
 
     public init(id: String, name: String, isActive: Bool) {
-        self.id = id; self.name = name; self.isActive = isActive
+        self.id = id
+        self.name = name
+        self.isActive = isActive
     }
 }
 
@@ -40,7 +45,10 @@ public struct DesktopPluginInventory: Codable, Equatable, Sendable {
     public let status: DesktopPluginStatus
 
     public init(id: String, name: String, mode: DesktopPluginMode, status: DesktopPluginStatus) {
-        self.id = id; self.name = name; self.mode = mode; self.status = status
+        self.id = id
+        self.name = name
+        self.mode = mode
+        self.status = status
     }
 }
 
@@ -51,8 +59,15 @@ public struct AppearanceInventory: Codable, Equatable, Sendable {
     public let pets: [AppearancePet]
     public let desktopPlugins: [DesktopPluginInventory]
 
-    public init(state: AppearanceInventoryState, activeSkinID: String?, skins: [AppearanceSkin], pets: [AppearancePet], desktopPlugins: [DesktopPluginInventory]) {
-        self.state = state; self.activeSkinID = activeSkinID; self.skins = skins; self.pets = pets; self.desktopPlugins = desktopPlugins
+    public init(
+        state: AppearanceInventoryState, activeSkinID: String?, skins: [AppearanceSkin], pets: [AppearancePet],
+        desktopPlugins: [DesktopPluginInventory]
+    ) {
+        self.state = state
+        self.activeSkinID = activeSkinID
+        self.skins = skins
+        self.pets = pets
+        self.desktopPlugins = desktopPlugins
     }
 }
 

@@ -145,13 +145,16 @@ struct LocalReviewWorkspace: View {
                     review.error == nil ? Color.dockSecondaryText : Color.dockWarning
                 ).lineLimit(2)
                 Spacer()
-                if guide.session != nil || guide.requesting { Button("Read guide") { readingGuide = true }.buttonStyle(.dockCompact) }
+                if guide.session != nil || guide.requesting {
+                    Button("Read guide") { readingGuide = true }.buttonStyle(.dockCompact)
+                }
                 if let session = guide.session {
                     Button("Open review conversation") {
                         openConversation(session)
                     }.buttonStyle(.dockCompact)
                 }
-                ReviewGuideGenerateAction(requesting: guide.requesting) { requestGuide(reviewerProfileID: $0) }.disabled(
+                ReviewGuideGenerateAction(requesting: guide.requesting) { requestGuide(reviewerProfileID: $0) }
+                    .disabled(
                         review.loading || guide.requesting || guide.uncertain || review.patches.isEmpty
                             || review.error != nil)
             }.padding(12)
@@ -229,7 +232,8 @@ struct LocalReviewWorkspace: View {
     private func requestGuide(reviewerProfileID: String?) {
         guard let comparison = review.comparison else { return }
         guide.start(
-            model: model, owner: guideOwner, reviewerProfileID: reviewerProfileID, directory: path, identity: comparison.identity,
+            model: model, owner: guideOwner, reviewerProfileID: reviewerProfileID, directory: path,
+            identity: comparison.identity,
             documents: review.patches.keys.sorted().compactMap {
                 review.patches[$0].map { DiffDocument(path: $0.path, patch: $0.text) }
             }, partial: review.partial)

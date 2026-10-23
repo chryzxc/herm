@@ -9,7 +9,8 @@ struct StoredMessageReference: Equatable {
         var references: [UUID: Self] = [:]
         for row in rows {
             guard let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id"),
-                  let messageID = rowIDs[rowID] else { continue }
+                let messageID = rowIDs[rowID]
+            else { continue }
             references[messageID] = Self(rowID: rowID, uid: row["message_uid"] as? String)
         }
         return references
@@ -25,15 +26,17 @@ struct PinnedMessage: Equatable, Identifiable {
 
     static func parse(_ response: [String: Any], sessionID: String) throws -> [Self] {
         guard response["supported"] as? Bool == true,
-              response["requested_session_id"] as? String == sessionID,
-              let rows = response["pins"] as? [[String: Any]] else {
+            response["requested_session_id"] as? String == sessionID,
+            let rows = response["pins"] as? [[String: Any]]
+        else {
             throw HermesGateway.GatewayError.malformedResponse
         }
         return try rows.map { row in
             guard let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id"), rowID > 0,
-                  let uid = row["message_uid"] as? String, !uid.isEmpty,
-                  let role = row["role"] as? String, role == "user" || role == "assistant",
-                  let preview = row["preview"] as? String else {
+                let uid = row["message_uid"] as? String, !uid.isEmpty,
+                let role = row["role"] as? String, role == "user" || role == "assistant",
+                let preview = row["preview"] as? String
+            else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
             return Self(rowID: rowID, uid: uid, role: role, preview: preview)
@@ -55,7 +58,10 @@ struct MessagePinsView: View {
             HStack {
                 Text("Pinned messages").dockFont(.body, weight: .semibold)
                 Spacer()
-                DockIconButton(icon: .arrowClockwise, label: "Refresh pinned messages", isBusy: model.isLoadingMessagePins, size: 24, style: DockThemePalette(theme: theme.selectedThemeID)) {
+                DockIconButton(
+                    icon: .arrowClockwise, label: "Refresh pinned messages", isBusy: model.isLoadingMessagePins,
+                    size: 24, style: DockThemePalette(theme: theme.selectedThemeID)
+                ) {
                     Task { await model.refreshMessagePins() }
                 }
                 .disabled(model.isLoadingMessagePins)
@@ -64,8 +70,12 @@ struct MessagePinsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if model.pinnedMessages.isEmpty {
-                        Text(model.messagePinError != nil ? "Pinned messages unavailable" : model.isLoadingMessagePins ? "Loading pinned messages…" : "No pinned messages")
-                            .dockFont(.body, weight: .semibold)
+                        Text(
+                            model.messagePinError != nil
+                                ? "Pinned messages unavailable"
+                                : model.isLoadingMessagePins ? "Loading pinned messages…" : "No pinned messages"
+                        )
+                        .dockFont(.body, weight: .semibold)
                         if !model.isLoadingMessagePins && model.messagePinError == nil {
                             Text("Pin a saved message using its pin action.")
                                 .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
@@ -73,7 +83,9 @@ struct MessagePinsView: View {
                     }
                     ForEach(model.pinnedMessages) { pin in
                         HStack(spacing: 8) {
-                            Button { onSelect(pin) } label: {
+                            Button {
+                                onSelect(pin)
+                            } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(pin.role == "user" ? "You" : "Hermes")
                                         .dockFont(.body, weight: .semibold)
@@ -89,7 +101,11 @@ struct MessagePinsView: View {
                             }
                             .buttonStyle(.dockHover)
                             .help("Jump to pinned message")
-                            DockIconButton(icon: .pushPinSlash, label: "Unpin message", isBusy: model.updatingMessagePinRowID == pin.rowID, size: 28, style: DockThemePalette(theme: theme.selectedThemeID)) {
+                            DockIconButton(
+                                icon: .pushPinSlash, label: "Unpin message",
+                                isBusy: model.updatingMessagePinRowID == pin.rowID, size: 28,
+                                style: DockThemePalette(theme: theme.selectedThemeID)
+                            ) {
                                 Task { await model.setMessagePinned(rowID: pin.rowID, pinned: false) }
                             }
                             .disabled(model.isUpdatingMessagePin || !model.messagePinsSupported)

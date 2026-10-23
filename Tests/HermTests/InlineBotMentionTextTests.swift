@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -9,8 +10,9 @@ struct InlineBotMentionTextTests {
         for width: CGFloat in [240, 700] {
             let body = "Please check the project and report what you find. "
             let content = ConversationMessageRow(
-                message: ChatMessage(role: .user, text: String(repeating: body, count: 3),
-                                     botProfileID: "cypher", botDisplayName: "Cypher"),
+                message: ChatMessage(
+                    role: .user, text: String(repeating: body, count: 3),
+                    botProfileID: "cypher", botDisplayName: "Cypher"),
                 isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
                 botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in }
             )

@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Fullscreen navigation stays visible as a quiet operational queue. It is
@@ -67,8 +67,9 @@ struct ConversationRepositoryBadgePresentation: Equatable {
 
     static func make(projectName: String?, isProjectLinked: Bool) -> Self? {
         guard isProjectLinked,
-              let projectName,
-              !projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let projectName,
+            !projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             return nil
         }
 
@@ -176,8 +177,15 @@ struct MissionControlRail: View {
             }
             VStack(spacing: 4) {
                 if showsKanban { globalDestination(.kanban, style: style) }
-                if showsPullRequests { destination("Pull requests", icon: .gitPullRequest, isSelected: navigationState.selection.selection == .pullRequests, style: style, action: onOpenPullRequests) }
-                if showsIssues { destination("Issues", icon: .record, isSelected: isIssuesActive, style: style, action: onOpenIssues) }
+                if showsPullRequests {
+                    destination(
+                        "Pull requests", icon: .gitPullRequest,
+                        isSelected: navigationState.selection.selection == .pullRequests, style: style,
+                        action: onOpenPullRequests)
+                }
+                if showsIssues {
+                    destination("Issues", icon: .record, isSelected: isIssuesActive, style: style, action: onOpenIssues)
+                }
             }
             VStack(spacing: 4) {
                 if showsCalendar { globalDestination(.calendar, style: style) }
@@ -185,11 +193,15 @@ struct MissionControlRail: View {
                 globalDestination(.capabilities, style: style)
             }
             VStack(spacing: 4) {
-                destination("Artifacts", icon: .files, isSelected: navigationState.selection.selection == .artifacts, style: style, action: onOpenArtifacts)
+                destination(
+                    "Artifacts", icon: .files, isSelected: navigationState.selection.selection == .artifacts,
+                    style: style, action: onOpenArtifacts)
                 if showsOffice { globalDestination(.officePreview, style: style) }
             }
             VStack(spacing: 4) {
-                destination("Bots", icon: .ghost, isSelected: navigationState.selection.selection == .bots, style: style, action: onOpenBots)
+                destination(
+                    "Bots", icon: .ghost, isSelected: navigationState.selection.selection == .bots, style: style,
+                    action: onOpenBots)
                 globalDestination(.messaging, style: style)
                 globalDestination(.usage, style: style)
             }
@@ -202,7 +214,10 @@ struct MissionControlRail: View {
             VStack(spacing: 4) {
                 HermesConnectionButton(isConnected: isHermesConnected, style: style, onReconnect: onReconnect)
                 if let onOpenWindow {
-                    destination(isDockedWindow ? "Switch to floating" : "Switch to window", icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style, action: onOpenWindow)
+                    destination(
+                        isDockedWindow ? "Switch to floating" : "Switch to window",
+                        icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style,
+                        action: onOpenWindow)
                 }
             }
         }
@@ -216,8 +231,13 @@ struct MissionControlRail: View {
         .accessibilityLabel("Hermes navigation")
     }
 
-    private func destination(_ title: String, icon: Ph, isSelected: Bool, showsUpdateBadge: Bool = false, style: DockThemePalette, action: @escaping () -> Void) -> some View {
-        DockRailButton(title: title, icon: icon, isSelected: isSelected, showsUpdateBadge: showsUpdateBadge, style: style, action: action)
+    private func destination(
+        _ title: String, icon: Ph, isSelected: Bool, showsUpdateBadge: Bool = false, style: DockThemePalette,
+        action: @escaping () -> Void
+    ) -> some View {
+        DockRailButton(
+            title: title, icon: icon, isSelected: isSelected, showsUpdateBadge: showsUpdateBadge, style: style,
+            action: action)
     }
 
     private func globalDestination(_ tab: ControlTab, style: DockThemePalette) -> some View {
@@ -243,7 +263,9 @@ private struct HermesConnectionButton: View {
 
     var body: some View {
         let title = isConnected ? "Connected to Hermes" : "Hermes offline · Click to reconnect"
-        Button { if !isConnected { onReconnect() } } label: {
+        Button {
+            if !isConnected { onReconnect() }
+        } label: {
             DockIcon(isConnected ? .plugsConnected : .plugs, size: 15, color: style.secondaryText)
                 .frame(width: 38, height: 30)
                 .overlay(alignment: .topTrailing) {

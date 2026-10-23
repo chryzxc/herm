@@ -31,7 +31,8 @@ extension DockModel {
     func quickMessageUnavailableReason(for target: HermesSession?) -> String? {
         if status == .offline { return "Hermes is offline. Reconnect in Herm to send a message." }
         if let target, currentSessionIDs.contains(target.id),
-           target.profileID == nil || target.profileID == sessionProfileID {
+            target.profileID == nil || target.profileID == sessionProfileID
+        {
             if isRestoringSession || isCreatingSession || isUpdatingSessionModel {
                 return "Wait for the conversation to finish loading."
             }
@@ -42,26 +43,37 @@ extension DockModel {
         return nil
     }
 
-    func submitQuickDraft(_ draft: QuickDraftRecord, progress: (QuickDraftRecord) throws -> Void) async throws -> QuickDraftRecord {
+    func submitQuickDraft(_ draft: QuickDraftRecord, progress: (QuickDraftRecord) throws -> Void) async throws
+        -> QuickDraftRecord
+    {
         if let reason = quickMessageUnavailableReason(for: draft.destination.session) {
             throw QuickSubmissionFailure(message: reason, uncertain: false)
         }
-        let submitted = try await QuickDraftSubmission.send(draft, client: sessionRPCClient, progress: { record in
-            rememberQuickSession(record.destination)
-            try progress(record)
-        }, beforeSubmit: { record, directory in
-            await DeveloperWorkflowModel.shared.captureTurnBaseline(origin: record.destination, path: directory, attemptID: record.revision)
-        })
+        let submitted = try await QuickDraftSubmission.send(
+            draft, client: sessionRPCClient,
+            progress: { record in
+                rememberQuickSession(record.destination)
+                try progress(record)
+            },
+            beforeSubmit: { record, directory in
+                await DeveloperWorkflowModel.shared.captureTurnBaseline(
+                    origin: record.destination, path: directory, attemptID: record.revision)
+            })
         rememberQuickSession(submitted.destination)
-        DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(origin: submitted.destination, attemptID: submitted.revision)
+        DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(
+            origin: submitted.destination, attemptID: submitted.revision)
         loadSessions()
         return submitted
     }
 
     func rememberQuickSession(_ destination: QuickDestination) {
         guard let runtime = destination.runtimeID, let owner = destination.sessionID else { return }
-        quickSessionOwners[runtime] = destination; quickSessionOwners[owner] = destination
-        if quickSessionOwners.count > 256 { quickSessionOwners = [runtime: destination]; quickSessionOwners[owner] = destination }
+        quickSessionOwners[runtime] = destination
+        quickSessionOwners[owner] = destination
+        if quickSessionOwners.count > 256 {
+            quickSessionOwners = [runtime: destination]
+            quickSessionOwners[owner] = destination
+        }
         let ids = Set([runtime, owner]).union(pendingApprovalAliasesBySessionID[owner] ?? [])
         for id in ids {
             pendingApprovalAliasesBySessionID[id] = ids
@@ -75,15 +87,27 @@ extension DockModel {
 
     /// A nil target explicitly creates an independent session. Existing targets
     /// are captured by identity; neither path changes the workspace selection.
-    func sendQuickMessage(_ text: String, to target: HermesSession? = nil, profileID: String? = nil,
-                          onCreated: @escaping (HermesSession) -> Void = { _ in },
-                          completion: @escaping (String?) -> Void) {
+    func sendQuickMessage(
+        _ text: String, to target: HermesSession? = nil, profileID: String? = nil,
+        onCreated: @escaping (HermesSession) -> Void = { _ in },
+        completion: @escaping (String?) -> Void
+    ) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let reason = quickMessageUnavailableReason(for: target) { completion(reason); return }
-        guard !clean.isEmpty else { completion("Enter a message first."); return }
-        guard !clean.hasPrefix("/") else { completion("Use Herm for slash commands."); return }
+        if let reason = quickMessageUnavailableReason(for: target) {
+            completion(reason)
+            return
+        }
+        guard !clean.isEmpty else {
+            completion("Enter a message first.")
+            return
+        }
+        guard !clean.hasPrefix("/") else {
+            completion("Use Herm for slash commands.")
+            return
+        }
         if let target, currentSessionIDs.contains(target.id),
-           target.profileID == nil || target.profileID == sessionProfileID {
+            target.profileID == nil || target.profileID == sessionProfileID
+        {
             send(QueuedPrompt(sessionID: target.id, text: clean, images: [], pdfURL: nil), onSubmission: completion)
             return
         }
@@ -100,25 +124,33 @@ extension DockModel {
                     resumeParams["session_id"] = target.id
                     resumeParams["source"] = "herm"
                     resumeParams["omit_messages"] = true
-                    let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
+                    let result = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
                     runtimeID = (result["session_id"] as? String) ?? target.id
-                    guard Self.resumeResponseProvesSessionOwnership(requestedSessionID: target.id,
-                            resolvedSessionID: runtimeID, result: result) else {
-                        completion("Hermes returned a different session. Refresh Activity and try again."); return
+                    guard
+                        Self.resumeResponseProvesSessionOwnership(
+                            requestedSessionID: target.id,
+                            resolvedSessionID: runtimeID, result: result)
+                    else {
+                        completion("Hermes returned a different session. Refresh Activity and try again.")
+                        return
                     }
                     guard (result["running"] as? Bool) != true else {
-                        completion("This session is busy. Reply when its current turn finishes."); return
+                        completion("This session is busy. Reply when its current turn finishes.")
+                        return
                     }
                     destination = target
                 } else {
                     var createParams = params
                     createParams["source"] = "herm"
-                    let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
+                    let result = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
                     guard let id = result["session_id"] as? String, !id.isEmpty else {
                         throw HermesGateway.GatewayError.malformedResponse
                     }
                     runtimeID = id
-                    destination = HermesSession(id: Self.stableSessionID(from: result) ?? id,
+                    destination = HermesSession(
+                        id: Self.stableSessionID(from: result) ?? id,
                         profileID: profile, title: result["title"] as? String ?? "", preview: clean,
                         startedAt: .now, messageCount: 0, source: "herm")
                     // Retain the created identity even if prompt submission fails.
@@ -127,7 +159,9 @@ extension DockModel {
                 params["session_id"] = runtimeID
                 params["text"] = GenerativeUIIntegration.preparePrompt(clean)
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: params)
-                if !sessions.contains(where: { $0.scopedID == destination.scopedID }) { sessions.insert(destination, at: 0) }
+                if !sessions.contains(where: { $0.scopedID == destination.scopedID }) {
+                    sessions.insert(destination, at: 0)
+                }
                 updateSessionActivity(sessionID: destination.id, isWorking: true)
                 touchSession(sessionID: destination.id, at: .now, preview: clean)
                 completion(nil)
@@ -144,25 +178,34 @@ extension DockModel {
     /// command's result text, nil when a prompt was submitted instead.
     func forwardMessage(_ text: String, toProfile profileID: String, completion: @escaping (String?, String?) -> Void) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let reason = quickMessageUnavailableReason(for: nil) { completion(reason, nil); return }
-        guard !clean.isEmpty else { completion("Enter a message first.", nil); return }
+        if let reason = quickMessageUnavailableReason(for: nil) {
+            completion(reason, nil)
+            return
+        }
+        guard !clean.isEmpty else {
+            completion("Enter a message first.", nil)
+            return
+        }
         let command = ComposerSlashCommand(clean)
         Task {
             do {
                 try await sessionRPCClient.connect()
-                let created = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: ["profile": profileID, "source": "herm"])
+                let created = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.sessionCreate.rawValue, params: ["profile": profileID, "source": "herm"])
                 guard let createdID = created["session_id"] as? String, !createdID.isEmpty else {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
                 let storedID = Self.stableSessionID(from: created) ?? createdID
-                let session = HermesSession(id: storedID, profileID: profileID, title: created["title"] as? String ?? "",
+                let session = HermesSession(
+                    id: storedID, profileID: profileID, title: created["title"] as? String ?? "",
                     preview: clean, startedAt: .now, messageCount: 0, source: "herm")
                 if !sessions.contains(where: { $0.scopedID == session.scopedID }) { sessions.insert(session, at: 0) }
                 let runtimeID = createdID
                 // The agent builds lazily; a turn submitted mid-build is refused
                 // ("no agent attached") without an RPC error. Any session-scoped RPC
                 // waits for the build, so block on a cheap one first.
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": runtimeID])
+                _ = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": runtimeID])
                 var scope: [String: Any] = ["session_id": runtimeID, "profile": profileID]
                 guard let command else {
                     scope["text"] = GenerativeUIIntegration.preparePrompt(clean)
@@ -176,17 +219,24 @@ extension DockModel {
                 let payload: [String: Any]
                 do {
                     let line = command.arg.isEmpty ? command.name : "\(command.name) \(command.arg)"
-                    payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.slashExec.rawValue,
+                    payload = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.slashExec.rawValue,
                         params: ["session_id": runtimeID, "command": line, "profile": profileID])
                 } catch {
                     // Skills, bundles and pending-input builtins refuse slash.exec.
-                    payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.commandDispatch.rawValue,
-                        params: ["session_id": runtimeID, "name": command.name, "arg": command.arg, "profile": profileID])
+                    payload = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.commandDispatch.rawValue,
+                        params: [
+                            "session_id": runtimeID, "name": command.name, "arg": command.arg, "profile": profileID,
+                        ])
                 }
                 switch payload["type"] as? String {
                 case "send", "skill":
                     let message = (payload["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    guard !message.isEmpty else { completion("/\(command.name): empty message", nil); return }
+                    guard !message.isEmpty else {
+                        completion("/\(command.name): empty message", nil)
+                        return
+                    }
                     scope["text"] = GenerativeUIIntegration.preparePrompt(message)
                     _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scope)
                     updateSessionActivity(sessionID: session.id, isWorking: true)

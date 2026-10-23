@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 struct FileAnnotationTests {
@@ -25,7 +26,9 @@ struct FileAnnotationTests {
         let text = "a\n  No login.\n• Next" as NSString
         let trimmed = AnnotatableDocumentView<EmptyView>.Coordinator.trimmed(NSRange(location: 1, length: 13), in: text)
         #expect(text.substring(with: trimmed) == "No login.")
-        #expect(AnnotatableDocumentView<EmptyView>.Coordinator.trimmed(NSRange(location: 1, length: 3), in: text).length == 0)
+        #expect(
+            AnnotatableDocumentView<EmptyView>.Coordinator.trimmed(NSRange(location: 1, length: 3), in: text).length
+                == 0)
     }
 
     @Test func promptQuotesEachNote() {

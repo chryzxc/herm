@@ -21,7 +21,8 @@ struct ArtifactActionPresentation: Equatable {
     let canOpenSession: Bool
 
     static func make(record: ArtifactRecord, hasSourceSession: Bool) -> Self {
-        let isLocalFile = record.kind == .file
+        let isLocalFile =
+            record.kind == .file
             && !record.value.hasPrefix("http://")
             && !record.value.hasPrefix("https://")
             && !record.value.hasPrefix("data:")
@@ -95,12 +96,13 @@ struct ArtifactsInspectorView: View {
     }
 
     private var visibleRecords: [ArtifactRecord] {
-        let kind: ArtifactKind? = switch filter {
-        case .all: nil
-        case .image: .image
-        case .file: .file
-        case .link: .link
-        }
+        let kind: ArtifactKind? =
+            switch filter {
+            case .all: nil
+            case .image: .image
+            case .file: .file
+            case .link: .link
+            }
         return ArtifactService.filter(records, query: query, kind: kind)
     }
 
@@ -175,7 +177,9 @@ struct ArtifactsInspectorView: View {
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 Spacer(minLength: 8)
-                Button { refreshID += 1 } label: {
+                Button {
+                    refreshID += 1
+                } label: {
                     DockIcon(isLoading ? .hourglass : .arrowsClockwise)
                         .dockFont(.metadata, weight: .semibold)
                 }
@@ -185,9 +189,12 @@ struct ArtifactsInspectorView: View {
                 .accessibilityLabel("Refresh artifacts")
             }
 
-            TextField("", text: $query, prompt: Text("Search by name, path, URL, or session…").foregroundColor(Color.dockMetadataText))
-                .textFieldStyle(.dockGlass)
-                .accessibilityLabel("Search artifacts")
+            TextField(
+                "", text: $query,
+                prompt: Text("Search by name, path, URL, or session…").foregroundColor(Color.dockMetadataText)
+            )
+            .textFieldStyle(.dockGlass)
+            .accessibilityLabel("Search artifacts")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -200,7 +207,6 @@ struct ArtifactsInspectorView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
     }
-
 
     private var pageBody: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -244,7 +250,9 @@ struct ArtifactsInspectorView: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .accessibilityLabel("Search artifacts by name, path, URL, or session")
             if !query.isEmpty {
-                Button { query = "" } label: {
+                Button {
+                    query = ""
+                } label: {
                     DockIcon(.xCircle, size: 13, color: .dockMetadataText)
                 }
                 .buttonStyle(.dockHover)
@@ -253,7 +261,8 @@ struct ArtifactsInspectorView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .background(shape.dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.outline))
+        .background(
+            shape.dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.outline))
     }
 
     @ViewBuilder
@@ -263,12 +272,16 @@ struct ArtifactsInspectorView: View {
                 refreshID += 1
             }
         } else if records.isEmpty && isLoading {
-            pageState(title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…", icon: .hourglass, actionTitle: nil, action: nil)
+            pageState(
+                title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…",
+                icon: .hourglass, actionTitle: nil, action: nil)
         } else if visibleRecords.isEmpty {
             let filtered = !query.isEmpty || filter != .all
             pageState(
                 title: filtered ? "No matching artifacts" : "No generated outputs yet",
-                detail: filtered ? "Try another search or clear the current filter." : "Files Hermes writes, images it produces, and links it shares will appear here.",
+                detail: filtered
+                    ? "Try another search or clear the current filter."
+                    : "Files Hermes writes, images it produces, and links it shares will appear here.",
                 icon: .squaresFour,
                 actionTitle: filtered ? "Clear filters" : nil
             ) {
@@ -291,10 +304,14 @@ struct ArtifactsInspectorView: View {
                 } else if showsNarrowDetail {
                     VStack(spacing: 0) {
                         HStack {
-                            Button { showsNarrowDetail = false } label: { DockIconLabel("BACK", icon: .caretLeft) }
-                                .buttonStyle(.dockCompact)
-                                .dockFont(.metadata, weight: .semibold)
-                                .foregroundStyle(Color.dockAccent)
+                            Button {
+                                showsNarrowDetail = false
+                            } label: {
+                                DockIconLabel("BACK", icon: .caretLeft)
+                            }
+                            .buttonStyle(.dockCompact)
+                            .dockFont(.metadata, weight: .semibold)
+                            .foregroundStyle(Color.dockAccent)
                             Spacer()
                         }
                         .padding(.horizontal, 12)
@@ -345,8 +362,14 @@ struct ArtifactsInspectorView: View {
             .focusable()
             .focused($isBrowserFocused)
             .focusEffectDisabled()
-            .onKeyPress(.downArrow) { moveSelection(by: 1); return .handled }
-            .onKeyPress(.upArrow) { moveSelection(by: -1); return .handled }
+            .onKeyPress(.downArrow) {
+                moveSelection(by: 1)
+                return .handled
+            }
+            .onKeyPress(.upArrow) {
+                moveSelection(by: -1)
+                return .handled
+            }
             .onKeyPress(.return) {
                 if let selectedRecord { open(selectedRecord.value) }
                 return .handled
@@ -440,22 +463,29 @@ struct ArtifactsInspectorView: View {
             DockIcon(.link)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
+                        Color.dockSurface2))
         }
     }
 
     /// Language-specific icon (TypeScript, Python, …) resolved by name, so
     /// moved or deleted files still get the right icon.
     private func systemFileIcon(_ record: ArtifactRecord) -> some View {
-        let image = ArtifactFileIcon.image(for: record.label)
-            ?? NSWorkspace.shared.icon(for: UTType(filenameExtension: URL(fileURLWithPath: record.label).pathExtension) ?? .data)
+        let image =
+            ArtifactFileIcon.image(for: record.label)
+            ?? NSWorkspace.shared.icon(
+                for: UTType(filenameExtension: URL(fileURLWithPath: record.label).pathExtension) ?? .data)
         return Image(nsImage: image)
             .resizable()
             .interpolation(.high)
             .scaledToFit()
             .padding(4)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
+                    Color.dockSurface2)
+            )
             .accessibilityHidden(true)
     }
 
@@ -474,7 +504,9 @@ struct ArtifactsInspectorView: View {
             .background(Color.dockCanvas)
             .task(id: record.id) { await loadTextPreview(for: record) }
         } else {
-            pageState(title: "Select an artifact", detail: "Choose an output to preview its contents and actions.", icon: .fileMagnifyingGlass, actionTitle: nil, action: nil)
+            pageState(
+                title: "Select an artifact", detail: "Choose an output to preview its contents and actions.",
+                icon: .fileMagnifyingGlass, actionTitle: nil, action: nil)
         }
     }
 
@@ -505,7 +537,9 @@ struct ArtifactsInspectorView: View {
                 .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 if let session = sourceSession(for: record) {
-                    Button { openSession(session) } label: {
+                    Button {
+                        openSession(session)
+                    } label: {
                         HStack(spacing: 5) {
                             DockIcon(.chatCircle, size: 12, color: .dockAccent)
                             Text(record.sessionTitle)
@@ -533,7 +567,9 @@ struct ArtifactsInspectorView: View {
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 260, maxHeight: 520)
-                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(
+                        Color.dockSurface2))
         } else if let textPreview, textPreview.id == record.id {
             switch textPreview.content {
             case .text(let text, let truncated):
@@ -559,12 +595,21 @@ struct ArtifactsInspectorView: View {
                             .padding(.vertical, 8)
                     }
                 }
-                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(Color.dockSurface))
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(
+                        Color.dockSurface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(
+                        Color.dockBorderLight))
             case .missing:
-                previewPlaceholder(icon: .warning, title: "File no longer exists", detail: "It was moved or deleted after the session produced it.")
+                previewPlaceholder(
+                    icon: .warning, title: "File no longer exists",
+                    detail: "It was moved or deleted after the session produced it.")
             case .binary:
-                previewPlaceholder(icon: fileIcon(for: record.label), title: "No inline preview", detail: "Open it with its default app.")
+                previewPlaceholder(
+                    icon: fileIcon(for: record.label), title: "No inline preview",
+                    detail: "Open it with its default app.")
             }
         } else if record.kind == .link {
             previewPlaceholder(icon: .link, title: record.location, detail: record.value)
@@ -595,12 +640,16 @@ struct ArtifactsInspectorView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, minHeight: 180)
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2))
     }
 
     private func detailActions(_ record: ArtifactRecord) -> some View {
         HStack(spacing: 8) {
-            Button { open(record.value) } label: {
+            Button {
+                open(record.value)
+            } label: {
                 DockIconLabel(record.kind == .link ? "Open link" : "Open", icon: .arrowSquareOut)
             }
             .buttonStyle(.dockPrimary)
@@ -614,13 +663,17 @@ struct ArtifactsInspectorView: View {
             )
             .buttonStyle(.dockSecondary)
             if isLocalFile(record) {
-                Button { reveal(record.value) } label: {
+                Button {
+                    reveal(record.value)
+                } label: {
                     DockIconLabel("Reveal in Finder", icon: .folderOpen)
                 }
                 .buttonStyle(.dockSecondary)
             }
             if let session = sourceSession(for: record) {
-                Button { openSession(session) } label: {
+                Button {
+                    openSession(session)
+                } label: {
                     DockIconLabel("Open session", icon: .chatCircle)
                 }
                 .buttonStyle(.dockSecondary)
@@ -654,7 +707,9 @@ struct ArtifactsInspectorView: View {
         }
     }
 
-    private func pageState(title: String, detail: String, icon: Ph, actionTitle: String?, action: (() -> Void)?) -> some View {
+    private func pageState(title: String, detail: String, icon: Ph, actionTitle: String?, action: (() -> Void)?)
+        -> some View
+    {
         VStack(spacing: 10) {
             DockIconLabel(title, icon: icon)
                 .dockFont(.navigation, weight: .semibold)
@@ -704,11 +759,15 @@ struct ArtifactsInspectorView: View {
             if let errorMessage, records.isEmpty {
                 state(title: "Artifacts unavailable", detail: errorMessage, icon: .warning)
             } else if records.isEmpty && isLoading {
-                state(title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…", icon: .hourglass)
+                state(
+                    title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…",
+                    icon: .hourglass)
             } else if visibleRecords.isEmpty {
                 state(
                     title: query.isEmpty ? "No artifacts found" : "No matching artifacts",
-                    detail: query.isEmpty ? "Generated images, files, and links will appear here as sessions produce them." : "Try another search or choose a different artifact type.",
+                    detail: query.isEmpty
+                        ? "Generated images, files, and links will appear here as sessions produce them."
+                        : "Try another search or choose a different artifact type.",
                     icon: .squaresFour
                 )
             } else {
@@ -747,13 +806,20 @@ struct ArtifactsInspectorView: View {
             }
         }
         .padding(3)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).dockSurfaceFill(Color.dockSurface2))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).stroke(Color.dockBorderLight))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).stroke(
+                Color.dockBorderLight))
     }
 
     private func filterSegment(_ item: ArtifactFilter) -> some View {
         let selected = filter == item
-        return Button { filter = item } label: {
+        return Button {
+            filter = item
+        } label: {
             HStack(spacing: 6) {
                 if item.showsIcon {
                     DockIcon(item.icon, size: 13, color: selected ? .dockAccent : .dockMetadataText)
@@ -768,7 +834,10 @@ struct ArtifactsInspectorView: View {
             .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .frame(height: 26)
-            .background(selected ? Color.dockAccent.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+            .background(
+                selected ? Color.dockAccent.opacity(0.16) : Color.clear,
+                in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -777,7 +846,9 @@ struct ArtifactsInspectorView: View {
     }
 
     private func filterButton(_ item: ArtifactFilter) -> some View {
-        Button { filter = item } label: {
+        Button {
+            filter = item
+        } label: {
             HStack(spacing: 6) {
                 DockIcon(item.icon)
                 Text(item.rawValue)
@@ -823,7 +894,10 @@ struct ArtifactsInspectorView: View {
             imagePreview(for: record)
                 .frame(maxWidth: .infinity)
                 .frame(height: 118)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                        Color.dockSurface2)
+                )
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             Text(record.label)
@@ -845,7 +919,10 @@ struct ArtifactsInspectorView: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.55)))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2.opacity(0.55))
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Image \(record.label), from \(record.sessionTitle)")
     }
@@ -916,7 +993,10 @@ struct ArtifactsInspectorView: View {
             artifactAction("Open") { open(record.value) }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.55)))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2.opacity(0.55))
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(record.kind == .link ? "Link" : "File") \(record.label), from \(record.sessionTitle)")
     }
@@ -942,14 +1022,18 @@ struct ArtifactsInspectorView: View {
 
     private func pagination(current: Int, total: Int, select: @escaping (Int) -> Void) -> some View {
         HStack(spacing: 8) {
-            Button { select(max(1, current - 1)) } label: {
+            Button {
+                select(max(1, current - 1))
+            } label: {
                 DockIcon(.caretLeft)
             }
             .disabled(current <= 1)
             Text("Page \(current) of \(total)")
                 .dockFont(.compactStatus, weight: .regular, design: .monospaced)
                 .foregroundStyle(Color.dockSecondaryText)
-            Button { select(min(total, current + 1)) } label: {
+            Button {
+                select(min(total, current + 1))
+            } label: {
                 DockIcon(.caretRight)
             }
             .disabled(current >= total)
@@ -1016,7 +1100,6 @@ struct ArtifactsInspectorView: View {
         )
     }
 
-
     private func refresh() async {
         guard !Task.isCancelled else { return }
         let generation = UUID()
@@ -1030,7 +1113,9 @@ struct ArtifactsInspectorView: View {
             sessions = try await model.artifactSessions()
         } catch {
             guard !Task.isCancelled, refreshGeneration == generation else { return }
-            errorMessage = "Could not refresh the artifact index. " + HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            errorMessage =
+                "Could not refresh the artifact index. "
+                + HermesDiagnosticsService.safeSummary(error.localizedDescription)
             return
         }
         let results = await ArtifactIndexLoader.load(sessions: sessions, cache: artifactCache) { session, offset in
@@ -1065,7 +1150,8 @@ struct ArtifactsInspectorView: View {
             .compactMap(\.value.first)
             .sorted { $0.timestamp > $1.timestamp }
         if !failedSessionIDs.isEmpty && records.isEmpty {
-            errorMessage = "Hermes couldn't read \(failedSessionIDs.count) of \(sessions.count) sessions. \(lastFailure ?? "")"
+            errorMessage =
+                "Hermes couldn't read \(failedSessionIDs.count) of \(sessions.count) sessions. \(lastFailure ?? "")"
         }
         resetPages()
         reconcileSelection()
@@ -1112,7 +1198,9 @@ struct ArtifactTextPreview: Equatable {
             defer { try? handle.close() }
             let data = (try? handle.read(upToCount: limit + 1)) ?? Data()
             let slice = data.prefix(limit)
-            guard !slice.contains(0), let text = String(data: slice, encoding: .utf8) ?? String(data: slice.dropLast(3), encoding: .utf8) else {
+            guard !slice.contains(0),
+                let text = String(data: slice, encoding: .utf8) ?? String(data: slice.dropLast(3), encoding: .utf8)
+            else {
                 return .binary
             }
             return .text(text, truncated: data.count > limit)

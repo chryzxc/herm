@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import Testing
+
 @testable import Herm
 
 struct ComposerCompletionTests {
@@ -31,11 +32,14 @@ struct ComposerCompletionTests {
     }
 
     @Test func slashRowsHideNonDesktopCommandsAndGroupCommandsFirst() {
-        let payload: [String: Any] = ["replace_from": 1, "items": [
-            ["text": "work", "meta": "skill", "kind": "skill"],
-            ["text": "/help", "meta": "help", "kind": "command"],
-            ["text": "/quit", "kind": "command"],
-        ]]
+        let payload: [String: Any] = [
+            "replace_from": 1,
+            "items": [
+                ["text": "work", "meta": "skill", "kind": "skill"],
+                ["text": "/help", "meta": "help", "kind": "command"],
+                ["text": "/quit", "kind": "command"],
+            ],
+        ]
         let result = ComposerCompletion.slashResult(from: payload) { $0 == "/quit" }
         #expect(result.items.map(\.display) == ["/help", "/work"])
         #expect(result.items.map(\.group) == ["Commands", "Skills"])
@@ -48,7 +52,8 @@ struct ComposerCompletionTests {
         #expect(accepted.keepOpen)
 
         let option = ComposerCompletionItem(text: "alice", display: "alice", meta: "", group: "Options")
-        let picked = ComposerCompletion.accepting(option, trigger: .slash("/personality al"), in: "/personality al", replaceFrom: 13)
+        let picked = ComposerCompletion.accepting(
+            option, trigger: .slash("/personality al"), in: "/personality al", replaceFrom: 13)
         #expect(picked.text == "/personality alice ")
         #expect(!picked.keepOpen)
 
@@ -58,12 +63,16 @@ struct ComposerCompletionTests {
         #expect(drilled.keepOpen)
 
         let file = ComposerCompletionItem(text: "@file:README.md", display: "README.md", meta: "", group: "")
-        #expect(ComposerCompletion.accepting(file, trigger: .mention("@READ"), in: "see @READ", replaceFrom: 1).text == "see @file:README.md ")
+        #expect(
+            ComposerCompletion.accepting(file, trigger: .mention("@READ"), in: "see @READ", replaceFrom: 1).text
+                == "see @file:README.md ")
     }
 
     @Test func mentionRowsPutBotsFirstWithoutDuplicates() {
         let bots = [ComposerCompletionItem(text: "@coder", display: "@coder", meta: "Coder", group: "")]
-        let payload: [String: Any] = ["items": [["text": "@coder", "meta": "agent profile"], ["text": "@diff", "meta": "git diff"]]]
+        let payload: [String: Any] = [
+            "items": [["text": "@coder", "meta": "agent profile"], ["text": "@diff", "meta": "git diff"]]
+        ]
         #expect(ComposerCompletion.mentionResult(from: payload, bots: bots).items.map(\.meta) == ["Coder", "git diff"])
     }
 
@@ -72,11 +81,15 @@ struct ComposerCompletionTests {
         #expect(ComposerCompletionTrigger.detect(in: "tidy with /") == .skill("/"))
         #expect(ComposerCompletionTrigger.detect(in: "see /usr/lo") == nil)
         let skill = ComposerCompletionItem(text: "clean", display: "/clean", meta: "", group: "Skills")
-        #expect(ComposerCompletion.accepting(skill, trigger: .skill("/cl"), in: "tidy with /cl", replaceFrom: 1).text == "tidy with /clean ")
+        #expect(
+            ComposerCompletion.accepting(skill, trigger: .skill("/cl"), in: "tidy with /cl", replaceFrom: 1).text
+                == "tidy with /clean ")
     }
 
     @Test func bareSlashRefsBecomeTypedRefs() {
-        #expect(ComposerCompletion.pathifyingBareRefs("read @src/app.ts and @docs/") == "read @file:src/app.ts and @folder:docs/")
+        #expect(
+            ComposerCompletion.pathifyingBareRefs("read @src/app.ts and @docs/")
+                == "read @file:src/app.ts and @folder:docs/")
         #expect(ComposerCompletion.pathifyingBareRefs("ask @coder, @file:a/b, a@b/c") == "ask @coder, @file:a/b, a@b/c")
     }
 
@@ -87,10 +100,12 @@ struct ComposerCompletionTests {
     }
 
     @Test func slashTokensIncludeNamespacedSkillsAndCommands() {
-        let text = "🚀 merge it as well /cpipe:run, then /plugin-name:skill_name and /plugin:group:run.\n/help: see /usr/bin and /plugin:run/file.txt"
+        let text =
+            "🚀 merge it as well /cpipe:run, then /plugin-name:skill_name and /plugin:group:run.\n/help: see /usr/bin and /plugin:run/file.txt"
         let ns = text as NSString
-        #expect(SlashCommandTokens.ranges(in: text).map(ns.substring) == [
-            "/cpipe:run", "/plugin-name:skill_name", "/plugin:group:run", "/help",
-        ])
+        #expect(
+            SlashCommandTokens.ranges(in: text).map(ns.substring) == [
+                "/cpipe:run", "/plugin-name:skill_name", "/plugin:group:run", "/help",
+            ])
     }
 }

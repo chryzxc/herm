@@ -50,16 +50,27 @@ struct ReviewGuideView: View {
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
-                            if coordinator.requesting || coordinator.session != nil && content.error == nil && coordinator.requestError == nil {
+                            if coordinator.requesting
+                                || coordinator.session != nil && content.error == nil && coordinator.requestError == nil
+                            {
                                 ProgressView().controlSize(.small)
                             }
-                            Text(coordinator.requestError != nil ? "Review request needs attention" : coordinator.requesting ? "Starting review conversation…" : coordinator.session != nil
-                                ? "Waiting for the review guide" : "No review guide yet")
-                                .dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                            Text(coordinator.requestError ?? (coordinator.session != nil
-                                ? "Saved replies appear automatically. Open the conversation to follow activity or respond to the reviewer."
-                                : coordinator.message ?? "Generate a guide from the comparison to read it here."))
-                                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                            Text(
+                                coordinator.requestError != nil
+                                    ? "Review request needs attention"
+                                    : coordinator.requesting
+                                        ? "Starting review conversation…"
+                                        : coordinator.session != nil
+                                            ? "Waiting for the review guide" : "No review guide yet"
+                            )
+                            .dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                            Text(
+                                coordinator.requestError
+                                    ?? (coordinator.session != nil
+                                        ? "Saved replies appear automatically. Open the conversation to follow activity or respond to the reviewer."
+                                        : coordinator.message ?? "Generate a guide from the comparison to read it here.")
+                            )
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         }
                         .frame(maxWidth: .infinity, minHeight: 180, alignment: .leading)
                     }
@@ -71,9 +82,11 @@ struct ReviewGuideView: View {
             }
             Divider().overlay(Color.dockBorderLight)
             HStack(spacing: 12) {
-                Text(coordinator.session.map { "Reviewer · " + ($0.profileID ?? "Default bot") }
-                    ?? "Separate review conversation")
-                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                Text(
+                    coordinator.session.map { "Reviewer · " + ($0.profileID ?? "Default bot") }
+                        ?? "Separate review conversation"
+                )
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                 Spacer()
                 Button("Open review conversation") {
                     guard let session = coordinator.session else { return }
@@ -92,7 +105,8 @@ struct ReviewGuideView: View {
             .task(id: trackingIdentity) {
                 content.reset(session: coordinator.session)
                 guard !coordinator.requesting, coordinator.requestError == nil,
-                    let session = coordinator.session else { return }
+                    let session = coordinator.session
+                else { return }
                 let client = model.controlRPCClient
                 while !Task.isCancelled {
                     await content.refresh(session: session, client: client)

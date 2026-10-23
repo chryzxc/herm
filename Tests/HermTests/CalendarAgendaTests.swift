@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
@@ -16,17 +17,21 @@ struct CalendarAgendaTests {
 
     private var week: DateInterval { DateInterval(start: date(19, 0), end: date(26, 0)) }
 
-    private func event(_ id: String, start: Date, end: Date? = nil, allDay: Bool = false, location: String? = nil) -> CalendarItem {
-        CalendarItem(id: "event:\(id)", kind: .event(calendar: "Work", location: location, attendees: [], url: nil),
-                     title: id, start: start, end: end, isAllDay: allDay)
+    private func event(_ id: String, start: Date, end: Date? = nil, allDay: Bool = false, location: String? = nil)
+        -> CalendarItem
+    {
+        CalendarItem(
+            id: "event:\(id)", kind: .event(calendar: "Work", location: location, attendees: [], url: nil),
+            title: id, start: start, end: end, isAllDay: allDay)
     }
 
     @Test func bucketsByLocalDayWithAllDayFirst() {
-        let agenda = CalendarAgenda.build([
-            event("standup", start: date(20, 9), end: date(20, 9, 15)),
-            event("offsite", start: date(20, 0), end: date(21, 0), allDay: true),
-            event("late", start: date(20, 23, 30), end: date(21, 0)),
-        ], in: week, calendar: calendar)
+        let agenda = CalendarAgenda.build(
+            [
+                event("standup", start: date(20, 9), end: date(20, 9, 15)),
+                event("offsite", start: date(20, 0), end: date(21, 0), allDay: true),
+                event("late", start: date(20, 23, 30), end: date(21, 0)),
+            ], in: week, calendar: calendar)
 
         #expect(agenda[date(20, 0)]?.map(\.id) == ["event:offsite", "event:standup", "event:late"])
         // Ending exactly at midnight does not spill into the next day.
@@ -34,14 +39,16 @@ struct CalendarAgendaTests {
     }
 
     @Test func multiDayEventsCoverEveryDayInsideTheRange() {
-        let agenda = CalendarAgenda.build([event("trip", start: date(17, 0), end: date(21, 0), allDay: true)], in: week, calendar: calendar)
+        let agenda = CalendarAgenda.build(
+            [event("trip", start: date(17, 0), end: date(21, 0), allDay: true)], in: week, calendar: calendar)
         #expect(agenda.keys.sorted() == [date(19, 0), date(20, 0)])
     }
 
     @Test func automationsWithoutATimestampAreDroppedNotGuessed() {
         let jobs = [
             CronSummary(id: "a", name: "Digest", schedule: "0 9 * * *", enabled: true, nextRun: "2026-10-21T01:00:00Z"),
-            CronSummary(id: "b", name: "Paused", schedule: "0 9 * * *", enabled: false, nextRun: "2026-10-21T01:00:00Z"),
+            CronSummary(
+                id: "b", name: "Paused", schedule: "0 9 * * *", enabled: false, nextRun: "2026-10-21T01:00:00Z"),
             CronSummary(id: "c", name: "Odd", schedule: "every 2h", enabled: true, nextRun: "soon"),
         ]
         #expect(CalendarAgenda.automationItems(jobs).map(\.id) == ["cron:a"])
@@ -60,8 +67,12 @@ struct CalendarAgendaTests {
 
     @Test func prepScheduleIsAnISOTimestampBeforeTheEventOrNilOncePassed() {
         let zone = TimeZone(identifier: "Asia/Manila")!
-        #expect(CalendarAgenda.prepSchedule(before: date(20, 10), leadMinutes: 30, now: date(20, 8), timeZone: zone) == "2026-10-20T09:30:00+08:00")
-        #expect(CalendarAgenda.prepSchedule(before: date(20, 10), leadMinutes: 30, now: date(20, 9, 45), timeZone: zone) == nil)
+        #expect(
+            CalendarAgenda.prepSchedule(before: date(20, 10), leadMinutes: 30, now: date(20, 8), timeZone: zone)
+                == "2026-10-20T09:30:00+08:00")
+        #expect(
+            CalendarAgenda.prepSchedule(before: date(20, 10), leadMinutes: 30, now: date(20, 9, 45), timeZone: zone)
+                == nil)
     }
 
     @Test func chatBodyCarriesOnlyTheFieldsPresent() {

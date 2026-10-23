@@ -105,7 +105,9 @@ struct MissionControlSidebarSnapshot: Equatable {
     }
 
     @MainActor
-    static func inputs(model: DockModel, control: ControlCenterModel, localProjectPaths: [String: String] = [:]) -> Inputs {
+    static func inputs(model: DockModel, control: ControlCenterModel, localProjectPaths: [String: String] = [:])
+        -> Inputs
+    {
         Inputs(
             activeSessionID: model.navigationSessionID,
             activeStatus: model.status,
@@ -156,14 +158,16 @@ struct MissionControlSidebarSnapshot: Equatable {
         var assigned = Set<String>()
 
         for project in inputs.projects where project.isRenderableProject {
-            var sessionsByID = Dictionary(recentSessions.compactMap { session -> (String, HermesSession)? in
-                let isMember = project.sessionIDs.contains(session.id)
-                    || inputs.projectIDBySessionID[session.id] == project.id
-                    || inputs.localProjectPathBySessionID[session.id] == project.name
-                guard isMember else { return nil }
-                assigned.insert(session.id)
-                return (session.id, session)
-            }, uniquingKeysWith: { first, _ in first })
+            var sessionsByID = Dictionary(
+                recentSessions.compactMap { session -> (String, HermesSession)? in
+                    let isMember =
+                        project.sessionIDs.contains(session.id)
+                        || inputs.projectIDBySessionID[session.id] == project.id
+                        || inputs.localProjectPathBySessionID[session.id] == project.name
+                    guard isMember else { return nil }
+                    assigned.insert(session.id)
+                    return (session.id, session)
+                }, uniquingKeysWith: { first, _ in first })
             for summary in inputs.projectSessionsByProjectID[project.id] ?? [] {
                 let savedSession = sessionsByID[summary.id]
                 let updatedAt = [summary.updatedAt, savedSession?.updatedAt].compactMap { $0 }.max()
@@ -172,7 +176,9 @@ struct MissionControlSidebarSnapshot: Equatable {
                     id: summary.id,
                     profileID: inputs.projectProfileID,
                     title: savedSessionIsNewer ? savedSession?.title ?? summary.title : summary.title,
-                    preview: savedSessionIsNewer ? savedSession?.preview ?? summary.preview ?? "" : summary.preview ?? savedSession?.preview ?? "",
+                    preview: savedSessionIsNewer
+                        ? savedSession?.preview ?? summary.preview ?? ""
+                        : summary.preview ?? savedSession?.preview ?? "",
                     startedAt: savedSession?.startedAt,
                     updatedAt: updatedAt,
                     messageCount: savedSession?.messageCount ?? 0,
@@ -191,7 +197,8 @@ struct MissionControlSidebarSnapshot: Equatable {
                     projectID: project.id,
                     projectPath: project.name,
                     isLinked: true,
-                    hasGit: FileManager.default.fileExists(atPath: (project.name as NSString).appendingPathComponent(".git"))
+                    hasGit: FileManager.default.fileExists(
+                        atPath: (project.name as NSString).appendingPathComponent(".git"))
                 )
             )
         }
@@ -210,7 +217,9 @@ struct MissionControlSidebarSnapshot: Equatable {
                     id: summary.id,
                     profileID: inputs.projectProfileID,
                     title: savedSessionIsNewer ? savedSession?.title ?? summary.title : summary.title,
-                    preview: savedSessionIsNewer ? savedSession?.preview ?? summary.preview ?? "" : summary.preview ?? savedSession?.preview ?? "",
+                    preview: savedSessionIsNewer
+                        ? savedSession?.preview ?? summary.preview ?? ""
+                        : summary.preview ?? savedSession?.preview ?? "",
                     startedAt: savedSession?.startedAt,
                     updatedAt: updatedAt,
                     messageCount: savedSession?.messageCount ?? 0,
@@ -268,9 +277,12 @@ struct MissionControlSidebarSnapshot: Equatable {
         var dots: [String: SessionAttentionDot] = [:]
         for item in inputs.attention {
             guard let sessionID = item.reference.sessionID else { continue }
-            dots[sessionID] = item.kind == .approval ? .warning
-                : item.kind == .clarification ? .clarification
-                : item.kind == .failure ? .failure : .activity
+            dots[sessionID] =
+                item.kind == .approval
+                ? .warning
+                : item.kind == .clarification
+                    ? .clarification
+                    : item.kind == .failure ? .failure : .activity
         }
         for activity in inputs.latestActivities where dots[activity.sessionID] == nil {
             let state = activity.state.lowercased()
@@ -307,15 +319,19 @@ final class MissionControlSidebarModel: ObservableObject {
         self.model = model
         self.control = control
         self.store = store
-        self.snapshot = MissionControlSidebarSnapshot(inputs: MissionControlSidebarSnapshot.inputs(model: model, control: control, localProjectPaths: Self.localPaths(store)))
+        self.snapshot = MissionControlSidebarSnapshot(
+            inputs: MissionControlSidebarSnapshot.inputs(
+                model: model, control: control, localProjectPaths: Self.localPaths(store)))
 
-        Publishers.Merge3(model.sidebarPresentationChanges, control.sidebarPresentationChanges, store.objectWillChange.map { _ in })
-            // objectWillChange fires before the mutation lands; one main-queue
-            // hop reads the settled values and coalesces same-tick bursts.
-            .receive(on: DispatchQueue.main)
-            .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
-            .store(in: &cancellables)
+        Publishers.Merge3(
+            model.sidebarPresentationChanges, control.sidebarPresentationChanges, store.objectWillChange.map { _ in }
+        )
+        // objectWillChange fires before the mutation lands; one main-queue
+        // hop reads the settled values and coalesces same-tick bursts.
+        .receive(on: DispatchQueue.main)
+        .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
+        .sink { [weak self] _ in self?.refresh() }
+        .store(in: &cancellables)
     }
 
     private static func localPaths(_ store: WorkspaceStore) -> [String: String] {
@@ -326,7 +342,8 @@ final class MissionControlSidebarModel: ObservableObject {
 
     func refresh() {
         let startedAt = Date()
-        let inputs = MissionControlSidebarSnapshot.inputs(model: model, control: control, localProjectPaths: Self.localPaths(store))
+        let inputs = MissionControlSidebarSnapshot.inputs(
+            model: model, control: control, localProjectPaths: Self.localPaths(store))
         guard inputs != snapshot.inputs else { return }
         snapshot = MissionControlSidebarSnapshot(inputs: inputs)
         DebugLog.writePerformance(

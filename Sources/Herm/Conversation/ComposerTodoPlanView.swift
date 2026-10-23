@@ -13,7 +13,9 @@ struct ComposerTodoPlanView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(motion) { isExpanded.toggle() } } label: {
+            Button {
+                withAnimation(motion) { isExpanded.toggle() }
+            } label: {
                 HStack(spacing: 10) {
                     ZStack {
                         Circle().stroke(Color.dockBorderStrong, lineWidth: 2)
@@ -30,12 +32,16 @@ struct ComposerTodoPlanView: View {
                         .foregroundStyle(Color.dockPrimaryText)
                         .contentTransition(.numericText())
                         .fixedSize()
-                    Text(isExpanded ? "Tasks · \(plan.done) of \(plan.items.count) done" : plan.current?.content ?? "Plan finished")
-                        .dockFont(.body, weight: isExpanded ? .medium : .regular)
-                        .foregroundStyle(isExpanded ? Color.dockPrimaryText : Color.dockSecondaryText)
-                        .lineLimit(1)
-                        .contentTransition(.opacity)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(
+                        isExpanded
+                            ? "Tasks · \(plan.done) of \(plan.items.count) done"
+                            : plan.current?.content ?? "Plan finished"
+                    )
+                    .dockFont(.body, weight: isExpanded ? .medium : .regular)
+                    .foregroundStyle(isExpanded ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     DockIcon(.caretRight, size: 10, color: .dockMetadataText)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
@@ -44,7 +50,9 @@ struct ComposerTodoPlanView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
-            .accessibilityLabel("Task plan, \(plan.done) of \(plan.items.count) steps resolved. \(plan.current?.content ?? "Plan finished")")
+            .accessibilityLabel(
+                "Task plan, \(plan.done) of \(plan.items.count) steps resolved. \(plan.current?.content ?? "Plan finished")"
+            )
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
             .accessibilityHint(isExpanded ? "Hide task details" : "Show task details")
             .help(isExpanded ? "Collapse task plan" : "Expand task plan")
@@ -67,7 +75,12 @@ struct ComposerTodoPlanView: View {
             }
         }
         .animation(motion, value: plan)
-        .transaction { if motion == nil { $0.animation = nil; $0.disablesAnimations = true } }
+        .transaction {
+            if motion == nil {
+                $0.animation = nil
+                $0.disablesAnimations = true
+            }
+        }
     }
 
     private func taskRow(_ item: TodoPlan.Item) -> some View {
@@ -96,7 +109,11 @@ struct ComposerTodoPlanView: View {
             .accessibilityHidden(true)
             Text(item.content)
                 .dockFont(.body, weight: active ? .semibold : .regular)
-                .foregroundStyle(active ? Color.dockPrimaryText : completed || cancelled ? Color.dockMetadataText : Color.dockSecondaryText)
+                .foregroundStyle(
+                    active
+                        ? Color.dockPrimaryText
+                        : completed || cancelled ? Color.dockMetadataText : Color.dockSecondaryText
+                )
                 .strikethrough(completed || cancelled, color: .dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -104,7 +121,10 @@ struct ComposerTodoPlanView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .dockSelectionBackground(RoundedRectangle(cornerRadius: DockThemeStyle.current.controlRadius), active: active, fill: .dockSurface4, allowsInvert: false)
+        .dockSelectionBackground(
+            RoundedRectangle(cornerRadius: DockThemeStyle.current.controlRadius), active: active, fill: .dockSurface4,
+            allowsInvert: false
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.content), \(item.status.replacingOccurrences(of: "_", with: " "))")
     }

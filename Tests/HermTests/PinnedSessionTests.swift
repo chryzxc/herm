@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Herm
 
 @MainActor
@@ -41,11 +42,11 @@ final class PinnedSessionTests: XCTestCase {
             let client = PinRPCClient()
             client.rows = [
                 ["id": "done", "pinned": true, "is_active": true, "last_active": Date().timeIntervalSince1970],
-                ["id": "busy", "pinned": true, "is_active": false, "last_active": 1]
+                ["id": "busy", "pinned": true, "is_active": false, "last_active": 1],
             ]
             client.liveRows = [
                 ["session_key": "done", "status": "idle"],
-                ["session_key": "busy", "status": "working"]
+                ["session_key": "busy", "status": "working"],
             ]
             let suite = "SessionActivityTests.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -92,7 +93,7 @@ final class PinnedSessionTests: XCTestCase {
             ["id": "legacy", "pinned": true],
             ["id": "other", "source": "custom_channel", "pinned": true],
             ["id": "conversation", "source": "conversation", "pinned": true],
-            ["id": "project", "source": "projects", "pinned": true]
+            ["id": "project", "source": "projects", "pinned": true],
         ]
         let index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
         let labels = Dictionary(uniqueKeysWithValues: index.pinned.map { ($0.id, $0.sourceBadgeTitle) })
@@ -106,16 +107,17 @@ final class PinnedSessionTests: XCTestCase {
     }
 
     private func session(_ id: String, updatedAt: TimeInterval = 0, working: Bool = false) -> HermesSession {
-        HermesSession(id: id, title: id, preview: "", startedAt: nil,
-                      updatedAt: Date(timeIntervalSince1970: updatedAt), messageCount: 1, source: "",
-                      isWorking: working)
+        HermesSession(
+            id: id, title: id, preview: "", startedAt: nil,
+            updatedAt: Date(timeIntervalSince1970: updatedAt), messageCount: 1, source: "",
+            isWorking: working)
     }
 
     func testFetchReadsHermesPinnedFlagFromTheDesktopSessionsEndpoint() async throws {
         let client = PinRPCClient()
         client.rows = [
             ["id": "recent", "title": "Recent", "pinned": false, "started_at": 100, "last_active": 900],
-            ["id": "pinned", "title": "Pinned", "pinned": true]
+            ["id": "pinned", "title": "Pinned", "pinned": true],
         ]
 
         let index = try await DockModel.fetchSessionIndex(client: client, profileID: "bot a")
@@ -127,16 +129,20 @@ final class PinnedSessionTests: XCTestCase {
     }
 
     func testSessionListRowTakesLastActiveInsteadOfStartTime() {
-        let stale = HermesSession(id: "a", title: "A", preview: "", startedAt: Date(timeIntervalSince1970: 100), messageCount: 1, source: "")
+        let stale = HermesSession(
+            id: "a", title: "A", preview: "", startedAt: Date(timeIntervalSince1970: 100), messageCount: 1, source: "")
         let fresh = DockModel.withRecency(stale, from: ["a": Date(timeIntervalSince1970: 900)])
         XCTAssertEqual(fresh.lastUpdatedAt, Date(timeIntervalSince1970: 900))
-        XCTAssertEqual(DockModel.withRecency(fresh, from: ["a": Date(timeIntervalSince1970: 500)]).lastUpdatedAt, Date(timeIntervalSince1970: 900))
+        XCTAssertEqual(
+            DockModel.withRecency(fresh, from: ["a": Date(timeIntervalSince1970: 500)]).lastUpdatedAt,
+            Date(timeIntervalSince1970: 900))
     }
 
     func testWritePatchesHermesPinnedFlagWithOwningProfile() async throws {
         let client = PinRPCClient()
 
-        try await DockModel.writeSessionPin(client: client, sessionID: "20260916_125552_df7428", profileID: "coder", pinned: true)
+        try await DockModel.writeSessionPin(
+            client: client, sessionID: "20260916_125552_df7428", profileID: "coder", pinned: true)
         try await DockModel.writeSessionPin(client: client, sessionID: "a/b", profileID: nil, pinned: false)
 
         XCTAssertEqual(client.writes.map(\.method), ["PATCH", "PATCH"])

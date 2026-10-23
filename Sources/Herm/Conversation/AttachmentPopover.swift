@@ -73,16 +73,18 @@ enum AttachmentPopoverPresentation {
     static let promptSnippets = [
         AttachmentPromptSnippet(label: "Summarize", text: "Summarize this attachment."),
         AttachmentPromptSnippet(label: "Extract action items", text: "Extract the action items from this attachment."),
-        AttachmentPromptSnippet(label: "Review this", text: "Review this attachment and call out anything that needs attention.")
+        AttachmentPromptSnippet(
+            label: "Review this", text: "Review this attachment and call out anything that needs attention."),
     ]
 
     static func validatedURL(from rawValue: String) -> URL? {
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: value),
-              let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              let host = url.host,
-              !host.isEmpty else { return nil }
+            let scheme = url.scheme?.lowercased(),
+            ["http", "https"].contains(scheme),
+            let host = url.host,
+            !host.isEmpty
+        else { return nil }
         return url
     }
 
@@ -172,7 +174,10 @@ struct AttachmentPopover: View {
         }
         .padding(12)
         .frame(width: 250)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                Color.dockSurface2)
+        )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

@@ -1,6 +1,6 @@
+import Combine
 import Foundation
 import SwiftUI
-import Combine
 
 enum ResponseDurationFormatting {
     static func string(seconds: TimeInterval) -> String {
@@ -93,8 +93,9 @@ enum StreamingChunkPolicy {
             } else if let opening = MarkdownFence(opening: line) {
                 fence = opening
             } else if line.trimmingCharacters(in: .whitespaces).isEmpty,
-                      bytes >= targetStableChunkBytes,
-                      !inlineBoundaries(in: tail[..<end]).isUnclosed {
+                bytes >= targetStableChunkBytes,
+                !inlineBoundaries(in: tail[..<end]).isUnclosed
+            {
                 return end
             }
             start = end
@@ -117,7 +118,8 @@ enum StreamingChunkPolicy {
     /// common inline constructs whose delimiter may be completed in a later
     /// delta; keeping the construct in the mutable tail preserves its rich
     /// presentation without reparsing stable text.
-    private static func inlineBoundaries(in source: Substring) -> (isUnclosed: Bool, lastSafeWhitespace: String.Index?) {
+    private static func inlineBoundaries(in source: Substring) -> (isUnclosed: Bool, lastSafeWhitespace: String.Index?)
+    {
         var codeDelimiter: Int?
         var bracketDepth = 0
         var parenthesisDepth = 0
@@ -128,7 +130,8 @@ enum StreamingChunkPolicy {
         while index < source.endIndex {
             let character = source[index]
             if character.isWhitespace, codeDelimiter == nil, bracketDepth == 0,
-               parenthesisDepth == 0, emphasisDepth == 0 {
+                parenthesisDepth == 0, emphasisDepth == 0
+            {
                 lastSafeWhitespace = source.index(after: index)
             }
             if escaped {
@@ -145,8 +148,7 @@ enum StreamingChunkPolicy {
                 var end = index
                 while end < source.endIndex, source[end] == "`" { end = source.index(after: end) }
                 let run = source.distance(from: index, to: end)
-                if codeDelimiter == run { codeDelimiter = nil }
-                else if codeDelimiter == nil { codeDelimiter = run }
+                if codeDelimiter == run { codeDelimiter = nil } else if codeDelimiter == nil { codeDelimiter = run }
                 index = end
                 continue
             }
@@ -168,7 +170,9 @@ enum StreamingChunkPolicy {
             }
             index = source.index(after: index)
         }
-        return (codeDelimiter != nil || bracketDepth > 0 || parenthesisDepth > 0 || emphasisDepth > 0, lastSafeWhitespace)
+        return (
+            codeDelimiter != nil || bracketDepth > 0 || parenthesisDepth > 0 || emphasisDepth > 0, lastSafeWhitespace
+        )
     }
 }
 
@@ -268,13 +272,14 @@ final class StreamingText: ObservableObject {
             let start = cursor < visibleRange.lowerBound ? visibleRange.lowerBound : cursor
             let end = chunkEnd > visibleRange.upperBound ? visibleRange.upperBound : chunkEnd
             if start < end {
-                result.append(StreamingPresentationChunk(
-                    id: chunk.id,
-                    text: String(rendered[start..<end]),
-                    revision: chunk.revision,
-                    isMutableTail: chunk.isMutableTail,
-                    context: chunk.context
-                ))
+                result.append(
+                    StreamingPresentationChunk(
+                        id: chunk.id,
+                        text: String(rendered[start..<end]),
+                        revision: chunk.revision,
+                        isMutableTail: chunk.isMutableTail,
+                        context: chunk.context
+                    ))
             }
             cursor = chunkEnd
             if cursor >= visibleRange.upperBound { break }
@@ -297,13 +302,14 @@ final class StreamingText: ObservableObject {
     private func promoteStableChunks() {
         while let boundary = StreamingChunkPolicy.promotionBoundary(in: mutableTail) {
             let stableText = String(mutableTail[..<boundary])
-            stableChunks.append(StreamingPresentationChunk(
-                id: nextStableChunkID,
-                text: stableText,
-                revision: tailRevision,
-                isMutableTail: false,
-                context: mutableTailContext
-            ))
+            stableChunks.append(
+                StreamingPresentationChunk(
+                    id: nextStableChunkID,
+                    text: stableText,
+                    revision: tailRevision,
+                    isMutableTail: false,
+                    context: mutableTailContext
+                ))
             nextStableChunkID += 1
             mutableTailContext = StreamingChunkPolicy.contextAfter(
                 stableText,
@@ -316,13 +322,14 @@ final class StreamingText: ObservableObject {
     private func publishChunks() {
         var published = stableChunks
         if !mutableTail.isEmpty {
-            published.append(StreamingPresentationChunk(
-                id: Int.max,
-                text: mutableTail,
-                revision: tailRevision,
-                isMutableTail: true,
-                context: mutableTailContext
-            ))
+            published.append(
+                StreamingPresentationChunk(
+                    id: Int.max,
+                    text: mutableTail,
+                    revision: tailRevision,
+                    isMutableTail: true,
+                    context: mutableTailContext
+                ))
         }
         chunks = published
     }
@@ -354,7 +361,8 @@ extension StreamingChunkPolicy {
             return .quote(depth: first.prefix(while: { $0 == ">" }).count)
         }
         if let item = first.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true).first,
-           item.hasPrefix("- ") || item.hasPrefix("* ") || item.hasPrefix("+ ") {
+            item.hasPrefix("- ") || item.hasPrefix("* ") || item.hasPrefix("+ ")
+        {
             return .list(marker: String(item.first!), indentation: 0)
         }
         if first.hasPrefix("|") || NativeMarkdownAttributedTextBuilder.isPureTable(first) { return .table }
@@ -381,7 +389,9 @@ final class StreamingTextPresentation: ObservableObject {
         hasPresentedText = !streaming.text.isEmpty
         sourceChanges = streaming.objectWillChange.sink { [weak self, weak streaming] in
             guard let self, let streaming else { return }
-            guard self.controller?.isUserScrolling != true || !self.hasPresentedText || streaming.text.isEmpty else { return }
+            guard self.controller?.isUserScrolling != true || !self.hasPresentedText || streaming.text.isEmpty else {
+                return
+            }
             self.hasPresentedText = !streaming.text.isEmpty
             self.objectWillChange.send()
         }
@@ -420,7 +430,8 @@ struct StreamingMessageText: View {
     @ViewBuilder
     private var standardBody: some View {
         if StreamingMarkdownRendererPolicy.usesNativeRenderer(for: streaming.text) {
-            NativeStreamingMarkdownView(chunks: streaming.chunks, source: streaming.text, themeRevision: DockThemeRuntime.revision)
+            NativeStreamingMarkdownView(
+                chunks: streaming.chunks, source: streaming.text, themeRevision: DockThemeRuntime.revision)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(streaming.chunks) { chunk in
@@ -447,7 +458,8 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
         view.markdownOpenURL = context.environment.markdownOpenURL
-        view.setBodyStyle(size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
+        view.setBodyStyle(
+            size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         context.coordinator.update(view, chunks: chunks, source: source, themeRevision: themeRevision)
         return view
@@ -455,7 +467,8 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
         nsView.markdownOpenURL = context.environment.markdownOpenURL
-        nsView.setBodyStyle(size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
+        nsView.setBodyStyle(
+            size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         context.coordinator.update(nsView, chunks: chunks, source: source, themeRevision: themeRevision)
     }
@@ -490,7 +503,8 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
                 let previous = previousChunks[prefix]
                 let next = chunks[prefix]
                 guard previous == next, previous.text == next.text,
-                      previous.context == next.context, previous.isMutableTail == next.isMutableTail else { break }
+                    previous.context == next.context, previous.isMutableTail == next.isMutableTail
+                else { break }
                 prefix += 1
             }
             // Stable chunks retain their exact sections and byte offsets; only a changed suffix is classified.
@@ -501,11 +515,14 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
             for chunk in chunks.dropFirst(prefix) {
                 let sections = MarkdownRenderDocumentBuilder.sections(for: [chunk])
                 sectionPreparationCount += 1
-                preparedSections.append(contentsOf: sections.map { section in
-                    MarkdownRenderSection(id: section.id,
-                        sourceRange: (section.sourceRange.lowerBound + offset)..<(section.sourceRange.upperBound + offset),
-                        source: section.source, kind: section.kind, continuation: section.continuation)
-                })
+                preparedSections.append(
+                    contentsOf: sections.map { section in
+                        MarkdownRenderSection(
+                            id: section.id,
+                            sourceRange: (section.sourceRange.lowerBound + offset)..<(section.sourceRange.upperBound
+                                + offset),
+                            source: section.source, kind: section.kind, continuation: section.continuation)
+                    })
                 offset += chunk.text.utf8.count
                 sectionEnds.append(preparedSections.count)
             }
@@ -513,7 +530,9 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
             view.applyStreaming(sections: preparedSections, source: source)
             let tailBytes = chunks.last(where: { $0.isMutableTail })?.text.utf8.count ?? 0
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-            DebugLog.writePerformance("markdown_native_update mode=streaming stable_sections=\(chunks.filter { !$0.isMutableTail }.count) prepared_chunks=\(sectionPreparationCount - preparationsBefore) tail_bytes=\(tailBytes) duration_ms=\(String(format: "%.2f", elapsed))")
+            DebugLog.writePerformance(
+                "markdown_native_update mode=streaming stable_sections=\(chunks.filter { !$0.isMutableTail }.count) prepared_chunks=\(sectionPreparationCount - preparationsBefore) tail_bytes=\(tailBytes) duration_ms=\(String(format: "%.2f", elapsed))"
+            )
         }
     }
 }

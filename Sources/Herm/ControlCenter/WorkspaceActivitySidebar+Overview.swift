@@ -1,7 +1,7 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
@@ -53,13 +53,16 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             } else if control.searchResults.isEmpty {
-                emptyState(icon: .question, title: "No matches", detail: "Try a session title, project name, or reminder.")
+                emptyState(
+                    icon: .question, title: "No matches", detail: "Try a session title, project name, or reminder.")
             } else {
                 sectionLabel("RESULTS  ·  \(control.searchResults.count)")
                 ForEach(control.searchResults) { result in
                     let canOpen = result.reference.source != .appleReminder && result.reference.source != .hermesCronJob
                     if canOpen {
-                        Button { control.openSearchResult(result) } label: {
+                        Button {
+                            control.openSearchResult(result)
+                        } label: {
                             searchResultRow(result)
                         }
                         .buttonStyle(.dockHover)
@@ -119,7 +122,8 @@ extension WorkspaceActivitySidebar {
         let cardContent = VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
                 .dockFont(size: 18, weight: .semibold)
-                .foregroundStyle(color == Color.dockWarning || color == Color.dockDestructive ? color : Color.dockPrimaryText)
+                .foregroundStyle(
+                    color == Color.dockWarning || color == Color.dockDestructive ? color : Color.dockPrimaryText)
             Text(label == label.uppercased() ? label.lowercased().capitalized : label)
                 .dockFont(.metadata, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
@@ -153,14 +157,21 @@ extension WorkspaceActivitySidebar {
                 DockIcon(workflow.repository.isGitRepository ? .gitBranch : .folder)
                     .foregroundStyle(workflow.repository.isGitRepository ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(workflow.repository.isGitRepository ? workflow.repository.branch : "No project folder selected")
-                        .dockFont(.body, weight: .medium)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
+                    Text(
+                        workflow.repository.isGitRepository ? workflow.repository.branch : "No project folder selected"
+                    )
+                    .dockFont(.body, weight: .medium)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
                     if workflow.repository.isGitRepository {
-                        Text(workflow.repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S")")
-                            .dockFont(.body, weight: .semibold)
-                            .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
+                        Text(
+                            workflow.repository.changedFiles == 0
+                                ? "CLEAN WORKING TREE"
+                                : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S")"
+                        )
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(
+                            workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
                     } else if let path = activeRepositoryPath {
                         Text(path).dockFont(.body).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                     }
@@ -176,7 +187,8 @@ extension WorkspaceActivitySidebar {
                         ForEach(workflow.branches, id: \.self) { branch in
                             Button {
                                 Task {
-                                    _ = await workflow.switchBranch(branch, preferences: commandCenterPreferences, control: control)
+                                    _ = await workflow.switchBranch(
+                                        branch, preferences: commandCenterPreferences, control: control)
                                 }
                             } label: {
                                 if branch == workflow.repository.branch {
@@ -265,7 +277,9 @@ extension WorkspaceActivitySidebar {
         }
         .padding(12)
         .dockGlassPane()
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(
+                Color.dockWarning.opacity(0.55), lineWidth: 0.5))
     }
 
     var unavailableSetupCapabilities: [CapabilityState] {
@@ -342,9 +356,10 @@ extension WorkspaceActivitySidebar {
     func handleRepositoryImport(_ result: Result<URL, Error>) {
         guard case .success(let url) = result else { return }
         let sessions = control.projectSessions
-        let currentSessionIsInSelectedProject = model.sessionID.map { id in
-            sessions.contains { $0.id == id }
-        } ?? false
+        let currentSessionIsInSelectedProject =
+            model.sessionID.map { id in
+                sessions.contains { $0.id == id }
+            } ?? false
         if currentSessionIsInSelectedProject, !sessions.isEmpty {
             store.attachProject(at: url.path, toSessions: sessions)
         } else {
@@ -357,7 +372,9 @@ extension WorkspaceActivitySidebar {
             HStack(spacing: 8) {
                 rosterTile(title: "ALL", subtitle: "Hermes", status: model.status.title, color: statusColor, id: nil)
                 ForEach(model.displayedSubagents) { agent in
-                    rosterTile(title: agent.role ?? initials(for: agent.goal), subtitle: shortGoal(agent.goal), status: agent.status, color: nativeAgentColor(agent.status), id: agent.id)
+                    rosterTile(
+                        title: agent.role ?? initials(for: agent.goal), subtitle: shortGoal(agent.goal),
+                        status: agent.status, color: nativeAgentColor(agent.status), id: agent.id)
                 }
             }
         }
@@ -386,7 +403,10 @@ extension WorkspaceActivitySidebar {
             .frame(width: 82, alignment: .leading)
             .padding(8)
             .background(selectedAgentID == id ? color.opacity(0.12) : Color.dockSurface4)
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.dockBorder, lineWidth: 0.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(
+                    selectedAgentID == id ? color.opacity(0.5) : Color.dockBorder, lineWidth: 0.5)
+            )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1))
         }
         .buttonStyle(.dockHover)
@@ -485,7 +505,9 @@ extension WorkspaceActivitySidebar {
     }
 
     func capabilityStates(for category: CapabilityCategory) -> [CapabilityState] {
-        (capabilityInventorySnapshot.statesByCategory[category] ?? []).filter { !unavailableSetupCapabilities.contains($0) }
+        (capabilityInventorySnapshot.statesByCategory[category] ?? []).filter {
+            !unavailableSetupCapabilities.contains($0)
+        }
     }
 
     var capabilityInventorySummary: some View {
@@ -493,8 +515,10 @@ extension WorkspaceActivitySidebar {
             Text("\(capabilityInventorySnapshot.totalCount) TOTAL")
             Text("\(capabilityInventorySnapshot.verifiedCount) READY").foregroundStyle(Color.dockPrimaryText)
             Text("\(capabilityInventorySnapshot.unverifiedCount) REVIEW")
-            Text("\(capabilityInventorySnapshot.missingCount + capabilityInventorySnapshot.unsupportedCount) MISSING/UNSUPPORTED")
-                .foregroundStyle(Color.dockWarning)
+            Text(
+                "\(capabilityInventorySnapshot.missingCount + capabilityInventorySnapshot.unsupportedCount) MISSING/UNSUPPORTED"
+            )
+            .foregroundStyle(Color.dockWarning)
         }
         .dockFont(.compactStatus, weight: .semibold)
         .foregroundStyle(Color.dockSecondaryText)

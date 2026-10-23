@@ -12,7 +12,8 @@ enum HermesAppRuntime {
 @MainActor
 enum DebugLog {
     private static let writer = DebugLogWriter()
-    private static let enabled = ProcessInfo.processInfo.environment["HERMES_DOCK_DEBUG_LOGS"] == "1"
+    private static let enabled =
+        ProcessInfo.processInfo.environment["HERMES_DOCK_DEBUG_LOGS"] == "1"
         || ProcessInfo.processInfo.arguments.contains("--perf-trace")
     private static let fileURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/Herm.log")
@@ -62,7 +63,7 @@ enum DebugLog {
             ("voice", "voice"),
             ("composer", "composer"),
             ("status item", "status_item"),
-            ("panel", "panel")
+            ("panel", "panel"),
         ]
         let lowercased = message.lowercased()
         return prefixes.first(where: { lowercased.hasPrefix($0.0) })?.1 ?? "diagnostic"
@@ -91,10 +92,22 @@ final class ConversationPerformanceMonitor {
     func recordPageTransaction() { pageTransactions += 1 }
     func recordAnchorCorrection() { anchorCorrections += 1 }
 
-    func recordModelPublication() { modelPublications += 1; flushIfNeeded() }
-    func recordScrollBoundsUpdate() { scrollBoundsUpdates += 1; flushIfNeeded() }
-    func recordStreamingUpdate() { streamingUpdates += 1; flushIfNeeded() }
-    func recordScrollSettled() { scrollSettledEvents += 1; flushIfNeeded() }
+    func recordModelPublication() {
+        modelPublications += 1
+        flushIfNeeded()
+    }
+    func recordScrollBoundsUpdate() {
+        scrollBoundsUpdates += 1
+        flushIfNeeded()
+    }
+    func recordStreamingUpdate() {
+        streamingUpdates += 1
+        flushIfNeeded()
+    }
+    func recordScrollSettled() {
+        scrollSettledEvents += 1
+        flushIfNeeded()
+    }
 
     private func flushIfNeeded() {
         guard Date().timeIntervalSince(startedAt) >= 1 else { return }
@@ -145,7 +158,8 @@ private final class DebugLogWriter: @unchecked Sendable {
     private func openHandleIfNeeded(for fileURL: URL) throws {
         guard handle == nil || openFileURL != fileURL else { return }
         closeHandle()
-        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: fileURL.path) {
             try Data().write(to: fileURL)
         }

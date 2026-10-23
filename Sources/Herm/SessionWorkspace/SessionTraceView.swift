@@ -9,7 +9,10 @@ struct SessionTraceView: View, Equatable {
     var isVisible = true
     @StateObject private var trace = SessionTraceModel()
     private let themeRevision: Int
-    init(model: DockModel, isVisible: Bool = true, trace: @autoclosure @escaping () -> SessionTraceModel = SessionTraceModel()) {
+    init(
+        model: DockModel, isVisible: Bool = true,
+        trace: @autoclosure @escaping () -> SessionTraceModel = SessionTraceModel()
+    ) {
         self.model = model
         self.isVisible = isVisible
         themeRevision = DockThemeRuntime.revision
@@ -60,8 +63,9 @@ struct SessionTraceView: View, Equatable {
     /// Full-workspace layer when there is room; a sheet otherwise.
     private func expand() {
         let router = router
-        let shown = router?.present(
-            SessionTraceExpanded(trace: trace, open: open) { router?.close() }) ?? false
+        let shown =
+            router?.present(
+                SessionTraceExpanded(trace: trace, open: open) { router?.close() }) ?? false
         if shown { expandedLayer = router?.layers.last?.id } else { expandedSheet = true }
     }
 }
@@ -406,9 +410,10 @@ struct SessionTraceCanvas: View {
                     .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                     waterfall(
                         visible, turn: turn, bounds: bounds, live: live, labelWidth: labelWidth,
-                        plotWidth: plotWidth, selectionFloats: floats)
-                        .frame(maxHeight: listMaxHeight ?? .infinity)
-                        .id(turn.id)
+                        plotWidth: plotWidth, selectionFloats: floats
+                    )
+                    .frame(maxHeight: listMaxHeight ?? .infinity)
+                    .id(turn.id)
                     footer(turn)
                 }
                 if !floats, let selected {
@@ -495,7 +500,9 @@ struct SessionTraceCanvas: View {
     private func ruler(width: CGFloat, scale: CGFloat, playhead: CGFloat?, offset: CGFloat) -> some View {
         Canvas { context, size in
             let step = tickStep(scale)
-            for tick in stride(from: floor(offset / scale / step) * step, through: Double((offset + width) / scale), by: step) {
+            for tick in stride(
+                from: floor(offset / scale / step) * step, through: Double((offset + width) / scale), by: step)
+            {
                 context.draw(
                     Text(tickLabel(tick)).font(DockTypography.metadata)
                         .foregroundColor(Color.dockSecondaryText),
@@ -510,7 +517,8 @@ struct SessionTraceCanvas: View {
     }
 
     private func waterfall(
-        _ items: [(row: SessionTraceRow, depth: Int)], turn: SessionTraceTurn, bounds: SessionTraceTimeBounds, live: Bool,
+        _ items: [(row: SessionTraceRow, depth: Int)], turn: SessionTraceTurn, bounds: SessionTraceTimeBounds,
+        live: Bool,
         labelWidth: CGFloat, plotWidth: CGFloat, selectionFloats: Bool
     ) -> some View {
         let slowest = turn.slowestRowID
@@ -520,10 +528,10 @@ struct SessionTraceCanvas: View {
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
                     SessionTraceRowWindow(viewport: rowViewport, items: items) { row, depth in
-                            stepLabel(
-                                row, depth: depth,
-                                hasChildren: childIDs.contains(row.id)
-                            ).id("trace-label:" + row.id)
+                        stepLabel(
+                            row, depth: depth,
+                            hasChildren: childIDs.contains(row.id)
+                        ).id("trace-label:" + row.id)
                     }.frame(width: labelWidth)
                     Color.dockBorderLight.frame(width: 0.5)
                     clock(live) { now in
@@ -577,10 +585,10 @@ struct SessionTraceCanvas: View {
             ScrollView(.horizontal) {
                 VStack(spacing: 0) {
                     SessionTraceRowWindow(viewport: rowViewport, items: items) { row, _ in
-                            barRow(
-                                row, origin: frame.origin, now: now,
-                                replayTime: frame.replayTime, width: frame.width,
-                                scale: frame.scale, slowest: row.id == slowest)
+                        barRow(
+                            row, origin: frame.origin, now: now,
+                            replayTime: frame.replayTime, width: frame.width,
+                            scale: frame.scale, slowest: row.id == slowest)
                     }
                     HStack {
                         Spacer(minLength: 0)
@@ -589,9 +597,12 @@ struct SessionTraceCanvas: View {
                 }
                 .frame(width: frame.width)
                 .background(alignment: .topLeading) {
-                    SessionTracePlotViewport(scroll: scroll, viewport: rowViewport,
-                        width: plotWidth, height: CGFloat(items.count) * rowHeight) { offset, height in
-                        grid(width: plotWidth, height: height, scale: frame.scale,
+                    SessionTracePlotViewport(
+                        scroll: scroll, viewport: rowViewport,
+                        width: plotWidth, height: CGFloat(items.count) * rowHeight
+                    ) { offset, height in
+                        grid(
+                            width: plotWidth, height: height, scale: frame.scale,
                             playhead: frame.playhead, offset: offset)
                     }
                 }
@@ -917,7 +928,9 @@ struct SessionTraceCanvas: View {
     {
         Canvas { context, _ in
             let step = tickStep(scale)
-            for tick in stride(from: floor(offset / scale / step) * step, through: Double((offset + width) / scale), by: step) {
+            for tick in stride(
+                from: floor(offset / scale / step) * step, through: Double((offset + width) / scale), by: step)
+            {
                 var path = Path()
                 path.move(to: CGPoint(x: tick * scale - offset, y: 0))
                 path.addLine(to: CGPoint(x: tick * scale - offset, y: height))
@@ -968,7 +981,9 @@ struct SessionTraceCanvas: View {
                     }
                     detailSection("Now", icon: .pulse, row.activity, .input, row)
                     detailSection(row.kind == .agent ? "Goal" : "Input", icon: .arrowLineDown, row.input, .input, row)
-                    detailSection(row.kind == .agent ? "Summary" : "Result", icon: row.failed ? .xCircle : .arrowLineUp, row.result, .result, row)
+                    detailSection(
+                        row.kind == .agent ? "Summary" : "Result", icon: row.failed ? .xCircle : .arrowLineUp,
+                        row.result, .result, row)
                     detailSection("Diff", icon: .gitDiff, row.diff, .diff, row)
                     if let related = row.relatedSessionID {
                         if availableSessionIDs.contains(related) {
@@ -1014,13 +1029,14 @@ struct SessionTraceCanvas: View {
         if let value = row.inputTokens { cells.append(("Tokens in", compact(value))) }
         if let value = row.outputTokens { cells.append(("Tokens out", compact(value))) }
         if let value = row.apiCalls { cells.append(("Model calls", "\(value)")) }
-        cells.append((
-            "Timing",
-            row.kind == .model
-                ? "Derived"
-                : row.timing == .runtime
-                    ? "Runtime" : row.timing == .observed ? "Observed" : "Unavailable"
-        ))
+        cells.append(
+            (
+                "Timing",
+                row.kind == .model
+                    ? "Derived"
+                    : row.timing == .runtime
+                        ? "Runtime" : row.timing == .observed ? "Observed" : "Unavailable"
+            ))
         return LazyVGrid(
             columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3),
             alignment: .leading, spacing: 10
@@ -1056,8 +1072,10 @@ struct SessionTraceCanvas: View {
                 Label {
                     Text(title).dockFont(.metadata, weight: .semibold)
                 } icon: {
-                    DockIcon(icon, size: 11, color: section == .result && row.failed
-                        ? DockAccentColor.coral.color : Color.dockSecondaryText)
+                    DockIcon(
+                        icon, size: 11,
+                        color: section == .result && row.failed
+                            ? DockAccentColor.coral.color : Color.dockSecondaryText)
                 }
                 .foregroundStyle(Color.dockSecondaryText)
                 MarkdownMessageView(markdown: markdown, bodySize: DockTypography.size(.body))

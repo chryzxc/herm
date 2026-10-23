@@ -17,8 +17,10 @@ struct EdgeQuickMessageView: View {
         model.quickMessageUnavailableReason(for: state.quickTarget ?? state.quickCreatedSession)
     }
     private var canSend: Bool {
-        !state.quickSending && state.quickPreparing == 0 && !state.quickNeedsReview && state.draftStore.error == nil && unavailableReason == nil
-            && (!state.quickDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !state.quickFiles.isEmpty || !state.quickSources.isEmpty)
+        !state.quickSending && state.quickPreparing == 0 && !state.quickNeedsReview && state.draftStore.error == nil
+            && unavailableReason == nil
+            && (!state.quickDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !state.quickFiles.isEmpty
+                || !state.quickSources.isEmpty)
     }
 
     var body: some View {
@@ -27,24 +29,38 @@ struct EdgeQuickMessageView: View {
                 let destination = state.captureRecord().destination
                 guard let session = destination.session else { return }
                 do {
-                    let snapshot = try await HermesWorkflowRPC(client: model.controlRPCClient, profileID: destination.profileID).sessionCapacity(session)
-                    guard !Task.isCancelled, state.captureRecord().destination.sessionKey == destination.sessionKey else { return }
+                    let snapshot = try await HermesWorkflowRPC(
+                        client: model.controlRPCClient, profileID: destination.profileID
+                    ).sessionCapacity(session)
+                    guard !Task.isCancelled, state.captureRecord().destination.sessionKey == destination.sessionKey
+                    else { return }
                     state.capacitySnapshots[destination.sessionKey] = snapshot
-                    if state.capacitySnapshots.count > 8, let oldest = state.capacitySnapshots.min(by: { $0.value.readAt < $1.value.readAt })?.key { state.capacitySnapshots.removeValue(forKey: oldest) }
-                } catch { /* Submission stays available when session model metadata cannot be read. */ }
+                    if state.capacitySnapshots.count > 8,
+                        let oldest = state.capacitySnapshots.min(by: { $0.value.readAt < $1.value.readAt })?.key
+                    {
+                        state.capacitySnapshots.removeValue(forKey: oldest)
+                    }
+                } catch { /* Submission stays available when session model metadata cannot be read. */  }
             }
             .confirmationDialog("Have you checked the interrupted submission?", isPresented: $confirmingReview) {
                 Button("I checked; allow deliberate retry") { state.confirmQuickDraftReview() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Inspect the destination conversation first. If the message arrived, discard this draft. Clear any unconfirmed queued attachments in Hermes before retrying. A new session may be created if its earlier creation was uncertain. Nothing is resent automatically.")
+                Text(
+                    "Inspect the destination conversation first. If the message arrived, discard this draft. Clear any unconfirmed queued attachments in Hermes before retrying. A new session may be created if its earlier creation was uncertain. Nothing is resent automatically."
+                )
             }
-            .onDrop(of: [UTType.fileURL.identifier, UTType.url.identifier, UTType.text.identifier], isTargeted: nil, perform: receiveDrop)
+            .onDrop(
+                of: [UTType.fileURL.identifier, UTType.url.identifier, UTType.text.identifier], isTargeted: nil,
+                perform: receiveDrop
+            )
             .confirmationDialog("Discard this quick draft?", isPresented: $confirmingDiscard) {
                 Button("Discard draft", role: .destructive) { discard() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes local text and draft-owned images. It does not cancel work already received by Hermes. Review an interrupted submission in its session first.")
+                Text(
+                    "This removes local text and draft-owned images. It does not cancel work already received by Hermes. Review an interrupted submission in its session first."
+                )
             }
     }
 
@@ -68,13 +84,16 @@ struct EdgeQuickMessageView: View {
             .background { DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill() }
             .overlay {
                 DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                    .stroke(focused ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight,
-                            lineWidth: DockLayout.hairline)
+                    .stroke(
+                        focused ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight,
+                        lineWidth: DockLayout.hairline)
             }
             attachments
             capacityAdvisory
-            if let status = state.quickPreparing > 0 ? "Preparing captured files…"
-                : state.quickResult ?? state.draftStore.error ?? unavailableReason {
+            if let status = state.quickPreparing > 0
+                ? "Preparing captured files…"
+                : state.quickResult ?? state.draftStore.error ?? unavailableReason
+            {
                 Text(status)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -121,8 +140,12 @@ struct EdgeQuickMessageView: View {
                 VStack(alignment: .leading, spacing: DockSpacing.tight) {
                     attachments
                     capacityAdvisory
-                    Text(state.quickPreparing > 0 ? "Preparing captured files…" : state.quickResult ?? state.draftStore.error ?? unavailableReason ?? "⌘ Return to send")
-                        .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
+                    Text(
+                        state.quickPreparing > 0
+                            ? "Preparing captured files…"
+                            : state.quickResult ?? state.draftStore.error ?? unavailableReason ?? "⌘ Return to send"
+                    )
+                    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
@@ -132,7 +155,9 @@ struct EdgeQuickMessageView: View {
                 EdgePreviewFooterButton(title: "Open Herm", icon: .sidebarSimple, action: openDock)
                 Spacer(minLength: DockSpacing.control)
                 Button(action: submit) {
-                    DockActionLabel(title: state.quickTarget == nil ? "Start session" : "Send reply", pendingTitle: "Sending…", isPending: state.quickSending)
+                    DockActionLabel(
+                        title: state.quickTarget == nil ? "Start session" : "Send reply", pendingTitle: "Sending…",
+                        isPending: state.quickSending)
                 }
                 .buttonStyle(.dockPrimary)
                 .keyboardShortcut(.return, modifiers: .command)
@@ -159,7 +184,10 @@ struct EdgeQuickMessageView: View {
                 let submitted = try await model.submitQuickDraft(record, progress: state.updateQuickSubmission)
                 state.finishQuickSubmission(submitted, failure: nil)
             } catch {
-                let failure = error as? QuickSubmissionFailure ?? QuickSubmissionFailure(message: DockModel.safeUserDiagnostic(error.localizedDescription), uncertain: false)
+                let failure =
+                    error as? QuickSubmissionFailure
+                    ?? QuickSubmissionFailure(
+                        message: DockModel.safeUserDiagnostic(error.localizedDescription), uncertain: false)
                 state.finishQuickSubmission(record, failure: failure)
             }
         }
@@ -169,8 +197,11 @@ struct EdgeQuickMessageView: View {
         let record = state.captureRecord()
         return VStack(alignment: .leading, spacing: 2) {
             let profile = record.destination.profileID ?? "Launch profile"
-            Text(state.quickTarget == nil ? "New session · \(profile)" : "Replying in \(record.destination.title) · \(profile)")
-                .dockFont(.body).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
+            Text(
+                state.quickTarget == nil
+                    ? "New session · \(profile)" : "Replying in \(record.destination.title) · \(profile)"
+            )
+            .dockFont(.body).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
             if let path = record.destination.projectPath {
                 Text("Project: \(URL(fileURLWithPath: path).lastPathComponent)").dockFont(.metadata).lineLimit(1)
             }
@@ -189,26 +220,40 @@ struct EdgeQuickMessageView: View {
                         .font(inline ? DockTypography.metadata : DockTypography.body)
                         .foregroundStyle(Color.dockSecondaryText)
                     if !inline {
-                        Text("Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
-                            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                        Text(
+                            "Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))"
+                        )
+                        .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                     }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
-            .help("Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
-            .accessibilityHint("Sending is available. Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
+            .help(
+                "Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))"
+            )
+            .accessibilityHint(
+                "Sending is available. Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))"
+            )
         }
     }
 
     private func destinationMenu() -> some View {
         DockMenu {
-            Button("New session in \(model.agentDisplayName)") { state.switchQuickProfile(model.profileScopeID); state.composing = true }
+            Button("New session in \(model.agentDisplayName)") {
+                state.switchQuickProfile(model.profileScopeID)
+                state.composing = true
+            }
             ForEach(state.bots) { bot in
-                Button("New session · \(bot.name)") { state.switchQuickProfile(bot.id); state.composing = true }
+                Button("New session · \(bot.name)") {
+                    state.switchQuickProfile(bot.id)
+                    state.composing = true
+                }
             }
             ForEach(model.sessions) { session in
-                Button("\(session.profileID ?? model.agentDisplayName) · \(session.displayTitle)") { state.selectQuickTarget(session) }
+                Button("\(session.profileID ?? model.agentDisplayName) · \(session.displayTitle)") {
+                    state.selectQuickTarget(session)
+                }
             }
         } label: {
             HStack(spacing: DockSpacing.tight) {
@@ -225,26 +270,37 @@ struct EdgeQuickMessageView: View {
     private var captureActions: some View {
         HStack(spacing: 8) {
             Button("Attach", icon: .paperclip) {
-                let picker = NSOpenPanel(); picker.canChooseDirectories = false; picker.allowsMultipleSelection = true
+                let picker = NSOpenPanel()
+                picker.canChooseDirectories = false
+                picker.allowsMultipleSelection = true
                 if picker.runModal() == .OK { state.stageQuickFiles(picker.urls) }
             }.disabled(state.quickSending || state.quickNeedsReview).help("Attach files")
-            Button("Paste", icon: .clipboard, action: paste).disabled(state.quickSending || state.quickNeedsReview).help("Paste")
+            Button("Paste", icon: .clipboard, action: paste).disabled(state.quickSending || state.quickNeedsReview)
+                .help("Paste")
             Spacer(minLength: 0)
             DockMenu {
                 if !state.recoverableDrafts.isEmpty || !state.savedPrompts.isEmpty {
                     Menu("Drafts") {
                         ForEach(state.recoverableDrafts) { record in
-                            Button("\(record.destination.title) · \(record.text.isEmpty ? "Attachments" : String(record.text.prefix(32)))") { state.restoreQuickDraft(record) }
+                            Button(
+                                "\(record.destination.title) · \(record.text.isEmpty ? "Attachments" : String(record.text.prefix(32)))"
+                            ) { state.restoreQuickDraft(record) }
                         }
                         if !state.savedPrompts.isEmpty {
-                            Menu("Saved prompts") { ForEach(state.savedPrompts) { record in Button(record.savedName ?? "Prompt") { state.restoreQuickDraft(record) } } }
+                            Menu("Saved prompts") {
+                                ForEach(state.savedPrompts) { record in
+                                    Button(record.savedName ?? "Prompt") { state.restoreQuickDraft(record) }
+                                }
+                            }
                         }
                     }
                 }
                 Button("Capture window") { state.captureWindow() }
                 if state.quickTarget == nil && state.quickCreatedSession == nil {
                     Button("Choose project…") {
-                        let picker = NSOpenPanel(); picker.canChooseFiles = false; picker.canChooseDirectories = true
+                        let picker = NSOpenPanel()
+                        picker.canChooseFiles = false
+                        picker.canChooseDirectories = true
                         if picker.runModal() == .OK { state.setQuickProject(picker.url?.path) }
                     }
                     if state.captureRecord().destination.projectPath != nil {
@@ -259,7 +315,9 @@ struct EdgeQuickMessageView: View {
             } label: {
                 DockIcon(.dotsThree, size: 14, color: Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
-                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6)))
+                    .background(
+                        DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
+                            Color.dockControlSurface.opacity(0.6)))
             }
             .disabled(state.quickSending || state.quickPreparing > 0)
             .help("More message actions").accessibilityLabel("More message actions")
@@ -269,7 +327,9 @@ struct EdgeQuickMessageView: View {
                         if state.quickSending {
                             ProgressView().controlSize(.mini)
                         } else {
-                            DockIcon(.arrowUp, size: 14, color: DockThemeStyle.current.material == .glass ? .dockOnAccentText : .dockPrimaryText)
+                            DockIcon(
+                                .arrowUp, size: 14,
+                                color: DockThemeStyle.current.material == .glass ? .dockOnAccentText : .dockPrimaryText)
                         }
                     }
                     .frame(width: 14, height: DockControlMetrics.compactHeight)
@@ -288,7 +348,9 @@ struct EdgeQuickMessageView: View {
     private var attachments: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(state.quickFiles) { file in
-                QuickDraftFileRow(file: file, disabled: state.quickSending || state.quickNeedsReview) { state.removeQuickFile(file) }
+                QuickDraftFileRow(file: file, disabled: state.quickSending || state.quickNeedsReview) {
+                    state.removeQuickFile(file)
+                }
             }
             ForEach(state.quickSources, id: \.self) { source in
                 Text(source).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
@@ -306,10 +368,20 @@ struct EdgeQuickMessageView: View {
         if record.files.contains(where: \.uploaded), !state.quickNeedsReview {
             state.quickSending = true
             Task {
-                do { try await model.cleanupQuickDraftUploads(record); state.quickSending = false; state.discardQuickDraft() }
-                catch { state.finishQuickSubmission(record, failure: QuickSubmissionFailure(message: DockModel.safeUserDiagnostic(error.localizedDescription), uncertain: true)) }
+                do {
+                    try await model.cleanupQuickDraftUploads(record)
+                    state.quickSending = false
+                    state.discardQuickDraft()
+                } catch {
+                    state.finishQuickSubmission(
+                        record,
+                        failure: QuickSubmissionFailure(
+                            message: DockModel.safeUserDiagnostic(error.localizedDescription), uncertain: true))
+                }
             }
-        } else { state.discardQuickDraft() }
+        } else {
+            state.discardQuickDraft()
+        }
     }
 
     private func paste() {
@@ -329,12 +401,18 @@ struct EdgeQuickMessageView: View {
                     return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
                 }.value
                 guard state.captureRecord().id == owner else { return }
-                if let png { state.stageQuickImage(png) }
-                else { state.quickResult = "The pasted image could not be prepared. Choose an image file instead." }
+                if let png {
+                    state.stageQuickImage(png)
+                } else {
+                    state.quickResult = "The pasted image could not be prepared. Choose an image file instead."
+                }
             }
         } else if let text = board.string(forType: .string) {
-            if let url = URL(string: text), ["http", "https"].contains(url.scheme ?? "") { state.addQuickSource(text) }
-            else { state.quickDraft += (state.quickDraft.isEmpty ? "" : "\n") + text }
+            if let url = URL(string: text), ["http", "https"].contains(url.scheme ?? "") {
+                state.addQuickSource(text)
+            } else {
+                state.quickDraft += (state.quickDraft.isEmpty ? "" : "\n") + text
+            }
         }
     }
 

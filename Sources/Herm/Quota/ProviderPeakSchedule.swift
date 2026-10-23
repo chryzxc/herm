@@ -28,10 +28,12 @@ struct ProviderPeakSchedule {
         // ponytail: scans 8 days; a schedule with no weekday in range returns nil.
         for dayOffset in -1...8 {
             guard let day = calendar.date(byAdding: .day, value: dayOffset, to: today),
-                  weekdays.contains(calendar.component(.weekday, from: day)) else { continue }
+                weekdays.contains(calendar.component(.weekday, from: day))
+            else { continue }
             for hours in peakHours {
                 guard let start = calendar.date(byAdding: .hour, value: hours.lowerBound, to: day),
-                      let end = calendar.date(byAdding: .hour, value: hours.upperBound, to: day) else { continue }
+                    let end = calendar.date(byAdding: .hour, value: hours.upperBound, to: day)
+                else { continue }
                 if start <= now, now < end { return Status(isPeak: true, changesAt: end, peak: start..<end) }
                 if start > now, nextPeak.map({ start < $0.lowerBound }) ?? true { nextPeak = start..<end }
             }
@@ -88,8 +90,10 @@ extension ProviderPeakSchedule {
         let local = Date.FormatStyle(date: .omitted, time: .shortened, timeZone: .current)
         let parts = peakHours.compactMap { hours -> String? in
             guard let start = calendar.date(byAdding: .hour, value: hours.lowerBound, to: day),
-                  let end = calendar.date(byAdding: .hour, value: hours.upperBound, to: day) else { return nil }
-            return "\(start.formatted(remote))–\(end.formatted(remote)) (your time \(start.formatted(local))–\(end.formatted(local)))"
+                let end = calendar.date(byAdding: .hour, value: hours.upperBound, to: day)
+            else { return nil }
+            return
+                "\(start.formatted(remote))–\(end.formatted(remote)) (your time \(start.formatted(local))–\(end.formatted(local)))"
         }
         let abbrev = timeZone.abbreviation(for: now) ?? timeZone.identifier
         let days = weekdays.count == 7 ? "daily" : "Mon–Fri"
@@ -107,14 +111,15 @@ extension ProviderPeakSchedule {
     @MainActor
     static func syncFromWeb() async -> String? {
         let prompt = """
-        Search the web for the CURRENT official peak / off-peak hours of: \
-        DeepSeek API (platform.deepseek.com) and Z.ai GLM Coding Plan (docs.z.ai). \
-        Reply with ONLY one JSON object, no prose, shaped exactly like \
-        {"deepseek":{"utc_offset_hours":8,"peak":[[9,12],[14,18]],"days":[1,2,3,4,5,6,7],"note":"short effect of peak"},"glm":{...}}. \
-        "peak" is local-hour [start,end) windows in that UTC offset; "days" are ISO weekdays (1=Mon..7=Sun) the windows apply on. \
-        Omit a provider you cannot confirm from an official source.
-        """
-        let result = await HermesUpdateService.runHermes(arguments: ["chat", "-Q", "--oneshot", "-t", "web", "-q", prompt], timeout: 240)
+            Search the web for the CURRENT official peak / off-peak hours of: \
+            DeepSeek API (platform.deepseek.com) and Z.ai GLM Coding Plan (docs.z.ai). \
+            Reply with ONLY one JSON object, no prose, shaped exactly like \
+            {"deepseek":{"utc_offset_hours":8,"peak":[[9,12],[14,18]],"days":[1,2,3,4,5,6,7],"note":"short effect of peak"},"glm":{...}}. \
+            "peak" is local-hour [start,end) windows in that UTC offset; "days" are ISO weekdays (1=Mon..7=Sun) the windows apply on. \
+            Omit a provider you cannot confirm from an official source.
+            """
+        let result = await HermesUpdateService.runHermes(
+            arguments: ["chat", "-Q", "--oneshot", "-t", "web", "-q", prompt], timeout: 240)
         guard result.succeeded else { return "Hermes could not complete the search." }
         guard let data = jsonObject(in: result.text), let parsed = parse(data), !parsed.isEmpty else {
             return "Hermes returned no readable schedule."
@@ -135,11 +140,14 @@ extension ProviderPeakSchedule {
         var out: [String: ProviderPeakSchedule] = [:]
         for (id, entry) in root {
             guard let offset = (entry["utc_offset_hours"] as? NSNumber)?.intValue, (-12...14).contains(offset),
-                  let zone = TimeZone(secondsFromGMT: offset * 3600),
-                  let rawPeak = entry["peak"] as? [[Int]], !rawPeak.isEmpty,
-                  let days = entry["days"] as? [Int], !days.isEmpty else { continue }
+                let zone = TimeZone(secondsFromGMT: offset * 3600),
+                let rawPeak = entry["peak"] as? [[Int]], !rawPeak.isEmpty,
+                let days = entry["days"] as? [Int], !days.isEmpty
+            else { continue }
             let windows = rawPeak.compactMap { pair -> Range<Int>? in
-                guard pair.count == 2, (0...24).contains(pair[0]), (0...24).contains(pair[1]), pair[0] < pair[1] else { return nil }
+                guard pair.count == 2, (0...24).contains(pair[0]), (0...24).contains(pair[1]), pair[0] < pair[1] else {
+                    return nil
+                }
                 return pair[0]..<pair[1]
             }
             guard windows.count == rawPeak.count, days.allSatisfy({ (1...7).contains($0) }) else { continue }
@@ -168,7 +176,9 @@ extension ProviderPeakSchedule {
     static func quotaID(forProvider provider: String) -> String? {
         let name = provider.lowercased()
         if name.contains("deepseek") { return "deepseek" }
-        if name.contains("glm") || name.contains("zai") || name.contains("z.ai") || name.contains("z-ai") { return "glm" }
+        if name.contains("glm") || name.contains("zai") || name.contains("z.ai") || name.contains("z-ai") {
+            return "glm"
+        }
         return nil
     }
 
@@ -178,10 +188,13 @@ extension ProviderPeakSchedule {
         let left = QuotaWorkspacePresentation.compactDuration(from: now, to: status.changesAt)
         // Formatted in the device's current time zone, so travel needs no refresh.
         let time = Date.FormatStyle(date: .omitted, time: .shortened, timeZone: .autoupdatingCurrent)
-        let window = "Peak \(status.peak.lowerBound.formatted(time)) – \(status.peak.upperBound.formatted(time)) your time."
+        let window =
+            "Peak \(status.peak.lowerBound.formatted(time)) – \(status.peak.upperBound.formatted(time)) your time."
         return status.isPeak
             ? Notice(text: "Peak hours · off-peak in \(left)", help: "\(window) \(schedule.peakNote)", isPeak: true)
-            : Notice(text: "Off-peak now · \(left) left", help: "Peak starts in \(left). \(window) \(schedule.peakNote)", isPeak: false)
+            : Notice(
+                text: "Off-peak now · \(left) left", help: "Peak starts in \(left). \(window) \(schedule.peakNote)",
+                isPeak: false)
     }
 }
 

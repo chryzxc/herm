@@ -112,9 +112,11 @@ struct LocalPreviewsPanel: View {
                                         Text(server.processName ?? "Process \(server.pid)")
                                             .dockFont(.body, weight: .semibold).lineLimit(1).truncationMode(
                                                 .middle)
-                                        Text(server.url.absoluteString).dockFont(.metadata, weight: .regular, design: .monospaced)
-                                            .fontDesign(.monospaced)
-                                            .foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                                        Text(server.url.absoluteString).dockFont(
+                                            .metadata, weight: .regular, design: .monospaced
+                                        )
+                                        .fontDesign(.monospaced)
+                                        .foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
                                     DockIcon(.arrowUpRight).foregroundStyle(Color.dockSecondaryText)

@@ -28,7 +28,8 @@ final class SessionSpotlightIndex {
     static func identifier(for session: HermesSession) -> String { "\(session.profileID ?? "")|\(session.id)" }
 
     static func sessionID(from identifier: String) -> String {
-        identifier.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).last.map(String.init) ?? identifier
+        identifier.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).last.map(String.init)
+            ?? identifier
     }
 
     static func item(for session: HermesSession) -> CSSearchableItem {
@@ -36,14 +37,18 @@ final class SessionSpotlightIndex {
         attributes.title = session.displayTitle
         attributes.contentDescription = session.displayPreview.map { String($0.prefix(maxPreview)) }
         attributes.contentModificationDate = session.lastUpdatedAt
-        return CSSearchableItem(uniqueIdentifier: identifier(for: session), domainIdentifier: domain, attributeSet: attributes)
+        return CSSearchableItem(
+            uniqueIdentifier: identifier(for: session), domainIdentifier: domain, attributeSet: attributes)
     }
 
     private func sync(_ sessions: [HermesSession]) {
         let index = CSSearchableIndex.default()
         guard UserDefaults.standard.bool(forKey: Self.enabledKey) else {
             // Turning the setting off removes everything Herm put in Spotlight.
-            if !cleared { index.deleteSearchableItems(withDomainIdentifiers: [Self.domain]); cleared = true }
+            if !cleared {
+                index.deleteSearchableItems(withDomainIdentifiers: [Self.domain])
+                cleared = true
+            }
             indexed = []
             return
         }

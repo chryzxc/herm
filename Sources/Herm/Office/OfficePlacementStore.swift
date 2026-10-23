@@ -9,7 +9,8 @@ struct OfficePlacementStore {
 
     func load() -> [String: OfficePreviewLayout.Node] {
         guard let data = defaults.data(forKey: key),
-              let nodes = try? JSONDecoder().decode([String: OfficePreviewLayout.Node].self, from: data) else { return [:] }
+            let nodes = try? JSONDecoder().decode([String: OfficePreviewLayout.Node].self, from: data)
+        else { return [:] }
         return nodes.filter { _, node in
             OfficePreviewLayout.locations.indices.contains(node.index)
                 && node.slot >= -1 && node.slot < 10_000

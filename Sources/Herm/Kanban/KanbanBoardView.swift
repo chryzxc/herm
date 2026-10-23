@@ -83,15 +83,17 @@ struct KanbanBoardView: View, Equatable {
                                 }
                             }
                         }
-                        .onDrop(of: [UTType.text], delegate: KanbanLaneDropDelegate(
-                            lane: lane,
-                            tasks: tasks,
-                            actions: actions,
-                            pendingActionIDs: pendingActionIDs,
-                            draggingTaskID: $draggingTaskID,
-                            targetedLane: $targetedLane,
-                            drop: onDrop
-                        ))
+                        .onDrop(
+                            of: [UTType.text],
+                            delegate: KanbanLaneDropDelegate(
+                                lane: lane,
+                                tasks: tasks,
+                                actions: actions,
+                                pendingActionIDs: pendingActionIDs,
+                                draggingTaskID: $draggingTaskID,
+                                targetedLane: $targetedLane,
+                                drop: onDrop
+                            ))
                     }
                 }
                 .padding(.bottom, 8)
@@ -218,7 +220,8 @@ private struct KanbanLaneDropDelegate: DropDelegate {
 
     private var accepts: Bool {
         guard let draggedTask,
-              !pendingActionIDs.contains(where: { $0.hasSuffix(":\(draggedTask.id)") }) else { return false }
+            !pendingActionIDs.contains(where: { $0.hasSuffix(":\(draggedTask.id)") })
+        else { return false }
         return actions.destinations(for: draggedTask.status).contains(lane)
     }
 
@@ -242,7 +245,8 @@ private struct KanbanLaneDropDelegate: DropDelegate {
             targetedLane = nil
         }
         guard accepts, let draggedTask,
-              let provider = info.itemProviders(for: [UTType.text]).first else { return false }
+            let provider = info.itemProviders(for: [UTType.text]).first
+        else { return false }
         // The remembered ID can be stale after a cancelled drag, so act only
         // when the payload itself names the same card.
         let lane = lane
@@ -403,7 +407,9 @@ private struct KanbanTaskCard: View, Equatable {
         .background(background)
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(isSelected ? Color.dockAccent.opacity(0.7) : (isHovered ? Color.dockBorder : Color.dockBorderLight), lineWidth: isSelected ? 1 : 0.5)
+                .stroke(
+                    isSelected ? Color.dockAccent.opacity(0.7) : (isHovered ? Color.dockBorder : Color.dockBorderLight),
+                    lineWidth: isSelected ? 1 : 0.5)
         }
         .overlay(alignment: .leading) {
             if lane == .blocked || lane == .running {
@@ -413,17 +419,21 @@ private struct KanbanTaskCard: View, Equatable {
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .dockHoverable().onTapGesture { onSelect(task) }
-        .modifier(KanbanCardDragSource(
-            isEnabled: isDraggable,
-            taskID: task.id,
-            draggingTaskID: $draggingTaskID,
-            preview: dragPreview
-        ))
+        .modifier(
+            KanbanCardDragSource(
+                isEnabled: isDraggable,
+                taskID: task.id,
+                draggingTaskID: $draggingTaskID,
+                preview: dragPreview
+            )
+        )
         // Attached after the tap/drag gestures so they cannot swallow the
         // click, and kept in the tree so losing hover while the menu is open
         // does not tear it down.
         .overlay(alignment: .topTrailing) {
-            DockMenu { actionMenu } label: {
+            DockMenu {
+                actionMenu
+            } label: {
                 Group {
                     if isMutationPending {
                         ProgressView().controlSize(.mini)
@@ -431,9 +441,12 @@ private struct KanbanTaskCard: View, Equatable {
                         Ph.dotsThree.image(size: 14, color: NSColor(Color.dockSecondaryText))
                     }
                 }
-                    .frame(width: 28, height: 22)
-                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.9)))
-                    .contentShape(Rectangle())
+                .frame(width: 28, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
+                        Color.dockSurface2.opacity(0.9))
+                )
+                .contentShape(Rectangle())
             }
             // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
             .buttonStyle(.dockHover)
@@ -445,10 +458,12 @@ private struct KanbanTaskCard: View, Equatable {
             .accessibilityLabel("More actions for \(task.title)")
         }
         .onHover { isHovered = $0 }
-        .modifier(KanbanCardDragCursor(
-            isEnabled: isDraggable,
-            isDragging: isDragging
-        ))
+        .modifier(
+            KanbanCardDragCursor(
+                isEnabled: isDraggable,
+                isDragging: isDragging
+            )
+        )
         .contextMenu { actionMenu }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
@@ -466,9 +481,14 @@ private struct KanbanTaskCard: View, Equatable {
             .frame(width: KanbanBoardView.laneWidth - 40, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
+                    Color.dockSurface2)
+            )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(lane.color.opacity(0.6), lineWidth: 1))
+            .overlay(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                    lane.color.opacity(0.6), lineWidth: 1))
     }
 
     private var background: Color {

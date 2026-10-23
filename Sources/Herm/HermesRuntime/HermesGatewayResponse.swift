@@ -14,8 +14,9 @@ struct HermesGatewayResponse: @unchecked Sendable {
         jsonSerialization: JSONSerialization.Type = JSONSerialization.self
     ) -> Self? {
         guard case .string(let text) = message,
-              let data = text.data(using: .utf8),
-              let object = try? jsonSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            let data = text.data(using: .utf8),
+            let object = try? jsonSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
         return Self(object: object)
     }
 

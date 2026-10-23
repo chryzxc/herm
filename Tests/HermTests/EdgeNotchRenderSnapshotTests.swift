@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 /// Opt-in native render for visual review, using the production notch view.
@@ -19,13 +20,20 @@ struct EdgeNotchRenderSnapshotTests {
         }
         let model = DockModel(defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "snapshot")
         let control = ControlCenterModel()
-        control.providerQuotas = [ProviderQuotaSnapshot(
-            provider: "codex", displayName: "Codex (Christian)", model: nil, updatedAt: .now,
-            windows: [ProviderQuotaWindow(id: "weekly", label: "Weekly", remainingPercent: 0,
-                remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)], safeDetail: nil)]
-        let session = HermesSession(id: "reply-snapshot", profileID: "default", title: "Audit tests and create draft PR",
+        control.providerQuotas = [
+            ProviderQuotaSnapshot(
+                provider: "codex", displayName: "Codex (Christian)", model: nil, updatedAt: .now,
+                windows: [
+                    ProviderQuotaWindow(
+                        id: "weekly", label: "Weekly", remainingPercent: 0,
+                        remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
+                ], safeDetail: nil)
+        ]
+        let session = HermesSession(
+            id: "reply-snapshot", profileID: "default", title: "Audit tests and create draft PR",
             preview: "", startedAt: nil, messageCount: 2, source: "herm")
-        let task = EdgeNotchTask(id: session.id, title: session.displayTitle, phase: .working,
+        let task = EdgeNotchTask(
+            id: session.id, title: session.displayTitle, phase: .working,
             statusLabel: "Working", detail: nil, updatedAt: .now.addingTimeInterval(-1920),
             isCurrent: false, isStatusCurrent: true, session: session)
         for theme in ["clean", "island", "glass", "mono", "eInk", "warmLight"] {
@@ -40,20 +48,25 @@ struct EdgeNotchRenderSnapshotTests {
                     state.tasks = [task]
                     state.selectQuickTarget(session, task: task)
                     state.composing = true
-                    state.quickDraft = mode == "empty" ? "" : "Please summarize the test failures before making changes."
+                    state.quickDraft =
+                        mode == "empty" ? "" : "Please summarize the test failures before making changes."
                     state.quickSending = mode == "pending"
-                    state.quickResult = mode == "failed" ? "The reply could not be sent. Your draft is saved; try again." : nil
+                    state.quickResult =
+                        mode == "failed" ? "The reply could not be sent. Your draft is saved; try again." : nil
                     model.status = .idle
-                    let view = EdgeTaskPreview(tasks: state.tasks, isOffline: false,
+                    let view = EdgeTaskPreview(
+                        tasks: state.tasks, isOffline: false,
                         reply: { _ in }, quickState: state, quickModel: model, quotaControl: control,
-                        openDock: {}, openTask: { _ in })
-                        .frame(width: width, height: 288)
-                        .background(Color.dockCanvas)
-                        .dockThemedRoot()
-                        .environment(\.colorScheme, dark ? .dark : .light)
+                        openDock: {}, openTask: { _ in }
+                    )
+                    .frame(width: width, height: 288)
+                    .background(Color.dockCanvas)
+                    .dockThemedRoot()
+                    .environment(\.colorScheme, dark ? .dark : .light)
                     let host = NSHostingView(rootView: view)
                     host.frame = CGRect(x: 0, y: 0, width: width, height: 288)
-                    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    let window = NSWindow(
+                        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
                     window.appearance = NSApplication.shared.appearance
                     window.contentView = host
                     window.orderFrontRegardless()
@@ -65,7 +78,8 @@ struct EdgeNotchRenderSnapshotTests {
                     let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                     host.cacheDisplay(in: host.bounds, to: rep)
                     try #require(rep.representation(using: .png, properties: [:])).write(
-                        to: URL(fileURLWithPath: directory).appendingPathComponent("reply-\(theme)-\(Int(width))-\(mode).png"))
+                        to: URL(fileURLWithPath: directory).appendingPathComponent(
+                            "reply-\(theme)-\(Int(width))-\(mode).png"))
                 }
             }
         }
@@ -80,7 +94,7 @@ struct EdgeNotchRenderSnapshotTests {
             ("Completed", .init(responseCompleted: true)),
             ("Offline", .init(status: .offline)),
             ("Attention + work", .init(status: .needsApproval, runningCount: 1)),
-            ("Update + work", .init(status: .working, unread: true))
+            ("Update + work", .init(status: .working, unread: true)),
         ]
         let content = VStack(spacing: 16) {
             NotchDisplaySettings()
@@ -129,20 +143,28 @@ struct EdgeNotchRenderSnapshotTests {
         let state = EdgeNotchState()
         state.expanded = true
         state.tasks = [
-            EdgeNotchTask(id: "session", title: "Improve the conversation workspace", phase: .working,
+            EdgeNotchTask(
+                id: "session", title: "Improve the conversation workspace", phase: .working,
                 statusLabel: "Working", detail: "Running swift test", updatedAt: nil,
                 isCurrent: true, isStatusCurrent: true, session: nil),
-            EdgeNotchTask(id: "finished", title: "Review the latest changes", phase: .finished,
-                statusLabel: "New response", detail: "Review complete. The changes are ready to inspect.", updatedAt: .now.addingTimeInterval(-120),
+            EdgeNotchTask(
+                id: "finished", title: "Review the latest changes", phase: .finished,
+                statusLabel: "New response", detail: "Review complete. The changes are ready to inspect.",
+                updatedAt: .now.addingTimeInterval(-120),
                 isCurrent: false, isStatusCurrent: true,
-                session: HermesSession(id: "finished", title: "Review the latest changes", preview: "", startedAt: nil, messageCount: 2, source: "herm"))
+                session: HermesSession(
+                    id: "finished", title: "Review the latest changes", preview: "", startedAt: nil, messageCount: 2,
+                    source: "herm")),
         ]
         var kanban = EdgeKanbanActivity()
-        let running = KanbanTaskSummary(id: "card", boardSlug: "Herm", title: "Include Kanban activity in the notch preview",
+        let running = KanbanTaskSummary(
+            id: "card", boardSlug: "Herm", title: "Include Kanban activity in the notch preview",
             status: "running", detail: nil, priority: nil, assignee: "Builder")
-        let blocked = KanbanTaskSummary(id: "blocked", boardSlug: "Herm", title: "Verify the release build",
+        let blocked = KanbanTaskSummary(
+            id: "blocked", boardSlug: "Herm", title: "Verify the release build",
             status: "blocked", detail: nil, priority: nil, assignee: "Reviewer")
-        let review = KanbanTaskSummary(id: "review", boardSlug: "Herm", title: "Tighten notch spacing",
+        let review = KanbanTaskSummary(
+            id: "review", boardSlug: "Herm", title: "Tighten notch spacing",
             status: "review", detail: nil, priority: nil, assignee: "Builder")
         _ = kanban.ingest([running, blocked])
         _ = kanban.ingest([running, review, blocked])
@@ -150,19 +172,25 @@ struct EdgeNotchRenderSnapshotTests {
         let control = ControlCenterModel()
         let model = DockModel(initialSessionID: "snapshot-chat")
         model.currentSessionTitle = "Herm notch improvements"
-        state.bots = [BotSummary(id: "Builder", name: "Builder", title: nil, description: nil,
-            model: nil, isActive: false, chat: nil, avatarURL: nil, preview: nil,
-            lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)]
+        state.bots = [
+            BotSummary(
+                id: "Builder", name: "Builder", title: nil, description: nil,
+                model: nil, isActive: false, chat: nil, avatarURL: nil, preview: nil,
+                lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+        ]
         let tasks = state.tasks
         for name in ["tasks", "tasks-many", "tasks-empty", "kanban-unavailable", "quick-message", "quick-reply"] {
             state.tasks = tasks
             if name == "tasks-many" {
-                state.tasks = EdgeNotchTask.merged(tasks + (0..<200).map { index in
-                    EdgeNotchTask(id: "attention-\(index)", title: "Review background task \(index)", phase: .attention,
-                        statusLabel: "Needs your attention", detail: "Review the result before continuing.",
-                        updatedAt: .now.addingTimeInterval(Double(-index * 60)), isCurrent: false,
-                        isStatusCurrent: true, session: nil)
-                })
+                state.tasks = EdgeNotchTask.merged(
+                    tasks
+                        + (0..<200).map { index in
+                            EdgeNotchTask(
+                                id: "attention-\(index)", title: "Review background task \(index)", phase: .attention,
+                                statusLabel: "Needs your attention", detail: "Review the result before continuing.",
+                                updatedAt: .now.addingTimeInterval(Double(-index * 60)), isCurrent: false,
+                                isStatusCurrent: true, session: nil)
+                        })
             }
             state.selectQuickTarget(nil)
             if name.contains("empty") || name.contains("unavailable") { state.tasks = [] }

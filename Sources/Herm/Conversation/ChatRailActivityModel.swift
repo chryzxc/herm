@@ -12,8 +12,10 @@ final class ChatRailActivityModel: ObservableObject {
     private let seenStore: SidebarSessionSeenStore
     private var cancellable: AnyCancellable?
 
-    init(model: DockModel, control: ControlCenterModel, store: WorkspaceStore,
-         seenStore: SidebarSessionSeenStore = .shared) {
+    init(
+        model: DockModel, control: ControlCenterModel, store: WorkspaceStore,
+        seenStore: SidebarSessionSeenStore = .shared
+    ) {
         self.model = model
         self.seenStore = seenStore
         let sidebar = MissionControlSidebarModel(model: model, control: control, store: store)
@@ -35,16 +37,19 @@ final class ChatRailActivityModel: ObservableObject {
         if next != activity { activity = next }
     }
 
-    private static func project(_ snapshot: MissionControlSidebarSnapshot,
-                                seenStore: SidebarSessionSeenStore, isConnected: Bool) -> ChatRailActivity {
+    private static func project(
+        _ snapshot: MissionControlSidebarSnapshot,
+        seenStore: SidebarSessionSeenStore, isConnected: Bool
+    ) -> ChatRailActivity {
         let statuses = SidebarSessionStatusResolver.statuses(
             for: (snapshot.conversations + snapshot.inputs.pinnedSessions).filter { !$0.isHidden },
             snapshot: snapshot, seenStore: seenStore,
             fallbackProfileID: snapshot.inputs.profileScopeID
         )
-        return ChatRailActivity(statuses: Array(statuses.values),
-                                foregroundWorking: snapshot.inputs.activeStatus == .working,
-                                isConnected: isConnected)
+        return ChatRailActivity(
+            statuses: Array(statuses.values),
+            foregroundWorking: snapshot.inputs.activeStatus == .working,
+            isConnected: isConnected)
     }
 }
 
@@ -55,8 +60,10 @@ struct ChatRailButton: View {
     let style: DockThemePalette
     let action: () -> Void
 
-    init(model: DockModel, control: ControlCenterModel, store: WorkspaceStore,
-         isSelected: Bool, isVisible: Bool, style: DockThemePalette, action: @escaping () -> Void) {
+    init(
+        model: DockModel, control: ControlCenterModel, store: WorkspaceStore,
+        isSelected: Bool, isVisible: Bool, style: DockThemePalette, action: @escaping () -> Void
+    ) {
         _source = StateObject(wrappedValue: ChatRailActivityModel(model: model, control: control, store: store))
         self.isSelected = isSelected
         self.isVisible = isVisible

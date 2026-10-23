@@ -38,7 +38,9 @@ public struct AppearanceCenterView: View {
                     }
                 }
                 Section("Desktop plugins") {
-                    if inventory.desktopPlugins.isEmpty { Text("None reported").foregroundStyle(Color.dockSecondaryText) }
+                    if inventory.desktopPlugins.isEmpty {
+                        Text("None reported").foregroundStyle(Color.dockSecondaryText)
+                    }
                     ForEach(inventory.desktopPlugins, id: \.id) { plugin in
                         VStack(alignment: .leading, spacing: 3) {
                             LabeledContent(plugin.name, value: plugin.status.rawValue.capitalized)
@@ -50,9 +52,11 @@ public struct AppearanceCenterView: View {
                 }
             }
             Section("Unavailable actions") {
-                Text("Skin and pet selection, and desktop-plugin enable/reload, require a verified Hermes command contract. No configuration is edited locally.")
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockSecondaryText)
+                Text(
+                    "Skin and pet selection, and desktop-plugin enable/reload, require a verified Hermes command contract. No configuration is edited locally."
+                )
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockSecondaryText)
             }
         }
         .formStyle(.grouped)

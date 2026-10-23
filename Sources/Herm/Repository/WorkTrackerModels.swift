@@ -19,12 +19,24 @@ struct WorkTrackerProviderDescriptor: Equatable, Sendable {
 
 enum WorkTrackerProviderCatalog {
     static let descriptors: [WorkTrackerProviderDescriptor] = [
-        .init(provider: .jira, displayName: "Jira", supportsSearch: true, supportsCreate: true, supportsStatusUpdate: true),
-        .init(provider: .linear, displayName: "Linear", supportsSearch: true, supportsCreate: true, supportsStatusUpdate: true),
-        .init(provider: .trello, displayName: "Trello", supportsSearch: true, supportsCreate: true, supportsStatusUpdate: true),
-        .init(provider: .asana, displayName: "Asana", supportsSearch: true, supportsCreate: true, supportsStatusUpdate: true),
-        .init(provider: .clickUp, displayName: "ClickUp", supportsSearch: true, supportsCreate: true, supportsStatusUpdate: true),
-        .init(provider: .todoist, displayName: "Todoist", supportsSearch: true, supportsCreate: true, supportsStatusUpdate: true)
+        .init(
+            provider: .jira, displayName: "Jira", supportsSearch: true, supportsCreate: true, supportsStatusUpdate: true
+        ),
+        .init(
+            provider: .linear, displayName: "Linear", supportsSearch: true, supportsCreate: true,
+            supportsStatusUpdate: true),
+        .init(
+            provider: .trello, displayName: "Trello", supportsSearch: true, supportsCreate: true,
+            supportsStatusUpdate: true),
+        .init(
+            provider: .asana, displayName: "Asana", supportsSearch: true, supportsCreate: true,
+            supportsStatusUpdate: true),
+        .init(
+            provider: .clickUp, displayName: "ClickUp", supportsSearch: true, supportsCreate: true,
+            supportsStatusUpdate: true),
+        .init(
+            provider: .todoist, displayName: "Todoist", supportsSearch: true, supportsCreate: true,
+            supportsStatusUpdate: true),
     ]
 
     static func descriptor(for provider: WorkTrackerProvider) -> WorkTrackerProviderDescriptor? {
@@ -49,7 +61,8 @@ struct WorkTrackerProjection: Equatable, Sendable {
 
     static let unconfigured = WorkTrackerProjection(availability: .unconfigured, items: [], refreshedAt: nil)
 
-    func preservingItems(with availability: WorkTrackerAvailability, refreshedAt: Date? = nil) -> WorkTrackerProjection {
+    func preservingItems(with availability: WorkTrackerAvailability, refreshedAt: Date? = nil) -> WorkTrackerProjection
+    {
         WorkTrackerProjection(availability: availability, items: items, refreshedAt: refreshedAt ?? self.refreshedAt)
     }
 }
@@ -108,8 +121,12 @@ struct UnconfiguredWorkTrackerService: WorkTrackerService, Sendable {
     let provider: WorkTrackerProvider
 
     func search(query: String) async -> Result<[ExternalWorkItem], WorkTrackerError> { .failure(.unconfigured) }
-    func create(_ request: WorkItemCreateRequest) async -> Result<ExternalWorkItem, WorkTrackerError> { .failure(.unconfigured) }
-    func updateStatus(remoteID: String, status: String) async -> Result<ExternalWorkItem, WorkTrackerError> { .failure(.unconfigured) }
+    func create(_ request: WorkItemCreateRequest) async -> Result<ExternalWorkItem, WorkTrackerError> {
+        .failure(.unconfigured)
+    }
+    func updateStatus(remoteID: String, status: String) async -> Result<ExternalWorkItem, WorkTrackerError> {
+        .failure(.unconfigured)
+    }
 }
 
 enum WorkTrackerSelectionError: Error, Equatable, Sendable {
@@ -143,7 +160,9 @@ enum WorkTrackerMutationError: Error, Equatable, Sendable {
 }
 
 enum WorkTrackerRequestBuilder {
-    static func create(title: String, description: String, projectID: String?) -> Result<WorkItemCreateRequest, WorkTrackerMutationError> {
+    static func create(title: String, description: String, projectID: String?) -> Result<
+        WorkItemCreateRequest, WorkTrackerMutationError
+    > {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanTitle.isEmpty else { return .failure(.emptyTitle) }
@@ -151,12 +170,14 @@ enum WorkTrackerRequestBuilder {
         guard cleanDescription.count <= 10_000 else { return .failure(.descriptionTooLong) }
         let cleanProjectID = projectID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         guard cleanTitle.rangeOfCharacter(from: .controlCharacters) == nil,
-              cleanDescription.rangeOfCharacter(from: .controlCharacters) == nil,
-              cleanProjectID?.rangeOfCharacter(from: .controlCharacters) == nil else { return .failure(.controlCharacter) }
-        return .success(WorkItemCreateRequest(title: cleanTitle, description: cleanDescription, projectID: cleanProjectID))
+            cleanDescription.rangeOfCharacter(from: .controlCharacters) == nil,
+            cleanProjectID?.rangeOfCharacter(from: .controlCharacters) == nil
+        else { return .failure(.controlCharacter) }
+        return .success(
+            WorkItemCreateRequest(title: cleanTitle, description: cleanDescription, projectID: cleanProjectID))
     }
 }
 
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
+extension String {
+    fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
 }

@@ -1,11 +1,13 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 @MainActor
 struct HermesDiagnosticsServiceTests {
     @Test func summaryStopsAfterThreeVisibleLinesWithoutChangingRedaction() {
-        let output = "\u{001B}[32mReady\u{001B}[0m\nAuth file: /Users/test/auth.json\n\n"
+        let output =
+            "\u{001B}[32mReady\u{001B}[0m\nAuth file: /Users/test/auth.json\n\n"
             + "Loaded .env\nStatus: token=secret\nProject: ~/work\n"
             + String(repeating: "Ignored token=secret /Users/test/private\n", count: 10_000)
         #expect(HermesDiagnosticsService.safeSummary(output) == "Ready  ·  Status: token: ••••  ·  Project: ••••/work")
@@ -22,12 +24,13 @@ struct HermesDiagnosticsServiceTests {
     }
 
     @Test func safeSummaryMasksHomePathsAndDropsCredentialFiles() {
-        let summary = HermesDiagnosticsService.safeSummary("""
-        Gateway Service
-        Status: running
-        Auth file: /Users/example/.hermes/auth.json
-        Project: /Users/example/hermes-agent
-        """)
+        let summary = HermesDiagnosticsService.safeSummary(
+            """
+            Gateway Service
+            Status: running
+            Auth file: /Users/example/.hermes/auth.json
+            Project: /Users/example/hermes-agent
+            """)
 
         #expect(summary == "Gateway Service  ·  Status: running  ·  Project: ••••/hermes-agent")
         #expect(!summary.contains("/Users/"))
@@ -36,11 +39,12 @@ struct HermesDiagnosticsServiceTests {
     }
 
     @Test func safeSummaryMasksInlineCredentialAssignments() {
-        let summary = HermesDiagnosticsService.safeSummary("""
-        Gateway: ok
-        Status: running token=abc123
-        Loaded api_key=sk_live_supersecret
-        """)
+        let summary = HermesDiagnosticsService.safeSummary(
+            """
+            Gateway: ok
+            Status: running token=abc123
+            Loaded api_key=sk_live_supersecret
+            """)
 
         #expect(!summary.contains("abc123"))
         #expect(!summary.contains("sk_live_supersecret"))
@@ -49,11 +53,12 @@ struct HermesDiagnosticsServiceTests {
     }
 
     @Test func safeSummaryMasksKnownProviderTokenPrefixes() {
-        let summary = HermesDiagnosticsService.safeSummary("""
-        Health: good
-        Token: ghp_aB...pQrS
-        Webhook: xoxb-1...cdef
-        """)
+        let summary = HermesDiagnosticsService.safeSummary(
+            """
+            Health: good
+            Token: ghp_aB...pQrS
+            Webhook: xoxb-1...cdef
+            """)
 
         #expect(!summary.contains("ghp_aB...pQrS"))
         #expect(!summary.contains("xoxb-1...cdef"))
@@ -68,7 +73,8 @@ struct HermesDiagnosticsServiceTests {
     }
 
     @Test func safeSummaryMasksEmbeddedCredentialEndpointURLs() {
-        let summary = HermesDiagnosticsService.safeSummary("Endpoint: https://admin:super-secret@gateway.example.test/rpc")
+        let summary = HermesDiagnosticsService.safeSummary(
+            "Endpoint: https://admin:super-secret@gateway.example.test/rpc")
 
         #expect(!summary.contains("https://admin:super-secret@gateway.example.test/rpc"))
         #expect(!summary.contains("super-secret"))
@@ -76,10 +82,11 @@ struct HermesDiagnosticsServiceTests {
     }
 
     @Test func safeSummaryMasksTildeHomePaths() {
-        let summary = HermesDiagnosticsService.safeSummary("""
-        Ready
-        Cache: ~/.hermes/cache
-        """)
+        let summary = HermesDiagnosticsService.safeSummary(
+            """
+            Ready
+            Cache: ~/.hermes/cache
+            """)
 
         #expect(!summary.contains("~/"))
         #expect(summary.contains("••••"))

@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 extension DockPopover {
@@ -40,7 +40,8 @@ extension DockPopover {
             onSelectTask: { task in
                 missionControlNavigation.selectTask(task.id)
                 if let sessionID = task.sessionID,
-                   let session = model.sessions.first(where: { $0.id == sessionID }) {
+                    let session = model.sessions.first(where: { $0.id == sessionID })
+                {
                     fullscreenSurface = .conversation
                     inspectorScope = .session
                     model.resumeSession(session)
@@ -93,7 +94,10 @@ extension DockPopover {
     func handleProfileScopeChange(_ profileID: String?) {
         let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let selected = normalized?.isEmpty == false ? normalized : nil
-        if model.profileScopeID == selected, !model.profileScopeUnavailable { controlCenter.setProjectProfile(selected); return }
+        if model.profileScopeID == selected, !model.profileScopeUnavailable {
+            controlCenter.setProjectProfile(selected)
+            return
+        }
         model.setProfileScope(selected)
         controlCenter.setProjectProfile(selected)
         missionControlNavigation.clearSelection()
@@ -117,7 +121,7 @@ extension DockPopover {
                 model.newChat()
                 agentUpdateService.restartDock()
             },
-            onOpenArtifacts: { },
+            onOpenArtifacts: {},
             onSessionOpened: { sessionID in
                 missionControlNavigation.openProjectSession(sessionID: sessionID)
                 // Global surfaces (such as Projects) own discovery; after a
@@ -135,9 +139,11 @@ extension DockPopover {
     var fullscreenGlobalSurface: some View {
         Group {
             if fullscreenSurface == .pullRequests {
-                PullRequestWorkspace(center: pullRequestCenter, projects: controlCenter.projects, onOpenChat: openPullRequestChat)
-                    .environment(\.openGitHubItem, openGitHubReference)
-                    .id("fullscreen-pull-requests")
+                PullRequestWorkspace(
+                    center: pullRequestCenter, projects: controlCenter.projects, onOpenChat: openPullRequestChat
+                )
+                .environment(\.openGitHubItem, openGitHubReference)
+                .id("fullscreen-pull-requests")
             } else if fullscreenSurface == .issues {
                 IssueWorkspacePage(center: issueCenter, projects: controlCenter.projects, onOpenChat: openIssueChat)
                     .environment(\.openGitHubItem, openGitHubReference)
@@ -162,7 +168,7 @@ extension DockPopover {
                     onOpenChat: openBotChat,
                     onOpenRecentSession: openRecentBotSession
                 )
-                    .id("fullscreen-bots")
+                .id("fullscreen-bots")
             } else if case .groupChat(let roomID) = fullscreenSurface {
                 GroupChatView(store: botMode.groupChats, botMode: botMode, roomID: roomID) {
                     missionControlNavigation.clearSelection()
@@ -184,7 +190,8 @@ extension DockPopover {
         Task {
             let opened = await gitHubInspector.open(reference, session: session)
             guard opened, GitHubMarkdownLink.reference(for: url) != nil,
-                  session == WorkspaceIdentity.session(model) else {
+                session == WorkspaceIdentity.session(model)
+            else {
                 InAppBrowser.open(url)
                 return
             }
@@ -195,10 +202,12 @@ extension DockPopover {
 
     func openGitHubReference(_ reference: GitHubItemReference) {
         if reference.kind == .pullRequest {
-            missionControlNavigation.selectPullRequests(); fullscreenSurface = .pullRequests
+            missionControlNavigation.selectPullRequests()
+            fullscreenSurface = .pullRequests
             Task { await pullRequestCenter.open(reference) }
         } else {
-            missionControlNavigation.selectIssues(); fullscreenSurface = .issues
+            missionControlNavigation.selectIssues()
+            fullscreenSurface = .issues
             Task { await issueCenter.open(reference) }
         }
     }
@@ -215,35 +224,41 @@ extension DockPopover {
         missionControlNavigation.openSession(recent.sessionID)
         fullscreenSurface = .conversation
         inspectorScope = .session
-        model.resumeSession(HermesSession(
-            id: recent.sessionID,
-            profileID: bot.id,
-            title: recent.title ?? "",
-            preview: recent.preview ?? "",
-            startedAt: recent.lastActive,
-            updatedAt: recent.lastActive,
-            messageCount: 0,
-            source: "hermes-bot",
-            isHidden: false
-        ))
+        model.resumeSession(
+            HermesSession(
+                id: recent.sessionID,
+                profileID: bot.id,
+                title: recent.title ?? "",
+                preview: recent.preview ?? "",
+                startedAt: recent.lastActive,
+                updatedAt: recent.lastActive,
+                messageCount: 0,
+                source: "hermes-bot",
+                isHidden: false
+            ))
     }
 
     func openPullRequestChat(_ pullRequest: PullRequestRecord) {
         let prompt = """
-        Review pull request #\(pullRequest.number), \"\(pullRequest.title)\", in \(pullRequest.repository.id).
-        PR: \(pullRequest.webURL?.absoluteString ?? "Unavailable")
-        Branch: \(pullRequest.headBranch) → \(pullRequest.baseBranch)
+            Review pull request #\(pullRequest.number), \"\(pullRequest.title)\", in \(pullRequest.repository.id).
+            PR: \(pullRequest.webURL?.absoluteString ?? "Unavailable")
+            Branch: \(pullRequest.headBranch) → \(pullRequest.baseBranch)
 
-        Review risks, test coverage, and findings. Do not modify files unless I ask.
-        """
+            Review risks, test coverage, and findings. Do not modify files unless I ask.
+            """
         Task {
             if let linkedID = pullRequestChatLinks.sessionID(for: pullRequest.id),
-               let linkedSession = model.sessions.first(where: { $0.id == linkedID }) {
+                let linkedSession = model.sessions.first(where: { $0.id == linkedID })
+            {
                 missionControlNavigation.openPullRequestChat(sessionID: linkedSession.id)
                 model.resumeSession(linkedSession)
             } else {
                 pullRequestChatLinks.remove(pullRequestID: pullRequest.id)
-                if pullRequest.localPath.isEmpty { model.newChat() } else { await model.startNewChat(in: pullRequest.localPath) }
+                if pullRequest.localPath.isEmpty {
+                    model.newChat()
+                } else {
+                    await model.startNewChat(in: pullRequest.localPath)
+                }
                 if let createdID = model.sessionID {
                     pullRequestChatLinks.save(sessionID: createdID, for: pullRequest.id)
                 }
@@ -261,7 +276,8 @@ extension DockPopover {
         Task {
             var sessionID: String?
             if let linkedID = pullRequestChatLinks.sessionID(for: context.id),
-               let linkedSession = model.sessions.first(where: { $0.id == linkedID }) {
+                let linkedSession = model.sessions.first(where: { $0.id == linkedID })
+            {
                 sessionID = linkedSession.id
                 model.resumeSession(linkedSession)
             } else {
@@ -332,21 +348,23 @@ extension DockPopover {
                             initialMode: fullscreenGlobalTab,
                             agentUpdateService: agentUpdateService
                         )
-                     case .session:
-                         SessionInspector(
-                             model: model,
-                             botMode: botMode,
-                             control: controlCenter,
-                             workflow: developerWorkflow,
-                             gitHub: gitHubInspector,
-                             onOpenPullRequestChat: openPullRequestChat,
-                             onOpenIssueChat: openIssueChat,
-                             sessionRepositoryPath: activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath,
-                             sessionProjectIsBound: activeSessionRepositoryPath != nil,
-                             showsHeader: false,
-                             onToggle: toggleInspectorPanel,
-                             headerHeight: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight
-                         )
+                    case .session:
+                        SessionInspector(
+                            model: model,
+                            botMode: botMode,
+                            control: controlCenter,
+                            workflow: developerWorkflow,
+                            gitHub: gitHubInspector,
+                            onOpenPullRequestChat: openPullRequestChat,
+                            onOpenIssueChat: openIssueChat,
+                            sessionRepositoryPath: activeSessionRepositoryScope?.repositoryPath
+                                ?? activeSessionRepositoryPath,
+                            sessionProjectIsBound: activeSessionRepositoryPath != nil,
+                            showsHeader: false,
+                            onToggle: toggleInspectorPanel,
+                            headerHeight: usesWindowChrome
+                                ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight
+                        )
                     case .artifacts:
                         ArtifactsInspectorView(model: model, presentation: .inspector)
                     }
@@ -385,19 +403,26 @@ extension DockPopover {
         switch sessionWorkspaceMode {
         case .explorer:
             if let explorerSelection,
-               let activeScope = activeSessionRepositoryScope,
-               explorerSelection.scope == activeScope {
+                let activeScope = activeSessionRepositoryScope,
+                explorerSelection.scope == activeScope
+            {
                 RepositoryCodeWorkspaceView(
                     repositoryPath: explorerSelection.scope.repositoryPath,
                     document: explorerSelection.document,
                     onClose: { self.explorerSelection = nil },
                     onSave: { draft in
                         guard self.activeSessionRepositoryScope == explorerSelection.scope else { return false }
-                        guard await RepositoryService.saveDocument(path: explorerSelection.scope.repositoryPath, filePath: explorerSelection.document.path, contents: draft) else { return false }
+                        guard
+                            await RepositoryService.saveDocument(
+                                path: explorerSelection.scope.repositoryPath, filePath: explorerSelection.document.path,
+                                contents: draft)
+                        else { return false }
                         await refreshSessionWorkflow()
                         self.explorerSelection = ScopedRepositoryDocument(
                             scope: explorerSelection.scope,
-                            document: RepositoryFileDocument(path: explorerSelection.document.path, contents: draft, byteCount: draft.lengthOfBytes(using: .utf8))
+                            document: RepositoryFileDocument(
+                                path: explorerSelection.document.path, contents: draft,
+                                byteCount: draft.lengthOfBytes(using: .utf8))
                         )
                         return true
                     },
@@ -444,9 +469,10 @@ extension DockPopover {
 
     var contextProjectPath: String? {
         guard let sessionID = model.sessionID,
-              let project = controlCenter.project(forSessionID: sessionID),
-              project.name != "__no_project__",
-              !project.name.isEmpty else { return nil }
+            let project = controlCenter.project(forSessionID: sessionID),
+            project.name != "__no_project__",
+            !project.name.isEmpty
+        else { return nil }
         return project.name
     }
 
@@ -464,11 +490,12 @@ extension DockPopover {
     var liveSessionRepositoryPath: String? {
         // The sidebar attaches projects under the stored session id, while a
         // resumed chat may stream under a runtime alias; check both.
-        workspaceStore.projectPath(forSessionID: model.navigationSessionID) ?? workspaceStore.resolvedProjectPath(
-            forSessionID: model.sessionID,
-            hermesProjectPath: model.sessionID.flatMap { controlCenter.project(forSessionID: $0)?.name },
-            createdSessionProjectPath: model.sessionID.flatMap { model.createdSessionProjectPaths[$0] }
-        )
+        workspaceStore.projectPath(forSessionID: model.navigationSessionID)
+            ?? workspaceStore.resolvedProjectPath(
+                forSessionID: model.sessionID,
+                hermesProjectPath: model.sessionID.flatMap { controlCenter.project(forSessionID: $0)?.name },
+                createdSessionProjectPath: model.sessionID.flatMap { model.createdSessionProjectPaths[$0] }
+            )
     }
 
     var activeSessionRepositoryIdentity: String? {
@@ -477,7 +504,8 @@ extension DockPopover {
 
     var activeSessionRepositoryScope: SessionRepositoryScope? {
         guard let sessionID = model.sessionID,
-              let path = activeSessionRepositoryPath else { return nil }
+            let path = activeSessionRepositoryPath
+        else { return nil }
         return SessionRepositoryScope(sessionID: sessionID, repositoryPath: activeWorktreePath ?? path)
     }
 
@@ -485,17 +513,20 @@ extension DockPopover {
     /// or outside worktree falls back to the bound folder.
     var activeWorktreePath: String? {
         guard let path = workspaceStore.worktreePath(forSessionID: model.sessionID),
-              let root = activeSessionRepositoryPath,
-              path != root,
-              RepositoryWorktreeSummary.isPath(path, within: root),
-              FileManager.default.fileExists(atPath: path) else { return nil }
+            let root = activeSessionRepositoryPath,
+            path != root,
+            RepositoryWorktreeSummary.isPath(path, within: root),
+            FileManager.default.fileExists(atPath: path)
+        else { return nil }
         return path
     }
 
     /// View-only: the agent keeps its own cwd.
     func selectWorktree(_ path: String) {
         guard let sessionID = model.sessionID else { return }
-        workspaceStore.setWorktreePath(path == activeSessionRepositoryPath ? nil : path, forSessionID: sessionID, title: model.currentSessionTitle ?? "Untitled task")
+        workspaceStore.setWorktreePath(
+            path == activeSessionRepositoryPath ? nil : path, forSessionID: sessionID,
+            title: model.currentSessionTitle ?? "Untitled task")
     }
 
     /// Updates the cached project name from the live computed value.
@@ -514,7 +545,8 @@ extension DockPopover {
 
     func synchronizeSessionMetadataFromControlCenter() {
         guard let sessionID = model.sessionID,
-              let summary = controlCenter.sessionSummary(for: sessionID) else { return }
+            let summary = controlCenter.sessionSummary(for: sessionID)
+        else { return }
         model.updateCurrentSessionTitle(summary.title)
     }
 
@@ -522,7 +554,8 @@ extension DockPopover {
         HStack(spacing: 0) {
             // The fullscreen right region is an inspector for the active
             // center surface, never a competing global workspace.
-            let scopes: [InspectorScope] = usesMissionControlLayout || isNarrowLayout
+            let scopes: [InspectorScope] =
+                usesMissionControlLayout || isNarrowLayout
                 ? [.session, .artifacts]
                 : InspectorScope.allCases
             ForEach(scopes) { scope in
@@ -557,7 +590,8 @@ extension DockPopover {
 
     func synchronizeWorkspace(status: HermesStatus? = nil) {
         guard let sessionID = model.sessionID else { return }
-        let title = model.currentSessionTitle
+        let title =
+            model.currentSessionTitle
             ?? model.messages.first(where: { $0.role == .user })?.text
             ?? "Current Hermes task"
         let task = workspaceStore.ensureTask(title: title, sessionID: sessionID)
@@ -591,17 +625,18 @@ extension DockPopover {
                 if sessionWorkspaceMode == .chat, !model.messageNavigatorItems.isEmpty {
                     // Pinned messages open from the "…" menu; the popover anchors here.
                     Color.clear.frame(width: 0, height: 0)
-                    .popover(isPresented: $isShowingMessagePins, arrowEdge: .bottom) {
-                        MessagePinsView(model: model) { pin in
-                            let sessionID = model.sessionID
-                            Task { @MainActor in
-                                guard let id = await model.messageID(forPin: pin), model.sessionID == sessionID else { return }
-                                isShowingMessagePins = false
-                                pinnedMessageJumpID = id
+                        .popover(isPresented: $isShowingMessagePins, arrowEdge: .bottom) {
+                            MessagePinsView(model: model) { pin in
+                                let sessionID = model.sessionID
+                                Task { @MainActor in
+                                    guard let id = await model.messageID(forPin: pin), model.sessionID == sessionID
+                                    else { return }
+                                    isShowingMessagePins = false
+                                    pinnedMessageJumpID = id
+                                }
                             }
+                            .task { await model.refreshMessagePins() }
                         }
-                        .task { await model.refreshMessagePins() }
-                    }
                     // Search lives in the "…" menu; this keeps ⌘F working.
                     Button("") { isShowingMessageSearch.toggle() }
                         .keyboardShortcut("f", modifiers: .command)
@@ -614,7 +649,8 @@ extension DockPopover {
                     .fixedSize()
 
                 if showsInspector && !inspectorHasOwnToggle {
-                    DockSidebarToggle(isCollapsed: !inspectorPanelIsVisible, edge: .trailing, action: toggleInspectorPanel)
+                    DockSidebarToggle(
+                        isCollapsed: !inspectorPanelIsVisible, edge: .trailing, action: toggleInspectorPanel)
                 }
             }
             .padding(.leading, hidesChatList ? DockWindowChrome.sidebarToggleLeading : 12)

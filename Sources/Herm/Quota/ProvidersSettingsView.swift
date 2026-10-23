@@ -86,10 +86,14 @@ struct ProvidersSettingsView: View {
                 .frame(height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
+                        .dockSurfaceFill(
+                            Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: DockLayout.hairline)
                 )
-                DockSegmentedPicker(selection: $filter, options: [(.all, "All"), (.connected, "Connected"), (.available, "Available")])
-                Button { load() } label: {
+                DockSegmentedPicker(
+                    selection: $filter, options: [(.all, "All"), (.connected, "Connected"), (.available, "Available")])
+                Button {
+                    load()
+                } label: {
                     if isLoading { ProgressView().controlSize(.small) } else { DockIcon(.arrowsClockwise) }
                 }
                 .buttonStyle(.dockHover)
@@ -116,7 +120,8 @@ struct ProvidersSettingsView: View {
             }
         }
         .task { load() }
-        .sheet(item: Binding(get: { addingAccountFor.map(SheetProvider.init) }, set: { addingAccountFor = $0?.id })) { item in
+        .sheet(item: Binding(get: { addingAccountFor.map(SheetProvider.init) }, set: { addingAccountFor = $0?.id })) {
+            item in
             AddPoolAccountSheet(control: control, initialProvider: item.id, onAdded: { load() })
         }
         .confirmationDialog(
@@ -238,11 +243,13 @@ struct ProvidersSettingsView: View {
                         .buttonStyle(.dockPrimary)
                         .disabled(busy || keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                ModalNote(text: "Saved by Hermes in its own .env\(row.keyEnv.map { " as \($0)" } ?? "").", icon: .lockSimple)
+                ModalNote(
+                    text: "Saved by Hermes in its own .env\(row.keyEnv.map { " as \($0)" } ?? "").", icon: .lockSimple)
             case .browser:
-                ModalNote(text: row.authenticated
-                    ? "Signed in. Add another account to let Hermes rotate between them."
-                    : "Sign in through your browser. Hermes keeps the account in its credential pool.",
+                ModalNote(
+                    text: row.authenticated
+                        ? "Signed in. Add another account to let Hermes rotate between them."
+                        : "Sign in through your browser. Hermes keeps the account in its credential pool.",
                     icon: .user)
             case .external:
                 ModalNote(text: row.warning ?? "Configure this provider with Hermes' setup wizard.", icon: .info)
@@ -262,11 +269,19 @@ struct ProvidersSettingsView: View {
 
             HStack(spacing: 8) {
                 if row.access == .browser && !row.authenticated {
-                    Button { addingAccountFor = row.slug } label: { DockIconLabel("Sign In", icon: .user) }
-                        .buttonStyle(.dockPrimary)
+                    Button {
+                        addingAccountFor = row.slug
+                    } label: {
+                        DockIconLabel("Sign In", icon: .user)
+                    }
+                    .buttonStyle(.dockPrimary)
                 } else if row.access != .external {
-                    Button { addingAccountFor = row.slug } label: { DockIconLabel("Add Pool Account", icon: .plus) }
-                        .buttonStyle(.dockSecondary)
+                    Button {
+                        addingAccountFor = row.slug
+                    } label: {
+                        DockIconLabel("Add Pool Account", icon: .plus)
+                    }
+                    .buttonStyle(.dockSecondary)
                 }
                 Spacer()
                 if busy { ProgressView().controlSize(.small) }
@@ -311,7 +326,9 @@ struct ProvidersSettingsView: View {
         run(row, HermesFeatureIDs.ID.modelDisconnect, params: ["slug": row.slug]) {}
     }
 
-    private func run(_ row: HermesProviderRow, _ method: HermesFeatureIDs.ID, params: [String: Any], onSuccess: @escaping () -> Void) {
+    private func run(
+        _ row: HermesProviderRow, _ method: HermesFeatureIDs.ID, params: [String: Any], onSuccess: @escaping () -> Void
+    ) {
         busySlug = row.slug
         actionError[row.slug] = nil
         Task {

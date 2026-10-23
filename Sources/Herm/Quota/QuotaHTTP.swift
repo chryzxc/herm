@@ -21,7 +21,9 @@ enum QuotaHTTP {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return .failure(.invalidResponse) }
             guard (200..<300).contains(http.statusCode) else { return .failure(.status(http.statusCode)) }
-            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .failure(.invalidResponse) }
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return .failure(.invalidResponse)
+            }
             return .success(object)
         } catch {
             return .failure(.network)

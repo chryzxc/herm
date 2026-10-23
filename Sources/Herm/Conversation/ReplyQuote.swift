@@ -45,16 +45,19 @@ struct ReplyQuoteChip: View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 1.5).fill(Color.dockAccent).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
-                if showsAuthor { Text(quote.author).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent) }
+                if showsAuthor {
+                    Text(quote.author).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
+                }
                 Text(quote.snippet).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let onDismiss {
                 Button(action: onDismiss) {
-                    DockIcon(.x, size: 11, color: .dockSecondaryText).frame(width: 28, height: 28).contentShape(Rectangle())
+                    DockIcon(.x, size: 11, color: .dockSecondaryText).frame(width: 28, height: 28).contentShape(
+                        Rectangle())
                 }
                 .buttonStyle(.dockHover)
-                    .help("Cancel reply")
+                .help("Cancel reply")
             }
         }
         .fixedSize(horizontal: false, vertical: true)

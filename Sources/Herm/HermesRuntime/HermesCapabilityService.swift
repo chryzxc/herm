@@ -132,8 +132,9 @@ final class HermesCapabilityService {
         let activeSessionID = Self.normalizedSessionID(sessionID)
         let cacheKey = CacheKey(clientID: clientID, remindersAvailable: remindersAvailable, sessionID: activeSessionID)
         if !forceRefresh,
-           let cached = cachedSnapshots[cacheKey],
-           cached.client === client {
+            let cached = cachedSnapshots[cacheKey],
+            cached.client === client
+        {
             return cached.snapshot.states
         }
 
@@ -185,7 +186,8 @@ final class HermesCapabilityService {
                     : []
             }
             probeGeneration += 1
-            let stale = cachedSnapshots[cacheKey]?.client === client
+            let stale =
+                cachedSnapshots[cacheKey]?.client === client
                 ? Self.markStale(cachedSnapshots[cacheKey]!.snapshot.states)
                 : []
             return stale
@@ -233,52 +235,53 @@ final class HermesCapabilityService {
             resultBox.markStarted()
             return []
         }
-        let specs: [(String, HermesFeatureIDs.ID, [String: Any])] = [
-            ("session", HermesFeatureIDs.ID.sessionActiveList, [:]),
-            // The roster RPC is fast and read-only; probing it before the
-            // slow shell.exec probes keeps it inside the batch's bounded
-            // timeout instead of starving at the end of the serial queue.
-            // Kanban backs the primary Control/Activity projection. Probe it
-            // before the long tail of optional shell integrations so the
-            // bounded capability pass cannot time out before reaching it.
-            ("kanban", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban list --help"]),
-            ("profiles", HermesFeatureIDs.ID.profilesList, ["limit": 100]),
-            ("scheduling", HermesFeatureIDs.ID.cronManage, ["action": "list"]),
-            ("projects", HermesFeatureIDs.ID.projectsTree, [:]), ("tools", HermesFeatureIDs.ID.toolsList, [:]),
-            ("plugins", HermesFeatureIDs.ID.pluginsList, [:]), ("config", HermesFeatureIDs.ID.configShow, [:]),
-            ("version", HermesFeatureIDs.ID.shellExec, ["command": "hermes --version"]),
-            ("skills", HermesFeatureIDs.ID.shellExec, ["command": "hermes skills list --enabled-only"]),
-            ("notes", HermesFeatureIDs.ID.shellExec, ["command": "memo --version"]),
-            ("email", HermesFeatureIDs.ID.shellExec, ["command": "himalaya --version"]),
-            ("messaging", HermesFeatureIDs.ID.shellExec, ["command": "imsg --version"]),
-            ("mcp", HermesFeatureIDs.ID.shellExec, ["command": "hermes mcp list"]),
-            ("kanbanDetails", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban show --help"]),
-            ("kanbanRuns", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban runs --help"]),
-            ("kanbanStats", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban stats --help"]),
-            ("kanbanAssignees", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban assignees --help"]),
-            ("kanbanBoards", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban boards list --help"]),
-            ("kanbanCreate", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban create --help"]),
-            ("kanbanComplete", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban complete --help"]),
-            ("kanbanBlock", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban block --help"]),
-            ("kanbanUnblock", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban unblock --help"]),
-            ("kanbanArchive", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban archive --help"]),
-            ("kanbanComment", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban comment --help"]),
-            ("kanbanSchedule", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban schedule --help"]),
-            ("kanbanAssign", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban assign --help"]),
-            ("kanbanReassign", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban reassign --help"]),
-            ("kanbanPromote", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban promote --help"]),
-            ("kanbanReclaim", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban reclaim --help"]),
-            ("cronRunNow", HermesFeatureIDs.ID.shellExec, ["command": "hermes cron run --help"]),
-            ("cronEdit", HermesFeatureIDs.ID.shellExec, ["command": "hermes cron edit --help"]),
-            ("mcpTest", HermesFeatureIDs.ID.shellExec, ["command": "hermes mcp test --help"]),
-            ("diagnosticsStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes status --help"]),
-            ("monitoringStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes monitoring status --help"]),
-            ("checkpointStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes checkpoints status --help"]),
-            ("hooksList", HermesFeatureIDs.ID.shellExec, ["command": "hermes hooks list --help"]),
-            ("journey", HermesFeatureIDs.ID.shellExec, ["command": "hermes journey --help"]),
-            ("sessionStats", HermesFeatureIDs.ID.shellExec, ["command": "hermes sessions stats --help"]),
-            ("memoryStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes memory status --help"])
-        ] + (sessionID.map { [("activity", HermesFeatureIDs.ID.processList, ["session_id": $0])] } ?? [])
+        let specs: [(String, HermesFeatureIDs.ID, [String: Any])] =
+            [
+                ("session", HermesFeatureIDs.ID.sessionActiveList, [:]),
+                // The roster RPC is fast and read-only; probing it before the
+                // slow shell.exec probes keeps it inside the batch's bounded
+                // timeout instead of starving at the end of the serial queue.
+                // Kanban backs the primary Control/Activity projection. Probe it
+                // before the long tail of optional shell integrations so the
+                // bounded capability pass cannot time out before reaching it.
+                ("kanban", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban list --help"]),
+                ("profiles", HermesFeatureIDs.ID.profilesList, ["limit": 100]),
+                ("scheduling", HermesFeatureIDs.ID.cronManage, ["action": "list"]),
+                ("projects", HermesFeatureIDs.ID.projectsTree, [:]), ("tools", HermesFeatureIDs.ID.toolsList, [:]),
+                ("plugins", HermesFeatureIDs.ID.pluginsList, [:]), ("config", HermesFeatureIDs.ID.configShow, [:]),
+                ("version", HermesFeatureIDs.ID.shellExec, ["command": "hermes --version"]),
+                ("skills", HermesFeatureIDs.ID.shellExec, ["command": "hermes skills list --enabled-only"]),
+                ("notes", HermesFeatureIDs.ID.shellExec, ["command": "memo --version"]),
+                ("email", HermesFeatureIDs.ID.shellExec, ["command": "himalaya --version"]),
+                ("messaging", HermesFeatureIDs.ID.shellExec, ["command": "imsg --version"]),
+                ("mcp", HermesFeatureIDs.ID.shellExec, ["command": "hermes mcp list"]),
+                ("kanbanDetails", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban show --help"]),
+                ("kanbanRuns", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban runs --help"]),
+                ("kanbanStats", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban stats --help"]),
+                ("kanbanAssignees", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban assignees --help"]),
+                ("kanbanBoards", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban boards list --help"]),
+                ("kanbanCreate", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban create --help"]),
+                ("kanbanComplete", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban complete --help"]),
+                ("kanbanBlock", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban block --help"]),
+                ("kanbanUnblock", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban unblock --help"]),
+                ("kanbanArchive", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban archive --help"]),
+                ("kanbanComment", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban comment --help"]),
+                ("kanbanSchedule", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban schedule --help"]),
+                ("kanbanAssign", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban assign --help"]),
+                ("kanbanReassign", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban reassign --help"]),
+                ("kanbanPromote", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban promote --help"]),
+                ("kanbanReclaim", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban reclaim --help"]),
+                ("cronRunNow", HermesFeatureIDs.ID.shellExec, ["command": "hermes cron run --help"]),
+                ("cronEdit", HermesFeatureIDs.ID.shellExec, ["command": "hermes cron edit --help"]),
+                ("mcpTest", HermesFeatureIDs.ID.shellExec, ["command": "hermes mcp test --help"]),
+                ("diagnosticsStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes status --help"]),
+                ("monitoringStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes monitoring status --help"]),
+                ("checkpointStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes checkpoints status --help"]),
+                ("hooksList", HermesFeatureIDs.ID.shellExec, ["command": "hermes hooks list --help"]),
+                ("journey", HermesFeatureIDs.ID.shellExec, ["command": "hermes journey --help"]),
+                ("sessionStats", HermesFeatureIDs.ID.shellExec, ["command": "hermes sessions stats --help"]),
+                ("memoryStatus", HermesFeatureIDs.ID.shellExec, ["command": "hermes memory status --help"]),
+            ] + (sessionID.map { [("activity", HermesFeatureIDs.ID.processList, ["session_id": $0])] } ?? [])
         let results = await requestBatch(
             client,
             specs: specs.map { ProbeSpec(key: $0.0, method: $0.1, params: $0.2) },
@@ -337,11 +340,13 @@ final class HermesCapabilityService {
         let emailAvailable = Self.shellResultSucceeded(emailResult)
         let messagingAvailable = Self.shellResultSucceeded(imessageResult)
         let mcpAvailable = Self.shellResultSucceeded(mcpResult)
-        let kanbanAvailable = Self.shellResultSucceeded(kanbanResult)
+        let kanbanAvailable =
+            Self.shellResultSucceeded(kanbanResult)
             && ((kanbanResult?["stdout"] as? String)?.localizedCaseInsensitiveContains("--json") == true)
         let mcpOutput = (mcpResult?["stdout"] as? String) ?? ""
         let hasMCPServers = mcpAvailable && !mcpOutput.localizedCaseInsensitiveContains("No MCP servers configured")
-        let version = (configResult?["version"] as? String)
+        let version =
+            (configResult?["version"] as? String)
             ?? (configResult?["hermes_version"] as? String)
             ?? (Self.shellResultSucceeded(versionResult) ? versionOutput : nil)
 
@@ -357,7 +362,8 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: HermesFeatureIDs.ID.bots.rawValue,
                 title: "Hermes Bots",
-                detail: profilesResult == nil ? "profiles.list is unsupported or unavailable" : "Hermes profile roster is available",
+                detail: profilesResult == nil
+                    ? "profiles.list is unsupported or unavailable" : "Hermes profile roster is available",
                 isAvailable: profilesResult != nil,
                 recovery: profilesResult == nil ? "Upgrade Hermes to enable Bot Mode." : nil
             ),
@@ -374,28 +380,33 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: HermesFeatureIDs.ID.rpcSessions.rawValue,
                 title: "Session control",
-                detail: sessionRPC == nil ? "session.active_list is unsupported or unavailable" : "Session listing and activation RPCs are available",
+                detail: sessionRPC == nil
+                    ? "session.active_list is unsupported or unavailable"
+                    : "Session listing and activation RPCs are available",
                 isAvailable: sessionRPC != nil,
                 recovery: sessionRPC == nil ? "Upgrade Hermes or use Ask to manage sessions through the agent." : nil
             ),
             CapabilityState(
                 id: HermesFeatureIDs.ID.rpcScheduling.rawValue,
                 title: "Cron control",
-                detail: schedulingRPC == nil ? "cron.manage is unsupported or unavailable" : "Cron listing and controls are available",
+                detail: schedulingRPC == nil
+                    ? "cron.manage is unsupported or unavailable" : "Cron listing and controls are available",
                 isAvailable: schedulingRPC != nil,
                 recovery: schedulingRPC == nil ? "Upgrade Hermes or manage scheduled work through the Hermes CLI." : nil
             ),
             CapabilityState(
                 id: HermesFeatureIDs.ID.rpcActivity.rawValue,
                 title: "Activity inspection",
-                detail: activityRPC == nil ? "process.list is unsupported or unavailable" : "Process and activity inspection is available",
+                detail: activityRPC == nil
+                    ? "process.list is unsupported or unavailable" : "Process and activity inspection is available",
                 isAvailable: activityRPC != nil,
                 recovery: activityRPC == nil ? "Upgrade Hermes to expose process activity to Herm." : nil
             ),
             CapabilityState(
                 id: HermesFeatureIDs.ID.rpcProjects.rawValue,
                 title: "Project control",
-                detail: projectsRPC == nil ? "projects.tree is unsupported or unavailable" : "Project and repository context is available",
+                detail: projectsRPC == nil
+                    ? "projects.tree is unsupported or unavailable" : "Project and repository context is available",
                 isAvailable: projectsRPC != nil,
                 recovery: projectsRPC == nil ? "Upgrade Hermes or open project context through Ask." : nil
             ),
@@ -412,10 +423,12 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: HermesFeatureIDs.ID.notes.rawValue,
                 title: "Apple Notes",
-                detail: notesAvailable ? "Available through memo and the Hermes apple-notes skill" : "memo is unavailable or unauthorized",
+                detail: notesAvailable
+                    ? "Available through memo and the Hermes apple-notes skill" : "memo is unavailable or unauthorized",
                 isAvailable: notesAvailable,
                 recovery: notesAvailable ? nil : "Install memo and authorize Notes access.",
-                recoveryCommand: notesAvailable ? nil : "brew tap antoniorodr/memo && brew install antoniorodr/memo/memo",
+                recoveryCommand: notesAvailable
+                    ? nil : "brew tap antoniorodr/memo && brew install antoniorodr/memo/memo",
                 source: .external,
                 access: .externalSetup,
                 availability: notesAvailable ? .available : .unavailable
@@ -455,7 +468,8 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: HermesFeatureIDs.ID.messaging.rawValue,
                 title: "Messaging",
-                detail: messagingAvailable ? "iMessage CLI is available through Hermes" : "imsg is unavailable or unauthorized",
+                detail: messagingAvailable
+                    ? "iMessage CLI is available through Hermes" : "imsg is unavailable or unauthorized",
                 isAvailable: messagingAvailable,
                 recovery: messagingAvailable ? nil : "Install imsg and grant Messages access.",
                 recoveryCommand: messagingAvailable ? nil : "brew install steipete/tap/imsg",
@@ -466,7 +480,8 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: HermesFeatureIDs.ID.email.rawValue,
                 title: "Email",
-                detail: emailAvailable ? "Email CLI is available through Hermes" : "himalaya is unavailable or unconfigured",
+                detail: emailAvailable
+                    ? "Email CLI is available through Hermes" : "himalaya is unavailable or unconfigured",
                 isAvailable: emailAvailable,
                 recovery: emailAvailable ? nil : "Install and configure himalaya before enabling email actions.",
                 recoveryCommand: emailAvailable ? nil : "brew install himalaya",
@@ -477,18 +492,27 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: HermesFeatureIDs.ID.kanban.rawValue,
                 title: "Hermes Kanban",
-                detail: kanbanAvailable ? "Kanban CLI is available through Hermes shell; desktop RPC is unavailable" : "Kanban CLI is unavailable",
+                detail: kanbanAvailable
+                    ? "Kanban CLI is available through Hermes shell; desktop RPC is unavailable"
+                    : "Kanban CLI is unavailable",
                 isAvailable: kanbanAvailable,
-                recovery: kanbanAvailable ? "Use Hermes Kanban prompts for actions; Herm does not duplicate the board." : "Install or enable Hermes Kanban before using Kanban actions.",
+                recovery: kanbanAvailable
+                    ? "Use Hermes Kanban prompts for actions; Herm does not duplicate the board."
+                    : "Install or enable Hermes Kanban before using Kanban actions.",
                 source: .cli,
                 access: .confirmedMutation
             ),
             CapabilityState(
                 id: HermesFeatureIDs.ID.mcp.rawValue,
                 title: "Third-party MCP",
-                detail: !mcpAvailable ? "MCP configuration is unavailable" : (hasMCPServers ? "Configured MCP servers are available through Hermes" : "No MCP servers are configured"),
+                detail: !mcpAvailable
+                    ? "MCP configuration is unavailable"
+                    : (hasMCPServers
+                        ? "Configured MCP servers are available through Hermes" : "No MCP servers are configured"),
                 isAvailable: hasMCPServers,
-                recovery: !mcpAvailable ? "Reconnect Hermes and configure MCP servers there." : (hasMCPServers ? nil : "Configure an MCP server in Hermes before using third-party actions."),
+                recovery: !mcpAvailable
+                    ? "Reconnect Hermes and configure MCP servers there."
+                    : (hasMCPServers ? nil : "Configure an MCP server in Hermes before using third-party actions."),
                 source: .external,
                 access: .externalSetup,
                 availability: !mcpAvailable || !hasMCPServers ? .unavailable : .available
@@ -538,17 +562,50 @@ final class HermesCapabilityService {
                 access: .readOnly,
                 requiredHelpTerms: ["list", "--json"]
             ),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanCreate.rawValue, title: "Create Kanban task", commandResult: kanbanCreate, recovery: "This Hermes version does not expose Kanban task creation.", access: .confirmedMutation, requiredHelpTerms: ["title"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanComplete.rawValue, title: "Complete Kanban task", commandResult: kanbanComplete, recovery: "This Hermes version does not expose Kanban completion.", access: .confirmedMutation, requiredHelpTerms: ["task"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanBlock.rawValue, title: "Block Kanban task", commandResult: kanbanBlock, recovery: "This Hermes version does not expose Kanban blocking.", access: .confirmedMutation, requiredHelpTerms: ["task"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanUnblock.rawValue, title: "Unblock Kanban task", commandResult: kanbanUnblock, recovery: "This Hermes version does not expose Kanban unblocking.", access: .confirmedMutation, requiredHelpTerms: ["task"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanArchive.rawValue, title: "Archive Kanban task", commandResult: kanbanArchive, recovery: "This Hermes version does not expose Kanban archiving.", access: .confirmedMutation, requiredHelpTerms: ["task"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanComment.rawValue, title: "Comment on Kanban task", commandResult: kanbanComment, recovery: "This Hermes version does not expose Kanban comments.", access: .confirmedMutation, requiredHelpTerms: ["task_id", "text"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanSchedule.rawValue, title: "Schedule Kanban task", commandResult: kanbanSchedule, recovery: "This Hermes version does not expose Kanban scheduling.", access: .confirmedMutation, requiredHelpTerms: ["task_id", "reason"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanAssign.rawValue, title: "Assign Kanban task", commandResult: kanbanAssign, recovery: "This Hermes version does not expose Kanban assignment.", access: .confirmedMutation, requiredHelpTerms: ["task_id", "profile"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanReassign.rawValue, title: "Reassign Kanban task", commandResult: kanbanReassign, recovery: "This Hermes version does not expose Kanban reassignment.", access: .confirmedMutation, requiredHelpTerms: ["task_id", "profile", "--reclaim"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanPromote.rawValue, title: "Promote Kanban task", commandResult: kanbanPromote, recovery: "This Hermes version does not expose Kanban promotion.", access: .confirmedMutation, requiredHelpTerms: ["task_id", "reason"]),
-            cliCapability(id: HermesFeatureIDs.ID.kanbanReclaim.rawValue, title: "Reclaim Kanban task", commandResult: kanbanReclaim, recovery: "This Hermes version does not expose Kanban reclaim.", access: .confirmedMutation, requiredHelpTerms: ["task_id", "--reason"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanCreate.rawValue, title: "Create Kanban task", commandResult: kanbanCreate,
+                recovery: "This Hermes version does not expose Kanban task creation.", access: .confirmedMutation,
+                requiredHelpTerms: ["title"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanComplete.rawValue, title: "Complete Kanban task",
+                commandResult: kanbanComplete, recovery: "This Hermes version does not expose Kanban completion.",
+                access: .confirmedMutation, requiredHelpTerms: ["task"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanBlock.rawValue, title: "Block Kanban task", commandResult: kanbanBlock,
+                recovery: "This Hermes version does not expose Kanban blocking.", access: .confirmedMutation,
+                requiredHelpTerms: ["task"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanUnblock.rawValue, title: "Unblock Kanban task",
+                commandResult: kanbanUnblock, recovery: "This Hermes version does not expose Kanban unblocking.",
+                access: .confirmedMutation, requiredHelpTerms: ["task"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanArchive.rawValue, title: "Archive Kanban task",
+                commandResult: kanbanArchive, recovery: "This Hermes version does not expose Kanban archiving.",
+                access: .confirmedMutation, requiredHelpTerms: ["task"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanComment.rawValue, title: "Comment on Kanban task",
+                commandResult: kanbanComment, recovery: "This Hermes version does not expose Kanban comments.",
+                access: .confirmedMutation, requiredHelpTerms: ["task_id", "text"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanSchedule.rawValue, title: "Schedule Kanban task",
+                commandResult: kanbanSchedule, recovery: "This Hermes version does not expose Kanban scheduling.",
+                access: .confirmedMutation, requiredHelpTerms: ["task_id", "reason"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanAssign.rawValue, title: "Assign Kanban task", commandResult: kanbanAssign,
+                recovery: "This Hermes version does not expose Kanban assignment.", access: .confirmedMutation,
+                requiredHelpTerms: ["task_id", "profile"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanReassign.rawValue, title: "Reassign Kanban task",
+                commandResult: kanbanReassign, recovery: "This Hermes version does not expose Kanban reassignment.",
+                access: .confirmedMutation, requiredHelpTerms: ["task_id", "profile", "--reclaim"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanPromote.rawValue, title: "Promote Kanban task",
+                commandResult: kanbanPromote, recovery: "This Hermes version does not expose Kanban promotion.",
+                access: .confirmedMutation, requiredHelpTerms: ["task_id", "reason"]),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanReclaim.rawValue, title: "Reclaim Kanban task",
+                commandResult: kanbanReclaim, recovery: "This Hermes version does not expose Kanban reclaim.",
+                access: .confirmedMutation, requiredHelpTerms: ["task_id", "--reason"]),
             cliCapability(
                 id: HermesFeatureIDs.ID.cronRunNow.rawValue,
                 title: "Run scheduled job now",
@@ -621,7 +678,7 @@ final class HermesCapabilityService {
                 commandResult: memoryStatus,
                 recovery: "This Hermes version does not expose memory health status.",
                 access: .readOnly
-            )
+            ),
         ]
 
         let states = rawStates.map(Self.productionMetadata)
@@ -672,17 +729,17 @@ final class HermesCapabilityService {
                 // after that cancellation; it would starve the next refresh
                 // and could later overwrite its cache boundary.
                 guard generation == probeGeneration,
-                      !timedOutGenerations.contains(generation),
-                      !resultBox.hasTimedOut,
-                      !Task.isCancelled else {
+                    !timedOutGenerations.contains(generation),
+                    !resultBox.hasTimedOut,
+                    !Task.isCancelled
+                else {
                     group.cancelAll()
                     break
                 }
                 // Once the first request has completed, maintain the bounded
                 // pipeline for the remaining low-cost capability probes.
                 while inFlight < limit {
-                    if let spec = iterator.next() { add(spec) }
-                    else { break }
+                    if let spec = iterator.next() { add(spec) } else { break }
                 }
             }
             return results
@@ -708,7 +765,8 @@ final class HermesCapabilityService {
         requiredHelpTerms: [String] = []
     ) -> CapabilityState {
         let help = (commandResult?["stdout"] as? String)?.lowercased() ?? ""
-        let available = Self.shellResultSucceeded(commandResult)
+        let available =
+            Self.shellResultSucceeded(commandResult)
             && requiredHelpTerms.allSatisfy { help.contains($0.lowercased()) }
         return CapabilityState(
             id: id,
@@ -727,22 +785,27 @@ final class HermesCapabilityService {
         guard let rawValue = try? await client.request(spec.method.rawValue, params: spec.params) else {
             return ProbeResponse(value: nil)
         }
-        let value = spec.method == .shellExec
+        let value =
+            spec.method == .shellExec
             ? HermesControlRPC.normalizedShellResult(rawValue)
             : rawValue
         guard
-              !Task.isCancelled,
-              !value.isEmpty,
-              value["error"] == nil else { return ProbeResponse(value: nil) }
+            !Task.isCancelled,
+            !value.isEmpty,
+            value["error"] == nil
+        else { return ProbeResponse(value: nil) }
         return ProbeResponse(value: value)
     }
 
-    private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async -> [String: Any]? {
+    private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async
+        -> [String: Any]?
+    {
         guard !Task.isCancelled else { return nil }
         guard let result = try? await client.request(method, params: params),
-              !Task.isCancelled,
-              !result.isEmpty,
-              result["error"] == nil else { return nil }
+            !Task.isCancelled,
+            !result.isEmpty,
+            result["error"] == nil
+        else { return nil }
         return result
     }
 

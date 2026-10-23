@@ -31,14 +31,15 @@ enum DockAccentColor: Int, CaseIterable {
         var result = NSColor.gray
         NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
             let monochrome = DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk
-            result = NSColor(DockThemePalette(theme: monochrome ? .mono : .clean).fill(self)).usingColorSpace(.sRGB) ?? .gray
+            result =
+                NSColor(DockThemePalette(theme: monochrome ? .mono : .clean).fill(self)).usingColorSpace(.sRGB) ?? .gray
         }
         return result
     }
 
     static func identity(for id: String) -> Self {
         let seed = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8
-            .reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
+            .reduce(UInt64(14_695_981_039_346_656_037)) { ($0 ^ UInt64($1)) &* 1_099_511_628_211 }
         return allCases[Int(seed % UInt64(allCases.count))]
     }
 
@@ -56,12 +57,13 @@ enum DockAccentColor: Int, CaseIterable {
             if surfaces.allSatisfy({ surface in
                 let paper = DockThemePalette.luminance(surface)
                 return (max(ink, paper) + 0.05) / (min(ink, paper) + 0.05) >= 4.5
-            }) { return candidate }
+            }) {
+                return candidate
+            }
         }
         return target == 0 ? "#111111" : "#FFFFFF"
     }
 }
-
 
 /// Category identity is independent of health, urgency, and the selected skin.
 enum DockCategoryTone: CaseIterable {

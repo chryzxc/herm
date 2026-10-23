@@ -1,7 +1,7 @@
 import AppKit
 import Combine
-import SwiftUI
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 enum ConversationScrollMetrics {
@@ -30,7 +30,8 @@ enum ConversationScrollMetrics {
         // It is therefore both at the top and at the bottom; treating it as
         // browsing produces a false unread badge on the next append.
         if topMinY >= -pastEndTolerance,
-           bottomMaxY <= viewportHeight + pastEndTolerance {
+            bottomMaxY <= viewportHeight + pastEndTolerance
+        {
             return true
         }
         return isAtBottom(bottomMaxY: bottomMaxY, viewportHeight: viewportHeight, tolerance: tolerance)

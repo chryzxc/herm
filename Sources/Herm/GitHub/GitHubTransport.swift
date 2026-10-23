@@ -6,4 +6,3 @@ protocol GitHubIssueTransport: Sendable {
 }
 
 extension URLSession: GitHubIssueTransport {}
-

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Herm
 
 private actor ReviewerTransport: GitHubIssueTransport {
@@ -17,19 +18,29 @@ private actor ReviewerTransport: GitHubIssueTransport {
         } else if url.path.hasSuffix("/requested_reviewers") {
             row = ["users": [["login": "old"]], "teams": [["slug": "team"]]]
         } else if url.path.hasSuffix("/collaborators") {
-            row = [["login": "author", "permissions": ["push": true]],
-                   ["login": "reader", "permissions": ["push": false]],
-                   ["login": "new", "permissions": ["push": true]]]
+            row = [
+                ["login": "author", "permissions": ["push": true]],
+                ["login": "reader", "permissions": ["push": false]],
+                ["login": "new", "permissions": ["push": true]],
+            ]
         } else if url.path.hasSuffix("/issues/42") {
             row = ["title": "Example"]
-        } else { row = ["permissions": ["push": true]] }
-        return (try JSONSerialization.data(withJSONObject: row), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        } else {
+            row = ["permissions": ["push": true]]
+        }
+        return (
+            try JSONSerialization.data(withJSONObject: row),
+            HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
     }
 }
 
 struct PullRequestReviewerTests {
     private var reference: GitHubItemReference {
-        GitHubItemReference(repository: GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!), number: 42, kind: .pullRequest)
+        GitHubItemReference(
+            repository: GitHubRepositoryReference(
+                owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!), number: 42,
+            kind: .pullRequest)
     }
     @Test func choicesExcludeAuthorAndReadOnlyPeople() async throws {
         let service = PullRequestReviewerService(client: GitHubClient(transport: ReviewerTransport()))

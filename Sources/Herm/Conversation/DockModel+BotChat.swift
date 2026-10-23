@@ -11,39 +11,55 @@ extension DockModel {
         // has no canonical session pointer yet, Hermes resolves (and lazily
         // creates) the chat by its exact title during profile-scoped resume.
         let chat = bot.chat ?? BotChatReference(sessionID: BotService.canonicalBotChatTitle, profileID: bot.id)
-        Task { _ = await resumeSession(HermesSession(id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive, messageCount: 0, source: "hermes-bot"), reportFailure: true, profileID: chat.profileID) }
+        Task {
+            _ = await resumeSession(
+                HermesSession(
+                    id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive,
+                    messageCount: 0, source: "hermes-bot"), reportFailure: true, profileID: chat.profileID)
+        }
     }
 
     /// Routes an explicit, unambiguous Bot mention to its profile-scoped Bot Chat.
     /// The recipient owns the turn; this model keeps the foreground
     /// session untouched and projects the streamed reply into its transcript.
     /// Generic `delegate_task` workers are never relabelled as the Bot.
-    func sendDirectBotRequest(profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil) {
+    func sendDirectBotRequest(
+        profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil
+    ) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // First message of a new chat: create the origin, then contact the Bot.
         if sessionID == nil, !request.isEmpty, !isSending, !isRestoringSession,
-           newSessionCreationAuthorized, !isCreatingSession {
+            newSessionCreationAuthorized, !isCreatingSession
+        {
             Task {
                 guard (try? await createAuthorizedSession(source: "herm")) != nil else { return }
-                sendDirectBotRequest(profileID: profileID, displayName: displayName, text: text, chatSessionID: chatSessionID, quote: quote)
+                sendDirectBotRequest(
+                    profileID: profileID, displayName: displayName, text: text, chatSessionID: chatSessionID,
+                    quote: quote)
             }
             return
         }
         guard !request.isEmpty,
-              !isUpdatingSessionModel,
-              !isRestoringSession,
-              pendingImages.isEmpty,
-              pendingPDFURL == nil,
-              let currentSessionID = sessionID,
-              !currentSessionID.isEmpty,
-              let originSessionID = sessionStorageID ?? sessionID,
-              !originSessionID.isEmpty else { return }
+            !isUpdatingSessionModel,
+            !isRestoringSession,
+            pendingImages.isEmpty,
+            pendingPDFURL == nil,
+            let currentSessionID = sessionID,
+            !currentSessionID.isEmpty,
+            let originSessionID = sessionStorageID ?? sessionID,
+            !originSessionID.isEmpty
+        else { return }
 
-        let explicitBotSessionID = chatSessionID
+        let explicitBotSessionID =
+            chatSessionID
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .flatMap { $0.isEmpty ? nil : $0 }
-        let activity = BotActivityRecord(originSessionID: originSessionID, botID: profileID, botName: displayName, summary: request, botChatSessionID: explicitBotSessionID)
-        inFlightBotActivities[activity.id] = InFlightBotActivity(activityID: activity.id, originSessionID: originSessionID, botID: profileID, botChatSessionID: explicitBotSessionID, clarificationRequestID: nil)
+        let activity = BotActivityRecord(
+            originSessionID: originSessionID, botID: profileID, botName: displayName, summary: request,
+            botChatSessionID: explicitBotSessionID)
+        inFlightBotActivities[activity.id] = InFlightBotActivity(
+            activityID: activity.id, originSessionID: originSessionID, botID: profileID,
+            botChatSessionID: explicitBotSessionID, clarificationRequestID: nil)
         insertBotActivity(activity)
         if explicitBotSessionID != nil {
             updateBotActivity(id: activity.id, state: .working)
@@ -53,7 +69,8 @@ extension DockModel {
         let relayMessage = Self.botRelayMessage(request: quote?.composing(request) ?? request, transcript: messages)
         draft = ""
         replyQuote = nil
-        messages.append(ChatMessage(role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName))
+        messages.append(
+            ChatMessage(role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName))
         // A running foreground turn keeps owning status/isSending; the request
         // is tracked by its activity and must not mark that turn idle.
         let ownsTurn = !isSending && status != .working
@@ -65,32 +82,43 @@ extension DockModel {
             do {
                 try await sessionRPCClient.connect()
                 guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == currentSessionID else { return }
+                    self.sessionID == currentSessionID
+                else { return }
                 let botSessionID = try await HermesControlRPC(client: sessionRPCClient).submitBotMessage(
                     profileID: profileID, message: relayMessage, chatSessionID: explicitBotSessionID
                 ) { botSessionID in
                     guard self.sessionResumeGeneration == sendGeneration, self.sessionID == currentSessionID else {
                         throw CancellationError()
                     }
-                    guard !self.inFlightBotActivities.values.contains(where: {
-                        $0.activityID != activity.id && $0.botChatSessionID == botSessionID
-                    }) else {
-                        throw QuickDraftError.message("This Bot is already answering an earlier mention. Wait for its reply before sending again.")
+                    guard
+                        !self.inFlightBotActivities.values.contains(where: {
+                            $0.activityID != activity.id && $0.botChatSessionID == botSessionID
+                        })
+                    else {
+                        throw QuickDraftError.message(
+                            "This Bot is already answering an earlier mention. Wait for its reply before sending again."
+                        )
                     }
                     self.inFlightBotActivities[activity.id]?.botChatSessionID = botSessionID
                     self.updateBotActivity(id: activity.id, state: .working, botChatSessionID: botSessionID)
                 }
                 guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == currentSessionID else { return }
+                    self.sessionID == currentSessionID
+                else { return }
                 if ownsTurn, !currentSessionIDs.contains(botSessionID) {
                     status = .idle
                     isSending = false
                 }
             } catch {
                 guard self.sessionResumeGeneration == sendGeneration,
-                      self.sessionID == currentSessionID else { return }
-                let message = "\(displayName) couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
-                messages.append(ChatMessage(role: .hermes, text: message, isError: true, botProfileID: profileID, botDisplayName: displayName))
+                    self.sessionID == currentSessionID
+                else { return }
+                let message =
+                    "\(displayName) couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                messages.append(
+                    ChatMessage(
+                        role: .hermes, text: message, isError: true, botProfileID: profileID,
+                        botDisplayName: displayName))
                 updateBotActivity(id: activity.id, state: .failed, result: message)
                 inFlightBotActivities.removeValue(forKey: activity.id)
                 if ownsTurn {
@@ -103,11 +131,14 @@ extension DockModel {
 
     func submitComposerInput(bots: [BotSummary]) {
         if !hasQueuedOrRedirectingPrompt, attachedContexts.isEmpty,
-           ComposerMentionPresentation.canDirectRouteBot(hasImages: !pendingImages.isEmpty, hasPDF: pendingPDFURL != nil),
-           let request = ComposerMentionPresentation.botRelayRequest(in: draft, profileIDs: bots.map(\.id)),
-           let bot = bots.first(where: { $0.id == request.profileID }) {
-            sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text,
-                                 chatSessionID: bot.chat?.sessionID, quote: replyQuote)
+            ComposerMentionPresentation.canDirectRouteBot(
+                hasImages: !pendingImages.isEmpty, hasPDF: pendingPDFURL != nil),
+            let request = ComposerMentionPresentation.botRelayRequest(in: draft, profileIDs: bots.map(\.id)),
+            let bot = bots.first(where: { $0.id == request.profileID })
+        {
+            sendDirectBotRequest(
+                profileID: bot.id, displayName: bot.name, text: request.text,
+                chatSessionID: bot.chat?.sessionID, quote: replyQuote)
             return
         }
         submitComposerInput(mentionProfiles: bots.map(\.id))
@@ -118,21 +149,24 @@ extension DockModel {
         var existing = Set(botActivityBySessionID[originSessionID, default: []].compactMap { $0.result })
         for (index, message) in messages.enumerated() {
             guard message.role == .hermes, let botID = message.botProfileID,
-                  !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !existing.contains(message.text) else { continue }
-            let request = index > 0 && messages[index - 1].role == .user
+                !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                !existing.contains(message.text)
+            else { continue }
+            let request =
+                index > 0 && messages[index - 1].role == .user
                 ? messages[index - 1].text
                 : "Bot response"
-            insertBotActivity(BotActivityRecord(
-                originSessionID: originSessionID,
-                botID: botID,
-                botName: message.botDisplayName ?? botID,
-                summary: request,
-                state: .completed,
-                createdAt: message.timestamp,
-                updatedAt: message.timestamp,
-                result: message.text
-            ))
+            insertBotActivity(
+                BotActivityRecord(
+                    originSessionID: originSessionID,
+                    botID: botID,
+                    botName: message.botDisplayName ?? botID,
+                    summary: request,
+                    state: .completed,
+                    createdAt: message.timestamp,
+                    updatedAt: message.timestamp,
+                    result: message.text
+                ))
             existing.insert(message.text)
         }
     }
@@ -145,7 +179,8 @@ extension DockModel {
             return "\(role): \(text.prefix(1000))"
         }.joined(separator: "\n")
         guard !context.isEmpty else { return request }
-        return "[CURRENT SESSION CONTEXT — reference only]\n\(context)\n[END CURRENT SESSION CONTEXT]\n\nRespond to this request: \(request)"
+        return
+            "[CURRENT SESSION CONTEXT — reference only]\n\(context)\n[END CURRENT SESSION CONTEXT]\n\nRespond to this request: \(request)"
     }
 
     func mergePersistedBotActivities(for sessionIDs: [String?]) {
@@ -159,8 +194,14 @@ extension DockModel {
                 // is still working, has no inline reply, or failed.
                 if result.isEmpty || record.state != .completed {
                     if record.summary != "Bot response", !record.id.hasPrefix("bot-dispatch:"),
-                       !messages.contains(where: { $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary) }) {
-                        messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt, botProfileID: record.botID, botDisplayName: record.botName))
+                        !messages.contains(where: {
+                            $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary)
+                        })
+                    {
+                        messages.append(
+                            ChatMessage(
+                                role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt,
+                                botProfileID: record.botID, botDisplayName: record.botName))
                     }
                     continue
                 }
@@ -169,9 +210,11 @@ extension DockModel {
                 // Kanban notices replay as notice cards, not as a bot request.
                 if let notices = Self.kanbanNotices(from: result) {
                     for notice in notices {
-                        messages.append(ChatMessage(role: .hermes, text: notice.body, timestamp: record.updatedAt,
-                                                    botProfileID: record.botID, botDisplayName: record.botName,
-                                                    kanbanNotice: KanbanNotice(text: notice.body)))
+                        messages.append(
+                            ChatMessage(
+                                role: .hermes, text: notice.body, timestamp: record.updatedAt,
+                                botProfileID: record.botID, botDisplayName: record.botName,
+                                kanbanNotice: KanbanNotice(text: notice.body)))
                     }
                     continue
                 }
@@ -180,18 +223,31 @@ extension DockModel {
                 // Another Bot asked, not the user: no request bubble.
                 if record.id.hasPrefix("bot-dispatch:") {
                     let reply = Self.botReply(from: result).reply
-                    guard !reply.isEmpty, !messages.contains(where: { $0.text == reply && $0.botProfileID == record.botID }) else { continue }
-                    messages.append(ChatMessage(role: .hermes, text: reply, timestamp: record.updatedAt, botProfileID: record.botID,
-                                                botDisplayName: record.botName, isBotHandoffReply: true))
+                    guard !reply.isEmpty,
+                        !messages.contains(where: { $0.text == reply && $0.botProfileID == record.botID })
+                    else { continue }
+                    messages.append(
+                        ChatMessage(
+                            role: .hermes, text: reply, timestamp: record.updatedAt, botProfileID: record.botID,
+                            botDisplayName: record.botName, isBotHandoffReply: true))
                     continue
                 }
                 // "Bot response" marks a bot message nobody asked for (a
                 // delivery); show the message without inventing a user bubble.
                 if record.summary != "Bot response",
-                   !messages.contains(where: { $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary) }) {
-                    messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt, botProfileID: record.botID, botDisplayName: record.botName))
+                    !messages.contains(where: {
+                        $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary)
+                    })
+                {
+                    messages.append(
+                        ChatMessage(
+                            role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt,
+                            botProfileID: record.botID, botDisplayName: record.botName))
                 }
-                messages.append(ChatMessage(role: .hermes, text: result, timestamp: record.updatedAt, botProfileID: record.botID, botDisplayName: record.botName))
+                messages.append(
+                    ChatMessage(
+                        role: .hermes, text: result, timestamp: record.updatedAt, botProfileID: record.botID,
+                        botDisplayName: record.botName))
             }
         }
         messages.sort {
@@ -217,21 +273,28 @@ extension DockModel {
             return (target, String(((args["message"] as? String) ?? "").prefix(400)))
         }
         guard let command = args["command"] as? String,
-              let match = command.firstMatch(of: /\bhermes\s+(?:-p|--profile)\s+([\w-]+)\s+chat\b/) else { return nil }
-        let query = command.firstMatch(of: /\s-q\s+'([^']*)'/).map { String($0.1) }
+            let match = command.firstMatch(of: /\bhermes\s+(?:-p|--profile)\s+([\w-]+)\s+chat\b/)
+        else { return nil }
+        let query =
+            command.firstMatch(of: /\s-q\s+'([^']*)'/).map { String($0.1) }
             ?? command.firstMatch(of: /\s-q\s+"([^"]*)"/).map { String($0.1) }
-        let brief = command.firstMatch(of: /--query-file\s+(\S+)/).map { "Brief: " + URL(fileURLWithPath: String($0.1)).lastPathComponent }
+        let brief = command.firstMatch(of: /--query-file\s+(\S+)/).map {
+            "Brief: " + URL(fileURLWithPath: String($0.1)).lastPathComponent
+        }
         return (String(match.1), String((query ?? brief ?? command).prefix(400)))
     }
 
     func recordBotDispatch(toolCallID: String, toolName: String, args: [String: Any], at date: Date = Date()) {
         guard let dispatch = Self.botDispatch(toolName: toolName, args: args),
-              let originSessionID = sessionStorageID ?? sessionID else { return }
+            let originSessionID = sessionStorageID ?? sessionID
+        else { return }
         let id = "bot-dispatch:\(toolCallID)"
         guard !botActivityBySessionID[originSessionID, default: []].contains(where: { $0.id == id }) else { return }
-        insertBotActivity(BotActivityRecord(id: id, originSessionID: originSessionID, botID: dispatch.profileID,
-                                            botName: dispatch.profileID, summary: dispatch.summary, state: .working,
-                                            createdAt: date, updatedAt: date))
+        insertBotActivity(
+            BotActivityRecord(
+                id: id, originSessionID: originSessionID, botID: dispatch.profileID,
+                botName: dispatch.profileID, summary: dispatch.summary, state: .working,
+                createdAt: date, updatedAt: date))
     }
 
     /// Bot DMs in stored history, including ones Herm never saw live. A DM
@@ -244,7 +307,9 @@ extension DockModel {
             let processID = call.result.flatMap(Self.dispatchProcessID)
             let finished = processID.map { id in notices.contains { $0.contains(id) } } ?? false
             // A card's status stays on the board, so any age can be resolved.
-            guard finished || call.name == "kanban_create" || Date().timeIntervalSince(call.startedAt) < 3 * 3600 else { continue }
+            guard finished || call.name == "kanban_create" || Date().timeIntervalSince(call.startedAt) < 3 * 3600 else {
+                continue
+            }
             recordBotDispatch(toolCallID: call.id, toolName: call.name, args: call.args ?? [:], at: call.startedAt)
             if let result = call.result { bindBotDispatch(toolCallID: call.id, result: result) }
         }
@@ -252,7 +317,9 @@ extension DockModel {
     }
 
     static func dispatchProcessID(_ result: String) -> String? {
-        guard let json = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any] else { return nil }
+        guard let json = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any] else {
+            return nil
+        }
         return [json["process_id"], json["session_id"]].compactMap { $0 as? String }.first { $0.hasPrefix("proc_") }
     }
 
@@ -272,7 +339,9 @@ extension DockModel {
         let cardID = (json["task_id"] as? String).flatMap { $0.hasPrefix("t_") ? $0 : nil }
         let error = (json["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         for originSessionID in botActivityBySessionID.keys {
-            guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else { continue }
+            guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else {
+                continue
+            }
             if let error {
                 updateBotActivity(id: id, state: .failed, result: error)
             } else if let cardID {
@@ -289,8 +358,10 @@ extension DockModel {
                 // no process, so no completion notice will ever arrive.
                 let output = Self.botReply(from: (json["output"] as? String) ?? "")
                 let ok = ((json["exit_code"] as? Int) ?? 0) == 0
-                updateBotActivity(id: id, state: ok ? .completed : .failed,
-                                  result: output.reply.isEmpty ? nil : String(output.reply.prefix(600)), botChatSessionID: output.sessionID)
+                updateBotActivity(
+                    id: id, state: ok ? .completed : .failed,
+                    result: output.reply.isEmpty ? nil : String(output.reply.prefix(600)),
+                    botChatSessionID: output.sessionID)
             }
             return
         }
@@ -304,24 +375,30 @@ extension DockModel {
         guard heads.count <= 1 else {
             for (index, head) in heads.enumerated() {
                 let end = index + 1 < heads.count ? heads[index + 1].range.lowerBound : text.endIndex
-                completeBotDispatch(from: String(text[head.range.lowerBound..<end]).replacing(/\s*\[IMPORTANT:\s*$/, with: ""))
+                completeBotDispatch(
+                    from: String(text[head.range.lowerBound..<end]).replacing(/\s*\[IMPORTANT:\s*$/, with: ""))
             }
             return
         }
         guard let head = heads.first else { return }
         let processID = String(head.1)
-        guard let record = botActivityBySessionID.values.lazy.flatMap({ $0 }).first(where: { $0.processID == processID }) else { return }
+        guard
+            let record = botActivityBySessionID.values.lazy.flatMap({ $0 }).first(where: { $0.processID == processID })
+        else { return }
         let output = text.range(of: "Output:\n").map { String(text[$0.upperBound...]) } ?? ""
         let (reply, botSessionID) = Self.botReply(from: output)
         let ok = head.2 == "completed" && text.contains("exit code 0")
-        updateBotActivity(id: record.id, state: ok ? .completed : .failed, result: reply.isEmpty ? nil : String(reply.prefix(600)), botChatSessionID: botSessionID)
+        updateBotActivity(
+            id: record.id, state: ok ? .completed : .failed, result: reply.isEmpty ? nil : String(reply.prefix(600)),
+            botChatSessionID: botSessionID)
     }
 
     /// `hermes chat -Q` ends its answer with `session_id: <id>`; that line is
     /// plumbing, not part of the reply.
     static func botReply(from output: String) -> (reply: String, sessionID: String?) {
         let sessionID = output.matches(of: /session_id: (\S+)/).last.map { String($0.1) }
-        let reply = output.replacing(/(\n*session_id: \S+)?\s*\]?\s*$/, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let reply = output.replacing(/(\n*session_id: \S+)?\s*\]?\s*$/, with: "").trimmingCharacters(
+            in: .whitespacesAndNewlines)
         return (reply, sessionID)
     }
 
@@ -336,10 +413,12 @@ extension DockModel {
         // process without needing a live session. Not a capability ID on
         // purpose: a failed call just leaves the records as they were.
         guard !pending.isEmpty,
-              let result = try? await sessionRPCClient.request("agents.list", params: [:]),
-              let rows = result["processes"] as? [[String: Any]] else { return }
-        let status = Dictionary(rows.compactMap { row in (row["session_id"] as? String).map { ($0, row["status"] as? String ?? "") } },
-                                uniquingKeysWith: { first, _ in first })
+            let result = try? await sessionRPCClient.request("agents.list", params: [:]),
+            let rows = result["processes"] as? [[String: Any]]
+        else { return }
+        let status = Dictionary(
+            rows.compactMap { row in (row["session_id"] as? String).map { ($0, row["status"] as? String ?? "") } },
+            uniquingKeysWith: { first, _ in first })
         for record in pending {
             switch status[record.processID!] {
             case "running": continue
@@ -354,15 +433,18 @@ extension DockModel {
     func reconcileKanbanAssignments(status: (String) async -> (status: String, summary: String?)?) async {
         // Hidden card references stay `.queued` forever and are not Bot work;
         // polling them spawned a `kanban show` per reference every pass.
-        let pending = botActivityBySessionID.values.joined().filter { $0.linkedCardID != nil && $0.isLive && !$0.isKanbanReference }
+        let pending = botActivityBySessionID.values.joined().filter {
+            $0.linkedCardID != nil && $0.isLive && !$0.isKanbanReference
+        }
         for record in pending {
             guard let card = await status(record.linkedCardID!) else { continue }
-            let state: BotActivityState = switch card.status.lowercased() {
-            case "done", "archived", "completed", "review": .completed
-            case "blocked", "triage": .waiting
-            case "running": .working
-            default: .queued
-            }
+            let state: BotActivityState =
+                switch card.status.lowercased() {
+                case "done", "archived", "completed", "review": .completed
+                case "blocked", "triage": .waiting
+                case "running": .working
+                default: .queued
+                }
             if state != record.state {
                 updateBotActivity(id: record.id, state: state, result: card.summary)
             }
@@ -378,16 +460,21 @@ extension DockModel {
         for records in Dictionary(grouping: workingBotDispatches, by: \.botID).values {
             // Two DMs to one Bot at once cannot be told apart.
             guard records.count == 1, let record = records.first,
-                  let profile = record.botID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { continue }
+                let profile = record.botID.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+            else { continue }
             var sessionID = record.botChatSessionID
             if sessionID == nil,
-               let rows = try? await sessionRPCClient.fetchHTTP("/api/sessions?limit=20&order=recent&profile=\(profile)")["sessions"] as? [[String: Any]] {
+                let rows = try? await sessionRPCClient.fetchHTTP(
+                    "/api/sessions?limit=20&order=recent&profile=\(profile)")["sessions"] as? [[String: Any]]
+            {
                 sessionID = Self.liveBotSessionID(in: rows, dispatchedAt: record.createdAt)
             }
             guard let sessionID,
-                  let path = TranscriptHistoryPaging.pagePath(sessionID: sessionID, profileID: record.botID, limit: 6, offset: 0),
-                  let rows = try? await sessionRPCClient.fetchHTTP(path)["messages"] as? [[String: Any]],
-                  let step = Self.latestBotStep(in: rows) else { continue }
+                let path = TranscriptHistoryPaging.pagePath(
+                    sessionID: sessionID, profileID: record.botID, limit: 6, offset: 0),
+                let rows = try? await sessionRPCClient.fetchHTTP(path)["messages"] as? [[String: Any]],
+                let step = Self.latestBotStep(in: rows)
+            else { continue }
             steps[record.id] = step
         }
         if steps != botLiveSteps { botLiveSteps = steps }
@@ -397,7 +484,8 @@ extension DockModel {
     static func liveBotSessionID(in rows: [[String: Any]], dispatchedAt: Date) -> String? {
         let open = rows.filter { row in
             guard row["ended_at"] == nil || row["ended_at"] is NSNull,
-                  let started = (row["started_at"] as? NSNumber)?.doubleValue else { return false }
+                let started = (row["started_at"] as? NSNumber)?.doubleValue
+            else { return false }
             // A few seconds of slack for the Bot process starting before Herm records the DM.
             return started >= dispatchedAt.timeIntervalSince1970 - 5
         }
@@ -406,7 +494,8 @@ extension DockModel {
 
     /// Title of the newest tool call in a page of stored session rows.
     static func latestBotStep(in rows: [[String: Any]]) -> String? {
-        for row in TranscriptHistoryPaging.displayRows(fromStoredRows: rows).reversed() where row["role"] as? String == "assistant" {
+        for row in TranscriptHistoryPaging.displayRows(fromStoredRows: rows).reversed()
+        where row["role"] as? String == "assistant" {
             if let call = historyToolCalls(in: row, timestamp: Date()).last {
                 return AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context)
             }
@@ -441,9 +530,10 @@ extension DockModel {
     var botDispatchesByToolCallID: [String: BotActivityRecord] {
         guard let id = sessionStorageID ?? sessionID else { return [:] }
         let prefix = "bot-dispatch:"
-        return Dictionary(botActivityBySessionID[id, default: []].compactMap {
-            $0.id.hasPrefix(prefix) ? (String($0.id.dropFirst(prefix.count)), $0) : nil
-        }, uniquingKeysWith: { first, _ in first })
+        return Dictionary(
+            botActivityBySessionID[id, default: []].compactMap {
+                $0.id.hasPrefix(prefix) ? (String($0.id.dropFirst(prefix.count)), $0) : nil
+            }, uniquingKeysWith: { first, _ in first })
     }
 
     func insertBotActivity(_ record: BotActivityRecord) {
@@ -452,14 +542,18 @@ extension DockModel {
         enqueueBotActivityPersistence()
     }
 
-    func updateBotActivity(id: String, state: BotActivityState, result: String? = nil, botChatSessionID: String? = nil) {
+    func updateBotActivity(id: String, state: BotActivityState, result: String? = nil, botChatSessionID: String? = nil)
+    {
         for originSessionID in botActivityBySessionID.keys {
-            guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else { continue }
+            guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else {
+                continue
+            }
             var record = botActivityBySessionID[originSessionID]![index]
             if record.state == .completed || record.state == .failed || record.state == .canceled {
                 // The registry check can finish a DM before its notice lands;
                 // the late notice still brings the reply and Bot session.
-                guard record.result == nil || record.botChatSessionID == nil, result != nil || botChatSessionID != nil else { return }
+                guard record.result == nil || record.botChatSessionID == nil, result != nil || botChatSessionID != nil
+                else { return }
                 record.result = record.result ?? result
                 record.botChatSessionID = record.botChatSessionID ?? botChatSessionID
                 botActivityBySessionID[originSessionID]![index] = record

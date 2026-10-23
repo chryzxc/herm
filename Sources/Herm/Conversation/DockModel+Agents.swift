@@ -12,7 +12,8 @@ extension DockModel {
         delegationMonitoringTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                let hasLiveWorkers = self.activeSubagents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
+                let hasLiveWorkers =
+                    self.activeSubagents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
                     || self.sessionAgents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
                     || self.status == .working
                 let interval: Duration = hasLiveWorkers ? .seconds(3) : .seconds(15)
@@ -59,7 +60,8 @@ extension DockModel {
                 }
                 let projections = rows.compactMap { row -> (row: [String: Any], agent: HermesSubagent)? in
                     guard row["subagent_id"] is String,
-                          let agent = self.telemetry(from: row, fallbackStatus: "running") else { return nil }
+                        let agent = self.telemetry(from: row, fallbackStatus: "running")
+                    else { return nil }
                     return (row, agent)
                 }
                 for projection in projections {
@@ -81,7 +83,8 @@ extension DockModel {
                 )
                 cacheCurrentAgentState()
             } catch {
-                DebugLog.write("workspace: delegation status failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                DebugLog.write(
+                    "workspace: delegation status failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
             self.isRefreshingDelegationStatus = false
             if self.delegationRefreshRequested {
@@ -130,14 +133,16 @@ extension DockModel {
     static func agentStatus(current: String, eventType: String, reportedStatus: String? = nil) -> String {
         let normalizedType = eventType.lowercased()
         let reportedStatus = canonicalAgentStatus(reportedStatus)
-        let eventStatus: String? = switch normalizedType {
-        case "subagent.spawn_requested": "queued"
-        case "subagent.start", "subagent.tool", "subagent.progress", "subagent.thinking": "running"
-        case "subagent.complete", "subagent.completed", "subagent.done", "subagent.finished", "subagent.finish": "complete"
-        case "subagent.error", "subagent.failed", "subagent.fail": "error"
-        case "subagent.interrupt", "subagent.interrupted": "interrupted"
-        default: nil
-        }
+        let eventStatus: String? =
+            switch normalizedType {
+            case "subagent.spawn_requested": "queued"
+            case "subagent.start", "subagent.tool", "subagent.progress", "subagent.thinking": "running"
+            case "subagent.complete", "subagent.completed", "subagent.done", "subagent.finished", "subagent.finish":
+                "complete"
+            case "subagent.error", "subagent.failed", "subagent.fail": "error"
+            case "subagent.interrupt", "subagent.interrupted": "interrupted"
+            default: nil
+            }
         let nextStatus = reportedStatus ?? eventStatus
         guard let nextStatus else { return current }
         if isTerminalAgentStatus(current), !isTerminalAgentStatus(nextStatus) { return current }
@@ -151,12 +156,24 @@ extension DockModel {
         guard let raw else { return nil }
         let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return nil }
-        if normalized.contains("complete") || normalized.contains("done") || normalized.contains("finish") || normalized.contains("success") { return "complete" }
-        if normalized.contains("interrupt") || normalized.contains("cancel") || normalized.contains("abort") { return "interrupted" }
+        if normalized.contains("complete") || normalized.contains("done") || normalized.contains("finish")
+            || normalized.contains("success")
+        {
+            return "complete"
+        }
+        if normalized.contains("interrupt") || normalized.contains("cancel") || normalized.contains("abort") {
+            return "interrupted"
+        }
         if normalized.contains("error") || normalized.contains("fail") { return "error" }
         if normalized.contains("block") { return "blocked" }
-        if normalized.contains("queue") || normalized.contains("pending") || normalized.contains("wait") { return "queued" }
-        if normalized.contains("run") || normalized.contains("work") || normalized.contains("active") || normalized.contains("start") { return "running" }
+        if normalized.contains("queue") || normalized.contains("pending") || normalized.contains("wait") {
+            return "queued"
+        }
+        if normalized.contains("run") || normalized.contains("work") || normalized.contains("active")
+            || normalized.contains("start")
+        {
+            return "running"
+        }
         return normalized
     }
 
@@ -175,8 +192,9 @@ extension DockModel {
         // agree. Treat conflicting attribution as untrusted rather than
         // silently preferring either source.
         if let envelopeSessionID, !envelopeSessionID.isEmpty,
-           let payloadSessionID, !payloadSessionID.isEmpty,
-           envelopeSessionID != payloadSessionID {
+            let payloadSessionID, !payloadSessionID.isEmpty,
+            envelopeSessionID != payloadSessionID
+        {
             return false
         }
 
@@ -184,7 +202,8 @@ extension DockModel {
             // A parent-session event may declare its parent explicitly, but it
             // may not smuggle in a different parent identity.
             if let parentSessionID = payload["parent_session_id"] as? String,
-               parentSessionID != currentSessionID {
+                parentSessionID != currentSessionID
+            {
                 return false
             }
             return true
@@ -195,17 +214,20 @@ extension DockModel {
         // the envelope child identity itself to match a current child agent,
         // and reject every contradictory supplied identifier.
         guard type.hasPrefix("subagent."),
-              let envelopeSessionID, !envelopeSessionID.isEmpty,
-              let eventSessionID, eventSessionID == envelopeSessionID else {
+            let envelopeSessionID, !envelopeSessionID.isEmpty,
+            let eventSessionID, eventSessionID == envelopeSessionID
+        else {
             return false
         }
         if let parentSessionID = payload["parent_session_id"] as? String,
-           parentSessionID != currentSessionID {
+            parentSessionID != currentSessionID
+        {
             return false
         }
         if let childSessionID = payload["child_session_id"] as? String,
-           !childSessionID.isEmpty,
-           childSessionID != envelopeSessionID {
+            !childSessionID.isEmpty,
+            childSessionID != envelopeSessionID
+        {
             return false
         }
         return agents.contains { $0.childSessionID == envelopeSessionID }
@@ -261,11 +283,13 @@ extension DockModel {
     ) -> AgentActivityEnvelopeProjection? {
         let rawPayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (rawPayload["session_id"] as? String)
-        let explicitAgentID = (rawPayload["subagent_id"] as? String)
+        let explicitAgentID =
+            (rawPayload["subagent_id"] as? String)
             ?? (params["subagent_id"] as? String)
             ?? (rawPayload["agent_id"] as? String)
             ?? (params["agent_id"] as? String)
-        let childSessionID = (rawPayload["child_session_id"] as? String)
+        let childSessionID =
+            (rawPayload["child_session_id"] as? String)
             ?? (params["child_session_id"] as? String)
         let resolvedAgentID = agentID(
             explicitAgentID: explicitAgentID,
@@ -275,13 +299,16 @@ extension DockModel {
             taskIndex: (rawPayload["task_index"] as? NSNumber)?.intValue,
             agents: agents
         )
-        let parentSessionID = (rawPayload["parent_id"] as? String)
+        let parentSessionID =
+            (rawPayload["parent_id"] as? String)
             ?? (rawPayload["parent_session_id"] as? String)
 
         if type.hasPrefix("subagent.") {
             let isKnownAgent = resolvedAgentID.map { id in agents.contains(where: { $0.id == id }) } ?? false
-            guard eventSessionID == nil || eventSessionID == currentSessionID
-                || parentSessionID == currentSessionID || isKnownAgent else { return nil }
+            guard
+                eventSessionID == nil || eventSessionID == currentSessionID
+                    || parentSessionID == currentSessionID || isKnownAgent
+            else { return nil }
             return AgentActivityEnvelopeProjection(
                 kind: type,
                 payload: agentActivityPayload(rawPayload, resolvedAgentID: resolvedAgentID),
@@ -290,14 +317,15 @@ extension DockModel {
         }
 
         guard let resolvedAgentID,
-              isAgentScopedActivity(
+            isAgentScopedActivity(
                 eventAgentID: resolvedAgentID,
                 eventSessionID: eventSessionID,
                 parentSessionID: parentSessionID,
                 currentSessionID: currentSessionID,
                 agents: agents
-              ),
-              let activityKind = agentActivityKind(for: type) else { return nil }
+            ),
+            let activityKind = agentActivityKind(for: type)
+        else { return nil }
         return AgentActivityEnvelopeProjection(
             kind: activityKind,
             payload: agentActivityPayload(rawPayload, resolvedAgentID: resolvedAgentID),
@@ -360,7 +388,7 @@ extension DockModel {
             ("planner", "Planner"), ("implementer", "Implementer"),
             ("reviewer", "Reviewer"), ("verifier", "Verifier"),
             ("investigator", "Investigator"), ("researcher", "Researcher"),
-            ("tester", "Tester"), ("testing", "QA"), ("architect", "Architect")
+            ("tester", "Tester"), ("testing", "QA"), ("architect", "Architect"),
         ]
         for role in roles where lower.contains(role.needle) {
             return role.label
@@ -371,7 +399,8 @@ extension DockModel {
     /// Converts one Hermes `delegate_task` call into the semantic workers the
     /// call represents. Batch delegation is one tool call but many agents, so
     /// the tool-call ID alone is not a sufficient row identity.
-    static func projectedDelegationAgents(toolCallID: String, args: [String: Any], startedAt: Date) -> [HermesSubagent] {
+    static func projectedDelegationAgents(toolCallID: String, args: [String: Any], startedAt: Date) -> [HermesSubagent]
+    {
         let taskRows = args["tasks"] as? [[String: Any]]
         let rows = taskRows?.isEmpty == false ? taskRows! : [args]
 
@@ -387,10 +416,12 @@ extension DockModel {
                 return nil
             }
 
-            let goal = value(["goal", "description", "prompt", "task", "instructions", "title"])
+            let goal =
+                value(["goal", "description", "prompt", "task", "instructions", "title"])
                 ?? "Delegated agent"
             let orchestrationRole = value(["role"])
-            let humanRole = value(["agent_role", "role_label", "specialty", "agent_type"])
+            let humanRole =
+                value(["agent_role", "role_label", "specialty", "agent_type"])
                 ?? orchestrationRole.flatMap { role in
                     ["leaf", "orchestrator"].contains(role.lowercased()) ? nil : role
                 }
@@ -415,7 +446,8 @@ extension DockModel {
 
     static func isBackgroundDelegationDispatch(_ result: String) -> Bool {
         guard let data = result.data(using: .utf8),
-              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+            let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
         let status = (payload["status"] as? String)?.lowercased()
         let mode = (payload["mode"] as? String)?.lowercased()
         return status == "dispatched" || mode == "background"
@@ -433,9 +465,10 @@ extension DockModel {
     static func eventText(_ value: Any?) -> String {
         if let value = value as? String { return value }
         guard let value,
-              JSONSerialization.isValidJSONObject(value),
-              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
-              let text = String(data: data, encoding: .utf8) else { return "" }
+            JSONSerialization.isValidJSONObject(value),
+            let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+            let text = String(data: data, encoding: .utf8)
+        else { return "" }
         return text
     }
 
@@ -455,9 +488,10 @@ extension DockModel {
         let pattern = #"(?i)\bkanban[ _-]+(?!list\b)[a-z-]+[ \t]+(t_[A-Za-z0-9][A-Za-z0-9_]*)\b"#
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
         let range = NSRange(text.startIndex..., in: text)
-        return Set(expression.matches(in: text, range: range).compactMap {
-            Range($0.range(at: 1), in: text).map { String(text[$0]) }
-        })
+        return Set(
+            expression.matches(in: text, range: range).compactMap {
+                Range($0.range(at: 1), in: text).map { String(text[$0]) }
+            })
     }
 
     static func kanbanTaskIDs(in text: String) -> Set<String> {
@@ -466,9 +500,10 @@ extension DockModel {
         // Serialized payloads escape newlines; `\nt_ab12` must still split.
         let text = text.replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\t", with: " ")
         let range = NSRange(text.startIndex..., in: text)
-        return Set(expression.matches(in: text, range: range).compactMap {
-            Range($0.range, in: text).map { String(text[$0]) }
-        })
+        return Set(
+            expression.matches(in: text, range: range).compactMap {
+                Range($0.range, in: text).map { String(text[$0]) }
+            })
     }
 
     /// Hermes emits `inline_diff` for edit tool completions. Some adapters use
@@ -515,19 +550,22 @@ extension DockModel {
     func telemetry(from row: [String: Any], fallbackStatus: String? = nil) -> HermesSubagent? {
         guard let id = row["subagent_id"] as? String else { return nil }
         let goal = row["goal"] as? String ?? "Hermes subagent"
-        let rawRole = (row["agent_role"] as? String)
+        let rawRole =
+            (row["agent_role"] as? String)
             ?? (row["role_label"] as? String)
             ?? (row["role"] as? String)
-        let role = rawRole.flatMap { value in
-            ["leaf", "orchestrator"].contains(value.lowercased()) ? nil : value
-        } ?? Self.inferRole(from: goal)
+        let role =
+            rawRole.flatMap { value in
+                ["leaf", "orchestrator"].contains(value.lowercased()) ? nil : value
+            } ?? Self.inferRole(from: goal)
         return HermesSubagent(
             id: id,
-            name: (row["name"] as? String) ?? (row["agent_name"] as? String) ?? (row["display_name"] as? String) ?? role,
+            name: (row["name"] as? String) ?? (row["agent_name"] as? String) ?? (row["display_name"] as? String)
+                ?? role,
             parentID: (row["parent_subagent_id"] as? String)
                 ?? (row["parent_agent_id"] as? String)
-                ?? (row["parent_id"] as? String)
-                ?? (row["parent_session_id"] as? String),
+                    ?? (row["parent_id"] as? String)
+                        ?? (row["parent_session_id"] as? String),
             childSessionID: (row["child_session_id"] as? String)
                 ?? (row["session_id"] as? String),
             depth: (row["depth"] as? NSNumber)?.intValue ?? 0,
@@ -542,7 +580,7 @@ extension DockModel {
             toolCount: (row["tool_count"] as? NSNumber)?.intValue ?? 0,
             latestActivity: (row["tool_preview"] as? String)
                 ?? (row["text"] as? String)
-                ?? (row["last_tool"] as? String),
+                    ?? (row["last_tool"] as? String),
             summary: row["summary"] as? String,
             inputTokens: (row["input_tokens"] as? NSNumber)?.intValue,
             outputTokens: (row["output_tokens"] as? NSNumber)?.intValue,
@@ -555,7 +593,8 @@ extension DockModel {
 
     func mergeAgentEvent(_ type: String, payload: [String: Any]) {
         guard let id = payload["subagent_id"] as? String else { return }
-        var agent = sessionAgents.first(where: { $0.id == id })
+        var agent =
+            sessionAgents.first(where: { $0.id == id })
             ?? activeSubagents.first(where: { $0.id == id })
             ?? HermesSubagent(id: id, goal: payload["goal"] as? String ?? "Hermes subagent", status: "running")
         if let hydrated = telemetry(from: payload.merging(["subagent_id": id]) { current, _ in current }) {
@@ -587,7 +626,9 @@ extension DockModel {
             agent.completedAt = dateValue(payload["completed_at"]) ?? Date()
             agent.durationSeconds = (payload["duration_seconds"] as? NSNumber)?.doubleValue ?? agent.durationSeconds
         }
-        if let preview = payload["tool_preview"] as? String ?? payload["text"] as? String { agent.latestActivity = preview }
+        if let preview = payload["tool_preview"] as? String ?? payload["text"] as? String {
+            agent.latestActivity = preview
+        }
         reconcileSyntheticPlaceholder(for: agent)
         upsertSessionAgent(agent)
         upsertActiveAgent(agent)
@@ -616,10 +657,12 @@ extension DockModel {
         guard !synthesizedSubagentIDs.contains(nativeAgent.id) else { return }
         let normalizedGoal = nativeAgent.goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalizedGoal.isEmpty, normalizedGoal != "hermes subagent" else { return }
-        guard let placeholder = activeSubagents.first(where: {
-            synthesizedSubagentIDs.contains($0.id)
-                && $0.goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedGoal
-        }) else { return }
+        guard
+            let placeholder = activeSubagents.first(where: {
+                synthesizedSubagentIDs.contains($0.id)
+                    && $0.goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedGoal
+            })
+        else { return }
 
         synthesizedSubagentIDs.remove(placeholder.id)
         activeSubagents.removeAll { $0.id == placeholder.id }
@@ -642,15 +685,16 @@ extension DockModel {
             synthesizedSubagentIDs.insert(agent.id)
             upsertSessionAgent(agent)
             upsertActiveAgent(agent)
-            agentActivities.append(AgentActivity(
-                id: UUID(),
-                timestamp: startedAt,
-                agentID: agent.id,
-                kind: "subagent.start",
-                text: agent.goal,
-                toolName: nil,
-                handoffTarget: nil
-            ))
+            agentActivities.append(
+                AgentActivity(
+                    id: UUID(),
+                    timestamp: startedAt,
+                    agentID: agent.id,
+                    kind: "subagent.start",
+                    text: agent.goal,
+                    toolName: nil,
+                    handoffTarget: nil
+                ))
         }
         if agentActivities.count > 250 {
             agentActivities.removeFirst(agentActivities.count - 250)
@@ -686,15 +730,16 @@ extension DockModel {
             if let sessionIndex = sessionAgents.firstIndex(where: { $0.id == id }) {
                 sessionAgents[sessionIndex] = activeSubagents[index]
             }
-            agentActivities.append(AgentActivity(
-                id: UUID(),
-                timestamp: Date(),
-                agentID: id,
-                kind: "subagent.complete",
-                text: summary ?? "Delegated agent finished",
-                toolName: nil,
-                handoffTarget: nil
-            ))
+            agentActivities.append(
+                AgentActivity(
+                    id: UUID(),
+                    timestamp: Date(),
+                    agentID: id,
+                    kind: "subagent.complete",
+                    text: summary ?? "Delegated agent finished",
+                    toolName: nil,
+                    handoffTarget: nil
+                ))
         }
         if agentActivities.count > 250 {
             agentActivities.removeFirst(agentActivities.count - 250)
@@ -704,34 +749,38 @@ extension DockModel {
 
     func recordAgentActivity(_ type: String, params: [String: Any], payload: [String: Any]) {
         let agentID = payload["subagent_id"] as? String
-        let toolName = (payload["tool_name"] as? String)
+        let toolName =
+            (payload["tool_name"] as? String)
             ?? (payload["tool"] as? String)
             ?? (payload["name"] as? String)
         let text = Self.agentActivityText(type: type, payload: payload, toolName: toolName)
-        agentActivities.append(AgentActivity(
-            id: UUID(),
-            timestamp: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
-            agentID: agentID,
-            kind: type,
-            text: text,
-            toolName: toolName,
-            handoffTarget: payload["handoff_target"] as? String,
-            diffPreview: Self.diffPreview(from: payload),
-            parentAgentID: (payload["parent_id"] as? String) ?? (payload["parent_subagent_id"] as? String),
-            childSessionID: payload["child_session_id"] as? String,
-            traceCallID: (payload["tool_id"] ?? payload["tool_call_id"] ?? payload["tool_use_id"] ?? payload["id"]) as? String,
-            traceTiming: (dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"])) != nil
-                ? .runtime : params["herm_trace_replayed"] as? Bool == true ? .unavailable : .observed,
-            traceDuration: SessionTraceProjection.measuredDuration(payload["duration_s"]),
-            traceOutcome: SessionTraceProjection.outcome(payload["result"] ?? payload["output"])
-        ))
+        agentActivities.append(
+            AgentActivity(
+                id: UUID(),
+                timestamp: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
+                agentID: agentID,
+                kind: type,
+                text: text,
+                toolName: toolName,
+                handoffTarget: payload["handoff_target"] as? String,
+                diffPreview: Self.diffPreview(from: payload),
+                parentAgentID: (payload["parent_id"] as? String) ?? (payload["parent_subagent_id"] as? String),
+                childSessionID: payload["child_session_id"] as? String,
+                traceCallID: (payload["tool_id"] ?? payload["tool_call_id"] ?? payload["tool_use_id"] ?? payload["id"])
+                    as? String,
+                traceTiming: (dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"])) != nil
+                    ? .runtime : params["herm_trace_replayed"] as? Bool == true ? .unavailable : .observed,
+                traceDuration: SessionTraceProjection.measuredDuration(payload["duration_s"]),
+                traceOutcome: SessionTraceProjection.outcome(payload["result"] ?? payload["output"])
+            ))
         if agentActivities.count > 250 { agentActivities.removeFirst(agentActivities.count - 250) }
     }
 
     static func agentActivityText(type: String, payload: [String: Any], toolName: String?) -> String {
         for key in ["tool_preview", "text", "summary", "message", "description", "question"] {
             if let text = payload[key] as? String,
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 return text
             }
         }
@@ -744,13 +793,16 @@ extension DockModel {
     }
 
     func recordTelemetryActivityIfChanged(row: [String: Any], agent: HermesSubagent) {
-        let previousAgent = sessionAgents.first(where: { $0.id == agent.id })
+        let previousAgent =
+            sessionAgents.first(where: { $0.id == agent.id })
             ?? activeSubagents.first(where: { $0.id == agent.id })
-        guard let projection = Self.telemetryActivityProjection(
-            row: row,
-            agent: agent,
-            previous: previousAgent
-        ) else {
+        guard
+            let projection = Self.telemetryActivityProjection(
+                row: row,
+                agent: agent,
+                previous: previousAgent
+            )
+        else {
             return
         }
         recordAgentActivity(projection.kind, params: [:], payload: projection.payload)
@@ -767,11 +819,13 @@ extension DockModel {
         previous: HermesSubagent?
     ) -> AgentActivityEnvelopeProjection? {
         let toolName = (row["tool_name"] as? String) ?? (row["last_tool"] as? String)
-        let preview = (row["tool_preview"] as? String)
+        let preview =
+            (row["tool_preview"] as? String)
             ?? (row["text"] as? String)
             ?? toolName
         guard let preview,
-              !preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            !preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
         let toolCountAdvanced = agent.toolCount > (previous?.toolCount ?? 0)
         guard previous?.latestActivity != preview || toolCountAdvanced else { return nil }
 

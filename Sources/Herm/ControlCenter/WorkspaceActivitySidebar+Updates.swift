@@ -1,21 +1,23 @@
 import AppKit
+import Foundation
 import ServiceManagement
 import SwiftUI
-import Foundation
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
     var appUpdateSection: some View {
-        let (status, color): (String, Color) = switch appUpdater.phase {
-        case .idle: ("Updates are checked automatically every few hours.", .dockMetadataText)
-        case .unavailable(let reason): (reason, .dockMetadataText)
-        case .checking: ("Checking \(HermAppUpdater.repository)…", .dockSecondaryText)
-        case .upToDate: ("Up to date", .dockSecondaryText)
-        case .downloading: ("Downloading Herm \(appUpdater.latest?.version ?? "")…", .dockSecondaryText)
-        case .readyToInstall(let version): ("Herm \(version) is ready. It installs and restarts once the current turn finishes.", .dockWarning)
-        case .installing: ("Installing and restarting…", .dockWarning)
-        case .failed(let reason): (reason, .dockWarning)
-        }
+        let (status, color): (String, Color) =
+            switch appUpdater.phase {
+            case .idle: ("Updates are checked automatically every few hours.", .dockMetadataText)
+            case .unavailable(let reason): (reason, .dockMetadataText)
+            case .checking: ("Checking \(HermAppUpdater.repository)…", .dockSecondaryText)
+            case .upToDate: ("Up to date", .dockSecondaryText)
+            case .downloading: ("Downloading Herm \(appUpdater.latest?.version ?? "")…", .dockSecondaryText)
+            case .readyToInstall(let version):
+                ("Herm \(version) is ready. It installs and restarts once the current turn finishes.", .dockWarning)
+            case .installing: ("Installing and restarting…", .dockWarning)
+            case .failed(let reason): (reason, .dockWarning)
+            }
         let isUnavailable = if case .unavailable = appUpdater.phase { true } else { false }
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -36,9 +38,12 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockAccent)
                 }
             }
-            Text("Source  ·  \(HermAppUpdater.repository)" + (appUpdater.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockMetadataText)
+            Text(
+                "Source  ·  \(HermAppUpdater.repository)"
+                    + (appUpdater.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? "")
+            )
+            .dockFont(.metadata)
+            .foregroundStyle(Color.dockMetadataText)
         }
     }
 
@@ -73,8 +78,12 @@ extension WorkspaceActivitySidebar {
             switch agentUpdateService.phase {
             case .idle: agentUpdateIdleContent
             case .checking: agentUpdateIdleContent
-            case .upToDate: agentUpdateCheckedContent(statusText: "UP TO DATE", statusColor: .dockSecondaryText, showsUpdateButton: false)
-            case .updateAvailable: agentUpdateCheckedContent(statusText: "UPDATE AVAILABLE", statusColor: .dockWarning, showsUpdateButton: true)
+            case .upToDate:
+                agentUpdateCheckedContent(
+                    statusText: "UP TO DATE", statusColor: .dockSecondaryText, showsUpdateButton: false)
+            case .updateAvailable:
+                agentUpdateCheckedContent(
+                    statusText: "UPDATE AVAILABLE", statusColor: .dockWarning, showsUpdateButton: true)
             case .checkFailed(let reason): agentUpdateCheckFailedContent(reason)
             case .updating: agentUpdateProgressContent
             case .updateSucceeded: agentUpdateSucceededContent
@@ -86,10 +95,13 @@ extension WorkspaceActivitySidebar {
                 isAgentUpdateOutputExpanded = false
                 agentUpdateService.performUpdate()
             }
-                .disabled(agentUpdateService.isBusy)
+            .disabled(agentUpdateService.isBusy)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(verbatim: "Herm will run the allow-listed command `\(HermesUpdateService.updateCommandDisplay)`. It pulls the latest code from NousResearch/hermes-agent, reinstalls dependencies, and may migrate new configuration options. Running Hermes sessions keep the current version until Hermes restarts.")
+            Text(
+                verbatim:
+                    "Herm will run the allow-listed command `\(HermesUpdateService.updateCommandDisplay)`. It pulls the latest code from NousResearch/hermes-agent, reinstalls dependencies, and may migrate new configuration options. Running Hermes sessions keep the current version until Hermes restarts."
+            )
         }
     }
 
@@ -124,11 +136,14 @@ extension WorkspaceActivitySidebar {
                         .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 76, alignment: .leading)
-                    Text(latest.displayVersion + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
-                        .dockFont(.body, weight: .medium)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    Text(
+                        latest.displayVersion
+                            + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? "")
+                    )
+                    .dockFont(.body, weight: .medium)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     if let page = latest.pageURL, let url = URL(string: page) {
                         Button("Release notes") { ExternalOpen.open(url) }
                             .buttonStyle(.dockLink)
@@ -143,8 +158,9 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.body, weight: .medium)
                     .foregroundStyle(statusColor)
                 if showsUpdateButton,
-                   let installed = agentUpdateService.installed,
-                   let latest = agentUpdateService.latest {
+                    let installed = agentUpdateService.installed,
+                    let latest = agentUpdateService.latest
+                {
                     Text("\(installed.displayVersion) → \(latest.displayVersion)")
                         .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
@@ -163,9 +179,12 @@ extension WorkspaceActivitySidebar {
             .padding(.vertical, 7)
             .background(statusColor.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
-            Text("Source  ·  NousResearch/hermes-agent" + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockMetadataText)
+            Text(
+                "Source  ·  NousResearch/hermes-agent"
+                    + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? "")
+            )
+            .dockFont(.metadata)
+            .foregroundStyle(Color.dockMetadataText)
         }
     }
 
@@ -243,10 +262,12 @@ extension WorkspaceActivitySidebar {
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Herm never retries an update automatically. Review the output below and run CHECK before trying again.")
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Herm never retries an update automatically. Review the output below and run CHECK before trying again."
+            )
+            .dockFont(.body)
+            .foregroundStyle(Color.dockSecondaryText)
+            .fixedSize(horizontal: false, vertical: true)
             if let latestLine = agentUpdateService.logLines.last {
                 Text(latestLine)
                     .dockFont(.body, weight: .regular, design: .monospaced)

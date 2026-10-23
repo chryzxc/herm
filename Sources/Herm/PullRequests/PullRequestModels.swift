@@ -2,7 +2,10 @@ import Foundation
 import SwiftUI
 
 enum PullRequestFilter: String, CaseIterable, Identifiable {
-    case all = "All", reviewing = "Reviewing", authored = "Authored", merged = "Merged"
+    case all = "All"
+    case reviewing = "Reviewing"
+    case authored = "Authored"
+    case merged = "Merged"
     var id: Self { self }
 }
 
@@ -29,7 +32,9 @@ struct PullRequestFilterPicker: View {
 final class PullRequestChatLinkStore: ObservableObject {
     private let defaults = UserDefaults.standard
     private let key = "hermes.pull-request-chat-links"
-    func sessionID(for pullRequestID: String) -> String? { (defaults.dictionary(forKey: key) as? [String: String])?[pullRequestID] }
+    func sessionID(for pullRequestID: String) -> String? {
+        (defaults.dictionary(forKey: key) as? [String: String])?[pullRequestID]
+    }
     func save(sessionID: String, for pullRequestID: String) {
         var links = defaults.dictionary(forKey: key) as? [String: String] ?? [:]
         links[pullRequestID] = sessionID
@@ -203,7 +208,10 @@ enum PullRequestFileTreeBuilder {
         return nodes.sorted { lhs, rhs in
             if lhs.path == rhs.path { return lhs.isDirectory && !rhs.isDirectory }
             return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
-        }.map { PullRequestFileTreeNode(id: $0.path, title: $0.title, depth: $0.depth, isDirectory: $0.isDirectory, fileID: $0.fileID) }
+        }.map {
+            PullRequestFileTreeNode(
+                id: $0.path, title: $0.title, depth: $0.depth, isDirectory: $0.isDirectory, fileID: $0.fileID)
+        }
     }
 }
 
@@ -240,15 +248,18 @@ struct PullRequestReviewToolbarIcon: View {
 
     var body: some View {
         DockIcon(name, size: 14, color: isSelected || isHovered ? Color.dockPrimaryText : Color.dockSecondaryText)
-        .frame(width: 28, height: 28)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                .dockSelectionFill(isSelected, fallback: isSelected ? Color.dockSurface4 : (isHovered ? Color.dockSurface4.opacity(0.72) : Color.clear))
-        )
-        .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
-        .onHover { isHovered = $0 }
-        .help(tooltip ?? accessibilityLabel)
-        .accessibilityLabel(accessibilityLabel)
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
+                    .dockSelectionFill(
+                        isSelected,
+                        fallback: isSelected
+                            ? Color.dockSurface4 : (isHovered ? Color.dockSurface4.opacity(0.72) : Color.clear))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+            .onHover { isHovered = $0 }
+            .help(tooltip ?? accessibilityLabel)
+            .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -260,7 +271,9 @@ struct PullRequestBranchIcon: View {
         ZStack(alignment: .bottomTrailing) {
             DockIcon(.gitPullRequest, size: 17, color: iconColor)
             if status == .success || status == .failure {
-                Circle().fill(status == .success ? Color.dockSuccessFill : Color.dockDestructiveFill).frame(width: 6, height: 6).overlay(Circle().stroke(Color.dockSurface2, lineWidth: 1.1)).offset(x: 1, y: 1)
+                Circle().fill(status == .success ? Color.dockSuccessFill : Color.dockDestructiveFill).frame(
+                    width: 6, height: 6
+                ).overlay(Circle().stroke(Color.dockSurface2, lineWidth: 1.1)).offset(x: 1, y: 1)
             }
         }
         .frame(width: 20, height: 20)
@@ -312,7 +325,9 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
     var refreshedAt: Date? = nil
     var labels: [String] = []
     var detailWarning: String? = nil
-    var reference: GitHubItemReference { .init(repository: repository, number: number, kind: .pullRequest, nodeID: nodeID) }
+    var reference: GitHubItemReference {
+        .init(repository: repository, number: number, kind: .pullRequest, nodeID: nodeID)
+    }
     var id: String { "github:\(repository.id)#\(number)" }
     /// PR identifiers are not quantities: never localize them with grouping
     /// separators (for example, render `4878`, never `4,878`).
@@ -330,10 +345,12 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
     }
     var checksSummary: String {
         var parts: [String] = []
-        for (count, label) in [(checks.filter { $0.conclusion == "success" }.count, "passed"),
-                               (checks.filter(\.isFailure).count, "failed"),
-                               (checks.filter(\.isPending).count, "pending"),
-                               (checks.filter { ["skipped", "neutral"].contains($0.conclusion ?? "") }.count, "skipped")] where count > 0 {
+        for (count, label) in [
+            (checks.filter { $0.conclusion == "success" }.count, "passed"),
+            (checks.filter(\.isFailure).count, "failed"),
+            (checks.filter(\.isPending).count, "pending"),
+            (checks.filter { ["skipped", "neutral"].contains($0.conclusion ?? "") }.count, "skipped"),
+        ] where count > 0 {
             parts.append("\(count) \(label)")
         }
         let unknown = checks.filter { !$0.isSuccess && !$0.isFailure && !$0.isPending }.count
@@ -360,13 +377,34 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
 
 struct PullRequestCenterFailure: Error { let repository: String }
 
-
 extension PullRequestRecord {
-    func activityItems(comments: [PullRequestComment], commits: [PullRequestCommit], events: [PullRequestEvent]) -> [GitHubConversationItem] {
-        var items = comments.map { GitHubConversationItem(id: "comment:" + $0.id, author: $0.author, summary: "commented", body: $0.body, date: $0.createdAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
-        items += commits.map { GitHubConversationItem(id: "commit:" + $0.id, author: $0.author, summary: $0.message, body: "", date: $0.committedAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
-        items += reviews.map { GitHubConversationItem(id: "review:" + $0.id, author: $0.author, summary: $0.state.replacingOccurrences(of: "_", with: " ").capitalized, body: $0.body, date: $0.submittedAt, url: $0.webURL, avatarURL: $0.authorAvatarURL) }
-        items += events.compactMap { event in event.presentation.map { GitHubConversationItem(id: "event:" + event.id, author: event.actor, summary: String($0.text.dropFirst((event.actor + " ").count)), body: "", date: event.createdAt, url: nil, avatarURL: event.actorAvatarURL) } }
+    func activityItems(comments: [PullRequestComment], commits: [PullRequestCommit], events: [PullRequestEvent])
+        -> [GitHubConversationItem]
+    {
+        var items = comments.map {
+            GitHubConversationItem(
+                id: "comment:" + $0.id, author: $0.author, summary: "commented", body: $0.body, date: $0.createdAt,
+                url: $0.webURL, avatarURL: $0.authorAvatarURL)
+        }
+        items += commits.map {
+            GitHubConversationItem(
+                id: "commit:" + $0.id, author: $0.author, summary: $0.message, body: "", date: $0.committedAt,
+                url: $0.webURL, avatarURL: $0.authorAvatarURL)
+        }
+        items += reviews.map {
+            GitHubConversationItem(
+                id: "review:" + $0.id, author: $0.author,
+                summary: $0.state.replacingOccurrences(of: "_", with: " ").capitalized, body: $0.body,
+                date: $0.submittedAt, url: $0.webURL, avatarURL: $0.authorAvatarURL)
+        }
+        items += events.compactMap { event in
+            event.presentation.map {
+                GitHubConversationItem(
+                    id: "event:" + event.id, author: event.actor,
+                    summary: String($0.text.dropFirst((event.actor + " ").count)), body: "", date: event.createdAt,
+                    url: nil, avatarURL: event.actorAvatarURL)
+            }
+        }
         return items.sorted { ($0.date ?? .distantPast) < ($1.date ?? .distantPast) }
     }
 

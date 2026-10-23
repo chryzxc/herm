@@ -1,8 +1,9 @@
 import AppKit
 import ImageIO
-import UniformTypeIdentifiers
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
+
 @testable import Herm
 
 struct HermesPetTests {
@@ -22,15 +23,20 @@ struct HermesPetTests {
         #expect(HermesPetReaction.announcement(activity: .init(status: .working), quota: false) == .working)
         #expect(HermesPetReaction.announcement(activity: .init(responseCompleted: true), quota: false) == .update)
         #expect(HermesPetReaction.announcement(activity: .init(), quota: false) == .update)
-        #expect(Set(HermesPetReaction.allCases.map(\.pose)).isSubset(of: Set(["idle", "run", "review", "waiting", "wave", "failed", "jump"])))
+        #expect(
+            Set(HermesPetReaction.allCases.map(\.pose)).isSubset(
+                of: Set(["idle", "run", "review", "waiting", "wave", "failed", "jump"])))
     }
 
     @MainActor @Test func remoteCatalogFailureRetainsInstalledPets() async {
         let client = PetRecordingClient()
         client.localGalleryOnly = true
-        client.result = ["enabled": true, "active": "nukey", "pets": [
-            ["slug": "nukey", "displayName": "Nukey", "installed": true]
-        ]]
+        client.result = [
+            "enabled": true, "active": "nukey",
+            "pets": [
+                ["slug": "nukey", "displayName": "Nukey", "installed": true]
+            ],
+        ]
         let pet = HermesPetModel()
         await pet.readGallery(HermesPetService(client: client, profile: "default"))
         #expect(pet.gallery?.pets.first?.slug == "nukey")
@@ -44,18 +50,23 @@ struct HermesPetTests {
         let manifest = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let entries = try #require(manifest["pets"] as? [[String: Any]])
         let rows = entries.map { entry in
-            var row = entry; row["installed"] = false; return row
+            var row = entry
+            row["installed"] = false
+            return row
         }
         let gallery = try HermesPetGallery.decode(["enabled": true, "active": "nukey", "pets": rows])
         #expect(gallery.pets.count > 4000)
         #expect(!gallery.matches("").isEmpty)
     }
     @Test func invalidCommunityLabelDoesNotHideOtherPets() throws {
-        let gallery = try HermesPetGallery.decode(["enabled": true, "active": "nukey", "pets": [
-            ["slug": "nukey", "displayName": "Nukey", "installed": true],
-            ["slug": "bad", "displayName": "Name\u{200C}", "installed": false],
-            ["slug": "cat", "displayName": "Cat", "installed": false]
-        ]])
+        let gallery = try HermesPetGallery.decode([
+            "enabled": true, "active": "nukey",
+            "pets": [
+                ["slug": "nukey", "displayName": "Nukey", "installed": true],
+                ["slug": "bad", "displayName": "Name\u{200C}", "installed": false],
+                ["slug": "cat", "displayName": "Cat", "installed": false],
+            ],
+        ])
         #expect(gallery.pets.map(\.slug) == ["nukey", "cat"])
     }
 
@@ -76,10 +87,19 @@ struct HermesPetTests {
         #expect(HermesPetWindow.clamped(NSPoint(x: -500, y: 300), to: screen) == NSPoint(x: -500, y: 300))
     }
     @MainActor @Test func livePoseResumesAfterInteraction() {
-        #expect(HermesPetModel.activityPose(online: true, attention: false, working: true, tool: true, reasoning: false, beat: "jump") == "jump")
-        #expect(HermesPetModel.activityPose(online: true, attention: false, working: true, tool: true, reasoning: false, beat: nil) == "run")
-        #expect(HermesPetModel.activityPose(online: true, attention: true, working: true, tool: true, reasoning: false, beat: nil) == "waiting")
-        #expect(HermesPetModel.activityPose(online: true, attention: false, working: false, tool: false, reasoning: false, beat: "failed") == "failed")
+        #expect(
+            HermesPetModel.activityPose(
+                online: true, attention: false, working: true, tool: true, reasoning: false, beat: "jump") == "jump")
+        #expect(
+            HermesPetModel.activityPose(
+                online: true, attention: false, working: true, tool: true, reasoning: false, beat: nil) == "run")
+        #expect(
+            HermesPetModel.activityPose(
+                online: true, attention: true, working: true, tool: true, reasoning: false, beat: nil) == "waiting")
+        #expect(
+            HermesPetModel.activityPose(
+                online: true, attention: false, working: false, tool: false, reasoning: false, beat: "failed")
+                == "failed")
     }
 
     @MainActor @Test func petHoverDoesNotOpenNotch() {
@@ -97,12 +117,17 @@ struct HermesPetTests {
     @MainActor @Test func spriteRemainsVisibleAcrossFramesAndLayoutUpdates() throws {
         // Two opaque frames in the top row, transparent padding below.
         // A vertically inverted crop disappears even though the requested row is populated.
-        let source = try #require(CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8,
-            bytesPerRow: 128, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let source = try #require(
+            CGContext(
+                data: nil, width: 32, height: 32, bitsPerComponent: 8,
+                bytesPerRow: 128, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         source.setFillColor(CGColor(red: 1, green: 0.5, blue: 0, alpha: 1))
         source.fill(CGRect(x: 0, y: 16, width: 32, height: 16))
-        let sheet = HermesPetSheet(image: try #require(source.makeImage()), info: HermesPetInfo(
-            enabled: true, frameW: 16, frameH: 16, framesPerState: 2, loopMs: 1100, stateRows: ["idle", "wave"]))
+        let sheet = HermesPetSheet(
+            image: try #require(source.makeImage()),
+            info: HermesPetInfo(
+                enabled: true, frameW: 16, frameH: 16, framesPerState: 2, loopMs: 1100, stateRows: ["idle", "wave"]))
         let view = HermesPetSpriteView(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
         view.configure(sheet, pose: "idle", animates: false)
         view.layoutSubtreeIfNeeded()
@@ -111,8 +136,11 @@ struct HermesPetTests {
             view.advanceFrame()
             view.configure(sheet, pose: "idle", animates: false)
             view.layout()
-            let context = try #require(CGContext(data: nil, width: 40, height: 40, bitsPerComponent: 8,
-                bytesPerRow: 160, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let context = try #require(
+                CGContext(
+                    data: nil, width: 40, height: 40, bitsPerComponent: 8,
+                    bytesPerRow: 160, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
             layer.render(in: context)
             let pixel = try #require(context.data).assumingMemoryBound(to: UInt8.self)
             #expect(pixel[(20 * 40 + 20) * 4 + 3] == 255)
@@ -121,14 +149,17 @@ struct HermesPetTests {
 
     @Test func disabledAndAdditiveContracts() throws {
         #expect(try !HermesPetInfo.decode(["enabled": false]).enabled)
-        let info = try HermesPetInfo.decode(["enabled": true, "slug": "cat", "displayName": "Cat", "scale": 0.33, "future": true])
+        let info = try HermesPetInfo.decode([
+            "enabled": true, "slug": "cat", "displayName": "Cat", "scale": 0.33, "future": true,
+        ])
         #expect(info.slug == "cat")
         #expect(throws: (any Error).self) { try HermesPetInfo.decode(["enabled": true, "scale": 10]) }
         #expect(throws: (any Error).self) { try HermesPetInfo.decode(["enabled": true, "displayName": "bad\nname"]) }
     }
 
     @Test func spriteAliasesAndRaggedRows() {
-        var info = HermesPetInfo(enabled: true, framesPerState: 6, framesByState: ["run": 4], stateRows: HermesPetInfo.defaultRows)
+        var info = HermesPetInfo(
+            enabled: true, framesPerState: 6, framesByState: ["run": 4], stateRows: HermesPetInfo.defaultRows)
         #expect(info.frame(for: "run").row == 7)
         #expect(info.frame(for: "run").count == 4)
         #expect(info.frame(for: "wave").row == 3)
@@ -141,23 +172,30 @@ struct HermesPetTests {
     }
 
     @Test func galleryRankingSearchAndDuplicateRejection() throws {
-        let raw: [String: Any] = ["enabled": true, "active": "cat", "pets": [
-            ["slug": "dog", "displayName": "Dog", "installed": false],
-            ["slug": "fox", "displayName": "Fox", "installed": true],
-            ["slug": "cat", "displayName": "Cat", "installed": true]
-        ]]
+        let raw: [String: Any] = [
+            "enabled": true, "active": "cat",
+            "pets": [
+                ["slug": "dog", "displayName": "Dog", "installed": false],
+                ["slug": "fox", "displayName": "Fox", "installed": true],
+                ["slug": "cat", "displayName": "Cat", "installed": true],
+            ],
+        ]
         let gallery = try HermesPetGallery.decode(raw)
         #expect(gallery.matches("").map(\.slug) == ["cat", "fox", "dog"])
         #expect(gallery.matches("FOX").map(\.slug) == ["fox"])
-        let duplicate: [String: Any] = ["enabled": false, "active": "", "pets": [
-            ["slug": "cat", "displayName": "Cat", "installed": true],
-            ["slug": "cat", "displayName": "Cat", "installed": true]
-        ]]
+        let duplicate: [String: Any] = [
+            "enabled": false, "active": "",
+            "pets": [
+                ["slug": "cat", "displayName": "Cat", "installed": true],
+                ["slug": "cat", "displayName": "Cat", "installed": true],
+            ],
+        ]
         #expect(throws: (any Error).self) { try HermesPetGallery.decode(duplicate) }
     }
 
     @MainActor @Test func companionReactsLocallyAndReturnsToIdle() async throws {
-        let client = PetRecordingClient(); client.result = try Self.atlas()
+        let client = PetRecordingClient()
+        client.result = try Self.atlas()
         let pet = HermesPetModel()
         try await pet.readInfo(HermesPetService(client: client, profile: nil), generation: 0)
         #expect(pet.pose == "idle")
@@ -180,23 +218,31 @@ struct HermesPetTests {
     }
 
     @Test func rejectsInvalidImageBeforeRendering() {
-        #expect(throws: (any Error).self) { try HermesPetSheet.decode(HermesPetInfo(enabled: true, mime: "text/html", spritesheetBase64: "PHNjcmlwdD4=")) }
+        #expect(throws: (any Error).self) {
+            try HermesPetSheet.decode(
+                HermesPetInfo(enabled: true, mime: "text/html", spritesheetBase64: "PHNjcmlwdD4="))
+        }
     }
 
     static func atlas() throws -> [String: Any] {
-        let context = try #require(CGContext(data: nil, width: 16, height: 18, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let context = try #require(
+            CGContext(
+                data: nil, width: 16, height: 18, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         context.setFillColor(CGColor(red: 1, green: 0.5, blue: 0, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 16, height: 18))
         let image = try #require(context.makeImage())
         let bytes = NSMutableData()
-        let destination = try #require(CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil))
+        let destination = try #require(
+            CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil))
         CGImageDestinationAddImage(destination, image, nil)
         #expect(CGImageDestinationFinalize(destination))
-        return ["enabled": true, "slug": "test-pet", "displayName": "Test companion", "mime": "image/png",
-                "spritesheetBase64": (bytes as Data).base64EncodedString(), "spritesheetRevision": "revision-1",
-                "frameW": 2, "frameH": 2, "framesPerState": 6, "loopMs": 1100,
-                "framesByRow": ["running-right": 8], "stateRows": HermesPetInfo.defaultRows, "scale": 0.33]
+        return [
+            "enabled": true, "slug": "test-pet", "displayName": "Test companion", "mime": "image/png",
+            "spritesheetBase64": (bytes as Data).base64EncodedString(), "spritesheetRevision": "revision-1",
+            "frameW": 2, "frameH": 2, "framesPerState": 6, "loopMs": 1100,
+            "framesByRow": ["running-right": 8], "stateRows": HermesPetInfo.defaultRows, "scale": 0.33,
+        ]
     }
 
     @Test func validatesAtlasGeometryAgainstActualImage() throws {
@@ -207,7 +253,8 @@ struct HermesPetTests {
         var invalid = raw
         invalid["frameW"] = 200
         #expect(throws: (any Error).self) { try HermesPetSheet.decode(HermesPetInfo.decode(invalid)) }
-        invalid = raw; invalid["framesByRow"] = ["idle": 100]
+        invalid = raw
+        invalid["framesByRow"] = ["idle": 100]
         #expect(throws: (any Error).self) { try HermesPetSheet.decode(HermesPetInfo.decode(invalid)) }
     }
 
@@ -218,7 +265,10 @@ struct HermesPetTests {
         let model = HermesPetModel()
         try await model.readInfo(service, generation: 0)
         let image = try #require(model.sheet?.image)
-        client.result = ["enabled": true, "slug": "test-pet", "displayName": "Renamed", "scale": 0.5, "spritesheetRevision": "revision-1"]
+        client.result = [
+            "enabled": true, "slug": "test-pet", "displayName": "Renamed", "scale": 0.5,
+            "spritesheetRevision": "revision-1",
+        ]
         try await model.readInfo(service, generation: 0)
         #expect(client.method == "pet.info.meta")
         #expect(model.sheet?.image === image)
@@ -253,8 +303,10 @@ struct HermesPetTests {
 
     @MainActor @Test func profileResetRetainsRecoverableDraftWithoutChangingPreviewTab() {
         let state = EdgeNotchState()
-        state.showsQuota = true; state.quickDraft = "Previous profile draft"
-        state.composing = true; state.quickSending = true
+        state.showsQuota = true
+        state.quickDraft = "Previous profile draft"
+        state.composing = true
+        state.quickSending = true
         state.resetQuickComposition()
         #expect(state.quickDraft == "Previous profile draft")
         state.quickSending = false
@@ -270,7 +322,9 @@ struct HermesPetTests {
     @MainActor @Test func everyPetRequestCarriesItsProfileAndExactParameters() async throws {
         let client = PetRecordingClient()
         let service = HermesPetService(client: client, profile: "work")
-        for method: HermesFeatureIDs.ID in [.petInfo, .petInfoMeta, .petGallery, .petThumb, .petSelect, .petDisable, .petScale] {
+        for method: HermesFeatureIDs.ID in [
+            .petInfo, .petInfoMeta, .petGallery, .petThumb, .petSelect, .petDisable, .petScale,
+        ] {
             _ = try await service.request(method, ["slug": "cat", "scale": 0.4, "knownRevision": "r1"])
             #expect(client.method == method.rawValue)
             #expect(client.params["profile"] as? String == "work")
@@ -284,13 +338,17 @@ struct HermesPetTests {
     /// Opt-in visual check with the user's installed atlas; never calls or mutates Hermes.
     @MainActor @Test func renderPetNotch() async throws {
         guard let directory = ProcessInfo.processInfo.environment["HERM_PET_SNAPSHOT_DIR"],
-              let path = ProcessInfo.processInfo.environment["HERM_PET_SHEET"] else { return }
+            let path = ProcessInfo.processInfo.environment["HERM_PET_SHEET"]
+        else { return }
         var raw = try Self.atlas()
         raw["spritesheetBase64"] = try Data(contentsOf: URL(fileURLWithPath: path)).base64EncodedString()
-        raw["mime"] = "image/webp"; raw["frameW"] = 192; raw["frameH"] = 208
+        raw["mime"] = "image/webp"
+        raw["frameW"] = 192
+        raw["frameH"] = 208
         raw["framesByRow"] = [String: Int]()
         let control = ControlCenterModel()
-        let client = PetRecordingClient(); client.result = raw
+        let client = PetRecordingClient()
+        client.result = raw
         try await control.pet.readInfo(HermesPetService(client: client, profile: nil), generation: 0)
         for name in ["rail-left", "rail-right", "preview", "quota"] {
             let state = EdgeNotchState()
@@ -298,12 +356,15 @@ struct HermesPetTests {
             state.side = name == "rail-left" ? .left : .right
             state.expanded = name == "preview" || name == "quota"
             state.showsQuota = name == "quota"
-            let size = CGSize(width: state.expanded ? EdgeNotchState.expandedSize.width : state.railWidth, height: state.panelHeight)
-            let view = EdgeNotchView(state: state, controlCenter: control, openDock: {}).frame(width: size.width, height: size.height)
+            let size = CGSize(
+                width: state.expanded ? EdgeNotchState.expandedSize.width : state.railWidth, height: state.panelHeight)
+            let view = EdgeNotchView(state: state, controlCenter: control, openDock: {}).frame(
+                width: size.width, height: size.height)
             let host = NSHostingView(rootView: view)
             host.frame = CGRect(origin: .zero, size: size)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            window.contentView = host; window.orderFrontRegardless()
+            window.contentView = host
+            window.orderFrontRegardless()
             defer { window.orderOut(nil) }
             try await Task.sleep(for: .milliseconds(150))
             host.layoutSubtreeIfNeeded()
@@ -325,7 +386,8 @@ private final class PetRecordingClient: HermesRPCClientProtocol {
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
-        self.method = method; self.params = params
+        self.method = method
+        self.params = params
         if localGalleryOnly && params["localOnly"] as? Bool != true { throw HermesPetError.invalidResponse }
         return result
     }

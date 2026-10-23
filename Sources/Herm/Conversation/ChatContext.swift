@@ -17,13 +17,19 @@ struct ChatContext: Identifiable, Equatable, Codable, Sendable {
     static func prompt(_ text: String, contexts: [ChatContext]) -> String {
         var rendered = text
         for context in contexts {
-            if let token = context.inlineToken { rendered = rendered.replacingOccurrences(of: token, with: context.body) }
+            if let token = context.inlineToken {
+                rendered = rendered.replacingOccurrences(of: token, with: context.body)
+            }
         }
-        return (contexts.filter { $0.inlineToken == nil }.map(\.body) + [rendered]).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        return (contexts.filter { $0.inlineToken == nil }.map(\.body) + [rendered]).filter { !$0.isEmpty }.joined(
+            separator: "\n\n")
     }
 
     init(id: String, title: String, body: String, projectPath: String? = nil) {
-        self.id = id; self.title = title; self.body = body; self.projectPath = projectPath
+        self.id = id
+        self.title = title
+        self.body = body
+        self.projectPath = projectPath
     }
 
     init(kanbanTask task: KanbanTaskSummary) {
@@ -42,14 +48,14 @@ struct ChatContext: Identifiable, Equatable, Codable, Sendable {
             id: pr.id,
             title: "PR #\(pr.displayNumber) \(pr.title)",
             body: """
-            Pull request #\(pr.displayNumber), "\(pr.title)", in \(pr.repository.id).
-            PR: \(pr.webURL?.absoluteString ?? "Unavailable")
-            Branch: \(pr.headBranch) → \(pr.baseBranch)
-            Head: \(pr.headRevision ?? "unknown")
-            Readiness: \(pr.readinessLabel)
-            Description:
-            \(String(pr.body.prefix(12_000)))
-            """,
+                Pull request #\(pr.displayNumber), "\(pr.title)", in \(pr.repository.id).
+                PR: \(pr.webURL?.absoluteString ?? "Unavailable")
+                Branch: \(pr.headBranch) → \(pr.baseBranch)
+                Head: \(pr.headRevision ?? "unknown")
+                Readiness: \(pr.readinessLabel)
+                Description:
+                \(String(pr.body.prefix(12_000)))
+                """,
             projectPath: pr.localPath.isEmpty ? nil : pr.localPath
         )
     }
@@ -59,11 +65,11 @@ struct ChatContext: Identifiable, Equatable, Codable, Sendable {
             id: "github:\(issue.repository.id)#\(issue.number)",
             title: "Issue #\(issue.number) \(issue.title)",
             body: """
-            Issue #\(issue.number), "\(issue.title)", in \(issue.repository.id).
-            Issue: \(issue.webURL?.absoluteString ?? "Unavailable")
-            Description:
-            \(String(issue.body.prefix(12_000)))
-            """,
+                Issue #\(issue.number), "\(issue.title)", in \(issue.repository.id).
+                Issue: \(issue.webURL?.absoluteString ?? "Unavailable")
+                Description:
+                \(String(issue.body.prefix(12_000)))
+                """,
             projectPath: issue.localPath.isEmpty ? nil : issue.localPath
         )
     }
@@ -119,7 +125,9 @@ struct AttachToChatMenu: View {
     var body: some View {
         if let router {
             if pill {
-                DockMenu { items(router) } label: {
+                DockMenu {
+                    items(router)
+                } label: {
                     HStack(spacing: 5) {
                         DockIcon(.chatCircleText, size: 12, color: Color.dockSecondaryText)
                         Text("Attach to chat")

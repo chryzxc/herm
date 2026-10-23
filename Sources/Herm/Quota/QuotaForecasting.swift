@@ -9,9 +9,10 @@ enum QuotaForecasting {
     /// there is not enough elapsed cycle time to derive a pace.
     static func limitForecast(for window: ProviderQuotaWindow, now: Date = .now) -> Date? {
         guard let remaining = window.remainingPercent,
-              let reset = window.resetsAt,
-              remaining > 0, remaining < 100,
-              reset > now else { return nil }
+            let reset = window.resetsAt,
+            remaining > 0, remaining < 100,
+            reset > now
+        else { return nil }
         let duration: TimeInterval
         switch window.label.lowercased() {
         case let label where label.contains("session") || label.contains("rolling"): duration = 5 * 60 * 60
@@ -35,8 +36,9 @@ enum QuotaForecasting {
     /// genuinely short rolling windows.
     static func dailyAllowance(for window: ProviderQuotaWindow, now: Date = .now) -> Int? {
         guard let remaining = window.remainingPercent,
-              remaining > 0,
-              let marker = dailyBudgetMarker(for: window, now: now) else { return nil }
+            remaining > 0,
+            let marker = dailyBudgetMarker(for: window, now: now)
+        else { return nil }
 
         return max(0, Int(floor(remaining - marker)))
     }
@@ -46,8 +48,9 @@ enum QuotaForecasting {
     /// shown on the quota meter.
     static func dailyBudgetMarker(for window: ProviderQuotaWindow, now: Date = .now) -> Double? {
         guard let reset = window.resetsAt,
-              reset > now,
-              let duration = cycleDuration(for: window.label) else { return nil }
+            reset > now,
+            let duration = cycleDuration(for: window.label)
+        else { return nil }
 
         let daysInCycle = max(1, Int(duration / 86_400))
         let elapsed = max(0, duration - reset.timeIntervalSince(now))

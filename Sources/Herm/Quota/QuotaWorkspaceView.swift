@@ -34,7 +34,8 @@ struct QuotaWorkspaceView: View {
     private var availableDescriptors: [QuotaProviderDescriptor] {
         let connectedIDs = control.providerQuotas.map(\.provider)
         return QuotaProviderCatalog.all.filter { descriptor in
-            control.isRegisteredInSettings(descriptor) && !connectedIDs.contains { $0 == descriptor.id || $0.hasPrefix(descriptor.id + "-") }
+            control.isRegisteredInSettings(descriptor)
+                && !connectedIDs.contains { $0 == descriptor.id || $0.hasPrefix(descriptor.id + "-") }
         }
     }
 
@@ -48,7 +49,9 @@ struct QuotaWorkspaceView: View {
             toolbar
 
             if refreshState?.isRefreshing == true && control.providerQuotas.isEmpty {
-                compactMessage(title: "Reading provider quota…", detail: "Each connected provider is asked for its current windows.")
+                compactMessage(
+                    title: "Reading provider quota…",
+                    detail: "Each connected provider is asked for its current windows.")
             } else {
                 TimelineView(.everyMinute) { context in
                     VStack(alignment: .leading, spacing: 16) {
@@ -83,7 +86,14 @@ struct QuotaWorkspaceView: View {
         }
         .sheet(isPresented: $addingPoolAccount) { AddPoolAccountSheet(control: control) }
         .sheet(item: Binding(get: { signInSlug.map(SlugItem.init) }, set: { signInSlug = $0?.id })) { item in
-            AddPoolAccountSheet(control: control, initialProvider: item.id, onAdded: { Task { try? await control.loadHermesProviderRows(); control.refreshProviderQuota() } })
+            AddPoolAccountSheet(
+                control: control, initialProvider: item.id,
+                onAdded: {
+                    Task {
+                        try? await control.loadHermesProviderRows()
+                        control.refreshProviderQuota()
+                    }
+                })
         }
         .task(id: autoRefreshMinutes) { await runAutoRefresh() }
         .task { try? await control.loadHermesProviderRows() }
@@ -96,11 +106,18 @@ struct QuotaWorkspaceView: View {
             Button("Disconnect", role: .destructive) { disconnect(descriptor) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("Removes this provider's saved key, as Settings → Providers does. Hermes stops using it for every agent.")
+            Text(
+                "Removes this provider's saved key, as Settings → Providers does. Hermes stops using it for every agent."
+            )
         }
-        .alert("Couldn't disconnect", isPresented: Binding(get: { disconnectError != nil }, set: { if !$0 { disconnectError = nil } })) {
+        .alert(
+            "Couldn't disconnect",
+            isPresented: Binding(get: { disconnectError != nil }, set: { if !$0 { disconnectError = nil } })
+        ) {
             Button("OK") {}
-        } message: { Text(disconnectError ?? "") }
+        } message: {
+            Text(disconnectError ?? "")
+        }
         .confirmationDialog(
             removalTitle,
             isPresented: Binding(get: { removalCandidate != nil }, set: { if !$0 { removalCandidate = nil } }),
@@ -113,7 +130,9 @@ struct QuotaWorkspaceView: View {
             Button("Cancel", role: .cancel) {}
         } message: { snapshot in
             if let credential = snapshot.hermesCredential {
-                Text("Runs `hermes auth remove \(credential.provider) \(credential.id)`. Hermes stops using “\(credential.label)” (#\(credential.position) in its \(credential.provider) pool) for every agent, not just this page. Sign in again with `hermes auth add` to restore it.")
+                Text(
+                    "Runs `hermes auth remove \(credential.provider) \(credential.id)`. Hermes stops using “\(credential.label)” (#\(credential.position) in its \(credential.provider) pool) for every agent, not just this page. Sign in again with `hermes auth add` to restore it."
+                )
             }
         }
     }
@@ -128,7 +147,9 @@ struct QuotaWorkspaceView: View {
             return
         }
         Task {
-            do { try await control.saveHermesProviderKey(nil, row: row) } catch { disconnectError = error.localizedDescription }
+            do { try await control.saveHermesProviderKey(nil, row: row) } catch {
+                disconnectError = error.localizedDescription
+            }
         }
     }
 
@@ -142,11 +163,13 @@ struct QuotaWorkspaceView: View {
     private var toolbar: some View {
         VStack(alignment: .leading, spacing: DockSpacing.control) {
             HStack(spacing: DockSpacing.group) {
-                Text(QuotaWorkspacePresentation.overviewSentence(
-                    providerCount: control.providerQuotas.count + availableDescriptors.count,
-                    connectedCount: control.providerQuotas.count,
-                    attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
-                ))
+                Text(
+                    QuotaWorkspacePresentation.overviewSentence(
+                        providerCount: control.providerQuotas.count + availableDescriptors.count,
+                        connectedCount: control.providerQuotas.count,
+                        attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
+                    )
+                )
                 .dockFont(.control)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)
@@ -154,13 +177,17 @@ struct QuotaWorkspaceView: View {
 
                 Spacer(minLength: 0)
 
-                Text(refreshState?.lastSuccess.map {
-                    "Updated \($0.formatted(.dateTime.hour().minute()))"
-                } ?? "Not updated yet")
+                Text(
+                    refreshState?.lastSuccess.map {
+                        "Updated \($0.formatted(.dateTime.hour().minute()))"
+                    } ?? "Not updated yet"
+                )
                 .dockFont(.machineMetadata)
                 .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
                 .fixedSize()
-                .help(refreshState?.isStale == true ? "The last refresh failed; figures are from this time." : "Last successful provider read")
+                .help(
+                    refreshState?.isStale == true
+                        ? "The last refresh failed; figures are from this time." : "Last successful provider read")
             }
             .frame(minHeight: DockControlMetrics.compactHeight)
 
@@ -181,7 +208,9 @@ struct QuotaWorkspaceView: View {
     }
 
     private var addAccountButton: some View {
-        Button { addingPoolAccount = true } label: {
+        Button {
+            addingPoolAccount = true
+        } label: {
             DockIconLabel("Add account", icon: .plus)
         }
         .buttonStyle(.dockPrimary)
@@ -225,7 +254,9 @@ struct QuotaWorkspaceView: View {
             .fixedSize()
             .disabled(isSyncingPeak)
             .accessibilityLabel(isSyncingPeak ? "Syncing peak hours" : "Sync peak hours")
-            .help(peakSyncError ?? peakSyncedAt.map { ProviderPeakSchedule.syncSummary(syncedAt: $0) } ?? "Ask Hermes to search the web for current provider peak and off-peak hours.")
+            .help(
+                peakSyncError ?? peakSyncedAt.map { ProviderPeakSchedule.syncSummary(syncedAt: $0) }
+                    ?? "Ask Hermes to search the web for current provider peak and off-peak hours.")
 
             DockIconButton(
                 icon: .arrowsClockwise,
@@ -288,37 +319,46 @@ struct QuotaWorkspaceView: View {
         let attention = snapshots.filter(QuotaWorkspacePresentation.needsAttention)
         let reset = QuotaWorkspacePresentation.nextReset(snapshots, now: now)
 
-        let headroom = if let best, let remaining = QuotaWorkspacePresentation.effectiveRemaining(best) {
-            overviewMetric(
-                title: "Most headroom",
-                value: "\(Int(remaining.rounded()))%",
-                valueColor: Self.figureColor(for: ProviderQuotaWindow.threshold(forRemaining: remaining)),
-                detail: [best.displayName, QuotaWorkspacePresentation.limitingWindow(best)?.label].compactMap { $0 }.joined(separator: " · "),
-                help: "The provider with the most capacity left in its tightest window."
-            )
-        } else {
-            overviewMetric(title: "Most headroom", value: "—", valueColor: .dockMetadataText, detail: "No provider reported a percentage", help: nil)
-        }
+        let headroom =
+            if let best, let remaining = QuotaWorkspacePresentation.effectiveRemaining(best) {
+                overviewMetric(
+                    title: "Most headroom",
+                    value: "\(Int(remaining.rounded()))%",
+                    valueColor: Self.figureColor(for: ProviderQuotaWindow.threshold(forRemaining: remaining)),
+                    detail: [best.displayName, QuotaWorkspacePresentation.limitingWindow(best)?.label].compactMap { $0 }
+                        .joined(separator: " · "),
+                    help: "The provider with the most capacity left in its tightest window."
+                )
+            } else {
+                overviewMetric(
+                    title: "Most headroom", value: "—", valueColor: .dockMetadataText,
+                    detail: "No provider reported a percentage", help: nil)
+            }
         let needsAttention = overviewMetric(
             title: "Needs attention",
             value: "\(attention.count) of \(snapshots.count)",
             valueColor: attention.isEmpty ? .dockPrimaryText : .dockWarning,
-            detail: attention.isEmpty ? "Every connected provider has headroom" : attention.map(\.displayName).joined(separator: ", "),
+            detail: attention.isEmpty
+                ? "Every connected provider has headroom" : attention.map(\.displayName).joined(separator: ", "),
             help: "Providers with a window at or below 20% remaining."
         )
-        let nextReset = if let reset {
-            overviewMetric(
-                title: reset.restoresAttention ? "Next recovery" : "Next reset",
-                value: QuotaWorkspacePresentation.compactDuration(from: now, to: reset.date),
-                valueColor: .dockPrimaryText,
-                detail: "\(reset.snapshot.displayName) · \(reset.window.label) · \(reset.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))",
-                help: reset.restoresAttention
-                    ? "The soonest reset of a window that is low or exhausted."
-                    : "The soonest reported window reset."
-            )
-        } else {
-            overviewMetric(title: "Next reset", value: "—", valueColor: .dockMetadataText, detail: "No reset times reported", help: nil)
-        }
+        let nextReset =
+            if let reset {
+                overviewMetric(
+                    title: reset.restoresAttention ? "Next recovery" : "Next reset",
+                    value: QuotaWorkspacePresentation.compactDuration(from: now, to: reset.date),
+                    valueColor: .dockPrimaryText,
+                    detail:
+                        "\(reset.snapshot.displayName) · \(reset.window.label) · \(reset.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))",
+                    help: reset.restoresAttention
+                        ? "The soonest reset of a window that is low or exhausted."
+                        : "The soonest reported window reset."
+                )
+            } else {
+                overviewMetric(
+                    title: "Next reset", value: "—", valueColor: .dockMetadataText, detail: "No reset times reported",
+                    help: nil)
+            }
 
         // Three columns when there is room, stacked rows on narrow windows.
         return ViewThatFits(in: .horizontal) {
@@ -347,7 +387,9 @@ struct QuotaWorkspaceView: View {
             .padding(.vertical, 12)
     }
 
-    private func overviewMetric(title: String, value: String, valueColor: Color, detail: String, help: String?) -> some View {
+    private func overviewMetric(title: String, value: String, valueColor: Color, detail: String, help: String?)
+        -> some View
+    {
         VStack(alignment: .leading, spacing: 6) {
             DockSectionLabel(title: title)
             Text(value)
@@ -397,11 +439,13 @@ struct QuotaWorkspaceView: View {
             peakStatusLine(snapshot.provider, now: now)
 
             if snapshot.windows.isEmpty {
-                Text(snapshot.hermesCredential != nil && snapshot.provider.hasPrefix("hermes-pool-")
-                     ? "Hermes rotates through this account. Its provider reports no usage windows."
-                     : "No quota windows were reported.")
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockSecondaryText)
+                Text(
+                    snapshot.hermesCredential != nil && snapshot.provider.hasPrefix("hermes-pool-")
+                        ? "Hermes rotates through this account. Its provider reports no usage windows."
+                        : "No quota windows were reported."
+                )
+                .dockFont(.body)
+                .foregroundStyle(Color.dockSecondaryText)
             } else {
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 240), spacing: 24, alignment: .top)],
@@ -478,13 +522,16 @@ struct QuotaWorkspaceView: View {
             }
 
             if control.isActionPending(ControlCenterModel.hermesCredentialRemovalActionID(snapshot.provider))
-                || control.isActionPending(ControlCenterModel.hermesCredentialPrimaryActionID(snapshot.provider)) {
+                || control.isActionPending(ControlCenterModel.hermesCredentialPrimaryActionID(snapshot.provider))
+            {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: DockControlMetrics.compactHeight, height: DockControlMetrics.compactHeight)
                     .accessibilityLabel("Removing \(snapshot.displayName) from Hermes")
             } else {
-                DockMenu { providerActions(snapshot) } label: {
+                DockMenu {
+                    providerActions(snapshot)
+                } label: {
                     DockIcon(.dotsThree, size: 15, color: Color.dockSecondaryText)
                         .frame(width: DockControlMetrics.compactHeight, height: DockControlMetrics.compactHeight)
                         .contentShape(Rectangle())
@@ -507,8 +554,9 @@ struct QuotaWorkspaceView: View {
     private func metadataLine(_ snapshot: ProviderQuotaSnapshot) -> String? {
         var parts: [String] = []
         if control.getProviderNickname(for: snapshot.provider) != nil,
-           let reported = control.reportedProviderName(for: snapshot.provider),
-           reported != snapshot.displayName {
+            let reported = control.reportedProviderName(for: snapshot.provider),
+            reported != snapshot.displayName
+        {
             parts.append(reported)
         }
         if let credential = snapshot.hermesCredential { parts.append("Hermes pool · \(credential.label)") }
@@ -578,7 +626,9 @@ struct QuotaWorkspaceView: View {
             Divider()
             if !(control.isHermesActiveCredential(credential) && control.isHermesPinnedPrimary(credential)) {
                 // round_robin rewrites the order after every pick, so "first" only means next in line.
-                let rotates = control.configEditor.value("credential_pool_strategies.\(credential.provider)") as? String == "round_robin"
+                let rotates =
+                    control.configEditor.value("credential_pool_strategies.\(credential.provider)") as? String
+                    == "round_robin"
                 Button(rotates ? "Make next in line" : "Make primary", icon: .arrowUp) {
                     control.makeHermesPooledCredentialPrimary(for: snapshot.provider)
                 }
@@ -586,7 +636,9 @@ struct QuotaWorkspaceView: View {
             Button("Remove from Hermes…", icon: .trash, role: .destructive) {
                 removalCandidate = snapshot
             }
-        } else if let descriptor = QuotaWorkspacePresentation.descriptor(forProvider: snapshot.provider), descriptor.storageKey != nil {
+        } else if let descriptor = QuotaWorkspacePresentation.descriptor(forProvider: snapshot.provider),
+            descriptor.storageKey != nil
+        {
             Divider()
             Button("Disconnect…", icon: .trash, role: .destructive) { disconnectCandidate = descriptor }
         }
@@ -710,7 +762,9 @@ struct QuotaWorkspaceView: View {
     private func windowInsights(_ window: ProviderQuotaWindow, now: Date) -> some View {
         if let remaining = window.remainingPercent, remaining <= 0 {
             if let reset = window.resetsAt, reset > now {
-                insight("Exhausted until \(reset.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))", color: .dockDestructive)
+                insight(
+                    "Exhausted until \(reset.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))",
+                    color: .dockDestructive)
             } else {
                 insight("Exhausted", color: .dockDestructive)
             }
@@ -721,14 +775,20 @@ struct QuotaWorkspaceView: View {
                     color: window.threshold == .healthy ? .dockSecondaryText : .dockWarning,
                     icon: .flame
                 )
-                .help("Estimated from the average consumption so far this cycle; the provider does not report a depletion time.")
+                .help(
+                    "Estimated from the average consumption so far this cycle; the provider does not report a depletion time."
+                )
             }
             if let daily = QuotaForecasting.dailyAllowance(for: window, now: now) {
                 insight("\(daily)% available today", color: .dockSecondaryText)
-                    .help("Even-use budget through today, including unused days carried forward. The marker shows where it ends.")
+                    .help(
+                        "Even-use budget through today, including unused days carried forward. The marker shows where it ends."
+                    )
             } else if let delta = QuotaWorkspacePresentation.paceDelta(for: window, now: now), abs(delta) >= 3 {
                 insight(
-                    delta < 0 ? "\(Int(-delta.rounded()))% over even-use pace" : "\(Int(delta.rounded()))% under even-use pace",
+                    delta < 0
+                        ? "\(Int(-delta.rounded()))% over even-use pace"
+                        : "\(Int(delta.rounded()))% under even-use pace",
                     color: delta < 0 ? .dockWarning : .dockSecondaryText
                 )
                 .help("Compared with spending this window evenly until it resets.")
@@ -777,11 +837,14 @@ struct QuotaWorkspaceView: View {
     private func availableRow(_ descriptor: QuotaProviderDescriptor) -> some View {
         // Same state Settings → Providers shows for this provider.
         let signedIn = control.hermesRow(for: descriptor)?.authenticated == true
-        let diagnostic = control.providerQuotaDiagnostics[descriptor.id]
+        let diagnostic =
+            control.providerQuotaDiagnostics[descriptor.id]
             ?? (signedIn ? "Connected in Settings; no quota reported yet." : nil)
         return HStack(spacing: 10) {
-            ProviderMarkBadge(mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName), size: 22)
-                .opacity(0.7)
+            ProviderMarkBadge(
+                mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName), size: 22
+            )
+            .opacity(0.7)
             VStack(alignment: .leading, spacing: 3) {
                 Text(descriptor.displayName)
                     .dockFont(.rowTitle)
@@ -793,7 +856,9 @@ struct QuotaWorkspaceView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            Button { connect(descriptor) } label: {
+            Button {
+                connect(descriptor)
+            } label: {
                 Text(signedIn ? "Update…" : "Connect…")
                     .dockFont(.control)
                     .frame(minWidth: 76, minHeight: DockControlMetrics.compactHeight)
@@ -945,7 +1010,9 @@ struct QuotaWorkspacePresentation {
     }
 
     /// All compact surfaces use the page's limiting window and presented snapshots.
-    static func reading(_ snapshots: [ProviderQuotaSnapshot], for provider: String?) -> (snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double)? {
+    static func reading(_ snapshots: [ProviderQuotaSnapshot], for provider: String?) -> (
+        snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double
+    )? {
         let quotaID = quotaProviderID(for: provider)
         let matching = snapshots.filter { snapshot in
             guard let quotaID else { return false }
@@ -1002,7 +1069,12 @@ struct QuotaWorkspacePresentation {
                 .max { $0.key.count < $1.key.count }?.value ?? Int.max
         }
         return snapshots.enumerated()
-            .map { (key: (saved[$0.element.provider] ?? Int.max, catalogRank($0.element.provider), $0.offset), snapshot: $0.element) }
+            .map {
+                (
+                    key: (saved[$0.element.provider] ?? Int.max, catalogRank($0.element.provider), $0.offset),
+                    snapshot: $0.element
+                )
+            }
             .sorted { $0.key < $1.key }
             .map(\.snapshot)
     }
@@ -1010,8 +1082,9 @@ struct QuotaWorkspacePresentation {
     /// Moves `id` into the position currently held by `target`.
     static func moving(_ id: String, to target: String, in ids: [String]) -> [String] {
         guard id != target,
-              let from = ids.firstIndex(of: id),
-              let to = ids.firstIndex(of: target) else { return ids }
+            let from = ids.firstIndex(of: id),
+            let to = ids.firstIndex(of: target)
+        else { return ids }
         var result = ids
         result.remove(at: from)
         result.insert(id, at: to)
@@ -1076,7 +1149,8 @@ struct QuotaWorkspacePresentation {
     /// window is being spent faster than an even pace.
     static func paceDelta(for window: ProviderQuotaWindow, now: Date = .now) -> Double? {
         guard let remaining = window.remainingPercent,
-              let expected = QuotaForecasting.expectedRemainingMarker(for: window, now: now) else { return nil }
+            let expected = QuotaForecasting.expectedRemainingMarker(for: window, now: now)
+        else { return nil }
         return remaining - expected
     }
 

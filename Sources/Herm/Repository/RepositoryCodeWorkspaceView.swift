@@ -31,7 +31,10 @@ struct RepositoryCodeWorkspaceView: View {
         case unavailable(String)
     }
 
-    init(repositoryPath: String, document: RepositoryFileDocument, onClose: @escaping () -> Void, onSave: @escaping (String) async -> Bool, isStandalonePane: Bool = false) {
+    init(
+        repositoryPath: String, document: RepositoryFileDocument, onClose: @escaping () -> Void,
+        onSave: @escaping (String) async -> Bool, isStandalonePane: Bool = false
+    ) {
         self.repositoryPath = repositoryPath
         self.document = document
         self.onClose = onClose
@@ -78,7 +81,7 @@ struct RepositoryCodeWorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .confirmationDialog("Discard unsaved changes?", isPresented: $showsDiscardConfirmation) {
             Button("Discard Changes", role: .destructive, action: onClose)
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text("Your edits to \(document.path) have not been saved.")
         }
@@ -113,17 +116,24 @@ struct RepositoryCodeWorkspaceView: View {
                     .accessibilityLabel("Unsaved changes")
             }
             Spacer(minLength: 8)
-            toolbarButton(.gitCommit, help: showsBlame ? "Hide git blame" : "Show git blame (who last changed each line)", isOn: showsBlame) {
+            toolbarButton(
+                .gitCommit, help: showsBlame ? "Hide git blame" : "Show git blame (who last changed each line)",
+                isOn: showsBlame
+            ) {
                 showsBlame.toggle()
             }
-            toolbarButton(.textAlignLeft, help: wrapsLines ? "Turn off word wrap" : "Wrap long lines", isOn: wrapsLines) {
+            toolbarButton(.textAlignLeft, help: wrapsLines ? "Turn off word wrap" : "Wrap long lines", isOn: wrapsLines)
+            {
                 wrapsLines.toggle()
             }
             toolbarButton(.magnifyingGlass, help: "Find in file (⌘F)") { findRequest += 1 }
             moreMenu
-            toolbarButton(isSaving ? .dotsThree : .floppyDisk, help: isSaving ? "Saving…" : "Save (⌘S)", tint: hasUnsavedChanges ? .dockAccent : nil, action: save)
-                .keyboardShortcut("s", modifiers: .command)
-                .disabled(!hasUnsavedChanges || isSaving)
+            toolbarButton(
+                isSaving ? .dotsThree : .floppyDisk, help: isSaving ? "Saving…" : "Save (⌘S)",
+                tint: hasUnsavedChanges ? .dockAccent : nil, action: save
+            )
+            .keyboardShortcut("s", modifiers: .command)
+            .disabled(!hasUnsavedChanges || isSaving)
         }
         .padding(.horizontal, 6)
         .frame(height: ExplorerWorkspaceMetrics.headerHeight)
@@ -174,7 +184,10 @@ struct RepositoryCodeWorkspaceView: View {
         .accessibilityLabel("More file actions")
     }
 
-    private func toolbarButton(_ icon: Ph, help: String, isOn: Bool = false, tint: Color? = nil, tipEdge: Edge = .leading, action: @escaping () -> Void) -> some View {
+    private func toolbarButton(
+        _ icon: Ph, help: String, isOn: Bool = false, tint: Color? = nil, tipEdge: Edge = .leading,
+        action: @escaping () -> Void
+    ) -> some View {
         ExplorerToolbarButton(icon: icon, help: help, isOn: isOn, tint: tint, tipEdge: tipEdge, action: action)
     }
 
@@ -222,9 +235,11 @@ struct RepositoryCodeWorkspaceView: View {
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                     if let date = commit.authoredAt, !commit.isUncommitted {
-                        Text("\(HumanDateFormatting.relative(date)) · \(date.formatted(date: .abbreviated, time: .shortened))")
-                            .dockFont(.metadata)
-                            .foregroundStyle(Color.dockSecondaryText)
+                        Text(
+                            "\(HumanDateFormatting.relative(date)) · \(date.formatted(date: .abbreviated, time: .shortened))"
+                        )
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
             }
@@ -244,7 +259,9 @@ struct RepositoryCodeWorkspaceView: View {
         }
         .padding(12)
         .frame(width: 280, alignment: .leading)
-        .dockFloatingSurface(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous), stroke: .dockBorderStrong)
+        .dockFloatingSurface(
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous), stroke: .dockBorderStrong
+        )
         .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.25), radius: 12, y: 4)
     }
 
@@ -254,9 +271,10 @@ struct RepositoryCodeWorkspaceView: View {
         HStack(spacing: 14) {
             blameStatus
             Spacer(minLength: 8)
-            Text(cursor.selectedCharacters > 0
-                 ? "Ln \(cursor.line), Col \(cursor.column) (\(cursor.selectedCharacters) selected)"
-                 : "Ln \(cursor.line), Col \(cursor.column)")
+            Text(
+                cursor.selectedCharacters > 0
+                    ? "Ln \(cursor.line), Col \(cursor.column) (\(cursor.selectedCharacters) selected)"
+                    : "Ln \(cursor.line), Col \(cursor.column)")
             Text("\(draft.reduce(into: 1) { if $1 == "\n" { $0 += 1 } }) lines")
             Text(ByteCountFormatter.string(fromByteCount: Int64(document.byteCount), countStyle: .file))
             Text("UTF-8")
@@ -274,7 +292,10 @@ struct RepositoryCodeWorkspaceView: View {
     private var blameStatus: some View {
         switch blameState {
         case .loading:
-            HStack(spacing: 5) { ProgressView().controlSize(.mini); Text("Loading blame…") }
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("Loading blame…")
+            }
         case .unavailable(let reason):
             DockIconLabel("No blame", icon: .gitCommit).help(reason)
         case .loaded(let blame):
@@ -368,7 +389,8 @@ struct ExplorerFileIcon: View {
         case "yml", "yaml", "toml", "ini", "plist", "xcconfig": return (.gear, DockAccentColor.violet.color)
         case "png", "jpg", "jpeg", "gif", "svg", "webp", "icns", "ico": return (.fileImage, DockAccentColor.pink.color)
         case "lock", "resolved": return (.fileLock, .dockMetadataText)
-        case "go", "rb", "java", "kt", "sh", "zsh", "bash", "m", "mm", "dart", "vue": return (.fileCode, .dockSecondaryText)
+        case "go", "rb", "java", "kt", "sh", "zsh", "bash", "m", "mm", "dart", "vue":
+            return (.fileCode, .dockSecondaryText)
         default:
             if name.hasPrefix(".env") || name.hasPrefix(".git") { return (.gear, .dockMetadataText) }
             return (.fileText, .dockSecondaryText)
@@ -418,7 +440,10 @@ struct ExplorerToolbarIcon: View {
         .frame(width: 28, height: 28)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
-                .fill(isOn ? Color.dockAccentMuted : isHovered && isEnabled ? Color.dockSurface4.opacity(0.72) : Color.clear)
+                .fill(
+                    isOn
+                        ? Color.dockAccentMuted
+                        : isHovered && isEnabled ? Color.dockSurface4.opacity(0.72) : Color.clear)
         )
         .contentShape(Rectangle())
         .opacity(isEnabled ? 1 : 0.35)

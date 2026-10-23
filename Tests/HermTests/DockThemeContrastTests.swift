@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import Herm
 
 /// Audits every theme's palette so text and icons stay visible on the
@@ -15,11 +16,15 @@ struct DockThemeContrastTests {
         return out
     }
     private func lum(_ c: NSColor) -> Double {
-        func lin(_ v: CGFloat) -> Double { let d = Double(v); return d <= 0.03928 ? d / 12.92 : pow((d + 0.055) / 1.055, 2.4) }
+        func lin(_ v: CGFloat) -> Double {
+            let d = Double(v)
+            return d <= 0.03928 ? d / 12.92 : pow((d + 0.055) / 1.055, 2.4)
+        }
         return 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent) + 0.0722 * lin(c.blueComponent)
     }
     private func ratio(_ a: NSColor, _ b: NSColor) -> Double {
-        let x = lum(a), y = lum(b)
+        let x = lum(a)
+        let y = lum(b)
         return (max(x, y) + 0.05) / (min(x, y) + 0.05)
     }
 
@@ -28,12 +33,20 @@ struct DockThemeContrastTests {
     func audit() -> [String] {
         var out: [String] = []
         for theme in DockThemeID.allCases {
-            let modes: [Bool] = switch theme.appearance { case .light: [false]; case .dark: [true]; case .system: [false, true] }
+            let modes: [Bool] =
+                switch theme.appearance {
+                case .light: [false]
+                case .dark: [true]
+                case .system: [false, true]
+                }
             for dark in modes {
                 let p = DockThemePalette(theme: theme)
                 let tag = "\(theme.rawValue)/\(dark ? "dark" : "light")"
                 func c(_ x: Color) -> NSColor { resolve(x, dark: dark) }
-                let surfaces: [(String, Color)] = [("bg", p.background), ("surface", p.surface), ("surface2", p.surface2), ("surface4", p.surface4), ("selected", p.selectedFill)]
+                let surfaces: [(String, Color)] = [
+                    ("bg", p.background), ("surface", p.surface), ("surface2", p.surface2), ("surface4", p.surface4),
+                    ("selected", p.selectedFill),
+                ]
                 func check(_ name: String, _ fg: Color, _ bgs: [(String, Color)], min: Double) {
                     for (bn, bg) in bgs {
                         let r = ratio(c(fg), c(bg))
@@ -63,7 +76,8 @@ struct DockThemeContrastTests {
                 // Primary buttons keep themed text over a tonal control fill.
                 for opacity in [0.14, 0.24, 0.30] {
                     for tint in [p.accent, p.destructive] {
-                        let base = c(p.background), overlay = c(tint)
+                        let base = c(p.background)
+                        let overlay = c(tint)
                         let fill = NSColor(
                             red: base.redComponent * (1 - opacity) + overlay.redComponent * opacity,
                             green: base.greenComponent * (1 - opacity) + overlay.greenComponent * opacity,
@@ -71,7 +85,9 @@ struct DockThemeContrastTests {
                             alpha: 1
                         )
                         let r = ratio(c(p.primaryText), fill)
-                        if r < 4.5 { out.append("\(tag) primary button at \(opacity) = \(String(format: "%.2f", r)) < 4.5") }
+                        if r < 4.5 {
+                            out.append("\(tag) primary button at \(opacity) = \(String(format: "%.2f", r)) < 4.5")
+                        }
                     }
                 }
                 check("divider", p.divider, [("bg", p.background)], min: 1.3)
@@ -105,8 +121,10 @@ struct DockThemeContrastTests {
     }
 
     @Test func approvedSolidFillsDoNotChangeBetweenLightAndDark() {
-        let approved: [DockAccentColor: String] = [.teal: "#50B8A6", .orange: "#FA9D29",
-            .indigo: "#6957E8", .violet: "#8955F5", .blue: "#387FF2", .tangerine: "#F97029"]
+        let approved: [DockAccentColor: String] = [
+            .teal: "#50B8A6", .orange: "#FA9D29",
+            .indigo: "#6957E8", .violet: "#8955F5", .blue: "#387FF2", .tangerine: "#F97029",
+        ]
         for (family, hex) in approved { #expect(family.hex == hex) }
         for family in DockAccentColor.allCases {
             let expected = NSColor(hex: family.hex).usingColorSpace(.sRGB)!
@@ -160,7 +178,10 @@ struct DockThemeContrastTests {
     @Test func editorRecolorsUnchangedTextWhenTheThemeChanges() async throws {
         let saved = DockThemeRuntime.current
         let revision = DockThemeRuntime.revision
-        defer { DockThemeRuntime.current = saved; DockThemeRuntime.revision = revision }
+        defer {
+            DockThemeRuntime.current = saved
+            DockThemeRuntime.revision = revision
+        }
         let editor = CodeEditorContainerView(text: "let value = 42", filePath: "example.swift")
         for theme in [DockThemeID.clean, .mono, .clean] {
             DockThemeRuntime.current = theme
@@ -168,12 +189,15 @@ struct DockThemeContrastTests {
             editor.applyThemeIfNeeded()
             let storage = try #require(editor.textView.textStorage)
             let deadline = Date().addingTimeInterval(3)
-            while storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor != CodeToken.keyword.color,
-                  Date() < deadline {
+            while storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+                != CodeToken.keyword.color,
+                Date() < deadline
+            {
                 try await Task.sleep(for: .milliseconds(20))
             }
             #expect(editor.textView.string == "let value = 42")
-            #expect(storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == CodeToken.keyword.color)
+            #expect(
+                storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == CodeToken.keyword.color)
         }
     }
 
@@ -194,7 +218,10 @@ struct DockThemeContrastTests {
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         let saved = DockThemeRuntime.current
         defer { DockThemeRuntime.current = saved }
-        for (theme, dark) in [(DockThemeID.clean, false), (.clean, true), (.glass, false), (.glass, true), (.mono, true), (.eInk, false), (.warmLight, false)] {
+        for (theme, dark) in [
+            (DockThemeID.clean, false), (.clean, true), (.glass, false), (.glass, true), (.mono, true), (.eInk, false),
+            (.warmLight, false),
+        ] {
             DockThemeRuntime.current = theme
             let palette = DockThemePalette(theme: theme)
             let content = VStack(alignment: .leading, spacing: 20) {
@@ -240,7 +267,9 @@ struct DockThemeContrastTests {
             let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let data = try #require(bitmap.representation(using: .png, properties: [:]))
-            try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(theme.rawValue)-\(dark ? "dark" : "light").png"))
+            try data.write(
+                to: URL(fileURLWithPath: directory).appendingPathComponent(
+                    "\(theme.rawValue)-\(dark ? "dark" : "light").png"))
         }
     }
 

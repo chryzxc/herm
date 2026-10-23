@@ -9,22 +9,23 @@ struct HermesPetSheet: @unchecked Sendable {
 
     static func decode(_ info: HermesPetInfo) throws -> Self {
         guard let encoded = info.spritesheetBase64, encoded.utf8.count <= 44 * 1024 * 1024,
-              ["image/png", "image/webp"].contains(info.mime ?? "image/webp"),
-              let data = Data(base64Encoded: encoded), data.count <= 32 * 1024 * 1024,
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width > 0, height > 0, width <= 8192, height <= 8192, width * height <= 8 * 1024 * 1024,
-              let frameW = info.frameW, let frameH = info.frameH,
-              frameW > 0, frameH > 0, frameW <= width, frameH <= height,
-              let frames = info.framesPerState, frames > 0, frames <= width / frameW,
-              let loop = info.loopMs, (100...60_000).contains(loop),
-              let rows = info.stateRows, !rows.isEmpty, rows.count <= height / frameH,
-              rows.contains("idle"), Set(rows).count == rows.count,
-              (info.framesByRow ?? [:]).values.allSatisfy({ $0 >= 0 && $0 <= width / frameW }),
-              (info.framesByState ?? [:]).values.allSatisfy({ $0 >= 0 && $0 <= width / frameW }),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+            ["image/png", "image/webp"].contains(info.mime ?? "image/webp"),
+            let data = Data(base64Encoded: encoded), data.count <= 32 * 1024 * 1024,
+            let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            width > 0, height > 0, width <= 8192, height <= 8192, width * height <= 8 * 1024 * 1024,
+            let frameW = info.frameW, let frameH = info.frameH,
+            frameW > 0, frameH > 0, frameW <= width, frameH <= height,
+            let frames = info.framesPerState, frames > 0, frames <= width / frameW,
+            let loop = info.loopMs, (100...60_000).contains(loop),
+            let rows = info.stateRows, !rows.isEmpty, rows.count <= height / frameH,
+            rows.contains("idle"), Set(rows).count == rows.count,
+            (info.framesByRow ?? [:]).values.allSatisfy({ $0 >= 0 && $0 <= width / frameW }),
+            (info.framesByState ?? [:]).values.allSatisfy({ $0 >= 0 && $0 <= width / frameW }),
+            let image = CGImageSourceCreateImageAtIndex(
+                source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         else { throw HermesPetError.invalidImage }
         var metadata = info
         metadata.spritesheetBase64 = nil
@@ -69,28 +70,45 @@ final class HermesPetModel: ObservableObject {
         model.$profileScopeID.receive(on: RunLoop.main).sink { [weak self] profile in
             guard let self else { return }
             self.generation += 1
-            self.refreshTask?.cancel(); self.refreshTask = nil
-            self.beatTask?.cancel(); self.beat = nil
-            self.notchWorking = false; self.notchAttention = false
+            self.refreshTask?.cancel()
+            self.refreshTask = nil
+            self.beatTask?.cancel()
+            self.beat = nil
+            self.notchWorking = false
+            self.notchAttention = false
             self.profile = profile
-            self.sheet = nil; self.info = HermesPetInfo(enabled: false); self.gallery = nil
+            self.sheet = nil
+            self.info = HermesPetInfo(enabled: false)
+            self.gallery = nil
             self.galleryNotice = nil
-            self.thumbnailCache = [:]; self.thumbnailsLoading = []
-            self.notice = nil; self.isLoading = false; self.isApplying = false
+            self.thumbnailCache = [:]
+            self.thumbnailsLoading = []
+            self.notice = nil
+            self.isLoading = false
+            self.isApplying = false
             self.revision += 1
             self.refresh()
         }.store(in: &subscriptions)
         model.$isHermesConnected.receive(on: RunLoop.main).sink { [weak self] connected in
             guard let self else { return }
             self.online = connected
-            if connected { self.refresh() } else {
-                self.generation += 1; self.refreshTask?.cancel(); self.refreshTask = nil
-                self.isLoading = false; self.isApplying = false; self.stale = true
+            if connected {
+                self.refresh()
+            } else {
+                self.generation += 1
+                self.refreshTask?.cancel()
+                self.refreshTask = nil
+                self.isLoading = false
+                self.isApplying = false
+                self.stale = true
             }
             self.updatePose()
         }.store(in: &subscriptions)
-        Publishers.Merge3(model.$status.map { _ in () }, model.$activityPresentationRevision.map { _ in () }, model.$backgroundTasks.map { _ in () })
-            .receive(on: RunLoop.main).sink { [weak self] in self?.updatePose() }.store(in: &subscriptions)
+        Publishers.Merge3(
+            model.$status.map { _ in () }, model.$activityPresentationRevision.map { _ in () },
+            model.$backgroundTasks.map { _ in () }
+        )
+        .receive(on: RunLoop.main).sink { [weak self] in self?.updatePose() }.store(in: &subscriptions)
         eventID = model.eventRouter.subscribe { [weak self, weak model] type, params in
             guard let self, let model else { return }
             // Change events need not identify a profile; re-read the selected profile.
@@ -102,20 +120,29 @@ final class HermesPetModel: ObservableObject {
                 if DockModel.messageCompletionError(from: payload) != nil { self.react(.failed) }
             }
         }
-        Timer.publish(every: 60, on: .main, in: .common).autoconnect().sink { [weak self] _ in self?.refresh() }.store(in: &subscriptions)
-        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification).sink { [weak self] _ in self?.refresh() }.store(in: &subscriptions)
+        Timer.publish(every: 60, on: .main, in: .common).autoconnect().sink { [weak self] _ in self?.refresh() }.store(
+            in: &subscriptions)
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification).sink { [weak self] _ in
+            self?.refresh()
+        }.store(in: &subscriptions)
     }
 
     private func updatePose() {
-        let next = visible ? Self.activityPose(online: online && !stale,
-            attention: notchAttention || dock?.status == .needsApproval || dock?.status == .needsClarification,
-            working: notchWorking || dock?.status == .working || dock?.backgroundTasks.contains { $0.status == .running } == true,
-            tool: dock?.activeToolCalls.contains { !$0.isComplete } == true,
-            reasoning: dock?.reasoningState?.isComplete == false, beat: beat) : "idle"
+        let next =
+            visible
+            ? Self.activityPose(
+                online: online && !stale,
+                attention: notchAttention || dock?.status == .needsApproval || dock?.status == .needsClarification,
+                working: notchWorking || dock?.status == .working
+                    || dock?.backgroundTasks.contains { $0.status == .running } == true,
+                tool: dock?.activeToolCalls.contains { !$0.isComplete } == true,
+                reasoning: dock?.reasoningState?.isComplete == false, beat: beat) : "idle"
         if pose != next { pose = next }
     }
 
-    static func activityPose(online: Bool, attention: Bool, working: Bool, tool: Bool, reasoning: Bool, beat: String?) -> String {
+    static func activityPose(online: Bool, attention: Bool, working: Bool, tool: Bool, reasoning: Bool, beat: String?)
+        -> String
+    {
         // Direct interactions are short-lived; afterwards the live pose resumes.
         if let beat { return beat }
         guard online else { return HermesPetReaction.idle.pose }
@@ -126,7 +153,9 @@ final class HermesPetModel: ObservableObject {
 
     func updateNotchActivity(working: Bool, attention: Bool) {
         guard notchWorking != working || notchAttention != attention else { return }
-        notchWorking = working; notchAttention = attention; updatePose()
+        notchWorking = working
+        notchAttention = attention
+        updatePose()
     }
 
     func greet() { if beat == nil { react(.greeting) } }
@@ -135,11 +164,14 @@ final class HermesPetModel: ObservableObject {
 
     private func flash(_ value: String) {
         guard visible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        beatTask?.cancel(); beat = value; updatePose()
+        beatTask?.cancel()
+        beat = value
+        updatePose()
         beatTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1600))
             guard !Task.isCancelled else { return }
-            self?.beat = nil; self?.updatePose()
+            self?.beat = nil
+            self?.updatePose()
         }
     }
 
@@ -150,8 +182,13 @@ final class HermesPetModel: ObservableObject {
         refreshTask = Task { [weak self] in
             guard let self else { return }
             defer { if self.generation == generation { self.refreshTask = nil } }
-            do { try await self.readInfo(service, generation: generation) }
-            catch { if self.generation == generation { self.stale = true; self.notice = "Hermes companion unavailable. Reconnect or update Hermes, then retry."; self.updatePose() } }
+            do { try await self.readInfo(service, generation: generation) } catch {
+                if self.generation == generation {
+                    self.stale = true
+                    self.notice = "Hermes companion unavailable. Reconnect or update Hermes, then retry."
+                    self.updatePose()
+                }
+            }
         }
     }
 
@@ -161,19 +198,33 @@ final class HermesPetModel: ObservableObject {
         if sheet != nil, let raw = try? await service.request(.petInfoMeta) {
             let meta = try HermesPetInfo.decode(raw)
             guard self.generation == generation else { return }
-            if !meta.enabled { publish(meta, sheet: nil); return }
+            if !meta.enabled {
+                publish(meta, sheet: nil)
+                return
+            }
             if let revision = info.spritesheetRevision, !revision.isEmpty,
-               meta.slug == info.slug, meta.spritesheetRevision == revision {
-                var next = info; next.displayName = meta.displayName; next.scale = meta.scale
-                publish(next, sheet: sheet); return
+                meta.slug == info.slug, meta.spritesheetRevision == revision
+            {
+                var next = info
+                next.displayName = meta.displayName
+                next.scale = meta.scale
+                publish(next, sheet: sheet)
+                return
             }
             params = [:]
         }
         var next = try HermesPetInfo.decode(try await service.request(.petInfo, params))
         guard self.generation == generation else { return }
-        if !next.enabled { publish(next, sheet: nil); return }
-        if next.spritesheetUnchanged == true, next.slug == info.slug, next.spritesheetRevision == info.spritesheetRevision, let sheet {
-            next.spritesheetBase64 = nil; publish(next, sheet: sheet); return
+        if !next.enabled {
+            publish(next, sheet: nil)
+            return
+        }
+        if next.spritesheetUnchanged == true, next.slug == info.slug,
+            next.spritesheetRevision == info.spritesheetRevision, let sheet
+        {
+            next.spritesheetBase64 = nil
+            publish(next, sheet: sheet)
+            return
         }
         let input = next
         let decoded = try await Task.detached(priority: .utility) { try HermesPetSheet.decode(input) }.value
@@ -184,7 +235,10 @@ final class HermesPetModel: ObservableObject {
 
     private func publish(_ next: HermesPetInfo, sheet: HermesPetSheet?) {
         let changed = info != next
-        info = next; self.sheet = sheet; stale = false; notice = nil
+        info = next
+        self.sheet = sheet
+        stale = false
+        notice = nil
         if changed { revision += 1 }
         updatePose()
     }
@@ -213,7 +267,10 @@ final class HermesPetModel: ObservableObject {
             if !stale { notice = nil }
         } catch {
             if self.generation == generation {
-                galleryNotice = gallery == nil ? "Pet gallery unavailable. Refresh to retry." : "Online catalog unavailable. Showing cached or installed pets; refresh to retry."
+                galleryNotice =
+                    gallery == nil
+                    ? "Pet gallery unavailable. Refresh to retry."
+                    : "Online catalog unavailable. Showing cached or installed pets; refresh to retry."
             }
         }
     }
@@ -225,19 +282,26 @@ final class HermesPetModel: ObservableObject {
         thumbnailsLoading.insert(entry.slug)
         defer { if self.generation == generation { thumbnailsLoading.remove(entry.slug) } }
         let service = HermesPetService(client: dock.controlRPCClient, profile: profile)
-        guard let result = try? await service.request(.petThumb, ["slug": entry.slug, "url": entry.spritesheetUrl ?? ""]),
-              let uri = result["dataUri"] as? String, uri.hasPrefix("data:image/png;base64,"), uri.count <= 2 * 1024 * 1024,
-              let data = Data(base64Encoded: String(uri.dropFirst("data:image/png;base64,".count))),
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              (1...2048).contains(width), (1...2048).contains(height),
-              // Decode once at row size so scrolling never decodes a full sprite sheet on the main thread.
-              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                  kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceShouldCacheImmediately: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 72] as CFDictionary),
-              self.generation == generation else { return nil }
+        guard
+            let result = try? await service.request(
+                .petThumb, ["slug": entry.slug, "url": entry.spritesheetUrl ?? ""]),
+            let uri = result["dataUri"] as? String, uri.hasPrefix("data:image/png;base64,"),
+            uri.count <= 2 * 1024 * 1024,
+            let data = Data(base64Encoded: String(uri.dropFirst("data:image/png;base64,".count))),
+            let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            (1...2048).contains(width), (1...2048).contains(height),
+            // Decode once at row size so scrolling never decodes a full sprite sheet on the main thread.
+            let cg = CGImageSourceCreateThumbnailAtIndex(
+                source, 0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 72,
+                ] as CFDictionary),
+            self.generation == generation
+        else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         if thumbnailCache.count >= 120 { thumbnailCache.removeAll() }
         thumbnailCache[entry.slug] = image
@@ -246,11 +310,14 @@ final class HermesPetModel: ObservableObject {
 
     func apply(enabled: Bool, slug: String, scale: Double) async {
         guard online, !isApplying, let dock, scale.isFinite, (0.1...3).contains(scale),
-              !enabled || gallery?.pets.contains(where: { $0.slug == slug }) == true else { return }
-        refreshTask?.cancel(); refreshTask = nil
+            !enabled || gallery?.pets.contains(where: { $0.slug == slug }) == true
+        else { return }
+        refreshTask?.cancel()
+        refreshTask = nil
         self.generation += 1
         isLoading = false
-        isApplying = true; notice = nil
+        isApplying = true
+        notice = nil
         let generation = generation
         let service = HermesPetService(client: dock.controlRPCClient, profile: profile)
         defer { if self.generation == generation { isApplying = false } }
@@ -260,12 +327,16 @@ final class HermesPetModel: ObservableObject {
                 _ = try await service.request(.petSelect, ["slug": slug])
                 guard self.generation == generation else { return }
                 _ = try await service.request(.petScale, ["scale": scale])
-            } else { _ = try await service.request(.petDisable) }
+            } else {
+                _ = try await service.request(.petDisable)
+            }
         } catch { failed = true }
         guard self.generation == generation else { return }
         do { try await readInfo(service, generation: generation) } catch { stale = true }
         await loadGallery()
         guard self.generation == generation else { return }
-        if failed { notice = "Hermes could not apply all companion changes. Reload the current settings before retrying." }
+        if failed {
+            notice = "Hermes could not apply all companion changes. Reload the current settings before retrying."
+        }
     }
 }

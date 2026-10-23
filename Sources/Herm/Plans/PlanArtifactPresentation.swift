@@ -40,7 +40,10 @@ struct PlanArtifactPresentation: Equatable {
         for (index, line) in lines.enumerated() {
             let lineNumber = index + 1
             if line.hasPrefix("```") {
-                if inDependencyBlock && !dependencyLines.isEmpty { dependencySummary = dependencyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) }
+                if inDependencyBlock && !dependencyLines.isEmpty {
+                    dependencySummary = dependencyLines.joined(separator: "\n").trimmingCharacters(
+                        in: .whitespacesAndNewlines)
+                }
                 inDependencyBlock.toggle()
                 continue
             }
@@ -50,15 +53,22 @@ struct PlanArtifactPresentation: Equatable {
             }
             if let match = line.firstMatch(of: /^(#{1,6})\s+(.+?)\s*#*$/) {
                 let rawTitle = String(match.2).trimmingCharacters(in: .whitespaces)
-                let anchor = rawTitle.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: "-")
-                headings.append(PlanArtifactHeading(level: match.1.count, title: rawTitle, line: lineNumber, anchor: anchor))
+                let anchor = rawTitle.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(
+                    separator: "-")
+                headings.append(
+                    PlanArtifactHeading(level: match.1.count, title: rawTitle, line: lineNumber, anchor: anchor))
             }
             if let match = line.firstMatch(of: /^(?:[-*]\s+)?(?:###?\s+)?(?:Task\s+)?(P\d+(?:\.\d+)+)\s*:?\s*(.*)$/) {
-                tasks.append(PlanArtifactTask(label: String(match.1), line: lineNumber, text: String(match.2).trimmingCharacters(in: .whitespaces)))
+                tasks.append(
+                    PlanArtifactTask(
+                        label: String(match.1), line: lineNumber,
+                        text: String(match.2).trimmingCharacters(in: .whitespaces)))
             }
             for match in line.matches(of: /\bAC-\d{2}\b/) { acceptance.insert(String(match.0)) }
         }
 
-        return Self(title: document.summary.title, headings: headings, tasks: tasks, acceptanceIDs: acceptance.sorted(), dependencySummary: dependencySummary, comments: comments, summary: document.summary)
+        return Self(
+            title: document.summary.title, headings: headings, tasks: tasks, acceptanceIDs: acceptance.sorted(),
+            dependencySummary: dependencySummary, comments: comments, summary: document.summary)
     }
 }

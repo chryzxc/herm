@@ -24,32 +24,46 @@ final class CommandCenterPreferencesStore: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let saved = defaults.dictionary(forKey: key) ?? [:]
-        if let data = saved["sourcePins"] as? Data { sourcePins = (try? JSONDecoder().decode([PinnedSource].self, from: data)) ?? [] }
+        if let data = saved["sourcePins"] as? Data {
+            sourcePins = (try? JSONDecoder().decode([PinnedSource].self, from: data)) ?? []
+        }
         routinePins = saved["routinePins"] as? [String] ?? []
         pinnedRepositoryIDs = saved["pinnedRepositoryIDs"] as? [String] ?? []
         collapsedSections = Set(saved["collapsedSections"] as? [String] ?? [])
         sectionOrder = saved["sectionOrder"] as? [String] ?? MissionControlSection.allCases.map(\.rawValue)
         recentActionIDs = saved["recentActionIDs"] as? [String] ?? []
         watchedRepositoryIDs = saved["watchedRepositoryIDs"] as? [String] ?? []
-        reviewBaselines = (saved["reviewBaselines"] as? [[String: Any]] ?? []).compactMap(RepositoryReviewBaseline.init(dictionary:))
+        reviewBaselines = (saved["reviewBaselines"] as? [[String: Any]] ?? []).compactMap(
+            RepositoryReviewBaseline.init(dictionary:))
         repositoryNotificationsEnabled = saved["repositoryNotificationsEnabled"] as? Bool ?? false
         launchesExpandedByDefault = saved["launchesExpandedByDefault"] as? Bool ?? false
         lastSeen = saved["lastSeen"] as? [String: TimeInterval] ?? [:]
     }
 
     func togglePinnedRepository(_ id: String) {
-        if let index = pinnedRepositoryIDs.firstIndex(of: id) { pinnedRepositoryIDs.remove(at: index) }
-        else { pinnedRepositoryIDs.append(id) }
+        if let index = pinnedRepositoryIDs.firstIndex(of: id) {
+            pinnedRepositoryIDs.remove(at: index)
+        } else {
+            pinnedRepositoryIDs.append(id)
+        }
         save()
     }
 
     func pinSource(origin: QuickDestination, url: String, label: String? = nil, revisionID: String? = nil) {
-        var origin = origin; origin.runtimeID = nil
-        guard let parsed = URL(string: url), ["http", "https"].contains(parsed.scheme?.lowercased() ?? ""), parsed.host != nil,
-              !sourcePins.contains(where: { $0.origin.key == origin.key && $0.url == url && $0.revisionID == revisionID }) else { return }
-        sourcePins.append(PinnedSource(origin: origin, url: url, label: label.map { String($0.prefix(120)) }, revisionID: revisionID)); save()
+        var origin = origin
+        origin.runtimeID = nil
+        guard let parsed = URL(string: url), ["http", "https"].contains(parsed.scheme?.lowercased() ?? ""),
+            parsed.host != nil,
+            !sourcePins.contains(where: { $0.origin.key == origin.key && $0.url == url && $0.revisionID == revisionID })
+        else { return }
+        sourcePins.append(
+            PinnedSource(origin: origin, url: url, label: label.map { String($0.prefix(120)) }, revisionID: revisionID))
+        save()
     }
-    func removeSource(_ id: UUID) { sourcePins.removeAll { $0.id == id }; save() }
+    func removeSource(_ id: UUID) {
+        sourcePins.removeAll { $0.id == id }
+        save()
+    }
     func toggleRoutinePin(_ id: String) {
         if routinePins.contains(id) { routinePins.removeAll { $0 == id } } else { routinePins.append(id) }
         save()
@@ -58,8 +72,11 @@ final class CommandCenterPreferencesStore: ObservableObject {
     func isPinnedRepository(_ id: String) -> Bool { pinnedRepositoryIDs.contains(id) }
 
     func toggleCollapsed(_ section: MissionControlSection) {
-        if collapsedSections.contains(section.rawValue) { collapsedSections.remove(section.rawValue) }
-        else { collapsedSections.insert(section.rawValue) }
+        if collapsedSections.contains(section.rawValue) {
+            collapsedSections.remove(section.rawValue)
+        } else {
+            collapsedSections.insert(section.rawValue)
+        }
         save()
     }
 
@@ -88,8 +105,11 @@ final class CommandCenterPreferencesStore: ObservableObject {
     }
 
     func toggleWatchingRepository(_ id: String) {
-        if let index = watchedRepositoryIDs.firstIndex(of: id) { watchedRepositoryIDs.remove(at: index) }
-        else { watchedRepositoryIDs.append(id) }
+        if let index = watchedRepositoryIDs.firstIndex(of: id) {
+            watchedRepositoryIDs.remove(at: index)
+        } else {
+            watchedRepositoryIDs.append(id)
+        }
         save()
     }
 
@@ -118,18 +138,19 @@ final class CommandCenterPreferencesStore: ObservableObject {
     }
 
     private func save() {
-        defaults.set([
-            "sourcePins": (try? JSONEncoder().encode(sourcePins)) ?? Data(),
-            "routinePins": routinePins,
-            "pinnedRepositoryIDs": pinnedRepositoryIDs,
-            "collapsedSections": Array(collapsedSections),
-            "sectionOrder": sectionOrder,
-            "recentActionIDs": recentActionIDs,
-            "lastSeen": lastSeen,
-            "watchedRepositoryIDs": watchedRepositoryIDs,
-            "reviewBaselines": reviewBaselines.map(\.dictionary),
-            "repositoryNotificationsEnabled": repositoryNotificationsEnabled,
-            "launchesExpandedByDefault": launchesExpandedByDefault
-        ], forKey: key)
+        defaults.set(
+            [
+                "sourcePins": (try? JSONEncoder().encode(sourcePins)) ?? Data(),
+                "routinePins": routinePins,
+                "pinnedRepositoryIDs": pinnedRepositoryIDs,
+                "collapsedSections": Array(collapsedSections),
+                "sectionOrder": sectionOrder,
+                "recentActionIDs": recentActionIDs,
+                "lastSeen": lastSeen,
+                "watchedRepositoryIDs": watchedRepositoryIDs,
+                "reviewBaselines": reviewBaselines.map(\.dictionary),
+                "repositoryNotificationsEnabled": repositoryNotificationsEnabled,
+                "launchesExpandedByDefault": launchesExpandedByDefault,
+            ], forKey: key)
     }
 }

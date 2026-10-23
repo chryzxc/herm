@@ -1,6 +1,6 @@
 import AppKit
-import os
 import SwiftUI
+import os
 
 /// The app's icon view. Phosphor (`PhosphorIcons.swift`) is the only icon
 /// family; views never instantiate SF Symbols or other icon sets.
@@ -38,7 +38,10 @@ struct DockIcon: View {
     @ViewBuilder private var glyph: some View {
         let shape = PhosphorShape(icon: icon, weight: weight)
         if let size {
-            shape.frame(width: DockWorkspaceScale.points(size, scale: workspaceScale), height: DockWorkspaceScale.points(size, scale: workspaceScale)).accessibilityHidden(true)
+            shape.frame(
+                width: DockWorkspaceScale.points(size, scale: workspaceScale),
+                height: DockWorkspaceScale.points(size, scale: workspaceScale)
+            ).accessibilityHidden(true)
         } else {
             Text(verbatim: "\u{2003}")
                 .hidden()
@@ -155,7 +158,11 @@ struct PhosphorShape: Shape {
 
 extension Label where Title == Text, Icon == Image {
     init(_ title: some StringProtocol, icon: Ph) {
-        self.init { Text(title) } icon: { icon.image() }
+        self.init {
+            Text(title)
+        } icon: {
+            icon.image()
+        }
     }
 }
 
@@ -241,9 +248,11 @@ enum PhosphorPathParser {
                 current = p
             case UInt8(ascii: "a"):
                 guard let rx = tokens.number(), let ry = tokens.number(), let rotation = tokens.number(),
-                      let largeArc = tokens.number(), let sweep = tokens.number(), let p = point() else { return path }
-                addArc(to: path, from: current, to: p, radii: CGSize(width: rx, height: ry),
-                       rotation: rotation, largeArc: largeArc != 0, sweep: sweep != 0)
+                    let largeArc = tokens.number(), let sweep = tokens.number(), let p = point()
+                else { return path }
+                addArc(
+                    to: path, from: current, to: p, radii: CGSize(width: rx, height: ry),
+                    rotation: rotation, largeArc: largeArc != 0, sweep: sweep != 0)
                 current = p
             case UInt8(ascii: "z"):
                 path.closeSubpath()
@@ -262,8 +271,10 @@ enum PhosphorPathParser {
     }
 
     /// SVG endpoint arc to cubic Béziers (SVG spec, appendix F.6).
-    private static func addArc(to path: CGMutablePath, from start: CGPoint, to end: CGPoint, radii: CGSize,
-                               rotation: CGFloat, largeArc: Bool, sweep: Bool) {
+    private static func addArc(
+        to path: CGMutablePath, from start: CGPoint, to end: CGPoint, radii: CGSize,
+        rotation: CGFloat, largeArc: Bool, sweep: Bool
+    ) {
         guard start != end else { return }
         var rx = abs(radii.width)
         var ry = abs(radii.height)
@@ -289,8 +300,9 @@ enum PhosphorPathParser {
         if largeArc == sweep { coefficient = -coefficient }
         let cx1 = coefficient * rx * y1 / ry
         let cy1 = -coefficient * ry * x1 / rx
-        let center = CGPoint(x: cosPhi * cx1 - sinPhi * cy1 + (start.x + end.x) / 2,
-                             y: sinPhi * cx1 + cosPhi * cy1 + (start.y + end.y) / 2)
+        let center = CGPoint(
+            x: cosPhi * cx1 - sinPhi * cy1 + (start.x + end.x) / 2,
+            y: sinPhi * cx1 + cosPhi * cy1 + (start.y + end.y) / 2)
 
         func angle(_ ux: CGFloat, _ uy: CGFloat, _ vx: CGFloat, _ vy: CGFloat) -> CGFloat {
             atan2(ux * vy - uy * vx, ux * vx + uy * vy)
@@ -301,8 +313,9 @@ enum PhosphorPathParser {
         if sweep, sweepAngle < 0 { sweepAngle += 2 * .pi }
 
         func onEllipse(_ u: CGFloat, _ v: CGFloat) -> CGPoint {
-            CGPoint(x: center.x + rx * u * cosPhi - ry * v * sinPhi,
-                    y: center.y + rx * u * sinPhi + ry * v * cosPhi)
+            CGPoint(
+                x: center.x + rx * u * cosPhi - ry * v * sinPhi,
+                y: center.y + rx * u * sinPhi + ry * v * cosPhi)
         }
         let segments = max(1, Int((abs(sweepAngle) / (.pi / 2)).rounded(.up)))
         let delta = sweepAngle / CGFloat(segments)
@@ -330,8 +343,10 @@ enum PhosphorPathParser {
         }
 
         mutating func skipSeparators() {
-            while index < bytes.count, bytes[index] == UInt8(ascii: ",") || bytes[index] == UInt8(ascii: " ")
-                || bytes[index] == UInt8(ascii: "\n") || bytes[index] == UInt8(ascii: "\t") {
+            while index < bytes.count,
+                bytes[index] == UInt8(ascii: ",") || bytes[index] == UInt8(ascii: " ")
+                    || bytes[index] == UInt8(ascii: "\n") || bytes[index] == UInt8(ascii: "\t")
+            {
                 index += 1
             }
         }
@@ -340,7 +355,9 @@ enum PhosphorPathParser {
             skipSeparators()
             guard index < bytes.count else { return nil }
             let byte = bytes[index]
-            let isLetter = (byte | 0x20) >= UInt8(ascii: "a") && (byte | 0x20) <= UInt8(ascii: "z") && byte | 0x20 != UInt8(ascii: "e")
+            let isLetter =
+                (byte | 0x20) >= UInt8(ascii: "a") && (byte | 0x20) <= UInt8(ascii: "z")
+                && byte | 0x20 != UInt8(ascii: "e")
             guard isLetter else { return nil }
             index += 1
             return byte
@@ -349,7 +366,9 @@ enum PhosphorPathParser {
         mutating func number() -> CGFloat? {
             skipSeparators()
             let start = index
-            if index < bytes.count, bytes[index] == UInt8(ascii: "-") || bytes[index] == UInt8(ascii: "+") { index += 1 }
+            if index < bytes.count, bytes[index] == UInt8(ascii: "-") || bytes[index] == UInt8(ascii: "+") {
+                index += 1
+            }
             var sawDigit = false
             var sawDot = false
             while index < bytes.count {
@@ -360,7 +379,9 @@ enum PhosphorPathParser {
                     sawDot = true
                 } else if byte | 0x20 == UInt8(ascii: "e"), sawDigit {
                     index += 1
-                    if index < bytes.count, bytes[index] == UInt8(ascii: "-") || bytes[index] == UInt8(ascii: "+") { index += 1 }
+                    if index < bytes.count, bytes[index] == UInt8(ascii: "-") || bytes[index] == UInt8(ascii: "+") {
+                        index += 1
+                    }
                     sawDot = true
                     continue
                 } else {

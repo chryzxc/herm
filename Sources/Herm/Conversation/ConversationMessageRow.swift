@@ -66,7 +66,7 @@ struct ConversationMessageRow: View, Equatable {
     @State private var sendTarget: BotSummary?
     @State private var hoverPresentation: ConversationRowHoverPresentation
     #if DEBUG
-    @Environment(\.conversationRowEvaluation) private var evaluation
+        @Environment(\.conversationRowEvaluation) private var evaluation
     #endif
 
     let loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)?
@@ -179,11 +179,12 @@ struct ConversationMessageRow: View, Equatable {
 
     var body: some View {
         #if DEBUG
-        let _ = evaluation?("message", -1)
+            let _ = evaluation?("message", -1)
         #endif
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
-                let fullText = GenerativeUIIntegration.displayUserText(message.text).trimmingCharacters(in: .whitespacesAndNewlines)
+                let fullText = GenerativeUIIntegration.displayUserText(message.text).trimmingCharacters(
+                    in: .whitespacesAndNewlines)
                 let replySplit = ReplyQuote.split(fullText)
                 let userText = replySplit?.body ?? fullText
                 Spacer(minLength: 40)
@@ -197,11 +198,14 @@ struct ConversationMessageRow: View, Equatable {
                         // sit centered in a 220pt square with a gap below.
                         let size = message.images[0].size
                         let scale = min(220 / max(size.width, 1), 220 / max(size.height, 1), 1)
-                        imageThumbnail(at: 0) { $0.scaledToFit().frame(width: size.width * scale, height: size.height * scale) }
+                        imageThumbnail(at: 0) {
+                            $0.scaledToFit().frame(width: size.width * scale, height: size.height * scale)
+                        }
                     } else if message.images.count > 1 {
                         let tile: CGFloat = 104
                         LazyVGrid(
-                            columns: Array(repeating: GridItem(.fixed(tile), spacing: 6), count: min(message.images.count, 3)),
+                            columns: Array(
+                                repeating: GridItem(.fixed(tile), spacing: 6), count: min(message.images.count, 3)),
                             alignment: .trailing,
                             spacing: 6
                         ) {
@@ -212,35 +216,45 @@ struct ConversationMessageRow: View, Equatable {
                         .fixedSize()
                     }
                     if !userText.isEmpty {
-                        let mention = ComposerMentionPresentation.directBotRequest(in: userText, profileIDs: Array(botsByID.keys))
+                        let mention = ComposerMentionPresentation.directBotRequest(
+                            in: userText, profileIDs: Array(botsByID.keys))
                         let mentionedBotID = message.botProfileID ?? mention?.profileID
                         let mentionPrefix = "@" + (message.botDisplayName ?? mentionedBotID ?? "") + " "
-                        let mentionBody = mentionedBotID != nil && userText.hasPrefix(mentionPrefix)
+                        let mentionBody =
+                            mentionedBotID != nil && userText.hasPrefix(mentionPrefix)
                             ? userText.dropFirst(mentionPrefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
                             : userText
                         VStack(alignment: .leading, spacing: 8) {
                             if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
                             if let mentionedBotID {
-                                InlineBotMentionText(text: mention?.text ?? mentionBody, botID: mentionedBotID,
-                                                     displayName: message.botDisplayName, botsByID: botsByID,
-                                                     avatarImages: avatarImages, themeRevision: themeRevision)
+                                InlineBotMentionText(
+                                    text: mention?.text ?? mentionBody, botID: mentionedBotID,
+                                    displayName: message.botDisplayName, botsByID: botsByID,
+                                    avatarImages: avatarImages, themeRevision: themeRevision)
                             } else {
                                 messageMarkdownView(userText, hugsContent: true)
                             }
                         }
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(Self.userBubbleShape.fill(DockSkinPresentation.current.transcript == .document ? Color.dockSurface : Color.dockUserMessageBubble))
-                            .overlay {
-                                Self.userBubbleShape
-                                    .stroke(
-                                        message.isSteering ? Color.dockAccent.opacity(0.45) : DockSkinPresentation.current.transcript == .document ? .clear : Color.dockBorderStrong,
-                                        lineWidth: 0.5
-                                    )
-                                    .allowsHitTesting(false)
-                            }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(
+                            Self.userBubbleShape.fill(
+                                DockSkinPresentation.current.transcript == .document
+                                    ? Color.dockSurface : Color.dockUserMessageBubble)
+                        )
+                        .overlay {
+                            Self.userBubbleShape
+                                .stroke(
+                                    message.isSteering
+                                        ? Color.dockAccent.opacity(0.45)
+                                        : DockSkinPresentation.current.transcript == .document
+                                            ? .clear : Color.dockBorderStrong,
+                                    lineWidth: 0.5
+                                )
+                                .allowsHitTesting(false)
+                        }
                     }
 
                     HStack(spacing: 6) {
@@ -264,7 +278,9 @@ struct ConversationMessageRow: View, Equatable {
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    let attributedBotID = message.systemEvent == nil && message.kanbanNotice == nil ? message.botProfileID ?? activeBotProfileID : nil
+                    let attributedBotID =
+                        message.systemEvent == nil && message.kanbanNotice == nil
+                        ? message.botProfileID ?? activeBotProfileID : nil
                     if let botProfileID = attributedBotID {
                         let bot = botsByID[botProfileID]
                         HStack(spacing: 7) {
@@ -279,7 +295,9 @@ struct ConversationMessageRow: View, Equatable {
                             } else {
                                 BotFaceMark(id: botProfileID, size: 24, animated: true)
                             }
-                            let requester = message.isBotHandoffReply ? activeBotProfileID.flatMap { $0 == botProfileID ? nil : botsByID[$0] } : nil
+                            let requester =
+                                message.isBotHandoffReply
+                                ? activeBotProfileID.flatMap { $0 == botProfileID ? nil : botsByID[$0] } : nil
                             (Text(bot?.name ?? message.botDisplayName ?? botProfileID)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 + Text(requester.map { " replied to \($0.name)" } ?? "")
@@ -294,16 +312,20 @@ struct ConversationMessageRow: View, Equatable {
                     }
 
                     if let event = message.systemEvent, event.isFeed {
-                        FeedEventRow(event: event, line: FeedLine(message.text), timeLabel: message.timeLabel,
-                                     botsByID: botsByID, avatarImages: avatarImages)
+                        FeedEventRow(
+                            event: event, line: FeedLine(message.text), timeLabel: message.timeLabel,
+                            botsByID: botsByID, avatarImages: avatarImages)
                     } else if let event = message.systemEvent {
                         SystemEventCard(event: event, text: message.text, timeLabel: message.timeLabel)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else if let notice = message.kanbanNotice {
-                        KanbanNoticeCard(notice: notice, botID: message.botProfileID ?? activeBotProfileID,
-                                         timeLabel: message.timeLabel, botsByID: botsByID, avatarImages: avatarImages,
-                                         loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
-                    } else if !message.text.isEmpty || isStreamingMessage || !ArtifactService.deliveredFiles(in: message.activity).isEmpty {
+                        KanbanNoticeCard(
+                            notice: notice, botID: message.botProfileID ?? activeBotProfileID,
+                            timeLabel: message.timeLabel, botsByID: botsByID, avatarImages: avatarImages,
+                            loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
+                    } else if !message.text.isEmpty || isStreamingMessage
+                        || !ArtifactService.deliveredFiles(in: message.activity).isEmpty
+                    {
                         Group {
                             if isStreamingMessage, let streamingText {
                                 // The row is an equatable boundary that does
@@ -333,11 +355,11 @@ struct ConversationMessageRow: View, Equatable {
                                 assistantBody
                             }
                         }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 6)
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     if message.kanbanNotice != nil || message.systemEvent != nil {
@@ -370,13 +392,14 @@ struct ConversationMessageRow: View, Equatable {
         if DockSkinPresentation.current.transcript == .document {
             return AnyShape(DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane))
         }
-        return AnyShape(UnevenRoundedRectangle(
-        topLeadingRadius: 14,
-        bottomLeadingRadius: 14,
-        bottomTrailingRadius: 4,
-        topTrailingRadius: 14,
-        style: .continuous
-        ))
+        return AnyShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 14,
+                bottomLeadingRadius: 14,
+                bottomTrailingRadius: 4,
+                topTrailingRadius: 14,
+                style: .continuous
+            ))
     }
 
     private var steeringLabel: String {
@@ -384,7 +407,11 @@ struct ConversationMessageRow: View, Equatable {
         return "Steering · \(status)"
     }
 
-    private enum AssistantBlock { case markdown(String), image(String), files([String]) }
+    private enum AssistantBlock {
+        case markdown(String)
+        case image(String)
+        case files([String])
+    }
 
     /// Merges consecutive non-image attachments into one block so they render as a single card.
     private static func groupFiles(_ segments: [ChatMediaSegment]) -> [AssistantBlock] {
@@ -394,8 +421,11 @@ struct ConversationMessageRow: View, Equatable {
             case .markdown(let text): blocks.append(.markdown(text))
             case .media(let path) where ArtifactService.kind(for: path) == .image: blocks.append(.image(path))
             case .media(let path):
-                if case .files(let paths)? = blocks.last { blocks[blocks.count - 1] = .files(paths + [path]) }
-                else { blocks.append(.files([path])) }
+                if case .files(let paths)? = blocks.last {
+                    blocks[blocks.count - 1] = .files(paths + [path])
+                } else {
+                    blocks.append(.files([path]))
+                }
             }
         }
         return blocks
@@ -408,7 +438,8 @@ struct ConversationMessageRow: View, Equatable {
 
     @ViewBuilder
     private var standardAssistantBody: some View {
-        let segments = ChatMediaSegment.split(message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
+        let segments = ChatMediaSegment.split(
+            message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
         if segments == [.markdown(message.text)] {
             messageMarkdownView(message.text)
         } else {
@@ -426,8 +457,13 @@ struct ConversationMessageRow: View, Equatable {
                                 ChatMediaAttachmentCard(path: path, grouped: true)
                             }
                         }
-                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.55)))
-                        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+                        .background(
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                .dockSurfaceFill(Color.dockSurface2.opacity(0.55))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                                Color.dockBorderLight, lineWidth: 0.5))
                     }
                 }
             }
@@ -456,7 +492,8 @@ struct ConversationMessageRow: View, Equatable {
                 actionButton(
                     kind,
                     action: { perform(kind) },
-                    isAvailable: kind == .pin ? isPinAvailable : kind == .copy || kind == .reply || areSessionActionsAvailable
+                    isAvailable: kind == .pin
+                        ? isPinAvailable : kind == .copy || kind == .reply || areSessionActionsAvailable
                 )
             }
             sendToBotMenu
@@ -548,13 +585,18 @@ struct ConversationMessageRow: View, Equatable {
             .frame(width: 28, height: 28)
             .contentShape(Rectangle())
         } else {
-            let icon = kind == .pin && isPinned ? Ph.pushPinSlash : kind == .readAloud && isSpeaking ? Ph.stop : kind.icon
-            let label = kind == .pin && isPinned ? "Unpin message" : kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
+            let icon =
+                kind == .pin && isPinned ? Ph.pushPinSlash : kind == .readAloud && isSpeaking ? Ph.stop : kind.icon
+            let label =
+                kind == .pin && isPinned
+                ? "Unpin message" : kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
             let isPending = pendingAction == kind
-            let anotherMutationIsPending = pendingAction != nil
+            let anotherMutationIsPending =
+                pendingAction != nil
                 && (kind == .branch || kind == .refresh)
                 && !isPending
-            let iconColor = (kind == .readAloud && isSpeaking) || (kind == .pin && isPinned)
+            let iconColor =
+                (kind == .readAloud && isSpeaking) || (kind == .pin && isPinned)
                 ? Color.dockAccent
                 : Color.dockSecondaryText
             Button(action: action) {
@@ -589,13 +631,13 @@ struct SystemEventCard: View {
     @State var isExpanded = false
     @State var hoverPresentation = ConversationRowHoverPresentation()
     #if DEBUG
-    @Environment(\.conversationRowEvaluation) private var evaluation
+        @Environment(\.conversationRowEvaluation) private var evaluation
     #endif
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         #if DEBUG
-        let _ = evaluation?("system", -1)
+            let _ = evaluation?("system", -1)
         #endif
         let firstLine = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
         let canExpand = firstLine != text || text.count > 90
@@ -671,7 +713,7 @@ struct FeedEventRow: View {
     @State var isExpanded = false
     @State var hoverPresentation = ConversationRowHoverPresentation()
     #if DEBUG
-    @Environment(\.conversationRowEvaluation) private var evaluation
+        @Environment(\.conversationRowEvaluation) private var evaluation
     #endif
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -680,7 +722,7 @@ struct FeedEventRow: View {
 
     var body: some View {
         #if DEBUG
-        let _ = evaluation?("feed", -1)
+            let _ = evaluation?("feed", -1)
         #endif
         VStack(alignment: .leading, spacing: DockSpacing.micro) {
             Button {
@@ -848,10 +890,12 @@ struct KanbanNoticeCard: View {
                         ForEach(runs) { run in
                             HStack(spacing: DockSpacing.tight) {
                                 Text(run.profile ?? "worker").fontWeight(.medium).foregroundStyle(Color.dockPrimaryText)
-                                Text(Self.outcomeLabel(run)).foregroundStyle(run.error == nil ? Color.dockSecondaryText : Color.dockWarning)
+                                Text(Self.outcomeLabel(run)).foregroundStyle(
+                                    run.error == nil ? Color.dockSecondaryText : Color.dockWarning)
                                 Spacer(minLength: DockSpacing.control)
                                 if let at = run.endedAt ?? run.startedAt {
-                                    Text(at.formatted(date: .omitted, time: .shortened)).foregroundStyle(Color.dockMetadataText)
+                                    Text(at.formatted(date: .omitted, time: .shortened)).foregroundStyle(
+                                        Color.dockMetadataText)
                                 }
                             }
                             .dockFont(.machineMetadata)

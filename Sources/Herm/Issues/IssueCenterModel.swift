@@ -10,7 +10,9 @@ final class IssueCenterModel: ObservableObject {
             guard hasLoaded else { return }
             let previous = Dictionary(oldValue.map { ($0.id, $0.updatedAt) }, uniquingKeysWith: { a, _ in a })
             for row in records where row.id != selectedIssueID {
-                if let old = previous[row.id] ?? nil, let updated = row.updatedAt, updated > old { changedIDs.insert(row.id) }
+                if let old = previous[row.id] ?? nil, let updated = row.updatedAt, updated > old {
+                    changedIDs.insert(row.id)
+                }
             }
         }
     }
@@ -21,7 +23,8 @@ final class IssueCenterModel: ObservableObject {
     @Published var viewerLogin: String?
     @Published var selectedIssueID: String? {
         didSet {
-            if oldValue != selectedIssueID { detailErrorMessage = nil }; if let selectedIssueID { changedIDs.remove(selectedIssueID) }
+            if oldValue != selectedIssueID { detailErrorMessage = nil }
+            if let selectedIssueID { changedIDs.remove(selectedIssueID) }
         }
     }
     @Published private(set) var detailByID: [String: GitHubIssueRecord] = [:]
@@ -50,7 +53,11 @@ final class IssueCenterModel: ObservableObject {
 
     func conversation(for record: GitHubIssueRecord) -> GitHubConversationModel {
         if let model = conversations[record.id] { return model }
-        if conversations.count >= 32, let key = conversations.first(where: { $0.value.draft.isEmpty && $0.key != selectedIssueID })?.key { conversations[key] = nil }
+        if conversations.count >= 32,
+            let key = conversations.first(where: { $0.value.draft.isEmpty && $0.key != selectedIssueID })?.key
+        {
+            conversations[key] = nil
+        }
         let model = GitHubConversationModel(reference: record.reference, client: api.client)
         conversations[record.id] = model
         return model
@@ -92,17 +99,28 @@ final class IssueCenterModel: ObservableObject {
         let matchesFilter: Bool
         switch filter {
         case .all: matchesFilter = true
-        case .authored: matchesFilter = viewerLogin.map { issue.author.caseInsensitiveCompare($0) == .orderedSame } ?? false
-        case .assigned: matchesFilter = viewerLogin.map { viewer in issue.assignees.contains { assignee in assignee.caseInsensitiveCompare(viewer) == .orderedSame } } ?? false
+        case .authored:
+            matchesFilter = viewerLogin.map { issue.author.caseInsensitiveCompare($0) == .orderedSame } ?? false
+        case .assigned:
+            matchesFilter =
+                viewerLogin.map { viewer in
+                    issue.assignees.contains { assignee in assignee.caseInsensitiveCompare(viewer) == .orderedSame }
+                } ?? false
         }
         guard matchesFilter else { return false }
         guard !needle.isEmpty else { return true }
-        return [issue.title, issue.repository.id, issue.author, issue.body, issue.labels.joined(separator: " "), issue.assignees.joined(separator: " "), "#\(issue.number)"].joined(separator: " ").lowercased().contains(needle)
+        return [
+            issue.title, issue.repository.id, issue.author, issue.body, issue.labels.joined(separator: " "),
+            issue.assignees.joined(separator: " "), "#\(issue.number)",
+        ].joined(separator: " ").lowercased().contains(needle)
     }
 
     func refresh(projects: [ProjectSummary]) async {
         guard !Task.isCancelled, !isRefreshing else { return }
-        let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
+        let token = UUID()
+        generation = token
+        isRefreshing = true
+        errorMessage = nil
         defer { if token == generation { isRefreshing = false } }
         let paths = Array(Set(projects.filter(\.isRenderableProject).map(\.name))).filter { !$0.isEmpty }
         async let viewerLookup = api.viewer()
@@ -112,7 +130,10 @@ final class IssueCenterModel: ObservableObject {
         guard token == generation, !Task.isCancelled else { return }
         guard case .success(let viewer) = viewerResult else {
             viewerLogin = nil
-            errorMessage = hasLoaded ? "Using last known GitHub issues. Refresh to retry." : "GitHub issues are unavailable. Check your sign-in or try again."
+            errorMessage =
+                hasLoaded
+                ? "Using last known GitHub issues. Refresh to retry."
+                : "GitHub issues are unavailable. Check your sign-in or try again."
             repairSelection()
             return
         }
@@ -122,22 +143,33 @@ final class IssueCenterModel: ObservableObject {
             do {
                 let page = try await api.searchPage(browsing.query(kind: .issue, viewer: viewer), localPaths: remotes)
                 guard token == generation, !Task.isCancelled else { return }
-                records = page.items; detailNeedsRefresh.formUnion(detailByID.keys); coverage = page.coverage.label; hasLoaded = true; repairSelection()
+                records = page.items
+                detailNeedsRefresh.formUnion(detailByID.keys)
+                coverage = page.coverage.label
+                hasLoaded = true
+                repairSelection()
             } catch { if token == generation { errorMessage = error.localizedDescription } }
             return
         }
         let result: Result<GitHubPage<GitHubIssueRecord>, Error>
-        do { result = .success(try await api.workPage(viewer: viewer, localPaths: remotes)) } catch { result = .failure(error) }
+        do { result = .success(try await api.workPage(viewer: viewer, localPaths: remotes)) } catch {
+            result = .failure(error)
+        }
         guard token == generation, !Task.isCancelled else { return }
         switch result {
         case .success(let page):
-            let issues = page.items; coverage = page.coverage.label
+            let issues = page.items
+            coverage = page.coverage.label
             records = issues.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
             detailNeedsRefresh.formUnion(detailByID.keys)
             loadingDetailID = nil
             hasLoaded = true
             errorMessage = nil
-        case .failure: errorMessage = hasLoaded ? "Using last known GitHub issues. Refresh to retry." : "GitHub issues are unavailable. Check your sign-in or try again."
+        case .failure:
+            errorMessage =
+                hasLoaded
+                ? "Using last known GitHub issues. Refresh to retry."
+                : "GitHub issues are unavailable. Check your sign-in or try again."
         }
         repairSelection()
     }
@@ -145,26 +177,35 @@ final class IssueCenterModel: ObservableObject {
     /// Session-scoped refresh: open issues of one local repository only.
     func refreshScoped(repositoryPath: String) async {
         guard !Task.isCancelled else { return }
-        let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
+        let token = UUID()
+        generation = token
+        isRefreshing = true
+        errorMessage = nil
         defer { if token == generation { isRefreshing = false } }
         let remote = await RepositoryService.githubRemote(path: repositoryPath)
         guard token == generation, !Task.isCancelled else { return }
         guard let remote else {
-            records = []; selectedIssueID = nil
+            records = []
+            selectedIssueID = nil
             errorMessage = "This session's repository has no GitHub remote."
             return
         }
         async let viewerLookup = api.viewer()
-        let page = try? await api.searchPage("repo:\(remote.id) is:issue is:open", localPaths: [remote.id: repositoryPath])
+        let page = try? await api.searchPage(
+            "repo:\(remote.id) is:issue is:open", localPaths: [remote.id: repositoryPath])
         if case .success(let viewer) = await viewerLookup { viewerLogin = viewer }
         guard token == generation, !Task.isCancelled else { return }
         guard let page else {
-            if records.isEmpty { errorMessage = "GitHub could not load issues for \(remote.id). Check your sign-in and try again." }
+            if records.isEmpty {
+                errorMessage = "GitHub could not load issues for \(remote.id). Check your sign-in and try again."
+            }
             return
         }
         records = page.items.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
         detailNeedsRefresh.formUnion(detailByID.keys)
-        coverage = page.coverage.label; hasLoaded = true; errorMessage = nil
+        coverage = page.coverage.label
+        hasLoaded = true
+        errorMessage = nil
         repairSelection()
     }
 
@@ -175,12 +216,21 @@ final class IssueCenterModel: ObservableObject {
         hasLoaded = true
         let token = generation
         do {
-            let record = try await api.resolve(reference, localPaths: Dictionary(records.map { ($0.repository.id, $0.localPath) }, uniquingKeysWith: { a, _ in a }))
+            let record = try await api.resolve(
+                reference,
+                localPaths: Dictionary(
+                    records.map { ($0.repository.id, $0.localPath) }, uniquingKeysWith: { a, _ in a }))
             guard token == generation, !Task.isCancelled else { return false }
-            browsing.state = .all; resetFilters()
-            records.removeAll { $0.id == record.id }; records.insert(record, at: 0); selectedIssueID = record.id
+            browsing.state = .all
+            resetFilters()
+            records.removeAll { $0.id == record.id }
+            records.insert(record, at: 0)
+            selectedIssueID = record.id
             return true
-        } catch { errorMessage = error.localizedDescription; return false }
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     func cancelLoads() {
@@ -190,7 +240,9 @@ final class IssueCenterModel: ObservableObject {
     }
 
     func loadSelectedDetail(force: Bool = false) async {
-        guard !Task.isCancelled, !isRefreshing, let issue = selected, (force || detailNeedsRefresh.contains(issue.id) || detailByID[issue.id] == nil) else { return }
+        guard !Task.isCancelled, !isRefreshing, let issue = selected,
+            force || detailNeedsRefresh.contains(issue.id) || detailByID[issue.id] == nil
+        else { return }
         let token = generation
         let stateVersion = stateVersions[issue.id]
         loadingDetailID = issue.id
@@ -199,10 +251,14 @@ final class IssueCenterModel: ObservableObject {
             if token == generation, loadingDetailID == issue.id { loadingDetailID = nil }
         }
         let detail = await api.detail(issue)
-        guard token == generation, !Task.isCancelled, selectedIssueID == issue.id, stateVersion == stateVersions[issue.id] else { return }
+        guard token == generation, !Task.isCancelled, selectedIssueID == issue.id,
+            stateVersion == stateVersions[issue.id]
+        else { return }
         detailNeedsRefresh.remove(issue.id)
         if let detail {
-            if let currentDate = detailByID[issue.id]?.updatedAt, (detail.updatedAt ?? .distantPast) < currentDate { return }
+            if let currentDate = detailByID[issue.id]?.updatedAt, (detail.updatedAt ?? .distantPast) < currentDate {
+                return
+            }
             detailByID[issue.id] = detail
             if let index = records.firstIndex(where: { $0.id == issue.id }) { records[index] = detail }
         } else {
@@ -219,10 +275,12 @@ final class IssueCenterModel: ObservableObject {
     func applyIssueState(_ updated: GitHubIssueRecord) {
         stateVersions[updated.id] = UUID()
         var result = detailByID[updated.id] ?? records.first(where: { $0.id == updated.id }) ?? updated
-        result.state = updated.state; result.updatedAt = updated.updatedAt ?? result.updatedAt
+        result.state = updated.state
+        result.updatedAt = updated.updatedAt ?? result.updatedAt
         detailByID[result.id] = result
         if (result.isOpen && browsing.state == .closed) || (!result.isOpen && browsing.state == .open) {
-            records.removeAll { $0.id == result.id }; repairSelection()
+            records.removeAll { $0.id == result.id }
+            repairSelection()
         } else if let index = records.firstIndex(where: { $0.id == result.id }) {
             records[index] = result
         }
@@ -235,6 +293,7 @@ final class IssueCenterModel: ObservableObject {
         repairSelection()
     }
 
-    func repairSelection() { if !visible.contains(where: { $0.id == selectedIssueID }) { selectedIssueID = visible.first?.id } }
+    func repairSelection() {
+        if !visible.contains(where: { $0.id == selectedIssueID }) { selectedIssueID = visible.first?.id }
+    }
 }
-

@@ -1,4 +1,5 @@
 import Testing
+
 @testable import Herm
 
 struct CommandDoubleTapDetectorTests {
@@ -19,7 +20,8 @@ struct CommandDoubleTapDetectorTests {
 
         let firstPress = detector.handle(isCommandDown: true, at: 1.0)
         let firstRelease = detector.handle(isCommandDown: false, at: 1.1)
-        let secondPress = detector.handle(isCommandDown: true, at: 1.1 + CommandDoubleTapDetector.maximumInterval + 0.01)
+        let secondPress = detector.handle(
+            isCommandDown: true, at: 1.1 + CommandDoubleTapDetector.maximumInterval + 0.01)
 
         #expect(!firstPress)
         #expect(!firstRelease)
