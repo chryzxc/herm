@@ -769,7 +769,7 @@ struct BotDispatchCard: View {
           .transition(.opacity)
       }
     }
-    .padding(.vertical, isOpen ? DockSpacing.control : 0)
+    .padding(.vertical, DockSpacing.control)
     }
   }
 

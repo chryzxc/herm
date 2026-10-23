@@ -1805,7 +1805,9 @@ stream text rather than joining the full chunk history for each update. Exact
 source/context checks invalidate reused chunk identities across stream replacement;
 theme changes restyle sections without reclassifying unchanged source. Activity rows
 receive only their own dispatches and bot steps, so another message’s bot updates
-do not rebuild completed activity.
+do not rebuild completed activity. Centered bot dispatch rows keep 8pt of outer
+vertical padding in both collapsed and expanded states, separating their pills
+from adjacent activity data.
 
 While the reader manually scrolls, a long live reply keeps its current Markdown
 layout. Incoming chunks continue accumulating in the existing streaming state;

@@ -162,6 +162,8 @@ Quick approval and clarification answers stay tied to their original request, se
 
 The composer’s **@** picker shows each bot’s description beside its handle when available. Hover or click the context gauge to see usage, the estimated category breakdown, and the runtime’s compaction threshold with remaining tokens in a popover, without a separate hover tooltip. Older runtimes show when the threshold is unavailable.
 
+Centered bot dispatch pills have vertical spacing above and below to separate them from conversation activity rows.
+
 Session list spinners follow Hermes’ live execution state and refresh every ten seconds while the sidebar is visible, including unopened sessions for the selected bot. Recent writes alone do not indicate running work; the next live refresh clears missed completion events.
 
 The status colors match the rest of the app: blue means active, green means healthy or done, amber means a warning or that Hermes needs you, and red means a failure.
