@@ -99,6 +99,8 @@ struct DockPopover: View {
     @State var isShowingMessagePins = false
     @State var pinnedMessageJumpID: UUID?
     @State var isSessionIdentityHovering = false
+    @State var sessionPickerQuery = ""
+    @ObservedObject var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     @State var isSessionMenuHovering = false
     @State var isRenamingSession = false
     @State var renameDraft = ""
@@ -118,6 +120,7 @@ struct DockPopover: View {
     @StateObject var developerWorkflow = DeveloperWorkflowModel.shared
     @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
     @StateObject var issueCenter = IssueCenterModel()
+    @StateObject var gitHubInspector = GitHubInspectorStore()
     @StateObject var pullRequestChatLinks = PullRequestChatLinkStore()
     @State var chatContextRouter = ChatContextRouter()
     @StateObject var repositoryPreferences = CommandCenterPreferencesStore.shared
@@ -128,7 +131,6 @@ struct DockPopover: View {
     @State var suppressNextVoiceResponse = false
     /// Full voice mode: the voice stage covers the navigation and inspector.
     @State var isVoiceImmersive = false
-    @State var voiceSubtitles = VoiceSubtitleTrack()
     @State var voiceHUD = VoiceHUDState()
     @State var sessionPendingDeletion: HermesSession?
     // These selections are owned by the active session/repository scope. The
@@ -140,6 +142,7 @@ struct DockPopover: View {
     @State var isLoadingChangeDiff = false
     @State var sourceControlRequestID = UUID()
     @StateObject var sessionPullRequestCenter = PullRequestCenterModel(details: .shared)
+    @StateObject var sessionIssueCenter = IssueCenterModel()
     // A restored/active conversation is the primary workspace at launch, so
     // the right pane should open on its session context rather than Today.
     @State var inspectorScope: InspectorScope = .session
@@ -168,6 +171,7 @@ struct DockPopover: View {
         case explorer
         case sourceControl
         case pullRequests
+        case issues
 
         var id: Self { self }
 
@@ -178,6 +182,7 @@ struct DockPopover: View {
             case .explorer: "Explorer"
             case .sourceControl: "Source Control"
             case .pullRequests: "Pull Requests"
+            case .issues: "Issues"
             }
         }
 
@@ -188,6 +193,7 @@ struct DockPopover: View {
             case .explorer: .folder
             case .sourceControl: .gitBranch
             case .pullRequests: .gitPullRequest
+            case .issues: .circleDashed
             }
         }
 
@@ -198,13 +204,14 @@ struct DockPopover: View {
             case .explorer: "Browse this session's project files"
             case .sourceControl: "Review this session's repository changes"
             case .pullRequests: "Pull requests for this session's repository"
+            case .issues: "Issues for this session's repository"
             }
         }
 
         /// Whether the inspector renders the selected center content's preview.
         var usesContextPreview: Bool {
             switch self {
-            case .explorer, .sourceControl, .pullRequests: true
+            case .explorer, .sourceControl, .pullRequests, .issues: true
             case .chat, .voice: false
             }
         }
@@ -221,7 +228,7 @@ struct DockPopover: View {
             switch self {
             case .global: .squaresFour
             case .session: .chats
-            case .artifacts: .fileMagnifyingGlass
+            case .artifacts: .files
             }
         }
     }
@@ -279,6 +286,10 @@ struct DockPopover: View {
             .generativeUISession(model: model)
             // SwiftUI Text links would otherwise open in the default browser.
             .environment(\.openURL, OpenURLAction { InAppBrowser.open($0); return .handled })
+            .environment(\.markdownOpenURL, OpenURLAction { url in
+                openMarkdownURL(url)
+                return .handled
+            })
     }
 
     /// The window's content runs under its transparent titlebar. Columns

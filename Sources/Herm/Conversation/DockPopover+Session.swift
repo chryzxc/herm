@@ -9,7 +9,7 @@ extension DockPopover {
         Button(action: { model.toggleSessions() }) {
             HStack(spacing: 8) {
                 Text(model.currentSessionTitle ?? "Untitled chat")
-                    .dockFont(size: 13, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(style.primaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -30,7 +30,7 @@ extension DockPopover {
         .accessibilityLabel("Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
         .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             sessionPicker
-                .frame(width: 390, height: 310)
+                .frame(width: 400, height: 440)
                 .padding(.vertical, 4)
                 .background(Color.dockCanvas)
         }
@@ -38,7 +38,7 @@ extension DockPopover {
 
     func sessionModeSwitcher(style: DockThemePalette) -> some View {
         SessionModeTabStrip(
-            modes: activeSessionRepositoryScope == nil ? [.chat, .voice] : [.chat, .voice, .pullRequests],
+            modes: activeSessionRepositoryScope == nil ? [.chat, .voice] : [.chat, .voice, .pullRequests, .issues],
             selectedMode: sessionWorkspaceMode,
             style: style,
             onSelect: selectSessionMode
@@ -332,22 +332,22 @@ extension DockPopover {
     ) -> some View {
         HStack(spacing: 7) {
             DockIcon(icon)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
 
             Text(title)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockSecondaryText)
 
             Text(value)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .lineLimit(1)
                 .truncationMode(truncatesValue ? .middle : .tail)
                 .layoutPriority(1)
 
             DockIcon(.caretDown)
-                .dockFont(size: 10, weight: .bold)
+                .dockFont(.compactStatus, weight: .bold)
                 .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(.horizontal, 10)
@@ -365,6 +365,14 @@ extension DockPopover {
 
     var sessionList: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
+        let sessions = filteredPickerSessions
+        // Same resolver and seen state as the rail, so both show the same marks.
+        let statuses = SidebarSessionStatusResolver.statuses(
+            for: sessions,
+            snapshot: MissionControlSidebarSnapshot(inputs: MissionControlSidebarSnapshot.inputs(model: model, control: controlCenter)),
+            seenStore: sidebarSessionSeenStore,
+            fallbackProfileID: model.profileScopeID
+        )
         return VStack(alignment: .leading, spacing: 4) {
             DockSectionHeader(
                 title: "Recents",
@@ -382,26 +390,41 @@ extension DockPopover {
             .padding(.horizontal, 6)
             .padding(.top, 8)
 
+            if !model.sessions.isEmpty {
+                sessionSearchField(style: style)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
+
             if model.sessions.isEmpty && model.isLoadingSessions {
                 DockLoadingState(title: "Loading conversations…", minHeight: 80)
-            } else if model.sessions.isEmpty {
-                Text("No saved conversations")
-                    .dockFont(size: 12)
+            } else if sessions.isEmpty {
+                Text(model.sessions.isEmpty ? "No saved conversations" : "No conversations match “\(sessionPickerQuery)”")
+                    .dockFont(.body)
                     .foregroundStyle(style.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 14)
+                    .padding(.vertical, 8)
+                Spacer(minLength: 0)
             } else {
                 List {
-                    ForEach(model.sessions) { session in
+                    ForEach(sessions) { session in
                         SessionPickerRow(
                             session: session,
                             projectName: conversationProjectName(for: session),
+                            status: statuses[session.id] ?? .none,
                             isCurrent: session.id == model.navigationSessionID,
                             canDelete: session.id != model.sessionID && model.deletingSessionID == nil,
                             isUpdatingVisibility: model.updatingSessionVisibilityID == session.id,
                             style: style,
-                            onOpen: { model.resumeSession(session) },
+                            onOpen: {
+                                sidebarSessionSeenStore.markSeen(
+                                    profileID: session.profileID ?? model.profileScopeID,
+                                    sessionID: session.id,
+                                    at: session.lastUpdatedAt
+                                )
+                                model.resumeSession(session)
+                            },
                             onToggleHidden: {
                                 Task { @MainActor in
                                     if await model.setSessionHidden(session, hidden: !session.isHidden) {
@@ -417,10 +440,46 @@ extension DockPopover {
                     }
                 }
                 .listStyle(.plain)
-                .frame(maxHeight: 280)
                 .scrollContentBackground(.hidden)
                 .padding(.bottom, 6)
             }
+        }
+    }
+
+    var filteredPickerSessions: [HermesSession] {
+        let query = sessionPickerQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return model.sessions }
+        return model.sessions.filter { session in
+            [session.displayTitle, session.displayPreview, conversationProjectName(for: session)]
+                .contains { $0?.localizedCaseInsensitiveContains(query) == true }
+        }
+    }
+
+    func sessionSearchField(style: DockThemePalette) -> some View {
+        HStack(spacing: 6) {
+            DockIcon(.magnifyingGlass, size: 12, color: style.metadataText)
+            DockTextField("Search conversations", text: $sessionPickerQuery)
+                .textFieldStyle(.plain)
+                .dockFont(.body)
+                .foregroundStyle(style.primaryText)
+                .onExitCommand { sessionPickerQuery = "" }
+            if !sessionPickerQuery.isEmpty {
+                Button { sessionPickerQuery = "" } label: {
+                    DockIcon(.xCircle, size: 12, color: style.metadataText)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                .help("Clear search")
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(Color.dockSurface4))
+        .overlay {
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                .stroke(Color.dockBorder, lineWidth: 0.5)
         }
     }
 

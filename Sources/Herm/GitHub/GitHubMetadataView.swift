@@ -47,14 +47,16 @@ struct GitHubMetadataView: View {
     @StateObject private var model: GitHubMetadataModel
     @State private var editing: GitHubMetadataSection?
     @Environment(\.openGitHubItem) private var openItem
+    var embedded = false
     let onChanged: () -> Void
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
-    init(reference: GitHubItemReference, client: GitHubClient, onChanged: @escaping () -> Void = {}) {
+    init(reference: GitHubItemReference, client: GitHubClient, embedded: Bool = false, onChanged: @escaping () -> Void = {}) {
         _model = StateObject(wrappedValue: GitHubMetadataModel(reference: reference, client: client)); self.onChanged = onChanged
+        self.embedded = embedded
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            DockSectionHeader(title: "Details", style: style) {
+            DockSectionHeader(title: "Details", style: style, isContentHeader: true) {
                 DockIconButton(icon: .arrowsClockwise, label: "Refresh GitHub details", isBusy: !model.loading.isEmpty, size: 24, style: style) { Task { await model.refresh() } }
             }
             if let error = model.errors["Details"] { Text(error).foregroundStyle(Color.dockWarning) }
@@ -115,7 +117,7 @@ struct GitHubMetadataView: View {
             }
         }
         .dockFont(.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
-        .dockCard(padding: 12)
+        .modifier(GitHubMetadataSurface(embedded: embedded))
         .task { await model.refresh() }
         .sheet(item: $editing) { section in
             GitHubMetadataEditor(model: model, section: section) { onChanged() }
@@ -153,6 +155,13 @@ struct GitHubMetadataView: View {
             }
         }
         .padding(.vertical, 6)
+    }
+}
+
+private struct GitHubMetadataSurface: ViewModifier {
+    let embedded: Bool
+    func body(content: Content) -> some View {
+        if embedded { content } else { content.dockCard(padding: 12) }
     }
 }
 

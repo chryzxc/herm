@@ -86,7 +86,6 @@ extension DockPopover {
             onSelectProfile: { botMode.selectProfile($0) },
             onOpenWindow: onOpenWindow,
             isDockedWindow: usesWindowChrome,
-            showsWindowTitleRow: !usesSharedChatTitleRow,
             isSidebarCollapsed: $isChatListCollapsed
         )
     }
@@ -173,6 +172,24 @@ extension DockPopover {
             } else {
                 fullscreenGlobalControlSurface
             }
+        }
+    }
+
+    func openMarkdownURL(_ url: URL) {
+        guard let reference = GitHubMarkdownLink.reference(for: url) else {
+            InAppBrowser.open(url)
+            return
+        }
+        let session = WorkspaceIdentity.session(model)
+        Task {
+            let opened = await gitHubInspector.open(reference, session: session)
+            guard opened, GitHubMarkdownLink.reference(for: url) != nil,
+                  session == WorkspaceIdentity.session(model) else {
+                InAppBrowser.open(url)
+                return
+            }
+            inspectorScope = .session
+            ensureInspectorPanelVisible()
         }
     }
 
@@ -281,7 +298,7 @@ extension DockPopover {
                             withAnimation(.dockEase(duration: 0.2)) { isNarrowControlVisible = false }
                         } label: {
                             Label("Back to chat", systemImage: "chevron.left")
-                                .dockFont(size: 12, weight: .semibold)
+                                .dockFont(.body, weight: .semibold)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .padding(.horizontal, 8)
                                 .frame(height: 28)
@@ -321,10 +338,11 @@ extension DockPopover {
                              botMode: botMode,
                              control: controlCenter,
                              workflow: developerWorkflow,
+                             gitHub: gitHubInspector,
+                             onOpenPullRequestChat: openPullRequestChat,
+                             onOpenIssueChat: openIssueChat,
                              sessionRepositoryPath: activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath,
                              sessionProjectIsBound: activeSessionRepositoryPath != nil,
-                             sessionRootPath: activeSessionRepositoryPath,
-                             onSelectWorktree: selectWorktree,
                              showsHeader: false,
                              onToggle: toggleInspectorPanel,
                              headerHeight: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight
@@ -400,6 +418,8 @@ extension DockPopover {
             )
         case .pullRequests:
             PullRequestDetailView(center: sessionPullRequestCenter, onOpenChat: openPullRequestChat)
+        case .issues:
+            IssueDetailView(center: sessionIssueCenter, onOpenChat: openIssueChat, isInspector: true)
         case .chat, .voice:
             EmptyView()
         }
@@ -408,7 +428,7 @@ extension DockPopover {
     var contextPanelHeader: some View {
         HStack(spacing: 12) {
             Text("INSPECTOR")
-                .dockFont(size: 11, weight: .bold)
+                .dockFont(.metadata, weight: .bold)
                 .tracking(1.05)
                 .foregroundStyle(Color.dockMetadataText)
 
@@ -442,7 +462,9 @@ extension DockPopover {
     }
 
     var liveSessionRepositoryPath: String? {
-        workspaceStore.resolvedProjectPath(
+        // The sidebar attaches projects under the stored session id, while a
+        // resumed chat may stream under a runtime alias; check both.
+        workspaceStore.projectPath(forSessionID: model.navigationSessionID) ?? workspaceStore.resolvedProjectPath(
             forSessionID: model.sessionID,
             hermesProjectPath: model.sessionID.flatMap { controlCenter.project(forSessionID: $0)?.name },
             createdSessionProjectPath: model.sessionID.flatMap { model.createdSessionProjectPaths[$0] }
@@ -459,11 +481,13 @@ extension DockPopover {
         return SessionRepositoryScope(sessionID: sessionID, repositoryPath: activeWorktreePath ?? path)
     }
 
-    /// The worktree the session is viewing; may live outside the bound folder.
-    /// A removed worktree falls back to the bound folder.
+    /// The worktree the session is viewing, inside the bound folder. A removed
+    /// or outside worktree falls back to the bound folder.
     var activeWorktreePath: String? {
         guard let path = workspaceStore.worktreePath(forSessionID: model.sessionID),
-              path != activeSessionRepositoryPath,
+              let root = activeSessionRepositoryPath,
+              path != root,
+              RepositoryWorktreeSummary.isPath(path, within: root),
               FileManager.default.fileExists(atPath: path) else { return nil }
         return path
     }
@@ -508,7 +532,7 @@ extension DockPopover {
                     }
                 } label: {
                     Text(scope.rawValue)
-                        .dockFont(size: 13, weight: inspectorScope == scope ? .semibold : .regular)
+                        .dockFont(.navigation, weight: inspectorScope == scope ? .semibold : .regular)
                         .foregroundStyle(inspectorScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
                         .frame(width: 82, height: 34)
                         .background {
@@ -558,7 +582,7 @@ extension DockPopover {
             let showsInspector = geometry.size.width >= 440
             HStack(spacing: 4) {
                 // Leading like a native toolbar title; actions sit at the trailing edge.
-                if usesSharedChatTitleRow {
+                if hidesChatList {
                     DockSidebarToggle(isCollapsed: $isChatListCollapsed)
                 }
                 sessionIdentity(style: style)
@@ -593,7 +617,7 @@ extension DockPopover {
                     DockSidebarToggle(isCollapsed: !inspectorPanelIsVisible, edge: .trailing, action: toggleInspectorPanel)
                 }
             }
-            .padding(.leading, usesSharedChatTitleRow ? DockWindowChrome.sidebarToggleLeading : 12)
+            .padding(.leading, hidesChatList ? DockWindowChrome.sidebarToggleLeading : 12)
             .padding(.trailing, 12)
             .frame(width: geometry.size.width, height: geometry.size.height)
         }

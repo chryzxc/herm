@@ -98,6 +98,24 @@ struct MarkdownPreparationTests {
         #expect(prefetch.committedDocuments == 0)
         prefetch.cancel()
     }
+
+    @Test func prefetchCoversBothAdjacentPagesWithoutPreparingMountedRows() async throws {
+        let messages = (0..<40).map { ChatMessage(role: .hermes, text: "# Adjacent \(UUID())\n\nBody \($0)") }
+        let prefetch = ConversationMarkdownPrefetch()
+        defer { prefetch.cancel() }
+        prefetch.update(messages: messages, range: 12..<24, sessionID: "adjacent", streamingID: nil,
+            isCurrent: { _, _ in true })
+        let deadline = Date().addingTimeInterval(5)
+        while prefetch.committedDocuments < 16 && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(prefetch.committedDocuments == 16)
+        for index in messages.indices {
+            let text = messages[index].text
+            let cached = MarkdownRenderDocumentCache.cached(source: text, key: MarkdownMessageView.renderKey(for: text))
+            #expect((cached != nil) == ((4..<12).contains(index) || (24..<32).contains(index)))
+        }
+    }
 }
 
 extension MarkdownPreparationTests {

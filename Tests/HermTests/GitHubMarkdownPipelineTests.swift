@@ -33,6 +33,36 @@ struct GitHubMarkdownPipelineTests {
         second.update(markdown: "Body **bold**", kind: .prose, bodySize: 12)
         #expect((second.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == 12)
     }
+    @Test func tableTextMatchesReplySizeAcrossPresentationChanges() {
+        let source = "| Name | Value |\n| --- | --- |\n| Job | Remote |"
+        let view = NativeMarkdownTextSectionView()
+        for size in [CGFloat(14), DockWorkspaceScale.points(14, scale: DockWorkspaceScale.window), 14] {
+            view.update(markdown: source, kind: .table, bodySize: size)
+            let text = view.textStorage!
+            for word in ["Name", "Value", "Job", "Remote"] {
+                let range = (text.string as NSString).range(of: word)
+                #expect(range.location != NSNotFound)
+                guard range.location != NSNotFound else { continue }
+                #expect((text.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont)?.pointSize == size)
+            }
+        }
+    }
+    @Test func headingsAndCodeFollowReplyPresentationSize() {
+        for size in [CGFloat(14), CGFloat(16), CGFloat(14)] {
+            let palette = NativeMarkdownPalette(bodySize: size)
+            let heading = NativeMarkdownAttributedTextBuilder.document("# Heading", palette: palette).string
+            let code = NativeMarkdownAttributedTextBuilder.code("let value = 1", palette: palette)
+            #expect((heading.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == palette.fontSize(18))
+            #expect((code.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == palette.fontSize(12.5))
+        }
+        let view = NativeMarkdownCodeView()
+        for size in [CGFloat(14), CGFloat(16), CGFloat(14)] {
+            view.update(code: "```swift\nlet value = 1\n```", language: "swift", bodySize: size)
+            let text = view.subviews.flatMap { $0.subviews }.flatMap { $0.subviews }.compactMap { $0 as? NSTextView }.first
+            #expect(text != nil)
+            #expect((text?.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == NativeMarkdownPalette(bodySize: size).fontSize(12.5))
+        }
+    }
     @Test func documentCacheSeparatesSourceAndThemeRevisions() {
         let id = UUID()
         let first = MarkdownRenderDocumentCache.document(for: "old", key: .init(messageID: id, contentRevision: 1, themeRevision: 0))

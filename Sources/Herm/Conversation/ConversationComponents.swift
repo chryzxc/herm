@@ -41,7 +41,7 @@ struct AgentAvatar: View {
         .fill(statusColor.opacity(0.12))
         .overlay {
           DockIcon(.user)
-            .dockFont(size: 11, weight: .medium)
+            .dockFont(.metadata, weight: .medium)
             .foregroundStyle(statusColor)
         }
         .overlay {
@@ -124,11 +124,13 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
 
   func makeNSView(context: Context) -> NativeMarkdownTextSectionView {
     let view = NativeMarkdownTextSectionView()
+    view.markdownOpenURL = context.environment.markdownOpenURL
     view.update(markdown: markdown, kind: .prose)
     return view
   }
 
   func updateNSView(_ nsView: NativeMarkdownTextSectionView, context: Context) {
+    nsView.markdownOpenURL = context.environment.markdownOpenURL
     nsView.update(markdown: markdown, kind: .prose)
   }
 
@@ -182,6 +184,7 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
 }
 
 final class NativeMarkdownTextView: NSTextView {
+  var markdownOpenURL = OpenURLAction { InAppBrowser.open($0); return .handled }
   init() {
     let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
     let layout = NSLayoutManager()
@@ -193,11 +196,12 @@ final class NativeMarkdownTextView: NSTextView {
     isSelectable = true
     isRichText = true
     drawsBackground = false
-    isVerticallyResizable = true
+    isVerticallyResizable = false
     isHorizontallyResizable = false
     maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     textContainerInset = NSSize(width: 0, height: 0)
-    textContainer?.widthTracksTextView = true
+    // SwiftUI owns the frame; TextKit sizing probes must not resize it.
+    textContainer?.widthTracksTextView = false
     textContainer?.lineFragmentPadding = 0
     allowsUndo = false
     isAutomaticSpellingCorrectionEnabled = false
@@ -218,10 +222,11 @@ final class NativeMarkdownTextView: NSTextView {
 
   override func clicked(onLink link: Any, at charIndex: Int) {
     guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)) else { return }
-    MainActor.assumeIsolated { InAppBrowser.open(url) }
+    MainActor.assumeIsolated { markdownOpenURL(url) }
   }
 
   override var intrinsicContentSize: NSSize {
+    guard bounds.width > 1 else { return NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
     guard let textContainer, let layoutManager else { return NSSize(width: NSView.noIntrinsicMetric, height: 0) }
     layoutManager.ensureLayout(for: textContainer)
     let used = layoutManager.usedRect(for: textContainer)
@@ -231,6 +236,9 @@ final class NativeMarkdownTextView: NSTextView {
   override func setFrameSize(_ newSize: NSSize) {
     let widthChanged = abs(frame.width - newSize.width) > 0.5
     super.setFrameSize(newSize)
+    if newSize.width > 1 {
+      textContainer?.size = NSSize(width: newSize.width, height: .greatestFiniteMagnitude)
+    }
     if widthChanged {
       // TextKit must recompute wrapping after a transcript resize, but an
       // ordinary scroll/layout pass must not continuously invalidate the

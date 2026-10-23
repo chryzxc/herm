@@ -33,6 +33,46 @@ private actor GitHubPageTransport: GitHubIssueTransport {
 }
 
 struct GitHubPageLoadingTests {
+    @MainActor @Test(arguments: [true, false])
+    func sessionRepositoryIncludesMergedHistoryWithoutHidingOpenPRs(historyAvailable: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-scoped-pr-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for arguments in [["init", "-q"], ["remote", "add", "origin", "https://github.com/owner/repo.git"]] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", root.path] + arguments
+            try process.run()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+        }
+        var merged = searchRow
+        merged["number"] = 20
+        merged["state"] = "closed"
+        merged["user"] = ["login": "another-contributor"]
+        merged["pull_request"] = ["merged_at": "2026-10-22T00:00:00Z"]
+        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+        var responses: [String: Any] = [
+            "/user": ["login": "ada"],
+            "/repos/owner/repo/pulls": [searchRow]
+        ]
+        if historyAvailable {
+            responses["/search/issues?is:pr is:merged repo:owner/repo merged:>=\(since)"] = ["items": [merged]]
+        }
+        let transport = try GitHubPageTransport(responses: responses)
+        let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
+        await center.refreshScoped(repositoryPath: root.path)
+
+        #expect(center.hasLoaded)
+        #expect(!center.isRefreshing)
+        #expect(center.visible.map(\.number) == [19])
+        center.filter = .merged
+        #expect(center.visible.map(\.number) == (historyAvailable ? [20] : []))
+        #expect(center.visible.allSatisfy { $0.localPath == root.path && $0.repository.id == "owner/repo" })
+        #expect((center.errorMessage == nil) == historyAvailable)
+        #expect(await transport.count("/search/issues") == 1)
+    }
+
     private var searchRow: [String: Any] {
         ["number": 19, "title": "Improve loading", "state": "open", "body": "Summary",
          "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],

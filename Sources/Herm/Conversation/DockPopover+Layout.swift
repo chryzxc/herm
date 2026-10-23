@@ -26,6 +26,7 @@ extension DockPopover {
         .onAppear {
             configureWorkspaceOnAppear()
             chatContextRouter.model = model
+            chatContextRouter.bots = botMode
             chatContextRouter.onOpened = { sessionID in
                 missionControlNavigation.openPullRequestChat(sessionID: sessionID)
                 fullscreenSurface = .conversation
@@ -125,7 +126,7 @@ extension DockPopover {
         }
         .onChange(of: activeSessionRepositoryIdentity) { _, _ in
             clearSessionSurfaceSelections()
-            if activeSessionRepositoryScope == nil, sessionWorkspaceMode == .pullRequests {
+            if activeSessionRepositoryScope == nil, sessionWorkspaceMode == .pullRequests || sessionWorkspaceMode == .issues {
                 selectSessionMode(.chat)
             }
         }
@@ -159,8 +160,8 @@ extension DockPopover {
         }
             .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
             .frame(width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth), height: isFullscreen ? nil : panelPresentation.compactHeight)
-            .padding(panelPresentation.isEdgeAttached && !usesWindowChrome
-                     ? (isFullscreen ? EdgeInsets(top: 20, leading: 0, bottom: 20, trailing: 0) : panelPresentation.edgeInsets)
+            .padding(panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen
+                     ? panelPresentation.edgeInsets
                      : EdgeInsets())
             .overlay(alignment: .top) {
                 if let status = panelPresentation.islandStatus, panelPresentation.edgeSide == .top,
@@ -333,26 +334,18 @@ extension DockPopover {
             // the gap above it is title row, not see-through window.
             Color.dockBorder.frame(width: DockLayout.hairline).padding(.top, titlebarInset)
                 .background(Color.dockSidebar)
-            VStack(spacing: 0) {
-                if usesSharedChatTitleRow { header }
-                if showsChatsPanel, !hidesChatList {
-                    FullscreenPanelSplitView(
-                        leading: missionControlQueue,
-                        trailing: desktopTrailingWorkspace,
-                        leadingFraction: DesktopWorkspaceFractions.queue,
-                        minimumLeadingWidth: 300,
-                        minimumTrailingWidth: desktopTrailingMinimumWidth
-                    )
-                } else {
-                    desktopTrailingWorkspace
-                }
+            if showsChatsPanel, !hidesChatList {
+                FullscreenPanelSplitView(
+                    leading: missionControlQueue,
+                    trailing: desktopTrailingWorkspace,
+                    leadingFraction: DesktopWorkspaceFractions.queue,
+                    minimumLeadingWidth: 300,
+                    minimumTrailingWidth: desktopTrailingMinimumWidth
+                )
+            } else {
+                desktopTrailingWorkspace
             }
         }
-    }
-
-    /// The windowed conversation owns one title row above all of its panes.
-    var usesSharedChatTitleRow: Bool {
-        usesWindowChrome && !isNarrowLayout && fullscreenSurface == .conversation
     }
 
     /// Only the windowed chat has a toggle to bring the list back, so only it collapses.
@@ -370,6 +363,10 @@ extension DockPopover {
 
     var missionControlRail: some View {
         MissionControlRail(
+            model: model,
+            controlCenter: controlCenter,
+            workspaceStore: workspaceStore,
+            isWorkspaceVisible: isWorkspaceVisible,
             agentUpdateService: agentUpdateService,
             navigationState: missionControlNavigation,
             dockThemeStore: dockThemeStore,
@@ -413,6 +410,16 @@ extension DockPopover {
             onOpenWindow: onOpenWindow
         )
         .underTitlebar(titlebarInset, separator: false)
+        .task(id: isWorkspaceVisible) {
+            guard isWorkspaceVisible else { return }
+            // Keep Chats status current even when its session list is unmounted.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+                guard model.isHermesConnected else { continue }
+                await model.loadSessions(quiet: true)?.value
+            }
+        }
         // The title strip above the rail is part of the sidebar, not the window canvas.
         .background(DockThemePalette(theme: dockThemeStore.selectedThemeID).sidebarBackground)
     }
@@ -517,7 +524,7 @@ extension DockPopover {
 
     var conversationColumn: some View {
         VStack(spacing: 0) {
-            if !usesSharedChatTitleRow { header }
+            header
             switch sessionWorkspaceMode {
             case .chat:
                 conversation
@@ -531,7 +538,18 @@ extension DockPopover {
                     isFullscreen: isFullscreen,
                     metrics: conversationMetrics,
                     controlCenter: controlCenter,
-                    openQuota: { panelPresentation.quotaRequest += 1 }
+                    openQuota: { panelPresentation.quotaRequest += 1 },
+                    worktreeBar: activeSessionRepositoryScope.map { scope in
+                        WorktreePicker(
+                            worktrees: developerWorkflow.repository.isGitRepository
+                                ? developerWorkflow.worktrees.filter { tree in
+                                    activeSessionRepositoryPath.map { RepositoryWorktreeSummary.isPath(tree.path, within: $0) } ?? false
+                                }
+                                : [],
+                            mainPath: activeSessionRepositoryPath,
+                            selection: Binding(get: { scope.repositoryPath }, set: { $0.map(selectWorktree) })
+                        )
+                    }
                 )
             case .voice:
                 if isVoiceImmersive {
@@ -566,6 +584,8 @@ extension DockPopover {
                     repositoryPath: activeSessionRepositoryPath,
                     onOpenChat: openPullRequestChat
                 )
+            case .issues:
+                SessionIssuesSurface(center: sessionIssueCenter, repositoryPath: activeSessionRepositoryPath)
             }
         }
     }

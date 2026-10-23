@@ -142,17 +142,45 @@ final class IssueCenterModel: ObservableObject {
         repairSelection()
     }
 
-    func open(_ reference: GitHubItemReference) async {
-        guard reference.kind == .issue else { return }
+    /// Session-scoped refresh: open issues of one local repository only.
+    func refreshScoped(repositoryPath: String) async {
+        guard !Task.isCancelled else { return }
+        let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
+        defer { if token == generation { isRefreshing = false } }
+        let remote = await RepositoryService.githubRemote(path: repositoryPath)
+        guard token == generation, !Task.isCancelled else { return }
+        guard let remote else {
+            records = []; selectedIssueID = nil
+            errorMessage = "This session's repository has no GitHub remote."
+            return
+        }
+        async let viewerLookup = api.viewer()
+        let page = try? await api.searchPage("repo:\(remote.id) is:issue is:open", localPaths: [remote.id: repositoryPath])
+        if case .success(let viewer) = await viewerLookup { viewerLogin = viewer }
+        guard token == generation, !Task.isCancelled else { return }
+        guard let page else {
+            if records.isEmpty { errorMessage = "GitHub could not load issues for \(remote.id). Check your sign-in and try again." }
+            return
+        }
+        records = page.items.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+        detailNeedsRefresh.formUnion(detailByID.keys)
+        coverage = page.coverage.label; hasLoaded = true; errorMessage = nil
+        repairSelection()
+    }
+
+    @discardableResult
+    func open(_ reference: GitHubItemReference) async -> Bool {
+        guard reference.kind == .issue else { return false }
         cancelLoads()
         hasLoaded = true
         let token = generation
         do {
             let record = try await api.resolve(reference, localPaths: Dictionary(records.map { ($0.repository.id, $0.localPath) }, uniquingKeysWith: { a, _ in a }))
-            guard token == generation, !Task.isCancelled else { return }
+            guard token == generation, !Task.isCancelled else { return false }
             browsing.state = .all; resetFilters()
             records.removeAll { $0.id == record.id }; records.insert(record, at: 0); selectedIssueID = record.id
-        } catch { errorMessage = error.localizedDescription }
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     func cancelLoads() {

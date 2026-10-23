@@ -52,14 +52,14 @@ struct MarkdownMessageView: View, Equatable {
   /// content. A per-view UUID missed the cache whenever paging remounted a row.
   private static let identity = UUID()
   typealias RenderBlock = MarkdownRenderDocumentBuilder.RenderBlock
-  init(markdown: String, cacheResult: Bool = true, cacheKey: String? = nil, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
+  init(markdown: String, cacheResult: Bool = true, cacheKey: String? = nil, bodySize: CGFloat = DockTypography.size(.conversation), bodyWeight: NSFont.Weight = .regular) {
     self.markdown = markdown; self.bodySize = bodySize; self.bodyWeight = bodyWeight; self.cacheResult = cacheResult
   }
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.markdown == rhs.markdown && lhs.bodySize == rhs.bodySize && lhs.bodyWeight == rhs.bodyWeight && lhs.cacheResult == rhs.cacheResult }
   var body: some View {
     NativeMarkdownDocumentHost(source: markdown, key: Self.renderKey(for: markdown, bodySize: bodySize, bodyWeight: bodyWeight), bodySize: bodySize, bodyWeight: bodyWeight, cacheResult: cacheResult)
   }
-  static func renderKey(for markdown: String, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) -> MarkdownRenderKey {
+  static func renderKey(for markdown: String, bodySize: CGFloat = DockTypography.size(.conversation), bodyWeight: NSFont.Weight = .regular) -> MarkdownRenderKey {
     MarkdownRenderKey(messageID: identity, contentRevision: markdown.hashValue, themeRevision: DockThemeRuntime.revision,
                       segment: Int(bodySize * 100 + bodyWeight.rawValue * 10))
   }

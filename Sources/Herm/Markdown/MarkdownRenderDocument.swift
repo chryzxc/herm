@@ -114,10 +114,10 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     let key: MarkdownRenderKey
     let streamingSections: [MarkdownRenderSection]?
     let cacheResult: Bool
-    var bodySize: CGFloat = 14
+    var bodySize: CGFloat = DockTypography.size(.conversation)
     var bodyWeight: NSFont.Weight = .regular
 
-    init(source: String, key: MarkdownRenderKey, streamingSections: [MarkdownRenderSection]? = nil, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular, cacheResult: Bool = true) {
+    init(source: String, key: MarkdownRenderKey, streamingSections: [MarkdownRenderSection]? = nil, bodySize: CGFloat = DockTypography.size(.conversation), bodyWeight: NSFont.Weight = .regular, cacheResult: Bool = true) {
         self.cacheResult = cacheResult
         self.source = source
         self.key = key
@@ -133,6 +133,7 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
+        view.markdownOpenURL = context.environment.markdownOpenURL
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         view.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
         context.coordinator.update(view, source: source, key: key, sections: streamingSections, cacheResult: cacheResult)
@@ -140,6 +141,7 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.markdownOpenURL = context.environment.markdownOpenURL
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         nsView.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
         context.coordinator.update(nsView, source: source, key: key, sections: streamingSections, cacheResult: cacheResult)
@@ -233,7 +235,8 @@ struct NativeMarkdownHeightCache {
 }
 
 @MainActor
-final class NativeMarkdownDocumentContainerView: NSView {
+final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
+    var markdownOpenURL = OpenURLAction { InAppBrowser.open($0); return .handled }
     /// Matches the block spacing of the SwiftUI `MarkdownMessageView`, so a
     /// message crossing the native threshold keeps the same rhythm.
     static let sectionSpacing: CGFloat = 8
@@ -433,7 +436,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
         }
     }
 
-    private var bodySize: CGFloat = 14
+    private var bodySize: CGFloat = DockTypography.size(.conversation)
     private var bodyWeight: NSFont.Weight = .regular
     func setBodyStyle(size: CGFloat, weight: NSFont.Weight) {
         guard bodySize != size || bodyWeight != weight else { return }
@@ -557,7 +560,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
         switch view {
         case let codeView as NativeMarkdownCodeView:
             if case .code(let language) = section.kind {
-                codeView.update(code: section.source, language: language)
+                codeView.update(code: section.source, language: language, bodySize: bodySize)
             }
         case let textView as NativeMarkdownTextSectionView:
             textView.update(markdown: section.source, kind: section.kind, bodySize: bodySize, bodyWeight: bodyWeight)
@@ -579,7 +582,10 @@ struct NativeMarkdownPalette {
 
     let bodySize: CGFloat
     let bodyWeight: NSFont.Weight
-    init(bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
+    func fontSize(_ compactSize: CGFloat) -> CGFloat {
+        DockWorkspaceScale.points(compactSize, scale: bodySize / NativeMarkdownAttributedTextBuilder.bodySize)
+    }
+    init(bodySize: CGFloat = DockTypography.size(.conversation), bodyWeight: NSFont.Weight = .regular) {
         self.bodySize = bodySize; self.bodyWeight = bodyWeight
         primary = NSColor(Color.dockMarkdownText)
         secondary = NSColor(Color.dockSecondaryText)
@@ -611,7 +617,7 @@ enum NativeMarkdownAttributedOutputCache {
         markdown: String,
         kind: MarkdownRenderSectionKind,
         themeRevision: Int,
-        bodySize: CGFloat = 14,
+        bodySize: CGFloat = DockTypography.size(.conversation),
         bodyWeight: NSFont.Weight = .regular,
         build: () -> NativeMarkdownAttributedTextBuilder.Output
     ) -> NativeMarkdownAttributedTextBuilder.Output {
@@ -635,9 +641,8 @@ enum NativeMarkdownAttributedTextBuilder {
 
     /// Marks inline icons so text-offset consumers can strip them.
     static let fileIconKey = NSAttributedString.Key("herm.fileIcon")
-    static let bodySize: CGFloat = 14
-    static let codeSize: CGFloat = 12.5
-    static let tableSize: CGFloat = 12.5
+    static let bodySize: CGFloat = DockTypography.size(.conversation)
+    static let codeSize: CGFloat = DockTypography.size(.code)
     static let listIndent: CGFloat = 22
     static let quoteIndent: CGFloat = 12
 
@@ -675,7 +680,7 @@ enum NativeMarkdownAttributedTextBuilder {
             switch block {
             case .heading(let level, let text):
                 let style = paragraphStyle(spacingBefore: index == 0 ? 0 : spacingBefore + 2)
-                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: headingSize(level), weight: .semibold), color: palette.primary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: palette.fontSize(headingSize(level)), weight: .semibold), color: palette.primary, palette: palette, style: style))
             case .paragraph(let text):
                 let style = paragraphStyle(spacingBefore: spacingBefore, lineSpacing: 3)
                 result.append(inline(text, font: DockSkinPresentation.nativeFont(size: palette.bodySize, weight: palette.bodyWeight), color: palette.primary, palette: palette, style: style))
@@ -703,12 +708,12 @@ enum NativeMarkdownAttributedTextBuilder {
                 for (column, value) in columns.enumerated() {
                     if column > 0 {
                         result.append(NSAttributedString(string: "  │  ", attributes: [
-                            .font: DockSkinPresentation.nativeFont(size: tableSize),
+                            .font: DockSkinPresentation.nativeFont(size: palette.bodySize),
                             .foregroundColor: palette.metadata,
                             .paragraphStyle: style
                         ]))
                     }
-                    result.append(inline(value, font: DockSkinPresentation.nativeFont(size: tableSize), color: palette.primary, palette: palette, style: style))
+                    result.append(inline(value, font: DockSkinPresentation.nativeFont(size: palette.bodySize), color: palette.primary, palette: palette, style: style))
                 }
             }
             if index < blocks.count - 1 {
@@ -723,7 +728,7 @@ enum NativeMarkdownAttributedTextBuilder {
 
     static func code(_ code: String, palette: NativeMarkdownPalette) -> NSAttributedString {
         NSAttributedString(string: code, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: codeSize, weight: .regular),
+            .font: NSFont.monospacedSystemFont(ofSize: palette.fontSize(codeSize), weight: .regular),
             .foregroundColor: palette.primary
         ])
     }
@@ -781,8 +786,8 @@ enum NativeMarkdownAttributedTextBuilder {
                 style.textBlocks = [block]
                 let value = column < row.count ? row[column] : ""
                 let font: NSFont = isHeader
-                    ? DockSkinPresentation.nativeFont(size: tableSize, weight: .semibold)
-                    : DockSkinPresentation.nativeFont(size: tableSize)
+                    ? DockSkinPresentation.nativeFont(size: palette.bodySize, weight: .semibold)
+                    : DockSkinPresentation.nativeFont(size: palette.bodySize)
                 // An empty cell still needs one character to own its block.
                 let parsed = value.isEmpty ? AttributedString(" ") : inlineMarkdown(value)
                 let cell = NSMutableAttributedString(attributedString: inline(parsed, font: font, color: palette.primary, palette: palette, style: style))
@@ -919,13 +924,13 @@ enum NativeMarkdownAttributedTextBuilder {
         let result = NSMutableAttributedString()
         if let language, !language.isEmpty {
             result.append(NSAttributedString(string: language.uppercased() + "\n", attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium),
+                .font: NSFont.monospacedSystemFont(ofSize: palette.fontSize(DockTypography.size(.control)), weight: .medium),
                 .foregroundColor: palette.secondary,
                 .paragraphStyle: style
             ]))
         }
         result.append(NSAttributedString(string: code.isEmpty ? " " : code, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: codeSize, weight: .regular),
+            .font: NSFont.monospacedSystemFont(ofSize: palette.fontSize(codeSize), weight: .regular),
             .foregroundColor: palette.primary,
             .paragraphStyle: style
         ]))
@@ -940,12 +945,13 @@ enum NativeMarkdownAttributedTextBuilder {
     }
 
     private static func headingSize(_ level: Int) -> CGFloat {
-        level == 1 ? 18 : level == 2 ? 16 : level == 3 ? 14.5 : 14
+        DockTypography.markdownHeadingSize(level)
     }
 }
 
 @MainActor
 final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableSection {
+    var markdownOpenURL: OpenURLAction?
     private var renderedMarkdown: String?
     private var renderedKind: MarkdownRenderSectionKind?
     private var renderedMentionRevision: Int?
@@ -994,7 +1000,7 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
 
     private var renderedBodySize: CGFloat?
     private var renderedBodyWeight: NSFont.Weight?
-    func update(markdown: String, kind: MarkdownRenderSectionKind, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
+    func update(markdown: String, kind: MarkdownRenderSectionKind, bodySize: CGFloat = DockTypography.size(.conversation), bodyWeight: NSFont.Weight = .regular) {
         // A theme change keeps the same markdown but changes every color, so
         // the rendered theme revision is part of what makes the text current.
         let themeRevision = DockThemeRuntime.revision
@@ -1035,7 +1041,8 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
 
     override func clicked(onLink link: Any, at charIndex: Int) {
         guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)) else { return }
-        InAppBrowser.open(url)
+        if let markdownOpenURL { markdownOpenURL(url) }
+        else { openMarkdownLink(url, from: self) }
     }
 
     /// NSTextView's own link cursor is lost when hosted in SwiftUI, so the
@@ -1153,8 +1160,9 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
     private static let horizontalPadding: CGFloat = 10
     private static let verticalPadding: CGFloat = 8
     private static let headerRowHeight: CGFloat = 28
-    private static let labelFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    private static var copyFont: NSFont { DockSkinPresentation.nativeFont(size: 12, weight: .medium) }
+    private var bodySize: CGFloat = DockTypography.size(.conversation)
+    private var labelFont: NSFont { .monospacedSystemFont(ofSize: NativeMarkdownPalette(bodySize: bodySize).fontSize(DockTypography.size(.machineMetadata)), weight: .regular) }
+    private var copyFont: NSFont { DockSkinPresentation.nativeFont(size: NativeMarkdownPalette(bodySize: bodySize).fontSize(DockTypography.size(.control)), weight: .medium) }
 
     private let languageLabel = NSTextField(labelWithString: "")
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
@@ -1180,11 +1188,11 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         layer?.cornerCurve = .continuous
         layer?.borderWidth = 0.5
         layer?.masksToBounds = true
-        languageLabel.font = Self.labelFont
+        languageLabel.font = labelFont
         languageLabel.lineBreakMode = .byTruncatingTail
         copyButton.isBordered = false
         copyButton.bezelStyle = .inline
-        copyButton.font = Self.copyFont
+        copyButton.font = copyFont
         copyButton.target = self
         copyButton.action = #selector(copyCode(_:))
         copyButton.toolTip = "Copy code"
@@ -1244,7 +1252,7 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
                 width: buttonWidth,
                 height: header
             )
-            let labelHeight = ceil(Self.labelFont.ascender - Self.labelFont.descender)
+            let labelHeight = ceil(labelFont.ascender - labelFont.descender)
             languageLabel.frame = NSRect(
                 x: Self.horizontalPadding,
                 y: floor((header - labelHeight) / 2),
@@ -1287,16 +1295,19 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
     private func setCopyTitle(_ title: String) {
         copyButton.attributedTitle = NSAttributedString(
             string: title,
-            attributes: [.font: Self.copyFont, .foregroundColor: NativeMarkdownPalette().secondary]
+            attributes: [.font: copyFont, .foregroundColor: NativeMarkdownPalette().secondary]
         )
         needsLayout = true
     }
 
-    func update(code: String, language: String?) {
+    func update(code: String, language: String?, bodySize: CGFloat = DockTypography.size(.conversation)) {
+        let sizeChanged = self.bodySize != bodySize
+        self.bodySize = bodySize
+        languageLabel.font = labelFont
         let themeRevision = DockThemeRuntime.revision
-        copyButton.font = Self.copyFont
+        copyButton.font = copyFont
         layer?.cornerRadius = DockLayout.controlRadius
-        guard renderedCode != code || renderedLanguage != language || renderedThemeRevision != themeRevision else { return }
+        guard sizeChanged || renderedCode != code || renderedLanguage != language || renderedThemeRevision != themeRevision else { return }
         renderedCode = code
         renderedLanguage = language
         renderedThemeRevision = themeRevision
@@ -1311,7 +1322,7 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         codeBody = body
         languageLabel.stringValue = opensBlock ? (language ?? "").lowercased() : ""
         setHeaderHidden(!opensBlock)
-        textView.update(markdown: body, kind: .code(language: language))
+        textView.update(markdown: body, kind: .code(language: language), bodySize: bodySize)
         contentSize = textView.naturalContentSize()
         needsLayout = true
         invalidateIntrinsicContentSize()

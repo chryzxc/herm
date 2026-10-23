@@ -4,6 +4,7 @@ import SwiftUI
 struct IssueDetailView: View {
     @ObservedObject var center: IssueCenterModel
     let onOpenChat: (GitHubIssueRecord) -> Void
+    var isInspector = false
     @State private var descriptionExpanded = true
     @Environment(\.dockTitleRow) private var titleRow
 
@@ -25,7 +26,7 @@ struct IssueDetailView: View {
                     DockIcon(.fileText, size: 28, color: Color.dockMetadataText)
                     Text("Select an issue")
                 }
-                .dockFont(size: 13, weight: .medium)
+                .dockFont(.navigation, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -46,7 +47,7 @@ struct IssueDetailView: View {
                 RepositoryShimmerBlock(width: 76, height: 26, cornerRadius: 7)
                 RepositoryShimmerBlock(width: 104, height: 28, cornerRadius: 7)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, isInspector ? 12 : 24)
             .frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
@@ -55,7 +56,7 @@ struct IssueDetailView: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading issue")
-                            .dockFont(size: 12, weight: .medium)
+                            .dockFont(.body, weight: .medium)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     .padding(.top, 28)
@@ -84,7 +85,7 @@ struct IssueDetailView: View {
                     .padding(.bottom, 48)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 28)
+                .padding(.horizontal, isInspector ? 12 : 28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -105,7 +106,7 @@ struct IssueDetailView: View {
                     Text("/").foregroundStyle(Color.dockMetadataText)
                     Text("#\(displayedIssue.number)").foregroundStyle(Color.dockMetadataText)
                 }
-                .dockFont(size: 11, weight: .medium, design: .monospaced)
+                .dockFont(.metadata, weight: .medium, design: .monospaced)
                 .lineLimit(1)
                 Spacer(minLength: 12)
                     .frame(maxHeight: .infinity)
@@ -124,7 +125,7 @@ struct IssueDetailView: View {
                     .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockControlSurface.opacity(0.6))) }
                 AttachToChatMenu(pill: true) { ChatContext(issue: displayedIssue) }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, isInspector ? 12 : 24)
             .frame(height: 52)
             .background(titleRow != nil ? Color.dockSidebar : .clear)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -166,13 +167,13 @@ struct IssueDetailView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                    }.dockFont(.body).dockCard(padding: 12)
+                    }.dockFont(.body).dockCard(padding: 16)
                     GitHubMetadataView(reference: displayedIssue.reference, client: center.api.client) { Task { await center.refreshSelectedDetail() } }.id(issue.id)
                     GitHubConversationView(model: center.conversation(for: displayedIssue))
                         .id("conversation:" + issue.id)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 32)
+                .padding(.horizontal, isInspector ? 12 : 16).padding(.top, 20).padding(.bottom, 32)
             }
             .clipped()
         }
