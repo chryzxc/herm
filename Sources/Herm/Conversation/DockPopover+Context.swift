@@ -187,7 +187,9 @@ extension DockPopover {
             return
         }
         let session = WorkspaceIdentity.session(model)
+        guard gitHubInspector.opening[session] == nil else { return }
         Task {
+            guard gitHubInspector.opening[session] == nil else { return }
             let opened = await gitHubInspector.open(reference, session: session)
             guard opened, GitHubMarkdownLink.reference(for: url) != nil,
                 session == WorkspaceIdentity.session(model)

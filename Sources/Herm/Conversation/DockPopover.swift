@@ -284,6 +284,24 @@ struct DockPopover: View {
         observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
             .environment(\.chatContextRouter, chatContextRouter)
             .generativeUISession(model: model)
+            .overlay(alignment: .bottomTrailing) {
+                if let reference = gitHubInspector.opening[WorkspaceIdentity.session(model)] {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Opening \(reference.kind == .pullRequest ? "pull request" : "issue") \(reference.title)…")
+                            .dockFont(.body)
+                            .lineLimit(2)
+                    }
+                    .padding(10)
+                    .dockFloatingSurface(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius), tint: .dockSurface2,
+                        stroke: .dockBorderLight
+                    )
+                    .padding(12)
+                    .accessibilityElement(children: .combine)
+                    .allowsHitTesting(false)
+                }
+            }
             // SwiftUI Text links would otherwise open in the default browser.
             .environment(
                 \.openURL,

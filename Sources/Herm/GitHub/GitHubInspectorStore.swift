@@ -17,6 +17,7 @@ final class GitHubInspectorStore: ObservableObject {
     }
 
     @Published private(set) var revision = UUID()
+    @Published private(set) var opening: [String: GitHubItemReference] = [:]
     private let transport: any GitHubIssueTransport
 
     init(transport: any GitHubIssueTransport = URLSession(configuration: .ephemeral)) {
@@ -28,6 +29,9 @@ final class GitHubInspectorStore: ObservableObject {
     func item(for session: String) -> Item? { items[session] }
 
     func open(_ reference: GitHubItemReference, session: String) async -> Bool {
+        guard opening[session] == nil else { return false }
+        opening[session] = reference
+        defer { opening[session] = nil }
         let item = items[session] ?? Item(transport: transport)
         items[session] = item
         let generation = UUID()
