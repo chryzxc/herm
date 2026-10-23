@@ -101,6 +101,8 @@ final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var branches: [String] = []
     @Published private(set) var commits: [RepositoryCommit] = []
     @Published private(set) var commitsError: String?
+    @Published private(set) var stashes: [RepositoryStash] = []
+    @Published private(set) var stashesError: String?
     @Published private(set) var isMutatingSourceControl = false
     @Published private(set) var sourceControlError: String?
     private var activePath: String?
@@ -133,6 +135,8 @@ final class DeveloperWorkflowModel: ObservableObject {
         }
         activePath = path
         commits = []
+        stashes = []
+        stashesError = nil
         commitsError = nil
         sourceControlError = nil
         generation = UUID()
@@ -159,10 +163,13 @@ final class DeveloperWorkflowModel: ObservableObject {
         async let fingerprint = RepositoryService.fingerprint(path: path)
         async let githubRemote = RepositoryService.githubRemote(path: path)
         async let recentCommits = RepositoryService.recentCommits(path: path)
+        async let stashEntries = RepositoryService.stashes(path: path)
         let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint, resolvedGitHubRemote) = await (snapshot, changes, worktrees, branches, fingerprint, githubRemote)
         guard token == generation, path == activePath else { return }
-        let resolvedCommits = await recentCommits
+        let (resolvedCommits, resolvedStashes) = await (recentCommits, stashEntries)
         guard token == generation, path == activePath else { return }
+        stashes = resolvedStashes ?? []
+        stashesError = resolvedStashes == nil ? "Could not refresh stashes. Refresh to try again." : nil
         if let resolvedCommits { commits = resolvedCommits }
         commitsError = resolvedCommits == nil ? "Could not refresh commits. Refresh to try again." : nil
         let githubRepositoryChanged = githubRepository != resolvedGitHubRemote

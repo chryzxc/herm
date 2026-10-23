@@ -57,6 +57,12 @@ enum RepositorySourceControlAction {
     case stage([RepositoryFileChange])
     case unstage([RepositoryFileChange])
     case commit(String)
+    case fetch, pull, push
+    case createStash(message: String, includeUntracked: Bool)
+    case updateStash(RepositoryStash, RepositoryStashOperation)
+    /// Working-tree changes only: tracked files restore from the index, untracked files move to the Trash.
+    case discard([RepositoryFileChange])
+    case ignore([RepositoryFileChange])
 }
 
 struct RepositoryCommit: Identifiable, Equatable {
@@ -65,6 +71,20 @@ struct RepositoryCommit: Identifiable, Equatable {
     let author: String
     let date: Date
     let references: String
+    var parents: [String] = []
+}
+
+struct RepositoryCommitDetail: Equatable {
+    struct File: Equatable, Identifiable {
+        let path: String
+        /// Nil for binary files.
+        let additions: Int?
+        let deletions: Int?
+        var id: String { path }
+    }
+    let body: String
+    let email: String
+    let files: [File]
 }
 
 struct RepositoryAttachmentChanges: Identifiable {
@@ -170,6 +190,14 @@ struct RepositoryWorktreeSummary: Identifiable, Equatable {
     let isPrunable: Bool
     let snapshot: RepositorySnapshot?
     var id: String { RepositorySnapshot.stableID(path: path) }
+
+    /// Whether `path` is `root` or inside it. Session tools never reach
+    /// worktrees outside the session's source folder.
+    static func isPath(_ path: String, within root: String) -> Bool {
+        let path = RepositorySnapshot.stableID(path: path)
+        let root = RepositorySnapshot.stableID(path: root)
+        return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+    }
 }
 
 /// A deliberately small pre-commit signal pass over added diff lines. It never
@@ -422,7 +450,8 @@ enum RepositoryService {
     }
 
     static func applySourceControl(_ action: RepositorySourceControlAction, path: String) async -> String? {
-        let arguments: [String]
+        var arguments: [String]
+        var workingPath = path
         switch action {
         case .stage(let files), .unstage(let files):
             let paths = Array(Set(files.flatMap { [$0.path] + ($0.renameSource.map { [$0] } ?? []) })).sorted()
@@ -447,14 +476,64 @@ enum RepositoryService {
             let conflicts = await runGit(path: path, arguments: ["ls-files", "--unmerged", "-z"])
             guard conflicts.exitCode == 0, conflicts.output.isEmpty else { return "Resolve conflicts before committing." }
             arguments = ["commit", "-m", message]
+        case .createStash(let message, let includeUntracked):
+            return await createStash(path: path, message: message, includeUntracked: includeUntracked)
+        case .updateStash(let stash, let operation):
+            return await updateStash(path: path, stash: stash, operation: operation)
+        case .fetch:
+            arguments = ["fetch", "--all", "--prune", "--quiet"]
+        case .pull:
+            // Fast-forward only: Herm never creates merge commits or rewrites history on the user's behalf.
+            arguments = ["pull", "--ff-only", "--quiet"]
+        case .push:
+            arguments = ["push", "--quiet"]
+        case .discard(let files):
+            let targets = files.filter { !$0.isStaged && $0.status != .conflicted }
+            guard !targets.isEmpty, targets.allSatisfy({ isSafeRelativePath($0.path) }) else { return "No discardable changes selected." }
+            // Status paths are relative to the repository root, not the selected folder.
+            guard let root = await topLevel(path: path) else { return "Git could not locate the repository root." }
+            for file in targets where file.status == .untracked {
+                // Git has no copy of an untracked file; the Trash keeps it recoverable.
+                do { try FileManager.default.trashItem(at: root.appendingPathComponent(file.path), resultingItemURL: nil) } catch {
+                    return "Could not move an untracked file to the Trash. Check file permissions, then retry."
+                }
+            }
+            let tracked = targets.filter { $0.status != .untracked }.map { ":(literal)" + $0.path }
+            guard !tracked.isEmpty else { return nil }
+            workingPath = root.path
+            arguments = ["restore", "--worktree", "--"] + tracked
+        case .ignore(let files):
+            let paths = files.filter { $0.status == .untracked }.map(\.path)
+            guard !paths.isEmpty, paths.allSatisfy(isSafeRelativePath) else { return "Only untracked files can be added to .gitignore." }
+            guard let root = await topLevel(path: path) else { return "Git could not locate the repository root." }
+            let url = root.appendingPathComponent(".gitignore")
+            let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            let known = Set(existing.split(separator: "\n").map(String.init))
+            let additions = paths.map(gitignorePattern).filter { !known.contains($0) }
+            guard !additions.isEmpty else { return nil }
+            let separator = existing.isEmpty || existing.hasSuffix("\n") ? "" : "\n"
+            do { try (existing + separator + additions.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8) } catch {
+                return "Could not update .gitignore. Check file permissions, then retry."
+            }
+            return nil
         }
-        let result = await runGit(path: path, arguments: arguments)
+        let result = await runGit(path: workingPath, arguments: arguments)
+        guard result.exitCode != 0 else { return nil }
         // Git/hooks can print source and private paths. Keep failures actionable without echoing their output.
-        return result.exitCode == 0 ? nil : "Git could not complete this action. Check repository permissions, index locks, identity, or commit hooks in Terminal, then retry."
+        switch action {
+        case .fetch: return "Fetch failed. Check the network connection and remote credentials, then retry."
+        case .pull: return "Pull could not fast-forward. Resolve divergence or local changes in Terminal, then retry."
+        case .push: return "Push was rejected. Pull the latest upstream changes or check remote credentials, then retry."
+        case .discard: return "Git could not discard these changes. Check repository permissions or index locks, then retry."
+        default: return "Git could not complete this action. Check repository permissions, index locks, identity, or commit hooks in Terminal, then retry."
+        }
     }
 
     static func recentCommits(path: String) async -> [RepositoryCommit]? {
-        let result = await runGit(path: path, arguments: ["log", "-50", "--format=%H%x00%s%x00%an%x00%at%x00%D%x00", "HEAD"], trimOutput: false)
+        // The upstream joins the graph so incoming commits show as their own lane.
+        let upstream = await runGit(path: path, arguments: ["rev-parse", "--verify", "--quiet", "@{upstream}"])
+        let revisions = upstream.exitCode == 0 ? ["HEAD", "@{upstream}"] : ["HEAD"]
+        let result = await runGit(path: path, arguments: ["log", "-50", "--topo-order", "--decorate=full", "--format=%H%x00%s%x00%an%x00%at%x00%D%x00%P%x00"] + revisions, trimOutput: false)
         guard result.exitCode == 0 else {
             let branch = await runGit(path: path, arguments: ["symbolic-ref", "--quiet", "HEAD"])
             let ref = branch.exitCode == 0 ? await runGit(path: path, arguments: ["show-ref", "--verify", "--quiet", branch.output]) : (output: "", exitCode: Int32(2))
@@ -465,11 +544,28 @@ enum RepositoryService {
 
     static func parseCommits(_ output: String) -> [RepositoryCommit] {
         let fields = output.components(separatedBy: "\0")
-        return stride(from: 0, to: max(0, fields.count - 4), by: 5).compactMap { index in
+        return stride(from: 0, to: max(0, fields.count - 5), by: 6).compactMap { index in
             let hash = fields[index].trimmingCharacters(in: .whitespacesAndNewlines)
             guard hash.count >= 40, hash.allSatisfy(\.isHexDigit), let timestamp = TimeInterval(fields[index + 3]) else { return nil }
-            return RepositoryCommit(id: hash, subject: fields[index + 1], author: fields[index + 2], date: Date(timeIntervalSince1970: timestamp), references: fields[index + 4])
+            return RepositoryCommit(id: hash, subject: fields[index + 1], author: fields[index + 2], date: Date(timeIntervalSince1970: timestamp), references: fields[index + 4], parents: fields[index + 5].split(separator: " ").map(String.init))
         }
+    }
+
+    static func commitDetail(path: String, hash: String) async -> RepositoryCommitDetail? {
+        guard hash.count >= 40, hash.allSatisfy(\.isHexDigit) else { return nil }
+        let result = await runGit(path: path, arguments: ["show", "--no-ext-diff", "--no-renames", "--diff-merges=first-parent", "--numstat", "--format=%B%x00%ae%x00", hash], trimOutput: false)
+        return result.exitCode == 0 ? parseCommitDetail(result.output) : nil
+    }
+
+    static func parseCommitDetail(_ output: String) -> RepositoryCommitDetail? {
+        let parts = output.components(separatedBy: "\0")
+        guard parts.count >= 3 else { return nil }
+        let files = parts[2].split(separator: "\n").compactMap { line -> RepositoryCommitDetail.File? in
+            let columns = line.split(separator: "\t", maxSplits: 2).map(String.init)
+            guard columns.count == 3 else { return nil }
+            return RepositoryCommitDetail.File(path: columns[2], additions: Int(columns[0]), deletions: Int(columns[1]))
+        }
+        return RepositoryCommitDetail(body: parts[0].trimmingCharacters(in: .whitespacesAndNewlines), email: parts[1], files: files)
     }
 
     static func explorerEntries(for files: [RepositoryFileChange]) -> [RepositoryExplorerEntry] {
@@ -904,6 +1000,25 @@ enum RepositoryService {
         return nil
     }
 
+    private static func topLevel(path: String) async -> URL? {
+        let result = await runGit(path: path, arguments: ["rev-parse", "--show-toplevel"])
+        return result.exitCode == 0 && !result.output.isEmpty ? URL(fileURLWithPath: result.output) : nil
+    }
+
+    /// An anchored, literal `.gitignore` entry for one repository-relative path.
+    static func gitignorePattern(_ path: String) -> String {
+        var pattern = "/" + path.reduce(into: "") { result, character in
+            if "\\*?[".contains(character) { result.append("\\") }
+            result.append(character)
+        }
+        // Git strips trailing spaces up to the last escaped one.
+        if pattern.hasSuffix(" ") {
+            pattern.removeLast()
+            pattern += "\\ "
+        }
+        return pattern
+    }
+
     static func isSafeRelativePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
@@ -971,7 +1086,10 @@ enum RepositoryService {
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = ["git", "-C", path] + arguments
-            process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
+            var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
+            // No terminal exists to answer credential prompts; fail instead of hanging.
+            environment["GIT_TERMINAL_PROMPT"] = "0"
+            process.environment = environment
             process.standardOutput = pipe
             process.standardError = pipe
             do {

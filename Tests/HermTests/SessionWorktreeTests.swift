@@ -3,6 +3,14 @@ import Testing
 @testable import Herm
 
 struct SessionWorktreeTests {
+    @Test func scopesWorktreesToTheSourceFolder() {
+        #expect(RepositoryWorktreeSummary.isPath("/repo", within: "/repo/"))
+        #expect(RepositoryWorktreeSummary.isPath("/repo/.worktrees/a", within: "/repo"))
+        #expect(!RepositoryWorktreeSummary.isPath("/repo-2", within: "/repo"))
+        #expect(!RepositoryWorktreeSummary.isPath("/repo/../other", within: "/repo"))
+        #expect(!RepositoryWorktreeSummary.isPath("/Users/me/Library/Application Support/Herm/Worktrees/x", within: "/repo"))
+    }
+
     @Test func parsesSecretFreeStructuredSummaries() throws {
         let data = Data(#"{"session_id":"session-1","export":{"format":"jsonl","record_count":3},"history":{"event_count":4,"latest_at":"2026-08-29T12:00:00Z"},"worktree":{"id":"tree-1","session_id":"session-1","state":"ready"}}"#.utf8)
 
