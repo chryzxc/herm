@@ -21,7 +21,7 @@ extension WorkspaceActivitySidebar {
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         } else if kanbanCurrentSessionOnly {
                             DockIconLabel("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", icon: .link)
-                                .dockFont(size: 10)
+                                .dockFont(.compactStatus, weight: .regular)
                                 .foregroundStyle(Color.dockMetadataText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -44,7 +44,7 @@ extension WorkspaceActivitySidebar {
                                     Spacer()
                                     if diagnostic.taskID != nil { DockIcon(.caretRight) }
                                 }
-                                .dockFont(size: 11)
+                                .dockFont(.metadata)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 5)
                             }
@@ -58,9 +58,9 @@ extension WorkspaceActivitySidebar {
                         DockIcon(.stethoscope)
                             .foregroundStyle(Color.dockWarning)
                         Text("Kanban health")
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                         Text("\(control.kanbanDiagnostics.count)")
-                            .dockFont(size: 10, design: .monospaced)
+                            .dockFont(.compactStatus, weight: .regular, design: .monospaced)
                             .foregroundStyle(Color.dockMetadataText)
                         Spacer()
                         DockMenu(kanbanDiagnosticSeverity) {
@@ -71,7 +71,7 @@ extension WorkspaceActivitySidebar {
                                 }
                             }
                         }
-                        .dockFont(size: 10)
+                        .dockFont(.compactStatus, weight: .regular)
                         Button {
                             control.refreshKanbanDiagnostics(severity: kanbanDiagnosticSeverity == "ALL" ? nil : kanbanDiagnosticSeverity.lowercased())
                         } label: {
@@ -98,9 +98,9 @@ extension WorkspaceActivitySidebar {
             if let state = control.refreshState(for: "kanban.board"), let error = state.error {
                 HStack(alignment: .top, spacing: 8) {
                     DockIcon(.warning)
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                     Text(state.isStale ? "Showing the last successful board. \(error)" : error)
-                        .font(.system(.body))
+                        .dockFont(.navigation)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(Color.dockWarning)
@@ -246,7 +246,7 @@ extension WorkspaceActivitySidebar {
                         DockIcon(.xCircle, weight: .fill)
                         Text("Clear")
                     }
-                    .dockFont(size: 11, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 }
                 .buttonStyle(.dockHover)
@@ -264,7 +264,7 @@ extension WorkspaceActivitySidebar {
                     DockIconLabel(isShowingKanbanComposer ? "Close" : "Add task", icon: isShowingKanbanComposer ? .x : .plus)
                 }
                 .buttonStyle(.dockPrimary)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
             }
         }
     }
@@ -276,14 +276,14 @@ extension WorkspaceActivitySidebar {
     func kanbanToolbarChip(_ title: String, icon: Ph) -> some View {
         HStack(spacing: 5) {
             DockIcon(icon)
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
             Text(title)
                 .lineLimit(1)
                 .truncationMode(.middle)
             DockIcon(.caretDown)
                 .dockFont(size: 8, weight: .bold)
         }
-        .dockFont(size: 11, weight: .semibold)
+        .dockFont(.metadata, weight: .semibold)
         .foregroundStyle(Color.dockSecondaryText)
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -325,7 +325,7 @@ extension WorkspaceActivitySidebar {
             .fixedSize()
         }
         .buttonStyle(.dockHover)
-        .dockFont(size: 11, weight: .semibold)
+        .dockFont(.metadata, weight: .semibold)
         .disabled(control.isKanbanRefreshPending)
     }
 
@@ -348,7 +348,7 @@ extension WorkspaceActivitySidebar {
     func kanbanFilterChip(_ title: String, icon: Ph, isSelected: Bool = false) -> some View {
         HStack(spacing: 6) {
             DockIcon(icon)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
             Text(title)
                 .lineLimit(1)
             DockIcon(.caretDown)
@@ -368,15 +368,15 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
                 DockIcon(.circlesFour)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 Text("STATUS")
-                    .dockFont(size: 11, weight: .bold)
+                    .dockFont(.metadata, weight: .bold)
                     .tracking(0.9)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
                 Text("\(KanbanLane.allCases.count)")
-                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                    .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
             }
             .padding(.horizontal, 12)
@@ -413,19 +413,19 @@ extension WorkspaceActivitySidebar {
                             .foregroundStyle(lane.color)
                     } else {
                         DockIcon(.circlesFour)
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
                 .frame(width: 30, height: 30)
                 Text(title)
-                    .dockFont(size: 13, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if isSelected {
                     DockIcon(.check)
-                        .dockFont(size: 12, weight: .bold)
+                        .dockFont(.body, weight: .bold)
                         .foregroundStyle(Color.dockAccent)
                 }
             }
@@ -442,15 +442,15 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
                 DockIcon(.users)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 Text("ASSIGNEE")
-                    .dockFont(size: 11, weight: .bold)
+                    .dockFont(.metadata, weight: .bold)
                     .tracking(0.9)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
                 Text("\(kanbanAssigneeOptions.count)")
-                    .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                    .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
             }
             .padding(.horizontal, 12)
@@ -484,7 +484,7 @@ extension WorkspaceActivitySidebar {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                             .fill(Color.dockAccent.opacity(0.18))
                         DockIcon(.users)
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     }
                     .frame(width: 30, height: 30)
@@ -498,13 +498,13 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 Text(assignee == "All" ? "All assignees" : assignee)
-                    .dockFont(size: 13, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if isSelected {
                     DockIcon(.check)
-                        .dockFont(size: 12, weight: .bold)
+                        .dockFont(.body, weight: .bold)
                         .foregroundStyle(Color.dockAccent)
                 }
             }
@@ -533,10 +533,10 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 DockIcon(.plus)
-                    .dockFont(size: 11, weight: .bold)
+                    .dockFont(.metadata, weight: .bold)
                     .foregroundStyle(Color.dockAccent)
                 Text("ADD TASK")
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .tracking(1.1)
                     .foregroundStyle(Color.dockSecondaryText)
             }
@@ -550,7 +550,7 @@ extension WorkspaceActivitySidebar {
                             ProgressView().controlSize(.small).tint(Color.dockPrimaryText)
                         } else {
                             DockIcon(.arrowUpRight)
-                                .dockFont(size: 13, weight: .bold)
+                                .dockFont(.navigation, weight: .bold)
                         }
                     }
                     .frame(width: 36, height: 36)
@@ -563,7 +563,7 @@ extension WorkspaceActivitySidebar {
             DockTextField("Add context for Hermes (optional)", text: $kanbanBody, axis: .vertical)
                 .lineLimit(1...3)
                 .textFieldStyle(.plain)
-                .dockFont(size: 13)
+                .dockFont(.navigation)
                 .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
@@ -604,7 +604,7 @@ extension WorkspaceActivitySidebar {
 
     func kanbanMetadataPill(_ value: String, tint: Color) -> some View {
         Text(value)
-            .dockFont(size: 10, weight: .semibold)
+            .dockFont(.compactStatus, weight: .semibold)
             .foregroundStyle(tint)
             .lineLimit(1)
             .padding(.horizontal, 7)
@@ -626,7 +626,7 @@ extension WorkspaceActivitySidebar {
             Text(assignee)
                 .lineLimit(1)
         }
-        .dockFont(size: 10, weight: .semibold)
+        .dockFont(.compactStatus, weight: .semibold)
         .foregroundStyle(Color.dockSecondaryText)
         .padding(.leading, 3)
         .padding(.trailing, 8)
@@ -643,7 +643,7 @@ extension WorkspaceActivitySidebar {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .dockFont(size: 10, weight: .medium, design: .monospaced)
+        .dockFont(.compactStatus, weight: .medium, design: .monospaced)
         .foregroundStyle(metadata.isOverride ? Color.dockWarning : Color.dockMetadataText)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -671,7 +671,7 @@ extension WorkspaceActivitySidebar {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(detail.title)
-                        .dockFont(size: 16, weight: .semibold)
+                        .dockFont(.pageTitle, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(3)
                     HStack(spacing: 7) {
@@ -679,10 +679,10 @@ extension WorkspaceActivitySidebar {
                             .foregroundStyle(laneColor)
                         Text("·")
                         Text(detail.id)
-                            .dockFont(size: 10, design: .monospaced)
+                            .dockFont(.compactStatus, weight: .regular, design: .monospaced)
                             .foregroundStyle(Color.dockMetadataText)
                     }
-                    .dockFont(size: 11, weight: .medium)
+                    .dockFont(.metadata, weight: .medium)
                 }
                 Spacer(minLength: 8)
                 HStack(spacing: 2) {
@@ -714,7 +714,7 @@ extension WorkspaceActivitySidebar {
             HStack(spacing: 0) {
                 ForEach(KanbanInspectorTab.allCases) { tab in
                     Button(tab.rawValue) { kanbanInspectorTab = tab }
-                        .dockFont(size: 11, weight: .semibold)
+                        .dockFont(.metadata, weight: .semibold)
                         .foregroundStyle(kanbanInspectorTab == tab ? Color.dockPrimaryText : Color.dockMetadataText)
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .overlay(alignment: .bottom) {
@@ -735,7 +735,7 @@ extension WorkspaceActivitySidebar {
                             Button("Retry") { control.loadKanbanTask(task) }
                                 .buttonStyle(.dockCompact)
                         }
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockWarning)
                     }
                     if control.loadingKanbanDetailTaskID == task.id {
@@ -743,7 +743,7 @@ extension WorkspaceActivitySidebar {
                             ProgressView().controlSize(.small)
                             Text("Refreshing task details…")
                         }
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                     }
 
@@ -766,7 +766,7 @@ extension WorkspaceActivitySidebar {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             } else {
                                 Text("No task description returned.")
-                                    .dockFont(size: 12)
+                                    .dockFont(.body)
                                     .foregroundStyle(Color.dockMetadataText)
                             }
                             kanbanAttachmentSection
@@ -795,12 +795,12 @@ extension WorkspaceActivitySidebar {
     var kanbanAttachmentSection: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("ATTACHMENTS")
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .tracking(0.7)
                 .foregroundStyle(Color.dockMetadataText)
             if control.kanbanAttachments.isEmpty {
                 Text("No attachments")
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 ForEach(control.kanbanAttachments) { attachment in
@@ -813,7 +813,7 @@ extension WorkspaceActivitySidebar {
                             Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
                         }
                     }
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.vertical, 5)
                     .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -842,7 +842,7 @@ extension WorkspaceActivitySidebar {
             if let step = selectedKanbanTask?.currentStepKey, !step.isEmpty {
                 kanbanInspectorSection("CURRENT STEP") {
                     Text(step)
-                        .dockFont(size: 13, weight: .medium, design: .monospaced)
+                        .dockFont(.navigation, weight: .medium, design: .monospaced)
                         .foregroundStyle(Color.dockAccent)
                 }
             }
@@ -850,9 +850,9 @@ extension WorkspaceActivitySidebar {
                 kanbanInspectorSection("LATEST EVENT") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(event.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .dockFont(size: 13, weight: .medium)
+                            .dockFont(.navigation, weight: .medium)
                         if let note = selectedKanbanTask?.latestEventNote, !note.isEmpty {
-                            Text(note).dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
+                            Text(note).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                         }
                     }
                 }
@@ -861,21 +861,21 @@ extension WorkspaceActivitySidebar {
                 let rows = kanbanTimeline(detail)
                 if rows.isEmpty {
                     Text("No events yet. This updates live while the task runs.")
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                 } else {
                     ForEach(rows) { row in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(row.title).dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockAccent)
+                                Text(row.title).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
                                 Spacer()
                                 if let date = row.date {
                                     Text(date.formatted(date: .omitted, time: .standard))
-                                        .dockFont(size: 10, design: .monospaced).foregroundStyle(Color.dockMetadataText)
+                                        .dockFont(.compactStatus, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText)
                                 }
                             }
                             if let text = row.text {
-                                Text(text).dockFont(size: 11).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                                Text(text).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
                             }
                         }
                         .padding(.vertical, 6)
@@ -886,7 +886,7 @@ extension WorkspaceActivitySidebar {
             kanbanInspectorSection("RUN HISTORY · \(detail.runs.count)") {
                 if detail.runs.isEmpty {
                     Text("No run history returned by Hermes.")
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                 } else {
                     ForEach(detail.runs) { run in
@@ -897,10 +897,10 @@ extension WorkspaceActivitySidebar {
                                 Spacer()
                                 if let elapsed = run.elapsed { Text(elapsed) }
                             }
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
-                            if let profile = run.profile { Text(profile).dockFont(size: 10, design: .monospaced).foregroundStyle(Color.dockMetadataText) }
-                            if let summary = run.summary { Text(summary).dockFont(size: 11).foregroundStyle(Color.dockSecondaryText) }
+                            if let profile = run.profile { Text(profile).dockFont(.compactStatus, weight: .regular, design: .monospaced).foregroundStyle(Color.dockMetadataText) }
+                            if let summary = run.summary { Text(summary).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText) }
                         }
                         .padding(.vertical, 7)
                         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -914,10 +914,10 @@ extension WorkspaceActivitySidebar {
         kanbanInspectorSection("WHY BLOCKED" + (why.kind.map { " · \($0.replacingOccurrences(of: "_", with: " "))" } ?? "")) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(why.reason ?? "No reason was recorded.")
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockWarning)
                 if let error = why.lastError {
-                    Text("Last run: \(error)").dockFont(size: 11).foregroundStyle(Color.dockSecondaryText)
+                    Text("Last run: \(error)").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                 }
             }
             .textSelection(.enabled)
@@ -930,7 +930,7 @@ extension WorkspaceActivitySidebar {
     func kanbanInspectorSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .tracking(0.7)
                 .foregroundStyle(Color.dockMetadataText)
             content()
@@ -944,7 +944,7 @@ extension WorkspaceActivitySidebar {
 
     func kanbanDetailHeaderIcon(_ name: Ph) -> some View {
         DockIcon(name)
-            .dockFont(size: 12, weight: .semibold)
+            .dockFont(.body, weight: .semibold)
             .foregroundStyle(Color.dockSecondaryText)
             .frame(width: 28, height: 28)
             .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(Color.dockSurface2.opacity(0.6)))

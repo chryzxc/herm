@@ -79,7 +79,7 @@ extension WorkspaceActivitySidebar {
                 }
             }
         }
-        .dockFont(size: 13)
+        .dockFont(.navigation)
     }
 
     var pageHeader: some View {
@@ -225,7 +225,7 @@ extension WorkspaceActivitySidebar {
                 .frame(width: 7, height: 7)
         case .count(let count):
             Text("\(count)")
-                .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                 .foregroundStyle(badge.isWarning ? Color.dockWarning : Color.dockMetadataText)
         }
     }
@@ -258,7 +258,7 @@ extension WorkspaceActivitySidebar {
                         .dockFont(.pageTitle)
                         .foregroundStyle(Color.dockPrimaryText)
                     Text(selectedSettingsCategory.subtitle)
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 coreContent
@@ -302,7 +302,6 @@ extension WorkspaceActivitySidebar {
                         .padding(.bottom, 16)
                 }
                 .clipped()
-                .task { control.refreshTokenUsage(days: UsageWorkspaceView.reportDays) }
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -423,7 +422,7 @@ extension WorkspaceActivitySidebar {
                 Spacer()
                 Button { isShowingCommandPalette = true } label: {
                     DockIcon(.command)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)
                         .frame(width: 32, height: 32)
                 }
@@ -432,7 +431,7 @@ extension WorkspaceActivitySidebar {
                 .keyboardShortcut("k", modifiers: [.command])
                 Button(action: onClose) {
                     DockIcon(.caretLeft)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.dockSurface4))
@@ -541,7 +540,7 @@ extension WorkspaceActivitySidebar {
             HStack(spacing: 4) {
             ForEach(compactRailLeading) { compactModeButton($0) }
 
-            compactTabButton(title: "Artifacts", icon: .fileMagnifyingGlass, isSelected: false) {
+            compactTabButton(title: "Artifacts", icon: .files, isSelected: false) {
                 onOpenArtifacts()
             }
 
@@ -603,14 +602,14 @@ extension WorkspaceActivitySidebar {
     ) -> some View {
         HStack(spacing: 6) {
             DockIcon(icon)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
             Text(detail ?? title)
                 .lineLimit(1)
             if badgeCount > 0 {
                 badgeView(count: badgeCount, isUrgent: isUrgent)
             }
         }
-        .dockFont(size: 11, weight: .semibold)
+        .dockFont(.metadata, weight: .semibold)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(minHeight: 32)
@@ -695,7 +694,7 @@ extension WorkspaceActivitySidebar {
     ) -> some View {
         HStack(spacing: 8) {
             DockIcon(.dotsThreeCircle)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .frame(width: 22, alignment: .center)
             Text(detail ?? title)
                 .lineLimit(1)
@@ -703,7 +702,7 @@ extension WorkspaceActivitySidebar {
                 badgeView(count: badgeCount, isUrgent: isUrgent)
             }
         }
-        .dockFont(size: 12, weight: .medium)
+        .dockFont(.body, weight: .medium)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
@@ -730,7 +729,7 @@ extension WorkspaceActivitySidebar {
         Button { select(mode) } label: {
             HStack(spacing: 8) {
                 DockIcon(mode.icon)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .frame(width: 22, alignment: .center)
                 Text(mode.globalRailLabel)
                     .lineLimit(1)
@@ -738,7 +737,7 @@ extension WorkspaceActivitySidebar {
                     badgeView(count: badgeCount(for: mode), isUrgent: badgeIsUrgent(for: mode))
                 }
             }
-            .dockFont(size: 12, weight: .semibold)
+            .dockFont(.body, weight: .semibold)
             .foregroundStyle(selectedMode == mode ? Color.dockPrimaryText : Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
@@ -751,7 +750,7 @@ extension WorkspaceActivitySidebar {
 
     func badgeView(count: Int, isUrgent: Bool) -> some View {
         Text(count > 99 ? "99+" : "\(count)")
-            .dockFont(size: 12, weight: .bold)
+            .dockFont(.body, weight: .bold)
             .monospacedDigit()
             .tracking(0)
             .foregroundStyle(isUrgent ? Color.dockOnAccentText : Color.dockPrimaryText)

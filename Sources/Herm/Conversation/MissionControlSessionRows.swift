@@ -57,7 +57,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(session.displayTitle)
-                    .font(style.labelFont)
+                    .dockFont(.navigation)
                     .foregroundStyle(style.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
@@ -75,7 +75,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
                 isProjectLinked: isProjectLinked
             ) {
                 DockIconLabel(badge.label, icon: .gitBranch)
-                    .dockFont(size: 11, weight: .medium)
+                    .dockFont(.metadata, weight: .medium)
                     .foregroundStyle(style.accent)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -88,13 +88,13 @@ struct MissionControlConversationSessionRow: View, Equatable {
             }
             if let preview = session.displayPreview {
                 Text(preview)
-                    .dockFont(size: 11)
+                    .dockFont(.body)
                     .foregroundStyle(style.secondaryText)
                     .lineLimit(1)
             }
             if let timestamp = session.lastUpdatedAt {
                 Text(timestamp, style: .relative)
-                .dockFont(size: 11)
+                .dockFont(.metadata)
                 .foregroundStyle(style.metadataText)
                 .lineLimit(1)
             }
@@ -227,7 +227,7 @@ struct MissionControlProjectList: View {
                     DockIcon(.folder, size: 15, color: isActiveProject ? style.primaryText : style.metadataText)
                         .frame(width: 16)
                     Text(group.title)
-                        .font(style.labelFont)
+                        .dockFont(.navigation)
                         .foregroundStyle(style.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -248,7 +248,7 @@ struct MissionControlProjectList: View {
             ZStack(alignment: .trailing) {
                 if sessionCount > 0 {
                     Text(compactCount(sessionCount))
-                        .font(.subheadline.monospacedDigit())
+                        .dockFont(.metadata).monospacedDigit()
                         .foregroundStyle(style.metadataText)
                         .padding(.trailing, 14)
                         .opacity(showsActions ? 0 : 1)
@@ -337,7 +337,7 @@ struct MissionControlProjectList: View {
 
     private func projectStatusRow(_ text: String, leading: CGFloat = 34) -> some View {
         Text(text)
-            .dockFont(size: 12)
+            .dockFont(.body)
             .foregroundStyle(style.metadataText)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .padding(.leading, leading)
@@ -452,7 +452,7 @@ struct MissionControlBotSessionRow: View, Equatable {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(bot.name)
-                        .font(style.labelFont)
+                        .dockFont(.navigation)
                         .foregroundStyle(style.primaryText)
                         .lineLimit(1)
                     Text("BOT")
@@ -465,14 +465,14 @@ struct MissionControlBotSessionRow: View, Equatable {
                     SessionActivityGlyph(isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate)
                     if let date = session.lastUpdatedAt {
                         Text(SidebarSessionTime.short(date))
-                            .font(.subheadline.monospacedDigit())
+                            .dockFont(.metadata).monospacedDigit()
                             .foregroundStyle(style.metadataText)
                             .fixedSize()
                     }
                 }
                 if let preview = session.displayPreview {
                     Text(preview)
-                        .font(.subheadline)
+                        .dockFont(.body)
                         .foregroundStyle(style.metadataText)
                         .lineLimit(1)
                 }
@@ -567,7 +567,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
                             HStack(spacing: 4) {
                                 DockIcon(.discordLogo, size: 12)
                                 Text(source)
-                                    .dockFont(size: 11, weight: .medium)
+                                    .dockFont(.metadata, weight: .medium)
                             }
                                 .foregroundStyle(Color.dockDiscord)
                                 .padding(.horizontal, 6)
@@ -580,7 +580,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
                         if let repository { repositoryPill(repository) }
                         if let preview {
                             Text(preview)
-                                .font(.subheadline)
+                                .dockFont(.body)
                                 .foregroundStyle(style.metadataText)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -638,7 +638,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
             if isEditingTitle {
                 DockTextField("Session title", text: $titleDraft)
                     .textFieldStyle(.plain)
-                    .font(Font.body.weight(.medium))
+                    .dockFont(.navigation, weight: .medium)
                     .foregroundStyle(style.primaryText)
                     .focused($titleFieldFocused)
                     .onSubmit { submitRename() }
@@ -650,7 +650,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
                 }
             } else {
                 Text(session.displayTitle)
-                    .font(Font.body.weight(isSelected ? .medium : .regular))
+                    .dockFont(.navigation, weight: isSelected ? .medium : .regular)
                     .foregroundStyle(isSelected ? style.primaryText : style.primaryText.opacity(0.88))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -679,7 +679,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
         HStack(spacing: 4) {
             DockIcon(.folder, size: 11)
             Text(name)
-                .dockFont(size: 11, weight: .medium)
+                .dockFont(.metadata, weight: .medium)
                 .lineLimit(1)
         }
         .foregroundStyle(style.accent)
@@ -716,7 +716,8 @@ struct MissionControlSidebarSessionRow: View, Equatable {
     private var trailingDetail: some View {
         if let date = session.lastUpdatedAt {
             Text(SidebarSessionTime.short(date))
-                .font(.subheadline.monospacedDigit())
+                .dockFont(.metadata)
+                .monospacedDigit()
                 .foregroundStyle(style.metadataText)
                 .lineLimit(1)
                 .fixedSize()

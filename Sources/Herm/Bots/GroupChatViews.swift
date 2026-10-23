@@ -28,7 +28,7 @@ struct GroupChatSidebarSection: View {
                 if isExpanded {
                     if store.rooms.isEmpty {
                         Text("No group chats")
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(style.metadataText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 7)
@@ -80,7 +80,7 @@ private struct GroupChatSidebarRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(room.name)
-                        .font(Font.body.weight(isSelected || isUnread ? .medium : .regular))
+                        .dockFont(.navigation, weight: isSelected || isUnread ? .medium : .regular)
                         .foregroundStyle(isSelected ? style.primaryText : style.primaryText.opacity(0.88))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -98,7 +98,8 @@ private struct GroupChatSidebarRow: View {
                         DockActivityIndicator(state: activity, size: 12, unreadDot: true)
                     } else {
                         Text(SidebarSessionTime.short(date))
-                            .font(.subheadline.monospacedDigit())
+                            .dockFont(.metadata)
+                            .monospacedDigit()
                             .foregroundStyle(style.metadataText)
                             .lineLimit(1)
                             .fixedSize()
@@ -106,7 +107,7 @@ private struct GroupChatSidebarRow: View {
                 }
                 .frame(height: 24)
                 Text(store.lastMessages[room.id]?.text ?? room.members.map { "@\($0.handle)" }.joined(separator: " "))
-                    .font(.subheadline)
+                    .dockFont(.body)
                     .foregroundStyle(style.metadataText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -256,7 +257,7 @@ struct NewGroupChatSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             labeledField("Name") { DockTextField("Group name", text: $name).textFieldStyle(.dockGlass) }
             Text("Members (\(GroupChatStore.memberLimits.lowerBound)–\(GroupChatStore.memberLimits.upperBound))")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
@@ -300,9 +301,9 @@ struct NewGroupChatSheet: View {
             }
             DockTextField("Paste the invite from the other Mac", text: seat.reply).textFieldStyle(.dockGlass)
             if !seat.wrappedValue.reply.isEmpty, seat.wrappedValue.invite == nil {
-                Text("That invite isn't for this seat.").font(.caption).foregroundStyle(Color.dockWarning)
+                Text("That invite isn't for this seat.").dockFont(.metadata).foregroundStyle(Color.dockWarning)
             } else if let invite = seat.wrappedValue.invite {
-                Text("\(invite.displayName) joins as @\(invite.handle)").font(.caption).foregroundStyle(Color.dockMetadataText)
+                Text("\(invite.displayName) joins as @\(invite.handle)").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             }
         }
         .padding(10)
@@ -325,7 +326,7 @@ private struct ShareBotForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Paste the request copied on the Mac that's creating the group, pick a bot to share, then send the invite back.")
-                .font(.caption)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
             DockTextField("Request code", text: $requestCode).textFieldStyle(.dockGlass)
@@ -341,7 +342,7 @@ private struct ShareBotForm: View {
             .disabled(request == nil || botID == nil || isWorking)
             if let invite {
                 HStack {
-                    Text(invite).font(.system(.caption, design: .monospaced)).lineLimit(2).truncationMode(.middle)
+                    Text(invite).dockFont(.machineMetadata).lineLimit(2).truncationMode(.middle)
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(invite, forType: .string) } label: {
                         DockIconLabel("Copy invite", icon: .copy)
                     }
@@ -419,7 +420,7 @@ struct GroupChatView: View {
             transcript
             if let message = store.errorMessage {
                 Text(message)
-                    .font(.caption)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockDestructive)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
@@ -482,7 +483,7 @@ struct GroupChatView: View {
                 HStack(spacing: 8) {
                     memberAvatars
                     Text(headerSubtitle)
-                        .dockFont(size: 11)
+                        .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                     if isWorking { ThinkingDots() }
@@ -494,7 +495,7 @@ struct GroupChatView: View {
             }
             Button { Task { await store.poll(roomID) } } label: {
                 DockIcon(.arrowsClockwise)
-                    .dockFont(size: 14, weight: .medium)
+                    .dockFont(.conversation, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
             }
@@ -506,7 +507,7 @@ struct GroupChatView: View {
                 Button("Disband…", role: .destructive) { isConfirmingDisband = true }
             } label: {
                 DockIcon(.dotsThree)
-                    .dockFont(size: 16, weight: .bold)
+                    .dockFont(.pageTitle, weight: .bold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
             }
@@ -536,7 +537,7 @@ struct GroupChatView: View {
                         BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 22, orbits: thinking.contains(member.memberID))
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
@@ -554,7 +555,7 @@ struct GroupChatView: View {
                 ForEach(threads, id: \.id) { item in
                     Button { thread = item.id } label: {
                         Text(item.title)
-                            .dockFont(size: 12, weight: item.id == thread ? .semibold : .regular)
+                            .dockFont(.body, weight: item.id == thread ? .semibold : .regular)
                             .lineLimit(1)
                             .padding(.horizontal, 10)
                             .frame(height: 24)
@@ -586,7 +587,7 @@ struct GroupChatView: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if events.isEmpty {
                         Text("Mention a member with @handle, or address everyone with @all. With no mention, every member may reply.")
-                            .font(.callout)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
@@ -594,7 +595,7 @@ struct GroupChatView: View {
                     if (store.earliestLoadedSeq[roomID] ?? 0) > 0 {
                         Button("Load earlier messages") { Task { await store.loadEarlier(roomID) } }
                             .buttonStyle(.dockCompact)
-                            .font(.caption)
+                            .dockFont(.metadata)
                             .foregroundStyle(Color.dockAccent)
                             .frame(maxWidth: .infinity)
                     }
@@ -605,7 +606,7 @@ struct GroupChatView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 8) {
                                     Text(member.displayName)
-                                        .dockFont(size: 12, weight: .semibold)
+                                        .dockFont(.body, weight: .semibold)
                                         .foregroundStyle(Color.dockSecondaryText)
                                     ThinkingDots()
                                 }
@@ -650,7 +651,7 @@ struct GroupChatView: View {
                 avatar(for: member)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(member?.displayName ?? memberID)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                     let tools = store.tools(for: event, in: roomID)
                     if !tools.isEmpty {
@@ -665,11 +666,11 @@ struct GroupChatView: View {
             }
         case .failed(let memberID):
             Label("\(room?.member(memberID)?.displayName ?? "A member"): \(event.text)", systemImage: "exclamationmark.triangle")
-                .font(.caption)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockWarning)
         case .notice:
             Text(event.text)
-                .font(.caption)
+                .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .frame(maxWidth: .infinity)
         case .started:
@@ -729,7 +730,7 @@ struct GroupChatView: View {
     private func banner<Actions: View>(icon: Ph, text: String, @ViewBuilder actions: () -> Actions) -> some View {
         HStack(spacing: 10) {
             DockIcon(icon).foregroundStyle(Color.dockWarning)
-            Text(text).font(.caption)
+            Text(text).dockFont(.metadata)
             Spacer()
             actions()
         }
@@ -751,9 +752,9 @@ struct GroupChatView: View {
     private func approvalBanner(_ approval: GroupRoomApproval) -> some View {
         HStack(spacing: 10) {
             Text("\(room?.member(approval.memberID)?.displayName ?? approval.memberID) wants to run:")
-                .font(.caption.weight(.semibold))
+                .dockFont(.metadata, weight: .semibold)
             Text(approval.summary)
-                .font(.system(.caption, design: .monospaced))
+                .dockFont(.machineMetadata)
                 .lineLimit(2)
             Spacer()
             Button("Deny") { Task { await store.respond(to: approval, in: roomID, approve: false) } }
@@ -841,7 +842,7 @@ struct GroupChatView: View {
                     .frame(height: max(1, editorHeight - 4))
                     if draft.isEmpty {
                         Text("Message the group — @ to mention a member")
-                            .dockFont(size: 14, design: DockThemeStyle.current.fontDesign)
+                            .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
                             .foregroundStyle(Color.dockSecondaryText)
                             .padding(.leading, 16)
                             .allowsHitTesting(false)
@@ -889,11 +890,11 @@ struct GroupChatView: View {
                                 .frame(width: 32, height: 32)
                             if isWorking && !canSend {
                                 DockIcon(.stop, weight: .fill)
-                                    .dockFont(size: 10, weight: .bold)
+                                    .dockFont(.compactStatus, weight: .bold)
                                     .foregroundStyle(Color.dockDestructive)
                             } else {
                                 DockIcon(.arrowUp)
-                                    .dockFont(size: 12, weight: .semibold)
+                                    .dockFont(.body, weight: .semibold)
                                     .foregroundStyle(canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
                             }
                         }

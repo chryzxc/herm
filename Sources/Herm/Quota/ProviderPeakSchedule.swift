@@ -197,7 +197,7 @@ struct PeakNoticeBadge: View {
                 HStack(spacing: 5) {
                     DockIcon(notice.isPeak ? .warning : .checkCircle, size: compact ? 10 : 12, color: color)
                     Text(notice.text)
-                        .font(compact ? .system(size: 10, weight: .medium) : DockTypography.control)
+                        .dockFont(size: compact ? 10 : 12, weight: .medium)
                         .foregroundStyle(color)
                         .lineLimit(1)
                 }

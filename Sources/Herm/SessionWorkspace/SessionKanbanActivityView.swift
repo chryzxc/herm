@@ -73,12 +73,12 @@ struct SessionKanbanActivityView: View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("SESSION ACTIVITY")
             Text(sessionID == nil ? "SESSION ATTRIBUTION UNAVAILABLE" : "KANBAN CAPABILITY UNAVAILABLE")
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockWarning)
             Text(sessionID == nil
                  ? "This session has no durable attribution ID, so Bot work cannot be matched safely."
                  : "Hermes did not advertise the Kanban capability for this session.")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -90,14 +90,6 @@ struct SessionKanbanActivityView: View {
     @ViewBuilder
     private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SessionBotActivityView(
-                model: model,
-                botMode: botMode,
-                sessionID: sessionID,
-                kanbanTasks: control.sessionKanbanTasks,
-                embedded: true
-            )
-
             if !botWorkRows.isEmpty {
                 botWorkSection
             }
@@ -108,26 +100,26 @@ struct SessionKanbanActivityView: View {
                         ProgressView().controlSize(.small).tint(Color.dockAccent)
                         Text("LOADING SESSION KANBAN")
                     }
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else if refreshState?.error != nil {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("SESSION KANBAN UNAVAILABLE")
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockWarning)
                         Text("The attribution query did not complete successfully. Retry before treating this session as empty.")
-                            .dockFont(size: 10)
+                            .dockFont(.compactStatus, weight: .regular)
                             .foregroundStyle(Color.dockSecondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("NO SESSION-ATTRIBUTED CARDS")
-                            .dockFont(size: 11, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockMetadataText)
                         Text("Global or manually created cards remain on the full board and are not shown here.")
-                            .dockFont(size: 10)
+                            .dockFont(.compactStatus, weight: .regular)
                             .foregroundStyle(Color.dockSecondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -149,7 +141,7 @@ struct SessionKanbanActivityView: View {
                         }
                     }
                     .buttonStyle(.dockHover)
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
                     if showsCompleted {
                         ForEach(snapshot.completedRows) { row in
@@ -170,7 +162,7 @@ struct SessionKanbanActivityView: View {
                     }
                     .buttonStyle(.dockCompact)
                 }
-                .dockFont(size: 10)
+                .dockFont(.compactStatus, weight: .regular)
                 .foregroundStyle(Color.dockWarning)
             }
 
@@ -185,7 +177,7 @@ struct SessionKanbanActivityView: View {
                     }
                 }
                 .buttonStyle(.dockHover)
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(Color.dockAccent)
             }
         }
@@ -200,7 +192,7 @@ struct SessionKanbanActivityView: View {
             Spacer(minLength: 0)
             if snapshot.activeCount > 0 {
                 Text("\(snapshot.activeCount) ACTIVE")
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
             }
             Button {
@@ -218,7 +210,7 @@ struct SessionKanbanActivityView: View {
         VStack(alignment: .leading, spacing: 6) {
             if sessionActivityBots.isEmpty {
                 Text("No activity yet.")
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
             } else {
                 ForEach(sessionActivityBots) { bot in
@@ -227,21 +219,21 @@ struct SessionKanbanActivityView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
                                 Text(bot.name)
-                                    .dockFont(size: 12, weight: .semibold)
+                                    .dockFont(.body, weight: .semibold)
                                     .foregroundStyle(Color.dockPrimaryText)
                                 Spacer(minLength: 4)
                                 if bot.isRecentlyActive {
                                     Text("ACTIVE NOW")
-                                        .dockFont(size: 10, weight: .semibold, design: .monospaced)
+                                        .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                                         .foregroundStyle(Color.dockSuccess)
                                 }
                             }
                             Text(BotRosterPresentation.role(for: bot))
-                                .dockFont(size: 11, weight: .medium)
+                                .dockFont(.metadata, weight: .medium)
                                 .foregroundStyle(Color.dockMetadataText)
                                 .lineLimit(1)
                             Text(activityText(for: bot))
-                                .dockFont(size: 12)
+                                .dockFont(.body)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .lineLimit(2)
                         }
@@ -265,14 +257,14 @@ struct SessionKanbanActivityView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(statusColor(row.status)).frame(width: 7, height: 7).padding(.top, 4)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(row.botName).dockFont(size: 11, weight: .semibold).foregroundStyle(Color.dockAccent)
-                            Text(row.title).dockFont(size: 12, weight: .semibold).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
+                            Text(row.botName).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
+                            Text(row.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
                             Text("\(row.status.label) · KANBAN TASK \(row.taskID)")
-                                .dockFont(size: 10, weight: .medium, design: .monospaced)
+                                .dockFont(.compactStatus, weight: .medium, design: .monospaced)
                                 .foregroundStyle(statusColor(row.status))
                         }
                         Spacer(minLength: 0)
-                        DockIcon(.caretRight).dockFont(size: 10, weight: .semibold).foregroundStyle(Color.dockMetadataText)
+                        DockIcon(.caretRight).dockFont(.compactStatus, weight: .semibold).foregroundStyle(Color.dockMetadataText)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 8)
@@ -301,7 +293,7 @@ struct SessionKanbanActivityView: View {
                     .padding(.top, 4)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(row.title)
-                        .dockFont(size: 12, weight: .semibold)
+                        .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -310,17 +302,17 @@ struct SessionKanbanActivityView: View {
                         if let assignee = row.assignee { Text("· \(assignee)") }
                         if let boardSlug = row.boardSlug { Text("· \(boardSlug)") }
                     }
-                    .dockFont(size: 10, weight: .medium)
+                    .dockFont(.compactStatus, weight: .medium)
                     .foregroundStyle(statusColor(row.status))
                     if let detail = row.detail, row.status == .blocked {
                         Text(detail)
-                            .dockFont(size: 10)
+                            .dockFont(.compactStatus, weight: .regular)
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(2)
                     }
                 }
                 DockIcon(.caretRight)
-                    .dockFont(size: 10, weight: .semibold)
+                    .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
                     .padding(.top, 3)
             }
@@ -349,7 +341,7 @@ struct SessionKanbanActivityView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .dockFont(size: 11, weight: .semibold)
+            .dockFont(.metadata, weight: .semibold)
             .tracking(0.8)
             .foregroundStyle(Color.dockSecondaryText)
     }

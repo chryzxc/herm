@@ -31,19 +31,19 @@ struct ProjectFolderSheet: View {
         Group {
             if let folder {
                 HStack(spacing: 10) {
-                    Image(systemName: "folder.fill").font(.title2).foregroundStyle(Color.dockAccent)
+                    Image(systemName: "folder.fill").dockFont(size: 17).foregroundStyle(Color.dockAccent)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(folder.lastPathComponent).font(.callout.weight(.medium)).foregroundStyle(Color.dockPrimaryText)
+                        Text(folder.lastPathComponent).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
                         Text((folder.path as NSString).abbreviatingWithTildeInPath)
-                            .font(.caption).foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(.middle)
+                            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer(minLength: 8)
                     Button("Change…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
                 }
             } else {
                 VStack(spacing: 6) {
-                    Image(systemName: "arrow.down.to.line").font(.title2).foregroundStyle(isDropTargeted ? Color.dockAccent : Color.dockMetadataText)
-                    Text("Drop a folder here").font(.callout.weight(.medium)).foregroundStyle(Color.dockPrimaryText)
+                    Image(systemName: "arrow.down.to.line").dockFont(size: 17).foregroundStyle(isDropTargeted ? Color.dockAccent : Color.dockMetadataText)
+                    Text("Drop a folder here").dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
                     Button("Choose…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
                 }
                 .frame(maxWidth: .infinity)

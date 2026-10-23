@@ -22,6 +22,7 @@ struct AnnotationHighlight: Equatable {
 /// blocks, ends reliably on mouse-up, and maps to an on-screen rect. Notes are
 /// drawn as temporary highlights and edited in a popover anchored to the text.
 struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let text: String
     let isMarkdown: Bool
     let highlights: [AnnotationHighlight]
@@ -54,11 +55,12 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
         let revision = DockThemeRuntime.revision
-        if coordinator.renderedText != text || coordinator.renderedTheme != revision || coordinator.renderedMarkdown != isMarkdown {
+        if coordinator.renderedText != text || coordinator.renderedTheme != revision || coordinator.renderedMarkdown != isMarkdown || coordinator.renderedScale != workspaceScale {
             coordinator.renderedText = text
             coordinator.renderedTheme = revision
             coordinator.renderedMarkdown = isMarkdown
-            textView.textStorage?.setAttributedString(Self.attributed(text, isMarkdown: isMarkdown))
+            coordinator.renderedScale = workspaceScale
+            textView.textStorage?.setAttributedString(Self.attributed(text, isMarkdown: isMarkdown, scale: workspaceScale))
             coordinator.forceHighlightRefresh()
             let rendered = textView.string
             DispatchQueue.main.async { onRendered(rendered) }
@@ -71,11 +73,11 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         coordinator.closePopover()
     }
 
-    private static func attributed(_ text: String, isMarkdown: Bool) -> NSAttributedString {
-        let palette = NativeMarkdownPalette()
+    private static func attributed(_ text: String, isMarkdown: Bool, scale: CGFloat) -> NSAttributedString {
+        let palette = NativeMarkdownPalette(bodySize: DockTypography.size(.conversation, scale: scale))
         guard isMarkdown else {
             return NSAttributedString(string: text, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular),
+                .font: NSFont.monospacedSystemFont(ofSize: DockWorkspaceScale.points(11.5, scale: scale), weight: .regular),
                 .foregroundColor: palette.primary,
             ])
         }
@@ -97,6 +99,7 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         var renderedText: String?
         var renderedTheme: Int?
         var renderedMarkdown: Bool?
+        var renderedScale: CGFloat?
         private(set) var appliedHighlights: [AnnotationHighlight] = []
         private var popover: NSPopover?
         private var hosting: NSHostingController<AnyView>?

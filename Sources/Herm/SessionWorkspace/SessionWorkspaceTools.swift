@@ -91,6 +91,22 @@ struct SessionTerminalView: View {
                         ForEach(terminalTabs.sessions) { session in
                             terminalTab(session).id(session.id)
                         }
+                        Button {
+                            terminalTabs.add(directory: directory)
+                        } label: {
+                            DockIcon(.plus)
+                                .dockFont(.pageTitle, weight: .light)
+                                .foregroundStyle(isHoveringNewShell ? Color.dockPrimaryText : Color.dockSecondaryText)
+                                .frame(width: 32, height: 32)
+                                .background(isHoveringNewShell ? Color.dockSurface2 : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
+                                .padding(.horizontal, 6)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { isHoveringNewShell = $0 }
+                        .animation(.dockEase(duration: 0.12), value: isHoveringNewShell)
+                        .help("New terminal session").accessibilityLabel("New terminal session")
                     }
                 }
                 .onAppear { proxy.scrollTo(terminalTabs.selectedID, anchor: .trailing) }
@@ -99,22 +115,18 @@ struct SessionTerminalView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                terminalTabs.add(directory: directory)
+            DockMenu {
+                Button("Split horizontally") { split(axis: 0) }.disabled(terminalTabs.splitIDs.count >= 4)
+                Button("Split vertically") { split(axis: 1) }.disabled(terminalTabs.splitIDs.count >= 4)
+                Button("Show selected shell only") { terminalTabs.splitIDs = [] }
+                Button("Clear output") { terminal.clear() }
+                Button("Interrupt", action: terminal.interrupt)
+                    .disabled(!canInterrupt)
+                Button("Restart shell") { terminal.start(directory: directory) }
             } label: {
-                DockIcon(.plus)
-                    .dockFont(size: 16, weight: .light)
-                    .foregroundStyle(isHoveringNewShell ? Color.dockPrimaryText : Color.dockSecondaryText)
-                    .frame(width: 32, height: 32)
-                    .background(isHoveringNewShell ? Color.dockSurface2 : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
-                    .padding(.horizontal, 6)
-                    .contentShape(Rectangle())
+                DockIcon(.dotsThree).frame(width: 32, height: 32)
             }
-            .buttonStyle(.plain)
-            .onHover { isHoveringNewShell = $0 }
-            .animation(.dockEase(duration: 0.12), value: isHoveringNewShell)
-            .help("New terminal session").accessibilityLabel("New terminal session")
+            .accessibilityLabel("Terminal options")
         }
         .padding(.horizontal, 0)
         .padding(.top, 8)
@@ -125,9 +137,9 @@ struct SessionTerminalView: View {
     private func terminalTab(_ session: LocalTerminalSession) -> some View {
         HStack(spacing: 7) {
             DockIcon(.terminal)
-                .dockFont(size: 10, weight: .semibold)
+                .dockFont(.compactStatus, weight: .semibold)
             Text("Shell \((terminalTabs.sessions.firstIndex(where: { $0.id == session.id }) ?? 0) + 1)")
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .lineLimit(1)
             Button {
                 terminalTabs.selectedID = session.id
@@ -155,12 +167,12 @@ struct SessionTerminalView: View {
     private var terminalControls: some View {
         HStack(alignment: .center, spacing: 10) {
             Text(URL(fileURLWithPath: directory).lastPathComponent)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
                 .help(directory)
             if case .failed(let error) = terminal.state {
-                Text(error).dockFont(size: 12).foregroundStyle(Color.dockWarning)
+                Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
                 Button("Retry") { terminal.start(directory: directory) }.buttonStyle(.dockCompact)
             }
             if terminal.state == .closed || terminal.state == .exited {
@@ -187,7 +199,7 @@ struct SessionTerminalView: View {
                     }
                 } label: {
                     Label("Run check", icon: .sealCheck)
-                        .dockFont(size: 11, weight: .semibold)
+                        .dockFont(.metadata, weight: .semibold)
                 }
                 .foregroundStyle(Color.dockAccent)
                 .help("Run verified repository check")
@@ -197,18 +209,6 @@ struct SessionTerminalView: View {
             }
 
             LocalServersMenu(processIDs: terminalTabs.sessions.map(\.shellProcessID), active: discoveryActive)
-            DockMenu {
-                Button("Split horizontally") { split(axis: 0) }.disabled(terminalTabs.splitIDs.count >= 4)
-                Button("Split vertically") { split(axis: 1) }.disabled(terminalTabs.splitIDs.count >= 4)
-                Button("Show selected shell only") { terminalTabs.splitIDs = [] }
-                Button("Clear output") { terminal.clear() }
-                Button("Interrupt", action: terminal.interrupt)
-                    .disabled(!canInterrupt)
-                Button("Restart shell") { terminal.start(directory: directory) }
-            } label: {
-                DockIcon(.dotsThree).frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("Terminal options")
 
         }
         .padding(.horizontal, 14)
@@ -219,7 +219,7 @@ struct SessionTerminalView: View {
     private func verificationRunBanner(_ run: VerificationRun) -> some View {
         HStack(spacing: 8) {
             Text(run.isComplete ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")" : "Running \(run.command)…")
-                .dockFont(size: 10, design: .monospaced)
+                .dockFont(.compactStatus, weight: .regular, design: .monospaced)
                 .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
                 .lineLimit(1)
             if let recipe = recipes.first(where: { $0.id == run.recipeID }), run.isComplete {

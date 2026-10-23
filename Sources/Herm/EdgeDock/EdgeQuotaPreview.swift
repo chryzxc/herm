@@ -159,7 +159,10 @@ struct EdgeQuotaPreview: View {
             }
             Spacer(minLength: 0)
             if let sessionActions { Button("Session…", action: sessionActions).buttonStyle(.dockCompact).accessibilityLabel("Capacity and actions for the selected quick destination") }
-            EdgePreviewFooterButton(title: "Open Quota", icon: .arrowRight, action: openQuota)
+            Button(action: openQuota) {
+                DockIconLabel("Open Quota", icon: .arrowRight)
+            }
+            .buttonStyle(.dockCompact)
         }
         .lineLimit(1)
         .padding(.vertical, 6)

@@ -70,7 +70,7 @@ struct ConversationPromptRows: View {
             VStack(alignment: .leading, spacing: 10) {
                 ScrollView(.vertical) {
                     Text(approval.detail)
-                        .font(approval.detailIsCommand ? .system(size: 12, design: .monospaced) : .system(size: 12))
+                        .dockFont(.body, weight: .regular, design: approval.detailIsCommand ? .monospaced : .default)
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
                         .lineSpacing(2)
@@ -136,7 +136,7 @@ struct ConversationPromptRows: View {
                         ? "Hermes' safety check blocked this. You can override it once."
                         : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : "Hermes asks again next time."
                 )
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -159,7 +159,7 @@ struct ConversationPromptRows: View {
             VStack(alignment: .leading, spacing: 8) {
                 if !choices.isEmpty {
                     Text(isMultiSelect ? "Choose one or more responses" : "Choose a response")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                     VStack(spacing: 6) {
                         ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
@@ -182,7 +182,7 @@ struct ConversationPromptRows: View {
                                             color: isSelected ? .dockAccent : .dockMetadataText)
                                     }
                                     Text(choice)
-                                        .dockFont(size: 12, weight: isSelected ? .semibold : .regular)
+                                        .dockFont(.body, weight: isSelected ? .semibold : .regular)
                                         .multilineTextAlignment(.leading)
                                         .fixedSize(horizontal: false, vertical: true)
                                     Spacer(minLength: 0)
@@ -230,7 +230,7 @@ struct ConversationPromptRows: View {
                 Text(
                     choices.isEmpty ? "Type your answer in the message box below." : "Or type a different answer below."
                 )
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -252,16 +252,16 @@ struct ConversationPromptRows: View {
             VStack(alignment: .leading, spacing: 8) {
                 if prompt.asksForLogin {
                     Text("Username or email")
-                        .dockFont(size: 12, weight: .medium)
+                        .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                     DockTextField("Username or email", text: $valuePromptIdentifier)
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .textFieldStyle(.dockGlass)
                         .textContentType(.username)
                         .disabled(isPending)
                 }
                 Text(prompt.fieldLabel)
-                    .dockFont(size: 12, weight: .medium)
+                    .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
                 Group {
                     if prompt.isSecret {
@@ -271,7 +271,7 @@ struct ConversationPromptRows: View {
                             .textContentType(.oneTimeCode)
                     }
                 }
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .textFieldStyle(.dockGlass)
                 .disabled(isPending)
                 .onSubmit(submit)
@@ -296,7 +296,7 @@ struct ConversationPromptRows: View {
                 .disabled(isPending)
 
                 Text(state.promptError ?? "Sent only to your local Hermes. Herm does not store it.")
-                    .dockFont(size: 12)
+                    .dockFont(.body)
                     .foregroundStyle(state.promptError == nil ? Color.dockMetadataText : Color.dockDestructive)
                     .fixedSize(horizontal: false, vertical: true)
             }

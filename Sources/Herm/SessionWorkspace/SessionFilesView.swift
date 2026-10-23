@@ -13,7 +13,6 @@ struct SessionFilesView: View {
     @Environment(\.chatContextRouter) private var contextRouter
     @State private var entries: [ProjectFileEntry] = []
     @State private var gitStatus: [String: RepositoryFileStatus] = [:]
-    @State private var branch: String?
     @State private var expandedDirectories = Set<String>()
     @State private var document: RepositoryFileDocument?
     @State private var isLoading = false
@@ -92,7 +91,7 @@ struct SessionFilesView: View {
             filterField
             if let error {
                 DockIconLabel(error, icon: .warning)
-                    .dockFont(size: 11)
+                    .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .lineLimit(2)
                     .padding(.horizontal, 8)
@@ -102,14 +101,14 @@ struct SessionFilesView: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if isLoading, entries.isEmpty {
                         HStack(spacing: 7) { ProgressView().controlSize(.small); Text("Loading files…") }
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
                             .padding(12)
                     } else if entries.isEmpty {
                         empty(.folder, "No files to show", showsGeneratedFiles ? "The selected project folder has no readable files." : "Generated folders are hidden. Use Explorer options to show them.")
                     } else if visibleEntries.isEmpty {
                         Text("No files match “\(filterText)”")
-                            .dockFont(size: 12)
+                            .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
                             .padding(12)
                     } else {
@@ -141,7 +140,7 @@ struct SessionFilesView: View {
                 .frame(width: 12)
                 if entry.isDirectory {
                     DockIcon(isExpanded ? .folderOpen : .folderSimple, weight: .fill)
-                        .dockFont(size: 13)
+                        .dockFont(.navigation)
                         .foregroundStyle(Color.dockFolder.opacity(0.85))
                         .frame(width: 16)
                 } else {
@@ -161,7 +160,7 @@ struct SessionFilesView: View {
                         Circle().fill(Self.color(for: status)).frame(width: 5, height: 5).padding(.trailing, 3)
                     } else {
                         Text(Self.letter(for: status))
-                            .dockFont(size: 11, weight: .semibold, design: .monospaced)
+                            .dockFont(.metadata, weight: .semibold, design: .monospaced)
                             .foregroundStyle(Self.color(for: status))
                     }
                 }
@@ -231,19 +230,11 @@ struct SessionFilesView: View {
     private var explorerHeader: some View {
         HStack(spacing: 4) {
             Text(projectName.uppercased())
-                .dockFont(size: 11, weight: .bold)
+                .dockFont(.metadata, weight: .bold)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if let branch {
-                DockIconLabel(branch, icon: .gitBranch)
-                    .dockFont(size: 11)
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.leading, 4)
-            }
             Spacer(minLength: 4)
             ExplorerToolbarButton(icon: .arrowsInLineVertical, help: "Collapse all folders") { expandedDirectories.removeAll() }
                 .disabled(expandedDirectories.isEmpty)
@@ -279,19 +270,19 @@ struct SessionFilesView: View {
     private var filterField: some View {
         HStack(spacing: 7) {
             DockIcon(.magnifyingGlass)
-                .dockFont(size: 12, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
             DockTextField("Search files by name", text: $filterText)
                 .textFieldStyle(.plain)
-                .dockFont(size: 12)
+                .dockFont(.body)
                 .foregroundStyle(Color.dockPrimaryText)
                 .onSubmit { if let first = visibleEntries.first(where: { !$0.isDirectory }) { open(first) } }
             if !filterText.isEmpty {
                 Text("\(visibleEntries.filter { !$0.isDirectory }.count)")
-                    .dockFont(size: 11, design: .monospaced)
+                    .dockFont(.metadata, weight: .regular, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
                 Button { filterText = "" } label: {
-                    DockIcon(.xCircle, weight: .fill).dockFont(size: 12)
+                    DockIcon(.xCircle, weight: .fill).dockFont(.body)
                 }
                 .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockMetadataText)
@@ -474,20 +465,18 @@ struct SessionFilesView: View {
     private func reloadGitStatus() async {
         guard let projectPath, let root = RepositoryService.repositoryRoot(projectPath) else {
             gitStatus = [:]
-            branch = nil
             return
         }
         let snapshot = await RepositoryService.changeSnapshot(path: projectPath)
         let project = URL(fileURLWithPath: projectPath).standardizedFileURL.path
         let prefix = project.hasPrefix(root + "/") ? String(project.dropFirst(root.count + 1)) + "/" : ""
         gitStatus = Self.projectRelativeStatus(snapshot.files, projectPrefix: prefix)
-        branch = snapshot.branch
     }
 
     private func empty(_ icon: Ph, _ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            DockIconLabel(title, icon: icon).dockFont(size: 12, weight: .semibold)
-            Text(detail).dockFont(size: 12).foregroundStyle(Color.dockMetadataText)
+            DockIconLabel(title, icon: icon).dockFont(.body, weight: .semibold)
+            Text(detail).dockFont(.body).foregroundStyle(Color.dockMetadataText)
         }
         .foregroundStyle(Color.dockPrimaryText)
         .padding(12)
