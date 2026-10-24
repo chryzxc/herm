@@ -896,12 +896,13 @@ extension ControlCenterModel {
 
     func createKanbanTask(title: String, body: String) async -> Bool {
         guard let cli, capabilityAvailable("kanban.create") else {
-            lastError = "Kanban is unavailable because Hermes Control is not connected."
+            reportActionError(
+                "Could not create task", message: "Kanban is unavailable because Hermes Control is not connected.")
             return false
         }
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanTitle.isEmpty else {
-            lastError = "Enter a Kanban task title before creating it."
+            reportActionError("Could not create task", message: "Enter a Kanban task title before creating it.")
             return false
         }
         let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -915,9 +916,11 @@ extension ControlCenterModel {
                 body: cleanBody.isEmpty ? nil : cleanBody
             )
             guard result.succeeded else {
-                lastError =
-                    Self.safeUserDiagnostic(result.stderr).isEmpty
-                    ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr)
+                reportActionError(
+                    "Could not create task",
+                    message:
+                        Self.safeUserDiagnostic(result.stderr).isEmpty
+                        ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr))
                 return false
             }
             if let sessionID = dockModel?.kanbanSessionID, !sessionID.isEmpty,
@@ -930,7 +933,9 @@ extension ControlCenterModel {
             refreshGlobalKanban()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not create task",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -971,27 +976,33 @@ extension ControlCenterModel {
                         boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
                 }
                 guard result.succeeded else {
-                    lastError =
-                        Self.safeUserDiagnostic(result.stderr).isEmpty
-                        ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
+                    reportActionError(
+                        "Could not update task",
+                        message:
+                            Self.safeUserDiagnostic(result.stderr).isEmpty
+                            ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr))
                     return
                 }
                 refreshKanban()
                 refreshGlobalKanban()
             } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                reportActionError(
+                    "Could not update task",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             }
         }
     }
 
     func mutateKanban(_ request: KanbanMutationRequest) {
         guard let cli, capabilityAvailable(request.kind.capabilityID) else {
-            lastError = "\(request.kind.title.capitalized) is unavailable through the installed Hermes CLI."
+            reportActionError(
+                "Could not update task",
+                message: "\(request.kind.title.capitalized) is unavailable through the installed Hermes CLI.")
             return
         }
         let value = request.value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
-            lastError = "Enter a value before updating this Kanban task."
+            reportActionError("Could not update task", message: "Enter a value before updating this Kanban task.")
             return
         }
         let actionID = kanbanActionID(request.kind, task: request.task)
@@ -1027,16 +1038,20 @@ extension ControlCenterModel {
                         reason: value)
                 }
                 guard result.succeeded else {
-                    lastError =
-                        Self.safeUserDiagnostic(result.stderr).isEmpty
-                        ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
+                    reportActionError(
+                        "Could not update task",
+                        message:
+                            Self.safeUserDiagnostic(result.stderr).isEmpty
+                            ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr))
                     return
                 }
                 refreshKanban()
                 loadKanbanTask(request.task)
                 refreshGlobalKanban()
             } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                reportActionError(
+                    "Could not update task",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             }
         }
     }
@@ -1060,7 +1075,8 @@ extension ControlCenterModel {
     /// Hermes accepts the transition, then refresh the authoritative board.
     func moveKanbanTask(_ task: KanbanTaskSummary, to lane: KanbanLane) {
         guard let cli, canMoveKanbanTasks else {
-            lastError = "Moving Kanban tasks is unavailable through the installed Hermes."
+            reportActionError(
+                "Could not move task", message: "Moving Kanban tasks is unavailable through the installed Hermes.")
             return
         }
         guard case .move = KanbanBoardPresentation.dropOutcome(taskStatus: task.status, target: lane) else { return }
@@ -1072,7 +1088,9 @@ extension ControlCenterModel {
                 _ = try await cli.kanbanMove(
                     boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id, status: lane.status)
             } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                reportActionError(
+                    "Could not move task",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             }
             refreshKanban()
             refreshGlobalKanban()
@@ -1084,7 +1102,9 @@ extension ControlCenterModel {
     /// `nil` unassigns.
     func assignKanbanTask(_ task: KanbanTaskSummary, to profile: String?) {
         guard let cli, capabilityAvailable(HermesFeatureIDs.ID.kanbanReassign.rawValue) else {
-            lastError = "Assigning Kanban tasks is unavailable through the installed Hermes CLI."
+            reportActionError(
+                "Could not assign task",
+                message: "Assigning Kanban tasks is unavailable through the installed Hermes CLI.")
             return
         }
         guard task.assignee != profile else { return }
@@ -1103,10 +1123,14 @@ extension ControlCenterModel {
                 )
                 if !result.succeeded {
                     let message = Self.safeUserDiagnostic(result.stderr)
-                    lastError = message.isEmpty ? "Hermes Kanban could not assign the task." : message
+                    reportActionError(
+                        "Could not assign task",
+                        message: message.isEmpty ? "Hermes Kanban could not assign the task." : message)
                 }
             } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                reportActionError(
+                    "Could not assign task",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             }
             refreshKanban()
             refreshGlobalKanban()

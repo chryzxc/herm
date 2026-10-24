@@ -4,7 +4,7 @@ struct PullRequestFloatingChatView: View {
     @ObservedObject var chat: PullRequestChatModel
     @ObservedObject var runtime: DockModel
     let record: PullRequestRecord
-    @State var expanded = false
+    @Binding var expanded: Bool
 
     var body: some View {
         Group {

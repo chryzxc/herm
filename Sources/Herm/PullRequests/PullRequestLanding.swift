@@ -456,6 +456,7 @@ struct PullRequestLandingView: View {
         } catch {
             result = nil
             self.error = error.localizedDescription
+            DockActionErrorCenter.shared.report("Pull request action failed", error: error)
             if toolbar { showsRequirements = true }
             onChanged()
         }

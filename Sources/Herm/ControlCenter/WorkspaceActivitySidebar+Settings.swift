@@ -806,7 +806,10 @@ extension WorkspaceActivitySidebar {
                                         } else {
                                             try SMAppService.mainApp.unregister()
                                         }
-                                    } catch {}
+                                    } catch {
+                                        DockActionErrorCenter.shared.report(
+                                            "Could not change Open at login", error: error)
+                                    }
                                     opensAtLogin = SMAppService.mainApp.status == .enabled
                                 }
                             ))
@@ -865,7 +868,7 @@ extension WorkspaceActivitySidebar {
         SettingsSection(title: "Notifications", subtitle: "", tint: .dockAccent) {
             VStack(alignment: .leading, spacing: 0) {
                 SettingsPreferenceRow(
-                    title: "Completion alerts", detail: "Notify when Hermes finishes a request while Herm is hidden."
+                    title: "Completion alerts", detail: "Notify when a request finishes while Herm is hidden."
                 ) {
                     settingsSwitch(
                         isOn: Binding(

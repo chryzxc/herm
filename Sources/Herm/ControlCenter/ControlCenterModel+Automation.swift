@@ -59,7 +59,10 @@ extension ControlCenterModel {
             routineActionErrors[reference.id] =
                 "Review recorded. Starting another run remains a separate confirmed action."
             if reference.profileID == routineProfileID { cronJobs = jobs }
-        } catch { routineActionErrors[reference.id] = Self.safeUserDiagnostic(error.localizedDescription) }
+        } catch {
+            routineActionErrors[reference.id] = Self.safeUserDiagnostic(error.localizedDescription)
+            DockActionErrorCenter.shared.report("Could not review routine", error: error)
+        }
     }
 
     func recoverRoutine(_ reference: RoutineReference, run: Bool, paused: Bool = false) async {
@@ -100,6 +103,8 @@ extension ControlCenterModel {
                 run
                 ? "The new run could not be confirmed. Review Automation before triggering again."
                 : Self.safeUserDiagnostic(error.localizedDescription)
+            DockActionErrorCenter.shared.report(
+                "Routine action failed", message: routineActionErrors[reference.id] ?? "")
         }
     }
 
@@ -116,7 +121,9 @@ extension ControlCenterModel {
                 try? await Task.sleep(for: .milliseconds(600))
                 refresh()
             } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                reportActionError(
+                    "Could not complete reminder",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             }
         }
     }
@@ -144,7 +151,7 @@ extension ControlCenterModel {
             profileID: profileForRoutine(job), job: job,
             run: cronRunsByJob[job.id]?.first ?? cronRuns.first { $0.jobID == job.id })
         guard canTriggerRoutine(reference) else {
-            lastError = "Run-now is unavailable or a run needs review."
+            reportActionError("Could not run automation", message: "Run-now is unavailable or a run needs review.")
             return
         }
         Task { await recoverRoutine(reference, run: true) }
@@ -226,7 +233,9 @@ extension ControlCenterModel {
         -> Bool
     {
         guard cronControlAvailable else {
-            lastError = "Automation control is unavailable through this Hermes gateway."
+            reportActionError(
+                "Could not create automation", message: "Automation control is unavailable through this Hermes gateway."
+            )
             return false
         }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -235,11 +244,14 @@ extension ControlCenterModel {
         guard !cleanName.isEmpty, !originalSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             !cleanPrompt.isEmpty
         else {
-            lastError = "Name, schedule, and request are required to create an automation."
+            reportActionError(
+                "Could not create automation",
+                message: "Name, schedule, and request are required to create an automation.")
             return false
         }
         guard CronSchedule.isValid(originalSchedule) else {
-            lastError = "Schedule cannot be empty or contain control characters."
+            reportActionError(
+                "Could not create automation", message: "Schedule cannot be empty or contain control characters.")
             return false
         }
         let actionID = "cron.create"
@@ -271,7 +283,9 @@ extension ControlCenterModel {
             return true
         } catch {
             if clientBindingGeneration == bindingGeneration {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                reportActionError(
+                    "Could not create automation",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             }
             return false
         }
@@ -279,7 +293,9 @@ extension ControlCenterModel {
 
     func removeCron(_ job: CronSummary) {
         guard cronControlAvailable, let rpc else {
-            lastError = "Automation control is unavailable through this Hermes gateway."
+            reportActionError(
+                "Could not delete automation", message: "Automation control is unavailable through this Hermes gateway."
+            )
             return
         }
         let bindingGeneration = clientBindingGeneration
@@ -299,7 +315,7 @@ extension ControlCenterModel {
                 guard clientBindingGeneration == bindingGeneration else { return }
                 let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 routineActionErrors[referenceID] = message
-                lastError = message
+                reportActionError("Could not delete automation", message: message)
             }
         }
     }
@@ -354,12 +370,13 @@ extension ControlCenterModel {
 
     func editCron(_ job: CronSummary, draft: CronEditDraft) async -> Bool {
         guard let rpc else {
-            lastError = "Automation editing is unavailable through this Hermes gateway."
+            reportActionError(
+                "Could not edit automation", message: "Automation editing is unavailable through this Hermes gateway.")
             return false
         }
         let changes = draft.changes(comparedTo: job)
         guard !changes.isEmpty else {
-            lastError = "Change at least one field before saving."
+            reportActionError("Could not edit automation", message: "Change at least one field before saving.")
             return false
         }
         guard !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -368,7 +385,8 @@ extension ControlCenterModel {
                 || !job.details.skills.isEmpty,
             !draft.configuration.delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
-            lastError = "Name, schedule, delivery, and agent request cannot be empty."
+            reportActionError(
+                "Could not edit automation", message: "Name, schedule, delivery, and agent request cannot be empty.")
             return false
         }
         let actionID = cronActionID("edit", job: job)
@@ -381,7 +399,9 @@ extension ControlCenterModel {
             if clientBindingGeneration == bindingGeneration, routineProfileID == profile { refresh() }
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not edit automation",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }

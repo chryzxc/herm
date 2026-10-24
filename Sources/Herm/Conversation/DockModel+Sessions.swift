@@ -199,6 +199,7 @@ extension DockModel {
         } catch {
             sessionDeletionError =
                 "Could not delete the session: \(Self.safeUserDiagnostic(error.localizedDescription))"
+            actionErrors.report("Could not delete session", error: error)
             DebugLog.write("model: session delete failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
@@ -219,6 +220,7 @@ extension DockModel {
             return true
         } catch {
             sessionVisibilityError = Self.safeUserDiagnostic(error.localizedDescription)
+            actionErrors.report("Could not update session visibility", error: error)
             return false
         }
     }
@@ -252,6 +254,7 @@ extension DockModel {
             await loadSessions(quiet: true)?.value
             return true
         } catch {
+            actionErrors.report(pinned ? "Could not pin session" : "Could not unpin session", error: error)
             DebugLog.write("model: session pin failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
@@ -370,6 +373,7 @@ extension DockModel {
             loadSessions()
             return true
         } catch {
+            actionErrors.report("Could not rename session", error: error)
             DebugLog.write("model: session rename failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
@@ -516,6 +520,7 @@ extension DockModel {
                     source: HermesFeatureIDs.sessionSource
                 ), reportFailure: true)
         } catch {
+            actionErrors.report("Could not branch conversation", error: error)
             DebugLog.write("model: message branch failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
         }
     }

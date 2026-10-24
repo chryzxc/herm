@@ -257,7 +257,11 @@ final class GroupChatStore: ObservableObject {
     /// This gateway's install identity and whether RoomLink peers are usable.
     @Published private(set) var installID: String?
     @Published private(set) var isRoomLinkEnabled = false
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet {
+            if let errorMessage { DockActionErrorCenter.shared.report("Group action failed", message: errorMessage) }
+        }
+    }
     private let defaults: UserDefaults
     private static let seenKey = "groupChat.seenSeq"
     /// Opening a room loads this many log rows; older ones load on demand.
@@ -587,22 +591,32 @@ final class GroupChatStore: ObservableObject {
     }
 
     func stop(_ roomID: String) async {
-        guard pendingRooms.insert(roomID).inserted else { return }
+        guard let client, pendingRooms.insert(roomID).inserted else { return }
         defer { pendingRooms.remove(roomID) }
-        _ = try? await client?.request(HermesFeatureIDs.ID.groupsStop.rawValue, params: ["room_id": roomID])
+        do {
+            _ = try await client.request(HermesFeatureIDs.ID.groupsStop.rawValue, params: ["room_id": roomID])
+            errorMessage = nil
+        } catch {
+            errorMessage =
+                "Could not stop the group: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+        }
         await poll(roomID)
     }
 
     func rename(_ roomID: String, to name: String) async {
-        guard pendingRooms.insert(roomID).inserted else { return }
+        guard let client, pendingRooms.insert(roomID).inserted else { return }
         defer { pendingRooms.remove(roomID) }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        _ = try? await client?.request(
-            HermesFeatureIDs.ID.groupsRename.rawValue,
-            params: [
-                "room_id": roomID, "event_id": UUID().uuidString.lowercased(), "name": trimmed,
-            ])
+        do {
+            _ = try await client.request(
+                HermesFeatureIDs.ID.groupsRename.rawValue,
+                params: ["room_id": roomID, "event_id": UUID().uuidString.lowercased(), "name": trimmed])
+            errorMessage = nil
+        } catch {
+            errorMessage =
+                "Could not rename the group: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+        }
         await refreshRooms()
     }
 
@@ -621,15 +635,21 @@ final class GroupChatStore: ObservableObject {
 
     /// Room members may only offer `once` or `deny` (Hermes' room driver).
     func respond(to approval: GroupRoomApproval, in roomID: String, approve: Bool) async {
-        guard pendingRooms.insert(roomID).inserted else { return }
+        guard let client, pendingRooms.insert(roomID).inserted else { return }
         defer { pendingRooms.remove(roomID) }
-        _ = try? await client?.request(
-            HermesFeatureIDs.ID.groupsApprove.rawValue,
-            params: [
-                "room_id": roomID, "member_id": approval.memberID, "task_id": approval.taskID,
-                "execution_generation": approval.executionGeneration, "request_id": approval.requestID,
-                "choice": approve ? "once" : "deny",
-            ])
+        do {
+            _ = try await client.request(
+                HermesFeatureIDs.ID.groupsApprove.rawValue,
+                params: [
+                    "room_id": roomID, "member_id": approval.memberID, "task_id": approval.taskID,
+                    "execution_generation": approval.executionGeneration, "request_id": approval.requestID,
+                    "choice": approve ? "once" : "deny",
+                ])
+            errorMessage = nil
+        } catch {
+            errorMessage =
+                "Could not answer group approval: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+        }
         await poll(roomID)
     }
 }

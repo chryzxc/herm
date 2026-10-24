@@ -256,7 +256,7 @@ struct QuotaWorkspaceView: View {
             .accessibilityLabel(isSyncingPeak ? "Syncing peak hours" : "Sync peak hours")
             .help(
                 peakSyncError ?? peakSyncedAt.map { ProviderPeakSchedule.syncSummary(syncedAt: $0) }
-                    ?? "Ask Hermes to search the web for current provider peak and off-peak hours.")
+                    ?? "Ask Herm to search the web for current provider peak and off-peak hours.")
 
             DockIconButton(
                 icon: .arrowsClockwise,

@@ -85,6 +85,7 @@ extension ControlCenterModel {
                         HermesDiagnosticsService.safeSummary(result.stderr).isEmpty
                         ? "Hermes could not engage the emergency stop."
                         : HermesDiagnosticsService.safeSummary(result.stderr)
+                    DockActionErrorCenter.shared.report("Could not pause dispatch", message: emergencyStopMessage ?? "")
                     return
                 }
                 emergencyStopActive = true
@@ -92,6 +93,7 @@ extension ControlCenterModel {
             } catch {
                 guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 emergencyStopMessage = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+                DockActionErrorCenter.shared.report("Could not pause dispatch", error: error)
             }
         }
     }
@@ -111,6 +113,8 @@ extension ControlCenterModel {
                     emergencyStopMessage =
                         HermesDiagnosticsService.safeSummary(result.stderr).isEmpty
                         ? "Hermes could not resume dispatch." : HermesDiagnosticsService.safeSummary(result.stderr)
+                    DockActionErrorCenter.shared.report(
+                        "Could not resume dispatch", message: emergencyStopMessage ?? "")
                     return
                 }
                 emergencyStopActive = false
@@ -118,6 +122,7 @@ extension ControlCenterModel {
             } catch {
                 guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 emergencyStopMessage = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+                DockActionErrorCenter.shared.report("Could not resume dispatch", error: error)
             }
         }
     }
@@ -210,7 +215,8 @@ extension ControlCenterModel {
 
     func reloadMCP() {
         guard let rpc, let sessionID = dockModel?.sessionID else {
-            lastError = "Open a Hermes session before reloading MCP tools."
+            reportActionError(
+                "Could not reload MCP tools", message: "Open a Hermes session before reloading MCP tools.")
             return
         }
         guard beginAction(reloadMCPActionID) else { return }
@@ -220,7 +226,9 @@ extension ControlCenterModel {
                 _ = try await rpc.reloadMCP(sessionID: sessionID)
                 dockModel?.refreshRuntimeConfiguration(force: true)
             } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                reportActionError(
+                    "Could not reload MCP tools",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             }
         }
     }

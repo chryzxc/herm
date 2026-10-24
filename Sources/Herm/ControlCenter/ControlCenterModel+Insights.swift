@@ -425,18 +425,22 @@ extension ControlCenterModel {
             guard let rawStatus = result["status"] as? String,
                 let status = SessionTextActionStatus(rawValue: rawStatus.lowercased())
             else {
-                lastError = "Hermes returned an invalid steering response."
+                reportActionError("Could not steer session", message: "Hermes returned an invalid steering response.")
                 return nil
             }
             guard status == .queued || status == .rejected else {
-                lastError = "Hermes returned an invalid steering status."
+                reportActionError("Could not steer session", message: "Hermes returned an invalid steering status.")
                 return nil
             }
             let action = SessionTextActionResult(status: status, text: cleanText)
-            if !action.wasAccepted { lastError = "Hermes rejected the steering correction." }
+            if !action.wasAccepted {
+                reportActionError("Could not steer session", message: "Hermes rejected the steering correction.")
+            }
             return action
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not steer session",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return nil
         }
     }

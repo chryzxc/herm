@@ -147,7 +147,10 @@ struct GitHubAuthoringMenu<AdditionalActions: View>: View {
                         state = updated.state
                         error = nil
                         if let onIssueStateChanged { onIssueStateChanged(updated) } else { onChanged() }
-                    } catch { self.error = error.localizedDescription }
+                    } catch {
+                        self.error = error.localizedDescription
+                        DockActionErrorCenter.shared.report("Could not change issue state", error: error)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { pendingState = nil }
@@ -342,6 +345,9 @@ struct GitHubItemEditor: View {
                 head: head, base: base)
             onSaved(result)
             dismiss()
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            self.error = error.localizedDescription
+            DockActionErrorCenter.shared.report("Could not save GitHub item", error: error)
+        }
     }
 }

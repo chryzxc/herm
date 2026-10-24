@@ -64,7 +64,10 @@ struct MemoryCorrectionView: View {
         do {
             entries = try await service.memoryEntries()
             status = entries.isEmpty ? "No editable fingerprinted memory entries were returned." : nil
-        } catch { status = HermesDiagnosticsService.safeSummary(error.localizedDescription) }
+        } catch {
+            status = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            DockActionErrorCenter.shared.report("Could not load memory entries", error: error)
+        }
     }
     private func inspect(_ entry: WorkflowMemoryEntry) async {
         guard !pending else { return }
@@ -75,7 +78,10 @@ struct MemoryCorrectionView: View {
             selected = entry
             content = text
             status = nil
-        } catch { status = HermesDiagnosticsService.safeSummary(error.localizedDescription) }
+        } catch {
+            status = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            DockActionErrorCenter.shared.report("Could not open memory entry", error: error)
+        }
     }
     private func save(_ remove: Bool) async {
         guard !pending, let selected else { return }
@@ -86,7 +92,11 @@ struct MemoryCorrectionView: View {
             content = ""
             entries = try await service.memoryEntries()
             status = "Memory change acknowledged."
-        } catch { status = HermesDiagnosticsService.safeSummary(error.localizedDescription) }
+        } catch {
+            status = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            DockActionErrorCenter.shared.report(
+                remove ? "Could not delete memory" : "Could not save memory", error: error)
+        }
         pending = false
     }
 }

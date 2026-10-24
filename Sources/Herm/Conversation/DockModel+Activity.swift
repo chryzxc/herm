@@ -267,6 +267,7 @@ extension DockModel {
                     self.interruptState == .requesting
                 else { return }
                 interruptState = .failed("Hermes could not be interrupted. Try again.")
+                actionErrors.report("Could not interrupt session", error: error)
                 DebugLog.write("model: interrupt failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }

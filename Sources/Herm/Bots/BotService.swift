@@ -1008,7 +1008,11 @@ final class BotModeModel: ObservableObject {
 
     func setHidden(_ hidden: Bool, for bot: BotSummary) async {
         guard capabilityAvailable, let service else { return }
-        _ = try? await service.setRosterMeta(profileID: bot.id, title: bot.title, hidden: hidden)
+        do {
+            try await service.setRosterMeta(profileID: bot.id, title: bot.title, hidden: hidden)
+        } catch {
+            DockActionErrorCenter.shared.report("Could not update Bot visibility", error: error)
+        }
         await refreshNow()
     }
 

@@ -179,14 +179,16 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not select project",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
 
     func createProject(name: String, folder: String) async -> Bool {
         guard let rpc else {
-            lastError = "Hermes is not connected."
+            reportActionError("Could not create project", message: "Hermes is not connected.")
             return false
         }
         guard !name.isEmpty, !folder.isEmpty else { return false }
@@ -198,14 +200,16 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not create project",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
 
     func addProjectFolder(_ project: ProjectSummary, folder: String) async -> Bool {
         guard let rpc else {
-            lastError = "Hermes is not connected."
+            reportActionError("Could not add project folder", message: "Hermes is not connected.")
             return false
         }
         guard !folder.isEmpty else { return false }
@@ -214,7 +218,9 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not add project folder",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -227,7 +233,9 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not archive or restore project",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -240,7 +248,9 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not delete project",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }

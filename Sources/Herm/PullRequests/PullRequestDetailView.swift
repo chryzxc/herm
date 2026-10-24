@@ -36,6 +36,7 @@ struct PullRequestDetailView: View {
     @State private var activityExpanded = true
     @State private var changesExpanded = false
     @State private var chatHeight: CGFloat = 180
+    @State private var chatExpanded = false
     @ObservedObject private var chats: PullRequestChatStore
     private var commentDraft: String { center.commentDrafts[center.selectedID ?? ""] ?? "" }
     @StateObject private var diffPresentationCache = PullRequestDiffPresentationCache()
@@ -43,7 +44,7 @@ struct PullRequestDetailView: View {
     @Environment(\.dockTitleRow) private var titleRow
 
     private var chatBottomPadding: CGFloat {
-        !isInspector && contextRouter?.model != nil ? chatHeight + 40 : 0
+        !isInspector && contextRouter?.model != nil && chatExpanded ? chatHeight + 40 : 0
     }
 
     var body: some View {
@@ -75,6 +76,7 @@ struct PullRequestDetailView: View {
                 await center.loadSelectedDetail()
             }
             .onChange(of: center.selectedID) { _, _ in
+                chatExpanded = false
                 inlineTarget = nil
                 commitDiffTarget = nil
                 selectedFileID = nil
@@ -172,14 +174,16 @@ struct PullRequestDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .overlay(alignment: .bottomTrailing) {
                 if !isInspector, let model = contextRouter?.model {
-                    PullRequestFloatingChatView(chat: chats.chat(for: pr), runtime: model, record: pr)
-                        .id(pr.id)
-                        .onGeometryChange(for: CGFloat.self) {
-                            $0.size.height
-                        } action: {
-                            chatHeight = $0
-                        }
-                        .padding(20)
+                    PullRequestFloatingChatView(
+                        chat: chats.chat(for: pr), runtime: model, record: pr, expanded: $chatExpanded
+                    )
+                    .id(pr.id)
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.height
+                    } action: {
+                        chatHeight = $0
+                    }
+                    .padding(20)
                 }
             }
         } else if center.isInitialLoad {

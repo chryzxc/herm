@@ -511,6 +511,7 @@ struct GitHubMetadataEditor: View {
             dismiss()
         } catch {
             await model.refresh()
+            DockActionErrorCenter.shared.report("Could not save GitHub changes", error: error)
             self.error =
                 "Could not save all changes. Current GitHub values were refreshed; your choices are retained. \(error.localizedDescription)"
         }

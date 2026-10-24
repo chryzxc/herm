@@ -110,6 +110,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private var keepAwake: NSObjectProtocol?
     private var keepAwakeObservers = Set<AnyCancellable>()
     private var dockTileStatus: DockTileStatus?
+    private var actionErrorPresenter: DockActionErrorPresenter?
     private var quickCaptureHotKey: QuickCaptureHotKey?
     private var windowCaptureHotKey: QuickCaptureHotKey?
     private var spotlightIndex: SessionSpotlightIndex?
@@ -128,6 +129,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
+        actionErrorPresenter = DockActionErrorPresenter()
         // AppKit's first tooltip waits ~1s; later ones are instant. Make the
         // first match so icon-only buttons explain themselves on hover.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
@@ -224,7 +226,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         let enabled = UserDefaults.standard.bool(forKey: Self.keepAwakeKey)
         if busy, enabled, keepAwake == nil {
             keepAwake = ProcessInfo.processInfo.beginActivity(
-                options: .idleSystemSleepDisabled, reason: "Hermes is working")
+                options: .idleSystemSleepDisabled, reason: "Herm is working")
         } else if !busy || !enabled, let activity = keepAwake {
             ProcessInfo.processInfo.endActivity(activity)
             keepAwake = nil

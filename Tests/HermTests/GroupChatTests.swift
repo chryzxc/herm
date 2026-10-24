@@ -5,6 +5,27 @@ import Testing
 
 @MainActor
 struct GroupChatTests {
+    @Test(arguments: ["groups.stop", "groups.rename", "groups.approve"])
+    func failedRoomActionsKeepTheirErrorAndReleasePendingState(method: String) async throws {
+        let client = RoomClient()
+        client.failingMethod = method
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        switch method {
+        case "groups.stop": await store.stop("r")
+        case "groups.rename": await store.rename("r", to: "New name")
+        default:
+            let approval = try #require(
+                GroupRoomApproval([
+                    "kind": "approval", "member_id": "m", "task_id": "t", "request_id": "q",
+                    "execution_generation": 1,
+                ]))
+            await store.respond(to: approval, in: "r", approve: true)
+        }
+        #expect(store.errorMessage?.contains("refused") == true)
+        #expect(store.pendingRooms.isEmpty)
+    }
+
     @Test func mapsRoomLogEventsAndSkipsBookkeeping() {
         let rows: [[String: Any]] = [
             ["seq": 1, "event_id": "a", "kind": "room.created", "payload": [:]],
@@ -189,6 +210,7 @@ private final class RoomClient: HermesRPCClientProtocol {
     var driver = true
     var latest = 2
     var listedSeq = 2
+    var failingMethod: String?
     private(set) var sinceSeqs: [Int] = []
     private(set) var sent: [String: Any]?
     private(set) var invited: [String: Any]?
@@ -198,6 +220,7 @@ private final class RoomClient: HermesRPCClientProtocol {
     func close() {}
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == failingMethod { throw HermesGateway.GatewayError.httpRefused(500, "refused") }
         switch method {
         case "groups.capabilities":
             return ["driver": driver]

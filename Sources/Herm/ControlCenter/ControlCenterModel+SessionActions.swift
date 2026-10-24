@@ -2,6 +2,11 @@ import Combine
 import Foundation
 
 extension ControlCenterModel {
+    func reportActionError(_ title: String, message: String) {
+        lastError = HermesDiagnosticsService.safeSummary(message)
+        DockActionErrorCenter.shared.report(title, message: message)
+    }
+
     func refreshPromptBudget() {
         guard let cli else { return }
         let generation = UUID()
@@ -75,10 +80,12 @@ extension ControlCenterModel {
         guard capabilityAvailable("gateway"), let rpc, let dockModel, let sessionID = dockModel.sessionID,
             !sessionID.isEmpty
         else {
-            lastError =
-                capabilityAvailable("gateway")
-                ? "Open a Hermes session before starting a background task."
-                : "Background tasks are unavailable in this Hermes installation."
+            reportActionError(
+                "Could not start background task",
+                message:
+                    capabilityAvailable("gateway")
+                    ? "Open a Hermes session before starting a background task."
+                    : "Background tasks are unavailable in this Hermes installation.")
             return false
         }
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -86,13 +93,16 @@ extension ControlCenterModel {
         do {
             let result = try await rpc.startBackgroundPrompt(sessionID: sessionID, text: cleanPrompt)
             guard let taskID = result["task_id"] as? String, !taskID.isEmpty else {
-                lastError = "Hermes did not return a background task ID."
+                reportActionError(
+                    "Could not start background task", message: "Hermes did not return a background task ID.")
                 return false
             }
             dockModel.registerBackgroundTask(id: taskID, prompt: cleanPrompt, parentSessionID: sessionID, kind: kind)
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not start background task",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -106,7 +116,9 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not rename session",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -123,14 +135,19 @@ extension ControlCenterModel {
                     $0 == status
                 })
             else {
-                lastError = "Hermes returned an invalid redirect response."
+                reportActionError(
+                    "Could not redirect session", message: "Hermes returned an invalid redirect response.")
                 return nil
             }
             let response = SessionTextActionResult(status: acceptedStatus, text: clean)
-            if !response.wasAccepted { lastError = "Hermes rejected the redirect." }
+            if !response.wasAccepted {
+                reportActionError("Could not redirect session", message: "Hermes rejected the redirect.")
+            }
             return response
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not redirect session",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return nil
         }
     }
@@ -146,7 +163,9 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not undo session",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -154,7 +173,9 @@ extension ControlCenterModel {
     func compressActiveSession(focusTopic: String? = nil) async -> Bool {
         guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty
         else {
-            lastError = "Session compression is unavailable in this Hermes installation."
+            reportActionError(
+                "Could not compress session", message: "Session compression is unavailable in this Hermes installation."
+            )
             return false
         }
         do {
@@ -162,7 +183,9 @@ extension ControlCenterModel {
             refreshSessionCockpit()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not compress session",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -171,7 +194,8 @@ extension ControlCenterModel {
         guard capabilityAvailable("rpc-sessions"), let rpc, let dockModel, let sessionID = dockModel.sessionID,
             !sessionID.isEmpty
         else {
-            lastError = "Session branching is unavailable in this Hermes installation."
+            reportActionError(
+                "Could not branch session", message: "Session branching is unavailable in this Hermes installation.")
             return false
         }
         do {
@@ -185,7 +209,9 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not branch session",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -197,7 +223,9 @@ extension ControlCenterModel {
             delegationPaused = result["paused"] as? Bool ?? paused
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not change delegation",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -207,12 +235,14 @@ extension ControlCenterModel {
         do {
             let result = try await rpc.interruptSubagent(subagentID: subagentID)
             guard result["found"] as? Bool != false else {
-                lastError = "Hermes could not find that subagent."
+                reportActionError("Could not interrupt subagent", message: "Hermes could not find that subagent.")
                 return false
             }
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not interrupt subagent",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }
@@ -230,7 +260,8 @@ extension ControlCenterModel {
 
     func killProcess(_ process: ProcessSummary) async -> Bool {
         guard rpc != nil, capabilityAvailable("rpc-activity") else {
-            lastError = "Process control is unavailable through this Hermes gateway."
+            reportActionError(
+                "Could not stop process", message: "Process control is unavailable through this Hermes gateway.")
             return false
         }
         let actionID = "process.kill:\(process.id)"
@@ -242,7 +273,9 @@ extension ControlCenterModel {
             refresh()
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            reportActionError(
+                "Could not stop process",
+                message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
             return false
         }
     }

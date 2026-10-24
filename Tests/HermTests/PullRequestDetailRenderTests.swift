@@ -133,8 +133,10 @@ struct PullRequestDetailRenderTests {
             conversation.draft = "Explain the timeout tests"
             defer { chat.shutdown() }
             let minimizedHost = NSHostingView(
-                rootView: PullRequestFloatingChatView(chat: chat, runtime: runtime, record: record)
-                    .dockThemedRoot())
+                rootView: PullRequestFloatingChatView(
+                    chat: chat, runtime: runtime, record: record, expanded: .constant(false)
+                )
+                .dockThemedRoot())
             let minimizedSize = minimizedHost.fittingSize
             #expect(minimizedSize.width <= 220)
             #expect(minimizedSize.height <= 60)
@@ -149,9 +151,11 @@ struct PullRequestDetailRenderTests {
             #expect(conversation.draft == "Explain the timeout tests")
             for chatWidth in [360.0, 600.0] {
                 let chatHost = NSHostingView(
-                    rootView: PullRequestFloatingChatView(chat: chat, runtime: runtime, record: record, expanded: true)
-                        .padding(20).frame(width: chatWidth, height: 640)
-                        .background(Color.dockOpaqueCanvas).dockThemedRoot())
+                    rootView: PullRequestFloatingChatView(
+                        chat: chat, runtime: runtime, record: record, expanded: .constant(true)
+                    )
+                    .padding(20).frame(width: chatWidth, height: 640)
+                    .background(Color.dockOpaqueCanvas).dockThemedRoot())
                 chatHost.frame = NSRect(x: 0, y: 0, width: chatWidth, height: 640)
                 let chatWindow = NSWindow(
                     contentRect: chatHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)

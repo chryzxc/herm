@@ -211,6 +211,7 @@ extension DockModel {
             } catch {
                 updateError =
                     "Hermes could not apply the provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                actionErrors.report("Could not change default model", error: error)
             }
 
             // The gateway is the sole writer. Re-read the persisted projection
@@ -257,6 +258,7 @@ extension DockModel {
                 guard self.sessionResumeGeneration == generation, self.sessionID == sessionID else { return }
                 runtimeConfigurationError =
                     "Hermes could not apply the session provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                actionErrors.report("Could not change session model", error: error)
             }
             isUpdatingSessionModel = false
         }
@@ -284,6 +286,7 @@ extension DockModel {
             } catch {
                 self.runtimeConfigurationError =
                     "Hermes could not apply the session reasoning change: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                actionErrors.report("Could not change session thinking level", error: error)
             }
         }
     }
@@ -312,6 +315,7 @@ extension DockModel {
             } catch {
                 runtimeConfigurationError =
                     "Hermes could not save the default thinking level: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                actionErrors.report("Could not change default thinking level", error: error)
             }
         }
     }

@@ -442,6 +442,7 @@ final class PullRequestCenterModel: ObservableObject {
         defer { isPostingComment = false }
         guard let comment = await mutationExecutor.postComment(trimmed, on: record) else {
             errorMessage = "GitHub could not add the comment. Check your sign-in and try again."
+            DockActionErrorCenter.shared.report("Could not post comment", message: errorMessage ?? "")
             return false
         }
         if !commentsByID[record.id, default: []].contains(where: { $0.id == comment.id }) {
@@ -483,6 +484,7 @@ final class PullRequestCenterModel: ObservableObject {
         }
         guard let response = await mutationExecutor.updateStatus(status, for: record) else {
             errorMessage = "GitHub could not update this pull request status. Check your sign-in and try again."
+            DockActionErrorCenter.shared.report("Could not update pull request", message: errorMessage ?? "")
             return false
         }
         summaryTasks.removeValue(forKey: record.id)?.cancel()

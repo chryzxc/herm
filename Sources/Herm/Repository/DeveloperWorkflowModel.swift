@@ -495,6 +495,8 @@ final class DeveloperWorkflowModel: ObservableObject {
         let result = await RepositoryService.switchBranch(path: path, branch: branch)
         guard result.success else {
             error = result.error
+            DockActionErrorCenter.shared.report(
+                "Could not switch branch", message: result.error ?? "Git rejected the branch change.")
             return false
         }
         await refresh(preferences: preferences, control: control)
@@ -513,6 +515,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         let failure = await RepositoryService.applySourceControl(action, path: path)
         guard activePath == path else { return failure == nil }
         sourceControlError = failure
+        if let failure { DockActionErrorCenter.shared.report("Source control action failed", message: failure) }
         await refresh()
         return failure == nil
     }
