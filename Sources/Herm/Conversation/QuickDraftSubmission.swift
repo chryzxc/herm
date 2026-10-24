@@ -11,7 +11,8 @@ enum QuickDraftSubmission {
     static func send(
         _ original: QuickDraftRecord, client: HermesRPCClientProtocol,
         progress: (QuickDraftRecord) throws -> Void,
-        beforeSubmit: ((QuickDraftRecord, String) async -> Void)? = nil
+        beforeSubmit: ((QuickDraftRecord, String) async -> Void)? = nil,
+        generationContext: RichGenerationContext = RichGenerationContext()
     ) async throws -> QuickDraftRecord {
         var draft = original
         guard draft.delivery != .needsReview else {
@@ -232,7 +233,9 @@ enum QuickDraftSubmission {
                 }.joined(separator: "\n\n")
             var prompt = scope
             let text = material.isEmpty ? "Review these attachments." : material
-            prompt["text"] = draft.requestsVisualReply == false ? text : GenerativeUIIntegration.preparePrompt(text)
+            prompt["text"] =
+                draft.requestsVisualReply == false
+                ? text : GenerativeUIIntegration.preparePrompt(text, context: generationContext)
             if let directory = validatedDirectory, let beforeSubmit {
                 await beforeSubmit(draft, directory)
                 guard try await validateDestination() == runtime else {

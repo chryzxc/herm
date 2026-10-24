@@ -115,7 +115,7 @@ struct GenerativeUIVisualReviewTests {
         for width: CGFloat in [320, 700] {
             try await capture(
                 RichDocumentView(document: sales).padding(20),
-                name: "numeric-sales-\(Int(width))", width: width, height: 500)
+                name: "numeric-sales-\(Int(width))", width: width, height: 700)
         }
         let unavailable = RichDocument("```herm-ui\n{\"version\":9,\"fallback\":\"Readable result\"}\n```")
         try await capture(

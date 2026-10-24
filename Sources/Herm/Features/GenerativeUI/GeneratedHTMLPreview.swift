@@ -6,8 +6,44 @@ import WebKit
 final class GeneratedHTMLCoordinator: ObservableObject {
     static let shared = GeneratedHTMLCoordinator()
     @Published private(set) var activeKey: String?
-    func open(_ key: String) { activeKey = key }
-    func close() { activeKey = nil }
+    private var host: GeneratedHTMLWebView.Coordinator?
+    private var hostIdentity: String?
+    private var stateIdentity: String?
+    private var loadState: GeneratedHTMLLoadState?
+    func open(_ key: String) {
+        if activeKey != key { close() }
+        activeKey = key
+    }
+    func state(for identity: String) -> GeneratedHTMLLoadState {
+        if let loadState, stateIdentity == identity { return loadState }
+        let state = GeneratedHTMLLoadState()
+        stateIdentity = identity
+        loadState = state
+        return state
+    }
+    func coordinator(html: String, identity: String, state: GeneratedHTMLLoadState) -> GeneratedHTMLWebView.Coordinator
+    {
+        if let host, hostIdentity == identity { return host }
+        if let host, let web = host.web { GeneratedHTMLWebView.destroy(web, coordinator: host) }
+        let coordinator = GeneratedHTMLWebView.Coordinator(html: html, state: state)
+        host = coordinator
+        hostIdentity = identity
+        return coordinator
+    }
+    func rekey(from old: String, to new: String) {
+        guard activeKey == old else { return }
+        if let identity = hostIdentity, identity.hasPrefix(old) { hostIdentity = new + identity.dropFirst(old.count) }
+        if stateIdentity == old { stateIdentity = new }
+        activeKey = new
+    }
+    func close() {
+        if let host, let web = host.web { GeneratedHTMLWebView.destroy(web, coordinator: host) }
+        host = nil
+        hostIdentity = nil
+        loadState = nil
+        stateIdentity = nil
+        activeKey = nil
+    }
 }
 
 enum GeneratedHTMLPolicy {
@@ -49,29 +85,37 @@ enum GeneratedHTMLPolicy {
 struct GeneratedHTMLPreview: View {
     let html: String
     let identity: String
-    @State private var revision = 0
     var expanded = false
-    @State private var showingExpanded = false
-    @StateObject private var state = GeneratedHTMLLoadState()
+    @ObservedObject private var state: GeneratedHTMLLoadState
+    init(html: String, identity: String, expanded: Bool = false) {
+        self.html = html
+        self.identity = identity
+        self.expanded = expanded
+        self.state = GeneratedHTMLCoordinator.shared.state(for: identity)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("Interactive view").dockFont(.body, weight: .medium)
                 Spacer()
-                if !expanded { Button("Expand") { showingExpanded = true }.buttonStyle(.dockCompact) }
                 Button("Reload") {
                     state.error = nil
-                    revision += 1
-                }.buttonStyle(.dockCompact)
+                    state.revision += 1
+                }.buttonStyle(.dockCompact).help("Reload restarts the original document and resets its inputs.")
                 Button("Close") { GeneratedHTMLCoordinator.shared.close() }.buttonStyle(.dockCompact)
             }
             if let error = state.error {
                 Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
                     .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
             } else {
-                Group { if !showingExpanded { GeneratedHTMLWebView(html: html, state: state) } }.id(
-                    "\(identity):\(revision):\(DockThemeRuntime.revision)"
+                Group {
+                    GeneratedHTMLWebView(
+                        html: html, state: state,
+                        identity: identity + ":" + String(state.revision) + ":" + String(DockThemeRuntime.revision),
+                        presentationPriority: expanded ? 1 : 0)
+                }.id(
+                    "\(identity):\(state.revision):\(DockThemeRuntime.revision)"
                 )
                 .frame(minHeight: expanded ? 500 : 420, maxHeight: expanded ? .infinity : 420)
                 .overlay {
@@ -79,16 +123,13 @@ struct GeneratedHTMLPreview: View {
                 }
             }
         }
-        .sheet(isPresented: $showingExpanded) {
-            GeneratedHTMLPreview(html: html, identity: identity, expanded: true)
-                .padding(16).frame(minWidth: 800, idealWidth: 1100, minHeight: 600, idealHeight: 780)
-                .background(Color.dockCanvas)
-        }
+
     }
 }
 
 @MainActor
 final class GeneratedHTMLLoadState: ObservableObject {
+    @Published var revision = 0
     @Published var error: String?
     @Published var loading = true
 }
@@ -96,15 +137,44 @@ final class GeneratedHTMLLoadState: ObservableObject {
 struct GeneratedHTMLWebView: NSViewRepresentable {
     let html: String
     let state: GeneratedHTMLLoadState
-    func makeCoordinator() -> Coordinator { Coordinator(html: html, state: state) }
-
-    func makeNSView(context: Context) -> WKWebView {
-        let web = context.coordinator.makeWebView()
-        context.coordinator.load()
-        return web
+    var identity: String? = nil
+    var presentationPriority = 0
+    func makeCoordinator() -> Coordinator {
+        if let identity {
+            return GeneratedHTMLCoordinator.shared.coordinator(html: html, identity: identity, state: state)
+        }
+        return Coordinator(html: html, state: state)
     }
-    func updateNSView(_ web: WKWebView, context: Context) {}
+
+    func makeNSView(context: Context) -> GeneratedHTMLContainer {
+        let coordinator = context.coordinator
+        if coordinator.web == nil {
+            coordinator.retainedWeb = coordinator.makeWebView()
+            coordinator.retainsHost = identity != nil
+            coordinator.load()
+        }
+        let container = GeneratedHTMLContainer()
+        container.presentationPriority = presentationPriority
+        coordinator.mount(container)
+        return container
+    }
+    func updateNSView(_ view: GeneratedHTMLContainer, context: Context) {
+        if view.presentationPriority != presentationPriority {
+            view.presentationPriority = presentationPriority
+            context.coordinator.mount(view)
+        }
+    }
+    static func dismantleNSView(_ view: GeneratedHTMLContainer, coordinator: Coordinator) {
+        coordinator.unmount(view)
+        if !coordinator.retainsHost, let web = coordinator.web { destroy(web, coordinator: coordinator) }
+    }
+    // Direct WebKit fixtures use the same teardown without a SwiftUI container.
     static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) {
+        destroy(web, coordinator: coordinator)
+    }
+    static func destroy(_ web: WKWebView, coordinator: Coordinator) {
+        web.removeFromSuperview()
+        coordinator.retainedWeb = nil
         coordinator.cancelled = true
         coordinator.timeout?.cancel()
         web.stopLoading()
@@ -119,6 +189,32 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         let html: String
         let state: GeneratedHTMLLoadState
         weak var web: WKWebView?
+        var retainedWeb: WKWebView?
+        var retainsHost = false
+        private struct Host { weak var view: GeneratedHTMLContainer? }
+        private var containers: [Host] = []
+        func mount(_ container: GeneratedHTMLContainer) {
+            containers.removeAll { $0.view == nil || $0.view === container }
+            containers.append(Host(view: container))
+            attachToLastContainer()
+        }
+        func unmount(_ container: GeneratedHTMLContainer) {
+            containers.removeAll { $0.view == nil || $0.view === container }
+            attachToLastContainer()
+        }
+        private func attachToLastContainer() {
+            let active = containers.compactMap(\.view).enumerated().max { left, right in
+                if left.element.presentationPriority == right.element.presentationPriority {
+                    return left.offset < right.offset
+                }
+                return left.element.presentationPriority < right.element.presentationPriority
+            }
+            guard let container = active?.element, let web else { return }
+            web.removeFromSuperview()
+            container.addSubview(web)
+            web.frame = container.bounds
+            web.autoresizingMask = [.width, .height]
+        }
         var cancelled = false
         var timeout: Task<Void, Never>?
         init(html: String, state: GeneratedHTMLLoadState) {
@@ -236,4 +332,10 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
             state.error = message
         }
     }
+}
+
+@MainActor
+final class GeneratedHTMLContainer: NSView {
+    var presentationPriority = 0
+    override var isFlipped: Bool { true }
 }

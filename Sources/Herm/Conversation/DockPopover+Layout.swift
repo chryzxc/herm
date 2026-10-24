@@ -26,6 +26,7 @@ extension DockPopover {
             }
             .onAppear {
                 configureWorkspaceOnAppear()
+                model.richGenerationContextProvider = richHostRouter.contextProvider()
                 chatContextRouter.model = model
                 chatContextRouter.bots = botMode
                 chatContextRouter.onOpened = { sessionID in
@@ -42,6 +43,9 @@ extension DockPopover {
                 guard connected else { return }
                 SessionBrowserStore.shared.activate(model: model, reconnect: true)
                 Task { await botMode.refreshNow(force: true) }
+            }
+            .onChange(of: WorkspaceIdentity.session(model)) { _, _ in
+                model.richGenerationContextProvider = richHostRouter.contextProvider()
             }
             .onChange(of: model.browserSessionKey) { _, _ in
                 guard model.isHermesConnected else { return }

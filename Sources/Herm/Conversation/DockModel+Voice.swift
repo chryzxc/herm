@@ -592,7 +592,8 @@ extension DockModel {
         guard let sessionID, !isSending else { return }
         let requestGeneration = sessionResumeGeneration
         let params = scopedSessionParams([
-            "session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text), "voice_turn": true,
+            "session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text, context: generationContext()),
+            "voice_turn": true,
         ])
         messages.append(ChatMessage(role: .user, text: text))
         status = .working

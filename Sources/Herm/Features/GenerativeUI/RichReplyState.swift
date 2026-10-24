@@ -36,7 +36,7 @@ final class RichReplyState: ObservableObject {
 
     func form(key: String) -> RichFormDraft {
         if let draft = forms[key] { return draft }
-        let draft = RichFormDraft()
+        let draft = RichArtifactStateStore.shared.form(for: key)
         forms[key] = draft
         return draft
     }
@@ -44,7 +44,8 @@ final class RichReplyState: ObservableObject {
 
 @MainActor
 final class RichFormDraft: ObservableObject {
-    @Published var values: [String: [String]] = [:]
+    @Published var values: [String: [String]] = [:] { didSet { onValuesChanged?(values) } }
+    var onValuesChanged: (([String: [String]]) -> Void)?
     @Published var pending = false
     @Published var error: String?
     @Published var sent = false
@@ -75,6 +76,7 @@ final class RichReplyContext {
     let messageID: UUID
     let revision: Int
     let sourceKey: String
+    let storedReference: StoredMessageReference?
 
     convenience init(model: DockModel, message: ChatMessage, state: RichReplyState) {
         self.init(
@@ -86,6 +88,7 @@ final class RichReplyContext {
         model: DockModel, message: ChatMessage, destination: QuickDestination,
         reference: StoredMessageReference?, state: RichReplyState
     ) {
+        self.storedReference = reference
         self.model = model
         self.destination = destination
         messageID = message.id
@@ -97,6 +100,13 @@ final class RichReplyContext {
         QuickDestination(
             profileID: model.sessionProfileID ?? model.profileScopeID,
             sessionID: model.navigationSessionID, title: model.currentSessionTitle ?? "Session")
+    }
+
+    func artifactReference(surface: RichSurface, source: String) -> RichArtifactReference {
+        RichArtifactReference(
+            profileID: destination.profileID, sessionID: destination.sessionID ?? "",
+            rowID: storedReference?.rowID, messageUID: storedReference?.uid,
+            surfaceID: surface.id, sourceDigest: RichArtifactReference.digest(source))
     }
 
     var isCurrent: Bool {

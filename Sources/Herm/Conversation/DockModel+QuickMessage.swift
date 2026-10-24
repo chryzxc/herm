@@ -58,7 +58,7 @@ extension DockModel {
             beforeSubmit: { record, directory in
                 await DeveloperWorkflowModel.shared.captureTurnBaseline(
                     origin: record.destination, path: directory, attemptID: record.revision)
-            })
+            }, generationContext: generationContext(for: draft.destination))
         rememberQuickSession(submitted.destination)
         DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(
             origin: submitted.destination, attemptID: submitted.revision)
@@ -157,7 +157,11 @@ extension DockModel {
                     onCreated(destination)
                 }
                 params["session_id"] = runtimeID
-                params["text"] = GenerativeUIIntegration.preparePrompt(clean)
+                params["text"] = GenerativeUIIntegration.preparePrompt(
+                    clean,
+                    context: generationContext(
+                        for: QuickDestination(
+                            profileID: profile, sessionID: destination.id, title: destination.displayTitle)))
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: params)
                 if !sessions.contains(where: { $0.scopedID == destination.scopedID }) {
                     sessions.insert(destination, at: 0)

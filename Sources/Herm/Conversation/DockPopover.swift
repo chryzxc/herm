@@ -282,6 +282,7 @@ struct DockPopover: View {
         // Bound the root's generic layout before observer modifiers copy its sheet state.
         observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
             .environment(\.chatContextRouter, chatContextRouter)
+            .environment(\.richHostActionRouter, richHostRouter)
             .generativeUISession(model: model)
             .overlay(alignment: .bottomTrailing) {
                 if let reference = gitHubInspector.opening[WorkspaceIdentity.session(model)] {

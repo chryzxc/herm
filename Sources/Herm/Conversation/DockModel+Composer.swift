@@ -69,8 +69,10 @@ extension DockModel {
         } else {
             text = "[image]"
         }
+        let richContext = generationContext()
         let submittedText = GenerativeUIIntegration.preparePrompt(
-            ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles))
+            ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles), context: richContext
+        )
         let sessionBeforeSend = sessionID
         let botActivityID = sessionBeforeSend.flatMap { eventSessionID in
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
@@ -163,7 +165,8 @@ extension DockModel {
                     ? submittedText
                     : GenerativeUIIntegration.preparePrompt(
                         ComposerMentionPresentation.annotatedPrompt(
-                            text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: composerMentionProfiles)
+                            text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: composerMentionProfiles),
+                        context: richContext
                     )
                 for attachedImage in attachedImages {
                     let base64 = try await AttachmentPayload.encoded(at: attachedImage.fileURL)

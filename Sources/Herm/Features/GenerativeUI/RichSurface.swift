@@ -9,15 +9,24 @@ struct RichSurface: Codable, Equatable, Identifiable, Sendable {
     let kind: Kind
     var blocks: [RichBlock]?
     var html: String?
+    var datasets: [RichDataset]?
+    var metadata: RichSurfaceMetadata?
+    var revisionOf: RichArtifactReference?
 
     func validate() -> Bool {
-        guard version == 1, !id.isEmpty, id.count <= 128, !title.isEmpty, title.count <= 256,
+        guard [1, 2].contains(version), !id.isEmpty, id.count <= 128, !title.isEmpty, title.count <= 256,
             !fallback.isEmpty, fallback.utf8.count <= 65_536
         else { return false }
         switch kind {
         case .native:
             guard html == nil, let blocks, !blocks.isEmpty, blocks.count <= 100 else { return false }
-            return blocks.allSatisfy { $0.validate() }
+            guard blocks.allSatisfy({ $0.validate() }) else { return false }
+            if version == 1 { return blocks.allSatisfy { $0.payload == nil } && datasets == nil }
+            guard RichIdentity.unique(blocks.compactMap(\.id)),
+                (datasets ?? []).count <= 20, RichIdentity.unique((datasets ?? []).map(\.id)),
+                (datasets ?? []).allSatisfy({ $0.validate() })
+            else { return false }
+            return blocks.allSatisfy { $0.payload?.validate(in: self) ?? true }
         case .html:
             return blocks == nil
                 && html.map { !$0.isEmpty && $0.utf8.count <= RichDocument.maximumBytes } == true
@@ -25,13 +34,25 @@ struct RichSurface: Codable, Equatable, Identifiable, Sendable {
     }
 
     var plainText: String {
-        ([title, fallback] + (blocks ?? []).map(\.plainText)).filter { !$0.isEmpty }.joined(
-            separator: "\n\n")
+        var parts = [title, fallback]
+        if metadata?.fictional == true { parts.append("Fictional data") }
+        if let assumptions = metadata?.assumptions { parts.append("Assumptions: " + assumptions) }
+        if let source = metadata?.source { parts.append("Source: " + source) }
+        if let observedAt = metadata?.observedAt { parts.append("Observed: " + observedAt) }
+        parts += (blocks ?? []).map(\.plainText)
+        parts += (datasets ?? []).map { dataset in
+            ([dataset.columns.map(\.title)] + dataset.rows.map(\.values)).map { $0.joined(separator: " | ") }
+                .joined(separator: "\n")
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 }
 
 struct RichBlock: Codable, Equatable, Sendable {
-    enum Kind: String, Codable, Sendable { case text, table, sources, gallery, chart, form }
+    enum Kind: String, Codable, CaseIterable, Sendable {
+        case text, table, sources, gallery, chart, form
+        case section, metrics, comparison, checklist, timeline, graph, tree, imageComparison, record
+    }
     let type: Kind
     var text: String?
     var columns: [String]?
@@ -41,8 +62,11 @@ struct RichBlock: Codable, Equatable, Sendable {
     var points: [RichPoint]?
     var fields: [RichField]?
     var submitLabel: String?
+    var id: String?
+    var payload: RichBlockPayload?
 
     func validate() -> Bool {
+        if let payload { return id.map { !$0.isEmpty && $0.count <= 128 } == true && payload.validate() }
         switch type {
         case .text: return text.map { !$0.isEmpty } == true
         case .table:
@@ -59,6 +83,8 @@ struct RichBlock: Codable, Equatable, Sendable {
             guard ["bar", "line"].contains(style), let points, !points.isEmpty, points.count <= 1_000
             else { return false }
             return points.allSatisfy { !$0.label.isEmpty && $0.value.isFinite }
+        case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record:
+            return false
         case .form:
             guard let fields, !fields.isEmpty, fields.count <= 64,
                 Set(fields.map(\.id)).count == fields.count
@@ -77,7 +103,9 @@ struct RichBlock: Codable, Equatable, Sendable {
     }
 
     var plainText: String {
-        switch type {
+        if let payload { return payload.plainText }
+        return switch type {
+        case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record: ""
         case .text: text ?? ""
         case .table:
             ([columns ?? []] + (rows ?? [])).map { $0.joined(separator: " | ") }.joined(separator: "\n")
@@ -91,9 +119,30 @@ struct RichBlock: Codable, Equatable, Sendable {
 }
 
 extension RichBlock {
+    enum CodingKeys: String, CodingKey {
+        case type, text, columns, rows, items, style, points, fields, submitLabel, id, payload
+    }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(type, forKey: .type)
+        try values.encodeIfPresent(id, forKey: .id)
+        if let payload { try payload.encode(to: values.superEncoder(forKey: .payload)) }
+        try values.encodeIfPresent(text, forKey: .text)
+        try values.encodeIfPresent(columns, forKey: .columns)
+        try values.encodeIfPresent(rows, forKey: .rows)
+        try values.encodeIfPresent(items, forKey: .items)
+        try values.encodeIfPresent(style, forKey: .style)
+        try values.encodeIfPresent(points, forKey: .points)
+        try values.encodeIfPresent(fields, forKey: .fields)
+        try values.encodeIfPresent(submitLabel, forKey: .submitLabel)
+    }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         type = try values.decode(Kind.self, forKey: .type)
+        id = try values.decodeIfPresent(String.self, forKey: .id)
+        payload =
+            values.contains(.payload)
+            ? try RichBlockPayload.decode(type: type, decoder: values.superDecoder(forKey: .payload)) : nil
         text = try values.decodeIfPresent(String.self, forKey: .text)
         columns = try values.decodeIfPresent([String].self, forKey: .columns)
         rows = try values.decodeIfPresent([[RichTableCell]].self, forKey: .rows)?.map { $0.map(\.text) }
@@ -251,6 +300,21 @@ struct RichDocument: Equatable, Sendable {
         segments = result
     }
 
+    static func validationReason(_ source: String) -> String {
+        guard !source.isEmpty else { return "The source exceeded the display limit or is unavailable." }
+        do {
+            let surface = try JSONDecoder().decode(RichSurface.self, from: Data(source.utf8))
+            if ![1, 2].contains(surface.version) { return "This reply uses an unsupported format version." }
+            return "A component contains invalid data, duplicate identities, or unresolved references."
+        } catch DecodingError.keyNotFound(_, _) {
+            return "The generated reply is missing a required field."
+        } catch DecodingError.typeMismatch(_, _) {
+            return "A generated field has an unsupported value type."
+        } catch {
+            return "The generated source is incomplete or does not match a supported format."
+        }
+    }
+
     private static func decode(_ source: String, overLimit: Bool) -> Segment {
         guard !overLimit, source.utf8.count <= maximumBytes else {
             return .unavailable("Interactive content exceeded the display limit.", source: "")
@@ -268,16 +332,7 @@ struct RichDocument: Equatable, Sendable {
 }
 
 enum RichPromptContext {
-    static let instructions = """
-        [Herm rendering context v1]
-        Generative UI is enabled in Herm. This is the user's default reply-format preference. When an interactive or structured view helps, use a fenced `herm-ui` JSON object. Do not wait for the user to mention Herm UI, HTML, or this format.
-        For calculators, simulations, interactive graphics, and tools whose results change with inputs, return a working self-contained HTML surface using kind "html". Put the complete HTML/CSS/JS document in html and omit blocks. Wire inputs to update results immediately. Deliver the interactive result rather than a code listing or instructions to save an HTML file, unless the user explicitly requests source code or a file.
-        For example, "Create a savings calculator with starting balance, monthly contribution, annual interest rate, and years" requires an HTML surface with editable inputs and a recalculating projected balance, even without an explicit UI request.
-        Use native blocks for useful tables, charts, sources, galleries, and forms. Use ordinary Markdown for simple answers where a visual view adds no value. Respect explicit requests for plain text, code listings, or project/file changes; this preference does not replace requested work with a preview.
-        Always include a useful plain-text fallback. Do not invent execution outcomes. Schema: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Blocks: {"type":"text","text":"..."}; {"type":"table","columns":["Name"],"rows":[["Value"]]}; {"type":"sources","items":[{"title":"Source","url":"https://..."}]}; gallery uses the same items with HTTPS or inline PNG/JPEG/WebP images; {"type":"chart","style":"bar" or "line","points":[{"label":"A","value":1}]}; {"type":"form","submitLabel":"Send answer","fields":[{"id":"name","label":"Name","type":"text","required":true}]}. Table rows are arrays of string or number cells, matching the columns. Chart style must be "bar" or "line" and each point has a string label and numeric value. Native surfaces omit html; HTML surfaces omit blocks. Do not add unsupported block types. Field types: text, number, choice, multipleChoice, boolean; choice fields require string options. Form answers return as a user message, never execute tools directly. Limits: 100 blocks, 1000 rows/points per block, 1 MiB per surface.
-        HTML runs only when opened, without network, files, credentials, tools, downloads, popups or persistent storage; inline all resources and avoid eval. Never request secrets in generated forms.
-        [/Herm rendering context]
-        """
+    static var instructions: String { RichFeatureRegistry.instructions() }
     static let suffix = "\n\n" + instructions
     static func prepare(_ text: String) -> String { text.hasSuffix(suffix) ? text : text + suffix }
     static func display(_ text: String) -> String {

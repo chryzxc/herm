@@ -256,6 +256,7 @@ final class DockModel: ObservableObject {
     @Published var defaultBotName: String?
 
     let gateway = HermesGateway()
+    var richGenerationContextProvider: ((QuickDestination) -> RichGenerationContext)?
     let sessionRPCClient: HermesRPCClientProtocol
     var quickWorkflowClient: HermesRPCClientProtocol { sessionRPCClient }
     let interruptRPC: HermesControlRPC

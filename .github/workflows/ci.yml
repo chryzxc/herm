@@ -35,4 +35,4 @@ jobs:
         with:
           persist-credentials: false
       - name: Test visual replies and HTML isolation
-        run: swift test --no-parallel --disable-automatic-resolution --filter 'GenerativeUIIsolationTests|GenerativeUITests|GeneratedHTMLTests'
+        run: swift test --no-parallel --disable-automatic-resolution --filter 'GenerativeUIIsolationTests|GenerativeUITests|GeneratedHTMLTests|RichExpansionTests|RichLifecycleTests'

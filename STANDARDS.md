@@ -18,6 +18,10 @@ Every failure has a user-visible honest state: unavailable, stale, or a safe dia
 
 A card is COMMIT_READY only when: `swift build` and the relevant focused suite are green; README updated for any user-facing change (documentation rule); capability-gated controls verify their probe terms, not just `--help` exit codes; no credential-shaped value appears in UI, logs, or tests; layout-stability and empty-state rules from `AGENTS.md`/`DESIGN.md` are respected.
 
+A feature is available to Generative UI only after its component or adapter is
+registered, its availability is verified, its example passes contract tests, and its
+actions reuse established handlers. Do not advertise an RPC name as an implemented UI.
+
 ## Boundaries
 
 Transport and process-launch concerns stay in `HermesRuntime/` gateway services; persistent workspace state in `WorkspaceStore`; presentation state in `DockModel`. Views render state — they do not own RPC parsing, CLI word-building, or persistence. The Hermes engine install (`~/.hermes/hermes-agent`) is read-only; Herm features extend through verified Hermes contracts or user-state helper scripts, never engine patches.

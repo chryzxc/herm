@@ -8,8 +8,11 @@ enum GenerativeUIIntegration {
         UserDefaults.standard.object(forKey: preferenceKey) as? Bool ?? true
     }
 
-    static func preparePrompt(_ text: String, enabled: Bool = isEnabled) -> String {
-        enabled ? RichPromptContext.prepare(text) : text
+    static func preparePrompt(
+        _ text: String, enabled: Bool = isEnabled, context: RichGenerationContext = RichGenerationContext()
+    ) -> String {
+        guard enabled else { return text }
+        return displayUserText(text) + "\n\n" + RichFeatureRegistry.instructions(context: context)
     }
 
     /// Text projections remain readable even when visual rendering is disabled.

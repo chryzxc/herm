@@ -140,5 +140,77 @@ Generated replies are separate from operational activity. Chat retains its
 existing loading animation, live tool steps and expandable completed summary.
 PRs, routines, integrations, checkpoints and updates keep their established
 native controls. Context and quota retain the existing monitoring views.
-Herm does not add a general layout language, a graph editor, A2UI/MCP Apps
-compatibility, or connected HTML apps.
+Herm adds bounded typed native graph/tree components, not an arbitrary layout language
+or scriptable graph editor. A2UI/MCP Apps compatibility and connected HTML apps are not included.
+
+## Expanded native formats and session Artifacts
+
+The session Artifacts inspector tab uses the same disposable history index as the
+global browser. Interactive replies join files, images, and links. Indexing validates
+completed assistant surfaces without opening HTML. Saved tools store their original
+profile/session/message/surface reference and source digest. A missing source remains
+unavailable; Export creates an independent `.herm-ui.json` or self-contained HTML file.
+Native inputs, sort/filter settings, selected items, tree expansion, and image controls
+restore only for that source revision. HTML transfers one host between presentations;
+it never persists DOM state. Close, session/profile changes, and disabling the setting
+destroy the host. Theme changes and Reload restart its original document.
+
+Use in current chat, Ask about selection, and Revise attach bounded untrusted context
+to the existing composer. They preserve the draft and do not send automatically.
+Forms remain restricted to the loaded original message in its owning conversation.
+Revision links must resolve to an earlier exact source in the same profile/session.
+The browser groups verified revisions and compares readable results through the shared
+diff renderer. Reused titles or IDs do not establish lineage.
+
+Version 2 retains the envelope and adds optional `datasets`, `metadata`, and
+`revisionOf`. New blocks have `id`, `type`, and a typed `payload`. Existing legacy
+blocks remain valid in version 2. Block IDs and dataset row/column IDs must be unique.
+The original source is never rewritten.
+
+```herm-ui
+{"version":2,"id":"sales","title":"Fictional sales","fallback":"January had 12 fictional sales.","kind":"native","metadata":{"fictional":true},"datasets":[{"id":"sales-data","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}],"blocks":[{"id":"table","type":"table","payload":{"dataset":"sales-data"}},{"id":"chart","type":"chart","payload":{"dataset":"sales-data","label":"month","series":["sales"],"style":"bar"}}]}
+```
+
+Dataset cells are strings, interpreted by typed text/number/ISO8601 date columns.
+Tables preserve source order until sorted. Charts share dataset row selection and
+support multiple numeric series. `metadata` accepts supplied `assumptions`, `source`,
+`observedAt`, and `fictional` fields. No field establishes verified runtime status.
+
+| Block | Payload |
+| --- | --- |
+| section | `title`, referenced block IDs in `blocks`, optional `paired`; no nested sections |
+| metrics | `items: [{id,label,value,unit?,comparison?}]`; at most 20 |
+| comparison | `criteria: [String]`, `options: [{id,title,values:[String],detail?}]` |
+| checklist | `items: [{id,title,detail?}]`; local choices attached explicitly to chat |
+| timeline | `items: [{id,title,detail?,date?,dependencies?:[id]}]` |
+| graph | `nodes: [{id,title,detail?}]`, `edges: [{source,target,label?}]`; 200 nodes/500 edges |
+| tree | `items: [{id,title,value?,parent?}]`; 1,000 items, no cycles |
+| imageComparison | `before` and `after`, each `{title,url}` using inline PNG/JPEG/WebP data |
+| record | `kind`, `id`; resolved by a registered current-workspace adapter |
+
+All formats retain the 1 MiB surface limit and existing count limits. Missing fields,
+unsupported types/versions, duplicate identities, cycles, and unresolved references
+show an honest unavailable reason and readable fallback. Inspect the exact source
+through the actions menu.
+
+## Adding a feature without prompt drift
+
+1. Implement its typed payload, validation, readable projection, and renderer.
+2. Register its descriptor and a valid example in `RichFeatureRegistry`. The prompt
+   catalog is generated from these descriptors; do not add another handwritten list.
+3. Connected features register their current record IDs and resolver together through
+   `RichHostActionRouter.Feature`. Use existing capability/permission authorities and
+   action handlers. The catalog uses these same readers for each captured destination.
+4. Add format, renderer, availability, and action-boundary contract tests. Unimplemented
+   registrations are not advertised. Existing RPC names alone never establish support.
+
+Registered connected navigation covers loaded PRs/issues, available Kanban tasks,
+Calendar automation/task items, usage reports, and the current session Timeline.
+Mac EventKit items remain local to Calendar. Missing CI reruns, network capture, and
+deployment adapters use supplied snapshots or normal agent follow-ups instead.
+
+`RichGenerationRecipes` contains natural-language acceptance prompts and fixtures for
+calculations, scheduling, organization, learning, decisions, research/writing, data
+inspection, developer exploration, UI review, and delivery workflows. These exercise
+reusable native components and offline HTML, rather than installing separate apps.
+Run the original Generative UI/HTML suites plus `RichExpansionTests|RichLifecycleTests`.

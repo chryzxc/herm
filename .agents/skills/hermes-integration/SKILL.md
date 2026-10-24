@@ -27,4 +27,11 @@ contract you need does not exist, stop and tell the user.
 7. **Tests:** cover the parsing and state transitions, plus an adapter test that
    asserts the exact quoted-word command. Use fixtures; never call a live Hermes.
 
+8. **Generative UI:** expose a feature only after its typed component/adapter is
+   registered, availability is verified, its example passes contract tests, and
+   actions reuse established handlers. Register connected record readers and
+   resolvers together in `RichHostActionRouter.Feature`; the next submission's
+   catalog derives from `RichFeatureRegistry`, not a second handwritten prompt.
+   An RPC name alone does not establish a working generated interface.
+
 Then follow `verify-change`.

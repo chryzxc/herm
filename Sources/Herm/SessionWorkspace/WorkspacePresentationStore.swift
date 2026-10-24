@@ -23,7 +23,7 @@ struct InspectorPresentation: Codable {
     }
 }
 
-/// Durable references only; no source, transcript, browser state, or terminal output.
+/// Durable references and bounded native-input preferences; no transcripts, HTML state, or terminal output.
 @MainActor
 final class WorkspacePresentationStore {
     static let shared = WorkspacePresentationStore()
