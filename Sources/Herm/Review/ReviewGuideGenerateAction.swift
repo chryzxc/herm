@@ -7,16 +7,19 @@ struct ReviewGuideGenerateAction: View {
     @Environment(\.chatContextRouter) private var router
 
     var body: some View {
-        if let bots = router?.bots {
-            ReviewGuideReviewerMenu(bots: bots, requesting: requesting, menuRow: menuRow, generate: generate)
-        } else {
-            if menuRow {
-                Button("Generate review guide") { generate(nil) }
+        Group {
+            if let bots = router?.bots {
+                ReviewGuideReviewerMenu(bots: bots, requesting: requesting, menuRow: menuRow, generate: generate)
             } else {
-                Button(requesting ? "Requesting guide…" : "Generate review guide") { generate(nil) }
-                    .buttonStyle(.dockCompact)
+                if menuRow {
+                    Button("Generate review guide") { generate(nil) }
+                } else {
+                    Button(requesting ? "Requesting guide…" : "Generate review guide") { generate(nil) }
+                        .buttonStyle(.dockCompact)
+                }
             }
         }
+        .help(ReviewGuideCoordinator.skillTooltip)
     }
 }
 
