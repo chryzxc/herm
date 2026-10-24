@@ -1998,11 +1998,15 @@ struct EdgeNotchView: View {
     }
 
     private var isIsland: Bool { state.side == .top }
+    private var showsQuickMessage: Bool {
+        state.composing && !state.isReadingDetail && !state.showingDigest
+            && (state.quickTarget == nil || state.quickReplyTask == nil) && quickMessageModel != nil
+    }
 
     private var preview: some View {
         VStack(spacing: isIsland ? 6 : 0) {
             // A glimpse is just the update: no tabs or toolbar until the user hovers.
-            if !state.glimpsing {
+            if !state.glimpsing && !showsQuickMessage {
                 HStack(spacing: 4) {
                     HStack(spacing: 2) {
                         tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
@@ -2104,7 +2108,7 @@ struct EdgeNotchView: View {
                     open: onOpenDigest, openActivity: openDock)
             } else if let target = state.resultTarget, let quickMessageModel {
                 resultPreview(target, model: quickMessageModel)
-            } else if state.composing, state.quickTarget == nil || state.quickReplyTask == nil, let quickMessageModel {
+            } else if showsQuickMessage, let quickMessageModel {
                 EdgeQuickMessageView(
                     model: quickMessageModel, control: controlCenter, state: state,
                     close: { onQuickMessageFocus(false) }, openDock: openDock)
@@ -2152,8 +2156,8 @@ struct EdgeNotchView: View {
                     openDock: openDock, openTask: onOpenTask)
             }
         }
-        // The header row normally fills the camera band; a glimpse hides it, so clear the camera itself.
-        .padding(.top, state.glimpsing && isIsland ? state.notchSize.height : 0)
+        // Presentations without the tab row still leave the camera housing clear.
+        .padding(.top, (state.glimpsing || showsQuickMessage) && isIsland ? state.notchSize.height : 0)
     }
 
     private func resultPreview(_ target: EdgeResultTarget, model quickMessageModel: DockModel) -> some View {

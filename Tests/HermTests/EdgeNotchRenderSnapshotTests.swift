@@ -85,6 +85,98 @@ struct EdgeNotchRenderSnapshotTests {
         }
     }
 
+    @Test func renderQuickMessageStates() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["QUICK_MESSAGE_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        _ = DockThemeStore.shared
+        let previousTheme = DockThemeRuntime.current
+        let previousAppearance = NSApplication.shared.appearance
+        defer {
+            DockThemeRuntime.current = previousTheme
+            DockThemeRuntime.revision &+= 1
+            NSApplication.shared.appearance = previousAppearance
+        }
+        let root = URL(fileURLWithPath: directory).appendingPathComponent("drafts")
+        defer { try? FileManager.default.removeItem(at: root) }
+        func editor(in view: NSView) -> NSTextView? {
+            if let text = view as? NSTextView { return text }
+            return view.subviews.lazy.compactMap { editor(in: $0) }.first
+        }
+        let model = DockModel(defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "snapshot")
+        let control = ControlCenterModel()
+        control.providerQuotas = [
+            ProviderQuotaSnapshot(
+                provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
+                windows: [
+                    ProviderQuotaWindow(
+                        id: "weekly", label: "Weekly", remainingPercent: 0,
+                        remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
+                ], safeDetail: nil)
+        ]
+        for theme in ["clean", "island", "glass", "mono", "storm", "warmLight"] {
+            DockThemeRuntime.current = try #require(DockThemeID(rawValue: theme))
+            DockThemeRuntime.revision &+= 1
+            let dark = ["island", "glass", "mono", "storm"].contains(theme)
+            NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            for width in [CGFloat(320), CGFloat(368), CGFloat(560)] {
+                for mode in ["empty", "draft", "long", "pending", "failed", "offline"] {
+                    let state = EdgeNotchState(
+                        store: QuickDraftStore(directory: root.appendingPathComponent(UUID().uuidString)))
+                    state.switchQuickProfile("default")
+                    state.expanded = true
+                    state.composing = true
+                    state.quickDraft =
+                        mode == "empty" ? "" : "Please summarize the test failures before making changes."
+                    if mode == "long" { state.quickDraft = String(repeating: state.quickDraft + "\n", count: 8) }
+                    state.quickSending = mode == "pending"
+                    state.quickResult =
+                        mode == "failed" ? "The message could not be sent. Your draft is saved; try again." : nil
+                    model.status = mode == "offline" ? .offline : .idle
+                    let height: CGFloat = width == 368 ? EdgeNotchState.expandedSize.height : 288
+                    let view = Group {
+                        if width == 368 {
+                            EdgeNotchView(state: state, controlCenter: control, quickMessageModel: model, openDock: {})
+                        } else {
+                            EdgeQuickMessageView(model: model, control: control, state: state, close: {}, openDock: {})
+                        }
+                    }
+                    .frame(width: width, height: height)
+                    .background(Color.dockCanvas)
+                    .dockThemedRoot()
+                    .environment(\.colorScheme, dark ? .dark : .light)
+                    .transaction {
+                        $0.disablesAnimations = true
+                        $0.animation = nil
+                    }
+                    let host = NSHostingView(rootView: view)
+                    host.frame = CGRect(x: 0, y: 0, width: width, height: height)
+                    let window = NSWindow(
+                        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    window.appearance = NSApplication.shared.appearance
+                    window.contentView = host
+                    window.orderFrontRegardless()
+                    defer { window.orderOut(nil) }
+                    for _ in 0..<3 {
+                        host.layoutSubtreeIfNeeded()
+                        try await Task.sleep(for: .milliseconds(50))
+                    }
+                    let text = try #require(editor(in: host))
+                    let container = try #require(text.textContainer)
+                    let textHeight = try #require(text.layoutManager).usedRect(for: container).height
+                    let viewportHeight = try #require(text.enclosingScrollView).contentView.bounds.height
+                    if mode == "draft" { #expect(textHeight <= viewportHeight + 0.5) }
+                    if mode == "long" { #expect(textHeight > viewportHeight) }
+                    let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    try #require(rep.representation(using: .png, properties: [:])).write(
+                        to: URL(fileURLWithPath: directory).appendingPathComponent(
+                            "message-\(theme)-\(Int(width))-\(mode).png"))
+                    state.draftStore.flush()
+                }
+            }
+        }
+    }
+
     @Test func renderDisplayStyles() async throws {
         guard let dir = ProcessInfo.processInfo.environment["NOTCH_SNAPSHOT_DIR"] else { return }
         let activities: [(String, EdgeNotchActivity)] = [

@@ -638,12 +638,20 @@ struct EdgeTaskPreview: View {
                             .foregroundStyle(task.tone == .attention ? task.tone.color : Color.dockSecondaryText)
                     }
                     if let detail = task.detail, !detail.isEmpty, task.choices.isEmpty {
-                        (Text(showStatus ? " · " : "") + Self.detailText(detail))
+                        let summaryPrefix = OnDeviceAssist.attribution + " · "
+                        let visibleDetail =
+                            detail.hasPrefix(summaryPrefix)
+                            ? String(detail.dropFirst(summaryPrefix.count)) : detail
+                        (Text(showStatus ? " · " : "") + Self.detailText(visibleDetail))
+                            .help(detail)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                 }
                 .lineLimit(1)
+                if task.detail?.hasPrefix(OnDeviceAssist.attribution + " · ") == true {
+                    OnDeviceAssistNotice()
+                }
                 if task.tone == .working {
                     DockShimmerTrack(tone: task.tone, muted: true).padding(.top, 3)
                 }
