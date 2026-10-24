@@ -1667,7 +1667,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .officePreview: .buildingOffice
         case .core: .gear
         case .quota: .gauge
-        case .usage: .chartBar
+        case .usage: .pulse
         case .calendar: .calendarBlank
         case .capabilities: .puzzlePiece
         case .messaging: .paperPlaneTilt
