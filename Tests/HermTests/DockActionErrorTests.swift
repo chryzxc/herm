@@ -6,6 +6,46 @@ import Testing
 
 @MainActor
 struct DockActionErrorTests {
+    @Test func closeButtonWorksWithoutMakingThePopupKey() async throws {
+        _ = NSApplication.shared
+        let parent = DockPanel(
+            contentRect: NSRect(x: 100, y: 100, width: 600, height: 300),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        parent.sharingType = .none
+        parent.makeKeyAndOrderFront(nil)
+        defer { parent.close() }
+        let center = DockActionErrorCenter()
+        let presenter = DockActionErrorPresenter(center: center)
+        center.report("Could not pin session", message: "not_found")
+        let popup = try #require(parent.childWindows?.first)
+        #expect(abs(popup.frame.maxX - (parent.frame.maxX - 20)) < 1)
+        #expect(abs(popup.frame.minY - (parent.frame.minY + 20)) < 1)
+        #expect(popup.sharingType == .none)
+        #expect(!popup.canBecomeMain)
+        defer { withExtendedLifetime(presenter) {} }
+        let host = try #require(popup.contentView)
+        #expect(host.acceptsFirstMouse(for: nil))
+        #expect(popup.canBecomeKey)
+        for _ in 0..<3 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        // Inside the close button's frame, outside the small X's painted pixels.
+        let point = NSPoint(x: host.bounds.maxX - 36, y: host.bounds.maxY - 20)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try #require(
+                NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: popup.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            NSApp.sendEvent(event)
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(center.current == nil)
+        #expect(!popup.isVisible)
+        #expect(parent.isKeyWindow)
+    }
+
     @Test func errorsAreSanitizedAndRemainUntilTheirOwnDismissal() throws {
         let center = DockActionErrorCenter()
         center.report("Save failed", message: "token=private-value\nhttps://example.com/private\nTry again.")

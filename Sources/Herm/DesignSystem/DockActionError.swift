@@ -47,7 +47,9 @@ struct DockActionErrorPopup: View {
             .foregroundStyle(Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: dismiss) {
-                DockIcon(.x, size: 12, color: .dockPrimaryText).frame(width: 24, height: 24)
+                DockIcon(.x, size: 12, color: .dockPrimaryText)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
             .help("Dismiss error")
@@ -80,23 +82,29 @@ final class DockActionErrorPresenter {
 
     private func show(_ error: DockActionError?) {
         if let panel {
-            panel.parent?.removeChildWindow(panel)
+            let parent = panel.parent
+            let restoreFocus = panel.isKeyWindow
+            parent?.removeChildWindow(panel)
             panel.close()
             self.panel = nil
+            if restoreFocus, parent?.isVisible == true { parent?.makeKey() }
         }
         guard let error, let parent = NSApp.keyWindow ?? NSApp.mainWindow,
             let screen = parent.screen
         else { return }
         let width = min(420, screen.visibleFrame.width - 32)
-        let host = NSHostingView(
+        let host = DockActionErrorHostingView(
             rootView: DockActionErrorPopup(error: error) { [weak center] in center?.dismiss(error.id) }
                 .frame(width: width)
                 .dockThemedRoot())
         let height = host.fittingSize.height
-        let panel = NSPanel(
+        let panel = DockActionErrorPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = false
+        panel.sharingType = parent.sharingType
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -105,7 +113,7 @@ final class DockActionErrorPresenter {
         let visible = screen.visibleFrame
         panel.setFrameOrigin(
             NSPoint(
-                x: min(max(parent.frame.midX - width / 2, visible.minX + 16), visible.maxX - width - 16),
+                x: min(max(parent.frame.maxX - width - 20, visible.minX + 16), visible.maxX - width - 16),
                 y: min(max(parent.frame.minY + 20, visible.minY + 16), visible.maxY - height - 16)))
         self.panel = panel
         parent.addChildWindow(panel, ordered: .above)
@@ -117,4 +125,14 @@ final class DockActionErrorPresenter {
                 .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
     }
+}
+
+/// Borderless panels otherwise refuse focus, so AppKit can discard their first click.
+private final class DockActionErrorPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+private final class DockActionErrorHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
