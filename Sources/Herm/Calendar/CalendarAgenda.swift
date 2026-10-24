@@ -62,6 +62,50 @@ struct CalendarItem: Identifiable, Equatable {
 
 @MainActor
 enum CalendarAgenda {
+    enum Filter: String, CaseIterable {
+        case all = "All items"
+        case events = "Events"
+        case reminders = "Reminders"
+        case automations = "Agent runs"
+        case tasks = "Kanban"
+    }
+
+    static func filtered(_ items: [CalendarItem], query: String, kind: Filter) -> [CalendarItem] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return items.filter { item in
+            let matchesKind: Bool
+            switch (kind, item.kind) {
+            case (.all, _), (.events, .event), (.reminders, .reminder), (.automations, .automation), (.tasks, .task):
+                matchesKind = true
+            default: matchesKind = false
+            }
+            let source: String
+            switch item.kind {
+            case .event(let name, let location, _, _): source = name + " " + (location ?? "")
+            case .reminder(let name): source = name
+            case .automation: source = "Automation"
+            case .task: source = "Kanban"
+            }
+            return matchesKind && (query.isEmpty || (item.title + " " + source).localizedStandardContains(query))
+        }
+    }
+
+    /// Only timed events conflict; touching boundaries and all-day entries do not.
+    static func overlappingEventIDs(_ items: [CalendarItem]) -> Set<String> {
+        let events = items.filter { $0.isEvent && !$0.isAllDay && ($0.end ?? $0.start) > $0.start }
+            .sorted { $0.start < $1.start }
+        var result: Set<String> = []
+        for (index, event) in events.enumerated() {
+            guard let end = event.end else { continue }
+            for other in events.dropFirst(index + 1) {
+                if other.start >= end { break }
+                result.insert(event.id)
+                result.insert(other.id)
+            }
+        }
+        return result
+    }
+
     /// Items keyed by local start-of-day. Multi-day items appear on every day
     /// they cover inside `range`; each day lists all-day items first, then by start.
     static func build(_ items: [CalendarItem], in range: DateInterval, calendar: Calendar = .current) -> [Date:

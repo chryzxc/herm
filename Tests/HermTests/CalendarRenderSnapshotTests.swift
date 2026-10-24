@@ -43,7 +43,7 @@ struct CalendarRenderSnapshotTests {
         ] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
-            for scope in ["Month", "Week"] {
+            for scope in ["Month", "Week", "Agenda"] {
                 defaults.set(scope, forKey: "dock.calendar.view")
                 for width: CGFloat in [440, 1320] {
                     let view = CalendarWorkspaceView(control: control)

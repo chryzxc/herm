@@ -13,6 +13,9 @@ struct CalendarWorkspaceView: View {
     @State private var selectedItemID: String?
     @State private var prepItem: CalendarItem?
     @State private var actionStatus: String?
+    @State private var query = ""
+    @State private var itemFilter = CalendarAgenda.Filter.all
+    @State private var showingDatePicker = false
     @AppStorage("dock.calendar.view") private var scopeRaw = CalendarViewScope.week.rawValue
     /// Calendar and list IDs the user hid, newline-separated. A local preference only.
     @AppStorage("dock.calendar.hidden") private var hiddenRaw = ""
@@ -43,25 +46,42 @@ struct CalendarWorkspaceView: View {
             + CalendarAgenda.taskItems(control.globalKanbanTasks)
     }
 
+    private var visibleItems: [CalendarItem] {
+        CalendarAgenda.filtered(items, query: query, kind: itemFilter)
+    }
+
+    private var isFiltering: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || itemFilter != .all
+    }
+
     var body: some View {
-        let agenda = CalendarAgenda.build(items, in: range, calendar: calendar)
+        let agenda = CalendarAgenda.build(visibleItems, in: range, calendar: calendar)
         VStack(alignment: .leading, spacing: 16) {
             toolbar
+            searchControls
             GeometryReader { proxy in
                 if proxy.size.width >= 1000 {
                     HStack(alignment: .top, spacing: 20) {
-                        ScrollView {
-                            calendarPane(agenda).frame(height: max(560, proxy.size.height))
+                        if scope == .agenda {
+                            agendaList(agenda)
+                        } else {
+                            ScrollView {
+                                calendarPane(agenda).frame(height: max(560, proxy.size.height))
+                            }
                         }
                         detail(agenda).frame(width: 340)
                     }
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            calendarPane(agenda).frame(
-                                height: proxy.size.width < 560
-                                    ? (scope == .month ? 440 : 240) : (scope == .month ? 600 : 420))
-                            detail(agenda).frame(height: 380)
+                            if scope == .agenda {
+                                agendaList(agenda).frame(height: 360)
+                            } else {
+                                calendarPane(agenda).frame(
+                                    height: proxy.size.width < 560
+                                        ? (scope == .month ? 440 : 240) : (scope == .month ? 600 : 420))
+                            }
+                            detail(agenda, stacked: true).frame(height: 380)
                         }
                     }
                 }
@@ -81,7 +101,9 @@ struct CalendarWorkspaceView: View {
             system.refresh()
         }
         .onChange(of: selected) { _, _ in
-            selectedItemID = nil
+            if !(agenda[selected] ?? []).contains(where: { $0.id == selectedItemID }) {
+                selectedItemID = nil
+            }
             actionStatus = nil
         }
         .onChange(of: selectedItemID) { _, _ in actionStatus = nil }
@@ -113,14 +135,38 @@ struct CalendarWorkspaceView: View {
     private var dateNavigation: some View {
         let style = DockThemePalette(theme: DockThemeRuntime.current)
         return HStack(spacing: 8) {
-            Text(selected.formatted(.dateTime.month(.wide).year()))
-                .dockFont(.pageTitle)
-                .foregroundStyle(Color.dockPrimaryText)
-                .fixedSize()
-            DockIconButton(icon: .caretLeft, label: "Previous \(scope.rawValue.lowercased())", style: style) {
+            Button {
+                showingDatePicker.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Text(selected.formatted(.dateTime.month(.wide).year()))
+                        .dockFont(.pageTitle)
+                    DockIcon(.caretDown, size: 10, color: .dockSecondaryText)
+                }
+            }
+            .buttonStyle(.dockCompact)
+            .fixedSize()
+            .help("Jump to a date")
+            .popover(isPresented: $showingDatePicker) {
+                DatePicker(
+                    "Jump to date",
+                    selection: Binding(
+                        get: { selected },
+                        set: {
+                            selected = calendar.startOfDay(for: $0)
+                            showingDatePicker = false
+                        }),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .padding(16)
+            }
+            DockIconButton(icon: .caretLeft, label: "Previous \(scope == .month ? "month" : "week")", style: style) {
                 shift(-1)
             }
-            DockIconButton(icon: .caretRight, label: "Next \(scope.rawValue.lowercased())", style: style) { shift(1) }
+            DockIconButton(icon: .caretRight, label: "Next \(scope == .month ? "month" : "week")", style: style) {
+                shift(1)
+            }
             Button("Today") { selected = today }
                 .buttonStyle(.dockCompact)
                 .disabled(selected == today)
@@ -165,6 +211,92 @@ struct CalendarWorkspaceView: View {
             }
         }
         .fixedSize()
+    }
+
+    private var searchControls: some View {
+        HStack(spacing: 10) {
+            DockTextField("Search this \(scope == .month ? "month" : "week")", text: $query)
+                .textFieldStyle(.dockGlass)
+                .accessibilityLabel("Search calendar titles, sources, and locations")
+            DockMenu {
+                ForEach(CalendarAgenda.Filter.allCases, id: \.self) { filter in
+                    Button(filter.rawValue) { itemFilter = filter }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(itemFilter.rawValue)
+                    DockIcon(.caretDown, size: 10, color: .dockSecondaryText)
+                }
+            }
+            .buttonStyle(.dockCompact)
+            Button("Clear") {
+                query = ""
+                itemFilter = .all
+            }
+            .buttonStyle(.dockCompact)
+            .disabled(!isFiltering)
+        }
+    }
+
+    private func agendaList(_ agenda: [Date: [CalendarItem]]) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                if agenda.isEmpty {
+                    Text(isFiltering ? "No matching items this week" : "Nothing scheduled this week")
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .padding(16)
+                }
+                ForEach(agenda.keys.sorted(), id: \.self) { day in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Button {
+                            selected = day
+                        } label: {
+                            HStack {
+                                Text(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                                if day == today { Text("Today") }
+                                Spacer()
+                                Text("\(agenda[day]?.count ?? 0) items")
+                            }
+                            .dockFont(.body, weight: .semibold)
+                        }
+                        .buttonStyle(.dockCompact)
+                        ForEach(agenda[day] ?? []) { item in
+                            Button {
+                                selected = day
+                                selectedItemID = item.id
+                            } label: {
+                                HStack(alignment: .top, spacing: 12) {
+                                    Text(item.isAllDay ? "All day" : timeLabel(item))
+                                        .monospacedDigit().frame(width: 110, alignment: .leading)
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                    DockIcon(icon(item), size: 12, color: tint(item))
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.title).foregroundStyle(Color.dockPrimaryText)
+                                        Text(source(item)).foregroundStyle(Color.dockMetadataText)
+                                    }
+                                    Spacer(minLength: 0)
+                                    DockIcon(.caretRight, size: 10, color: .dockMetadataText)
+                                }
+                                .dockFont(.body)
+                                .multilineTextAlignment(.leading)
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.dockHover)
+                            .help("Show this day's agenda and actions")
+                        }
+                    }
+                    .padding(12)
+                    .background {
+                        DockThemeShape(cornerRadius: DockLayout.paneRadius)
+                            .dockSelectionFill(day == selected, fallback: Color.dockSurface)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var legend: some View {
@@ -365,8 +497,10 @@ struct CalendarWorkspaceView: View {
 
     // MARK: Detail
 
-    private func detail(_ agenda: [Date: [CalendarItem]]) -> some View {
+    private func detail(_ agenda: [Date: [CalendarItem]], stacked: Bool = false) -> some View {
         let dayItems = agenda[selected] ?? []
+        let fullDayItems = CalendarAgenda.build(items, in: range, calendar: calendar)[selected] ?? []
+        let overlaps = CalendarAgenda.overlappingEventIDs(fullDayItems)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -383,7 +517,7 @@ struct CalendarWorkspaceView: View {
                 Spacer(minLength: 8)
                 if let router {
                     Button("Plan in chat") {
-                        router.attach(CalendarAgenda.dayContext(selected, items: dayItems), to: nil)
+                        router.attach(CalendarAgenda.dayContext(selected, items: fullDayItems), to: nil)
                     }
                     .buttonStyle(.dockSecondary)
                     .controlSize(.small)
@@ -394,17 +528,31 @@ struct CalendarWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if dayItems.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Nothing scheduled")
+                            Text(isFiltering ? "No matching items" : "Nothing scheduled")
                                 .dockFont(.body, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
-                            Text("Events, reminders, and Hermes runs for this day appear here.")
-                                .dockFont(.body)
-                                .foregroundStyle(Color.dockMetadataText)
+                            Text(
+                                isFiltering
+                                    ? "Clear filters to see the full day."
+                                    : "Events, reminders, and Hermes runs for this day appear here."
+                            )
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockMetadataText)
                         }
                         .padding(.top, 4)
                     } else {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(dayItems) { itemRow($0) }
+                        ForEach([true, false], id: \.self) { allDay in
+                            let sectionItems = dayItems.filter { $0.isAllDay == allDay }
+                            if !sectionItems.isEmpty {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(allDay ? "All day" : "Schedule")
+                                        .dockFont(.body, weight: .semibold)
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                    ForEach(sectionItems) { item in
+                                        itemRow(item, overlaps: overlaps.contains(item.id))
+                                    }
+                                }
+                            }
                         }
                     }
                     accessCard
@@ -412,9 +560,15 @@ struct CalendarWorkspaceView: View {
             }
             .scrollIndicators(.hidden)
         }
-        .padding(.leading, 20)
+        .padding(stacked ? .top : .leading, 20)
         .frame(maxHeight: .infinity, alignment: .top)
-        .overlay(alignment: .leading) { Color.dockBorderLight.frame(width: DockLayout.hairline) }
+        .overlay(alignment: stacked ? .top : .leading) {
+            if stacked {
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
+            } else {
+                Color.dockBorderLight.frame(width: DockLayout.hairline)
+            }
+        }
     }
 
     @ViewBuilder
@@ -476,7 +630,7 @@ struct CalendarWorkspaceView: View {
         }
     }
 
-    private func itemRow(_ item: CalendarItem) -> some View {
+    private func itemRow(_ item: CalendarItem, overlaps: Bool) -> some View {
         let isSelected = item.id == selectedItemID
         return VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -495,6 +649,11 @@ struct CalendarWorkspaceView: View {
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(isSelected ? nil : 2)
                             .multilineTextAlignment(.leading)
+                        if overlaps {
+                            Text("Overlaps another event")
+                                .dockFont(.metadata)
+                                .foregroundStyle(Color.dockWarning)
+                        }
                         HStack(spacing: 5) {
                             DockIcon(icon(item), size: 11, color: tint(item))
                             Text(source(item)).lineLimit(1)
@@ -658,6 +817,7 @@ struct CalendarWorkspaceView: View {
 private enum CalendarViewScope: String, CaseIterable {
     case week = "Week"
     case month = "Month"
+    case agenda = "Agenda"
 }
 
 /// One-time Hermes automation ahead of an event. Hermes reads an ISO

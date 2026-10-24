@@ -89,4 +89,40 @@ struct CalendarAgendaTests {
         #expect(context.id.hasPrefix("agenda:2026-10-"))
         #expect(context.body.contains("Standup (event)"))
     }
+    @Test func searchMatchesTitlesSourcesAndLocationsAndCombinesWithKind() {
+        let meeting = event("Review", start: date(20, 10), location: "Room 4")
+        let reminder = CalendarItem(
+            id: "reminder", kind: .reminder(list: "Personal"), title: "Review notes", start: date(20))
+        let items = [meeting, reminder]
+        #expect(CalendarAgenda.filtered(items, query: "  review  ", kind: .all).count == 2)
+        #expect(CalendarAgenda.filtered(items, query: "ROOM 4", kind: .events).map(\.id) == [meeting.id])
+        #expect(CalendarAgenda.filtered(items, query: "work", kind: .all).map(\.id) == [meeting.id])
+        #expect(CalendarAgenda.filtered(items, query: "review", kind: .reminders).map(\.id) == [reminder.id])
+        #expect(CalendarAgenda.filtered(items, query: "missing", kind: .all).isEmpty)
+        #expect(CalendarAgenda.filtered(items, query: " ", kind: .all) == items)
+    }
+
+    @Test func overlapsExcludeAllDayRemindersMissingEndsAndTouchingBoundaries() {
+        let items = [
+            event("a", start: date(20, 9), end: date(20, 11)),
+            event("b", start: date(20, 10), end: date(20, 12)),
+            event("adjacent", start: date(20, 12), end: date(20, 13)),
+            event("all day", start: date(20, 0), end: date(21, 0), allDay: true),
+            event("unknown end", start: date(20, 10)),
+            event("invalid end", start: date(20, 10), end: date(20, 9)),
+            CalendarItem(
+                id: "reminder", kind: .reminder(list: "Work"), title: "Due", start: date(20, 10), end: date(20, 11)),
+        ]
+        #expect(CalendarAgenda.overlappingEventIDs(items) == ["event:a", "event:b"])
+    }
+
+    @Test func overlapsIncludeNestedAndOvernightEvents() {
+        let items = [
+            event("overnight", start: date(19, 23), end: date(20, 10)),
+            event("nested", start: date(20, 8), end: date(20, 9)),
+            event("later", start: date(20, 9), end: date(20, 11)),
+        ]
+        #expect(CalendarAgenda.overlappingEventIDs(items) == Set(items.map(\.id)))
+    }
+
 }
