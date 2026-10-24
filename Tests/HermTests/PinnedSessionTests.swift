@@ -13,12 +13,22 @@ private final class PinRPCClient: HermesRPCClientProtocol {
     var writeError: Error?
     var beforeWrite: (() async -> Void)?
     var beforeIndexRead: (() async -> Void)?
+    var cliPinHelp = "usage: hermes sessions pin [-h] session_ids [session_ids ...]"
+    var cliUnpinHelp = "usage: hermes sessions unpin [-h] session_ids [session_ids ...]"
+    var cliResult: [String: Any] = ["stdout": "Pinned session.", "code": 0]
+    private(set) var commands: [String] = []
     private(set) var fetchedPaths: [String] = []
     private(set) var writes: [(method: String, path: String, body: [String: Any])] = []
 
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "shell.exec", let command = params["command"] as? String {
+            commands.append(command)
+            if command == "'hermes' 'sessions' 'pin' '--help'" { return ["stdout": cliPinHelp, "code": 0] }
+            if command == "'hermes' 'sessions' 'unpin' '--help'" { return ["stdout": cliUnpinHelp, "code": 0] }
+            return cliResult
+        }
         if method == "session.list" { return ["sessions": rows] }
         if method == "session.active_list" {
             if liveUnavailable { throw HermesGateway.GatewayError.malformedResponse }
@@ -215,6 +225,51 @@ final class PinnedSessionTests: XCTestCase {
                 XCTFail("An invalid snapshot must not permit a write")
             } catch {}
             XCTAssertTrue(client.writes.isEmpty)
+        }
+    }
+
+    func testSavedTUIHistoryUsesVerifiedCLIWhenHTTPHasNoExecutionOwner() async throws {
+        let client = PinRPCClient()
+        client.writeError = HermesGateway.GatewayError.httpRefused(404, "not_found")
+        let service = HermesSessionPinService()
+        try await service.setPinned(true, sessionID: "saved", profileID: "coder", client: client)
+        try await service.setPinned(false, sessionID: "saved", profileID: "coder", client: client)
+        XCTAssertEqual(
+            client.commands,
+            [
+                "'hermes' 'sessions' 'pin' '--help'",
+                "'hermes' 'sessions' 'unpin' '--help'",
+                "'hermes' '--profile' 'coder' 'sessions' 'pin' '--' 'saved'",
+                "'hermes' '--profile' 'coder' 'sessions' 'unpin' '--' 'saved'",
+            ])
+    }
+
+    func testCLIPinRecoveryFailsClosedOnMissingContractOrRejectedWrite() async {
+        for helpAvailable in [false, true] {
+            let client = PinRPCClient()
+            client.writeError = HermesGateway.GatewayError.httpRefused(404, "not_found")
+            if !helpAvailable { client.cliUnpinHelp = "usage: hermes sessions" }
+            client.cliResult = ["code": 1, "stderr": "Session not found"]
+            do {
+                try await HermesSessionPinService().setPinned(true, sessionID: "saved", profileID: nil, client: client)
+                XCTFail("A failed CLI contract or write must not report success")
+            } catch {}
+            XCTAssertEqual(client.commands.count, helpAvailable ? 3 : 2)
+        }
+    }
+
+    func testHTTPRefusalsDoNotFallBackToCLI() async {
+        for failure in [
+            HermesGateway.GatewayError.httpRefused(403, "permission_denied"),
+            .httpRefused(409, "revision_conflict"), .httpError(404), .httpRefused(404, "unknown_route"),
+        ] {
+            let client = PinRPCClient()
+            client.writeError = failure
+            do {
+                try await HermesSessionPinService().setPinned(true, sessionID: "saved", profileID: nil, client: client)
+                XCTFail("Expected the original HTTP refusal")
+            } catch {}
+            XCTAssertTrue(client.commands.isEmpty)
         }
     }
 

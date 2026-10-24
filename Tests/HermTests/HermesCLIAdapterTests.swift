@@ -5,6 +5,17 @@ import Testing
 
 @MainActor
 struct HermesCLIAdapterTests {
+    @Test func sessionPinCommandsKeepProfileAndSessionAsQuotedWords() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        _ = try await adapter.setSessionPinned(true, sessionID: "saved's $(noop)", profileID: "bot's profile")
+        #expect(
+            client.commands.last
+                == "'hermes' '--profile' 'bot'\\''s profile' 'sessions' 'pin' '--' 'saved'\\''s $(noop)'")
+        _ = try await adapter.setSessionPinned(false, sessionID: "saved", profileID: nil)
+        #expect(client.commands.last == "'hermes' 'sessions' 'unpin' '--' 'saved'")
+    }
+
     @Test func profileDeletionUsesConfirmedQuotedCommand() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))

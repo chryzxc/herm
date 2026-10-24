@@ -36,6 +36,7 @@ final class HermesSessionPinService {
 
     // A lost acknowledgement must retry the same receipt, not overwrite a newer edit.
     private var pending: [Intent: [String: Any]] = [:]
+    private var cliSupportedClient: ObjectIdentifier?
 
     func setPinned(_ pinned: Bool, sessionID: String, profileID: String?, client: HermesRPCClientProtocol) async throws
     {
@@ -70,8 +71,13 @@ final class HermesSessionPinService {
             pending[intent] = body
         }
         do {
-            let result = try await client.sendHTTP("PATCH", path: path, body: body)
-            guard result["ok"] as? Bool == true else { throw Failure.unavailable }
+            do {
+                let result = try await client.sendHTTP("PATCH", path: path, body: body)
+                guard result["ok"] as? Bool == true else { throw Failure.unavailable }
+            } catch HermesGateway.GatewayError.httpRefused(404, "not_found") {
+                // TUI history can exist without the HTTP route's execution-owner binding.
+                try await setSavedSessionPinned(pinned, sessionID: sessionID, profileID: profileID, client: client)
+            }
             pending = pending.filter { $0.key.sessionID != sessionID || $0.key.profileID != profileID }
         } catch {
             let status: Int?
@@ -84,6 +90,27 @@ final class HermesSessionPinService {
                 pending[intent] = nil
             }
             throw error
+        }
+    }
+
+    private func setSavedSessionPinned(
+        _ pinned: Bool, sessionID: String, profileID: String?, client: HermesRPCClientProtocol
+    ) async throws {
+        let cli = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        if cliSupportedClient != ObjectIdentifier(client) {
+            for pinned in [true, false] {
+                let help = try await cli.sessionPinHelp(pinned: pinned)
+                guard help.succeeded, help.stdout.contains("sessions \(pinned ? "pin" : "unpin")"),
+                    help.stdout.contains("session_ids")
+                else { throw Failure.unavailable }
+            }
+            cliSupportedClient = ObjectIdentifier(client)
+        }
+        let result = try await cli.setSessionPinned(pinned, sessionID: sessionID, profileID: profileID)
+        guard result.succeeded else {
+            throw HermesCLIError.failed(
+                result.stderr.isEmpty
+                    ? "Hermes could not update the saved session pin. Refresh and try again." : result.stderr)
         }
     }
 }

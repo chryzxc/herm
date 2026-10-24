@@ -369,6 +369,17 @@ final class HermesCLIAdapter {
         try await run(["hermes", "profile", "delete", "--help"])
     }
 
+    func sessionPinHelp(pinned: Bool) async throws -> HermesCLIResult {
+        try await run(["hermes", "sessions", pinned ? "pin" : "unpin", "--help"])
+    }
+
+    func setSessionPinned(_ pinned: Bool, sessionID: String, profileID: String?) async throws -> HermesCLIResult {
+        guard !sessionID.isEmpty else { throw HermesCLIError.invalidArgument }
+        return try await run(
+            ["hermes"] + (profileID.map { ["--profile", $0] } ?? [])
+                + ["sessions", pinned ? "pin" : "unpin", "--", sessionID])
+    }
+
     func deleteProfile(profileID: String) async throws -> HermesCLIResult {
         guard !profileID.isEmpty, profileID.lowercased() != "default" else {
             throw HermesCLIError.failed("The default Bot cannot be deleted.")
