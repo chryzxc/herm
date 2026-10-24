@@ -212,7 +212,9 @@ struct MissionControlRail: View {
             Spacer(minLength: 0)
             // Global window chrome: applies to the whole workspace, not one chat.
             VStack(spacing: 4) {
-                HermesConnectionButton(isConnected: isHermesConnected, style: style, onReconnect: onReconnect)
+                HermesConnectionButton(
+                    isConnected: isHermesConnected, service: controlCenter.gatewayService,
+                    style: style, onReconnect: onReconnect)
                 if let onOpenWindow {
                     destination(
                         isDockedWindow ? "Switch to floating" : "Switch to window",
@@ -254,17 +256,18 @@ struct MissionControlRail: View {
     }
 }
 
-/// Whether Herm's gateway socket to the Hermes backend is up. Offline is a
-/// button that retries the connection.
+/// Backend connection status with quick access to the local messaging gateway.
 private struct HermesConnectionButton: View {
     let isConnected: Bool
+    @ObservedObject var service: HermesGatewayLifecycleModel
     let style: DockThemePalette
     let onReconnect: () -> Void
+    @State private var showsActions = false
 
     var body: some View {
-        let title = isConnected ? "Connected to Hermes" : "Hermes offline · Click to reconnect"
+        let title = isConnected ? "Connected to Hermes" : "Hermes offline"
         Button {
-            if !isConnected { onReconnect() }
+            showsActions.toggle()
         } label: {
             DockIcon(isConnected ? .plugsConnected : .plugs, size: 15, color: style.secondaryText)
                 .frame(width: 38, height: 30)
@@ -275,8 +278,31 @@ private struct HermesConnectionButton: View {
                 }
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .help(title)
-        .accessibilityLabel(title)
+        .buttonStyle(.dockHover)
+        .help("\(title) · Gateway actions")
+        .accessibilityLabel("\(title). Gateway actions")
+        .accessibilityIdentifier("hermes-gateway-actions")
+        .popover(isPresented: $showsActions, arrowEdge: .trailing) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text(title)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Spacer()
+                    if !isConnected {
+                        Button("Reconnect", action: onReconnect)
+                            .buttonStyle(.dockCompact)
+                    }
+                }
+                Divider()
+                Text("Local messaging gateway · Default profile")
+                    .dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockSecondaryText)
+                HermesGatewaySettingsView(service: service)
+            }
+            .padding(16)
+            .frame(width: 400)
+            .background(Color.dockCanvas)
+        }
     }
 }
