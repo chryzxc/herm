@@ -204,6 +204,8 @@ final class EdgeDockController: NSObject {
                 guard let self else { return }
                 EdgeIslandTheme.apply(side: side, store: .shared, defaults: self.defaults)
             }.store(in: &subscriptions)
+        state.$composing.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.position(animated: true) }.store(in: &subscriptions)
         Publishers.CombineLatest3(state.interruptions.$pendingDigest, state.$composing, model.$isHermesConnected)
             .receive(on: RunLoop.main)
             .sink { [weak self] pending, composing, connected in
@@ -1409,6 +1411,7 @@ final class EdgeNotchState: ObservableObject {
     @Published var quickTarget: HermesSession?
     @Published var quickReplyTask: EdgeNotchTask?
     @Published var quickCreatedSession: HermesSession?
+    @Published var quickTranscriptRevision = 0
     let draftStore: QuickDraftStore
     private var draftSubscription: AnyCancellable?
     private var applyingDraft = false
@@ -1660,8 +1663,10 @@ final class EdgeNotchState: ObservableObject {
             quickSources = []
             quickRecordID = nil
             quickCreatedSession = nil
+            quickTarget = record.destination.session
             quickNeedsReview = false
-            quickResult = "Sent. Follow the response in Activity."
+            quickResult = nil
+            quickTranscriptRevision &+= 1
             applyingDraft = false
         }
     }
@@ -1779,6 +1784,7 @@ final class EdgeNotchState: ObservableObject {
     @Published var kanbanUnavailable = false
     /// Fixed so refreshes and task arrivals never resize the preview.
     static let expandedSize = CGSize(width: 368, height: 360)
+    static let quickMessageHeight: CGFloat = 560
     /// The island opens landscape: wide and short, like an expanded Dynamic Island.
     static let islandSize = CGSize(width: 560, height: 300)
     var sessionRailActivity: EdgeNotchActivity {
@@ -1824,6 +1830,11 @@ final class EdgeNotchState: ObservableObject {
             : CGSize(width: railWidth, height: collapsedRailHeight)
     }
     var openSize: CGSize {
+        if isComposingQuickMessage {
+            return CGSize(
+                width: side == .top ? Self.islandSize.width : Self.expandedSize.width,
+                height: Self.quickMessageHeight + (side == .top ? notchSize.height : 0))
+        }
         if glimpsing {
             // Matches the preview padding below: 8 + 16 under the notch, 26 + 26 on an edge.
             return side == .top
@@ -1833,6 +1844,9 @@ final class EdgeNotchState: ObservableObject {
         return side == .top
             ? CGSize(width: Self.islandSize.width, height: Self.islandSize.height + notchSize.height)
             : Self.expandedSize
+    }
+    var isComposingQuickMessage: Bool {
+        composing && !isReadingDetail && !showingDigest && (quickTarget == nil || quickReplyTask == nil)
     }
     /// The window: the pet hangs below an edge rail but beside the top island.
     var panelSize: CGSize {
@@ -1999,8 +2013,7 @@ struct EdgeNotchView: View {
 
     private var isIsland: Bool { state.side == .top }
     private var showsQuickMessage: Bool {
-        state.composing && !state.isReadingDetail && !state.showingDigest
-            && (state.quickTarget == nil || state.quickReplyTask == nil) && quickMessageModel != nil
+        state.isComposingQuickMessage && quickMessageModel != nil
     }
 
     private var preview: some View {

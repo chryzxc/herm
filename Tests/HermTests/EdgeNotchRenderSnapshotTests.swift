@@ -132,7 +132,7 @@ struct EdgeNotchRenderSnapshotTests {
                     state.quickResult =
                         mode == "failed" ? "The message could not be sent. Your draft is saved; try again." : nil
                     model.status = mode == "offline" ? .offline : .idle
-                    let height: CGFloat = width == 368 ? EdgeNotchState.expandedSize.height : 288
+                    let height: CGFloat = EdgeNotchState.quickMessageHeight
                     let view = Group {
                         if width == 368 {
                             EdgeNotchView(state: state, controlCenter: control, quickMessageModel: model, openDock: {})

@@ -13,9 +13,11 @@ struct EdgeQuickMessageView: View {
     @State private var composerHeight = ComposerLayout.minHeight
     @State private var confirmingReview = false
     @State private var confirmingDiscard = false
+    @StateObject private var chat = EdgeQuickConversationModel()
 
     private var unavailableReason: String? {
         model.quickMessageUnavailableReason(for: state.quickTarget ?? state.quickCreatedSession)
+            ?? (inline ? nil : chat.unavailableReason)
     }
     private var canSend: Bool {
         !state.quickSending && state.quickPreparing == 0 && !state.quickNeedsReview && state.draftStore.error == nil
@@ -26,6 +28,14 @@ struct EdgeQuickMessageView: View {
 
     var body: some View {
         Group { if inline { inlineBody } else { panelBody } }
+            .task(
+                id:
+                    "\(state.captureRecord().destination.sessionKey)/\(state.quickTranscriptRevision)/\(state.quickSending)"
+            ) {
+                guard !inline, !state.quickSending else { return }
+                await chat.load(state.captureRecord().destination, runtime: model)
+            }
+            .onDisappear { chat.shutdown() }
             .task(id: state.captureRecord().destination.sessionKey) {
                 let destination = state.captureRecord().destination
                 guard let session = destination.session else { return }
@@ -88,12 +98,34 @@ struct EdgeQuickMessageView: View {
                     icon: .x, label: "Close quick message",
                     style: DockThemePalette(theme: DockThemeRuntime.current), action: close)
             }
-            ScrollView {
-                messageFeedback.frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if let conversation = chat.conversation {
+                    EdgeQuickConversationTranscript(
+                        model: conversation, control: control,
+                        onReply: { quote in
+                            guard !state.quickSending, !state.quickNeedsReview else { return }
+                            state.quickDraft = quote.composing(state.quickDraft)
+                            focused = true
+                        },
+                        onSessionChanged: { session in
+                            guard session.id != state.captureRecord().destination.sessionID else { return }
+                            state.selectQuickTarget(session)
+                        }
+                    )
+                    .id(ObjectIdentifier(conversation))
+                } else {
+                    Color.clear
+                }
             }
-            .scrollIndicators(.hidden)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .defaultScrollAnchor(.bottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if chat.loadFailed {
+                Button("Reload conversation") {
+                    Task { await chat.load(state.captureRecord().destination, runtime: model) }
+                }
+                .buttonStyle(.dockCompact)
+                .disabled(chat.isLoading)
+            }
+            messageFeedback
             messageComposer.layoutPriority(1)
         }
         .padding(DockSpacing.group)
