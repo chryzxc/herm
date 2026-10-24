@@ -211,7 +211,7 @@ struct ApprovalPresentation: Equatable {
         let detail =
             command
             ?? stringValue(in: payload, keys: ["message", "details", "description", "reason"])
-            ?? "Hermes wants to perform an action."
+            ?? "Herm wants to perform an action."
 
         let title =
             stringValue(in: payload, keys: ["title", "approval_title", "action_title"])

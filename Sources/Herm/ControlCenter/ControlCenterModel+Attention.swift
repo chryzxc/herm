@@ -150,7 +150,7 @@ extension ControlCenterModel {
                         clarificationRequestID: requestID
                     ),
                     kind: .clarification,
-                    title: "Hermes needs clarification",
+                    title: "Herm needs clarification",
                     detail: detail,
                     createdAt: Date(),
                     state: .open,
@@ -241,6 +241,7 @@ extension ControlCenterModel {
     static func isPlaceholderAttentionDetail(_ detail: String) -> Bool {
         let normalized = detail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.isEmpty
+            || normalized == "herm wants to perform an action."
             || normalized == "hermes wants to perform an action."
             || normalized.hasPrefix("hermes reported ")
     }
@@ -267,7 +268,7 @@ extension ControlCenterModel {
                         id: "approval:\(sessionID)",
                         reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
                         kind: .approval,
-                        title: dockModel.approvalTitle ?? "Hermes needs approval",
+                        title: dockModel.approvalTitle ?? "Herm needs approval",
                         detail: approval,
                         createdAt: Date(),
                         state: .open,

@@ -57,13 +57,13 @@ struct ValuePrompt: Equatable {
             let command = text("command").map { "\n\($0)" } ?? ""
             return ValuePrompt(
                 requestID: requestID, title: "Administrator password",
-                message: "Hermes needs your sudo password to run:\(command)",
+                message: "Herm needs your sudo password to run:\(command)",
                 fieldLabel: "Password", isSecret: true, asksForLogin: false)
         case "secret":
             let envVar = text("env_var") ?? "a secret"
             return ValuePrompt(
                 requestID: requestID, title: "Secret needed: \(envVar)",
-                message: text("prompt") ?? "Hermes needs a value for \(envVar).",
+                message: text("prompt") ?? "Herm needs a value for \(envVar).",
                 fieldLabel: envVar, isSecret: true, asksForLogin: false)
         case "vault.unlock_prompt":
             let name = text("display_name") ?? text("backend") ?? "your password manager"

@@ -406,6 +406,6 @@ enum ApprovalAuthGate {
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &policyError) else { return false }
         return
             (try? await context.evaluatePolicy(
-                .deviceOwnerAuthentication, localizedReason: "Allow Hermes to run this without asking again")) == true
+                .deviceOwnerAuthentication, localizedReason: "Allow Herm to run this without asking again")) == true
     }
 }

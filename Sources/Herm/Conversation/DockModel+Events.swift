@@ -476,7 +476,7 @@ extension DockModel {
         let question =
             nestedClarificationString(keys: ["question", "prompt", "query"], in: params)
             ?? nestedClarificationString(keys: ["message", "description", "text", "detail"], in: params)
-            ?? "Hermes needs more information."
+            ?? "Herm needs more information."
         let choices = nestedClarificationStrings(keys: ["choices", "options", "suggested_responses"], in: params)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let payload = params["payload"] as? [String: Any] ?? params
@@ -822,8 +822,8 @@ extension DockModel {
             if completionNotificationsEnabled {
                 let response =
                     messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText)
-                    ?? "Hermes completed the active request."
-                notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
+                    ?? "Herm completed the active request."
+                notify(title: "Herm completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
             }
             if voiceState.isNativeConversationActive, completionError != nil, !wasInterrupting {
                 stopVoicePlayback()
@@ -892,7 +892,7 @@ extension DockModel {
             status = .needsClarification
             conversationActivityPhase = .idle
             notify(
-                title: "Hermes needs clarification", body: question,
+                title: "Herm needs clarification", body: question,
                 identifier: "clarification:\(sessionID ?? "hermes")",
                 replyRequestID: clarification.batch.count > 1 || clarification.multiSelect ? nil : requestID)
         case "prompt.request":
@@ -900,7 +900,7 @@ extension DockModel {
             valuePrompt = prompt
             valuePromptError = nil
             notify(
-                title: prompt.title, body: "Hermes is waiting for your input.",
+                title: prompt.title, body: "Herm is waiting for your input.",
                 identifier: "prompt:\(sessionID ?? "hermes")")
         case "prompt.expire":
             if payload["request_id"] as? String == valuePrompt?.requestID { valuePrompt = nil }

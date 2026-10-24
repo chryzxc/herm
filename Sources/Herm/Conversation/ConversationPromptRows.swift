@@ -134,7 +134,7 @@ struct ConversationPromptRows: View {
                 Text(
                     approval.smartDenied
                         ? "Hermes' safety check blocked this. You can override it once."
-                        : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : "Hermes asks again next time."
+                        : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : "Herm asks again next time."
                 )
                 .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)

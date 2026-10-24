@@ -61,7 +61,7 @@ enum ControlTowerNotificationPolicy {
     private static func genericBody(for kind: AttentionKind) -> String {
         switch kind {
         case .approval: return "A Hermes action is waiting for your approval."
-        case .clarification: return "Hermes needs an answer before continuing."
+        case .clarification: return "Herm needs an answer before continuing."
         case .failure: return "A Hermes operation failed and needs review."
         default: return "Hermes work needs review."
         }

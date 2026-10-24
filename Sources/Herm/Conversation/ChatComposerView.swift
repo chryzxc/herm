@@ -545,11 +545,11 @@ struct ChatComposerView: View {
                                 .help(
                                     model.status == .needsClarification
                                         ? "Dismiss the question and interrupt Hermes"
-                                        : "Stop Hermes response"
+                                        : "Stop Herm response"
                                 )
                                 .accessibilityLabel(
                                     model.status == .needsClarification
-                                        ? "Dismiss clarification" : "Stop Hermes response")
+                                        ? "Dismiss clarification" : "Stop Herm response")
                             }
 
                             // Submit and stop share one action, styled by the composer role.
@@ -613,14 +613,14 @@ struct ChatComposerView: View {
                             )
                             .accessibilityLabel(
                                 speechInput.isRecording
-                                    ? "Send voice prompt" : showStop ? "Stop Hermes response" : submitLabel
+                                    ? "Send voice prompt" : showStop ? "Stop Herm response" : submitLabel
                             )
                             .keyboardShortcut(.return, modifiers: [.command])
                             .help(
                                 speechInput.isRecording
                                     ? "Send voice prompt"
                                     : (showStop
-                                        ? "Stop Hermes response"
+                                        ? "Stop Herm response"
                                         : "\(submitLabel) (↩; ⇧↩ for newline)")
                             )
                         }

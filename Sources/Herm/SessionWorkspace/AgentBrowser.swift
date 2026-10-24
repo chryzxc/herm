@@ -1047,7 +1047,7 @@ struct AgentBrowserPane: View {
                 .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
-            Button("Hand back to Hermes") { browser.handBack() }
+            Button("Hand back to Herm") { browser.handBack() }
                 .buttonStyle(DockPrimaryButtonStyle())
                 .controlSize(.small)
             DockIconButton(icon: .x, label: "Dismiss", size: 22, style: palette) { browser.userHasControl = false }
@@ -1067,7 +1067,7 @@ struct AgentBrowserPane: View {
     private func activityPill(_ step: (icon: Ph, title: String, detail: String?)) -> some View {
         HStack(spacing: 8) {
             DockStatusDot(tone: .working, size: 7, pulses: true)
-            Text("Hermes is browsing")
+            Text("Herm is browsing")
                 .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
@@ -1084,15 +1084,15 @@ struct AgentBrowserPane: View {
             Button("Take over") { browser.takeOver() }
                 .buttonStyle(DockSecondaryButtonStyle())
                 .controlSize(.small)
-                .help("Pause Hermes and use the page yourself")
-            DockIconButton(icon: .stop, label: "Stop Hermes", size: 22, style: palette) { model.stop() }
+                .help("Pause Herm and use the page yourself")
+            DockIconButton(icon: .stop, label: "Stop Herm", size: 22, style: palette) { model.stop() }
         }
         .padding(.leading, 12)
         .padding(.trailing, 4)
         .padding(.vertical, 4)
         .dockHUDPanel()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Hermes is browsing: \(step.title)")
+        .accessibilityLabel("Herm is browsing: \(step.title)")
     }
 }
 
