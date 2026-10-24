@@ -83,6 +83,57 @@ struct SessionTracePerformanceTests {
         #expect(trace.turns.first?.title == "Prepended history")
     }
 
+    @Test func horizontalNavigationKeepsLabelsStaticAndBarWorkBounded() async throws {
+        #if DEBUG
+            let start = Date().addingTimeInterval(-8_000)
+            let rows = (0..<1_000).map { index in
+                SessionTraceRow(
+                    id: "row-\(index)", kind: .tool, title: "Tool \(index)",
+                    start: start.addingTimeInterval(Double(index) * 8), duration: 1,
+                    timing: .runtime, active: index == 999)
+            }
+            let evaluations = Evaluations()
+            let root = SessionTraceCanvas(
+                turns: [.init(id: "long", title: "Long request", start: start, rows: rows)],
+                connected: false, isVisible: false
+            )
+            .environment(\.conversationRowEvaluation) { name, _ in
+                if name == "timeline-label" { evaluations.labels += 1 }
+                if name == "timeline-bar" { evaluations.bars += 1 }
+            }
+            let host = NSHostingView(rootView: root)
+            host.sizingOptions = []
+            host.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.contentView = host
+            defer { window.orderOut(nil) }
+            for _ in 0..<6 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            func horizontal(_ view: NSView) -> NSScrollView? {
+                if let scroll = view as? NSScrollView,
+                    (scroll.documentView?.bounds.width ?? 0) > scroll.contentView.bounds.width
+                {
+                    return scroll
+                }
+                return view.subviews.lazy.compactMap(horizontal).first
+            }
+            let scroll = try #require(horizontal(host))
+            for x in [0.0, 40_000, 90_000] {
+                evaluations.labels = 0
+                evaluations.bars = 0
+                scroll.contentView.scroll(to: NSPoint(x: x, y: 0))
+                for _ in 0..<4 {
+                    host.layoutSubtreeIfNeeded()
+                    try await Task.sleep(for: .milliseconds(30))
+                }
+                #expect(evaluations.labels == 0)
+                #expect(evaluations.bars > 0 && evaluations.bars < 200)
+            }
+        #endif
+    }
+
     @Test func subscriptionsIgnoreUnrelatedUpdatesAndCancelWhileHidden() async throws {
         let model = DockModel(initialSessionID: "timeline-subscriptions")
         model.messages = [ChatMessage(role: .user, text: "Request")]

@@ -1,6 +1,29 @@
 import AppKit
 import SwiftUI
 
+/// Shared by drawing and navigation so short steps keep the same minimum hit width.
+struct SessionTraceBarLayout {
+    enum Offscreen { case earlier, later }
+    let x: CGFloat
+    let width: CGFloat
+
+    init(offset: TimeInterval, elapsed: TimeInterval, scale: CGFloat, contentWidth: CGFloat) {
+        x = min(contentWidth, max(0, offset * scale))
+        width = min(max(4, contentWidth - x), max(4, elapsed * scale))
+    }
+
+    func offscreen(in viewport: CGRect) -> Offscreen? {
+        if x + width <= viewport.minX { return .earlier }
+        if x >= viewport.maxX { return .later }
+        return nil
+    }
+
+    func revealOffset(in viewport: CGRect, contentWidth: CGFloat) -> CGFloat? {
+        guard offscreen(in: viewport) != nil else { return nil }
+        return min(max(0, x - 12), max(0, contentWidth - viewport.width))
+    }
+}
+
 /// Resolve the full row set once per projection, never once per clock tick.
 struct SessionTraceTimeBounds {
     let origin: Date

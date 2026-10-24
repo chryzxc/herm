@@ -144,6 +144,7 @@ struct SessionTraceCanvas: View {
     var openSession: (String) -> Void = { _ in }
     @State private var selectedTurnID: String? = SessionTraceProjection.allTurnsID
     @State private var selectedRowID: String?
+    @State private var selectionRevision = 0
     @State private var collapsed = Set<String>()
     @State private var showsSubagents = true
     @State private var showsSteps = true
@@ -152,7 +153,7 @@ struct SessionTraceCanvas: View {
     @State private var follow = true
     @State private var fitted = false
     @State private var fittedSpan: Double = 30
-    /// Read only by the ruler, so scrolling never re-renders the rows.
+    /// Observed only by plot drawing, so scrolling never re-renders the labels.
     @State private var scroll = SessionTraceScroll()
     @State private var rowViewport = SessionTraceRowViewport()
     @State private var replay: SessionTraceReplay?
@@ -205,7 +206,7 @@ struct SessionTraceCanvas: View {
             .background(Color.dockCanvas)
         }
         .onAppear {
-            selectedRowID = initialSelectionID
+            if let initialSelectionID { select(initialSelectionID) }
             if let turn, !turn.rows.contains(where: \.active) {
                 fittedSpan = extent(turn)
                 fitted = true
@@ -584,11 +585,14 @@ struct SessionTraceCanvas: View {
         ScrollViewReader { reader in
             ScrollView(.horizontal) {
                 VStack(spacing: 0) {
-                    SessionTraceRowWindow(viewport: rowViewport, items: items) { row, _ in
-                        barRow(
-                            row, origin: frame.origin, now: now,
-                            replayTime: frame.replayTime, width: frame.width,
-                            scale: frame.scale, slowest: row.id == slowest)
+                    SessionTraceScrolled(scroll: scroll) { offset in
+                        SessionTraceRowWindow(viewport: rowViewport, items: items) { row, _ in
+                            barRow(
+                                row, origin: frame.origin, now: now,
+                                replayTime: frame.replayTime, width: frame.width,
+                                scale: frame.scale, slowest: row.id == slowest,
+                                viewport: CGRect(x: offset, y: 0, width: plotWidth, height: rowHeight))
+                        }
                     }
                     HStack {
                         Spacer(minLength: 0)
@@ -623,6 +627,17 @@ struct SessionTraceCanvas: View {
             .onAppear { if follow { reader.scrollTo("trace-tail", anchor: .trailing) } }
             .onChange(of: follow) { _, value in
                 if value { reader.scrollTo("trace-tail", anchor: .trailing) }
+            }
+            .task(id: selectionRevision) {
+                await Task.yield()
+                guard !Task.isCancelled,
+                    let row = items.first(where: { $0.row.id == selectedRowID })?.row,
+                    let start = row.start, let elapsed = row.elapsed(at: now)
+                else { return }
+                scroll.reveal(
+                    SessionTraceBarLayout(
+                        offset: start.timeIntervalSince(frame.origin), elapsed: elapsed,
+                        scale: frame.scale, contentWidth: frame.width))
             }
         }
     }
@@ -825,7 +840,7 @@ struct SessionTraceCanvas: View {
 
     private func barRow(
         _ row: SessionTraceRow, origin: Date, now: Date, replayTime: Double?, width: CGFloat,
-        scale: CGFloat, slowest: Bool
+        scale: CGFloat, slowest: Bool, viewport: CGRect
     ) -> some View {
         #if DEBUG
             let _ = evaluation?("timeline-bar", 0)
@@ -838,37 +853,61 @@ struct SessionTraceCanvas: View {
                     SessionTraceReplay.visibleElapsed(offset: offset, elapsed: $0, at: time)
                 }
             } ?? full
-        let x = min(width, max(0, offset * scale))
         return ZStack(alignment: .leading) {
             if row.start != nil, let elapsed {
-                let barWidth = min(max(4, width - x), max(4, elapsed * scale))
-                Button {
-                    select(row.id)
-                } label: {
-                    bar(row, width: barWidth)
-                }
-                .buttonStyle(.dockHover)
-                .offset(x: x)
-                HStack(spacing: 6) {
-                    Text(barLabel(row, elapsed: elapsed)).dockFont(.metadata).monospacedDigit()
-                        .foregroundStyle(Color.dockSecondaryText)
-                    if slowest, replayTime.map({ $0 >= offset + (full ?? 0) }) ?? true {
-                        Text("Slowest").dockFont(.metadata, weight: .medium)
-                            .foregroundStyle(DockAccentColor.amber.color)
-                            .padding(.horizontal, 6).padding(.vertical, 1)
-                            .background(Capsule().fill(DockAccentColor.amber.fill.opacity(0.14)))
-                            .overlay(Capsule().stroke(DockAccentColor.amber.fill.opacity(0.4)))
+                let layout = SessionTraceBarLayout(
+                    offset: offset, elapsed: elapsed, scale: scale, contentWidth: width)
+                if let side = layout.offscreen(in: viewport) {
+                    HStack {
+                        if side == .later { Spacer(minLength: 0) }
+                        Button {
+                            select(row.id)
+                        } label: {
+                            Label(
+                                barLabel(row, elapsed: elapsed),
+                                systemImage: side == .earlier ? "arrow.left" : "arrow.right"
+                            )
+                            .dockFont(.metadata).monospacedDigit()
+                        }
+                        .buttonStyle(.dockCompact)
+                        .help(
+                            side == .earlier
+                                ? "Show this step earlier in the timeline" : "Show this step later in the timeline")
+                        if side == .earlier { Spacer(minLength: 0) }
                     }
+                    .padding(.horizontal, 6)
+                } else {
+                    Button {
+                        select(row.id)
+                    } label: {
+                        bar(row, width: layout.width)
+                    }
+                    .buttonStyle(.dockHover)
+                    .offset(x: layout.x - viewport.minX)
+                    HStack(spacing: 6) {
+                        Text(barLabel(row, elapsed: elapsed)).dockFont(.metadata).monospacedDigit()
+                            .foregroundStyle(Color.dockSecondaryText)
+                        if slowest, replayTime.map({ $0 >= offset + (full ?? 0) }) ?? true {
+                            Text("Slowest").dockFont(.metadata, weight: .medium)
+                                .foregroundStyle(DockAccentColor.amber.color)
+                                .padding(.horizontal, 6).padding(.vertical, 1)
+                                .background(Capsule().fill(DockAccentColor.amber.fill.opacity(0.14)))
+                                .overlay(Capsule().stroke(DockAccentColor.amber.fill.opacity(0.4)))
+                        }
+                    }
+                    .fixedSize()
+                    .offset(x: layout.x - viewport.minX + layout.width + 6).allowsHitTesting(false)
                 }
-                .fixedSize()
-                .offset(x: x + barWidth + 6).allowsHitTesting(false)
-            } else if row.start == nil {
-                // Runtime timestamps are exact; unstamped steps stay off the timeline.
+            } else if row.start == nil || full == nil {
+                // Missing intervals stay explicit; future replay steps remain hidden.
                 Text(row.active ? "Running · timing unavailable" : "No timing")
                     .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                     .padding(.leading, 8)
             }
         }
+        .frame(width: viewport.width, height: rowHeight, alignment: .leading)
+        .clipped()
+        .offset(x: viewport.minX)
         .frame(width: width, height: rowHeight, alignment: .leading)
         .background(selectedRowID == row.id ? Color.dockSurface2 : Color.clear)
         .contentShape(Rectangle())
@@ -1185,10 +1224,13 @@ struct SessionTraceCanvas: View {
         if let turn = currentTurn { fittedSpan = extent(turn) }
         fitted = true
         follow = false
+        scroll.reset()
     }
 
     private func select(_ id: String?) {
+        if id != nil { follow = false }
         withAnimation(animates ? .dockEase(duration: 0.2) : nil) { selectedRowID = id }
+        selectionRevision &+= 1
     }
     private func extent(_ turn: SessionTraceTurn) -> Double {
         let start = turn.rows.compactMap(\.start).min() ?? turn.start
@@ -1311,9 +1353,27 @@ private struct SessionTraceHatching: Shape {
 /// Trackpad/wheel navigation must release follow just like dragging the scrollbar.
 @MainActor final class SessionTraceScroll: ObservableObject {
     @Published var x: CGFloat = 0
+    weak var host: NSView?
+
+    func reveal(_ bar: SessionTraceBarLayout) {
+        guard let scroll = host?.enclosingScrollView, let document = scroll.documentView,
+            let x = bar.revealOffset(in: scroll.contentView.bounds, contentWidth: document.bounds.width)
+        else { return }
+        move(to: x, in: scroll)
+    }
+
+    func reset() {
+        guard let scroll = host?.enclosingScrollView else { return }
+        move(to: 0, in: scroll)
+    }
+
+    private func move(to x: CGFloat, in scroll: NSScrollView) {
+        scroll.contentView.scroll(to: NSPoint(x: x, y: scroll.contentView.bounds.minY))
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
 }
 
-/// Keeps the ruler aligned without re-rendering the rows it sits above.
+/// Observes horizontal position only where drawing depends on it.
 private struct SessionTraceScrolled<Content: View>: View {
     @ObservedObject var scroll: SessionTraceScroll
     @ViewBuilder let content: (CGFloat) -> Content
@@ -1371,6 +1431,7 @@ private struct SessionTraceScrollObserver: NSViewRepresentable {
         }
         private func report() {
             guard let clip = enclosingScrollView?.contentView, let scroll else { return }
+            scroll.host = self
             let x = max(0, clip.bounds.origin.x)
             if abs(scroll.x - x) > 0.25 { scroll.x = x }
         }

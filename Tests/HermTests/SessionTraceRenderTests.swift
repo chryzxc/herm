@@ -91,6 +91,66 @@ struct SessionTraceRenderTests {
             }
         }
     }
+    @Test func renderOffscreenSteps() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["HERM_TRACE_UI_DIR"] else { return }
+        let root = URL(fileURLWithPath: directory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let saved = DockThemeRuntime.current
+        defer {
+            DockThemeRuntime.current = saved
+            DockThemeRuntime.revision &+= 1
+        }
+        let start = Date().addingTimeInterval(-7_800)
+        let rows = [
+            SessionTraceRow(
+                id: "model", kind: .model, title: "Model call", start: start, duration: 15, timing: .observed),
+            SessionTraceRow(
+                id: "earlier", kind: .tool, title: "Run python3", start: start.addingTimeInterval(2_207),
+                duration: 1, timing: .runtime, toolName: "terminal"),
+            SessionTraceRow(
+                id: "instant", kind: .tool, title: "Skill View", start: start.addingTimeInterval(7_680),
+                duration: 0, timing: .runtime, toolName: "skill_view"),
+            SessionTraceRow(
+                id: "live", kind: .compaction, title: "Compacting context", start: start.addingTimeInterval(7_690),
+                timing: .observed, active: true),
+            SessionTraceRow(
+                id: "missing-duration", kind: .tool, title: "Tool without duration",
+                start: start.addingTimeInterval(7_790), timing: .unavailable),
+        ]
+        for theme: DockThemeID in [.clean, .island, .glass, .mono, .eInk] {
+            DockThemeRuntime.current = theme
+            DockThemeRuntime.revision &+= 1
+            for width in [380.0, 760.0] {
+                for selection: String? in [nil, "earlier"] {
+                    let view = SessionTraceCanvas(
+                        turns: [.init(id: "long", title: "Long request", start: start, rows: rows)],
+                        connected: true, isVisible: false, initialSelectionID: selection, listMaxHeight: 240
+                    )
+                    .padding(.horizontal, 12).frame(width: width, height: 800)
+                    .background(Color.dockCanvas).dockThemedRoot()
+                    let host = NSHostingView(rootView: view)
+                    host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
+                    let window = NSWindow(
+                        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    window.contentView = host
+                    window.orderFrontRegardless()
+                    for _ in 0..<4 {
+                        host.layoutSubtreeIfNeeded()
+                        try await Task.sleep(for: .milliseconds(80))
+                    }
+                    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    let state = selection == nil ? "live" : "selected"
+                    try #require(bitmap.representation(using: .png, properties: [:]))
+                        .write(
+                            to: root.appendingPathComponent(
+                                "trace-offscreen-\(theme.rawValue)-\(Int(width))-\(state).png"))
+                    window.orderOut(nil)
+                }
+            }
+        }
+    }
+
     @Test func renderLiveGrowth() async throws {
         guard let directory = ProcessInfo.processInfo.environment["HERM_TRACE_UI_DIR"] else {
             return
