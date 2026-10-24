@@ -813,28 +813,30 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   A failed new-session submission retains its created session for retry. The workspace draft and attachments remain untouched. Pending
   and rejected sends stay in place; rejected text remains available for retry.
   Busy chats and offline state explain why sending is unavailable.
-- The quick-message header groups its title and destination picker, with a standard
-  compact Back action. The editor and Attach/Paste/More controls share one themed
-  input surface. Attach and Paste use compact button styles; More uses a 28pt icon.
-  Low quota is a compact advisory: a threshold-colored icon, readable provider
-  allowance text, and a secondary update time that confirms sending is available.
-  Attachments and status scroll within the fixed body; the footer stays in place.
-- Inline quick reply uses the task row as its only title. A single themed input
-  contains a two-line editor and one Attach/Paste/More/Send toolbar. Destination
-  stays tied to the surrounding task row's captured session. More contains capture,
-  saved drafts when available, and discard; interrupted sends also expose review
-  and retry. Project choices appear only for a new session, with a directory reset
-  only when a project has been chosen.
-  Low quota sits below the editor as one quiet provider/allowance line, with sending
-  availability and freshness in its tooltip and accessibility hint. Only actual
-  preparation, errors, and unavailable states add status text; the send shortcut is
-  in the Send tooltip. Draft errors remain visible and prevent sending. The replying
-  task row yields keyboard focus and its selection outline to the composer.
+- Quick message hides the Tasks/Quota tabs, Quiet, refresh, activity banners, and
+  Open Herm footer while its standalone composer is visible. A quiet destination
+  picker and icon-only Close action are the only header controls. The composer
+  anchors to the bottom, leaving the remaining body clear for real feedback.
+- Quick message and inline reply reuse the session composer's native growing
+  editor, input surface, attachment control, and circular send treatment, including
+  theme-specific line and shaped variants. Return and Command-Return send;
+  Shift-Return inserts a newline. Attachments scroll inside the input surface.
+  The + menu contains files, paste, capture, saved drafts when available, and
+  discard; interrupted sends also expose review and retry. Project choices appear
+  only for a new session, with a directory reset only when a project has been chosen.
+- Inline quick reply uses the task row as its only title. Destination stays tied
+  to that row's captured session. Low quota uses one quiet provider/allowance line,
+  with sending availability and freshness in its tooltip and accessibility hint.
+  Actual preparation, errors, and unavailable states use the feedback area; the
+  send shortcut stays in the Send tooltip. Draft errors remain visible and prevent
+  sending. The replying task row yields keyboard focus and its selection outline
+  to the composer.
 - Explicitly entering the composer gives the panel keyboard focus and prevents
   pointer-exit dismissal and automatic announcements from interrupting typing.
-  Back, Escape, tab changes, or Open Herm leave composition. The separate draft
-  survives preview collapse and restart in a dedicated QuickDraftStore file.
-  To, Add, Paste, Drafts and More operate within the existing composer. The
+  Close or Escape leaves standalone composition; the row reply toggle closes inline
+  replies. The separate draft survives preview collapse and restart in a dedicated
+  QuickDraftStore file. Destination, attachments, paste, and draft recovery stay in
+  the existing composer. The
   destination names the captured profile and session; a chosen project is
   explicit. Workspace navigation never retargets a nonempty quick draft.
   Captured URLs are references, not browser or agent actions. Files use
@@ -1185,6 +1187,12 @@ hides the roster when both panels would crowd the scene.
 
 ### Navigation sidebar
 
+The bottom connection indicator opens a quick-action popover in every connection
+state. Show Herm's backend connection separately from the local default-profile
+messaging gateway. Reuse General's gateway status, refresh, confirmed restart,
+pending, and unavailable states; offer Reconnect when the backend is offline.
+Keep the indicator's dot tied to backend connectivity.
+
 The sidebar is the reference implementation of the navigation patterns in
 the design system; other panes copy it rather than restyle it.
 
@@ -1227,7 +1235,11 @@ changes) stay with the active-session workspace rather than navigation.
 
 Conversations uses the same outline language as Projects: one collapsible
 header with count and refresh, ten newest sessions by default, and independent
-Show more/Show recent expansion. Each session is a 50pt two-line row. The
+Show more/Show recent expansion. Right-click the Recents header for Mark all as read,
+which updates seen timestamps and clears unread flags for all loaded conversations in that
+bot’s Recents, including rows under Show more. Disable it when no completed
+conversation is unread; preserve working, approval, clarification, and failure states.
+Each session is a 50pt two-line row. The
 second line may combine relative time, an inline repository identity, and a
 single-line preview; missing values do not leave separators behind. Repository
 identity is inline metadata rather than a capsule so the list remains calm at
@@ -1250,6 +1262,9 @@ project remains neutral and uses only an accent folder to show containment.
 Session selection is profile-scoped and owned by navigation state, so refreshes
 may update projections but never clear a still-valid selection. Only explicit
 navigation or authoritative removal can clear it.
+Startup restoration selects from the shared session index and awaits any in-flight
+list load. It never publishes a partial list over the sidebar's loaded snapshot.
+An explicit refresh can supersede an older background poll after a session mutation.
 
 ### Pinned messages
 
@@ -1483,8 +1498,13 @@ below 800pt), whose Close button and Esc return. Both views read the same projec
 strip follows: Duration, Model calls, Tool calls, Delegates and Tokens when reported,
 and Errors (destructive tint only when nonzero). Step labels stay fixed beside a
 horizontally scrolling timeline with a shared ruler; one vertical scroll keeps the
-tree and bars aligned. Delegates disclose their tool calls. The longest finished step
-carries an amber Slowest badge when there is more than one. Selecting a label or bar
+tree and bars aligned. Delegates disclose their tool calls.
+Bars outside the horizontal viewport show a compact directional timing button at
+the corresponding edge. Selecting a step pauses Live and reveals its bar without
+changing the time scale; Fit resets the native horizontal offset. Row drawing is
+clipped to the visible plot, and horizontal navigation updates nearby bars without
+rebuilding labels.
+The longest finished step carries an amber Slowest badge when there is more than one. Selecting a label or bar
 reveals a lower detail area in compact panes and a 380×340 floating card in wide, tall
 panes: icon, title with owner/context subtitle, status pill, a metric grid (duration,
 start, tokens, model calls, timing quality), then Input/Goal, Result/Summary, and Diff
@@ -1558,6 +1578,12 @@ readable text. Canonical Hermes records remain unchanged. All host hooks continu
 through `GenerativeUIIntegration`; the feature owns parsing, form state, and HTML
 lifecycle. Legacy rendering instructions remain hidden only in presentation.
 
+When enabled, prompt context directs Hermes to use visual replies whenever interaction
+or structure helps, without requiring the user to name Herm UI or HTML. Calculators,
+simulations, and interactive graphics request complete offline HTML with inputs wired
+to update results immediately. Simple answers remain Markdown, and explicit requests
+for plain text, source code, or project/file changes retain their requested deliverable.
+
 Hermes owns execution and transcripts; there is no additional workflow engine
 or operational store. Rendering instructions travel through
 existing prompt submissions and remain hidden from the visible conversation.
@@ -1576,13 +1602,18 @@ action tokens. Tables scroll within bounded containers; charts use Apple Charts
 and the theme accent; gallery images do not fetch arbitrary remote resources
 on display. Forms reuse native Dock controls and destination-validated drafts.
 Generated content cannot declare verified Herm records, approvals, credentials,
-or direct tool actions. Source inspection is explicit. Plain-text projections
+or direct tool actions. Source inspection is explicit. Expanded source uses a
+bounded, padded panel with a theme-aware surface and border; its top-right Copy
+source action stays above the scrollable, selectable monospaced content. Plain-text projections
 serve copy, search, speech, and Result Peek. Existing runtime-owned export
 contracts remain unchanged; host text projections use `GenerativeUIIntegration`.
 
 Only complete, validated surfaces render. Limits are 1 MiB per surface, 100
 blocks, and 1,000 table rows or chart points per block. Unsupported or malformed
 content retains a readable fallback. Partial streamed JSON and HTML never run.
+Table cells accept JSON strings and numbers; numbers become display text only in
+the presentation decoder. Invalid surfaces show “Visual reply unavailable” above
+their readable fallback and source disclosure. Canonical reply source is preserved.
 
 HTML uses a native fallback card and explicit “Open interactive view” action.
 Its separate nonpersistent WebKit host embeds the document in an opaque-origin
@@ -1710,15 +1741,24 @@ cross-machine routing and richer routine actions require
 additional Hermes gateway contracts and are not presented as available Herm
 controls yet.
 
-Sent mention bubbles show their pill and body on the first layout, without waiting
-for a reply or roster refresh. Native text measurement must preserve the displayed
-wrapping width and leave frame sizing to SwiftUI.
+The composer’s bot picker shows display names, such as Nexus, while retaining
+canonical profile IDs for selection and delivery.
+
+Recognized bot mentions show their pill and body inside the sent bubble on the
+first layout, whether selected from the picker or typed manually. History uses
+the current bot roster to recognize mentions. Unknown handles and mentions inside
+code or links stay plain. Draft restoration and queue editing retain explicit
+selections; deleting a handle clears its selection. Native text measurement must
+preserve the displayed wrapping width and leave frame sizing to SwiftUI.
 
 Single-bot mentions eligible for direct delivery, including mentions after words
 such as “hey”, submit a user turn to the recipient’s profile-scoped canonical Bot
 Chat. Confirm its session and profile before sending; a busy or unconfirmed
 recipient fails visibly. Only the confirmed recipient’s stream supplies its reply
-in the originating conversation, without navigating away from it.
+in the originating conversation, without navigating away from it. Queued mentions
+retain the recipient selected at submission and cannot steer the current bot.
+Unsupported selected-bot payloads keep the draft and explain the text-only,
+single-recipient requirement, including in Bot Chats.
 
 Native typing supersedes queued completion caret moves in the shared composer,
 including Forward to Bot. Redraws must not restore a selection from before the edit.
@@ -1783,6 +1823,10 @@ returning to the live reply presents the current state without replaying UI upda
 The message navigator reuses its immutable history projection across activity and
 scroll refreshes; offscreen edits and stored-history changes still update search
 and navigation. Ordinary Markdown chunks do not restart visual-reply parsing tasks.
+Find matches full message text away from the main thread. Query edits, history
+changes, closing Find, and session changes cancel obsolete matching; stale results
+cannot be selected. Return reuses matching results or waits for the current query,
+and the existing result slot shows progress while matching is pending.
 
 Completed assistant replies use the section renderer at every length, including
 replies over 8 KB. Long native Markdown documents retain their full measured height while mounting
@@ -1838,6 +1882,10 @@ and grows only for multiline drafts, attachments, suggestions, or actionable
 errors. Files, Images, and Folder share one native picker presentation, configured for
 the selected action. Files and composer drops accept generic files up to 8 MB as
 removable context chips, using the existing protected file upload on send.
+Context attachments use one removable tray chip per source. Attaching or refreshing
+context never inserts a second chip into the text editor. Restored inline context
+references move into the tray while preserving their payload and the surrounding
+draft text; repeated sources keep the latest context.
 Pasted file URLs take precedence over clipboard icon bitmaps and use the same
 attachment path as picked or dropped files; ordinary image pastes keep thumbnails.
 Folder selection inserts its path into the draft.
@@ -1866,6 +1914,14 @@ backend recorder checks. Hermes synthesizes the owning profile's reply audio;
 Herm plays it locally and cancels pending synthesis/playback on exit. Backend
 recording uses session-scoped controls. Process-wide speech toggles are never
 used. Recognized words cannot be held indefinitely by background noise.
+Voice keeps captions and labeled controls in a centered column, without floating
+activity cards overlapping the conversation. Microphone startup and permission
+errors occupy the existing status slot with Retry microphone. Muting releases
+capture in every phase and rejects late speech callbacks. Speech that interrupts
+local playback retains the same recognition request so opening words are kept;
+a completed agent turn is not interrupted again just to stop its local audio.
+Normal phrases settle after 0.8 seconds (1.2 without confirmed quiet); unfinished
+phrases retain their longer hold. Quiet follow-ups wait 30 seconds before sleep.
 Spoken captions use the exact plain-text segment sent to synthesis and change
 only when that segment's audio starts. Show a preparation status while audio
 loads. Center caption text without Markdown list indents or timer-based advance.
@@ -1932,7 +1988,10 @@ retains its existing grid/list and pagination presentation. Both read a paginate
 profile-aware index of unarchived sessions independently of the sidebar window, including
 pre-compaction messages, assistant links, and producer/terminal outputs. Transcript
 extraction runs off the main actor in bounded pages, with at most four concurrent
-session reads. An in-memory cache reuses artifacts only while Hermes session
+session reads. Completed sessions appear progressively; sidebar updates do not
+cancel indexing. Opening the page or using Refresh starts a scan. Partial profile/index
+failures keep readable results and prior outputs for unreadable sessions, with a warning
+in the existing header subtitle. An in-memory cache reuses artifacts only while Hermes session
 recency, message count, and display title agree; raw transcripts are not cached. Refresh
 failures stay in the fixed header subtitle and preserve the last loaded output.
 
@@ -2184,12 +2243,15 @@ Before considering a UI change complete, verify:
 
 ### Pull requests and Issues metadata
 
+Wide PR Summary layouts place a `dockBorderLight` vertical hairline midway through
+the existing gap between the reading column and details sidebar. Stacked layouts omit it.
+
 The PR detail panel follows the ChatGPT pull request reference: an open reading
 canvas, a compact capsule tab strip (Summary, Changes with line totals, Reviews),
 and a quiet action toolbar. Before wrapping, the header drops tab line totals and
-uses an accessible review icon. At phone-like widths, compact tabs and actions
+uses compact icon actions. At phone-like widths, compact tabs and actions
 form left-aligned rows, with actions wrapping further when needed. Watch, GitHub,
-Refresh, More, Review, and Merge remain
+Refresh, More, and Merge remain
 available. Line totals remain in the summary. Repository/number, status, title, author/freshness,
 and base ← head branch direction sit above the content without an overview card.
 At 840pt and wider, description and Activity occupy the reading column while a
@@ -2199,22 +2261,39 @@ available through the Changes disclosure. The shared metadata and breakdown view
 support an embedded presentation; Issues retains its existing card treatment.
 The Merge toolbar dropdown opens the shared landing controls in a popover,
 retaining requirements, permissions, confirmations, expected-head checks, queue
-state, and merged-branch cleanup. Review with Hermes uses the existing review
-guide flow with the default profile. Activity uses the shared individual event
+state, and merged-branch cleanup. More contains Generate review guide, using the
+existing separate-conversation flow with the default profile. A current guide
+exposes Read review guide beside Reviews. Generation tooltips identify Hermes
+Agent's bundled `github` skill and its code-review workflow. The request tells
+Hermes to load the skill and `references/code-review.md`, report unavailability
+instead of silently substituting a review, and keep analysis private without
+checkout, file edits, or GitHub writes. Activity uses the shared individual event
 surfaces. The comment editor and submit action occupy separate rows.
 
-A floating bottom-right composer is titled “Chat” and asks Hermes about the selected PR.
-Its icon, input, and send action are vertically centered with equal top/bottom insets. Focus
-or the chat icon expands a bounded conversation above the composer; minimize
-returns to the capsule. Expansion respects Reduce Motion. Bottom scroll padding
-keeps the final content reachable. Each PR keeps its own process-local draft,
-conversation reference, and disposable history projection. Sending uses an
-independent Hermes session under the explicit `default` profile and includes the
-current PR context; it leaves the selected workspace conversation and attachments
-alone. The shared quick-submission path validates ownership and retains interrupted
-submissions for deliberate review. Replies come from bounded canonical history,
-refreshed while the panel is mounted. Main-bot approvals and clarifications link
-to the full conversation. No transcript is persisted in Herm.
+On the standalone Pull Requests page, a floating bottom-right panel is titled “Chat” and reuses `ConversationTranscriptView`
+and `ChatComposerView` from session chat, including message bubbles, Markdown,
+activity, reply actions, approvals, clarification, attachments, and send/stop controls.
+Minimized chat is a compact Chat · #PR button, at most 200pt wide, with the transcript
+and composer hidden. Clicking it opens the transcript and composer and focuses the
+input. The header minimizes the entire panel; drafts and attachments stay in the
+PR conversation model. Typing or sending expands it.
+Summary, Changes, and Reviews reserve its measured height plus outer gutters outside
+their content viewports, keeping content and scroll controls above the panel at every pane width.
+Expansion respects Reduce Motion. Each PR has an independent presentation model over
+Hermes-owned history. Herm saves only the PR-to-session reference (profile and stable
+session ID), so reopening the PR after navigation or an app restart resumes the same
+conversation rather than creating another one. A new conversation uses the explicit
+`default` profile and the PR’s local project path when available. Every composer
+submission includes current PR context. The selected workspace conversation and its
+draft and attachments remain untouched. Open conversation navigates to the linked
+session. Missing or unavailable history uses the standard session recovery behavior;
+a failed resume never silently replaces the linked session.
+
+Session PR inspector tabs, including expanded code review, omit the floating chat
+and its reserved space. Their toolbar offers Attach to chat, staging current PR
+context in the existing session composer without sending or replacing the draft.
+Reattaching updates the existing chip. Compact toolbars use a labelled icon action.
+The standalone Pull Requests page hides Attach to chat.
 
 The Changes group classifies current loaded file paths, with mocks/fixtures
 preceding tests, then docs/configuration/code/other. Totals lead the group, followed by compact rows with category, file count,
@@ -2358,6 +2437,8 @@ Diff toolbars use the standard Unified/Split tab treatment and 28pt shared
 icon controls for wrapping, Find, context loading, and expansion. Wrap retains
 an active tint and an accessible On/Off value; context loading uses an in-place
 spinner. Every icon has a descriptive tooltip and accessibility label.
+Long-line wrapping defaults to on in shared diffs, pull request reviews, and the
+repository code editor. Keep the wrap controls available and honor saved preferences.
 Unified/Split choices reflect the visible layout. Panes under 680pt and one-sided
 diffs disable Split and
 render a single full-width source pane. Escape closes the expanded file review.
@@ -2431,6 +2512,15 @@ checking, and failed discovery occupy one stable slot. Failed refreshes retain
 previous rows with an explicit stale subtitle. Discovery pauses under hidden surfaces
 and rejects results from a previous terminal scope. Opening remains an explicit click.
 
+Browser uses the session composer exclusively. Attach Page stays visible in the
+responsive toolbar and stages a removable context chip without sending or changing
+the chat draft. It captures the title, URL, shared Chromium tab ID when available,
+and selected text as untrusted page context. Reattaching the same page refreshes
+its chip; navigation does not silently change attached context. Async selection
+capture is discarded if the session, page, or tab changes. The action shows pending
+feedback and is disabled on blank pages. More retains New Agent Tab and the
+annotation and console-context actions.
+
 The Browser toolbar uses 28pt controls and a compact themed address field. It
 first collapses viewport labels and moves annotation into More; phone-width
 panels give the address a full-width row above navigation and viewport actions.
@@ -2438,7 +2528,12 @@ Browser has no Local Previews control or discovery polling. Auto follows native
 page bounds on every resize without reloading; device presets retain their CSS
 width and scale to fit. WebKit sizing belongs to its native page container;
 Chromium’s canvas reports frame changes directly rather than waiting for a
-subview layout pass. The viewport menu stays visible and names the
+subview layout pass. Headless Chromium uses a 2x compositor and lossless PNG
+screencast frames, bounded to the viewing display’s pixel density. Auto rounds
+CSS viewport dimensions down to whole pixels and aligns the page origin to the
+backing pixel grid, preserving 1:1 text rendering in fractional panel bounds.
+Device previews scale down only when needed to fit. Screencasting stays paused
+while the pane is hidden. The viewport menu stays visible and names the
 selected CSS width; its accessible label includes the device preset. Page loading
 uses a reserved address-field spinner and a slim indeterminate track over the
 toolbar’s bottom edge; Reload becomes Stop in the same footprint. Navigation
@@ -2461,6 +2556,14 @@ themes, and neutral ink in Monochrome/E-Ink. Description prose stays within an
 
 
 ### Calendar workspace
+
+Week and Month share a search row with Agenda, a weekly list grouped by date.
+Search matches titles, source names, and locations within the displayed range;
+a type menu narrows the projection and Clear resets both filters. The month heading
+opens a date picker. Agenda rows select the day and expand the item in the inspector.
+The inspector separates all-day items from the schedule and labels overlapping timed
+events using all enabled sources before search/type filtering. Touching event boundaries
+do not conflict. Plan in chat includes the complete selected day from enabled sources.
 
 Calendar uses the shared semantic palette for item identity: `DockCategoryTone.event` blue for events,
 `.reminder` amber for reminders, `.automation` violet for scheduled agent runs,
@@ -2506,6 +2609,8 @@ confirmation, posting feedback, and provider-authoritative metadata editing.
 
 ### Activity workspace
 
+Activity navigation uses the shared pulse waveform icon.
+
 Work retains its pinned calendar and scrollable detail pane. The calendar starts
 with a labelled month overview of shipped work, sessions, and active days. Its
 heat cells and shipped meters use `dockReview` teal; sessions and hourly rhythm
@@ -2514,6 +2619,26 @@ use `dockInfo` blue; automation uses `dockMerged` violet. Failed runs keep
 color. These category accents reuse the shared appearance-aware palette and
 resolve to neutral ink in Monochrome and E-Ink. Refresh errors occupy the existing
 toolbar status slot; initial unavailable content retains a stable content area.
+
+A summary card sits below the Activity calendar in the left scrolling column on
+wide windows, and before the detail sections in the narrow scrolling pane.
+The wide calendar column retains 16pt of bottom content padding so the summary
+card clears the viewport edge when scrolled to the end. It
+summarizes the selected Day, Week, or Month using Apple's on-device model, with
+bounded metadata samples and full recorded counts. A week crossing a month edge
+uses only the loaded month's records. Changing period cancels the previous request;
+empty, loading, stale, unavailable, and retry states retain the same card container.
+Summaries use the shared `MarkdownMessageView` at body size, preserving paragraph
+and list breaks. Generation requests a short overview and 2–3 bullets with bold
+labels, up to 90 words, focusing on concrete changes rather than repeating totals.
+Apple Intelligence attribution uses the shared `OnDeviceAssistNotice`: a small
+neutral inset surface, an orange info icon from `DockAccentColor.orange.color`,
+and unchanged `dockMetadataText` body text. Reuse it for Activity and notch
+summaries, automatic title information, and Apple Intelligence settings.
+Generated summaries show “Generated by Apple Intelligence” with help explaining
+local generation and possible inaccuracies. Existing reply summaries retain that
+attribution in notch detail, approval notifications include an accuracy notice,
+and session title / Writing Tools help explains their generation behavior.
 
 Today uses a 24pt filled date badge with `dockOnAccentText`, a 2.5pt skin-accent
 cell outline, and a light accent tint in every scope. Other selected days retain
@@ -2577,11 +2702,17 @@ including wrapped warnings.
 The Merge toolbar button uses a live Dock glyph that inherits the primary button's
 foreground with its label, including on Storm's gradient and Glass's filled surface.
 Keep icon and text at the same contrast in every skin and interaction state.
-PR toolbar actions inherit small control sizing, keeping Review and Merge close
+PR toolbar actions inherit small control sizing, keeping Attach to chat and Merge close
 to the adjacent 28pt icon controls while retaining 12pt labels and themed feedback.
 
 PR Summary content cards use 20pt insets. Their section headers omit sidebar-only
 leading padding and use 12pt semibold primary ink so titles and body share an edge.
+
+PR Activity commit entries show a monospaced short hash as a visible link below
+the message. Selecting it opens a read-only commit diff sheet using `DockExpandedPage`
+and `SharedDiffView`, with a changed-file picker and addition/deletion counts.
+The sheet loads that exact commit from GitHub, retains partial-coverage notices,
+and offers retry on failure. Missing patches show an unavailable message.
 
 Review actions group pull-request watching and guide actions in a compact menu. Raw submission diagnostics stay in the guide; startup shows a loading indicator. New review sessions wait briefly for project-directory confirmation, and active first turns wait for saved history.
 
@@ -2627,3 +2758,5 @@ even before requirements load. Missing requirements fail closed. GitHub merge
 state controls required-check and branch-protection gating; optional failing
 checks remain warnings when GitHub reports the PR mergeable. Disabled Merge
 keeps an active hover-tip anchor and the separate requirements dropdown.
+
+The empty chat welcome shows the orb and introductory text without suggested-prompt pills.
