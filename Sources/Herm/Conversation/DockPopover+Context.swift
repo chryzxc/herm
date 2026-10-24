@@ -444,7 +444,7 @@ extension DockPopover {
                 isLoading: isLoadingChangeDiff
             )
         case .pullRequests:
-            PullRequestDetailView(center: sessionPullRequestCenter, onOpenChat: openPullRequestChat)
+            PullRequestDetailView(center: sessionPullRequestCenter, onOpenChat: openPullRequestChat, isInspector: true)
         case .issues:
             IssueDetailView(center: sessionIssueCenter, onOpenChat: openIssueChat, isInspector: true)
         case .chat, .voice:

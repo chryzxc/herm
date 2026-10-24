@@ -154,7 +154,7 @@ final class PullRequestReviewPreferenceStore: ObservableObject {
         self.defaults = defaults
         showsFileTree = defaults.object(forKey: prefix + "file-tree") as? Bool ?? false
         diffMode = PullRequestDiffMode(rawValue: defaults.string(forKey: prefix + "diff-mode") ?? "unified") ?? .unified
-        wordWrap = defaults.object(forKey: prefix + "word-wrap") as? Bool ?? false
+        wordWrap = defaults.object(forKey: prefix + "word-wrap") as? Bool ?? true
         richPreview = defaults.object(forKey: prefix + "rich-preview") as? Bool ?? false
         wordDiffs = defaults.object(forKey: prefix + "word-diffs") as? Bool ?? false
         expandedFileIDs = Set(defaults.stringArray(forKey: prefix + "expanded-files") ?? [])
@@ -389,7 +389,7 @@ extension PullRequestRecord {
         items += commits.map {
             GitHubConversationItem(
                 id: "commit:" + $0.id, author: $0.author, summary: $0.message, body: "", date: $0.committedAt,
-                url: $0.webURL, avatarURL: $0.authorAvatarURL)
+                url: $0.webURL, avatarURL: $0.authorAvatarURL, commitSHA: $0.id)
         }
         items += reviews.map {
             GitHubConversationItem(

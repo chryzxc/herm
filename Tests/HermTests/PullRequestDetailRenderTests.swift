@@ -96,8 +96,10 @@ struct PullRequestDetailRenderTests {
             DockThemeRuntime.revision &+= 1
             NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             let appearanceName = "\(theme.rawValue)-\(dark ? "dark" : "light")"
-            for width in [320.0, 400.0, 600.0, 1120.0] {
-                let view = PullRequestDetailView(center: center, onOpenChat: { _ in })
+            let chatOnly = ProcessInfo.processInfo.environment["HERM_PR_CHAT_ONLY"] == "1"
+            for width in chatOnly ? [] : [320.0, 400.0, 600.0, 1120.0] {
+                let isInspector = width == 400 || width == 600
+                let view = PullRequestDetailView(center: center, onOpenChat: { _ in }, isInspector: isInspector)
                     .environment(\.chatContextRouter, router)
                     .frame(width: width, height: 850)
                     .background(Color.dockOpaqueCanvas).dockThemedRoot()
@@ -112,7 +114,8 @@ struct PullRequestDetailRenderTests {
                     host.layoutSubtreeIfNeeded()
                     try await Task.sleep(for: .milliseconds(100))
                 }
-                let url = root.appendingPathComponent("pr-\(appearanceName)-\(Int(width)).png")
+                let surface = isInspector ? "session-pr" : "pr"
+                let url = root.appendingPathComponent("\(surface)-\(appearanceName)-\(Int(width)).png")
                 // Material layers require a live compositor check; the chat is captured separately below.
                 if theme != .glass {
                     let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -120,40 +123,50 @@ struct PullRequestDetailRenderTests {
                     try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
                 }
             }
-            let rpc = PullRequestChatRPC()
-            rpc.history = [
-                "messages": [
-                    ["role": "user", "content": "What should I review first?"],
-                    [
-                        "role": "assistant",
-                        "content":
-                            "Start with **timeout handling**, then check that existing output is preserved.\n\n- Verify process termination.\n- Check invalid output paths.\n- Run the focused measurement suite.",
-                    ],
-                ]
+            let chat = PullRequestChatModel(links: defaults)
+            await chat.prepareConversation(for: record, runtime: runtime)
+            let conversation = try #require(chat.conversation)
+            conversation.messages = [
+                ChatMessage(role: .user, text: "What should I review first?"),
+                ChatMessage(role: .hermes, text: "Start with **timeout handling**, then check the focused tests."),
             ]
-            let chat = PullRequestChatModel()
-            chat.text = "What should I review first?"
-            await chat.submit(record, client: rpc, drafts: QuickDraftStore(directory: nil))
-            await chat.refresh(client: rpc)
-            chat.text = "Explain the timeout tests"
-            let chatHost = NSHostingView(
-                rootView: PullRequestFloatingChatView(chat: chat, runtime: runtime, record: record, expanded: true)
-                    .padding(20).frame(width: 400, height: 440)
-                    .background(Color.dockOpaqueCanvas).dockThemedRoot())
-            chatHost.frame = NSRect(x: 0, y: 0, width: 400, height: 440)
-            let chatWindow = NSWindow(
-                contentRect: chatHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            chatWindow.contentView = chatHost
-            chatWindow.orderFrontRegardless()
-            defer { chatWindow.orderOut(nil) }
-            for _ in 0..<4 {
-                chatHost.layoutSubtreeIfNeeded()
-                try await Task.sleep(for: .milliseconds(80))
+            conversation.draft = "Explain the timeout tests"
+            defer { chat.shutdown() }
+            let minimizedHost = NSHostingView(
+                rootView: PullRequestFloatingChatView(chat: chat, runtime: runtime, record: record)
+                    .dockThemedRoot())
+            let minimizedSize = minimizedHost.fittingSize
+            #expect(minimizedSize.width <= 220)
+            #expect(minimizedSize.height <= 60)
+            minimizedHost.frame = NSRect(origin: .zero, size: minimizedSize)
+            minimizedHost.layoutSubtreeIfNeeded()
+            if theme != .glass {
+                let bitmap = try #require(minimizedHost.bitmapImageRepForCachingDisplay(in: minimizedHost.bounds))
+                minimizedHost.cacheDisplay(in: minimizedHost.bounds, to: bitmap)
+                try #require(bitmap.representation(using: .png, properties: [:]))
+                    .write(to: root.appendingPathComponent("chat-minimized-\(appearanceName).png"))
             }
-            let bitmap = try #require(chatHost.bitmapImageRepForCachingDisplay(in: chatHost.bounds))
-            chatHost.cacheDisplay(in: chatHost.bounds, to: bitmap)
-            try #require(bitmap.representation(using: .png, properties: [:]))
-                .write(to: root.appendingPathComponent("chat-\(appearanceName)-400.png"))
+            #expect(conversation.draft == "Explain the timeout tests")
+            for chatWidth in [360.0, 600.0] {
+                let chatHost = NSHostingView(
+                    rootView: PullRequestFloatingChatView(chat: chat, runtime: runtime, record: record, expanded: true)
+                        .padding(20).frame(width: chatWidth, height: 640)
+                        .background(Color.dockOpaqueCanvas).dockThemedRoot())
+                chatHost.frame = NSRect(x: 0, y: 0, width: chatWidth, height: 640)
+                let chatWindow = NSWindow(
+                    contentRect: chatHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                chatWindow.contentView = chatHost
+                chatWindow.orderFrontRegardless()
+                defer { chatWindow.orderOut(nil) }
+                for _ in 0..<4 {
+                    chatHost.layoutSubtreeIfNeeded()
+                    try await Task.sleep(for: .milliseconds(80))
+                }
+                let bitmap = try #require(chatHost.bitmapImageRepForCachingDisplay(in: chatHost.bounds))
+                chatHost.cacheDisplay(in: chatHost.bounds, to: bitmap)
+                try #require(bitmap.representation(using: .png, properties: [:]))
+                    .write(to: root.appendingPathComponent("chat-\(appearanceName)-\(Int(chatWidth)).png"))
+            }
         }
         #expect(runtime.sessionID == "selected-workspace")
     }

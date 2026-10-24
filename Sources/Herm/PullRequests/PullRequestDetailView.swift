@@ -18,6 +18,7 @@ struct PullRequestDetailView: View {
     }
 
     @State private var reviewerRecord: PullRequestRecord?
+    @State private var commitDiffTarget: PullRequestCommitDiffTarget?
     @State private var readingGuide = false
     @StateObject private var guide = ReviewGuideCoordinator()
     @ObservedObject private var watches = PullRequestWatchStore.shared
@@ -34,14 +35,23 @@ struct PullRequestDetailView: View {
     @State private var checksExpanded = true
     @State private var activityExpanded = true
     @State private var changesExpanded = false
+    @State private var chatHeight: CGFloat = 180
     @ObservedObject private var chats: PullRequestChatStore
     private var commentDraft: String { center.commentDrafts[center.selectedID ?? ""] ?? "" }
     @StateObject private var diffPresentationCache = PullRequestDiffPresentationCache()
     @StateObject private var mutationCoordinator = PullRequestMutationCoordinator()
     @Environment(\.dockTitleRow) private var titleRow
 
+    private var chatBottomPadding: CGFloat {
+        !isInspector && contextRouter?.model != nil ? chatHeight + 40 : 0
+    }
+
     var body: some View {
         detailPane
+            .sheet(item: $commitDiffTarget) { target in
+                PullRequestCommitDiffView(target: target, client: center.api.client)
+                    .frame(minWidth: 700, minHeight: 560).modifier(ReviewSheetContext())
+            }
             .sheet(item: $reviewerRecord) { record in
                 PullRequestReviewerPicker(record: record, client: center.api.client) {
                     Task { await center.refreshSelectedDetail() }
@@ -66,6 +76,7 @@ struct PullRequestDetailView: View {
             }
             .onChange(of: center.selectedID) { _, _ in
                 inlineTarget = nil
+                commitDiffTarget = nil
                 selectedFileID = nil
                 sourceDiffFileIDs.removeAll()
                 diffPresentationCache.removeAll()
@@ -130,9 +141,9 @@ struct PullRequestDetailView: View {
                         ScrollView {
                             summary(pr, wide: geometry.size.width >= 840)
                                 .padding(.horizontal, isInspector ? 12 : 24)
-                                .padding(.bottom, contextRouter?.model == nil ? 0 : 96)
                         }.clipped()
                     }
+                    .padding(.bottom, chatBottomPadding)
                 } else if detailTab == 2 {
                     PullRequestReviewView(
                         model: center.review(for: pr), record: pr, viewer: center.viewerLogin,
@@ -152,18 +163,23 @@ struct PullRequestDetailView: View {
                             }
                         }
                     )
-                    .padding(.bottom, contextRouter?.model == nil ? 0 : 88)
+                    .padding(.bottom, chatBottomPadding)
                 } else {
                     code(pr).padding(.horizontal, isInspector ? 12 : 16)
-                        .padding(.bottom, contextRouter?.model == nil ? 0 : 88)
+                        .padding(.bottom, chatBottomPadding)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .overlay(alignment: .bottomTrailing) {
-                if let model = contextRouter?.model {
+                if !isInspector, let model = contextRouter?.model {
                     PullRequestFloatingChatView(chat: chats.chat(for: pr), runtime: model, record: pr)
                         .id(pr.id)
-                        .padding(isInspector ? 12 : 20)
+                        .onGeometryChange(for: CGFloat.self) {
+                            $0.size.height
+                        } action: {
+                            chatHeight = $0
+                        }
+                        .padding(20)
                 }
             }
         } else if center.isInitialLoad {
@@ -287,6 +303,13 @@ struct PullRequestDetailView: View {
             layout {
                 summaryConversation(pr)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .trailing) {
+                        if wide {
+                            Color.dockBorderLight.frame(width: DockLayout.hairline)
+                                .offset(x: 18)
+                                .accessibilityHidden(true)
+                        }
+                    }
                 summarySidebar(pr)
                     .frame(width: wide ? 280 : nil)
                     .frame(maxWidth: wide ? 280 : .infinity, alignment: .leading)
@@ -350,7 +373,12 @@ struct PullRequestDetailView: View {
                         Text(center.isLoadingDetail(for: pr.id) ? "Loading activity…" : "No activity loaded.")
                             .dockFont(.body).foregroundStyle(Color.dockMetadataText)
                     } else {
-                        GitHubTimelineView(reference: pr.reference, items: activity)
+                        GitHubTimelineView(reference: pr.reference, items: activity) { sha in
+                            if let commit = center.commitsByID[pr.id]?.first(where: { $0.id == sha }) {
+                                commitDiffTarget = PullRequestCommitDiffTarget(
+                                    repository: pr.repository, commit: commit)
+                            }
+                        }
                     }
                 }
             }
@@ -617,6 +645,10 @@ struct PullRequestDetailView: View {
                     .contentShape(Capsule())
             }.buttonStyle(.dockHover).accessibilityAddTraits(detailTab == 1 ? .isSelected : [])
             detailTabButton("Reviews", selected: detailTab == 2) { detailTab = 2 }
+            if hasCurrentGuide(pr) {
+                Button("Read review guide") { readingGuide = true }
+                    .buttonStyle(.dockCompact)
+            }
         }.padding(4)
             .background(Capsule().fill(Color.dockSurface))
             .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
@@ -641,29 +673,41 @@ struct PullRequestDetailView: View {
                 center.invalidateSelectedDetail()
                 detailRefreshID += 1
             }
-            GitHubAuthoringMenu(reference: pr.reference, client: center.api.client) {
-                Task { await center.refreshSelectedDetail() }
-            }.id(pr.id)
-            if contextRouter?.model != nil {
-                Group {
-                    if compact {
-                        DockIconButton(
-                            icon: .sparkle, label: hasCurrentGuide(pr) ? "Read review" : "Review with Hermes", size: 28,
-                            style: DockThemePalette(theme: DockThemeRuntime.current)
-                        ) { openReviewGuide(pr) }
-                    } else {
-                        Button(hasCurrentGuide(pr) ? "Read review" : "Review with Hermes", icon: .sparkle) {
+            GitHubAuthoringMenu(
+                reference: pr.reference, client: center.api.client, isAdditionalActionPending: guide.requesting,
+                additionalActions: {
+                    if contextRouter?.model != nil {
+                        Button(
+                            guide.requesting
+                                ? "Generating review guide…"
+                                : (hasCurrentGuide(pr) ? "Read review guide" : "Generate review guide")
+                        ) {
                             openReviewGuide(pr)
                         }
-                        .buttonStyle(.dockSecondary)
+                        .disabled(
+                            guide.requesting
+                                || (!hasCurrentGuide(pr)
+                                    && (guide.uncertain || !center.filesAreCurrent(for: pr)
+                                        || !(center.filesByID[pr.id] ?? []).contains { $0.patch?.isEmpty == false }))
+                        )
+                        .help(ReviewGuideCoordinator.skillTooltip)
+                        Divider()
                     }
                 }
-                .disabled(
-                    guide.requesting
-                        || (!hasCurrentGuide(pr)
-                            && (guide.uncertain || !center.filesAreCurrent(for: pr)
-                                || !(center.filesByID[pr.id] ?? []).contains { $0.patch?.isEmpty == false }))
-                )
+            ) {
+                Task { await center.refreshSelectedDetail() }
+            }.id(pr.id)
+            if isInspector, let contextRouter, contextRouter.model != nil {
+                if compact {
+                    DockIconButton(
+                        icon: .chatCircleText, label: "Attach to chat", size: 28,
+                        style: DockThemePalette(theme: DockThemeRuntime.current)
+                    ) { contextRouter.attachToCurrentChat(ChatContext(pullRequest: pr)) }
+                } else {
+                    Button("Attach to chat", icon: .chatCircleText) {
+                        contextRouter.attachToCurrentChat(ChatContext(pullRequest: pr))
+                    }.buttonStyle(.dockSecondary)
+                }
             }
             if pr.isOpenForWork || pr.mergedAt != nil {
                 PullRequestLandingView(
@@ -784,7 +828,7 @@ struct PullRequestDetailView: View {
         DockExpandedPage(
             title: "Code review", subtitle: center.selected.map { "#\($0.number) · \($0.title)" } ?? "", close: close
         ) {
-            PullRequestDetailView(center: center, onOpenChat: onOpenChat, initialTab: 1)
+            PullRequestDetailView(center: center, onOpenChat: onOpenChat, isInspector: isInspector, initialTab: 1)
         }
     }
 
