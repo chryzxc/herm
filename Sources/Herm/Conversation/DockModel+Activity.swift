@@ -370,7 +370,8 @@ extension DockModel {
             guard let explanation = await OnDeviceAssist.explainApproval(title: title, detail: body),
                 let updated = content.mutableCopy() as? UNMutableNotificationContent
             else { return }
-            updated.subtitle = "\(OnDeviceAssist.attribution) · \(explanation)"
+            updated.subtitle = "\(OnDeviceAssist.attribution) · may be inaccurate"
+            updated.body = "\(explanation)\n\(content.body)"
             updated.sound = nil
             try? await UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: requestIdentifier, content: updated, trigger: nil))

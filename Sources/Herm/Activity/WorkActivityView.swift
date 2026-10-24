@@ -51,16 +51,22 @@ struct WorkActivityView: View {
                 GeometryReader { proxy in
                     if proxy.size.width >= 1100 {
                         HStack(alignment: .top, spacing: 16) {
-                            ScrollView { gridCard(index, wide: true) }
-                                .scrollIndicators(.hidden)
-                                .frame(width: min(560, proxy.size.width * 0.45))
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    gridCard(index, wide: true)
+                                    summaryCard(index)
+                                }
+                                .padding(.bottom, 16)
+                            }
+                            .scrollIndicators(.hidden)
+                            .frame(width: min(560, proxy.size.width * 0.45))
                             detail(index)
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 16) {
                             // Pinned: the grid never scrolls away, so another day is always one click off.
                             gridCard(index, wide: false)
-                            detail(index)
+                            detail(index, includesSummary: true)
                         }
                     }
                 }
@@ -115,12 +121,13 @@ struct WorkActivityView: View {
 
     /// The only scrolling region beside the wide-layout calendar; each scope starts at the top.
     @ViewBuilder
-    private func detail(_ index: WorkCalendarIndex) -> some View {
+    private func detail(_ index: WorkCalendarIndex, includesSummary: Bool = false) -> some View {
         if loadedIndex == nil {
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 VStack(spacing: 16) {
+                    if includesSummary { summaryCard(index) }
                     switch scope {
                     case .day:
                         CalendarDayPane(
@@ -153,6 +160,18 @@ struct WorkActivityView: View {
             .id(scope == .day ? selected : (scope == .week ? weekBounds.start : month))
             .frame(maxHeight: .infinity)
         }
+    }
+
+    private func summaryCard(_ index: WorkCalendarIndex) -> some View {
+        let range: WorkRange =
+            switch scope {
+            case .day: index.range(from: selected, to: selected)
+            case .week: index.range(from: weekBounds.start, to: weekBounds.end)
+            case .month: index.range(from: index.month, to: .distantFuture)
+            }
+        return WorkActivitySummaryView(
+            input: loadedIndex == nil || refreshState?.isStale == true
+                ? nil : WorkActivitySummaryInput(range: range, scope: scope.title))
     }
 
     private func rangePane(_ range: WorkRange, title: String) -> some View {

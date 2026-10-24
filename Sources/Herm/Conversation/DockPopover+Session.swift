@@ -28,7 +28,9 @@ extension DockPopover {
         .buttonStyle(.dockHover)
         .onHover { isSessionIdentityHovering = $0 }
         .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: isSessionIdentityHovering)
-        .help("\(model.currentSessionTitle ?? "Untitled chat") — \(model.status.title)")
+        .help(
+            "\(model.currentSessionTitle ?? "Untitled chat") — \(model.status.title)\n\(OnDeviceAssist.sessionTitleHelp)"
+        )
         .accessibilityLabel("Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
         .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             sessionPicker
@@ -381,6 +383,13 @@ extension DockPopover {
     var sessionPicker: some View {
         VStack(alignment: .leading, spacing: 0) {
             sessionList
+            if UserDefaults.standard.object(forKey: OnDeviceAssist.nameSessionsKey) as? Bool ?? true {
+                OnDeviceAssistNotice(
+                    text: "Automatic titles use Apple Intelligence",
+                    help: OnDeviceAssist.sessionTitleHelp
+                )
+                .padding(8)
+            }
         }
         .background(Color.dockCanvas)
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous))

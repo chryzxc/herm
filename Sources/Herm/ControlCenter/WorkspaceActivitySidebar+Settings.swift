@@ -920,6 +920,9 @@ extension WorkspaceActivitySidebar {
                 ) {
                     settingsSwitch(isOn: $namesSessionsOnDevice)
                 }
+                OnDeviceAssistNotice(
+                    text: "Apple Intelligence runs on this Mac. Generated text may be inaccurate."
+                )
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(
                     title: "Show sessions in Spotlight",

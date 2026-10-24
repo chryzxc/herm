@@ -824,7 +824,9 @@ final class EdgeDockController: NSObject {
             !GenerativeUIIntegration.readableText(response).isEmpty
         {
             let summary = replySummaries[response.id]
-            state.detail = summary ?? String(GenerativeUIIntegration.readableText(response).prefix(180))
+            state.detail =
+                summary.map { "\(OnDeviceAssist.attribution) · \($0)" }
+                ?? String(GenerativeUIIntegration.readableText(response).prefix(180))
             summarizeIfEnabled(response)
             if state.activity.quiet {
                 state.updateTitle =
