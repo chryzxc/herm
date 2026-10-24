@@ -804,8 +804,9 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   "Hermes is offline", with one line saying what will appear. A failed Kanban
   read explicitly shows "Kanban is unavailable" when no cards are cached.
 - The footer holds Quick message and Open Herm actions. Quick message replaces
-  the scrolling body with a compact text composer inside the same fixed panel.
-  It always starts a new session, even when another chat is selected or busy.
+  the preview with a taller conversation panel. Entering Quick message starts a
+  new session, even when another chat is selected or busy; acknowledged sends keep
+  that destination for follow-ups until the user chooses another destination.
   Each session row also has Reply, which opens a composer beneath that row
   and captures the session identity and profile. Command-Return submits either
   composer. Neither action changes the workspace selection. Reply drafts stay
@@ -816,7 +817,13 @@ with a result the user has not opened. The list has no cap; the body scrolls.
 - Quick message hides the Tasks/Quota tabs, Quiet, refresh, activity banners, and
   Open Herm footer while its standalone composer is visible. A quiet destination
   picker and icon-only Close action are the only header controls. The composer
-  anchors to the bottom, leaving the remaining body clear for real feedback.
+  anchors to the bottom of a 560pt panel (plus the top island's camera clearance).
+  Above it, `ConversationTranscriptView` renders Hermes-owned sent messages,
+  streamed replies, activity, approval/clarification controls, and message actions.
+  A disposable `DockModel` shares the gateway's event router and existing session
+  resume/history path; workspace selection and drafts remain separate. Changing
+  destinations or closing detaches the projection. Failed history reads show the
+  existing chat error and a Reload conversation action without resending.
 - Quick message and inline reply reuse the session composer's native growing
   editor, input surface, attachment control, and circular send treatment, including
   theme-specific line and shaped variants. Return and Command-Return send;

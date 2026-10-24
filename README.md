@@ -331,7 +331,11 @@ Each operation remains unavailable when its installed-runtime contract cannot be
 Quick message opens a clean message-only panel with a destination picker and Close.
 Tasks, Quota, Quiet, refresh, and Open Herm controls stay out of the way while composing.
 It reuses the chat session's growing text editor, themed input surface, attachment
-control, and send button. The composer stays at the bottom; attachments appear inside it.
+control, and send button. The taller 560pt panel shows your sent messages and live
+replies using the session chat's transcript and message actions. Follow-up messages
+stay in that conversation; the destination menu starts a new one when you choose it.
+The workspace's selected session and draft stay separate. The composer stays at the
+bottom; attachments appear inside it.
 The + menu offers files, paste, window capture, saved drafts, and discard; review and
 retry appear for interrupted sends. Project choices appear only for new sessions.
 Inline replies share the same composer and stay tied to the task's session.

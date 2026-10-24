@@ -48,6 +48,10 @@ grid/ruler drawing keep time ticks independent of history length.
 - `Settings/` — shared settings components (`SettingsCategory`, `SettingsSection`, rows).
 - `Kanban/`, `Calendar/`, `Office/` — kanban board, work calendar, and the 3D office scene.
 - `EdgeDock/` — edge dock, notch/island previews, quick message, result peek.
+  `EdgeQuickConversationModel` mounts a disposable `DockModel` for Quick Message's
+  captured session, sharing gateway events and the standard session resume/history
+  path. `ConversationTranscriptView` renders it; the existing `QuickDraftStore`
+  retains only unsent material, and the workspace session stays separate.
 - `DesignSystem/` — theme, component styles, icons (`PhosphorIcons`), modal/menu/hover primitives.
 - `Bots/` — Bot roster page, avatar presentation (stable FNV-1a fallback identity), bot editor, bot chat routing.
 - `Repository/` — GitHub remote discovery, pull-request center, source control, code editor.
