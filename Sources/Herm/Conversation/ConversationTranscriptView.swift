@@ -183,8 +183,8 @@ struct ConversationTranscriptView: View, Equatable {
                             onSelect: { jumpToMessage($0, proxy: proxy) }
                         )
                         .frame(width: 286, height: viewport.size.height)
-                        .padding(.trailing, 24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .padding(.leading, 24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
                 }
                 .onAppear {

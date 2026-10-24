@@ -331,7 +331,7 @@ struct MessageNavigatorView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .topLeading) {
                 if !items.isEmpty {
                     if showsMap {
                         messageMap(in: CGSize(width: 286, height: geometry.size.height))
@@ -341,12 +341,12 @@ struct MessageNavigatorView: View {
                         searchPanel
                             .frame(width: 300, alignment: .leading)
                             .padding(.top, 10)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .animation(.dockEase(duration: 0.16), value: isSearchPresented)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -548,7 +548,7 @@ struct MessageNavigatorView: View {
                 Capsule()
                     .fill(markerColor(for: item, activeTarget: activeTarget, distanceFromHover: distanceFromHover))
                     .frame(width: width, height: 3)
-                    .frame(width: 28, height: hoverZoneHeight, alignment: .trailing)
+                    .frame(width: 28, height: hoverZoneHeight, alignment: .leading)
                     .animation(
                         .easeInOut(duration: 0.16).delay(Double(distanceFromHover ?? 5) * 0.022),
                         value: hoveredTarget
@@ -563,7 +563,7 @@ struct MessageNavigatorView: View {
                     }
                     // The marker frame must sit inside the rail's bounds:
                     // SwiftUI drops hover for anything drawn outside its parent.
-                    .position(x: size.width - 14, y: markerY(at: index, count: markers.count, in: size.height))
+                    .position(x: 14, y: markerY(at: index, count: markers.count, in: size.height))
             }
 
             // One strip on top of the markers: the wave follows the pointer's y.
@@ -583,7 +583,7 @@ struct MessageNavigatorView: View {
             // The whole rail block, not just the bars: SwiftUI's hit area for
             // the bars sat left of their drawing, so cover a wide band too.
             .frame(width: 120, height: markerTrackHeight(in: size.height) + hoverZoneHeight + 24)
-            .position(x: size.width - 60, y: size.height / 2)
+            .position(x: 60, y: size.height / 2)
 
             if let previewItem {
                 VStack(alignment: .leading, spacing: 4) {
@@ -602,7 +602,7 @@ struct MessageNavigatorView: View {
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), lineWidth: 0.5
                 )
                 .shadow(color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.18), radius: 8, y: 3)
-                .position(x: size.width - 107, y: min(max(previewY, 52), max(52, size.height - 40)))
+                .position(x: 107, y: min(max(previewY, 52), max(52, size.height - 40)))
                 .transition(.opacity)
                 .allowsHitTesting(false)
             }
