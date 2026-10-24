@@ -86,7 +86,7 @@ call. Runtime-owned voice turns remain compatible.
 {"version":1,"id":"checks","title":"Validation","fallback":"The build and tests passed.","kind":"native","blocks":[{"type":"table","columns":["Check","Result"],"rows":[["Build","Passed"],["Tests","Passed"]]}]}
 ```
 
-Each surface requires version `1`, a unique short `id` within its reply, `title`,
+Each surface requires version `1` or `2`, a unique short `id` within its reply, `title`,
 `fallback`, and `kind`. Native surfaces require `blocks` and omit `html`.
 Supported block fields:
 
@@ -121,7 +121,7 @@ uses readable fallback. During streaming, structured content stays pending until
 the reply commits. Source inspection and source copying remain explicit.
 
 ```herm-ui
-{"version":1,"id":"calculator","title":"Local calculator","fallback":"Enter a number to calculate its square.","kind":"html","html":"<label>Number <input id=\"n\" type=\"number\" value=\"4\"></label><button onclick=\"document.getElementById('answer').textContent=Number(document.getElementById('n').value)**2\">Calculate</button><output id=\"answer\"></output>"}
+{"version":1,"id":"calculator","title":"Local calculator","fallback":"Enter a number to calculate its square.","kind":"html","html":"<label>Number <input id=\"n\" type=\"number\" value=\"4\" oninput=\"document.getElementById('answer').textContent=Number(this.value)**2\"></label><output id=\"answer\" aria-live=\"polite\">16</output>"}
 ```
 
 HTML documents must inline CSS/JavaScript and resources. Prefer the injected
@@ -173,8 +173,14 @@ The original source is never rewritten.
 
 Dataset cells are strings, interpreted by typed text/number/ISO8601 date columns.
 Tables preserve source order until sorted. Charts share dataset row selection and
-support multiple numeric series. `metadata` accepts supplied `assumptions`, `source`,
-`observedAt`, and `fictional` fields. No field establishes verified runtime status.
+support multiple numeric series. Crowded category charts scroll horizontally and
+wrap labels in narrow layouts. Dataset cells, metric values, comparison values,
+and tree values are strings. `metadata.assumptions` accepts a string or a list of
+strings; list entries retain their order and render on separate lines. `source`
+and `observedAt` are strings; `fictional` is a boolean. No field establishes verified
+runtime status. Invalid field types identify their field path in the unavailable
+reason. Original JSON, including assumption lists, remains unchanged in chat,
+Artifacts, and explicit exports.
 
 | Block | Payload |
 | --- | --- |
@@ -213,4 +219,10 @@ deployment adapters use supplied snapshots or normal agent follow-ups instead.
 calculations, scheduling, organization, learning, decisions, research/writing, data
 inspection, developer exploration, UI review, and delivery workflows. These exercise
 reusable native components and offline HTML, rather than installing separate apps.
-Run the original Generative UI/HTML suites plus `RichExpansionTests|RichLifecycleTests`.
+Run the original Generative UI/HTML suites plus
+`RichExpansionTests|RichLifecycleTests|RichTemplateContractTests|RichTemplateInteractionTests`.
+The template suites cover every catalog entry, all ten recipe families, documented
+`herm-ui` examples, mixed dashboards, all form controls, and linked multi-series
+charts. HTML examples execute in the real offline WebKit host to check input changes,
+quiz scoring, and reset. Optional `HERM_TEMPLATE_REVIEW_DIR` writes native captures
+at 320/640/1000pt and HTML snapshots without relaunching Herm.

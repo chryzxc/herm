@@ -306,13 +306,27 @@ struct RichDocument: Equatable, Sendable {
             let surface = try JSONDecoder().decode(RichSurface.self, from: Data(source.utf8))
             if ![1, 2].contains(surface.version) { return "This reply uses an unsupported format version." }
             return "A component contains invalid data, duplicate identities, or unresolved references."
-        } catch DecodingError.keyNotFound(_, _) {
-            return "The generated reply is missing a required field."
-        } catch DecodingError.typeMismatch(_, _) {
-            return "A generated field has an unsupported value type."
+        } catch DecodingError.keyNotFound(let key, let context) {
+            return "A required field is missing at \(fieldPath(context.codingPath + [key]))."
+        } catch DecodingError.typeMismatch(_, let context) {
+            return "A generated field has an unsupported value type at \(fieldPath(context.codingPath))."
+        } catch DecodingError.valueNotFound(_, let context) {
+            return "A required value is missing at \(fieldPath(context.codingPath))."
         } catch {
             return "The generated source is incomplete or does not match a supported format."
         }
+    }
+
+    private static func fieldPath(_ keys: [any CodingKey]) -> String {
+        var path = ""
+        for key in keys {
+            if let index = key.intValue {
+                path += "[\(index)]"
+            } else {
+                path += (path.isEmpty ? "" : ".") + key.stringValue
+            }
+        }
+        return path.isEmpty ? "reply" : String(path.prefix(256))
     }
 
     private static func decode(_ source: String, overLimit: Bool) -> Segment {

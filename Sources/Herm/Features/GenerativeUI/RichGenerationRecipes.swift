@@ -60,7 +60,16 @@ enum RichGenerationRecipes {
             return String(decoding: data, as: UTF8.self)
         }
         guard let descriptor = RichFeatureRegistry.local.first(where: { $0.id == recipe.feature }) else { return "" }
-        return RichFeatureRegistry.exampleSurface(descriptor)
+        let source = RichFeatureRegistry.exampleSurface(descriptor)
+        if recipe.id == "data",
+            var surface = try? JSONDecoder().decode(RichSurface.self, from: Data(source.utf8)),
+            let dataset = surface.datasets?.first
+        {
+            surface.blocks?.insert(
+                RichBlock(type: .table, id: "table", payload: .table(.init(dataset: dataset.id))), at: 0)
+            if let data = try? JSONEncoder().encode(surface) { return String(decoding: data, as: UTF8.self) }
+        }
+        return source
     }
 
     private static let savings = """

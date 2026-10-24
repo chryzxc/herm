@@ -272,3 +272,20 @@ struct RichSurfaceMetadata: Codable, Equatable, Sendable {
     var observedAt: String?
     var fictional: Bool?
 }
+
+extension RichSurfaceMetadata {
+    private enum CodingKeys: String, CodingKey { case assumptions, source, observedAt, fictional }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        if let text = try? values.decode(String.self, forKey: .assumptions) {
+            assumptions = text
+        } else {
+            let items = try values.decodeIfPresent([String].self, forKey: .assumptions)
+            assumptions = items.flatMap { $0.isEmpty ? nil : $0.joined(separator: "\n") }
+        }
+        source = try values.decodeIfPresent(String.self, forKey: .source)
+        observedAt = try values.decodeIfPresent(String.self, forKey: .observedAt)
+        fictional = try values.decodeIfPresent(Bool.self, forKey: .fictional)
+    }
+}

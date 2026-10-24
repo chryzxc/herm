@@ -92,14 +92,23 @@ enum RichFeatureRegistry {
     ]
 
     static func descriptors(in context: RichGenerationContext) -> [RichFeatureDescriptor] {
-        (local
-            + RichRecordTarget.Kind.allCases.map { kind in
-                RichFeatureDescriptor(
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return
+            (local
+            + RichRecordTarget.Kind.allCases.compactMap { kind -> RichFeatureDescriptor? in
+                let references = context.recordReferences.filter {
+                    $0.kind == kind && RichBlockPayload.record($0).validate()
+                }.sorted { $0.id < $1.id }
+                guard let target = references.first,
+                    let encoded = try? encoder.encode(
+                        RichBlock(type: .record, id: "record", payload: .record(target)))
+                else { return nil }
+                return RichFeatureDescriptor(
                     id: "record.\(kind.rawValue)", version: 2,
                     guidance: "Loaded \(kind.rawValue) record; status and navigation resolve from Herm. Available IDs: "
-                        + context.recordReferences.filter { $0.kind == kind }.map(\.id).sorted().joined(separator: ", "),
-                    example:
-                        "{\"id\":\"record\",\"type\":\"record\",\"payload\":{\"kind\":\"\(kind.rawValue)\",\"id\":\"record-id\"}}",
+                        + references.map(\.id).joined(separator: ", "),
+                    example: String(decoding: encoded, as: UTF8.self),
                     recordKind: kind)
             }).filter { $0.isAvailable(in: context) }.sorted { $0.id < $1.id }
     }
@@ -114,7 +123,7 @@ enum RichFeatureRegistry {
             For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface. Wire inputs to update results immediately. A savings calculator needs editable balance, contribution, rate and years with a recalculating result.
             Respect explicit requests for plain text, code listings, or project/file changes. Use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes.
             Envelope: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Use version 2 for new components, datasets or revisionOf. Native surfaces omit html. HTML uses kind "html", complete inline HTML/CSS/JS in html, and omits blocks. Include a useful fallback. HTML is offline and has no host bridge, credentials, storage, files, tools, downloads, popups or device access. Never request secrets.
-            V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; cells are strings. Share datasets to link selection. metadata may contain assumptions, source, observedAt, fictional. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.
+            V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; dataset cells, metric values, comparison values and tree values are strings. Share datasets to link selection. Optional metadata example: \(metadataExample). assumptions accepts a string or an array of strings; source and observedAt are strings, fictional is a boolean. Supply only known metadata. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.
             Limits: 1 MiB per surface, 100 blocks, 1000 rows/items/points, 20 table columns. Available blocks:
             \(catalog)
             [/Herm rendering context]
@@ -123,6 +132,9 @@ enum RichFeatureRegistry {
 
     static let datasetExample =
         #"{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]},{"id":"feb","values":["February","18"]}]}"#
+
+    static let metadataExample =
+        #"{"fictional":true,"assumptions":["Illustrative supplied figures"],"source":"Supplied sample","observedAt":"2026-10-24T10:00:00Z"}"#
 
     static func exampleSurface(_ descriptor: RichFeatureDescriptor) -> String {
         let blocks =

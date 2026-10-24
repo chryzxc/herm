@@ -183,55 +183,75 @@ struct RichDatasetChartView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Chart {
-                ForEach(configuration.series, id: \.self) { series in
-                    if let index = dataset.columns.firstIndex(where: { $0.id == series }) {
-                        ForEach(dataset.rows) { row in
-                            if let value = Double(row.values[index]) {
-                                if configuration.style == "line" {
-                                    LineMark(
-                                        x: .value(dataset.columns[labelIndex].title, row.values[labelIndex]),
-                                        y: .value(dataset.columns[index].title, value)
-                                    )
-                                    .foregroundStyle(by: .value("Series", dataset.columns[index].title))
-                                } else {
-                                    BarMark(
-                                        x: .value(dataset.columns[labelIndex].title, row.values[labelIndex]),
-                                        y: .value(dataset.columns[index].title, value)
-                                    )
-                                    .foregroundStyle(by: .value("Series", dataset.columns[index].title))
-                                    .position(by: .value("Series", series))
-                                }
-                            }
-                        }
-                    }
+            GeometryReader { geometry in
+                ScrollView(.horizontal) {
+                    chart.frame(
+                        width: max(
+                            geometry.size.width, dataset.rows.count > 4 ? CGFloat(dataset.rows.count) * 80 + 40 : 0)
+                    )
+                    .padding(.vertical, 8)
                 }
-                if let selectedRow {
-                    RuleMark(x: .value("Selected", selectedRow.values[labelIndex]))
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-            }
-            .chartForegroundStyleScale(range: [Color.dockAccent, Color.dockInfo, Color.dockReview, Color.dockMerged])
-            .chartXSelection(value: $selectedLabel)
-            .chartXAxis { AxisMarks { _ in AxisValueLabel().foregroundStyle(Color.dockMetadataText) } }
-            .chartYAxis {
-                AxisMarks(position: .leading) { _ in
-                    AxisGridLine().foregroundStyle(Color.dockBorderLight)
-                    AxisValueLabel().foregroundStyle(Color.dockMetadataText)
-                }
-            }
-            .frame(height: 200)
-            .onChange(of: selectedLabel) { _, value in
-                if let row = dataset.rows.first(where: { $0.values[labelIndex] == value }) {
-                    state.snapshot.selected[RichSelectionIdentity.dataset(dataset.id)] = row.id
-                }
-            }
+            }.frame(height: 220)
             if let row = selectedRow {
                 Text(
                     zip(dataset.columns, row.values).map { "\($0.title): \($1)\($0.unit.map { " " + $0 } ?? "")" }
                         .joined(separator: " · ")
                 )
                 .foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var chart: some View {
+        Chart {
+            ForEach(configuration.series, id: \.self) { series in
+                if let index = dataset.columns.firstIndex(where: { $0.id == series }) {
+                    ForEach(dataset.rows) { row in
+                        if let value = Double(row.values[index]) {
+                            if configuration.style == "line" {
+                                LineMark(
+                                    x: .value(dataset.columns[labelIndex].title, row.values[labelIndex]),
+                                    y: .value(dataset.columns[index].title, value)
+                                )
+                                .foregroundStyle(by: .value("Series", dataset.columns[index].title))
+                            } else {
+                                BarMark(
+                                    x: .value(dataset.columns[labelIndex].title, row.values[labelIndex]),
+                                    y: .value(dataset.columns[index].title, value)
+                                )
+                                .foregroundStyle(by: .value("Series", dataset.columns[index].title))
+                                .position(by: .value("Series", series))
+                            }
+                        }
+                    }
+                }
+            }
+            if let selectedRow {
+                RuleMark(x: .value("Selected", selectedRow.values[labelIndex]))
+                    .foregroundStyle(Color.dockSecondaryText)
+            }
+        }
+        .chartForegroundStyleScale(range: [Color.dockAccent, Color.dockInfo, Color.dockReview, Color.dockMerged])
+        .chartXSelection(value: $selectedLabel)
+        .chartXAxis {
+            AxisMarks { value in
+                AxisValueLabel {
+                    if let label = value.as(String.self) {
+                        Text(label).lineLimit(2).multilineTextAlignment(.center).foregroundStyle(Color.dockMetadataText)
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { _ in
+                AxisGridLine().foregroundStyle(Color.dockBorderLight)
+                AxisValueLabel().foregroundStyle(Color.dockMetadataText)
+            }
+        }
+        .frame(height: 200)
+        .onChange(of: selectedLabel) { _, value in
+            if let row = dataset.rows.first(where: { $0.values[labelIndex] == value }) {
+                state.snapshot.selected[RichSelectionIdentity.dataset(dataset.id)] = row.id
             }
         }
     }
