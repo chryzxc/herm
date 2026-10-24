@@ -709,7 +709,6 @@ struct BotDispatchCard: View {
     var assignedIDs: Set<String> = []
     var botsByID: [String: BotSummary] = [:]
     var avatars: [String: Data] = [:]
-    var liveSteps: [String: String] = [:]
     @State private var openIDs: Set<String> = []
 
     var body: some View {
@@ -764,16 +763,6 @@ struct BotDispatchCard: View {
                 .help(record.state == .failed ? (reply ?? "Failed") : record.linkedCardID.map { "Kanban \($0)" } ?? "")
                 .accessibilityLabel(
                     canOpen ? (isOpen ? "Hide reply" : "Show reply") : "Messaged \(bot?.name ?? record.botName)")
-                if record.isLive, let step = liveSteps[record.id] {
-                    // The Bot's newest step, read from its own session.
-                    Text(step)
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1).truncationMode(.tail)
-                        .contentTransition(.opacity)
-                        .animation(.easeOut(duration: 0.18), value: step)
-                        .help(step)
-                }
                 if isOpen, let reply {
                     Text(DockModel.botReply(from: reply).reply)
                         .dockFont(.body)
@@ -1028,8 +1017,7 @@ struct TurnActivityView: View, Equatable {
     private func card(_ segment: Segment) -> some View {
         let assigned = zip(segment.calls, segment.records).filter { $0.0.name == "kanban_create" }.map(\.1.id)
         return BotDispatchCard(
-            records: segment.records, assignedIDs: Set(assigned), botsByID: botsByID, avatars: avatars,
-            liveSteps: botLiveSteps)
+            records: segment.records, assignedIDs: Set(assigned), botsByID: botsByID, avatars: avatars)
     }
 
     private var steps: some View {

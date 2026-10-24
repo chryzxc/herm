@@ -64,7 +64,7 @@ struct ConversationTranscriptIntegrationTests {
 
         init(
             source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil,
-            includeTimeline: Bool = false
+            includeTimeline: Bool = false, trailingContentInset: CGFloat = 0
         ) {
             timeline = includeTimeline ? SessionTraceModel() : nil
             coordinator = ConversationTranscriptCoordinator(controller: controller)
@@ -89,7 +89,8 @@ struct ConversationTranscriptIntegrationTests {
                 messageActionState: ConversationMessageActionState(), voiceOutput: VoiceOutput(),
                 conversationMetrics: .resolve(isFullscreen: true), conversationHermFaceID: nil,
                 isShowingMessageSearch: .constant(false), pinnedMessageJumpID: .constant(nil),
-                selectedChatImage: .constant(nil), coordinator: transcriptCoordinator
+                selectedChatImage: .constant(nil), trailingContentInset: trailingContentInset,
+                coordinator: transcriptCoordinator
             )
             host = NSHostingView(
                 rootView: Root(
@@ -117,6 +118,28 @@ struct ConversationTranscriptIntegrationTests {
             let origin = document.isFlipped ? top : geometry.documentHeight - geometry.visibleHeight - top
             clip.scroll(to: NSPoint(x: 0, y: origin))
         }
+    }
+
+    @Test(arguments: [CGFloat(220), CGFloat(360)])
+    func railSpaceKeepsTheNativeScrollbarAtTheOuterEdge(railWidth: CGFloat) async throws {
+        let fixture = Fixture(trailingContentInset: railWidth)
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+        let scroll = try #require(fixture.controller.clipView?.superview as? NSScrollView)
+        let scrollFrame = fixture.host.convert(scroll.bounds, from: scroll)
+        #expect(abs(scrollFrame.maxX - fixture.host.bounds.maxX) < 1)
+        func containers(_ view: NSView) -> [NativeMarkdownDocumentContainerView] {
+            (view as? NativeMarkdownDocumentContainerView).map { [$0] } ?? view.subviews.flatMap(containers)
+        }
+        let bodies = containers(fixture.host)
+        #expect(!bodies.isEmpty)
+        for body in bodies {
+            let frame = fixture.host.convert(body.bounds, from: body)
+            #expect(frame.maxX <= fixture.host.bounds.maxX - railWidth + 1)
+        }
+        let before = try #require(fixture.controller.geometry)
+        try fixture.move(to: max(0, before.visibleTop - 80))
+        #expect(try #require(fixture.controller.geometry).visibleTop < before.visibleTop)
     }
 
     @Test func productionPagingKeepsTheVisibleMessageWithoutManualCorrection() async throws {
