@@ -110,6 +110,26 @@ struct ArtifactIndexLoaderTests {
         id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil,
         updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes")
 
+    @Test func publishesCompletedSessionsBeforeStartingQueuedReads() async {
+        let sessions = (0..<5).map {
+            HermesSession(
+                id: String($0), title: "Outputs", preview: "", startedAt: nil,
+                messageCount: 1, source: "test")
+        }
+        var published: [String] = []
+        let results = await ArtifactIndexLoader.load(
+            sessions: sessions,
+            onSession: { result in
+                published.append(result.sessionID)
+            },
+            messages: { session, _ in
+                if session.id == "4" { #expect(!published.isEmpty) }
+                return ["data": [["role": "assistant", "content": "MEDIA: /tmp/output.pdf"]]]
+            })
+        #expect(Set(published) == Set(sessions.map(\.id)))
+        #expect(results.count == 5)
+    }
+
     @Test func readsEveryMessagePageAndKeepsFirstMention() async {
         var offsets: [Int] = []
         let results = await ArtifactIndexLoader.load(sessions: [session]) { _, offset in

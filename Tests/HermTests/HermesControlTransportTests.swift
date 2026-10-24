@@ -377,7 +377,9 @@ extension HermesControlTransportTests {
             ["sessions": first, "total": 101],
             ["sessions": [["id": "older", "profile": "personal"]], "total": 101],
         ])
-        let rows = try await HermesControlRPC(client: client).artifactSessions()
+        let index = try await HermesControlRPC(client: client).artifactSessions()
+        let rows = index.rows
+        #expect(!index.isIncomplete)
         #expect(rows.count == 101)
         #expect(rows.last?["profile"] as? String == "personal")
         #expect(
@@ -397,11 +399,25 @@ extension HermesControlTransportTests {
             ])
     }
 
-    @Test func incompleteProfileIndexFailsInsteadOfReportingCompleteResults() async {
-        let client = HTTPEnvelopeRPCClient(responses: [["sessions": [], "total": 0, "errors": [["profile": "work"]]]])
-        do {
-            _ = try await HermesControlRPC(client: client).artifactSessions()
-            Issue.record("Expected incomplete profile index to fail")
-        } catch {}
+    @Test func incompleteProfileIndexKeepsReadableSessionsWithWarning() async throws {
+        let client = HTTPEnvelopeRPCClient(responses: [
+            [
+                "sessions": [["id": "readable", "profile": "personal"]], "total": 1,
+                "errors": [["profile": "work"]],
+            ]
+        ])
+        let index = try await HermesControlRPC(client: client).artifactSessions()
+        #expect(index.isIncomplete)
+        #expect(index.rows.first?["id"] as? String == "readable")
+    }
+
+    @Test func earlyEndOfIndexKeepsEarlierPagesWithWarning() async throws {
+        let client = HTTPEnvelopeRPCClient(responses: [
+            ["sessions": [["id": "readable"]], "total": 2],
+            ["sessions": [], "total": 2],
+        ])
+        let index = try await HermesControlRPC(client: client).artifactSessions()
+        #expect(index.isIncomplete)
+        #expect(index.rows.count == 1)
     }
 }

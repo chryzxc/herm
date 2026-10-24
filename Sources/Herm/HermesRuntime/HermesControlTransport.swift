@@ -145,26 +145,33 @@ final class HermesControlRPC {
         canonical["data"] = messages
         return canonical
     }
+    struct ArtifactSessionIndex {
+        let rows: [[String: Any]]
+        let isIncomplete: Bool
+    }
+
     /// Artifacts use the archive, independently of the sidebar's recent-session window.
-    func artifactSessions() async throws -> [[String: Any]] {
+    func artifactSessions() async throws -> ArtifactSessionIndex {
         var rows: [[String: Any]] = []
         var offset = 0
+        var isIncomplete = false
         while true {
             try Task.checkCancellation()
             let page = try await client.fetchHTTP(
                 "/api/profiles/sessions?limit=100&offset=\(offset)&min_messages=1&archived=exclude&order=recent&profile=all"
             )
             guard let sessions = page["sessions"] as? [[String: Any]],
-                let total = page["total"] as? Int,
-                (page["errors"] as? [[String: Any]] ?? []).isEmpty,
-                (page["storage"] as? [String: String] ?? [:]).isEmpty
+                let total = page["total"] as? Int, total >= 0
             else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
+            isIncomplete =
+                isIncomplete || !(page["errors"] as? [[String: Any]] ?? []).isEmpty
+                || !(page["storage"] as? [String: String] ?? [:]).isEmpty
             rows.append(contentsOf: sessions)
             offset += min(100, sessions.count)  // Hermes may back-fill pinned rows beyond the page window.
-            if offset >= total { return rows }
-            guard !sessions.isEmpty else { throw HermesGateway.GatewayError.malformedResponse }
+            if offset >= total { return ArtifactSessionIndex(rows: rows, isIncomplete: isIncomplete) }
+            if sessions.isEmpty { return ArtifactSessionIndex(rows: rows, isIncomplete: true) }
         }
     }
 

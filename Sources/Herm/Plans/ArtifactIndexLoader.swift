@@ -24,6 +24,7 @@ enum ArtifactIndexLoader {
     static func load(
         sessions: [HermesSession],
         cache: [ProfileScopedID: CachedSession] = [:],
+        onSession: @MainActor (SessionResult) -> Void = { _ in },
         messages: @escaping @MainActor @Sendable (HermesSession, Int) async throws -> [String: Any]
     ) async -> [SessionResult] {
         await withTaskGroup(of: SessionResult.self) { group in
@@ -42,6 +43,7 @@ enum ArtifactIndexLoader {
                     return []
                 }
                 results.append(result)
+                onSession(result)
                 if let session = remaining.next() { add(session) }
             }
             return results

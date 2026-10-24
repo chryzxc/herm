@@ -134,10 +134,6 @@ struct ArtifactsInspectorView: View {
         return Array(visibleFiles.dropFirst(start).prefix(filesPerPage))
     }
 
-    private var sessionRefreshKey: String {
-        model.sessions.map { "\($0.profileID ?? ""):\($0.id):\($0.messageCount)" }.joined(separator: ",")
-    }
-
     var body: some View {
         Group {
             if presentation == .page {
@@ -146,7 +142,7 @@ struct ArtifactsInspectorView: View {
                 inspectorBody
             }
         }
-        .task(id: "\(sessionRefreshKey):\(refreshID)") { await refresh() }
+        .task(id: refreshID) { await refresh() }
         .onChange(of: query) { resetPages() }
         .onChange(of: filter) { resetPages() }
         .onChange(of: visibleRecords.map(\.id)) { _, _ in reconcileSelection() }
@@ -267,7 +263,7 @@ struct ArtifactsInspectorView: View {
 
     @ViewBuilder
     private var pageContent: some View {
-        if let errorMessage, records.isEmpty {
+        if let errorMessage, records.isEmpty, !isLoading {
             pageState(title: "Artifacts unavailable", detail: errorMessage, icon: .warning, actionTitle: "Retry") {
                 refreshID += 1
             }
@@ -756,7 +752,7 @@ struct ArtifactsInspectorView: View {
 
     private var content: some View {
         Group {
-            if let errorMessage, records.isEmpty {
+            if let errorMessage, records.isEmpty, !isLoading {
                 state(title: "Artifacts unavailable", detail: errorMessage, icon: .warning)
             } else if records.isEmpty && isLoading {
                 state(
@@ -1109,8 +1105,15 @@ struct ArtifactsInspectorView: View {
         errorMessage = nil
         let previous = records
         let sessions: [HermesSession]
+        let indexIncomplete: Bool
         do {
-            sessions = try await model.artifactSessions()
+            let index = try await model.artifactSessions()
+            guard !Task.isCancelled, refreshGeneration == generation else { return }
+            sessions = index.sessions
+            indexIncomplete = index.isIncomplete
+            if indexIncomplete {
+                errorMessage = "Some Hermes sessions could not be indexed. Results may be incomplete. Refresh to retry."
+            }
         } catch {
             guard !Task.isCancelled, refreshGeneration == generation else { return }
             errorMessage =
@@ -1118,13 +1121,24 @@ struct ArtifactsInspectorView: View {
                 + HermesDiagnosticsService.safeSummary(error.localizedDescription)
             return
         }
-        let results = await ArtifactIndexLoader.load(sessions: sessions, cache: artifactCache) { session, offset in
-            try await model.artifactMessages(for: session, offset: offset)
-        }
+        guard !Task.isCancelled, refreshGeneration == generation else { return }
+        indexedSessions = sessions
+        let results = await ArtifactIndexLoader.load(
+            sessions: sessions, cache: artifactCache,
+            onSession: { result in
+                guard !Task.isCancelled, refreshGeneration == generation, result.error == nil else { return }
+                let key = ProfileScopedID(profileID: result.profileID, resourceID: result.sessionID)
+                records.removeAll { $0.scopedSessionID == key }
+                records.append(contentsOf: result.records)
+                records.sort { $0.timestamp > $1.timestamp }
+                reconcileSelection()
+            },
+            messages: { session, offset in
+                try await model.artifactMessages(for: session, offset: offset)
+            })
         guard !Task.isCancelled, refreshGeneration == generation else { return }
         var next: [ArtifactRecord] = []
         var failedSessionIDs = Set<ProfileScopedID>()
-        indexedSessions = sessions
         var lastFailure: String?
         let sessionsByID = Dictionary(sessions.map { ($0.scopedID, $0) }, uniquingKeysWith: { first, _ in first })
         var nextCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
@@ -1144,7 +1158,11 @@ struct ArtifactsInspectorView: View {
         // Keep the prior artifacts for sessions that could not be read this
         // cycle, while allowing successful sessions and removed sessions to
         // converge to the latest authoritative index.
-        next.append(contentsOf: previous.filter { failedSessionIDs.contains($0.scopedSessionID) })
+        next.append(
+            contentsOf: previous.filter {
+                failedSessionIDs.contains($0.scopedSessionID)
+                    || (indexIncomplete && sessionsByID[$0.scopedSessionID] == nil)
+            })
         failedSessionCount = failedSessionIDs.count
         records = Dictionary(grouping: next, by: \.id)
             .compactMap(\.value.first)

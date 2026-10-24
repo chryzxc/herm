@@ -40,15 +40,16 @@ extension DockModel {
         loadSessions()
     }
 
-    func artifactSessions() async throws -> [HermesSession] {
-        let rows = try await interruptRPC.artifactSessions()
+    func artifactSessions() async throws -> (sessions: [HermesSession], isIncomplete: Bool) {
+        let index = try await interruptRPC.artifactSessions()
         var seen = Set<ProfileScopedID>()
-        return rows.compactMap { row in
+        let sessions = index.rows.compactMap { row -> HermesSession? in
             guard let session = Self.parseSession(row, profileID: row["profile"] as? String),
                 seen.insert(session.scopedID).inserted
             else { return nil }
             return session
         }
+        return (sessions, index.isIncomplete)
     }
 
     func artifactMessages(for session: HermesSession, offset: Int) async throws -> [String: Any] {
