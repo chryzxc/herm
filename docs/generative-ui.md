@@ -70,6 +70,12 @@ The focused suites cover validation, forms, and the offline HTML host.
 ## Response format
 
 Only assistant conversation content recognizes a fenced `herm-ui` JSON object.
+When enabled, Herm instructs Hermes to use visual replies whenever interaction or
+structure helps; users do not need to mention “Herm UI” or HTML. A request such as
+“Create a savings calculator with starting balance, monthly contribution, annual
+interest rate, and years” requests a complete HTML surface with editable inputs and
+an immediately recalculating result. Explicit requests for plain text, source code,
+or project/file changes retain their requested deliverable.
 Use ordinary Markdown whenever an interactive view adds no value. Rendering
 context is appended only when the setting is enabled, to workspace,
 quick-message, group and client-submitted voice requests through the existing
@@ -92,6 +98,11 @@ Supported block fields:
 | gallery | `items: [{title, url}]` with HTTPS links or inline PNG/JPEG/WebP data URLs |
 | chart | `style: "bar"` or `"line"`, `points: [{label, value}]` |
 | form | `fields: [{id, label, type, required?, options?}]`, optional `submitLabel` |
+
+Table rows are arrays of string or number cells matching the columns. Numbers
+become display text during decoding; the saved source remains unchanged. Objects,
+arrays, booleans, and null cells are unsupported. Invalid visual replies show
+“Visual reply unavailable” with their readable fallback and source disclosure.
 
 Forms submit within canonical session conversations. Group replies can display
 rich content; generated forms there retain their readable fallback.

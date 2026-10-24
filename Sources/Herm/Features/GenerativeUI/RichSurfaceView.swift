@@ -11,6 +11,8 @@ struct RichDocumentView: View {
                 case .markdown(let text): MarkdownMessageView(markdown: text).equatable()
                 case .surface(let surface, let source): RichSurfaceView(surface: surface, source: source)
                 case .unavailable(let text, let source):
+                    Text("Visual reply unavailable").dockFont(.body, weight: .semibold).foregroundStyle(
+                        Color.dockPrimaryText)
                     Text(text).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
                     RichSourceDisclosure(source: source)
                 case .pending:
@@ -153,14 +155,24 @@ struct RichSourceDisclosure: View {
                         expanded ? "Hide source" : "View source", icon: expanded ? .caretDown : .caretRight)
                 }.buttonStyle(.dockLink)
                 if expanded {
-                    DockCopyButton(
-                        source, label: "Copy source", accessibilityLabel: "Copy interactive source"
-                    ).buttonStyle(.dockCompact)
-                    ScrollView([.horizontal, .vertical]) {
-                        Text(source).dockFont(.body, weight: .regular, design: .monospaced).textSelection(.enabled)
-                            .foregroundStyle(Color.dockSecondaryText).frame(
-                                maxWidth: .infinity, alignment: .leading)
-                    }.frame(maxHeight: 220)
+                    VStack(alignment: .leading, spacing: 8) {
+                        DockCopyButton(
+                            source, label: "Copy source", accessibilityLabel: "Copy interactive source"
+                        ).buttonStyle(.dockCompact)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        ScrollView([.horizontal, .vertical]) {
+                            Text(source).dockFont(.body, weight: .regular, design: .monospaced).textSelection(.enabled)
+                                .foregroundStyle(Color.dockPrimaryText).frame(
+                                    maxWidth: .infinity, alignment: .leading
+                                )
+                                .padding(4)
+                        }.frame(maxHeight: 220)
+                    }
+                    .padding(12)
+                    .background {
+                        DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
+                            .dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight)
+                    }
                 }
             }
         }

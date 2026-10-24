@@ -16,13 +16,24 @@ struct GenerativeUIIsolationTests {
         let key = GenerativeUIIntegration.preferenceKey
         let old = UserDefaults.standard.object(forKey: key)
         defer { UserDefaults.standard.set(old, forKey: key) }
+        let request = """
+            Create a savings calculator with starting balance, monthly contribution, annual interest rate, and years.
+            """
         UserDefaults.standard.removeObject(forKey: key)
         #expect(GenerativeUIIntegration.isEnabled)
+        let prepared = GenerativeUIIntegration.preparePrompt(request)
+        #expect(prepared.hasPrefix(request))
+        #expect(prepared.contains("When an interactive or structured view helps, use a fenced `herm-ui` JSON object."))
+        #expect(prepared.contains("return a working self-contained HTML surface"))
+        #expect(prepared.contains("Wire inputs to update results immediately."))
+        #expect(prepared.contains("Respect explicit requests for plain text, code listings, or project/file changes"))
+        #expect(GenerativeUIIntegration.displayUserText(prepared) == request)
+        #expect(GenerativeUIIntegration.preparePrompt(prepared) == prepared)
         UserDefaults.standard.set(false, forKey: key)
         #expect(!GenerativeUIIntegration.isEnabled)
-        #expect(GenerativeUIIntegration.preparePrompt("Request") == "Request")
+        #expect(GenerativeUIIntegration.preparePrompt(request) == request)
         UserDefaults.standard.set(true, forKey: key)
-        #expect(GenerativeUIIntegration.preparePrompt("Request").contains("Herm rendering context"))
+        #expect(GenerativeUIIntegration.preparePrompt(request) == prepared)
     }
 
     @Test func normalBuildIncludesVisualsWithReadableDisabledFallback() {

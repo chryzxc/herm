@@ -90,6 +90,35 @@ struct RichBlock: Codable, Equatable, Sendable {
     }
 }
 
+extension RichBlock {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        type = try values.decode(Kind.self, forKey: .type)
+        text = try values.decodeIfPresent(String.self, forKey: .text)
+        columns = try values.decodeIfPresent([String].self, forKey: .columns)
+        rows = try values.decodeIfPresent([[RichTableCell]].self, forKey: .rows)?.map { $0.map(\.text) }
+        items = try values.decodeIfPresent([RichItem].self, forKey: .items)
+        style = try values.decodeIfPresent(String.self, forKey: .style)
+        points = try values.decodeIfPresent([RichPoint].self, forKey: .points)
+        fields = try values.decodeIfPresent([RichField].self, forKey: .fields)
+        submitLabel = try values.decodeIfPresent(String.self, forKey: .submitLabel)
+    }
+}
+
+/// Table cells are display values; JSON numbers must not invalidate the entire reply.
+private struct RichTableCell: Decodable {
+    let text: String
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let string = try? value.decode(String.self) {
+            text = string
+        } else {
+            text = try value.decode(Decimal.self).description
+        }
+    }
+}
+
 struct RichItem: Codable, Equatable, Sendable {
     let title: String
     let url: String
@@ -241,7 +270,12 @@ struct RichDocument: Equatable, Sendable {
 enum RichPromptContext {
     static let instructions = """
         [Herm rendering context v1]
-        When an interactive or structured view helps, you may emit a fenced `herm-ui` JSON object. Otherwise use ordinary Markdown. Always include a useful plain-text fallback. Do not invent execution outcomes. Schema: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Blocks: {"type":"text","text":"..."}; {"type":"table","columns":["Name"],"rows":[["Value"]]}; {"type":"sources","items":[{"title":"Source","url":"https://..."}]}; gallery uses the same items with HTTPS or inline PNG/JPEG/WebP images; {"type":"chart","style":"bar" or "line","points":[{"label":"A","value":1}]}; {"type":"form","submitLabel":"Send answer","fields":[{"id":"name","label":"Name","type":"text","required":true}]}. Field types: text, number, choice, multipleChoice, boolean; choice fields require string options. Form answers return as a user message, never execute tools directly. Limits: 100 blocks, 1000 rows/points per block, 1 MiB per surface. For a self-contained local calculator, simulation or interactive graphic use kind "html", html containing the complete HTML/CSS/JS document, and omit blocks. HTML runs only when opened, without network, files, credentials, tools, downloads, popups or persistent storage; inline all resources and avoid eval. Never request secrets in generated forms.
+        Generative UI is enabled in Herm. This is the user's default reply-format preference. When an interactive or structured view helps, use a fenced `herm-ui` JSON object. Do not wait for the user to mention Herm UI, HTML, or this format.
+        For calculators, simulations, interactive graphics, and tools whose results change with inputs, return a working self-contained HTML surface using kind "html". Put the complete HTML/CSS/JS document in html and omit blocks. Wire inputs to update results immediately. Deliver the interactive result rather than a code listing or instructions to save an HTML file, unless the user explicitly requests source code or a file.
+        For example, "Create a savings calculator with starting balance, monthly contribution, annual interest rate, and years" requires an HTML surface with editable inputs and a recalculating projected balance, even without an explicit UI request.
+        Use native blocks for useful tables, charts, sources, galleries, and forms. Use ordinary Markdown for simple answers where a visual view adds no value. Respect explicit requests for plain text, code listings, or project/file changes; this preference does not replace requested work with a preview.
+        Always include a useful plain-text fallback. Do not invent execution outcomes. Schema: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Blocks: {"type":"text","text":"..."}; {"type":"table","columns":["Name"],"rows":[["Value"]]}; {"type":"sources","items":[{"title":"Source","url":"https://..."}]}; gallery uses the same items with HTTPS or inline PNG/JPEG/WebP images; {"type":"chart","style":"bar" or "line","points":[{"label":"A","value":1}]}; {"type":"form","submitLabel":"Send answer","fields":[{"id":"name","label":"Name","type":"text","required":true}]}. Table rows are arrays of string or number cells, matching the columns. Chart style must be "bar" or "line" and each point has a string label and numeric value. Native surfaces omit html; HTML surfaces omit blocks. Do not add unsupported block types. Field types: text, number, choice, multipleChoice, boolean; choice fields require string options. Form answers return as a user message, never execute tools directly. Limits: 100 blocks, 1000 rows/points per block, 1 MiB per surface.
+        HTML runs only when opened, without network, files, credentials, tools, downloads, popups or persistent storage; inline all resources and avoid eval. Never request secrets in generated forms.
         [/Herm rendering context]
         """
     static let suffix = "\n\n" + instructions

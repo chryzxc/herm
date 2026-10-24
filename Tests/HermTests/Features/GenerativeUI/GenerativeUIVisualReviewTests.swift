@@ -111,6 +111,16 @@ struct GenerativeUIVisualReviewTests {
             let png = try #require(rep.representation(using: .png, properties: [:]))
             try png.write(to: root.appendingPathComponent(name + ".png"))
         }
+        let sales = RichDocument("```herm-ui\n" + GenerativeUITests.monthlySalesSource + "\n```")
+        for width: CGFloat in [320, 700] {
+            try await capture(
+                RichDocumentView(document: sales).padding(20),
+                name: "numeric-sales-\(Int(width))", width: width, height: 500)
+        }
+        let unavailable = RichDocument("```herm-ui\n{\"version\":9,\"fallback\":\"Readable result\"}\n```")
+        try await capture(
+            RichDocumentView(document: unavailable).padding(20),
+            name: "unavailable-visual", width: 700, height: 180)
         try await capture(
             VStack(spacing: 12) {
                 row(user)

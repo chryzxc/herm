@@ -25,6 +25,42 @@ private final class RichFormRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct GenerativeUITests {
+    static let monthlySalesSource = """
+        {
+          "version": 1,
+          "id": "fictional-monthly-sales-dashboard",
+          "title": "Monthly Sales — Fictional Data",
+          "fallback": "Fictional monthly sales: January 12, February 18, March 15, and April 24.",
+          "kind": "native",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Illustrative figures only — this is fictional data, not actual sales."
+            },
+            {
+              "type": "table",
+              "columns": ["Month", "Fictional sales"],
+              "rows": [
+                ["January", 12],
+                ["February", 18],
+                ["March", 15],
+                ["April", 24]
+              ]
+            },
+            {
+              "type": "chart",
+              "style": "bar",
+              "points": [
+                {"label": "January", "value": 12},
+                {"label": "February", "value": 18},
+                {"label": "March", "value": 15},
+                {"label": "April", "value": 24}
+              ]
+            }
+          ]
+        }
+        """
+
     private var surface: RichSurface {
         RichSurface(
             version: 1, id: "results", title: "Build results", fallback: "Two checks passed.",
@@ -75,6 +111,50 @@ struct GenerativeUITests {
         #expect(RichResourcePolicy.url("file:///etc/passwd") == nil)
         #expect(RichResourcePolicy.url("https://a.localhost/private") == nil)
     }
+
+    @Test func numericSalesDashboardRetainsTableAndChart() async throws {
+        let source = Self.monthlySalesSource
+        let text = "```herm-ui\n" + source + "\n```"
+        let document = await RichDocumentCache.shared.document(text, identity: UUID().uuidString, streaming: false)
+        let surface = try #require(
+            document.segments.compactMap { segment -> RichSurface? in
+                if case .surface(let surface, _) = segment { return surface }
+                return nil
+            }.first)
+        #expect(surface.validate())
+        #expect(surface.blocks?.map(\.type) == [.text, .table, .chart])
+        #expect(
+            surface.blocks?.first(where: { $0.type == .table })?.rows == [
+                ["January", "12"], ["February", "18"], ["March", "15"], ["April", "24"],
+            ])
+        #expect(surface.blocks?.last?.points?.map(\.value) == [12, 18, 15, 24])
+        #expect(document.segments == [.surface(surface, source: source)])
+        #expect(document.plainText.contains("January | 12"))
+        #expect(document.plainText.contains("Illustrative figures only — this is fictional data, not actual sales."))
+        #expect(RichDocument(text, streaming: true).segments == [.pending])
+    }
+
+    @Test(arguments: ["{}", "[]", "true", "null"])
+    func unsupportedTableCellsRemainUnavailable(_ cell: String) {
+        let source = """
+            {"version":1,"id":"sales","title":"Sales","fallback":"Readable result","kind":"native","blocks":[{"type":"table","columns":["Month","Sales"],"rows":[["January",\(cell)]]}]}
+            """
+        #expect(
+            RichDocument("```herm-ui\n" + source + "\n```").segments
+                == [.unavailable("Readable result", source: source)])
+    }
+
+    @Test func numericTableCellsPreserveValues() throws {
+        let block = try JSONDecoder().decode(
+            RichBlock.self,
+            from: Data(
+                #"{"type":"table","columns":["Integer","Decimal","Negative","Exponent","Text"],"rows":[[0,18.5,-24,1e3,"12.00"]]}"#
+                    .utf8))
+        #expect(block.validate())
+        #expect(block.rows == [["0", "18.5", "-24", "1000", "12.00"]])
+        #expect(try JSONDecoder().decode(RichBlock.self, from: JSONEncoder().encode(block)) == block)
+    }
+
     @Test func formDraftsSurviveRemountingAndValidateAnswers() throws {
         let state = RichReplyState()
         let draft = state.form(key: "profile/session/message/surface")
