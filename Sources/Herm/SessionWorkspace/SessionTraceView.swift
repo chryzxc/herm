@@ -505,7 +505,7 @@ struct SessionTraceCanvas: View {
                 from: floor(offset / scale / step) * step, through: Double((offset + width) / scale), by: step)
             {
                 context.draw(
-                    Text(tickLabel(tick)).font(DockTypography.metadata)
+                    Text(Self.tickLabel(tick)).font(DockTypography.metadata)
                         .foregroundColor(Color.dockSecondaryText),
                     at: CGPoint(x: tick * scale - offset + 6, y: size.height / 2), anchor: .leading)
             }
@@ -1254,15 +1254,20 @@ struct SessionTraceCanvas: View {
             ? time(elapsed) : time(elapsed) + " · " + compact(tokens.reduce(0, +)) + " tok"
     }
 
-    /// Roughly six to ten labelled ticks across whatever span is visible.
+    /// Leave room for readable minute-and-second labels.
     private func tickStep(_ scale: CGFloat) -> Double {
-        let target = 80 / Double(max(scale, 0.0001))
+        let target = 140 / Double(max(scale, 0.0001))
         let steps: [Double] = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]
         return steps.first { $0 >= target } ?? ceil(target / 3600) * 3600
     }
-    private func tickLabel(_ seconds: Double) -> String {
-        seconds >= 60 && seconds.truncatingRemainder(dividingBy: 60) == 0
-            ? "\(Int(seconds / 60))m" : String(format: "%.0fs", seconds)
+    nonisolated static func tickLabel(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        let minutes = total / 60
+        let remainder = total % 60
+        let secondsLabel = "\(remainder) \(remainder == 1 ? "sec" : "secs")"
+        guard minutes > 0 else { return secondsLabel }
+        let minutesLabel = "\(minutes) \(minutes == 1 ? "min" : "mins")"
+        return remainder == 0 ? minutesLabel : "\(minutesLabel) \(secondsLabel)"
     }
     private func time(_ seconds: Double) -> String {
         if seconds >= 60 {

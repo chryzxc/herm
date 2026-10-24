@@ -4,6 +4,18 @@ import Testing
 @testable import Herm
 
 struct SessionTraceTests {
+    @Test func rulerLabelsUseReadableMinutesAndSeconds() {
+        #expect(SessionTraceCanvas.tickLabel(0) == "0 secs")
+        #expect(SessionTraceCanvas.tickLabel(1) == "1 sec")
+        #expect(SessionTraceCanvas.tickLabel(43) == "43 secs")
+        #expect(SessionTraceCanvas.tickLabel(59.6) == "1 min")
+        #expect(SessionTraceCanvas.tickLabel(61) == "1 min 1 sec")
+        #expect(SessionTraceCanvas.tickLabel(120) == "2 mins")
+        #expect(SessionTraceCanvas.tickLabel(163) == "2 mins 43 secs")
+        #expect(SessionTraceCanvas.tickLabel(2670) == "44 mins 30 secs")
+        #expect(SessionTraceCanvas.tickLabel(3600) == "60 mins")
+    }
+
     private let origin = Date(timeIntervalSince1970: 1_000)
     private func call(_ id: String, _ offset: Double, duration: Double? = nil, agent: String? = nil)
         -> ActiveToolCall
