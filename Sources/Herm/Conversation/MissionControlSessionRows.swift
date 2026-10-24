@@ -176,6 +176,7 @@ struct MissionControlProjectList: View {
     let onArchiveProject: (String) -> Void
     let onAddSourceFolder: (String, String) -> Void
     let onNewChatInProject: (String) -> Void
+    var pinningSessionID: String?
     @State private var disclosureState = ProjectDisclosureState()
     @State private var isExpanded = true
     @State private var hoveredNewChatProjectID: String?
@@ -379,7 +380,8 @@ struct MissionControlProjectList: View {
             onTogglePin: onTogglePin,
             onRename: onRename,
             onToggleHidden: onToggleHidden,
-            onRequestDelete: onRequestDelete
+            onRequestDelete: onRequestDelete,
+            isPinning: pinningSessionID == session.id
         )
         .equatable()
     }
@@ -528,6 +530,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
     let onRename: (HermesSession, String) async -> Bool
     let onToggleHidden: (HermesSession, Bool) async -> Bool
     let onRequestDelete: (HermesSession) -> Void
+    var isPinning = false
     var projectTargets: [SidebarProjectTarget] = []
     var onAddToProject: (HermesSession, SidebarProjectTarget) -> Void = { _, _ in }
     @State private var isHovered = false
@@ -559,7 +562,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
     }
 
     private var showsActions: Bool {
-        isHovered || rowFocused || pendingAction != nil
+        isHovered || rowFocused || pendingAction != nil || isPinning
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
@@ -573,6 +576,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
             && lhs.isDeleting == rhs.isDeleting
             && lhs.isUpdatingVisibility == rhs.isUpdatingVisibility
             && lhs.isRenaming == rhs.isRenaming
+            && lhs.isPinning == rhs.isPinning
             && lhs.projectTargets == rhs.projectTargets
     }
 
@@ -769,10 +773,13 @@ struct MissionControlSidebarSessionRow: View, Equatable {
                 onTogglePin(session)
             } label: {
                 DockIcon(.pushPin, size: 12, color: isPinned ? style.accent : style.metadataText)
+                    .opacity(isPinning ? 0 : 1)
+                    .overlay { if isPinning { ProgressView().controlSize(.mini) } }
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
+            .disabled(isPinning)
             .help(isPinned ? "Unpin session" : "Pin session")
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
 
@@ -799,6 +806,7 @@ struct MissionControlSidebarSessionRow: View, Equatable {
         Button(isPinned ? "Unpin" : "Pin", icon: isPinned ? .pushPinSlash : .pushPin) {
             onTogglePin(session)
         }
+        .disabled(isPinning)
         Button("Rename…", icon: .pencilSimple) {
             isEditingTitle = true
         }

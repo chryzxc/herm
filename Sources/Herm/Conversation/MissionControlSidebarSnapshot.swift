@@ -66,6 +66,7 @@ struct MissionControlSidebarSnapshot: Equatable {
         var attention: [AttentionItem]
         var latestActivities: [LatestActivityItem]
         var pinnedSessions: [HermesSession] = []
+        var pinningSessionID: String?
         /// Dock-local session → project folder links for conversations Hermes
         /// has no project for (its cwd-based membership can't be edited from here).
         var localProjectPathBySessionID: [String: String] = [:]
@@ -135,6 +136,7 @@ struct MissionControlSidebarSnapshot: Equatable {
             },
             latestActivities: control.latestActivities,
             pinnedSessions: model.pinnedSessions,
+            pinningSessionID: model.pinningSessionID,
             localProjectPathBySessionID: localProjectPaths
         )
     }

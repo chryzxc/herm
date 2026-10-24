@@ -233,16 +233,23 @@ extension DockModel {
     func toggleSessionPinned(_ session: HermesSession) async -> Bool {
         guard pinningSessionID == nil else { return false }
         let pinned = !isSessionPinned(session.id)
+        let scope = profileScopeID
+        let profileID = session.profileID ?? scope
         pinningSessionID = session.id
         defer { pinningSessionID = nil }
         do {
-            try await Self.writeSessionPin(
-                client: sessionRPCClient, sessionID: session.id,
-                profileID: session.profileID ?? profileScopeID, pinned: pinned)
-            // ponytail: optimistic local flip; a list page already in flight can
-            // briefly show the old pin until the next load (Desktop fences this).
-            if pinned { pinnedSessions.append(session) } else { pinnedSessions.removeAll { $0.id == session.id } }
-            loadSessions()
+            try await sessionPinService.setPinned(
+                pinned, sessionID: session.id, profileID: profileID, client: sessionRPCClient)
+            guard profileScopeID == scope else { return true }
+            // Reject list snapshots that predate the acknowledged mutation.
+            sessionLoadGeneration &+= 1
+            sessionLoadTask?.cancel()
+            sessionLoadTask = nil
+            isLoadingSessions = false
+            isPollingSessions = false
+            pinnedSessions.removeAll { $0.id == session.id }
+            if pinned { pinnedSessions.append(session) }
+            await loadSessions(quiet: true)?.value
             return true
         } catch {
             DebugLog.write("model: session pin failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
@@ -321,20 +328,6 @@ extension DockModel {
         )
     }
 
-    static func writeSessionPin(client: HermesRPCClientProtocol, sessionID: String, profileID: String?, pinned: Bool)
-        async throws
-    {
-        guard
-            let encoded = sessionID.addingPercentEncoding(
-                withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_.")))
-        else {
-            throw HermesGateway.GatewayError.malformedResponse
-        }
-        var body: [String: Any] = ["pinned": pinned]
-        if let profileID, !profileID.isEmpty { body["profile"] = profileID }
-        _ = try await client.sendHTTP("PATCH", path: "/api/sessions/\(encoded)", body: body)
-    }
-
     /// One-time move of pins older Herm builds kept in UserDefaults into Hermes.
     /// Pins that fail to write (other than a deleted session) stay for the next load.
     func migrateLegacyLocalPins() async {
@@ -347,10 +340,9 @@ extension DockModel {
         for reference in references {
             guard let sessionID = reference["sessionID"] else { continue }
             do {
-                try await Self.writeSessionPin(
-                    client: sessionRPCClient, sessionID: sessionID,
-                    profileID: reference["profileID"], pinned: true)
-            } catch HermesGateway.GatewayError.httpError(404), HermesGateway.GatewayError.httpRefused(404, _) {
+                try await sessionPinService.setPinned(
+                    true, sessionID: sessionID, profileID: reference["profileID"], client: sessionRPCClient)
+            } catch HermesSessionPinService.Failure.sessionNotFound {
                 continue
             } catch {
                 remaining.append(reference)

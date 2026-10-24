@@ -559,7 +559,8 @@ struct MissionControlQueue: View {
                         guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
                         Task { _ = await controlCenter.addProjectFolder(project, folder: folder) }
                     },
-                    onNewChatInProject: startNewChat(inProject:)
+                    onNewChatInProject: startNewChat(inProject:),
+                    pinningSessionID: sidebarSnapshot.inputs.pinningSessionID
                 )
             }
         }
@@ -729,6 +730,7 @@ struct MissionControlQueue: View {
             onRequestDelete: { selected in
                 sessionPendingDeletion = selected
             },
+            isPinning: sidebarSnapshot.inputs.pinningSessionID == session.id,
             projectTargets: sidebarSnapshot.projectNameBySessionID[session.id] == nil
                 ? sidebarSnapshot.projectTargets : [],
             onAddToProject: { selected, target in
@@ -805,7 +807,8 @@ struct MissionControlQueue: View {
                 if succeeded { controlCenter.refreshProjectNavigation() }
                 return succeeded
             },
-            onRequestDelete: { sessionPendingDeletion = $0 }
+            onRequestDelete: { sessionPendingDeletion = $0 },
+            isPinning: sidebarSnapshot.inputs.pinningSessionID == session.id
         )
         .equatable()
     }

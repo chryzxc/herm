@@ -161,6 +161,8 @@ final class DockModel: ObservableObject {
     /// same flag Hermes Desktop's Pinned section and `hermes sessions pin` use.
     @Published var pinnedSessions: [HermesSession] = []
     @Published var pinningSessionID: String?
+    let sessionPinService = HermesSessionPinService()
+    var actionErrors = DockActionErrorCenter.shared
     @Published var renamingSessionID: String?
     @Published var isRestoringSession = false
     @Published var isCreatingSession = false
