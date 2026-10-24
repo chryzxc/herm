@@ -362,6 +362,43 @@ identity and Chat/Talk actions, and the inspector's tabs reach the top of its
 pane. When the chat list is collapsed, its restore toggle moves into the
 conversation header with traffic-light clearance.
 
+**Session rail.** Chat has a stacked-cards Show/Hide session rail icon immediately before
+Conversation actions. The icon has no background fill; accent ink indicates that
+the rail is open. The optional rail sits to the right of the transcript and
+composer below their shared header; it remains a second area in compact layouts.
+It uses a 220–360pt width with inset, content-height cards over the conversation's
+continuous background. The rail has no full-height fill or vertical divider; its
+repository heading, Changes row, and PR section share one floating card. Use
+`dockCard(isQuiet: true)`: a solid theme surface and neutral hairline without glow
+or decorative edges. Glass and typographic skins retain their shared treatments.
+The heading uses 12pt secondary text and an overflow menu for Refresh session rail;
+the pending spinner occupies that same 24pt slot. Hide the entire PR section when
+there are no linked PRs, including its divider and heading. When there are neither
+changes nor PRs, show a compact empty state inside the same card with the general
+description "Session details will appear here." Pending and
+unavailable states stay in the card and never claim that failed data is empty.
+Changes appears only for a fresh snapshot matching the active session/worktree,
+with unique file counts and tracked text additions/deletions measured against HEAD.
+New files contribute to the file count; the count tooltip explains that untracked
+and binary lines are excluded. Without readable line counts, show the file count.
+Changes and PR rows are disclosures: ordinary rail clicks only expand or collapse
+inline quick views. Changes discloses changed files; each file discloses the shared
+native diff canvas without review/navigation controls. PRs disclose branch, author,
+readiness, and line counts. Only explicit links inside expanded content open the
+full inspector: View all changes selects Source Control, and View in GitHub panel
+selects GitHub. These links never change the center's Chat mode. Inspector requests
+are scoped to session identity and consumed after tab restoration. Clean repositories
+omit the row; unavailable snapshots show an in-card retry note. The transcript's native
+scroll viewport spans the full session panel, with its scrollbar at the outer right
+edge. Message content and the composer reserve the rail's width; the cards stay beside the chat and clear of the scrollbar.
+Visibility is presentation state and starts hidden. Other session modes retain
+their existing layout. The rail contains only PR overview links found in the active
+session's loaded messages and tool results, deduplicated by repository and number.
+It never substitutes the repository PR list. Each entry shows fetched title, PR number,
+repository, and readiness. Refresh uses the shared GitHub transport/detail store. Loading, empty, and unavailable
+states remain inside the rail; failed refreshes label retained details as last
+fetched. Session identity remounts the disposable projection to isolate results.
+
 **Header bar anatomy.** Identity on the left, actions on the right, a hairline
 divider below. Identity is a 28pt avatar and a two-line stack (13pt
 semibold name, 11pt role). When the identity can be switched, the block is a
@@ -611,6 +648,8 @@ diagnostics, history, and setup guidance follow it.
   presentation identity. Do not key state by a mutable title.
 - Show status with both text and color. Color alone is insufficient.
 - Empty states explain what Hermes must provide or what the user can do next.
+- Session Pull Request and Issue warning rows use 8pt vertical padding so messages
+  clear the filter-bar divider.
 - Refresh failures retain the last successful projection, mark it stale, and
   show the error locally to the affected section.
 
@@ -1484,7 +1523,10 @@ These are current Git changes, not a response-specific patch.
 
 The session inspector uses one compact text switcher for Timeline, Terminal,
 Explorer, Source Control, and Browser. They share the canvas, 12pt typography, and 12pt
-side insets. Explorer starts with the repository and filter, without a repeated
+side insets from `DockSpacing.inspectorInset`, applied once by the tab host.
+Artifacts uses the host inset for its header and filters. Browser applies the
+shared inset only to its toolbar; Chromium and WebKit pages fill the tab width,
+including additional browser tabs. Explorer starts with the repository and filter, without a repeated
 page label. Secondary tree actions live in its options menu. Changes prioritizes
 branch and staged/unstaged files; GitHub account and PR management remain in the
 full repository workspace. Missing projects use a compact top-aligned message.
@@ -1611,6 +1653,8 @@ align trailing. Dataset charts share row selection with their table and show exa
 selected values. Source, assumptions, fictional labels, and observation times come
 only from supplied metadata. Graph nodes remain keyboard-selectable; tree expansion
 and image-comparison position/zoom use the shared native presentation state.
+Dense charts wrap category labels and scroll horizontally within their fixed-height
+container so narrow replies do not overlap labels.
 
 Session Artifacts is a closable/reopenable inspector tab beside Explorer and Terminal,
 not a new top-level session mode. It scopes the existing Artifacts browser to one
@@ -1647,6 +1691,9 @@ content retains a readable fallback. Partial streamed JSON and HTML never run.
 Table cells accept JSON strings and numbers; numbers become display text only in
 the presentation decoder. Invalid surfaces show “Visual reply unavailable” above
 their readable fallback and source disclosure. Canonical reply source is preserved.
+Assumptions metadata accepts text or ordered string lists and wraps without losing
+entries. Type errors identify the affected field path. Connected-card examples use
+IDs from the same available-record catalog as their resolver.
 
 HTML uses a native fallback card and explicit “Open interactive view” action.
 Its separate nonpersistent WebKit host embeds the document in an opaque-origin
@@ -1892,7 +1939,8 @@ theme changes restyle sections without reclassifying unchanged source. Activity 
 receive only their own dispatches and bot steps, so another message’s bot updates
 do not rebuild completed activity. Centered bot dispatch rows keep 8pt of outer
 vertical padding in both collapsed and expanded states, separating their pills
-from adjacent activity data.
+from adjacent activity data. Live bot steps stay in the bottom activity area;
+the centered dispatch row shows only its pill until a completed reply is expanded.
 
 While the reader manually scrolls, a long live reply keeps its current Markdown
 layout. Incoming chunks continue accumulating in the existing streaming state;
@@ -1917,6 +1965,10 @@ The rail uses tightly grouped 28pt controls and subdued monospaced metadata,
 without a divider before the hover-revealed timestamp. Hover and keyboard focus strengthen the control surface but
 never reveal or hide actions. The composer is one centered floating surface with
 the editor, attachments, model, reasoning, and send controls kept together.
+There is no dedicated Writing Tools button. All shared chat composers use native
+macOS spelling correction by default, controlled by Autocorrect in chat under
+Settings → General → Typing. Changes apply to open composers without replacing
+the draft or moving its selection. This setting does not require Apple Intelligence.
 Attach, model, and reasoning are 28pt control-surface chips inside 44pt
 targets. It is aligned to the reading column, stays at a compact two-row idle height,
 and grows only for multiline drafts, attachments, suggestions, or actionable
@@ -2681,7 +2733,7 @@ summaries, automatic title information, and Apple Intelligence settings.
 Generated summaries show “Generated by Apple Intelligence” with help explaining
 local generation and possible inaccuracies. Existing reply summaries retain that
 attribution in notch detail, approval notifications include an accuracy notice,
-and session title / Writing Tools help explains their generation behavior.
+and session title help explains automatic naming.
 
 Today uses a 24pt filled date badge with `dockOnAccentText`, a 2.5pt skin-accent
 cell outline, and a light accent tint in every scope. Other selected days retain
@@ -2707,13 +2759,51 @@ explicit Refresh reloads both, sharing any in-flight request. The refresh contro
 stays pending through the yearly load. Failed loads settle to unavailable or stale
 content, without showing old errors alongside active loading messages.
 
-Spend leads with the yearly heatmap, followed by estimated cost, total tokens,
-cache reads, and sessions for the past 30 days. API
-calls, reasoning, background share, and model count form a compact supporting
-row with detail in help text. The daily chart follows the spend summary. Input is blue, output and cost teal, cache reads and background work
-violet. Tools and skills occupy two equal columns when space permits and stack
-in compact panes. Selection continues to use the interaction accent; charts
-and meters keep their category colors across metric and theme changes.
+Spend leads with the yearly heatmap, then a single quiet surface with the 30-day
+estimated USD cost and a Models / Providers toggle for the four leading entries beside the daily chart. Models rank
+by estimated cost, then tokens, then name; unpriced models retain $0.00. Show
+cost shares against the full conversation-plus-background estimate. The full
+expandable model ledger follows below. Never attribute a model's cost to a
+provider when Hermes reports multiple providers for it. Provider rankings aggregate
+same-period `/api/analytics/models` accounting rows by their exact billing-provider
+identity, including auxiliary work. Missing identities form an Unknown provider
+row. Costs missing from an old or malformed response remain unavailable, not $0.
+Shares use the provider accounting total, which may differ from session totals;
+help text explains this. Provider loading, empty, and unavailable messages share
+the ranking's fixed-height area. Refresh remains pending through the provider read;
+provider failures leave the recent usage report available and can be retried.
+
+Daily defaults to a teal line with a faint area fill; Tokens retains stacked
+input/output bars, with Cache reads and API calls also available. Hover selects
+a day and exposes exact figures without moving surrounding content. Metric
+changes transition briefly unless Reduce Motion is enabled. The chart explicitly
+covers the main conversation, grouped by the start-day buckets reported by Hermes; no per-model
+daily series is inferred from aggregate totals. Narrow windows stack summary
+and chart vertically. The installed API exposes no daily model/provider breakdown,
+so separate daily cost lines cannot be synthesized from period totals.
+
+The scroll viewport owns width measurement. A single chart changes layout through
+AnyLayout rather than measuring duplicate charts in ViewThatFits. An equatable
+analytics-only report boundary keeps unrelated control-center publications out of
+chart rendering; heatmap and daily-chart inputs have their own equality boundaries.
+Heatmap hover uses an in-page floating surface instead of creating native popovers
+as the pointer crosses cells during scrolling. Hover only updates on a changed day.
+
+Below, an unboxed adaptive totals row shows processed tokens (input plus output
+plus separately reported cache reads), cache reads, uncached input, output, and
+cache hit rate. Reasoning is already part of output and is never added again.
+Token mix and conversation/background cost use proportional horizontal bars
+with labelled legends, side by side when space permits. Monochrome skins use
+distinct ink densities and thin surface dividers between segments. Zero values draw no
+segment. Cache figures explicitly cover the main conversation only. All currency
+values preserve cents. API calls, reasoning, and model count form a compact
+supporting row. No cache savings, token-type prices, speed tiers, or daily
+background costs are invented when Hermes does not report them.
+
+Input is blue, output and cost teal, cache reads and background work violet.
+Tools and skills occupy two equal columns when space permits and stack in
+compact panes. Selection uses the interaction accent; charts and meters retain
+their category colors across metric and theme changes.
 
 Neutral skins use neutral interaction and selection. Character skins use their
 own hue. Semantic status and identity colors use the shared solid palette.
@@ -2781,8 +2871,12 @@ and provider revalidation. All segments share primary-button ink across skins.
 ### Async action feedback
 
 Failed explicit actions use the shared `DockActionErrorCenter` and
-`DockActionErrorPopup`. A nonactivating child panel places the error above the
-active window or sheet without reflowing content or stealing keyboard focus.
+`DockActionErrorPopup`. A nonactivating child panel places the error at the
+bottom-right of the active window or sheet with a 20pt inset, clamped to the
+visible screen, without reflowing content or stealing keyboard focus.
+The popup's hosting view accepts first mouse events; its borderless panel permits
+key status only when needed, so the close button works on the first click. It
+inherits the parent's screen-sharing privacy setting.
 Use a destructive-tinted background and border, a warning icon, readable title
 and sanitized detail, and a labelled dismiss button. Errors remain until dismissed
 or replaced by a newer action error; an old dismissal cannot clear a newer error.
@@ -2790,6 +2884,9 @@ Monochrome skins retain their semantic palette and the warning icon. Background
 polls keep their existing inline stale/unavailable states and do not open popups.
 Pin actions retain their footprint with a spinner until acknowledgement and refresh;
 late index reads cannot undo a confirmed pin or publish it into another profile.
+If a verified existing session's HTTP pin write reports `not_found`, use the
+installed Hermes pin/unpin CLI contract, with the captured profile and saved ID.
+Probe both command signatures first. Other HTTP refusals never use this recovery path.
 
 User-triggered asynchronous actions acknowledge the click immediately, keep progress
 visible until their awaited work settles, and disable repeat submission while pending.
