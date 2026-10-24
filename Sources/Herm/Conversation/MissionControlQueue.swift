@@ -834,6 +834,12 @@ struct MissionControlQueue: View {
         }
         .padding(.top, style.sectionSpacing)
         .padding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
+        .contextMenu {
+            Button("Mark all as read") {
+                model.markSessionsRead(conversations, seenStore: sidebarSessionSeenStore)
+            }
+            .disabled(!conversations.contains { statuses[$0.id] == .unreadComplete })
+        }
 
         if navigationState.areConversationsExpanded {
             if conversations.isEmpty {

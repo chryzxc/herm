@@ -74,6 +74,34 @@ extension DockModel {
         }
     }
 
+    func markSessionsRead(
+        _ reviewed: [HermesSession], seenStore: SidebarSessionSeenStore = .shared
+    ) {
+        let reviewedIDs = Set(
+            reviewed.map {
+                ProfileScopedID(profileID: $0.profileID ?? profileScopeID, resourceID: $0.id)
+            })
+        for session in reviewed {
+            seenStore.markSeen(
+                profileID: session.profileID ?? profileScopeID,
+                sessionID: session.id, at: session.lastUpdatedAt)
+        }
+        func clearingUnread(_ session: HermesSession) -> HermesSession {
+            let identity = ProfileScopedID(profileID: session.profileID ?? profileScopeID, resourceID: session.id)
+            guard reviewedIDs.contains(identity), session.hasUnreadUpdate else { return session }
+            return HermesSession(
+                id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
+                startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
+                source: session.source, isHidden: session.isHidden, isWorking: session.isWorking,
+                hasUnreadUpdate: false)
+        }
+        sessions = sessions.map(clearingUnread)
+        pinnedSessions = pinnedSessions.map(clearingUnread)
+        var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
+        unreadIDs.subtract(reviewed.map(\.id))
+        defaults.set(Array(unreadIDs), forKey: unreadSessionIDsKey)
+    }
+
     func updateSessionActivityLabel(sessionID rawSessionID: String, type: String, payload: [String: Any]) {
         let sessionID = rowSessionID(rawSessionID)
         switch type {
