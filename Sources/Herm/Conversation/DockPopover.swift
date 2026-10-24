@@ -102,6 +102,7 @@ struct DockPopover: View {
     @State var sessionPickerQuery = ""
     @ObservedObject var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     @State var isSessionMenuHovering = false
+    @State var isSessionRailVisible = false
     @State var isRenamingSession = false
     @State var renameDraft = ""
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -145,6 +146,7 @@ struct DockPopover: View {
     // A restored/active conversation is the primary workspace at launch, so
     // the right pane should open on its session context rather than Today.
     @State var inspectorScope: InspectorScope = .session
+    @State var sessionInspectorTabRequest: SessionInspector.TabRequest?
     /// Cached project/repo folder name for the active session.
     /// Only updated when a non-nil value is resolved — never cleared on transient
     /// refresh-cycle gaps where projectIDBySessionID is momentarily empty.

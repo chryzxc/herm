@@ -161,6 +161,31 @@ extension DockPopover {
         await developerWorkflow.refresh(preferences: repositoryPreferences, control: controlCenter)
     }
 
+    func refreshSessionRailChanges() async {
+        guard let path = activeSessionRepositoryScope?.repositoryPath else { return }
+        if developerWorkflow.repository.path == path {
+            await refreshSessionWorkflow()
+        } else {
+            await developerWorkflow.setActiveRepository(
+                path: path, preferences: repositoryPreferences, control: controlCenter)
+        }
+    }
+
+    func showSessionRailInspector(_ section: SessionInspector.Section) {
+        filePreview.url = nil
+        inspectorScope = .session
+        sessionInspectorTabRequest = .init(session: WorkspaceIdentity.session(model), section: section)
+        ensureInspectorPanelVisible()
+    }
+
+    func viewSessionRailPullRequest(_ reference: GitHubItemReference) async -> Bool {
+        let session = WorkspaceIdentity.session(model)
+        let opened = await gitHubInspector.open(reference, session: session)
+        guard opened, session == WorkspaceIdentity.session(model) else { return false }
+        showSessionRailInspector(.github)
+        return true
+    }
+
     func selectChangeFile(_ file: RepositoryFileChange) {
         guard let scope = activeSessionRepositoryScope else { return }
         let requestID = UUID()
@@ -536,11 +561,11 @@ extension DockPopover {
     }
 
     @ViewBuilder
-    var conversation: some View {
+    func conversation(trailingContentInset: CGFloat) -> some View {
         if speechInput.isRecording {
-            voiceMode
+            voiceMode.padding(.trailing, trailingContentInset)
         } else {
-            chatScroll
+            chatScroll(trailingContentInset: trailingContentInset)
         }
     }
 }

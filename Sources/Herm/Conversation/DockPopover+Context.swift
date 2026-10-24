@@ -365,7 +365,8 @@ extension DockPopover {
                             showsHeader: false,
                             onToggle: toggleInspectorPanel,
                             headerHeight: usesWindowChrome
-                                ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight
+                                ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
+                            tabRequest: $sessionInspectorTabRequest
                         )
                     case .artifacts:
                         ArtifactsInspectorView(model: model, presentation: .inspector)
@@ -646,6 +647,23 @@ extension DockPopover {
                 }
 
                 sessionModeSwitcher(style: style)
+
+                if sessionWorkspaceMode == .chat {
+                    Button {
+                        isSessionRailVisible.toggle()
+                    } label: {
+                        DockIcon(
+                            .cardsThree, size: DockLayout.toolbarIconSize,
+                            color: isSessionRailVisible ? style.accent : style.secondaryText
+                        )
+                        .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.dockHover)
+                    .help(isSessionRailVisible ? "Hide session rail" : "Show session rail")
+                    .accessibilityLabel(isSessionRailVisible ? "Hide session rail" : "Show session rail")
+                    .accessibilityValue(isSessionRailVisible ? "Shown" : "Hidden")
+                }
 
                 sessionViewMenu(includesInspector: !showsInspector, style: style)
                     .fixedSize()

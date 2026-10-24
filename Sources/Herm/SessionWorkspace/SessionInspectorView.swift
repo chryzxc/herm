@@ -19,6 +19,12 @@ struct SessionInspector: View {
     var onToggle: (() -> Void)?
     /// Matches the chat header beside it so both rows share one baseline and separator.
     var headerHeight: CGFloat = 44
+    @Binding var tabRequest: TabRequest?
+
+    struct TabRequest: Equatable {
+        let session: String
+        let section: Section
+    }
     // Persisted so collapsing and reopening the panel keeps the open tab.
     @AppStorage("sessionInspector.selectedSection") private var selectedSection = Section.timeline
     @AppStorage("sessionInspector.closedSections") private var closedRaw = "Browser"
@@ -65,7 +71,7 @@ struct SessionInspector: View {
             } ?? [])
     }
 
-    private enum Section: String, CaseIterable, Identifiable {
+    enum Section: String, CaseIterable, Identifiable {
         case timeline = "Timeline"
         case artifacts = "Artifacts"
         case files = "Files"
@@ -137,7 +143,7 @@ struct SessionInspector: View {
                 ForEach(extras) { extra in
                     extraContent(extra)
                         .opacity(isVisible(extra) ? 1 : 0)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, extra.kind == .browser ? 0 : DockSpacing.inspectorInset)
                         .opacity(selectedExtraID == extra.id ? 1 : 0)
                         .allowsHitTesting(selectedExtraID == extra.id)
                 }
@@ -232,6 +238,10 @@ struct SessionInspector: View {
                 selectedSection = .changes
             }
             restoringPresentation = false
+            consumeTabRequest()
+        }
+        .onChange(of: tabRequest) { _, _ in
+            if !restoringPresentation { consumeTabRequest() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .hermOpenRichTrace)) { event in
             guard let scope = event.object as? ProfileScopedID,
@@ -277,12 +287,15 @@ struct SessionInspector: View {
             || selectedSection == .artifacts
         {
             inspectorContent
-                .padding(.horizontal, selectedSection == .github ? 0 : 12)
+                .padding(
+                    .horizontal,
+                    selectedSection == .github || selectedSection == .browser ? 0 : DockSpacing.inspectorInset
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 inspectorContent
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, DockSpacing.inspectorInset)
                     .padding(.bottom, 12)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -461,6 +474,13 @@ struct SessionInspector: View {
         closedRaw = closedRaw.split(separator: "|").filter { $0 != section.rawValue }.joined(separator: "|")
         selectedSection = section
         selectedExtraID = nil
+    }
+
+    private func consumeTabRequest() {
+        guard let request = tabRequest else { return }
+        tabRequest = nil
+        guard request.session == WorkspaceIdentity.session(model) else { return }
+        reopen(request.section)
     }
 
     /// Sits right after the last tab, like a browser's new-tab button.
@@ -683,7 +703,8 @@ struct SessionInspector: View {
                 model: model, presentation: .page,
                 sessionScope: ProfileScopedID(
                     profileID: model.sessionProfileID ?? model.profileScopeID,
-                    resourceID: model.navigationSessionID ?? "")
+                    resourceID: model.navigationSessionID ?? ""),
+                contentHorizontalPadding: 0
             )
             .id(WorkspaceIdentity.session(model))
         case .timeline:

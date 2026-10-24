@@ -555,32 +555,24 @@ extension DockPopover {
             header
             switch sessionWorkspaceMode {
             case .chat:
-                conversation
-                    .overlay(alignment: .top) { ChatQuotaBanner(control: controlCenter, metrics: conversationMetrics) }
-                ChatComposerView(
-                    model: model,
-                    composer: model.composer,
-                    speechInput: speechInput,
-                    botMode: botMode,
-                    onStop: stopCurrentRequest,
-                    isFullscreen: isFullscreen,
-                    metrics: conversationMetrics,
-                    controlCenter: controlCenter,
-                    openQuota: { panelPresentation.quotaRequest += 1 },
-                    worktreeBar: activeSessionRepositoryScope.map { scope in
-                        WorktreePicker(
-                            worktrees: developerWorkflow.repository.isGitRepository
-                                ? developerWorkflow.worktrees.filter { tree in
-                                    activeSessionRepositoryPath.map {
-                                        RepositoryWorktreeSummary.isPath(tree.path, within: $0)
-                                    } ?? false
-                                }
-                                : [],
-                            mainPath: activeSessionRepositoryPath,
-                            selection: Binding(get: { scope.repositoryPath }, set: { $0.map(selectWorktree) })
-                        )
-                    }
-                )
+                GeometryReader { geometry in
+                    let railWidth = isSessionRailVisible ? min(360, max(220, geometry.size.width * 0.4)) : 0
+                    chatConversationContent(railWidth: railWidth)
+                        .overlay(alignment: .trailing) {
+                            if isSessionRailVisible {
+                                SessionPullRequestRail(
+                                    model: model, workflow: developerWorkflow,
+                                    repositoryPath: activeSessionRepositoryScope?.repositoryPath,
+                                    onViewAllChanges: { showSessionRailInspector(.changes) },
+                                    onViewPullRequest: viewSessionRailPullRequest,
+                                    onRefreshChanges: refreshSessionRailChanges
+                                )
+                                .id(WorkspaceIdentity.session(model))
+                                .frame(width: railWidth - DockSpacing.section)
+                                .padding(.trailing, DockSpacing.section)
+                            }
+                        }
+                }
             case .voice:
                 if isVoiceImmersive {
                     // Full voice mode renders the stage over the whole shell.
@@ -617,6 +609,41 @@ extension DockPopover {
             case .issues:
                 SessionIssuesSurface(center: sessionIssueCenter, repositoryPath: activeSessionRepositoryPath)
             }
+        }
+    }
+
+    func chatConversationContent(railWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            conversation(trailingContentInset: railWidth)
+                .overlay(alignment: .top) {
+                    ChatQuotaBanner(control: controlCenter, metrics: conversationMetrics)
+                        .padding(.trailing, railWidth)
+                }
+            ChatComposerView(
+                model: model,
+                composer: model.composer,
+                speechInput: speechInput,
+                botMode: botMode,
+                onStop: stopCurrentRequest,
+                isFullscreen: isFullscreen,
+                metrics: conversationMetrics,
+                controlCenter: controlCenter,
+                openQuota: { panelPresentation.quotaRequest += 1 },
+                worktreeBar: activeSessionRepositoryScope.map { scope in
+                    WorktreePicker(
+                        worktrees: developerWorkflow.repository.isGitRepository
+                            ? developerWorkflow.worktrees.filter { tree in
+                                activeSessionRepositoryPath.map {
+                                    RepositoryWorktreeSummary.isPath(tree.path, within: $0)
+                                } ?? false
+                            }
+                            : [],
+                        mainPath: activeSessionRepositoryPath,
+                        selection: Binding(get: { scope.repositoryPath }, set: { $0.map(selectWorktree) })
+                    )
+                }
+            )
+            .padding(.trailing, railWidth)
         }
     }
 }

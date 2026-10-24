@@ -5,13 +5,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension DockPopover {
-    var chatScroll: some View {
+    func chatScroll(trailingContentInset: CGFloat) -> some View {
         ConversationTranscriptView(
             model: model, controlCenter: controlCenter, botMode: botMode,
             messageActionState: messageActionState, voiceOutput: voiceOutput,
             conversationMetrics: conversationMetrics, conversationHermFaceID: conversationHermFaceID,
             isShowingMessageSearch: $isShowingMessageSearch, pinnedMessageJumpID: $pinnedMessageJumpID,
-            selectedChatImage: $selectedChatImage
+            selectedChatImage: $selectedChatImage, trailingContentInset: trailingContentInset
         ).equatable()
     }
     func reasoningBlock(_ reasoning: ReasoningState) -> some View {

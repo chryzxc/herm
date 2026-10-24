@@ -13,6 +13,7 @@ struct ConversationTranscriptView: View, Equatable {
     let voiceOutput: VoiceOutput
     let conversationMetrics: ConversationWorkspaceMetrics
     let conversationHermFaceID: String?
+    let trailingContentInset: CGFloat
     @Binding var isShowingMessageSearch: Bool
     @Binding var pinnedMessageJumpID: UUID?
     @Binding var selectedChatImage: ChatImagePreview?
@@ -29,6 +30,7 @@ struct ConversationTranscriptView: View, Equatable {
         conversationMetrics: ConversationWorkspaceMetrics, conversationHermFaceID: String?,
         isShowingMessageSearch: Binding<Bool>, pinnedMessageJumpID: Binding<UUID?>,
         selectedChatImage: Binding<ChatImagePreview?>,
+        trailingContentInset: CGFloat = 0,
         coordinator: @autoclosure @escaping () -> ConversationTranscriptCoordinator =
             ConversationTranscriptCoordinator()
     ) {
@@ -39,6 +41,7 @@ struct ConversationTranscriptView: View, Equatable {
         self.voiceOutput = voiceOutput
         self.conversationMetrics = conversationMetrics
         self.conversationHermFaceID = conversationHermFaceID
+        self.trailingContentInset = trailingContentInset
         self._isShowingMessageSearch = isShowingMessageSearch
         self._pinnedMessageJumpID = pinnedMessageJumpID
         self._selectedChatImage = selectedChatImage
@@ -57,6 +60,7 @@ struct ConversationTranscriptView: View, Equatable {
             && lhs.messageActionState === rhs.messageActionState && lhs.voiceOutput === rhs.voiceOutput
             && lhs.conversationMetrics == rhs.conversationMetrics
             && lhs.conversationHermFaceID == rhs.conversationHermFaceID
+            && lhs.trailingContentInset == rhs.trailingContentInset
             && lhs.searchPresented == rhs.searchPresented && lhs.jumpID == rhs.jumpID
             && lhs.themeRevision == rhs.themeRevision
     }
@@ -145,6 +149,7 @@ struct ConversationTranscriptView: View, Equatable {
                             .padding(.vertical, 12)
                             .frame(maxWidth: conversationMetrics.readingWidth)
                             .frame(maxWidth: .infinity)
+                            .padding(.trailing, trailingContentInset)
                             Color.clear.frame(height: 1).id("conversation-bottom")
                         }
                         .background {
@@ -168,9 +173,10 @@ struct ConversationTranscriptView: View, Equatable {
                     ConversationLatestMessageControl(presentation: coordinator.presentation) {
                         coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
                     }
+                    .padding(.trailing, trailingContentInset)
                     let showsMap =
                         snapshot.navigatorItems.count >= MessageNavigator.minimumMessagesToShowNavigator
-                        && viewport.size.width >= 820
+                        && viewport.size.width - trailingContentInset >= 820
                     if showsMap || isShowingMessageSearch {
                         ConversationScrollNavigator(
                             presentation: coordinator.presentation, snapshot: snapshot.navigator,

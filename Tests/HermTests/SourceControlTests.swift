@@ -6,6 +6,59 @@ import Testing
 @testable import Herm
 
 struct SourceControlTests {
+    @Test func lineSummaryParsesLiteralPathsAndRejectsInvalidCounts() {
+        #expect(
+            RepositoryChangeLineSummary.parse("3\t2\ttab\tand\nnewline.swift\0-\t-\timage.png\0")
+                == RepositoryChangeLineSummary(additions: 3, deletions: 2, binaryFiles: 1))
+        #expect(RepositoryChangeLineSummary.parse("") == RepositoryChangeLineSummary())
+        #expect(RepositoryChangeLineSummary.parse("0\t0\t\0old\tpath\0new\npath\0") == RepositoryChangeLineSummary())
+        for malformed in [
+            "broken", "3\t2\t\0", "-1\t2\tfile\0", "oops\t2\tfile\0",
+            "\(Int.max)\t0\ta\0\(Int.max)\t0\tb\0",
+        ] {
+            #expect(RepositoryChangeLineSummary.parse(malformed) == nil)
+        }
+    }
+
+    @Test func lineSummaryMeasuresNetTrackedChangesWithoutCountingTheSameFileTwice() async throws {
+        let root = try repository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = "tab\tand\nnewline.txt"
+        try write("one\ntwo\n", file, in: root)
+        let unborn = await RepositoryService.changeSnapshot(path: root.path)
+        #expect(await RepositoryService.changeLineSummary(path: root.path, changes: unborn) == nil)
+        _ = try git(root, ["add", "."])
+        _ = try git(root, ["commit", "-qm", "Base"])
+        try write("staged\ntwo\n", file, in: root)
+        _ = try git(root, ["add", "."])
+        try write("one\ntwo\nextra\n", file, in: root)
+        try write("new file\n", "new.txt", in: root)
+        let changes = await RepositoryService.changeSnapshot(path: root.path)
+        #expect(changes.files.count == 3)
+        #expect(
+            await RepositoryService.changeLineSummary(path: root.path, changes: changes)
+                == RepositoryChangeLineSummary(additions: 1, deletions: 0))
+        #expect(
+            await RepositoryService.changeLineSummary(
+                path: root.appendingPathComponent("other").path,
+                changes: changes) == nil)
+    }
+
+    @Test func lineSummaryDoesNotInventLinesForRenamesOrBinaryFiles() async throws {
+        let root = try repository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try write("one\ntwo\n", "old.txt", in: root)
+        try write("binary\0one", "image.bin", in: root)
+        _ = try git(root, ["add", "."])
+        _ = try git(root, ["commit", "-qm", "Base"])
+        _ = try git(root, ["mv", "old.txt", "new\nname.txt"])
+        try write("binary\0two", "image.bin", in: root)
+        let changes = await RepositoryService.changeSnapshot(path: root.path)
+        #expect(
+            await RepositoryService.changeLineSummary(path: root.path, changes: changes)
+                == RepositoryChangeLineSummary(additions: 0, deletions: 0, binaryFiles: 1))
+    }
+
     @Test func stagingAndCommittingPreserveUnstagedContentAndLiteralPaths() async throws {
         let root = try repository()
         defer { try? FileManager.default.removeItem(at: root) }
