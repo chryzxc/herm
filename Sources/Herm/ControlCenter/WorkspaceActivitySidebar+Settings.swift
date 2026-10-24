@@ -753,6 +753,10 @@ extension WorkspaceActivitySidebar {
 
     var generalPreferencesSection: some View {
         VStack(alignment: .leading, spacing: 17) {
+            SettingsSection(title: "Typing", subtitle: "", tint: .dockAccent) {
+                ComposerTypingSettings()
+                    .padding(.vertical, -8)
+            }
             SettingsSection(title: "Window capture", subtitle: "", tint: .dockAccent) {
                 DesktopCaptureSettings()
                     .padding(.vertical, -8)

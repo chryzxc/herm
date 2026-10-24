@@ -471,26 +471,6 @@ struct ChatComposerView: View {
                                 )
                             }
 
-                            if #available(macOS 15.2, *), OnDeviceAssist.isAvailable {
-                                Button {
-                                    NSApp.sendAction(#selector(NSResponder.showWritingTools(_:)), to: nil, from: nil)
-                                } label: {
-                                    DockIcon(.magicWand, size: 14, color: Color.dockSecondaryText)
-                                        .frame(width: 28, height: 28)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                                .fill(DockSkinPresentation.current.composerControlFill)
-                                        )
-                                        .frame(width: 32, height: 32)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.dockHover)
-                                .help(
-                                    "Rewrite or proofread with Apple Intelligence. Generated text may be inaccurate; review it before sending."
-                                )
-                                .accessibilityLabel("Writing Tools")
-                            }
-
                             composerModelPicker
                         }
                         .layoutPriority(-1)
@@ -1184,6 +1164,7 @@ enum ComposerCompletionKey {
 }
 
 struct ComposerInputEditor: NSViewRepresentable {
+    @AppStorage(ComposerTypingSettings.autocorrectKey) private var autocorrectEnabled = true
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.isEnabled) private var isEnabled
     @Binding var text: String
@@ -1220,6 +1201,8 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onDropFiles = onDropFiles
         textView.onPaste = onPaste
         textView.isEditable = isEnabled
+        textView.isAutomaticSpellingCorrectionEnabled = autocorrectEnabled
+        textView.isContinuousSpellCheckingEnabled = autocorrectEnabled
         textView.onWidthChanged = { [weak coordinator = context.coordinator, weak textView] in
             guard let textView else { return }
             coordinator?.schedulePresentationUpdate(for: textView)
@@ -1262,6 +1245,8 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onDropFiles = onDropFiles
         textView.onPaste = onPaste
         textView.isEditable = isEnabled
+        textView.isAutomaticSpellingCorrectionEnabled = autocorrectEnabled
+        textView.isContinuousSpellCheckingEnabled = autocorrectEnabled
         textView.contexts = contexts
         textView.onInspectContext = onInspectContext
         context.coordinator.synchronize(textView)

@@ -65,6 +65,38 @@ struct ComposerInlineEditorTests {
         #expect(text.string == "Saved draft")
     }
 
+    @Test func autocorrectDefaultsOnAndUpdatesWithoutChangingDraftOrSelection() async throws {
+        let suite = "ComposerAutocorrectTests-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let editor = ComposerInputEditor(
+            text: .constant("Saved draft"), isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
+            onFocusChanged: { _ in }, onCaretMoved: { _, _ in }, takePendingCaret: { nil },
+            onTextChanged: { _, _ in }, onContentHeightChanged: { _ in })
+        let host = NSHostingView(rootView: editor.defaultAppStorage(defaults).frame(width: 352, height: 100))
+        host.frame = NSRect(x: 0, y: 0, width: 352, height: 100)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        func find(_ view: NSView) -> NSTextView? {
+            if let text = view as? NSTextView { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let text = try #require(find(host))
+        #expect(text.isAutomaticSpellingCorrectionEnabled)
+        #expect(text.isContinuousSpellCheckingEnabled)
+        let selection = NSRange(location: 3, length: 2)
+        text.setSelectedRange(selection)
+        for enabled in [false, true] {
+            defaults.set(enabled, forKey: ComposerTypingSettings.autocorrectKey)
+            try await Task.sleep(for: .milliseconds(100))
+            host.layoutSubtreeIfNeeded()
+            #expect(text.isAutomaticSpellingCorrectionEnabled == enabled)
+            #expect(text.isContinuousSpellCheckingEnabled == enabled)
+            #expect(text.string == "Saved draft")
+            #expect(text.selectedRange() == selection)
+        }
+    }
+
     @Test func nativeEditorRemeasuresWrappedDraftAfterResize() async throws {
         var heights: [CGFloat] = []
         let editor = ComposerInputEditor(
