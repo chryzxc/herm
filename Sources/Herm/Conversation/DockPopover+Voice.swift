@@ -20,7 +20,7 @@ extension DockPopover {
     func voiceStage(immersive: Bool) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         let captions = voiceCaptions
-        let orbScale: CGFloat = immersive ? 1.45 : 1
+        let orbScale: CGFloat = immersive ? 0.85 : 0.65
         return VStack(spacing: 0) {
             VoiceStatusStrip(model: model, repositoryPath: activeSessionRepositoryPath)
                 .padding(.top, 12)
@@ -40,8 +40,36 @@ extension DockPopover {
             .help(voiceOrbHelp)
             .accessibilityLabel(voiceOrbHelp)
 
-            voiceStatusLabel
-                .frame(height: 40)
+            VStack(spacing: 6) {
+                if let error = micLevelMeter.errorMessage {
+                    Text(error)
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockWarning)
+                        .multilineTextAlignment(.center)
+                    Button("Retry microphone") {
+                        micLevelMeter.stop()
+                        handleVoiceStateChange(model.voiceState)
+                    }
+                    .buttonStyle(.dockCompact)
+                } else if model.voiceState == .paused, let message = model.messages.last, message.isError {
+                    Text(message.text)
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockWarning)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                } else if micLevelMeter.isStarting {
+                    Text("Starting microphone…")
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockSecondaryText)
+                } else {
+                    voiceStatusLabel
+                    Text(voiceInteractionHint)
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
+            }
+            .frame(maxWidth: 480, minHeight: 76, maxHeight: 76)
+            .padding(.horizontal, 16)
 
             if !model.activeSubagents.isEmpty {
                 VoiceSubagentOrbs(agents: model.activeSubagents)
@@ -85,41 +113,11 @@ extension DockPopover {
             Spacer(minLength: 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            // A pending approval or question dims everything else.
-            VoiceActivityPillsLayer(
-                model: model, cardWidth: immersive ? 280 : 200, cronJobs: controlCenter.cronJobs,
-                leavesLeftFree: !voiceHUD.cards.isEmpty
-            )
-            .padding(immersive ? 24 : 12)
-            .opacity(hasPendingVoicePrompt ? 0.2 : 1)
-        }
-        .overlay(alignment: .leading) {
-            GeometryReader { geometry in
-                let inset: CGFloat = immersive ? 24 : 12
-                let width = min(immersive ? 300.0 : 210.0, max(0, (geometry.size.width - inset * 2 - 12) / 2))
-                ViewThatFits(in: .vertical) {
-                    VoiceHUDDeck(state: voiceHUD, width: width)
-                        .fixedSize(horizontal: false, vertical: true)
-                    ScrollView(.vertical) {
-                        VoiceHUDDeck(state: voiceHUD, width: width)
-                    }
-                    .scrollIndicators(.hidden)
-                }
-                .frame(width: width, height: geometry.size.height)
-                .padding(.leading, inset)
-                .opacity(hasPendingVoicePrompt ? 0.2 : 1)
-                .allowsHitTesting(!hasPendingVoicePrompt)
-            }
-        }
-        .overlay { VoiceWakeFlash(count: model.wakeCount) }
-        .onChange(of: model.activeToolCalls) { _, calls in voiceHUD = VoiceHUDState(calls: calls) }
         .animation(.dockEase(duration: 0.3), value: model.voiceState)
         .animation(.dockEase(duration: 0.25), value: captions.user)
         .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: hasPendingVoicePrompt)
         .onAppear {
-            voiceHUD = VoiceHUDState(calls: model.activeToolCalls)
             beginVoiceConversation()
         }
     }
@@ -142,10 +140,10 @@ extension DockPopover {
 
     var voiceOrbHelp: String {
         switch voiceOrbMode {
-        case .listening: "Tap to send now"
-        case .thinking, .speaking: "Tap to interrupt"
+        case .listening: "Send now"
+        case .thinking, .speaking: "Interrupt"
         case .transcribing: "Transcribing"
-        case .idle: "Tap to resume listening"
+        case .idle: "Resume listening"
         }
     }
 
@@ -234,45 +232,40 @@ extension DockPopover {
     }
 
     func voiceControls(style: DockThemePalette) -> some View {
-        HStack(spacing: 14) {
-            if model.voiceState.isNativeConversationActive {
-                DockIconButton(
-                    icon: .waveform,
-                    label: model.voiceRepliesEnabled ? "Mute spoken replies" : "Speak replies aloud",
-                    isProminent: model.voiceRepliesEnabled,
-                    size: 34,
-                    style: style
-                ) { model.toggleVoiceReplies() }
-                DockIconButton(
-                    icon: model.isVoiceMicMuted ? .microphoneSlash : .microphone,
-                    label: model.isVoiceMicMuted ? "Unmute microphone" : "Mute microphone",
-                    isProminent: model.isVoiceMicMuted,
-                    size: 34,
-                    style: style
-                ) { model.toggleVoiceMicMuted() }
-            }
-            switch voiceOrbMode {
-            case .listening:
-                DockIconButton(icon: .arrowUp, label: "Send now", size: 34, style: style, action: handleVoiceOrbTap)
-            case .thinking, .speaking:
-                DockIconButton(icon: .stop, label: "Interrupt", size: 34, style: style, action: handleVoiceOrbTap)
-            case .idle:
-                // While muted, the mute toggle is the resume control.
-                if !model.isVoiceMicMuted {
-                    DockIconButton(
-                        icon: .play, label: "Resume listening", size: 34, style: style, action: handleVoiceOrbTap)
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                if model.voiceState.isNativeConversationActive {
+                    Button(model.isVoiceMicMuted ? "Unmute mic" : "Mute mic") { model.toggleVoiceMicMuted() }
+                        .buttonStyle(.dockSecondary)
+                    Button(model.voiceRepliesEnabled ? "Mute replies" : "Speak replies") { model.toggleVoiceReplies() }
+                        .buttonStyle(.dockSecondary)
                 }
-            case .transcribing:
-                DockIconButton(icon: .microphone, label: "Transcribing", isBusy: true, size: 34, style: style) {}
+                Button("End voice", action: exitVoiceMode)
+                    .buttonStyle(.dockSecondary)
             }
-            DockIconButton(
-                icon: isVoiceImmersive ? .cornersIn : .cornersOut,
-                label: isVoiceImmersive ? "Exit full voice mode" : "Full voice mode",
-                size: 34,
-                style: style
-            ) { isVoiceImmersive.toggle() }
-            .keyboardShortcut(isVoiceImmersive ? .cancelAction : nil)
-            DockIconButton(icon: .x, label: "End voice conversation", size: 34, style: style, action: exitVoiceMode)
+            HStack(spacing: 12) {
+                Button(voiceOrbHelp, action: handleVoiceOrbTap)
+                    .buttonStyle(.dockPrimary)
+                    .disabled(model.voiceState == .preparing || model.voiceState == .transcribing)
+                DockIconButton(
+                    icon: isVoiceImmersive ? .cornersIn : .cornersOut,
+                    label: isVoiceImmersive ? "Exit full voice mode" : "Full voice mode",
+                    size: 34, style: style
+                ) { isVoiceImmersive.toggle() }
+                .keyboardShortcut(isVoiceImmersive ? .cancelAction : nil)
+            }
+        }
+    }
+
+    var voiceInteractionHint: String {
+        if model.isVoiceMicMuted { return "Your microphone is off." }
+        switch model.voiceState {
+        case .listening: return "Speak naturally. Your request sends after a short pause."
+        case .speaking:
+            return model.answersVoicePromptsAloud ? "Speak to interrupt, or tap Interrupt." : "Tap Interrupt to speak."
+        case .thinking: return "You can keep talking to add to your request."
+        case .paused: return "Tap Resume listening when you’re ready."
+        default: return ""
         }
     }
 

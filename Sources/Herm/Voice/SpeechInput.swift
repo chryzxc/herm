@@ -308,6 +308,9 @@ enum VoiceRecognitionCompletion: Equatable {
 /// talking instead of waiting on Hermes' whisper pass.
 @MainActor
 final class MicLevelMeter: ObservableObject {
+    @Published private(set) var errorMessage: String?
+    @Published private(set) var isStarting = false
+    @Published private(set) var isRunning = false
     let reading = VoiceMeterReading()
     private(set) var level: CGFloat {
         get { reading.level }
@@ -324,7 +327,7 @@ final class MicLevelMeter: ObservableObject {
     var onUtteranceEnd: ((String?) -> Void)?
     /// Called while endpointing once nobody has spoken for `idleLimit`.
     var onIdle: (() -> Void)?
-    var idleLimit: TimeInterval = 8
+    var idleLimit: TimeInterval = 30
     /// Hermes' own VAD uses a fixed RMS threshold, so steady room noise keeps
     /// it recording until the user presses send. While this is on, Herm ends
     /// the turn itself against an adaptive noise floor.
@@ -332,15 +335,25 @@ final class MicLevelMeter: ObservableObject {
     /// While a reply plays: transcribe without ending turns, reporting each
     /// partial to `onBargeSpeech` so talking over the reply can cut it off.
     private(set) var isWatchingForBarge = false
-    var onBargeSpeech: ((String) -> Void)?
+    var onBargeSpeech: ((String) -> Bool)?
+    private var acceptedBargeIn = false
 
     /// Starts a fresh transcript for the next voice state.
     func listen(endpointing: Bool, watchingForBarge: Bool) {
+        let preserveUtterance = acceptedBargeIn && isWatchingForBarge && endpointing
+        acceptedBargeIn = false
         isEndpointing = endpointing
         isWatchingForBarge = watchingForBarge && !endpointing
         endpoint.beginTurn()
         pendingEndSince = nil
-        restartRecognition()
+        turnProgress = 0
+        // The words that stopped playback belong to the next request. Keep
+        // the same recognition task so its later partials extend those words.
+        if preserveUtterance {
+            heardPlayback = false
+        } else {
+            restartRecognition()
+        }
     }
     /// The transcript to submit now, or nil when on-device recognition failed.
     var utteranceTranscript: String? { recognitionFailures > 2 ? nil : transcript }
@@ -391,7 +404,13 @@ final class MicLevelMeter: ObservableObject {
     private(set) var heardPlayback = false
 
     func start() {
-        guard engine == nil, Bundle.main.bundleURL.pathExtension == "app" else { return }
+        guard engine == nil, !isStarting else { return }
+        guard Bundle.main.bundleURL.pathExtension == "app" else {
+            errorMessage = "Voice input requires the packaged Herm app."
+            return
+        }
+        errorMessage = nil
+        isStarting = true
         generation &+= 1
         let expected = generation
         recognitionFailures = 0
@@ -401,7 +420,13 @@ final class MicLevelMeter: ObservableObject {
             if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
                 _ = await SpeechInput.requestSpeechAuthorization()
             }
-            guard granted, let self, self.generation == expected, self.engine == nil else { return }
+            guard let self, self.generation == expected, self.engine == nil else { return }
+            self.isStarting = false
+            guard granted else {
+                self.errorMessage =
+                    "Allow microphone access in System Settings → Privacy & Security → Microphone, then retry."
+                return
+            }
             self.startEngine()
         }
     }
@@ -412,6 +437,8 @@ final class MicLevelMeter: ObservableObject {
         engine?.stop()
         engine?.inputNode.removeTap(onBus: 0)
         engine = nil
+        isStarting = false
+        isRunning = false
         level = 0
     }
 
@@ -424,6 +451,9 @@ final class MicLevelMeter: ObservableObject {
         transcript = ""
         turnAudio.reset()
         turnVerdict = nil
+        checkedPause = nil
+        lastWordAt = ProcessInfo.processInfo.systemUptime
+        lastLoudAt = lastWordAt
         heardPlayback = false
         beginRecognitionRequest()
     }
@@ -444,17 +474,9 @@ final class MicLevelMeter: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.feed.request.map(ObjectIdentifier.init) == requestID else { return }
                 if let text, !text.isEmpty {
-                    self.requestHeardSpeech = true
-                    self.recognitionFailures = 0
-                    let transcript = [self.committedTranscript, text].filter { !$0.isEmpty }.joined(separator: " ")
-                    if transcript != self.transcript {
-                        self.lastWordAt = ProcessInfo.processInfo.systemUptime
-                        self.turnVerdict = nil
-                    }
-                    self.transcript = transcript
-                    if self.isWatchingForBarge { self.onBargeSpeech?(self.transcript) }
+                    self.receiveRecognizedText(text)
                 }
-                guard ended else { return }
+                guard self.feed.request.map(ObjectIdentifier.init) == requestID, ended else { return }
                 // The recognizer gives up after silence or ~1 minute; keep
                 // listening with a fresh request. Repeated empty failures mean
                 // it is unusable (dictation off, no on-device model).
@@ -478,15 +500,32 @@ final class MicLevelMeter: ObservableObject {
         }
     }
 
+    func receiveRecognizedText(_ text: String) {
+        guard isEndpointing || isWatchingForBarge else { return }
+        requestHeardSpeech = true
+        recognitionFailures = 0
+        let updated = [committedTranscript, text].filter { !$0.isEmpty }.joined(separator: " ")
+        if updated != transcript {
+            lastWordAt = ProcessInfo.processInfo.systemUptime
+            turnVerdict = nil
+        }
+        transcript = updated
+        if isWatchingForBarge, !acceptedBargeIn { acceptedBargeIn = onBargeSpeech?(transcript) == true }
+    }
+
     private func startEngine(cancellingEcho: Bool = true) {
         let engine = AVAudioEngine()
         let input = engine.inputNode
         if cancellingEcho { Self.cancelEcho(on: engine) }
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { return }
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            errorMessage = "No microphone input is available. Connect a microphone and retry."
+            return
+        }
+        let expected = generation
         Self.installTap(on: input, feed: feed, turnAudio: turnAudio) { [weak self] value in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.generation == expected else { return }
                 let smoothing: CGFloat = value > self.level ? 0.5 : 0.12
                 self.level += (value - self.level) * smoothing
                 guard self.isEndpointing else { return }
@@ -533,6 +572,7 @@ final class MicLevelMeter: ObservableObject {
         do {
             try engine.start()
             self.engine = engine
+            isRunning = true
             // Speech permission may have arrived after `listen` was called.
             if feed.request == nil { beginRecognitionRequest() }
         } catch {
@@ -541,6 +581,9 @@ final class MicLevelMeter: ObservableObject {
             if input.isVoiceProcessingEnabled {
                 DebugLog.write("voice: echo cancellation failed to start; using the plain microphone")
                 startEngine(cancellingEcho: false)
+            } else {
+                errorMessage =
+                    "Couldn’t start the microphone: " + HermesDiagnosticsService.safeSummary(error.localizedDescription)
             }
         }
     }
@@ -698,7 +741,7 @@ struct VoiceEndpointDetector {
 
     /// How long after the last word a turn ends.
     static func turnHold(_ transcript: String, quietSince: TimeInterval?, finished: Bool?) -> TimeInterval {
-        let hold: TimeInterval = finished.map { $0 ? 0.5 : 3 } ?? (trailsOff(transcript) ? 3 : 1.2)
+        let hold: TimeInterval = finished.map { $0 ? 0.5 : 3 } ?? (trailsOff(transcript) ? 3 : 0.8)
         // Under the level threshold the meter can't confirm the pause; wait a bit more.
         return hold + (quietSince == nil ? 0.4 : 0)
     }

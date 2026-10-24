@@ -56,7 +56,11 @@ extension DockPopover {
 
     func handleVoiceStateChange(_ state: HermesVoiceState) {
         // Permission and runtime setup finish before capture starts.
-        if state.isNativeConversationActive, state != .preparing { micLevelMeter.start() } else { micLevelMeter.stop() }
+        if state.isNativeConversationActive, state != .preparing, !model.isVoiceMicMuted {
+            micLevelMeter.start()
+        } else {
+            micLevelMeter.stop()
+        }
         let sessionID = model.sessionID
         let generation = model.voiceConversationGeneration
         micLevelMeter.onUtteranceEnd = { [model, micLevelMeter] transcript in
@@ -68,15 +72,15 @@ extension DockPopover {
             model.sleepVoiceConversation()
         }
         micLevelMeter.onBargeSpeech = { [model] heard in
-            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
-            model.bargeInVoiceReply(heard: heard)
+            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return false }
+            return model.bargeInVoiceReply(heard: heard)
         }
         // Asleep, the meter only listens for the wake phrase, and only on-device.
         let listensForWake = state == .paused && !model.isVoiceMicMuted && wakesByVoice
         micLevelMeter.listen(
             // While Hermes thinks, speech steers the running turn instead of being lost.
-            endpointing: state == .listening || listensForWake || (state == .thinking && !model.isVoiceMicMuted),
-            watchingForBarge: state == .speaking && !model.isVoiceMicMuted && wakesByVoice
+            endpointing: !model.isVoiceMicMuted && (state == .listening || listensForWake || state == .thinking),
+            watchingForBarge: state == .speaking && !model.isVoiceMicMuted && model.answersVoicePromptsAloud
         )
         if state == .interrupted {
             // The native gateway has accepted a spoken interruption. Stop

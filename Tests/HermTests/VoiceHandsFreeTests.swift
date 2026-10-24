@@ -4,6 +4,36 @@ import Testing
 @testable import Herm
 
 struct VoiceHandsFreeTests {
+    @Test @MainActor func interruptionKeepsTheWordsThatStoppedPlayback() {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: false, watchingForBarge: true)
+        meter.onBargeSpeech = { _ in true }
+        meter.receiveRecognizedText("Actually tell me")
+        meter.listen(endpointing: true, watchingForBarge: false)
+        #expect(meter.transcript == "Actually tell me")
+        #expect(meter.isEndpointing)
+        meter.receiveRecognizedText("Actually tell me about tomorrow")
+        #expect(meter.utteranceTranscript == "Actually tell me about tomorrow")
+        // Sending manually enters thinking with the same endpointing mode,
+        // but must start a fresh transcript for steering.
+        meter.listen(endpointing: true, watchingForBarge: false)
+        #expect(meter.transcript.isEmpty)
+        meter.stop()
+        meter.receiveRecognizedText("Late callback")
+        #expect(meter.transcript.isEmpty)
+        #expect(!meter.isRunning)
+    }
+
+    @Test @MainActor func finishingPlaybackDiscardsUnacceptedEcho() {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: false, watchingForBarge: true)
+        meter.onBargeSpeech = { _ in false }
+        meter.receiveRecognizedText("The forecast is sunny")
+        meter.listen(endpointing: true, watchingForBarge: false)
+        #expect(meter.transcript.isEmpty)
+        meter.stop()
+    }
+
     /// Feeds `level` at ~43 buffers/s (1024 frames @ 44.1 kHz) for `seconds`.
     private func feed(_ detector: inout VoiceEndpointDetector, level: Double, seconds: Double, from start: inout Double)
         -> Bool

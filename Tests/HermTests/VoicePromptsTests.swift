@@ -52,14 +52,14 @@ struct VoicePromptsTests {
 
     @Test func turnEndsFastWhenFinishedAndWaitsWhenTrailingOff() {
         // A finished thought ends quickly once the words stop.
-        #expect(!VoiceEndpointDetector.shouldEndTurn("book a table for two", lastWordAt: 9, quietSince: 9, now: 10))
+        #expect(!VoiceEndpointDetector.shouldEndTurn("book a table for two", lastWordAt: 9, quietSince: 9, now: 9.7))
         #expect(VoiceEndpointDetector.shouldEndTurn("book a table for two", lastWordAt: 9, quietSince: 9, now: 10.3))
         // "...and" or "um": the speaker is still going.
         #expect(!VoiceEndpointDetector.shouldEndTurn("book a table and", lastWordAt: 9, quietSince: 9, now: 11.5))
         #expect(!VoiceEndpointDetector.shouldEndTurn("so I was thinking, um", lastWordAt: 9, quietSince: 9, now: 11.5))
         #expect(VoiceEndpointDetector.shouldEndTurn("book a table and", lastWordAt: 9, quietSince: 9, now: 12.1))
         // A soft voice the level detector missed waits a little longer.
-        #expect(!VoiceEndpointDetector.shouldEndTurn("book a table", lastWordAt: 9, quietSince: nil, now: 10.3))
+        #expect(!VoiceEndpointDetector.shouldEndTurn("book a table", lastWordAt: 9, quietSince: nil, now: 10.1))
         #expect(VoiceEndpointDetector.shouldEndTurn("book a table", lastWordAt: 9, quietSince: nil, now: 10.7))
         // No words yet: give the recognizer time instead of dropping the turn.
         #expect(!VoiceEndpointDetector.shouldEndTurn("", lastWordAt: 0, quietSince: 9, now: 10))

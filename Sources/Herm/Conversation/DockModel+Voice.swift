@@ -194,6 +194,7 @@ extension DockModel {
     /// is Herm's on-device text; nil means that recognizer failed.
     /// `overPlayback`: audio was playing meanwhile, so it may be our own reply.
     func finishVoiceUtterance(transcript: String?, overPlayback: Bool = false) {
+        guard !isVoiceMicMuted else { return }
         if voiceState == .paused {
             // Asleep: only "hey <name>" wakes it, optionally with the request.
             guard !isVoiceMicMuted, let transcript,
@@ -257,7 +258,10 @@ extension DockModel {
             _ = stop()
         case .speaking:
             stopVoicePlayback()
-            _ = stop()
+            if isSending && !isVoicePromptActive {
+                skipNextVoicePlaybackDrain = true
+                _ = stop()
+            }
             resumeVoiceListening(force: true)
         default:
             break
@@ -276,19 +280,25 @@ extension DockModel {
     }
 
     /// Speech heard while a reply plays cuts it off, like tapping the orb.
-    func bargeInVoiceReply(heard: String) {
-        guard voiceState == .speaking, !isVoicePromptActive else { return }
-        let reply = (messages.last { $0.role == .hermes }?.text ?? "") + " " + streamingText.text
-        guard VoicePrompts.isBargeIn(heard, over: reply) else { return }
+    @discardableResult
+    func bargeInVoiceReply(heard: String) -> Bool {
+        guard voiceState == .speaking, !isVoiceMicMuted else { return false }
+        let reply = voiceSpokenCaption ?? lastVoiceSpeech
+        guard VoicePrompts.isBargeIn(heard, over: reply) else { return false }
         interruptVoiceTurn()
+        return true
     }
 
     /// Re-opens the microphone after a no-speech pause (or a cut-off reply).
     func resumeVoiceListening(force: Bool = false) {
         guard voiceState == .paused || force, voiceState.isNativeConversationActive else { return }
         stopVoicePlayback()
-        isVoiceMicMuted = false
         nativeVoiceCapture.reset()
+        if force && isVoiceMicMuted {
+            voiceState = .paused
+            return
+        }
+        isVoiceMicMuted = false
         voiceState = .listening
         armNativeVoiceCapture()
     }

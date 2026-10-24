@@ -131,7 +131,6 @@ struct DockPopover: View {
     @State var suppressNextVoiceResponse = false
     /// Full voice mode: the voice stage covers the navigation and inspector.
     @State var isVoiceImmersive = false
-    @State var voiceHUD = VoiceHUDState()
     @State var sessionPendingDeletion: HermesSession?
     // These selections are owned by the active session/repository scope. The
     // request IDs invalidate completions from an older scope or selection.

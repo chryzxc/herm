@@ -99,6 +99,9 @@ extension DockPopover {
             .onChange(of: model.voiceState) { _, state in
                 handleVoiceStateChange(state)
             }
+            .onChange(of: model.isVoiceMicMuted) { _, _ in
+                handleVoiceStateChange(model.voiceState)
+            }
             .onChange(of: model.voicePromptSpeech) { _, speech in
                 handleVoicePromptChange(speech)
             }

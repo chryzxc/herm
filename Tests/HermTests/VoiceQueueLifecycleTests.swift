@@ -87,6 +87,66 @@ struct VoiceQueueLifecycleTests {
         await model.voiceRequestChain?.value
     }
 
+    @Test func localBargeInStopsAudioWithoutInterruptingAnAlreadyCompletedTurn() async throws {
+        let client = VoiceQueueRPCClient()
+        let playback = VoiceQueuePlayback()
+        playback.hold = true
+        let model = model(client, playback: playback)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        model.speakNativeVoiceReply("The forecast is sunny today.")
+        for _ in 0..<100 where playback.continuation == nil { try await Task.sleep(for: .milliseconds(10)) }
+        playback.caption?("The forecast is sunny today.")
+        model.bargeInVoiceReply(heard: "forecast is sunny today")
+        #expect(model.voiceState == .speaking)
+        let stops = playback.stopped
+        model.bargeInVoiceReply(heard: "Actually tell me about tomorrow")
+        #expect(model.voiceState == .listening)
+        #expect(playback.stopped > stops)
+        #expect(model.interruptState == .idle)
+        playback.caption?("A stale caption")
+        #expect(model.voiceSpokenCaption == nil)
+        playback.continuation?.resume()
+        model.finishVoiceUtterance(transcript: "Actually tell me about tomorrow")
+        for _ in 0..<100 where client.submitted.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(client.submitted == [GenerativeUIIntegration.preparePrompt("Actually tell me about tomorrow")])
+        model.stopVoiceConversation()
+    }
+
+    @Test func mutedMicrophoneRejectsLateSpeechAndInterruptions() {
+        let model = model(VoiceQueueRPCClient())
+        model.voiceState = .thinking
+        model.isVoiceMicMuted = true
+        model.finishVoiceUtterance(transcript: "Do not send this")
+        #expect(model.queuedPrompts.isEmpty)
+        #expect(model.messages.isEmpty)
+        model.voiceState = .speaking
+        model.bargeInVoiceReply(heard: "Wait stop")
+        #expect(model.voiceState == .speaking)
+    }
+
+    @Test func automaticResumeNeverUnmutesTheMicrophone() {
+        let model = model(VoiceQueueRPCClient())
+        model.voiceState = .speaking
+        model.isVoiceMicMuted = true
+        model.resumeVoiceListening(force: true)
+        #expect(model.isVoiceMicMuted)
+        #expect(model.voiceState == .paused)
+        #expect(!model.nativeVoiceCapture.captureArmed)
+    }
+
+    @Test func interruptingASpokenApprovalKeepsTheApprovalActive() {
+        let model = model(VoiceQueueRPCClient())
+        model.voiceState = .speaking
+        model.isVoicePromptActive = true
+        model.isSending = true
+        model.lastVoiceSpeech = "May I run this command?"
+        model.bargeInVoiceReply(heard: "Wait please")
+        #expect(model.isVoicePromptActive)
+        #expect(model.interruptState == .idle)
+        #expect(model.voiceState == .listening)
+    }
+
     @Test func localRecognitionDoesNotWaitForBackendAudioChecksOrEnableGlobalSpeech() async throws {
         let client = VoiceQueueRPCClient()
         let model = model(client)
