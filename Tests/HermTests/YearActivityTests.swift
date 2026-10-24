@@ -92,6 +92,38 @@ struct YearActivityTests {
         await control.refreshYearActivity()
         #expect(control.yearActivity == nil)
     }
+
+    @Test func providerAccountingLoadsSeparatelyAndCannotReuseOldCostsAfterFailure() async {
+        let client = YearActivityClient()
+        client.modelResponse = [
+            "period_days": 30,
+            "models": [
+                [
+                    "model": "example", "provider": "direct", "input_tokens": 100,
+                    "output_tokens": 20, "estimated_cost": 2,
+                ]
+            ],
+        ]
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        await control.refreshTokenUsage(days: 30)?.value
+        for _ in 0..<100 {
+            if control.refreshState(for: "usage.providers")?.isRefreshing == false { break }
+            try? await Task.sleep(for: .milliseconds(3))
+        }
+        #expect(control.tokenUsage?.costRankedProviders?.first?.estimatedCost == 2)
+        #expect(control.refreshState(for: "usage.providers")?.error == nil)
+
+        client.modelFailure = URLError(.timedOut)
+        await control.refreshTokenUsage(days: 30)?.value
+        for _ in 0..<100 {
+            if control.refreshState(for: "usage.providers")?.isRefreshing == false { break }
+            try? await Task.sleep(for: .milliseconds(3))
+        }
+        #expect(control.tokenUsage != nil)
+        #expect(control.tokenUsage?.costRankedProviders == nil)
+        #expect(control.refreshState(for: "usage.providers")?.isRefreshing == false)
+        #expect(control.refreshState(for: "usage.providers")?.error != nil)
+    }
 }
 
 @MainActor
@@ -101,7 +133,9 @@ private final class YearActivityClient: HermesRPCClientProtocol {
     var timeouts: [TimeInterval] = []
     var failure: Error?
     var onFetch: (() -> Void)?
-    var response: [String: Any] = ["daily": [["day": "2026-10-20", "input_tokens": 100]]]
+    var response: [String: Any] = ["period_days": 30, "daily": [["day": "2026-10-20", "input_tokens": 100]]]
+    var modelResponse: [String: Any] = ["period_days": 30, "models": [[String: Any]]()]
+    var modelFailure: Error?
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
@@ -110,7 +144,8 @@ private final class YearActivityClient: HermesRPCClientProtocol {
         onFetch?()
         try await Task.sleep(for: .milliseconds(10))
         if let failure { throw failure }
-        return response
+        if path.contains("/models?"), let modelFailure { throw modelFailure }
+        return path.contains("/models?") ? modelResponse : response
     }
     func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any] {
         timeouts.append(timeout)

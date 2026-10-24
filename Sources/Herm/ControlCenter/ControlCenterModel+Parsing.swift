@@ -444,8 +444,7 @@ extension ControlCenterModel {
         )
     }
 
-    /// `models` is `/api/analytics/models`, used only for each model's providers:
-    /// the usage payload groups by model alone.
+    /// `/api/analytics/models` supplies per-provider accounting; never split model totals by provider names.
     static func parseTokenUsage(_ result: [String: Any], models modelResult: [String: Any] = [:]) -> TokenUsageReport {
         let totals = result["totals"] as? [String: Any] ?? [:]
         let rows = { (key: String, source: [String: Any]) in source[key] as? [[String: Any]] ?? [] }
@@ -528,8 +527,33 @@ extension ControlCenterModel {
                     percentage: doubleValue($0["percentage"]) ?? 0)
             },
             skillLoads: intValue(skillSummary["total_skill_loads"]),
-            distinctSkills: intValue(skillSummary["distinct_skills_used"])
+            distinctSkills: intValue(skillSummary["distinct_skills_used"]),
+            costRankedProviders: parseProviderCosts(modelResult, days: intValue(result["period_days"]))
         )
+    }
+
+    static func parseProviderCosts(_ result: [String: Any], days: Int) -> [TokenUsageReport.Provider]? {
+        guard days > 0, intValue(result["period_days"]) == days,
+            let rows = result["models"] as? [[String: Any]]
+        else { return nil }
+        var grouped: [String: TokenUsageReport.Provider] = [:]
+        for row in rows {
+            guard let cost = doubleValue(row["estimated_cost"]), cost.isFinite, cost >= 0,
+                let input = optionalIntValue(row["input_tokens"]), input >= 0,
+                let output = optionalIntValue(row["output_tokens"]), output >= 0
+            else { return nil }
+            let provider = (row["provider"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let previous = grouped[provider]
+            grouped[provider] = TokenUsageReport.Provider(
+                provider: provider,
+                inputTokens: (previous?.inputTokens ?? 0) + input,
+                outputTokens: (previous?.outputTokens ?? 0) + output,
+                estimatedCost: (previous?.estimatedCost ?? 0) + cost)
+        }
+        return grouped.values.sorted {
+            if $0.estimatedCost != $1.estimatedCost { return $0.estimatedCost > $1.estimatedCost }
+            return $0.provider < $1.provider
+        }
     }
 
     static func parseCheckpoints(_ result: [String: Any]) -> [HermesCheckpointSummary] {

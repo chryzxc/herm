@@ -41,8 +41,22 @@ struct ActivityRenderSnapshotTests {
             "daily": daily,
             "by_model": [
                 [
-                    "model": "Example model", "input_tokens": 9_000_000, "output_tokens": 1_200_000,
-                    "sessions": 90, "api_calls": 720, "estimated_cost": 36.5,
+                    "model": "Example model", "input_tokens": 6_000_000, "output_tokens": 800_000,
+                    "sessions": 60, "api_calls": 480, "estimated_cost": 25.0,
+                ],
+                [
+                    "model": "Secondary model", "input_tokens": 3_000_000, "output_tokens": 400_000,
+                    "sessions": 30, "api_calls": 240, "estimated_cost": 11.5,
+                ],
+                [
+                    "model": "Background model", "input_tokens": 250_000, "output_tokens": 50_000,
+                    "sessions": 0, "api_calls": 24, "estimated_cost": 1.75,
+                ],
+            ],
+            "by_task": [
+                [
+                    "task": "compression", "input_tokens": 250_000, "output_tokens": 50_000,
+                    "api_calls": 24, "estimated_cost": 1.75,
                 ]
             ],
             "tools": [
@@ -88,6 +102,8 @@ struct ActivityRenderSnapshotTests {
         let selectedThemes = ProcessInfo.processInfo.environment["HERM_ACTIVITY_REVIEW_THEMES"]?.split(separator: ",")
             .map(String.init)
         let themes = DockThemeID.allCases.filter { selectedThemes?.contains($0.rawValue) ?? true }
+        let selectedPages = ProcessInfo.processInfo.environment["HERM_ACTIVITY_REVIEW_PAGES"]?.split(separator: ",")
+            .map(String.init)
         #expect(!themes.isEmpty)
         let appearances = themes.flatMap { theme -> [(DockThemeID, Bool)] in
             let modes: [Bool] =
@@ -103,18 +119,20 @@ struct ActivityRenderSnapshotTests {
             DockThemeRuntime.revision &+= 1
             for width: CGFloat in [640, 1380] {
                 for page in ["day", "week", "month", "spend"] {
+                    if let selectedPages, !selectedPages.contains(page) { continue }
                     let work = page != "spend"
+                    let height: CGFloat = work ? 1000 : (width < 900 ? 1700 : 1250)
                     defaults.set(work ? page : "day", forKey: "dock.calendar.scope")
                     let content =
                         work
                         ? AnyView(WorkActivityView(control: control, repoPaths: []))
-                        : AnyView(ScrollView { UsageWorkspaceView(control: control) })
+                        : AnyView(ScrollView { UsageWorkspaceView(control: control, availableWidth: width - 40) })
                     let view = content.defaultAppStorage(defaults).padding(20)
-                        .frame(width: width, height: 1000)
+                        .frame(width: width, height: height)
                         .background(Color.dockCanvas).background(dark ? Color.black : Color.white)
                         .dockThemedRoot().environment(\.colorScheme, dark ? .dark : .light)
                     let host = NSHostingView(rootView: view)
-                    host.frame = NSRect(x: 0, y: 0, width: width, height: 1000)
+                    host.frame = NSRect(x: 0, y: 0, width: width, height: height)
                     let window = NSWindow(
                         contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
                     window.isReleasedWhenClosed = false
@@ -124,6 +142,9 @@ struct ActivityRenderSnapshotTests {
                     for _ in 0..<3 {
                         host.layoutSubtreeIfNeeded()
                         try await Task.sleep(for: .milliseconds(80))
+                    }
+                    if !work, ProcessInfo.processInfo.environment["HERM_ACTIVITY_SCROLL_REVIEW"] == "1" {
+                        await reviewScrolling(host, control: control, label: "\(theme.rawValue)-\(width)")
                     }
                     let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                     host.cacheDisplay(in: host.bounds, to: bitmap)
@@ -136,5 +157,77 @@ struct ActivityRenderSnapshotTests {
                 }
             }
         }
+    }
+
+    @Test func renderProviderRanking() async throws {
+        guard let path = ProcessInfo.processInfo.environment["HERM_ACTIVITY_REVIEW_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        let report = ControlCenterModel.parseTokenUsage(
+            ["period_days": 30, "totals": ["total_estimated_cost": 9, "total_sessions": 20]],
+            models: [
+                "period_days": 30,
+                "models": [
+                    [
+                        "model": "example", "provider": "anthropic", "input_tokens": 6_000,
+                        "output_tokens": 600, "estimated_cost": 6,
+                    ],
+                    [
+                        "model": "example", "provider": "openrouter", "input_tokens": 2_000,
+                        "output_tokens": 200, "estimated_cost": 2,
+                    ],
+                    [
+                        "model": "example", "provider": "", "input_tokens": 1_000,
+                        "output_tokens": 100, "estimated_cost": 1,
+                    ],
+                    [
+                        "model": "included", "provider": "openai-codex", "input_tokens": 5_000,
+                        "output_tokens": 500, "estimated_cost": 0,
+                    ],
+                ],
+            ])
+        let content = UsageSpendSummary(report: report, grouping: .constant(.providers))
+            .padding(18).frame(width: 340, height: 460, alignment: .topLeading)
+            .background(Color.dockCanvas).background(Color.white)
+            .dockThemedRoot().environment(\.colorScheme, .light)
+        let host = NSHostingView(rootView: content)
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 460)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        try png.write(to: URL(fileURLWithPath: path).appendingPathComponent("provider-ranking.png"))
+    }
+
+    private func reviewScrolling(_ host: NSView, control: ControlCenterModel, label: String) async {
+        func scrollView(in view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView { return scroll }
+            return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
+        }
+        guard let scroll = scrollView(in: host), let document = scroll.documentView else { return }
+        let distance = max(0, document.bounds.height - scroll.contentView.bounds.height)
+        var samples: [Double] = []
+        for step in 0..<30 {
+            let start = CFAbsoluteTimeGetCurrent()
+            control.isRefreshing.toggle()  // Unrelated publications must not rebuild the analytics report.
+            let fraction = Double(step < 15 ? step : 29 - step) / 14
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: distance * fraction))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            await Task.yield()
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            samples.append((CFAbsoluteTimeGetCurrent() - start) * 1_000)
+        }
+        let sorted = samples.sorted()
+        print("Activity scroll fixture \(label): p95 \(sorted[28]) ms; max \(sorted[29]) ms")
+        scroll.contentView.scroll(to: .zero)
+        scroll.reflectScrolledClipView(scroll.contentView)
+        host.layoutSubtreeIfNeeded()
     }
 }

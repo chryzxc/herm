@@ -75,7 +75,6 @@ extension ControlCenterModel {
             spendRefreshTask?.cancel()
             spendRefreshTask = nil
             tokenUsage = nil
-            tokenUsageModelRows = [:]
             sessionContext = nil
             sessionCockpitSessionID = nil
             providerQuotas = []

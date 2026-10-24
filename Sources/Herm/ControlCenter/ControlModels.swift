@@ -960,6 +960,15 @@ struct TokenUsageReport: Equatable {
         var id: String { name }
     }
 
+    struct Provider: Identifiable, Equatable {
+        let provider: String
+        let inputTokens: Int
+        let outputTokens: Int
+        let estimatedCost: Double
+        var id: String { provider }
+        var totalTokens: Int { inputTokens + outputTokens }
+    }
+
     let days: Int
     let inputTokens: Int
     let outputTokens: Int
@@ -976,6 +985,8 @@ struct TokenUsageReport: Equatable {
     let skills: [Share]
     let skillLoads: Int
     let distinctSkills: Int
+    /// Nil until same-period model/provider accounting has loaded successfully.
+    var costRankedProviders: [Provider]? = nil
 
     var auxInputTokens: Int { tasks.reduce(0) { $0 + $1.inputTokens } }
     var auxOutputTokens: Int { tasks.reduce(0) { $0 + $1.outputTokens } }
@@ -984,7 +995,16 @@ struct TokenUsageReport: Equatable {
     var totalInputTokens: Int { inputTokens + auxInputTokens }
     var totalOutputTokens: Int { outputTokens + auxOutputTokens }
     var totalTokens: Int { totalInputTokens + totalOutputTokens }
+    /// Cache reads are reported separately from input; reasoning is already in output.
+    var processedTokens: Int { totalTokens + cacheReadTokens }
     var totalCost: Double { estimatedCost + auxCost }
+    var costRankedModels: [Model] {
+        models.sorted {
+            if $0.estimatedCost != $1.estimatedCost { return $0.estimatedCost > $1.estimatedCost }
+            if $0.totalTokens != $1.totalTokens { return $0.totalTokens > $1.totalTokens }
+            return $0.model < $1.model
+        }
+    }
     /// Share of prompt tokens served from the provider cache.
     var cacheHitRate: Double? {
         let prompt = inputTokens + cacheReadTokens

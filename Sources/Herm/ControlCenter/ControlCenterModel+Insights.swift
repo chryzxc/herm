@@ -43,6 +43,7 @@ extension ControlCenterModel {
             }
             let usageState = refreshState(for: "token.usage")
             if force || tokenUsage == nil || usageState?.isStale == true
+                || refreshState(for: "usage.providers")?.error != nil
                 || (usageState?.lastSuccess?.timeIntervalSinceNow ?? -.infinity) < -60
             {
                 await refreshTokenUsage(days: UsageWorkspaceView.reportDays)?.value
@@ -80,23 +81,37 @@ extension ControlCenterModel {
                 guard generation == tokenUsageGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                tokenUsage = Self.parseTokenUsage(result, models: tokenUsageModelRows)
+                tokenUsage = Self.parseTokenUsage(result)
                 recordProjectionSuccess("token.usage", count: tokenUsage?.sessions ?? 0)
-                // Models is slower (models.dev lookups) and only adds provider
-                // pills, so it lands after the dashboard is already drawn.
+                // Slower provider accounting enriches the visible report without blocking yearly activity.
+                beginProjectionRefresh("usage.providers")
                 Task { @MainActor in
-                    guard let modelRows = try? await rpc.modelAnalytics(days: days),
-                        generation == tokenUsageGeneration,
-                        isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
-                    else { return }
-                    tokenUsageModelRows = modelRows
-                    tokenUsage = Self.parseTokenUsage(result, models: modelRows)
+                    do {
+                        let modelRows = try await rpc.modelAnalytics(days: days)
+                        guard generation == tokenUsageGeneration,
+                            isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                        else { return }
+                        let report = Self.parseTokenUsage(result, models: modelRows)
+                        guard let providers = report.costRankedProviders else {
+                            throw HermesGateway.GatewayError.malformedResponse
+                        }
+                        tokenUsage = report
+                        recordProjectionSuccess("usage.providers", count: providers.count)
+                    } catch {
+                        guard generation == tokenUsageGeneration,
+                            isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                        else { return }
+                        recordProjectionFailure("usage.providers", error: error.localizedDescription)
+                    }
                 }
             } catch {
                 guard generation == tokenUsageGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
                 recordProjectionFailure("token.usage", error: error.localizedDescription)
+                if refreshState(for: "usage.providers")?.isRefreshing == true {
+                    recordProjectionFailure("usage.providers", error: error.localizedDescription)
+                }
             }
         }
         tokenUsageTask = task

@@ -1,11 +1,14 @@
 import SwiftUI
 
 /// A year of daily activity, one square per day, oldest week on the left.
-struct UsageHeatmap: View {
+struct UsageHeatmap: View, Equatable {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     let daily: [TokenUsageReport.Day]
+    private let today = Calendar.current.startOfDay(for: Date())
     @State private var metric: Metric = .tokens
     @State private var selected: Date?
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.daily == rhs.daily && lhs.today == rhs.today }
 
     enum Metric: String, CaseIterable, Identifiable {
         case tokens = "Tokens"
@@ -52,7 +55,16 @@ struct UsageHeatmap: View {
             Color.clear
                 .aspectRatio(Double(Self.weeks) / (7 + Self.labelRows), contentMode: .fit)
                 .overlay { canvas(start: start, values: values, peak: peak) }
-                .overlay { popoverAnchor(start: start, values: values) }
+                .overlay(alignment: .bottomTrailing) {
+                    if let selected {
+                        stats(selected, values[selected])
+                            .dockFloatingSurface(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous),
+                                stroke: .dockBorderLight, lineWidth: 1
+                            )
+                            .allowsHitTesting(false)
+                    }
+                }
 
             Text("Main conversation only · days bucketed by session start · hover a square for details")
                 .dockFont(.metadata)
@@ -94,7 +106,9 @@ struct UsageHeatmap: View {
         }
         .onContinuousHover { phase in
             switch phase {
-            case .active(let point): selected = day(at: point)
+            case .active(let point):
+                let day = day(at: point)
+                if day != selected { selected = day }
             case .ended: selected = nil
             }
         }
@@ -130,25 +144,6 @@ struct UsageHeatmap: View {
         // Four steps of the metric's color, brightest at the peak.
         let level = min(3, Int(value / peak * 4))
         return tint.opacity(0.3 + 0.23 * Double(level))
-    }
-
-    /// A clear square over the hovered cell that hosts the stats popover.
-    @ViewBuilder
-    private func popoverAnchor(start: Date, values: [Date: TokenUsageReport.Day]) -> some View {
-        if let selected, width > 0 {
-            let offset = calendar.dateComponents([.day], from: start, to: selected).day ?? 0
-            let pitch = width / Double(Self.weeks)
-            let cell = pitch * (1 - Self.gap)
-            Color.clear
-                .frame(width: cell, height: cell)
-                .popover(isPresented: .constant(true), arrowEdge: .bottom) { stats(selected, values[selected]) }
-                .position(
-                    x: Double(offset / 7) * pitch + cell / 2,
-                    y: pitch * Self.labelRows + Double(offset % 7) * pitch + cell / 2
-                )
-                .id(selected)
-                .allowsHitTesting(false)
-        }
     }
 
     private func stats(_ date: Date, _ day: TokenUsageReport.Day?) -> some View {
