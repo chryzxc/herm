@@ -40,7 +40,7 @@ struct HermNotice: Codable, Identifiable, Equatable, Sendable {
         return sessions.first { $0.id == sourceID && $0.profileID == profileID }
             ?? HermesSession(
                 id: sourceID, profileID: profileID, title: sourceID,
-                preview: "", startedAt: nil, messageCount: 0, source: "herm")
+                preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
     }
 }
 

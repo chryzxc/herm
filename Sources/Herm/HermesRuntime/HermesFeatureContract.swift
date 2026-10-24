@@ -20,6 +20,12 @@ enum HermesSkillsUnavailableReason: Equatable, Sendable {
 /// transport adapters, and presentation gates. Raw values are stable contract
 /// identifiers; callers must not invent spelling variants at the call site.
 enum HermesFeatureIDs {
+    /// Hermes' own label for a desktop front end's sessions. It is a Hermes
+    /// vocabulary value, not the app name: Hermes hands it to the session's
+    /// tools as `HERMES_SESSION_SOURCE`, and only labels it knows (`desktop`)
+    /// are cleared for nested `hermes chat -Q` runs; others fail `invalid_params`.
+    static let sessionSource = "desktop"
+
     enum ID: String, CaseIterable, Sendable {
         case petInfo = "pet.info"
         case petInfoMeta = "pet.info.meta"

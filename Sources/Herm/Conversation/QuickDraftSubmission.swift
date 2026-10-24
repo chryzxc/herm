@@ -47,7 +47,7 @@ enum QuickDraftSubmission {
             let creatingSession = draft.destination.sessionID == nil
             if creatingSession {
                 var create = scope
-                create["source"] = "herm"
+                create["source"] = HermesFeatureIDs.sessionSource
                 create["idempotency_key"] = draft.id.uuidString
                 if let path = draft.destination.projectPath {
                     create["cwd"] = path
@@ -74,7 +74,7 @@ enum QuickDraftSubmission {
                 var params = scope
                 params["session_id"] = owner
                 params["omit_messages"] = true
-                params["source"] = "herm"
+                params["source"] = HermesFeatureIDs.sessionSource
                 let result = try await client.request(
                     HermesFeatureIDs.ID.sessionResume.rawValue, params: params)
                 let runtime = result["session_id"] as? String ?? owner

@@ -122,7 +122,7 @@ extension DockModel {
                 if let target {
                     var resumeParams = params
                     resumeParams["session_id"] = target.id
-                    resumeParams["source"] = "herm"
+                    resumeParams["source"] = HermesFeatureIDs.sessionSource
                     resumeParams["omit_messages"] = true
                     let result = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
@@ -142,7 +142,7 @@ extension DockModel {
                     destination = target
                 } else {
                     var createParams = params
-                    createParams["source"] = "herm"
+                    createParams["source"] = HermesFeatureIDs.sessionSource
                     let result = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
                     guard let id = result["session_id"] as? String, !id.isEmpty else {
@@ -152,7 +152,7 @@ extension DockModel {
                     destination = HermesSession(
                         id: Self.stableSessionID(from: result) ?? id,
                         profileID: profile, title: result["title"] as? String ?? "", preview: clean,
-                        startedAt: .now, messageCount: 0, source: "herm")
+                        startedAt: .now, messageCount: 0, source: HermesFeatureIDs.sessionSource)
                     // Retain the created identity even if prompt submission fails.
                     onCreated(destination)
                 }
@@ -191,14 +191,15 @@ extension DockModel {
             do {
                 try await sessionRPCClient.connect()
                 let created = try await sessionRPCClient.request(
-                    HermesFeatureIDs.ID.sessionCreate.rawValue, params: ["profile": profileID, "source": "herm"])
+                    HermesFeatureIDs.ID.sessionCreate.rawValue,
+                    params: ["profile": profileID, "source": HermesFeatureIDs.sessionSource])
                 guard let createdID = created["session_id"] as? String, !createdID.isEmpty else {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
                 let storedID = Self.stableSessionID(from: created) ?? createdID
                 let session = HermesSession(
                     id: storedID, profileID: profileID, title: created["title"] as? String ?? "",
-                    preview: clean, startedAt: .now, messageCount: 0, source: "herm")
+                    preview: clean, startedAt: .now, messageCount: 0, source: HermesFeatureIDs.sessionSource)
                 if !sessions.contains(where: { $0.scopedID == session.scopedID }) { sessions.insert(session, at: 0) }
                 let runtimeID = createdID
                 // The agent builds lazily; a turn submitted mid-build is refused

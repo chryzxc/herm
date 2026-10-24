@@ -137,7 +137,7 @@ extension DockModel {
         navigationSessionID.map {
             HermesSession(
                 id: $0, profileID: sessionProfileID, title: currentSessionTitle ?? "Session", preview: "",
-                startedAt: nil, messageCount: 0, source: "herm")
+                startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
         }
     }
 

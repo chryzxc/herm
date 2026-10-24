@@ -32,7 +32,9 @@ extension DockModel {
             newSessionCreationAuthorized, !isCreatingSession
         {
             Task {
-                guard (try? await createAuthorizedSession(source: "herm")) != nil else { return }
+                guard (try? await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)) != nil else {
+                    return
+                }
                 sendDirectBotRequest(
                     profileID: profileID, displayName: displayName, text: text, chatSessionID: chatSessionID,
                     quote: quote)

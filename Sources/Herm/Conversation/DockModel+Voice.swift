@@ -33,7 +33,7 @@ extension DockModel {
                 try await sessionRPCClient.connect()
                 guard voiceConversationGeneration == generation else { return }
                 if sessionID == nil {
-                    _ = try await createAuthorizedSession(source: "herm")
+                    _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
                 }
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
                 guard voiceConversationGeneration == generation else { return }

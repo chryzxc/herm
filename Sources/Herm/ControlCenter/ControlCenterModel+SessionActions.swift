@@ -142,7 +142,7 @@ extension ControlCenterModel {
             dockModel.resumeSession(
                 HermesSession(
                     id: sessionID, title: dockModel.currentSessionTitle ?? "Hermes session", preview: "",
-                    startedAt: nil, messageCount: 0, source: "hermes"))
+                    startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource))
             refresh()
             return true
         } catch {

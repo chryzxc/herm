@@ -188,7 +188,8 @@ final class HermesControlRPC {
     func resume(sessionID: String, profileID: String? = nil) async throws -> [String: Any] {
         try await client.request(
             HermesFeatureIDs.ID.sessionResume.rawValue,
-            params: Self.profileParams(["session_id": sessionID, "source": "herm-control"], profileID: profileID))
+            params: Self.profileParams(
+                ["session_id": sessionID, "source": HermesFeatureIDs.sessionSource], profileID: profileID))
     }
     func delete(sessionID: String, profileID: String? = nil) async throws -> [String: Any] {
         try await client.request(
@@ -236,7 +237,10 @@ final class HermesControlRPC {
         let requested = chatSessionID ?? BotService.canonicalBotChatTitle
         let result = try await client.request(
             HermesFeatureIDs.ID.sessionResume.rawValue,
-            params: ["session_id": requested, "profile": profileID, "source": "herm", "omit_messages": true])
+            params: [
+                "session_id": requested, "profile": profileID, "source": HermesFeatureIDs.sessionSource,
+                "omit_messages": true,
+            ])
         let info = result["info"] as? [String: Any] ?? [:]
         let profile = result["profile"] as? String ?? info["profile_name"] as? String ?? info["profile"] as? String
         guard let runtime = result["session_id"] as? String, !runtime.isEmpty,

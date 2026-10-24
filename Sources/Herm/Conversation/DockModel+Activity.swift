@@ -23,7 +23,7 @@ extension DockModel {
                     startedAt: date,
                     updatedAt: date,
                     messageCount: 0,
-                    source: "herm"
+                    source: HermesFeatureIDs.sessionSource
                 ), at: 0)
             return
         }
@@ -271,7 +271,7 @@ extension DockModel {
         }
         try await gateway.connect()
         if sessionID == nil {
-            _ = try await createAuthorizedSession(source: "herm-control")
+            _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
         }
         guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
         _ = try await gateway.request(

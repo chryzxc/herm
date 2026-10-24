@@ -124,7 +124,7 @@ extension DockPopover {
         return model.sessions.first { $0.id == id }
             ?? HermesSession(
                 id: id, profileID: model.sessionProfileID, title: model.currentSessionTitle ?? "",
-                preview: "", startedAt: nil, messageCount: 0, source: "herm")
+                preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
     }
 
     func showFilePreview() {

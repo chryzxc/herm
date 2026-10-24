@@ -154,8 +154,11 @@ struct PullRequestFloatingChatView: View {
     }
 
     private func openConversation() {
-        guard let session = chat.destination?.session else { return }
-        runtime.resumeSession(session)
-        router?.onOpened(session.id)
+        guard let sessionID = model.sessionStorageID ?? model.sessionID else { return }
+        runtime.resumeSession(
+            HermesSession(
+                id: sessionID, profileID: model.sessionProfileID, title: "PR #\(record.displayNumber)",
+                preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource))
+        router?.onOpened(sessionID)
     }
 }

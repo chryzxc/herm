@@ -16,7 +16,7 @@ struct QuickDestination: Codable, Equatable, Sendable {
         sessionID.map {
             HermesSession(
                 id: $0, profileID: profileID, title: title, preview: "",
-                startedAt: nil, messageCount: 0, source: "herm")
+                startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
         }
     }
 }

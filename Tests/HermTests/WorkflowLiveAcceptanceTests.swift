@@ -94,7 +94,7 @@ struct WorkflowLiveAcceptanceTests {
         }
 
         let create: [String: Any] = [
-            "profile": profile, "source": "herm", "title": "Herm acceptance",
+            "profile": profile, "source": HermesFeatureIDs.sessionSource, "title": "Herm acceptance",
             "cwd": directory.path, "cwd_explicit": true, "idempotency_key": UUID().uuidString,
             "messages": [
                 ["role": "user", "content": "Acceptance fixture material"],
@@ -130,7 +130,7 @@ struct WorkflowLiveAcceptanceTests {
             "session.resume",
             params: [
                 "profile": profile,
-                "session_id": session.id, "omit_messages": true, "source": "herm",
+                "session_id": session.id, "omit_messages": true, "source": HermesFeatureIDs.sessionSource,
             ])
         let resumeInfo = rawResume["info"] as? [String: Any] ?? [:]
         let resumeProfile = rawResume["profile"] as? String ?? resumeInfo["profile_name"] as? String

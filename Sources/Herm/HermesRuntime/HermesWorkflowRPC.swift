@@ -651,7 +651,7 @@ final class HermesWorkflowRPC {
         guard session.profileID == profileID else { throw HermesGateway.GatewayError.malformedResponse }
         let result = try await client.request(
             HermesFeatureIDs.ID.sessionResume.rawValue,
-            params: scoped(["session_id": session.id, "omit_messages": true, "source": "herm"]))
+            params: scoped(["session_id": session.id, "omit_messages": true, "source": HermesFeatureIDs.sessionSource]))
         let runtime = result["session_id"] as? String ?? session.id
         let info = result["info"] as? [String: Any] ?? [:]
         guard
@@ -727,7 +727,8 @@ final class HermesWorkflowRPC {
         try await client.request(
             HermesFeatureIDs.ID.sessionCreate.rawValue,
             params: scoped([
-                "cwd": directory, "cwd_explicit": true, "source": "herm", "idempotency_key": idempotencyKey,
+                "cwd": directory, "cwd_explicit": true, "source": HermesFeatureIDs.sessionSource,
+                "idempotency_key": idempotencyKey,
             ]))
     }
     private func query(_ values: [String: String]) -> String {

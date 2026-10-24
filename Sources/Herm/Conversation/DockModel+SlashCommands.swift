@@ -163,7 +163,7 @@ extension DockModel {
             defer { if self.sessionResumeGeneration == generation, self.status != .working { self.isSending = false } }
             do {
                 try await sessionRPCClient.connect()
-                let sessionID = try await createAuthorizedSession(source: "herm")
+                let sessionID = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
                 guard self.sessionResumeGeneration == generation else { return }
                 // The agent builds lazily and slash.exec doesn't start it, so a plugin
                 // command that submits a turn on a fresh session is refused ("could not

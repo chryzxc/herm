@@ -99,7 +99,7 @@ extension DockModel {
                     self.sessionID == sessionBeforeSend
                 else { return }
                 if sessionID == nil {
-                    _ = try await createAuthorizedSession(source: "herm")
+                    _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
                 }
                 guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
                 // Keep this operation bound to the session selected above. A
@@ -204,7 +204,7 @@ extension DockModel {
                     let origin = HermesSession(
                         id: navigationSessionID ?? promptSessionID, profileID: sessionProfileID,
                         title: currentSessionTitle ?? "Session", preview: "", startedAt: nil, messageCount: 0,
-                        source: "herm")
+                        source: HermesFeatureIDs.sessionSource)
                     baselineDirectory = try? await HermesWorkflowRPC(
                         client: controlRPCClient, profileID: sessionProfileID
                     ).sessionDirectory(origin)

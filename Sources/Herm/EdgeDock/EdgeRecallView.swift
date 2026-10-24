@@ -38,7 +38,8 @@ final class EdgeRecallModel: ObservableObject {
                 }
                 let session = HermesSession(
                     id: id, profileID: profileID, title: row["title"] as? String ?? "Conversation",
-                    preview: "", startedAt: nil, messageCount: 0, source: row["source"] as? String ?? "herm")
+                    preview: "", startedAt: nil, messageCount: 0,
+                    source: row["source"] as? String ?? HermesFeatureIDs.sessionSource)
                 return RecallHit(
                     session: session, snippet: String((row["snippet"] as? String ?? "").prefix(2000)))
             }

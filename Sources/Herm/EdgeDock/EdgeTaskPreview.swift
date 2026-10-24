@@ -194,7 +194,7 @@ extension EdgeNotchTask {
             let session = record.botChatSessionID.map {
                 HermesSession(
                     id: $0, profileID: record.botID, title: record.summary, preview: "",
-                    startedAt: record.createdAt, messageCount: 0, source: "herm")
+                    startedAt: record.createdAt, messageCount: 0, source: HermesFeatureIDs.sessionSource)
             }
             return EdgeNotchTask(
                 id: "bot:\(record.id)", title: record.summary, phase: phase, statusLabel: label,

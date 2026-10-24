@@ -360,7 +360,7 @@ final class EdgeDockController: NSObject {
                 ? model.navigationSessionID.map {
                     HermesSession(
                         id: $0, profileID: model.sessionProfileID, title: task.title,
-                        preview: "", startedAt: nil, messageCount: 0, source: "herm")
+                        preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
                 } : nil)
         guard let session else { return }
         setQuickMessageFocus(false)
@@ -375,7 +375,8 @@ final class EdgeDockController: NSObject {
                 ? model.navigationSessionID.map {
                     HermesSession(
                         id: $0, profileID: model.sessionProfileID, title: task.title,
-                        preview: task.detail ?? "", startedAt: nil, messageCount: 0, source: "herm")
+                        preview: task.detail ?? "", startedAt: nil, messageCount: 0,
+                        source: HermesFeatureIDs.sessionSource)
                 } : nil)
         guard let target else { return }
         state.resultTarget = nil
@@ -502,7 +503,7 @@ final class EdgeDockController: NSObject {
             else { continue }
             let session = HermesSession(
                 id: target.sessionID, profileID: target.profileID, title: target.sessionID,
-                preview: "", startedAt: nil, messageCount: 0, source: "herm")
+                preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
             var row = EdgeNotchTask(
                 id: session.id, title: session.displayTitle, phase: .attention,
                 statusLabel: request.status.title, detail: request.summary, updatedAt: nil, isCurrent: false,
@@ -522,7 +523,7 @@ final class EdgeDockController: NSObject {
                 latestSessions.first { $0.id == failure.sourceID && $0.profileID == failure.profileID }
                 ?? HermesSession(
                     id: failure.sourceID, profileID: failure.profileID, title: failure.sourceID,
-                    preview: "", startedAt: nil, messageCount: 0, source: "herm")
+                    preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
             tasks.removeAll {
                 $0.id == session.id
                     && ($0.session?.profileID == session.profileID

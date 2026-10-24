@@ -459,7 +459,7 @@ extension DockModel {
                 preview: "",
                 startedAt: nil,
                 messageCount: messages.count,
-                source: "herm"
+                source: HermesFeatureIDs.sessionSource
             ),
             reportFailure: true
         )
@@ -524,7 +524,7 @@ extension DockModel {
                     preview: "",
                     startedAt: nil,
                     messageCount: 0,
-                    source: "herm"
+                    source: HermesFeatureIDs.sessionSource
                 ), reportFailure: true)
         } catch {
             DebugLog.write("model: message branch failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
@@ -663,7 +663,7 @@ extension DockModel {
             try await sessionRPCClient.connect()
             var resumeParams: [String: Any] = [
                 "session_id": session.id,
-                "source": "herm",
+                "source": HermesFeatureIDs.sessionSource,
                 // Page the transcript over REST instead of shipping it whole in
                 // this response: long sessions produced multi-megabyte frames
                 // and parsed thousands of rows nobody had scrolled to. Hermes
@@ -907,7 +907,7 @@ extension DockModel {
         sessionProjectionState = .loading
         do {
             try await sessionRPCClient.connect()
-            _ = try await createAuthorizedSession(source: "herm")
+            _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
         } catch {
             sessionProjectionState = .failed(safeMessage: "Hermes could not start a new session. Try again.")
             DebugLog.write(
