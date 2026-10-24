@@ -289,28 +289,6 @@ extension DockPopover {
         } message: { _ in
             Text("This permanently deletes the saved conversation and its transcript.")
         }
-        .alert(
-            "Could Not Delete Session",
-            isPresented: Binding(
-                get: { model.sessionDeletionError != nil },
-                set: { if !$0 { model.clearSessionDeletionError() } }
-            )
-        ) {
-            Button("OK", role: .cancel) { model.clearSessionDeletionError() }
-        } message: {
-            Text(model.sessionDeletionError ?? "The session could not be deleted.")
-        }
-        .alert(
-            "Could Not Update Session Visibility",
-            isPresented: Binding(
-                get: { model.sessionVisibilityError != nil },
-                set: { if !$0 { model.clearSessionVisibilityError() } }
-            )
-        ) {
-            Button("OK", role: .cancel) { model.clearSessionVisibilityError() }
-        } message: {
-            Text(model.sessionVisibilityError ?? "The session visibility could not be updated.")
-        }
         .task {
             loadInitialModelConfiguration()
         }
