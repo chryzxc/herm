@@ -303,14 +303,16 @@ extension WorkspaceActivitySidebar {
                 }
                 .padding(.horizontal, 16)
             case .spend:
-                ScrollView {
-                    UsageWorkspaceView(control: control)
-                        .frame(maxWidth: 1280, alignment: .topLeading)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                GeometryReader { geometry in
+                    ScrollView {
+                        UsageWorkspaceView(control: control, availableWidth: min(1280, geometry.size.width - 32))
+                            .frame(maxWidth: 1280, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, alignment: .top)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 16)
+                    }
+                    .clipped()
                 }
-                .clipped()
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
