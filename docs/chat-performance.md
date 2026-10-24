@@ -384,3 +384,49 @@ restarted; a live physical-trackpad check and a fresh paired Release comparison
 remain outside this verification.
 
 The final Debug build, color contract, and `git diff --check` passed.
+
+
+## Find matching and Return selection — 23 October 2026
+
+A further audit found a separate main-thread path: Find debounced query changes,
+but then synchronously scanned full message bodies on the UI actor. Pressing
+Return repeated that scan instead of using the displayed results. Snapshot
+isolation and Markdown caches do not eliminate this work.
+
+Find now scans Sendable navigator items in one cancellable background worker per
+query. Cancellation is forwarded to the worker and checked between messages;
+the UI task rejects a cancelled result after returning to the main actor. Matching
+keeps the existing case/diacritic rules, full-text coverage, role matches, order,
+and stored-prompt targets. Task identity compares the immutable navigator snapshot
+rather than comparing full-text arrays during viewport/hover updates.
+
+`MessageNavigatorSearchState` binds completed results and a pending Return action
+to exact query, session, and snapshot identity. Return uses current results or
+waits for that request. Old matches are hidden immediately when inputs change;
+closing the panel cancels work. The existing empty/result slot reports pending
+matching instead of briefly claiming there are no matches. This state is disposable
+presentation state and adds no transcript persistence or runtime changes.
+
+New checks cover a 500-message full-text/Unicode fixture from the main actor, worker
+cancellation, pending Return, query/history/session replacement, close/reopen,
+no matches, and a native Find field submitting before debounce completes. Debug
+worker assertions also enforce that matching executes outside the main thread.
+
+
+The final focused gate passed 339 Swift Testing tests across 31 suites and 47
+XCTest tests (386 total), using `--no-parallel`. This includes the native Find
+submission test, chat/Timeline concurrency, eight-message paging, tall-row anchors,
+Markdown rendering and selection, streaming handoff, composer interactions,
+prompts, message actions, and stored-history search/navigation. The worker fixture
+runs from the main actor over roughly 6 MB of message text, with main-thread
+execution rejected by its Debug assertion; no new frame-rate or Release timing
+claim is made.
+
+Tests use the existing isolated source copy because another SwiftPM process owns
+the workspace build directory. The changed search, navigator adapter, transcript
+call site, and new tests were checked against the workspace; unrelated concurrent
+changes were preserved. The running Herm app was not restarted. This pass does
+not include a physical-trackpad check or a fresh paired Release profile.
+
+The final Debug build, `make guard` (strict lint, color contract, and diff checks),
+and `git diff --check` passed.

@@ -5,14 +5,14 @@ import SwiftUI
 /// Stable identity for a transcript location. The session component prevents a
 /// delayed viewport or selection update from targeting a similarly identified
 /// message after the user changes sessions.
-struct MessageNavigatorTarget: Hashable, Identifiable {
+struct MessageNavigatorTarget: Hashable, Identifiable, Sendable {
     let sessionID: String
     let messageID: UUID
 
     var id: String { "\(sessionID):\(messageID.uuidString)" }
 }
 
-struct MessageNavigatorItem: Equatable, Identifiable {
+struct MessageNavigatorItem: Equatable, Identifiable, Sendable {
     let target: MessageNavigatorTarget
     let ordinal: Int
     let roleLabel: String
@@ -31,7 +31,7 @@ struct MessageNavigatorItem: Equatable, Identifiable {
 }
 
 /// Immutable projection identity lets transcript refreshes skip walking unchanged history.
-final class MessageNavigatorSnapshot {
+final class MessageNavigatorSnapshot: Sendable {
     let items: [MessageNavigatorItem]
 
     init(items: [MessageNavigatorItem]) {
@@ -119,10 +119,32 @@ enum MessageNavigator {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return items }
         let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
-        return items.filter { item in
+        var results: [MessageNavigatorItem] = []
+        for item in items {
+            guard !Task.isCancelled else { return [] }
             let body = item.searchText.isEmpty ? item.preview : item.searchText
-            return body.range(of: normalizedQuery, options: options) != nil
+            if body.range(of: normalizedQuery, options: options) != nil
                 || item.roleLabel.range(of: normalizedQuery, options: options) != nil
+            {
+                results.append(item)
+            }
+        }
+        return results
+    }
+
+    static func searchInBackground(items: [MessageNavigatorItem], query: String) async throws -> [MessageNavigatorItem]
+    {
+        try Task.checkCancellation()
+        let worker = Task.detached(priority: .userInitiated) {
+            assert(!Thread.isMainThread)
+            return search(items: items, query: query)
+        }
+        return try await withTaskCancellationHandler {
+            let results = await worker.value
+            try Task.checkCancellation()
+            return results
+        } onCancel: {
+            worker.cancel()
         }
     }
 
@@ -240,7 +262,8 @@ struct MessageNavigatorViewportPreferenceKey: PreferenceKey {
 }
 
 struct MessageNavigatorView: View {
-    let items: [MessageNavigatorItem]
+    let snapshot: MessageNavigatorSnapshot
+    private var items: [MessageNavigatorItem] { snapshot.items }
     let sessionID: String
     let visibleTargets: Set<MessageNavigatorTarget>
     /// The find panel stays hidden until the header search action opens it.
@@ -260,11 +283,16 @@ struct MessageNavigatorView: View {
     @State private var hoveredResult: MessageNavigatorTarget?
     /// Full-text matching scans every message body, so results are computed
     /// when the query or items change instead of on every hover render.
-    @State private var searchResults: [MessageNavigatorItem] = []
+    @State private var searchState = MessageNavigatorSearchState()
     @FocusState private var isSearchFocused: Bool
 
     private var hasSearchQuery: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var searchInput: MessageNavigatorSearchRequest? {
+        guard isSearchPresented, hasSearchQuery else { return nil }
+        return .init(snapshot: snapshot, sessionID: sessionID, query: searchQuery)
     }
 
     private var activeTarget: MessageNavigatorTarget? {
@@ -339,14 +367,25 @@ struct MessageNavigatorView: View {
         .onChange(of: searchQuery) { _, _ in
             if hasSearchQuery { onSearch() }
         }
-        .task(id: SearchInput(query: searchQuery, items: items)) {
-            guard hasSearchQuery else {
-                searchResults = []
+        .onChange(of: searchInput) { _, input in searchState.invalidateSelection(for: input) }
+        .task(id: searchInput) {
+            guard let input = searchInput else {
+                searchState = MessageNavigatorSearchState()
                 return
             }
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-            searchResults = MessageNavigator.search(items: items, query: searchQuery)
+            do {
+                try await Task.sleep(for: .milliseconds(120))
+                let results = try await MessageNavigator.searchInBackground(
+                    items: input.snapshot.items, query: input.query)
+                try Task.checkCancellation()
+                if let item = searchState.complete(results, for: input, current: searchInput) {
+                    selectSearchResult(item)
+                }
+            } catch is CancellationError {
+                // A new query, history revision, close, or session change owns the next result.
+            } catch {
+                assertionFailure("Unexpected search failure: \(error)")
+            }
         }
         .onMoveCommand { direction in
             guard hoveredTarget != nil, !items.isEmpty else { return }
@@ -365,7 +404,9 @@ struct MessageNavigatorView: View {
     }
 
     private var searchPanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let searchResults = searchState.results(for: searchInput)
+        let isSearching = hasSearchQuery && !searchState.isComplete(for: searchInput)
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 13, color: Color.dockMetadataText)
                 DockTextField("Find a message", text: $searchQuery)
@@ -399,12 +440,16 @@ struct MessageNavigatorView: View {
             if hasSearchQuery {
                 Color.dockBorder.frame(height: DockLayout.hairline)
                 if searchResults.isEmpty {
-                    Text(isLoadingHistory ? "Searching earlier messages…" : "No matching messages")
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
+                    Text(
+                        isLoadingHistory
+                            ? "Searching earlier messages…"
+                            : isSearching ? "Searching messages…" : "No matching messages"
+                    )
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
@@ -457,14 +502,12 @@ struct MessageNavigatorView: View {
         .onAppear { isSearchFocused = true }
     }
 
-    private struct SearchInput: Equatable {
-        let query: String
-        let items: [MessageNavigatorItem]
+    private func selectFirstSearchResult() {
+        guard let input = searchInput, let item = searchState.submit(input) else { return }
+        selectSearchResult(item)
     }
 
-    private func selectFirstSearchResult() {
-        let results = MessageNavigator.search(items: items, query: searchQuery)
-        guard let item = results.first else { return }
+    private func selectSearchResult(_ item: MessageNavigatorItem) {
         selectedTarget = item.target
         Self.dispatchSelection(item, onSelect: onSelect)
         isSearchPresented = false

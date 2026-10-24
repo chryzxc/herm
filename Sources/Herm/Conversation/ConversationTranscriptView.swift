@@ -173,7 +173,7 @@ struct ConversationTranscriptView: View, Equatable {
                         && viewport.size.width >= 820
                     if showsMap || isShowingMessageSearch {
                         ConversationScrollNavigator(
-                            presentation: coordinator.presentation, items: snapshot.navigatorItems,
+                            presentation: coordinator.presentation, snapshot: snapshot.navigator,
                             sessionID: snapshot.sessionID ?? "", isSearchPresented: $isShowingMessageSearch,
                             showsMap: showsMap, isLoadingHistory: snapshot.context.historyLoading,
                             onSearch: {

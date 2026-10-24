@@ -32,6 +32,9 @@ scoped by their tool-call identities before the equatable view boundary.
 mutation boundaries; transcript equality compares its identity instead of walking
 all navigator entries. Ordinary Markdown keeps a nil rich-document parse request;
 only visual replies schedule parsing, keyed by source, stream completion, and reply identity.
+Find matches immutable navigator items in a cancellable background task. Its
+`MessageNavigatorSearchState` scopes results and queued Return selection to the
+query, session, and snapshot identity; views never rescan history on submission.
 
 `SessionTraceModel` owns Timeline’s focused execution subscriptions and coalesced
 projection, caching completed request inputs by `DockModel.messagesRevision`.

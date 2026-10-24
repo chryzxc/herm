@@ -28,7 +28,7 @@ struct ConversationLatestMessageControl: View {
 
 struct ConversationScrollNavigator: View {
     @ObservedObject var presentation: ConversationScrollPresentationState
-    let items: [MessageNavigatorItem]
+    let snapshot: MessageNavigatorSnapshot
     let sessionID: String
     @Binding var isSearchPresented: Bool
     let showsMap: Bool
@@ -38,7 +38,7 @@ struct ConversationScrollNavigator: View {
 
     var body: some View {
         MessageNavigatorView(
-            items: items,
+            snapshot: snapshot,
             sessionID: sessionID,
             visibleTargets: presentation.visibleTargets,
             isSearchPresented: $isSearchPresented,
