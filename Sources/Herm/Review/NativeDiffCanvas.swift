@@ -9,7 +9,7 @@ struct NativeDiffCanvas: NSViewRepresentable {
     let findRequest: Int
     var reveal: DiffSearchMatch? = nil
     var viewport: DiffViewportState? = nil
-    let onNote: (DiffSelection) -> Void
+    let onNote: ((DiffSelection) -> Void)?
     let onComment: ((DiffLine) -> Void)?
     func makeNSView(context: Context) -> DiffCanvasContainer { DiffCanvasContainer() }
     func updateNSView(_ view: DiffCanvasContainer, context: Context) {
@@ -104,7 +104,7 @@ final class DiffCanvasContainer: NSView {
     func update(
         _ document: DiffDocument, split: Bool, wraps: Bool, wordDiffs: Bool, findRequest: Int, reveal: DiffSearchMatch?,
         viewport: DiffViewportState?,
-        onNote: @escaping (DiffSelection) -> Void, onComment: ((DiffLine) -> Void)?
+        onNote: ((DiffSelection) -> Void)?, onComment: ((DiffLine) -> Void)?
     ) {
         let split = split && document.supportsSplitView
         let key =
@@ -307,10 +307,12 @@ private final class DiffSelectableTextView: NSTextView {
         let rows = DiffTextSelection.rowRange(in: string, selection: selectedRange())
         captured = DiffSelection(
             lines: lines.enumerated().compactMap { index, line in rows.contains(index) ? line : nil }, side: side)
-        let item = NSMenuItem(title: "Add revision note", action: #selector(addNote), keyEquivalent: "")
-        item.target = self
-        item.isEnabled = captured.first != nil
-        menu.addItem(item)
+        if onNote != nil {
+            let item = NSMenuItem(title: "Add revision note", action: #selector(addNote), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = captured.first != nil
+            menu.addItem(item)
+        }
         if onComment != nil {
             let comment = NSMenuItem(title: "Comment on GitHub…", action: #selector(commentOnLine), keyEquivalent: "")
             comment.target = self

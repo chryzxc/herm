@@ -7,6 +7,25 @@ import Testing
 struct DiffReviewStateTests {
     private let document = DiffDocument(path: "main.swift", patch: "@@ -1 +1 @@\n-old\n+new")
 
+    @Test func quickDiffWithoutANoteActionOmitsTheRevisionNoteMenuItem() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 330, height: 200))
+        let event = try #require(
+            NSEvent.mouseEvent(
+                with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        for hasNotes in [true, false] {
+            canvas.update(
+                document, split: false, wraps: true, wordDiffs: true, findRequest: 0,
+                reveal: nil, viewport: nil, onNote: hasNotes ? { _ in } : nil, onComment: nil)
+            canvas.layoutSubtreeIfNeeded()
+            let stack = try #require(canvas.subviews.first as? NSStackView)
+            let scroll = try #require(stack.arrangedSubviews.first as? NSScrollView)
+            let text = try #require(scroll.documentView as? NSTextView)
+            let menu = try #require(text.menu(for: event))
+            #expect(menu.items.contains { $0.title == "Add revision note" } == hasNotes)
+        }
+    }
+
     @Test func gutterCommentsKeepOldAndNewLineAnchorsAndDisableWithTheAction() throws {
         let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
         let document = DiffDocument(path: "file.swift", patch: "@@ -4,2 +7,2 @@\n-old\n+new\n context")
