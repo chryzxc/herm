@@ -82,7 +82,7 @@ struct DiffReviewStateTests {
     @Test func wrappedLongLinesFitThePaneAfterResizing() throws {
         let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
         let longLine = String(repeating: "longIdentifier", count: 60)
-        let document = DiffDocument(path: "long.swift", patch: "@@ -1 +1 @@\n-old\n+" + longLine)
+        let document = DiffDocument(path: "long.swift", patch: "@@ -1 +1 @@\n-" + longLine + "\n+" + longLine)
         for split in [false, true] {
             canvas.update(
                 document, split: split, wraps: true, wordDiffs: false, findRequest: 0,

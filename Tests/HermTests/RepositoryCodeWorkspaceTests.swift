@@ -178,12 +178,13 @@ struct RepositoryCodeWorkspaceTests {
         let first = PullRequestReviewPreferenceStore(defaults: defaults)
         #expect(first.diffMode == .unified)
         #expect(first.showsFileTree == false)
+        #expect(first.wordWrap)
         first.diffMode = .split
-        first.wordWrap = true
+        first.wordWrap = false
         first.toggleExpanded("README.md")
         let second = PullRequestReviewPreferenceStore(defaults: defaults)
         #expect(second.diffMode == .split)
-        #expect(second.wordWrap)
+        #expect(!second.wordWrap)
         #expect(second.expandedFileIDs == Set(["README.md"]))
         second.toggleExpanded("README.md")
         #expect(second.expandedFileIDs.isEmpty)

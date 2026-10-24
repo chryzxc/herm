@@ -13,7 +13,7 @@ struct RepositoryCodeWorkspaceView: View {
     var isStandalonePane = false
 
     @AppStorage("codeWorkspace.showsBlame") private var showsBlame = true
-    @AppStorage("codeWorkspace.wrapsLines") private var wrapsLines = false
+    @AppStorage("codeWorkspace.wrapsLines") private var wrapsLines = true
     @State private var draft: String
     @State private var savedDraft: String
     @State private var blameState: BlameState = .loading
