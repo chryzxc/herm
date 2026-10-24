@@ -62,11 +62,28 @@ struct GitHubAuthoringService: Sendable {
     }
 }
 
-struct GitHubAuthoringMenu: View {
+struct GitHubAuthoringMenu<AdditionalActions: View>: View {
     let reference: GitHubItemReference
     let client: GitHubClient
     var onIssueStateChanged: ((GitHubIssueRecord) -> Void)? = nil
     let onChanged: () -> Void
+    let additionalActions: AdditionalActions
+    let isAdditionalActionPending: Bool
+
+    init(
+        reference: GitHubItemReference, client: GitHubClient,
+        onIssueStateChanged: ((GitHubIssueRecord) -> Void)? = nil,
+        isAdditionalActionPending: Bool = false,
+        @ViewBuilder additionalActions: () -> AdditionalActions = { EmptyView() },
+        onChanged: @escaping () -> Void
+    ) {
+        self.reference = reference
+        self.client = client
+        self.onIssueStateChanged = onIssueStateChanged
+        self.isAdditionalActionPending = isAdditionalActionPending
+        self.additionalActions = additionalActions()
+        self.onChanged = onChanged
+    }
     @State private var loading = false
     @State private var metadata: GitHubMetadataSnapshot?
     @State private var state = ""
@@ -76,6 +93,7 @@ struct GitHubAuthoringMenu: View {
     @State private var error: String?
     var body: some View {
         DockMenu {
+            additionalActions
             if metadata == nil { Button("Retry loading actions") { Task { await load() } } }
             Button("Edit title and description") { editing = true }.disabled(metadata?.canUpdate != true || busy)
             if reference.kind == .issue {
@@ -91,7 +109,7 @@ struct GitHubAuthoringMenu: View {
             }
         } label: {
             Group {
-                if busy || loading {
+                if busy || loading || isAdditionalActionPending {
                     ProgressView().controlSize(.mini)
                 } else {
                     DockIcon(.dotsThree, size: 14, color: Color.dockSecondaryText)
