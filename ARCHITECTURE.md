@@ -60,6 +60,22 @@ grid/ruler drawing keep time ticks independent of history length.
 - `Voice/` — native voice gateway preference + labelled local fallback.
 - `Operations/`, `Automation/`, `Profiles/`, `Knowledge/`, `Appearance/`, `Extensions/`, `Agents/`, `Configuration/`, `Plans/` — supporting subsystems for their named concerns.
 
+## Generative UI and artifacts
+
+`Features/GenerativeUI/` owns versioned typed rendering, `RichFeatureRegistry`,
+`RichGenerationContext`, `RichArtifactReference`, native presentation preferences,
+and the isolated HTML host. Registry examples drive the next submission's prompt
+catalog through GenerativeUIIntegration. App composition registers connected feature
+readers/resolvers in RichHostActionRouter; it never creates a second capability probe.
+
+`Plans/ArtifactService` extracts validated surfaces from assistant text through the
+same RichDocument decoder as chat. Artifact records use typed content, original source,
+and canonical message references, not fabricated paths. ArtifactIndexStore coalesces
+reads per model/profile/session and keeps a bounded disposable cache shared by global
+and session browsers. Source history remains in Hermes. WorkspacePresentationStore
+holds only references and bounded user input/selection preferences; exports are
+independent user documents. Existing provider models and action handlers own writes.
+
 ## Data flow
 
 WebSocket `/api/ws` (authenticated, loopback-only) → `HermesControlRPC` → `DockModel`/`ControlCenterModel` projection → SwiftUI views. Mutations flow back only through typed RPCs or capability-gated CLI calls; Hermes responses remain authoritative — Herm never optimistically invents final state.

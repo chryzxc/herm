@@ -1498,7 +1498,9 @@ below 800pt), whose Close button and Esc return. Both views read the same projec
 strip follows: Duration, Model calls, Tool calls, Delegates and Tokens when reported,
 and Errors (destructive tint only when nonzero). Step labels stay fixed beside a
 horizontally scrolling timeline with a shared ruler; one vertical scroll keeps the
-tree and bars aligned. Delegates disclose their tool calls.
+tree and bars aligned. Ruler ticks use readable minute-and-second labels (for example,
+`2 mins 43 secs`), omitting zero seconds at whole minutes and leaving room between labels.
+Delegates disclose their tool calls.
 Bars outside the horizontal viewport show a compact directional timing button at
 the corresponding edge. Selecting a step pauses Live and reveals its bar without
 changing the time scale; Fit resets the native horizontal offset. Row drawing is
@@ -1591,11 +1593,32 @@ Protocol-owned answers and runtime-owned voice keep their existing contracts.
 Generated forms use existing destination-validated submission handling without
 adding rendering context or replacing the workspace composer.
 
-Compact live workflow cards, including PR commit/conflict graphs, are not yet
-implemented. Future cards must adapt existing authoritative stores inside this
-feature, retain the existing action handlers, and use current Dock
-tokens. They must not infer verified status from generic tool completion or
-replace the established activity presentation.
+Generated surfaces use one themed container with a wrapping 12pt semibold title,
+16pt insets, restrained separators, and visible Expand. A compact actions menu owns
+source inspection, readable copying, Export, Save/Unsave, Reset inputs, Revise, and
+composer-context actions. Source opens expanded within its existing padded panel.
+Native expansion uses DockExpandedPage and the shared expanded router/sheet fallback.
+Sections stack below 640pt; explicitly paired sections use columns at wider sizes.
+Tables retain source order until sorted and expose filters above ten rows. Numbers
+align trailing. Dataset charts share row selection with their table and show exact
+selected values. Source, assumptions, fictional labels, and observation times come
+only from supplied metadata. Graph nodes remain keyboard-selectable; tree expansion
+and image-comparison position/zoom use the shared native presentation state.
+
+Session Artifacts is a closable/reopenable inspector tab beside Explorer and Terminal,
+not a new top-level session mode. It scopes the existing Artifacts browser to one
+profile/session; the global library spans accessible sessions. Interactive and Saved
+filters join the existing resource filters. Latest explicitly linked revisions occupy
+one list entry, with prior versions and comparison in detail. Missing saved sources
+retain an unavailable entry and removable reference. Refresh remains in the header;
+new outputs never steal the selected tab or move transcript content.
+
+Connected record cards resolve existing PR/issue, Kanban, Calendar automation/task,
+usage, and session-trace projections. Their navigation opens established Herm pages,
+where permissions, confirmations, mutations, and pending state remain authoritative.
+Unavailable records are labelled unavailable. Generated labels never establish live
+status or an action permission. Mac calendar items remain owned by the Calendar page;
+CI reruns, deployment control, and network capture are not advertised integrations.
 
 Native surfaces use the current Dock canvas, surface, typography, border and
 action tokens. Tables scroll within bounded containers; charts use Apple Charts
@@ -1608,6 +1631,9 @@ source action stays above the scrollable, selectable monospaced content. Plain-t
 serve copy, search, speech, and Result Peek. Existing runtime-owned export
 contracts remain unchanged; host text projections use `GenerativeUIIntegration`.
 
+Version-1 replies remain supported. Version-2 payloads use typed components, shared
+datasets, stable item IDs, and optional explicit revision references. The feature
+registry supplies the generation catalog; unavailable connected features are omitted.
 Only complete, validated surfaces render. Limits are 1 MiB per surface, 100
 blocks, and 1,000 table rows or chart points per block. Unsupported or malformed
 content retains a readable fallback. Partial streamed JSON and HTML never run.
@@ -1621,7 +1647,13 @@ sandbox with scripts enabled, restrictive CSP, blocked resources and navigation,
 and no action bridge. It exposes no tools, credentials, session browser state,
 network, filesystem, downloads, popups or device permission access. Native Close
 and Reload remain outside authored content; process failure retains recovery
-and fallback. Only one preview may run, and session/profile changes destroy it.
+and fallback. Only one preview may run. The same WebKit host transfers between inline, artifact,
+and expanded containers and returns to the previous container on close. Explicit
+Close, disabling Generative UI, and session/profile changes destroy that host.
+Native drafts and selection are bounded local presentation preferences keyed by
+source reference and digest; they do not duplicate transcripts or provider records.
+Saving a tool stores its original reply reference. Export is an explicit user file.
+HTML DOM/input state is never persisted.
 Theme variables and reduced-motion defaults are injected into the saved document;
 changing themes reloads an open HTML preview. Authored styles may customize the
 interactive content itself. See `docs/generative-ui.md` for isolation and removal.
@@ -1820,6 +1852,8 @@ Transcript snapshots include live activity only while its streaming row is mount
 and bot-step inputs are scoped to the selected conversation’s dispatches and mentions.
 The canonical stream and activity continue accumulating while browsing history;
 returning to the live reply presents the current state without replaying UI updates.
+The jump-to-message rail sits on the left edge of wide conversations, with hover
+previews opening inward to its right. Find opens at the same left edge.
 The message navigator reuses its immutable history projection across activity and
 scroll refreshes; offscreen edits and stored-history changes still update search
 and navigation. Ordinary Markdown chunks do not restart visual-reply parsing tasks.
@@ -2277,8 +2311,10 @@ Minimized chat is a compact Chat · #PR button, at most 200pt wide, with the tra
 and composer hidden. Clicking it opens the transcript and composer and focuses the
 input. The header minimizes the entire panel; drafts and attachments stay in the
 PR conversation model. Typing or sending expands it.
-Summary, Changes, and Reviews reserve its measured height plus outer gutters outside
-their content viewports, keeping content and scroll controls above the panel at every pane width.
+Minimized chat floats over the page without reserving a bottom strip; the page's
+content viewport continues to the bottom edge. Only expanded chat reserves its
+measured height plus outer gutters in Summary, Changes, and Reviews, keeping
+content and scroll controls above the composer at every pane width.
 Expansion respects Reduce Motion. Each PR has an independent presentation model over
 Hermes-owned history. Herm saves only the PR-to-session reference (profile and stable
 session ID), so reopening the PR after navigation or an app restart resumes the same
@@ -2736,6 +2772,17 @@ main action; the dropdown opens requirements. Successful eligibility requires ex
 and provider revalidation. All segments share primary-button ink across skins.
 
 ### Async action feedback
+
+Failed explicit actions use the shared `DockActionErrorCenter` and
+`DockActionErrorPopup`. A nonactivating child panel places the error above the
+active window or sheet without reflowing content or stealing keyboard focus.
+Use a destructive-tinted background and border, a warning icon, readable title
+and sanitized detail, and a labelled dismiss button. Errors remain until dismissed
+or replaced by a newer action error; an old dismissal cannot clear a newer error.
+Monochrome skins retain their semantic palette and the warning icon. Background
+polls keep their existing inline stale/unavailable states and do not open popups.
+Pin actions retain their footprint with a spinner until acknowledgement and refresh;
+late index reads cannot undo a confirmed pin or publish it into another profile.
 
 User-triggered asynchronous actions acknowledge the click immediately, keep progress
 visible until their awaited work settles, and disable repeat submission while pending.
