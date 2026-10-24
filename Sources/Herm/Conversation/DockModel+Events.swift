@@ -222,6 +222,7 @@ extension DockModel {
                     result: reply.isEmpty ? nil : reply)
                 inFlightBotActivities.removeValue(forKey: activity.activityID)
             }
+            if !currentSessionIDs.contains(eventSessionID) { drainQueuedPromptIfIdle() }
         default:
             break
         }

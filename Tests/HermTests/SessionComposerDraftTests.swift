@@ -34,6 +34,71 @@ private final class ComposerDraftRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 struct SessionComposerDraftTests {
+    @Test func nativeEditsKeepSelectionOnOneOccurrenceAndClearItWhenThatOccurrenceIsDeleted() {
+        let composer = ComposerText()
+        let bot = BotSummary(
+            id: "default", name: "Nexus", title: nil, description: nil, model: nil,
+            isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: true)
+        composer.text = "@default @default hey"
+        composer.selectBot(bot, range: NSRange(location: 0, length: 8))
+        composer.noteEdit(range: NSRange(location: 0, length: 0), replacement: "👋 ")
+        composer.text = "👋 " + composer.text
+        #expect(composer.botMentions.first?.range == NSRange(location: 3, length: 8))
+        composer.noteEdit(range: NSRange(location: 3, length: 9), replacement: "")
+        composer.text = "👋 @default hey"
+        #expect(composer.botMentions.isEmpty)
+    }
+
+    @Test func editingInsideASelectedTokenDoesNotSelectTheTypedReplacement() {
+        let composer = ComposerText()
+        let bot = BotSummary(
+            id: "default", name: "Nexus", title: nil, description: nil, model: nil,
+            isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: true)
+        composer.text = "@default hey"
+        composer.selectBot(bot)
+        composer.text = "@defaul hey"
+        composer.text = "@default hey"
+        #expect(composer.botMentions.isEmpty)
+        composer.selectBot(bot)
+        composer.noteEdit(range: NSRange(location: 8, length: 0), replacement: "x")
+        composer.text = "@defaultx hey"
+        #expect(composer.botMentions.isEmpty)
+    }
+
+    @Test func pickerSelectionSurvivesDraftRestorationAndQueueEditingButNotRetyping() {
+        let rpc = ComposerDraftRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        let bot = BotSummary(
+            id: "default", name: "Nexus", title: nil, description: nil, model: nil,
+            isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: true)
+        model.sessionID = "origin"
+        model.draft = "@default hey"
+        model.composer.selectBot(bot)
+        model.saveComposerDraft()
+        model.composer.reset(to: "another draft")
+        model.restoreComposerDraft(for: model.composerDraftKey)
+        #expect(model.composer.selectedBots.map(\.id) == ["default"])
+
+        #expect(model.composer.navigate(direction: -1, history: ["previous message"]))
+        #expect(model.composer.selectedBots.isEmpty)
+        #expect(model.composer.navigate(direction: 1, history: ["previous message"]))
+        #expect(model.composer.selectedBots.map(\.id) == ["default"])
+
+        model.status = .working
+        model.isSending = true
+        model.queueDraft()
+        #expect(model.composer.selectedBots.isEmpty)
+        if let queued = model.currentSessionQueuedPrompts.first { model.editQueuedPrompt(queued.id) }
+        #expect(model.composer.selectedBots.map(\.id) == ["default"])
+        model.draft = ""
+        model.draft = "@default hey"
+        #expect(model.composer.selectedBots.isEmpty)
+    }
+
     private func session(_ id: String, profile: String = "default") -> HermesSession {
         HermesSession(
             id: id, profileID: profile, title: id, preview: "", startedAt: nil, messageCount: 0,

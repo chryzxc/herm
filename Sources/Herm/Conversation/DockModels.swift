@@ -446,6 +446,8 @@ struct ChatMessage: Identifiable, Equatable {
     /// UI never guesses a Bot from message prose.
     let botProfileID: String?
     let botDisplayName: String?
+    /// Picker selections are presentation metadata, never inferred from prose.
+    let botMentions: [ComposerBotMention]
     /// Stable content revision computed once when a message enters the model.
     /// Transcript descriptors can then compare revisions without re-hashing
     /// the full Markdown body during unrelated view updates.
@@ -474,7 +476,7 @@ struct ChatMessage: Identifiable, Equatable {
         tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false,
         botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil,
         activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil,
-        isBotHandoffReply: Bool = false
+        isBotHandoffReply: Bool = false, botMentions: [ComposerBotMention] = []
     ) {
         self.id = id
         self.role = role
@@ -489,6 +491,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.isError = isError
         self.botProfileID = botProfileID
         self.botDisplayName = botDisplayName
+        self.botMentions = botMentions
         self.contentRevision = contentRevision ?? Self.revision(for: text)
         self.hasBodyText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         self.timeLabel = timestamp.formatted(date: .abbreviated, time: .shortened)
@@ -528,7 +531,8 @@ struct ChatMessage: Identifiable, Equatable {
             contentRevision: contentRevision,
             activity: activity,
             kanbanNotice: kanbanNotice,
-            systemEvent: systemEvent
+            systemEvent: systemEvent,
+            botMentions: botMentions
         )
     }
 
@@ -862,6 +866,8 @@ struct QueuedPrompt: Identifiable {
     let pdfURL: URL?
     var contexts: [ChatContext] = []
     var replyQuote: ReplyQuote? = nil
+    var botMentions: [ComposerBotMention] = []
+    var botRecipient: BotSummary? = nil
 }
 
 struct ImageAttachment: Identifiable {

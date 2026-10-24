@@ -62,18 +62,16 @@ struct ComposerMentionTests {
     }
 
     @Test func explainsWhenAPickedBotWouldNotBeReached() {
-        func notice(_ draft: String, attachments: Bool = false, queued: Bool = false, botChat: Bool = false) -> String?
-        {
+        func notice(_ draft: String, attachments: Bool = false, queued: Bool = false) -> String? {
             ComposerMentionPresentation.relayNotice(
                 draft: draft, profileIDs: ["nexus", "cypher"], hasAttachments: attachments,
-                isQueued: queued, inBotChat: botChat)
+                isQueued: queued)
         }
         #expect(notice("please @ne") == nil)
         #expect(notice("@nexus") == nil)
-        #expect(notice("ask @nexus and @cy")?.hasPrefix("One Bot per message") == true)
+        #expect(notice("ask @nexus and @cy")?.hasPrefix("Select one Bot per message") == true)
         #expect(notice("ask @ne", attachments: true)?.hasPrefix("Bots get text only") == true)
-        #expect(notice("ask @ne", queued: true)?.hasPrefix("A queued prompt") == true)
-        #expect(notice("ask @nexus and @cy", attachments: true, botChat: true) == nil)
+        #expect(notice("ask @ne", queued: true)?.contains("wait behind queued prompts") == true)
     }
 
     @Test func attachmentsStayOnTheOrdinarySubmissionPathForBotMentions() {

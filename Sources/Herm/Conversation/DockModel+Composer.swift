@@ -9,10 +9,13 @@ extension DockModel {
     /// Sends the composer draft, or a queued prompt without touching the draft.
     /// The optional callback reports RPC submission, not completion of the turn.
     func send(_ queued: QueuedPrompt? = nil, onSubmission: ((String?) -> Void)? = nil) {
-        let prompt = (queued?.text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
+        let originalText = queued?.text ?? draft
+        let prompt = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImages = queued?.images ?? pendingImages
         let attachedPDF = queued == nil ? pendingPDFURL : queued?.pdfURL
         let contexts = queued == nil ? attachedContexts : queued?.contexts ?? []
+        let botMentions = ComposerBotMention.rebasing(
+            queued?.botMentions ?? composer.botMentions, from: originalText, to: prompt)
         guard !prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil || !contexts.isEmpty,
             !isSending,
             !isUpdatingSessionModel,
@@ -32,6 +35,16 @@ extension DockModel {
 
         if queued == nil, hasQueuedOrRedirectingPrompt {
             queueDraft()
+            return
+        }
+
+        if let queued, let bot = queued.botRecipient,
+            let request = ComposerMentionPresentation.botRelayRequest(in: prompt, profileIDs: [bot.id])
+        {
+            sendDirectBotRequest(
+                profileID: bot.id, displayName: bot.name, text: request.text,
+                chatSessionID: bot.chat?.sessionID, quote: queued.replyQuote, originalText: prompt,
+                botMentions: botMentions, clearsComposer: false)
             return
         }
 
@@ -75,7 +88,10 @@ extension DockModel {
         let transcriptText =
             attachedPDF.map { "[PDF: \($0.lastPathComponent)]" + (visibleText.isEmpty ? "" : "\n\(visibleText)") }
             ?? visibleText
-        messages.append(ChatMessage(role: .user, text: transcriptText, images: attachedImages.map(\.image)))
+        messages.append(
+            ChatMessage(
+                role: .user, text: transcriptText, images: attachedImages.map(\.image),
+                botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText)))
         submittedMessageIDForPin = messages.last?.id
         status = .working
         isSending = true
@@ -396,6 +412,7 @@ extension DockModel {
             && !text.isEmpty
             && prompt.images.isEmpty && prompt.pdfURL == nil && prompt.contexts.isEmpty
             && prompt.replyQuote == nil && ComposerSlashCommand(text) == nil
+            && prompt.botRecipient == nil
     }
 
     /// Delivers a queued prompt into the live turn. A refused redirect re-queues it.
@@ -429,10 +446,16 @@ extension DockModel {
         guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil || !attachedContexts.isEmpty else {
             return
         }
+        let request = ComposerMentionPresentation.botRelayRequest(in: text, profileIDs: composerMentionBots.map(\.id))
+        let recipient =
+            pendingImages.isEmpty && pendingPDFURL == nil && attachedContexts.isEmpty
+            ? composerMentionBots.first(where: { $0.id == request?.profileID }) : nil
         queuedPrompts.append(
             QueuedPrompt(
                 sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL,
-                contexts: attachedContexts, replyQuote: replyQuote))
+                contexts: attachedContexts, replyQuote: replyQuote,
+                botMentions: ComposerBotMention.rebasing(composer.botMentions, from: draft, to: text),
+                botRecipient: recipient))
         draft = ""
         pendingImages = []
         pendingPDFURL = nil
@@ -450,6 +473,7 @@ extension DockModel {
     /// Sends the oldest queued prompt of the open session, one per settled turn.
     func drainQueuedPromptIfIdle() {
         guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
+            pendingBotMentions.isEmpty,
             !nativeVoiceCapture.isAwaitingPlaybackDrain,
             sessionID != nil, let sessionID = queuedPromptSessionID,
             redirectingPrompts[sessionID] == nil,
@@ -468,6 +492,12 @@ extension DockModel {
         let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let current = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = [current, text].filter { !$0.isEmpty }.joined(separator: "\n")
+        let mentions = ComposerBotMention.rebasing(prompt.botMentions, from: prompt.text, to: text)
+        composer.botMentions += mentions.map { mention in
+            var mention = mention
+            mention.range.location += current.isEmpty ? 0 : current.utf16.count + 1
+            return mention
+        }
         pendingImages.append(contentsOf: prompt.images)
         if pendingPDFURL == nil { pendingPDFURL = prompt.pdfURL }
         attachedContexts.append(contentsOf: prompt.contexts)

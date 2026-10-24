@@ -1,5 +1,63 @@
 import Foundation
 
+/// A picker selection owns one exact token, including when a handle occurs twice.
+struct ComposerBotMention: Equatable {
+    let bot: BotSummary
+    var range: NSRange
+
+    static func editing(
+        _ mentions: [Self], range edit: NSRange, replacementLength: Int
+    ) -> [Self] {
+        mentions.compactMap { mention in
+            var mention = mention
+            if NSMaxRange(edit) <= mention.range.location {
+                mention.range.location += replacementLength - edit.length
+            } else if edit.location < NSMaxRange(mention.range) {
+                return nil
+            }
+            return mention
+        }
+    }
+
+    static func updating(_ mentions: [Self], from old: String, to new: String) -> [Self] {
+        guard !mentions.isEmpty, old != new else { return mentions }
+        let before = Array(old.utf16)
+        let after = Array(new.utf16)
+        var prefix = 0
+        while prefix < min(before.count, after.count), before[prefix] == after[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < min(before.count, after.count) - prefix,
+            before[before.count - suffix - 1] == after[after.count - suffix - 1]
+        { suffix += 1 }
+        return editing(
+            mentions, range: NSRange(location: prefix, length: before.count - prefix - suffix),
+            replacementLength: after.count - prefix - suffix)
+    }
+
+    /// Submission may trim whitespace or wrap the body in a reply quote.
+    static func rebasing(_ mentions: [Self], from old: String, to new: String) -> [Self] {
+        guard !mentions.isEmpty, old != new else { return mentions }
+        let oldSource = old as NSString
+        let newSource = new as NSString
+        let oldInNew = newSource.range(of: old)
+        let newInOld = oldSource.range(of: new)
+        let offset: Int
+        if oldInNew.location != NSNotFound {
+            offset = oldInNew.location
+        } else if newInOld.location != NSNotFound {
+            offset = -newInOld.location
+        } else {
+            return updating(mentions, from: old, to: new)
+        }
+        return mentions.compactMap { mention in
+            var mention = mention
+            mention.range.location += offset
+            guard mention.range.location >= 0, NSMaxRange(mention.range) <= newSource.length else { return nil }
+            return mention
+        }
+    }
+}
+
 /// Pure text rules for the composer’s Bot mention picker.
 enum ComposerMentionPresentation {
     struct DirectBotRequest: Equatable {
@@ -48,22 +106,20 @@ enum ComposerMentionPresentation {
     }
 
     /// Why a Bot picked into `draft` would not be reached, shown in the `@`
-    /// popover. Herm's relay is text-only and takes one Bot; anything else
-    /// goes to the session agent, which has `message_agent` only in a Bot Chat.
+    /// popover. Herm's relay is text-only and takes one Bot in every session.
     static func relayNotice(
         draft: String, profileIDs: [String], hasAttachments: Bool,
-        isQueued: Bool, inBotChat: Bool
+        isQueued: Bool
     ) -> String? {
-        guard !inBotChat else { return nil }
         if hasAttachments {
             return "Bots get text only. Remove attachments and context to send this to a Bot."
         }
         if isQueued {
-            return "A queued prompt is pending. Send to a Bot once it finishes."
+            return "This Bot message will wait behind queued prompts."
         }
         let typed = activeToken(in: draft).map { String(draft.dropLast($0.count)) } ?? draft
         if !mentionedProfiles(in: typed, profileIDs: profileIDs).isEmpty {
-            return "One Bot per message. Mentioning two only works in a Bot Chat."
+            return "Select one Bot per message for direct delivery."
         }
         return nil
     }
@@ -129,10 +185,49 @@ enum ComposerMentionPresentation {
 final class ComposerText: ObservableObject {
     @Published var text = "" {
         didSet {
+            if let edit = pendingEdit,
+                (oldValue as NSString).replacingCharacters(in: edit.range, with: edit.text) == text
+            {
+                botMentions = ComposerBotMention.editing(
+                    botMentions, range: edit.range, replacementLength: edit.text.utf16.count)
+            } else {
+                botMentions = ComposerBotMention.updating(botMentions, from: oldValue, to: text)
+            }
+            botMentions.removeAll { mention in
+                guard let range = Range(mention.range, in: text) else { return true }
+                guard range.upperBound < text.endIndex else { return false }
+                let next = text[range.upperBound]
+                return next.isLetter || next.isNumber || "_-@/:".contains(next)
+            }
+            pendingEdit = nil
             guard !isUpdatingFromHistory else { return }
             historyIndex = nil
             restoreDraft = ""
+            restoreBotMentions = []
         }
+    }
+
+    /// Only completion acceptance creates a selection; typing a handle does not.
+    var botMentions: [ComposerBotMention] = []
+    var selectedBots: [BotSummary] {
+        var seen: Set<String> = []
+        return botMentions.map(\.bot).filter { seen.insert($0.id).inserted }
+    }
+    private var pendingEdit: (range: NSRange, text: String)?
+
+    func noteEdit(range: NSRange, replacement: String) {
+        guard range.location >= 0, NSMaxRange(range) <= text.utf16.count else { return }
+        pendingEdit = (range, replacement)
+    }
+
+    func selectBot(_ bot: BotSummary, range: NSRange? = nil) {
+        let source = text as NSString
+        let range = range ?? source.range(of: "@\(bot.id)", options: [.backwards, .caseInsensitive])
+        guard range.location != NSNotFound, NSMaxRange(range) <= source.length,
+            source.substring(with: range).caseInsensitiveCompare("@\(bot.id)") == .orderedSame
+        else { return }
+        botMentions.removeAll { $0.range == range }
+        botMentions.append(ComposerBotMention(bot: bot, range: range))
     }
 
     /// The `/`/`@` popover owns Up/Down while it is showing rows.
@@ -143,15 +238,19 @@ final class ComposerText: ObservableObject {
     /// True while the text is an unedited recalled prompt.
     var isBrowsingHistory: Bool { historyIndex != nil }
     private var restoreDraft = ""
+    private var restoreBotMentions: [ComposerBotMention] = []
     private var isUpdatingFromHistory = false
 
     /// Replaces a conversation's editor state with one final text publication.
     func reset(to text: String = "") {
+        botMentions = []
+        pendingEdit = nil
         isUpdatingFromHistory = true
         if self.text != text { self.text = text }
         isUpdatingFromHistory = false
         historyIndex = nil
         restoreDraft = ""
+        restoreBotMentions = []
         pendingCaret = nil
         isCompletionOpen = false
     }
@@ -164,6 +263,7 @@ final class ComposerText: ObservableObject {
         if let index = historyIndex, index >= history.count {
             historyIndex = nil
             restoreDraft = text
+            restoreBotMentions = botMentions
         }
 
         let nextIndex: Int?
@@ -172,6 +272,7 @@ final class ComposerText: ObservableObject {
                 nextIndex = max(0, index - 1)
             } else {
                 restoreDraft = text
+                restoreBotMentions = botMentions
                 nextIndex = history.count - 1
             }
         } else {
@@ -180,8 +281,10 @@ final class ComposerText: ObservableObject {
                 nextIndex = index + 1
             } else {
                 setTextPreservingHistorySlot(restoreDraft)
+                botMentions = restoreBotMentions
                 historyIndex = nil
                 restoreDraft = ""
+                restoreBotMentions = []
                 return true
             }
         }
@@ -193,6 +296,7 @@ final class ComposerText: ObservableObject {
     }
 
     private func setTextPreservingHistorySlot(_ value: String) {
+        botMentions = []
         isUpdatingFromHistory = true
         text = value
         isUpdatingFromHistory = false

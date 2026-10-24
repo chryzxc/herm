@@ -24,7 +24,8 @@ extension DockModel {
     /// session untouched and projects the streamed reply into its transcript.
     /// Generic `delegate_task` workers are never relabelled as the Bot.
     func sendDirectBotRequest(
-        profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil
+        profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil,
+        originalText: String? = nil, botMentions: [ComposerBotMention] = [], clearsComposer: Bool = true
     ) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // First message of a new chat: create the origin, then contact the Bot.
@@ -37,15 +38,15 @@ extension DockModel {
                 }
                 sendDirectBotRequest(
                     profileID: profileID, displayName: displayName, text: text, chatSessionID: chatSessionID,
-                    quote: quote)
+                    quote: quote, originalText: originalText, botMentions: botMentions, clearsComposer: clearsComposer
+                )
             }
             return
         }
         guard !request.isEmpty,
             !isUpdatingSessionModel,
             !isRestoringSession,
-            pendingImages.isEmpty,
-            pendingPDFURL == nil,
+            !clearsComposer || (pendingImages.isEmpty && pendingPDFURL == nil),
             let currentSessionID = sessionID,
             !currentSessionID.isEmpty,
             let originSessionID = sessionStorageID ?? sessionID,
@@ -67,12 +68,18 @@ extension DockModel {
             updateBotActivity(id: activity.id, state: .working)
         }
         let sendGeneration = sessionResumeGeneration
-        let transcriptText = quote?.composing("@\(displayName) \(request)") ?? "@\(displayName) \(request)"
+        let visibleText = originalText ?? "@\(displayName) \(request)"
+        let transcriptText = quote?.composing(visibleText) ?? visibleText
         let relayMessage = Self.botRelayMessage(request: quote?.composing(request) ?? request, transcript: messages)
-        draft = ""
-        replyQuote = nil
+        if clearsComposer {
+            draft = ""
+            replyQuote = nil
+            clearAttachmentErrors()
+        }
         messages.append(
-            ChatMessage(role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName))
+            ChatMessage(
+                role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName,
+                botMentions: ComposerBotMention.rebasing(botMentions, from: visibleText, to: transcriptText)))
         // A running foreground turn keeps owning status/isSending; the request
         // is tracked by its activity and must not mark that turn idle.
         let ownsTurn = !isSending && status != .working
@@ -127,23 +134,47 @@ extension DockModel {
                     status = .idle
                     isSending = false
                 }
+                drainQueuedPromptIfIdle()
             }
         }
     }
 
     func submitComposerInput(bots: [BotSummary]) {
-        if !hasQueuedOrRedirectingPrompt, attachedContexts.isEmpty,
+        let selected = composer.selectedBots
+        let roster = selected + bots.filter { bot in !selected.contains(where: { $0.id == bot.id }) }
+        let recipients = selected.isEmpty ? roster : selected
+        composerMentionBots = recipients
+        composerMentionProfiles = roster.map(\.id)
+        if !selected.isEmpty {
+            guard attachedContexts.isEmpty, pendingImages.isEmpty, pendingPDFURL == nil else {
+                reportAttachmentError(
+                    "Bot messages support text only. Remove attachments and context. Your draft is kept.")
+                return
+            }
+            guard selected.count == 1,
+                ComposerMentionPresentation.botRelayRequest(in: draft, profileIDs: recipients.map(\.id)) != nil
+            else {
+                reportAttachmentError("Select one Bot per message and include a request. Your draft is kept.")
+                return
+            }
+        }
+        if attachedContexts.isEmpty,
             ComposerMentionPresentation.canDirectRouteBot(
                 hasImages: !pendingImages.isEmpty, hasPDF: pendingPDFURL != nil),
-            let request = ComposerMentionPresentation.botRelayRequest(in: draft, profileIDs: bots.map(\.id)),
-            let bot = bots.first(where: { $0.id == request.profileID })
+            let request = ComposerMentionPresentation.botRelayRequest(in: draft, profileIDs: recipients.map(\.id)),
+            let bot = recipients.first(where: { $0.id == request.profileID })
         {
+            if hasQueuedOrRedirectingPrompt {
+                queueDraft()
+                return
+            }
             sendDirectBotRequest(
                 profileID: bot.id, displayName: bot.name, text: request.text,
-                chatSessionID: bot.chat?.sessionID, quote: replyQuote)
+                chatSessionID: bot.chat?.sessionID, quote: replyQuote, originalText: draft,
+                botMentions: composer.botMentions)
             return
         }
-        submitComposerInput(mentionProfiles: bots.map(\.id))
+        submitComposerInput(mentionProfiles: roster.map(\.id))
     }
 
     func projectBotMessagesIntoActivity() {

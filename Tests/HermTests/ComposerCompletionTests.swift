@@ -5,6 +5,19 @@ import Testing
 @testable import Herm
 
 struct ComposerCompletionTests {
+    @Test func runtimeDisplayNameRowsKeepThePickersCanonicalBotIdentity() throws {
+        let nexus = BotSummary(
+            id: "default", name: "Nexus", title: nil, description: nil, model: nil, isActive: true, chat: nil,
+            avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: true)
+        let item = ComposerCompletionItem(text: "@default", display: "Nexus", meta: "", group: "", bot: nexus)
+        let result = ComposerCompletion.mentionResult(
+            from: ["items": [["text": "@Nexus", "meta": "agent profile"], ["text": "@default"]]], bots: [item])
+
+        #expect(result.items.count == 1)
+        #expect(result.items.first?.text == "@default")
+        #expect(result.items.first?.bot?.id == "default")
+    }
+
     @MainActor @Test func closingClosedPickerDoesNotPublish() {
         let controller = ComposerCompletionController()
         var publications = 0

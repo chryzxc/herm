@@ -15,9 +15,7 @@ enum BotMentions {
     private static let pattern = try! NSRegularExpression(pattern: #"(?<![\w@/.])@([A-Za-z0-9][A-Za-z0-9_-]*)"#)
 
     static func update(bots: [BotSummary], avatars: [String: Data]) {
-        var index: [String: BotSummary] = [:]
-        for bot in bots { index[bot.name.lowercased()] = bot }
-        for bot in bots { index[bot.id.lowercased()] = bot }
+        let index = index(bots)
         guard index != byHandle || avatars != self.avatars else { return }
         byHandle = index
         botsByID = Dictionary(bots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -26,8 +24,16 @@ enum BotMentions {
         revision &+= 1
     }
 
+    private static func index(_ bots: [BotSummary]) -> [String: BotSummary] {
+        var index: [String: BotSummary] = [:]
+        for bot in bots { index[bot.name.lowercased()] = bot }
+        for bot in bots { index[bot.id.lowercased()] = bot }
+        return index
+    }
+
     /// Known-bot mentions in `text`, as UTF-16 ranges covering the `@handle`.
-    static func matches(in text: String) -> [(range: NSRange, bot: BotSummary)] {
+    static func matches(in text: String, bots: [BotSummary]? = nil) -> [(range: NSRange, bot: BotSummary)] {
+        let byHandle = bots.map(index) ?? byHandle
         guard !byHandle.isEmpty, text.contains("@") else { return [] }
         let ns = text as NSString
         return pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { match in
@@ -35,12 +41,14 @@ enum BotMentions {
         }
     }
 
-    static func pill(for bot: BotSummary) -> NSImage? {
-        let dark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let key = "\(bot.id)|\(dark)|\(DockThemeRuntime.revision)"
+    static func pill(for bot: BotSummary, colorScheme: ColorScheme? = nil) -> NSImage? {
+        let dark =
+            colorScheme.map { $0 == .dark }
+            ?? (NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+        let key = "\(bot.id)|\(bot.name)|\(dark)|\(DockThemeRuntime.revision)"
         if let cached = pills[key] { return cached }
         let renderer = ImageRenderer(
-            content: BotChip(id: bot.id, botsByID: botsByID, avatarImages: avatars)
+            content: BotChip(id: bot.id, botsByID: botsByID, avatarImages: avatars, displayName: bot.name)
                 .environment(\.colorScheme, dark ? .dark : .light))
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
         let image = renderer.nsImage
@@ -49,8 +57,10 @@ enum BotMentions {
     }
 
     /// Replaces mentions with pill attachments, skipping code and link runs.
-    static func pilled(_ text: NSAttributedString) -> NSAttributedString {
-        let found = matches(in: text.string)
+    static func pilled(
+        _ text: NSAttributedString, bots: [BotSummary]? = nil, colorScheme: ColorScheme? = nil
+    ) -> NSAttributedString {
+        let found = matches(in: text.string, bots: bots)
         guard !found.isEmpty else { return text }
         let result = NSMutableAttributedString(attributedString: text)
         for (range, bot) in found.reversed() {
@@ -61,7 +71,7 @@ enum BotMentions {
             }
             guard attributes[.link] == nil, intent?.contains(.code) != true,
                 font?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true,
-                let image = pill(for: bot)
+                let image = pill(for: bot, colorScheme: colorScheme)
             else { continue }
             let attachment = NSTextAttachment()
             attachment.image = image

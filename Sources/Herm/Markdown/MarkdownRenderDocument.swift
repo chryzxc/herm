@@ -627,6 +627,7 @@ struct NativeMarkdownPalette {
 
     let bodySize: CGFloat
     let bodyWeight: NSFont.Weight
+    var rendersBotMentions = true
     func fontSize(_ compactSize: CGFloat) -> CGFloat {
         DockWorkspaceScale.points(compactSize, scale: bodySize / NativeMarkdownAttributedTextBuilder.bodySize)
     }
@@ -982,7 +983,7 @@ enum NativeMarkdownAttributedTextBuilder {
                     ], range: NSRange(location: start + range.location, length: range.length))
             }
         }
-        return BotMentions.pilled(result)
+        return palette.rendersBotMentions ? BotMentions.pilled(result) : result
     }
 
     private static func codeBlock(

@@ -5,10 +5,7 @@ import SwiftUI
 /// lines wrap across the full bubble width.
 struct InlineBotMentionText: NSViewRepresentable {
     let text: String
-    let botID: String
-    let displayName: String?
-    let botsByID: [String: BotSummary]
-    let avatarImages: [String: Data]
+    var botMentions: [ComposerBotMention] = []
     let themeRevision: Int
 
     func makeNSView(context: Context) -> NativeMarkdownTextView {
@@ -26,26 +23,21 @@ struct InlineBotMentionText: NSViewRepresentable {
     }
 
     private func apply(to view: NativeMarkdownTextView, colorScheme: ColorScheme) {
-        let renderer = ImageRenderer(
-            content:
-                BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages, displayName: displayName)
-                .environment(\.colorScheme, colorScheme)
-        )
-        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
-        let content = NSMutableAttributedString()
-        if let image = renderer.nsImage {
-            let attachment = NSTextAttachment()
-            attachment.image = image
-            attachment.bounds = CGRect(x: 0, y: -4, width: image.size.width, height: image.size.height)
-            content.append(NSAttributedString(attachment: attachment))
-            content.append(NSAttributedString(string: " "))
-        } else {
-            content.append(NSAttributedString(string: "@\(displayName ?? botID) "))
-        }
-        content.append(NativeMarkdownMessageView.Coordinator.attributedString(for: text))
-        view.textStorage?.setAttributedString(content)
-        view.setAccessibilityLabel("@\(displayName ?? botsByID[botID]?.name ?? botID) \(text)")
+        view.textStorage?.setAttributedString(
+            Self.attributedString(text: text, botMentions: botMentions, colorScheme: colorScheme))
+        view.setAccessibilityLabel(text)
         view.invalidateIntrinsicContentSize()
+    }
+
+    static func attributedString(
+        text: String, botMentions: [ComposerBotMention], colorScheme: ColorScheme? = nil
+    ) -> NSAttributedString {
+        var palette = NativeMarkdownPalette()
+        palette.rendersBotMentions = false
+        let content = NativeMarkdownAttributedTextBuilder.document(text, palette: palette).string
+        // Picked identities survive a roster refresh; typed mentions use the current roster.
+        let selected = BotMentions.pilled(content, bots: botMentions.map(\.bot), colorScheme: colorScheme)
+        return BotMentions.pilled(selected, colorScheme: colorScheme)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NativeMarkdownTextView, context: Context) -> CGSize? {

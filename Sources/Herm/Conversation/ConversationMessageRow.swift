@@ -142,6 +142,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.message.isError == rhs.message.isError
             && lhs.message.botProfileID == rhs.message.botProfileID
             && lhs.message.botDisplayName == rhs.message.botDisplayName
+            && lhs.message.botMentions == rhs.message.botMentions
             && lhs.message.responseDuration == rhs.message.responseDuration
             && lhs.message.tokenCount == rhs.message.tokenCount
             && lhs.isStreamingMessage == rhs.isStreamingMessage
@@ -216,24 +217,13 @@ struct ConversationMessageRow: View, Equatable {
                         .fixedSize()
                     }
                     if !userText.isEmpty {
-                        let mention = ComposerMentionPresentation.directBotRequest(
-                            in: userText, profileIDs: Array(botsByID.keys))
-                        let mentionedBotID = message.botProfileID ?? mention?.profileID
-                        let mentionPrefix = "@" + (message.botDisplayName ?? mentionedBotID ?? "") + " "
-                        let mentionBody =
-                            mentionedBotID != nil && userText.hasPrefix(mentionPrefix)
-                            ? userText.dropFirst(mentionPrefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
-                            : userText
                         VStack(alignment: .leading, spacing: 8) {
                             if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
-                            if let mentionedBotID {
-                                InlineBotMentionText(
-                                    text: mention?.text ?? mentionBody, botID: mentionedBotID,
-                                    displayName: message.botDisplayName, botsByID: botsByID,
-                                    avatarImages: avatarImages, themeRevision: themeRevision)
-                            } else {
-                                messageMarkdownView(userText, hugsContent: true)
-                            }
+                            InlineBotMentionText(
+                                text: userText,
+                                botMentions: ComposerBotMention.rebasing(
+                                    message.botMentions, from: message.text, to: userText),
+                                themeRevision: themeRevision)
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(Color.dockPrimaryText)

@@ -16,6 +16,8 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requests.append((method, params))
         switch method {
+        case "profiles.list":
+            return ["profiles": [["id": "default", "display_name": "Nexus"]]]
         case "session.resume":
             onResume?()
             return resumeResult ?? [
@@ -35,6 +37,28 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 struct DirectBotRoutingTests {
+    private var nexus: BotSummary {
+        BotSummary(
+            id: "default", name: "Nexus", title: nil, description: nil, model: nil,
+            isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: true)
+    }
+
+    private func pickNexus(in model: DockModel) {
+        let controller = ComposerCompletionController()
+        model.draft = "@ne"
+        controller.configure(
+            model: model, botMode: BotModeModel(), text: { model.draft },
+            apply: { text, _ in model.draft = text }, onBotSelected: { model.composer.selectBot($0, range: $1) })
+        controller.update(for: model.draft, caret: model.draft.utf16.count)
+        let items = ComposerCompletion.mentionResult(
+            from: ["items": [["text": "@Nexus"]]],
+            bots: [ComposerCompletionItem(text: "@default", display: "Nexus", meta: "", group: "", bot: nexus)]
+        ).items
+        controller.accept(items[0])
+        model.draft += "hey"
+    }
+
     private func model(_ rpc: DirectBotRoutingRPCClient) -> DockModel {
         DockModel(
             initialSessionID: "cypher-chat",
@@ -47,6 +71,155 @@ struct DirectBotRoutingTests {
         for _ in 0..<50 where !rpc.requests.contains(where: { $0.method == "prompt.submit" }) {
             try? await Task.sleep(for: .milliseconds(10))
         }
+    }
+
+    @Test func pressingEnterOnAFullyTypedPickerRowStillSelectsTheBot() async {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        let bots = BotModeModel()
+        bots.bind(to: rpc, capabilityAvailable: true)
+        await bots.refreshNow(force: true)
+        bots.searchText = "Cypher"
+        #expect(bots.visibleBots.isEmpty)
+        let controller = ComposerCompletionController()
+        controller.configure(
+            model: model, botMode: bots, text: { model.draft }, apply: { text, _ in model.draft = text },
+            onBotSelected: { model.composer.selectBot($0, range: $1) })
+        model.draft = "@default"
+        controller.update(for: model.draft, caret: model.draft.utf16.count)
+
+        #expect(controller.result.items.first?.display == "Nexus")
+        #expect(controller.result.items.first?.text == "@default")
+        #expect(controller.handleKey(.enter))
+        #expect(model.composer.selectedBots.map(\.id) == ["default"])
+        #expect(model.draft == "@default ")
+        #expect(!rpc.requests.contains { $0.method == "prompt.submit" })
+    }
+
+    @Test func pickerAcceptanceMarksOnlyTheTokenAtItsCaret() {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        let controller = ComposerCompletionController()
+        controller.configure(
+            model: model, botMode: BotModeModel(), text: { model.draft }, apply: { text, _ in model.draft = text },
+            onBotSelected: { model.composer.selectBot($0, range: $1) })
+        model.draft = "@default and @ne hey"
+        controller.update(for: model.draft, caret: 16)
+        controller.accept(ComposerCompletionItem(text: "@default", display: "Nexus", meta: "", group: "", bot: nexus))
+
+        #expect(model.draft == "@default and @default hey")
+        #expect(model.composer.botMentions.map(\.range) == [NSRange(location: 13, length: 8)])
+    }
+
+    @Test func pickerSelectionRoutesToItsHermesProfileAfterTheRosterChanges() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.sessionProfileID = "cypher"
+        pickNexus(in: model)
+
+        model.submitComposerInput(bots: [])
+        await waitForSubmission(rpc)
+
+        let submit = try #require(rpc.requests.first { $0.method == "prompt.submit" })
+        #expect(submit.params["session_id"] as? String == "recipient-chat")
+        #expect(submit.params["profile"] as? String == "default")
+        #expect(submit.params["text"] as? String == "hey")
+        #expect(model.messages.first?.text == "@default hey")
+        #expect(model.messages.first?.botMentions.map(\.bot.id) == ["default"])
+        #expect(model.composer.selectedBots.isEmpty)
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Hello from Nexus."]])
+        #expect(model.messages.last?.botProfileID == "default")
+        #expect(model.messages.last?.botDisplayName == "Nexus")
+    }
+
+    @Test func typedHandleRoutesWithoutPickerMetadata() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.draft = "@default hey"
+
+        model.submitComposerInput(bots: [nexus])
+        await waitForSubmission(rpc)
+
+        #expect(model.messages.first?.text == "@default hey")
+        #expect(model.messages.first?.botMentions.isEmpty == true)
+        #expect(rpc.requests.last?.params["profile"] as? String == "default")
+    }
+
+    @Test func pickedBotOwnsDeliveryWhenTheRequestAlsoTypesAnotherHandle() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        pickNexus(in: model)
+        model.draft += ", ask @cypher about the audit"
+        let cypher = BotSummary(
+            id: "cypher", name: "Cypher", title: nil, description: nil, model: nil, isActive: false, chat: nil,
+            avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+
+        model.submitComposerInput(bots: [nexus, cypher])
+        await waitForSubmission(rpc)
+
+        #expect(rpc.requests.last?.params["profile"] as? String == "default")
+        #expect(model.messages.first?.botMentions.map(\.bot.id) == ["default"])
+    }
+
+    @Test func queuedPickerSelectionKeepsItsRecipientAndDoesNotConsumeTheNextDraft() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.status = .working
+        model.isSending = true
+        model.draft = "Earlier message"
+        model.queueDraft()
+        pickNexus(in: model)
+        model.submitComposerInput(bots: [nexus])
+        #expect(model.currentSessionQueuedPrompts.last?.botRecipient?.id == "default")
+        #expect(model.currentSessionQueuedPrompts.last?.botMentions.map(\.bot.id) == ["default"])
+        #expect(!model.canSteerQueuedPrompt(try #require(model.currentSessionQueuedPrompts.last)))
+        model.draft = "Later message"
+        model.submitComposerInput(bots: [])
+        model.draft = "Unsent draft"
+        for count in 1...2 {
+            model.receiveGatewayEvent(
+                "message.complete", params: ["session_id": "cypher-chat", "payload": ["text": "Done"]])
+            for _ in 0..<50 where rpc.requests.filter({ $0.method == "prompt.submit" }).count < count {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        let submits = rpc.requests.filter { $0.method == "prompt.submit" }
+        #expect(submits.count == 2)
+        #expect(submits.last?.params["session_id"] as? String == "recipient-chat")
+        #expect(submits.last?.params["profile"] as? String == "default")
+        #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Later message"])
+        #expect(model.draft == "Unsent draft")
+        #expect(model.messages.last?.botMentions.map(\.bot.id) == ["default"])
+
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Hello"]])
+        for _ in 0..<50 where rpc.requests.filter({ $0.method == "prompt.submit" }).count < 3 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(rpc.requests.last { $0.method == "prompt.submit" }?.params["session_id"] as? String == "cypher-chat")
+        #expect(model.draft == "Unsent draft")
+    }
+
+    @Test func unsupportedPickerPayloadKeepsTheDraftInsteadOfAskingTheCurrentBot() {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        pickNexus(in: model)
+        model.pendingPDFURL = URL(fileURLWithPath: "/tmp/mention-document.pdf")
+
+        model.submitComposerInput(bots: [nexus])
+
+        #expect(rpc.requests.isEmpty)
+        #expect(model.draft == "@default hey")
+        #expect(model.composer.selectedBots.map(\.id) == ["default"])
+        #expect(model.pendingAttachmentError?.contains("text only") == true)
     }
 
     @Test(arguments: ["@default start working on RO2 using /cpipe", "hey @default start working on RO2 using /cpipe"])

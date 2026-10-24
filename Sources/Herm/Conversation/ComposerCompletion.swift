@@ -106,6 +106,13 @@ enum ComposerCompletion {
     static func mentionResult(from payload: [String: Any], bots: [ComposerCompletionItem]) -> Result {
         let rows = (payload["items"] as? [[String: Any]] ?? []).compactMap { row -> ComposerCompletionItem? in
             guard let text = row["text"] as? String, !text.isEmpty else { return nil }
+            if let canonical = bots.first(where: { $0.text.caseInsensitiveCompare(text) == .orderedSame }) {
+                return canonical
+            }
+            let namedBots = bots.filter { item in
+                item.bot.map { "@\($0.name)".caseInsensitiveCompare(text) == .orderedSame } == true
+            }
+            if namedBots.count == 1 { return namedBots[0] }
             return ComposerCompletionItem(
                 text: text, display: row["display"] as? String ?? text, meta: row["meta"] as? String ?? "", group: "")
         }

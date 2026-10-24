@@ -15,6 +15,7 @@ struct SessionComposerDraft {
     let replyQuote: ReplyQuote?
     let attachmentError: String?
     let pdfError: String?
+    var botMentions: [ComposerBotMention] = []
 
     var isEmpty: Bool {
         text.isEmpty && images.isEmpty && pdfURL == nil && contexts.isEmpty
@@ -35,7 +36,7 @@ extension DockModel {
         let snapshot = SessionComposerDraft(
             text: draft, images: pendingImages, pdfURL: pendingPDFURL,
             contexts: attachedContexts, replyQuote: replyQuote,
-            attachmentError: pendingAttachmentError, pdfError: pendingPDFError
+            attachmentError: pendingAttachmentError, pdfError: pendingPDFError, botMentions: composer.botMentions
         )
         composerDrafts[composerDraftKey] = snapshot.isEmpty ? nil : snapshot
     }
@@ -45,6 +46,7 @@ extension DockModel {
         // cannot leave an older draft referring to its deleted temporary file.
         let snapshot = composerDrafts.removeValue(forKey: key)
         composer.reset(to: snapshot?.text ?? "")
+        composer.botMentions = snapshot?.botMentions ?? []
         // Unchanged published values would invalidate the entire workspace.
         let images = snapshot?.images ?? []
         if !pendingImages.elementsEqual(images, by: { $0.id == $1.id }) { pendingImages = images }

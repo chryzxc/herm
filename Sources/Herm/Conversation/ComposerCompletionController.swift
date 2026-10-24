@@ -20,13 +20,15 @@ final class ComposerCompletionController: ObservableObject {
     /// Replaces the whole text and moves the caret (UTF-16).
     private var apply: (String, Int) -> Void = { _, _ in }
     private var onOpenChanged: (Bool) -> Void = { _ in }
+    private var onBotSelected: (BotSummary, NSRange) -> Void = { _, _ in }
     /// Scopes completions to one bot's commands and files (the forward box).
     private var profileID: String?
 
     func configure(
         model: DockModel, botMode: BotModeModel, profileID: String? = nil,
         text: @escaping () -> String, apply: @escaping (String, Int) -> Void,
-        onOpenChanged: @escaping (Bool) -> Void = { _ in }
+        onOpenChanged: @escaping (Bool) -> Void = { _ in },
+        onBotSelected: @escaping (BotSummary, NSRange) -> Void = { _, _ in }
     ) {
         self.model = model
         self.botMode = botMode
@@ -34,6 +36,7 @@ final class ComposerCompletionController: ObservableObject {
         self.text = text
         self.apply = apply
         self.onOpenChanged = onOpenChanged
+        self.onBotSelected = onBotSelected
     }
 
     /// Roster Bots offered ahead of Hermes' `@` rows. Typed refs like `@file:` skip them.
@@ -41,7 +44,7 @@ final class ComposerCompletionController: ObservableObject {
         guard let botMode, case .mention(let token) = trigger else { return [] }
         let query = token.dropFirst().lowercased()
         guard !query.contains(":"), !query.contains("/") else { return [] }
-        return botMode.visibleBots
+        return botMode.bots.filter { !$0.isHidden }
             .filter { bot in
                 query.isEmpty
                     || bot.id.localizedCaseInsensitiveContains(query)
@@ -50,7 +53,7 @@ final class ComposerCompletionController: ObservableObject {
             }
             .map {
                 ComposerCompletionItem(
-                    text: "@\($0.id)", display: "@\($0.id)",
+                    text: "@\($0.id)", display: $0.name,
                     meta: $0.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "", group: "", bot: $0)
             }
     }
@@ -135,6 +138,10 @@ final class ComposerCompletionController: ObservableObject {
         let tail = accepted.text.hasSuffix(" ") && after.hasPrefix(" ") ? String(after.dropFirst()) : after
         let caret = (accepted.text as NSString).length
         apply(accepted.text + tail, caret)
+        if let bot = item.bot, case .mention(let token) = trigger {
+            onBotSelected(
+                bot, NSRange(location: before.utf16.count - token.utf16.count, length: item.text.utf16.count))
+        }
         close()
         if accepted.keepOpen { update(for: text(), caret: caret) }
     }
@@ -152,6 +159,7 @@ final class ComposerCompletionController: ObservableObject {
             // Enter on a command that is already fully typed runs it instead of re-inserting it.
             if key == .enter,
                 let trigger,
+                case .slash = trigger,
                 case let before = split.before,
                 ComposerCompletion.accepting(item, trigger: trigger, in: before, replaceFrom: result.replaceFrom)
                     .text.trimmingCharacters(in: .whitespaces) == before.trimmingCharacters(in: .whitespaces)

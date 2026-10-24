@@ -302,7 +302,7 @@ final class DockModel: ObservableObject {
     var inFlightBotActivities: [String: InFlightBotActivity] = [:]
     let botActivityStore: BotActivityStore
     let botActivityWriter: BotActivityWriter
-    var sessionStorageID: String?
+    @Published var sessionStorageID: String?
     /// The id session.list rows carry for the open chat. Hermes streams under
     /// a runtime alias (`session_id`) that differs from the stored key.
     var navigationSessionID: String? { sessionStorageID ?? sessionID }
@@ -491,6 +491,7 @@ final class DockModel: ObservableObject {
     var isDiscardingStoppedTurn = false
 
     var composerMentionProfiles: [String] = []
+    var composerMentionBots: [BotSummary] = []
 
     // MARK: - Slash commands and @ references (Hermes desktop parity)
 

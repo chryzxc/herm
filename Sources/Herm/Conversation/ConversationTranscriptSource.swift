@@ -17,6 +17,7 @@ struct ConversationTranscriptSnapshot: Equatable {
                 && a.responseDuration == b.responseDuration && a.tokenCount == b.tokenCount
                 && a.isSteering == b.isSteering && a.steeringStatus == b.steeringStatus && a.isError == b.isError
                 && a.botProfileID == b.botProfileID && a.botDisplayName == b.botDisplayName
+                && a.botMentions == b.botMentions
                 && a.activity == b.activity && a.kanbanNotice == b.kanbanNotice && a.systemEvent == b.systemEvent
                 && a.isBotHandoffReply == b.isBotHandoffReply
         }
