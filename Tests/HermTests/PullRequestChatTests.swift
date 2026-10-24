@@ -13,6 +13,9 @@ final class PullRequestChatRPC: HermesRPCClientProtocol {
     var missingHistory = false
     var delayedHistory: CheckedContinuation<[String: Any], Error>?
     var delayHistory = false
+    var rejectResume = false
+    var delayResume = false
+    var delayedResume: CheckedContinuation<[String: Any], Error>?
     var rejectSubmit = false
     var delaySubmit = false
     var delayedSubmit: CheckedContinuation<[String: Any], Error>?
@@ -23,6 +26,8 @@ final class PullRequestChatRPC: HermesRPCClientProtocol {
         switch method {
         case "session.create": return ["session_id": "runtime", "stored_session_id": "pr-chat"]
         case "session.resume":
+            if rejectResume { throw HermesGateway.GatewayError.disconnected }
+            if delayResume { return try await withCheckedThrowingContinuation { delayedResume = $0 } }
             return ["session_id": "runtime", "stored_session_id": "pr-chat", "profile": "default", "running": false]
         case "prompt.submit":
             if rejectSubmit {
@@ -43,133 +48,179 @@ final class PullRequestChatRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct PullRequestChatTests {
-    func record(_ number: Int = 93) throws -> PullRequestRecord {
+    func record(_ number: Int = 93, repository: String = "owner/repo") throws -> PullRequestRecord {
         try #require(
             PullRequestCenterAPI().parse(
                 [
                     "number": number, "title": "Bound synthetic measurement tooling", "state": "open",
                     "body": "Add bounded measurements.", "user": ["login": "author"],
                     "head": ["ref": "measurements", "sha": "abc"], "base": ["ref": "main", "sha": "def"],
-                ], repository: GitHubReferenceParser.repository("owner/repo")!, localPath: ""))
+                ], repository: GitHubReferenceParser.repository(repository)!, localPath: ""))
     }
 
-    @Test func defaultBotReceivesPRContextAndFollowUpsReuseTheSession() async throws {
+    func runtime(_ rpc: PullRequestChatRPC, defaults: UserDefaults) -> DockModel {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        return DockModel(
+            sessionAgentStateFileURL: directory.appendingPathComponent("agents.json"), defaults: defaults,
+            initialSessionID: "selected-workspace", botActivityFileURL: directory.appendingPathComponent("bots.json"),
+            rpcClient: rpc)
+    }
+
+    @Test func attachPRToCurrentChatPreservesSessionAndDraft() throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
         let rpc = PullRequestChatRPC()
-        let chat = PullRequestChatModel()
-        let drafts = QuickDraftStore(directory: nil)
+        let runtime = runtime(rpc, defaults: defaults)
+        defer { runtime.shutdown() }
+        let router = ChatContextRouter()
+        router.model = runtime
+        runtime.draft = "My existing draft"
+        let existing = ChatContext(id: "existing", title: "Existing attachment", body: "Keep this")
+        runtime.attachedContexts = [existing]
+        var pr = try record()
+        router.attachToCurrentChat(ChatContext(pullRequest: pr))
+        pr.body = "Updated description"
+        let updated = ChatContext(pullRequest: pr)
+        router.attachToCurrentChat(updated)
+        #expect(runtime.attachedContexts == [existing, updated])
+        #expect(runtime.sessionID == "selected-workspace")
+        #expect(runtime.draft == "My existing draft")
+        #expect(!rpc.calls.contains { ["session.create", "session.resume", "prompt.submit"].contains($0.0) })
+    }
+
+    @Test func newPRSessionIsLinkedAndReopenedWithoutChangingWorkspace() async throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let rpc = PullRequestChatRPC()
+        let runtime = runtime(rpc, defaults: defaults)
+        defer { runtime.shutdown() }
+        runtime.draft = "Workspace draft"
+        let chat = PullRequestChatModel(links: defaults)
+        defer { chat.shutdown() }
         let pr = try record()
-        chat.text = "What changed?"
-        await chat.submit(pr, client: rpc, drafts: drafts)
-        #expect(chat.text.isEmpty)
-        #expect(chat.destination?.profileID == "default")
-        #expect(chat.destination?.sessionID == "pr-chat")
-        #expect(chat.running)
-        #expect(drafts.records.isEmpty)
+        await chat.prepareConversation(for: pr, runtime: runtime)
+        let model = try #require(chat.conversation)
+        #expect(model !== runtime)
+        #expect(model.sessionID == nil)
+        #expect(!rpc.calls.contains { $0.0 == "session.create" })
+        model.draft = "What changed?"
+        model.send()
+        for _ in 0..<200 where !rpc.calls.contains(where: { $0.0 == "prompt.submit" }) { await Task.yield() }
         let prompt = try #require(rpc.calls.first { $0.0 == "prompt.submit" }?.1)
         #expect(prompt["profile"] as? String == "default")
-        #expect(prompt["session_id"] as? String == "runtime")
         #expect((prompt["text"] as? String)?.contains("Pull request #93") == true)
-        #expect((prompt["text"] as? String)?.hasSuffix("What changed?") == true)
-        rpc.history = ["messages": [["role": "assistant", "content": "It adds measurements."]]]
-        await chat.refresh(client: rpc)
-        #expect(!chat.running)
-        #expect(chat.messages.last?.text == "It adds measurements.")
-        chat.text = "Which tests cover it?"
-        await chat.submit(pr, client: rpc, drafts: drafts)
+        #expect(chat.linkedDestination(for: pr)?.sessionID == "pr-chat")
+        #expect(runtime.sessionID == "selected-workspace")
+        #expect(runtime.draft == "Workspace draft")
+        #expect(runtime.attachedContexts.isEmpty)
+        let reopened = PullRequestChatModel(links: defaults)
+        defer { reopened.shutdown() }
+        await reopened.prepareConversation(for: pr, runtime: runtime)
         #expect(rpc.calls.filter { $0.0 == "session.create" }.count == 1)
-        #expect(rpc.calls.filter { $0.0 == "prompt.submit" }.count == 2)
+        let resume = try #require(rpc.calls.last { $0.0 == "session.resume" }?.1)
+        #expect(resume["session_id"] as? String == "pr-chat")
+        #expect(resume["profile"] as? String == "default")
+        #expect(reopened.conversation?.sessionStorageID == "pr-chat")
     }
 
-    @Test func ambiguousSubmissionKeepsDraftAndBlocksDuplicateSend() async throws {
+    @Test func prDraftsAndLinksAreScopedByRepositoryAndNumber() async throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
         let rpc = PullRequestChatRPC()
-        rpc.submitStatus = "queued"
-        let chat = PullRequestChatModel()
-        let drafts = QuickDraftStore(directory: nil)
-        chat.text = "Explain the risk"
-        await chat.submit(try record(), client: rpc, drafts: drafts)
-        #expect(chat.needsReview)
-        #expect(!chat.canSend)
-        #expect(chat.text == "Explain the risk")
-        #expect(drafts.records.first?.delivery == .needsReview)
-        #expect(chat.destination?.sessionID == "pr-chat")
-        await chat.submit(try record(), client: rpc, drafts: drafts)
-        #expect(rpc.calls.filter { $0.0 == "prompt.submit" }.count == 1)
-        chat.allowDeliberateRetry()
-        #expect(chat.canSend)
+        let runtime = runtime(rpc, defaults: defaults)
+        defer { runtime.shutdown() }
+        let first = PullRequestChatModel(links: defaults)
+        let second = PullRequestChatModel(links: defaults)
+        defer {
+            first.shutdown()
+            second.shutdown()
+        }
+        await first.prepareConversation(for: try record(1), runtime: runtime)
+        await second.prepareConversation(for: try record(2), runtime: runtime)
+        first.conversation?.draft = "First PR question"
+        #expect(second.conversation?.draft.isEmpty == true)
+        _ = try await first.conversation?.createAuthorizedSession(source: "herm")
+        #expect(first.linkedDestination(for: try record(1))?.sessionID == "pr-chat")
+        #expect(second.linkedDestination(for: try record(2)) == nil)
+        #expect(first.linkedDestination(for: try record(1, repository: "other/repo")) == nil)
+        await first.prepareConversation(for: try record(1), runtime: runtime)
+        #expect(first.conversation?.draft == "First PR question")
     }
 
-    @Test func rejectedSendKeepsItsErrorAcrossRefreshAndRetriesTheCapturedSession() async throws {
+    @Test func linkedConversationBlocksSendingUntilResumeSettles() async throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
         let rpc = PullRequestChatRPC()
-        rpc.rejectSubmit = true
-        let chat = PullRequestChatModel()
-        let drafts = QuickDraftStore(directory: nil)
-        chat.text = "Explain this PR"
+        let runtime = runtime(rpc, defaults: defaults)
+        defer { runtime.shutdown() }
         let pr = try record()
-        await chat.submit(pr, client: rpc, drafts: drafts)
-        #expect(!chat.needsReview)
-        #expect(chat.canSend)
-        #expect(chat.text == "Explain this PR")
-        #expect(chat.error?.contains("Request rejected") == true)
-        await chat.refresh(client: rpc)
-        #expect(chat.error?.contains("Request rejected") == true)
-        rpc.rejectSubmit = false
-        await chat.submit(pr, client: rpc, drafts: drafts)
-        #expect(chat.error == nil)
-        #expect(chat.text.isEmpty)
-        #expect(drafts.records.isEmpty)
+        let first = PullRequestChatModel(links: defaults)
+        defer { first.shutdown() }
+        await first.prepareConversation(for: pr, runtime: runtime)
+        _ = try await first.conversation?.createAuthorizedSession(source: "herm")
+        rpc.delayResume = true
+        let reopened = PullRequestChatModel(links: defaults)
+        defer { reopened.shutdown() }
+        let loading = Task { await reopened.prepareConversation(for: pr, runtime: runtime) }
+        while rpc.delayedResume == nil { await Task.yield() }
+        let model = try #require(reopened.conversation)
+        #expect(model.isRestoringSession)
+        model.draft = "Wait for the previous conversation"
+        model.send()
+        #expect(!rpc.calls.contains { $0.0 == "prompt.submit" })
+        rpc.delayedResume?.resume(returning: [
+            "session_id": "runtime", "stored_session_id": "pr-chat", "profile": "default", "running": false,
+        ])
+        await loading.value
+        #expect(!model.isRestoringSession)
+        #expect(reopened.linkedDestination(for: pr)?.sessionID == "pr-chat")
+    }
+
+    @Test func unavailableLinkedSessionIsNotReplaced() async throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let rpc = PullRequestChatRPC()
+        let runtime = runtime(rpc, defaults: defaults)
+        defer { runtime.shutdown() }
+        let pr = try record()
+        let first = PullRequestChatModel(links: defaults)
+        defer { first.shutdown() }
+        await first.prepareConversation(for: pr, runtime: runtime)
+        _ = try await first.conversation?.createAuthorizedSession(source: "herm")
+        rpc.rejectResume = true
+        let reopened = PullRequestChatModel(links: defaults)
+        defer { reopened.shutdown() }
+        await reopened.prepareConversation(for: pr, runtime: runtime)
+        #expect(reopened.conversation?.status == .offline)
+        #expect(reopened.linkedDestination(for: pr)?.sessionID == "pr-chat")
         #expect(rpc.calls.filter { $0.0 == "session.create" }.count == 1)
     }
 
-    @Test func pendingSendPreventsDuplicateSubmission() async throws {
+    @Test func sessionEventsReachPRConversationAndKeepWorkspaceIsolated() async throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
         let rpc = PullRequestChatRPC()
-        rpc.delaySubmit = true
-        let chat = PullRequestChatModel()
-        let drafts = QuickDraftStore(directory: nil)
-        let pr = try record()
-        chat.text = "Explain this PR"
-        let first = Task { await chat.submit(pr, client: rpc, drafts: drafts) }
-        while rpc.delayedSubmit == nil { await Task.yield() }
-        #expect(chat.sending)
-        #expect(!chat.canSend)
-        await chat.submit(pr, client: rpc, drafts: drafts)
-        #expect(rpc.calls.filter { $0.0 == "prompt.submit" }.count == 1)
-        rpc.delayedSubmit?.resume(returning: ["status": "streaming"])
-        await first.value
-        #expect(!chat.sending)
-        #expect(chat.running)
-    }
-
-    @Test func historyLimitsAndFailedReadsPreserveTheLastReply() async throws {
-        let rpc = PullRequestChatRPC()
-        let chat = PullRequestChatModel()
-        let drafts = QuickDraftStore(directory: nil)
-        chat.text = "Explain this PR"
-        await chat.submit(try record(), client: rpc, drafts: drafts)
-        rpc.history = ["messages": [["role": "assistant", "content": "Saved answer"]]]
-        await chat.refresh(client: rpc)
-        rpc.history = ["messages": [["role": "assistant", "content": String(repeating: "x", count: 256_001)]]]
-        await chat.refresh(client: rpc)
-        #expect(chat.messages.last?.text == "Saved answer")
-        #expect(chat.error?.contains("preview limit") == true)
-        rpc.history = [:]
-        await chat.refresh(client: rpc)
-        #expect(chat.messages.last?.text == "Saved answer")
-        #expect(chat.error != nil)
-    }
-
-    @Test func prSwitchesKeepSeparateDraftsAndConversations() throws {
-        let details = PullRequestDetailStore()
-        let firstCenter = PullRequestCenterModel(details: details)
-        let inspectorCenter = PullRequestCenterModel(details: details)
-        let store = firstCenter.details.chats
-        let first = store.chat(for: try record(1))
-        first.text = "First PR question"
-        let second = store.chat(for: try record(2))
-        #expect(first !== second)
-        #expect(second.text.isEmpty)
-        #expect(store.chat(for: try record(1)) === first)
-        #expect(first.text == "First PR question")
-        #expect(inspectorCenter.details.chats.chat(for: try record(1)) === first)
+        let runtime = runtime(rpc, defaults: defaults)
+        defer { runtime.shutdown() }
+        let chat = PullRequestChatModel(links: defaults)
+        defer { chat.shutdown() }
+        await chat.prepareConversation(for: try record(), runtime: runtime)
+        let model = try #require(chat.conversation)
+        _ = try await model.createAuthorizedSession(source: "herm")
+        runtime.receiveGatewayEvent("message.start", params: ["session_id": "runtime"])
+        #expect(model.streamingMessageID != nil)
+        #expect(runtime.streamingMessageID == nil)
+        runtime.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "runtime", "payload": ["text": "Shared session reply"]])
+        runtime.receiveGatewayEvent("message.complete", params: ["session_id": "runtime"])
+        #expect(model.messages.contains { $0.role == .hermes && $0.text == "Shared session reply" })
+        #expect(runtime.messages.isEmpty)
     }
 
     @Test func historyRejectsAnotherOwnerAndHidesToolPayloadsAndContext() throws {
@@ -212,20 +263,4 @@ struct PullRequestChatTests {
         }
     }
 
-    @Test func refreshFromBeforeSubmissionCannotClearTheNewRunningState() async throws {
-        let rpc = PullRequestChatRPC()
-        let chat = PullRequestChatModel()
-        let drafts = QuickDraftStore(directory: nil)
-        chat.text = "First question"
-        await chat.submit(try record(), client: rpc, drafts: drafts)
-        await chat.refresh(client: rpc)
-        rpc.delayHistory = true
-        let refresh = Task { await chat.refresh(client: rpc) }
-        while rpc.delayedHistory == nil { await Task.yield() }
-        chat.text = "Follow up"
-        await chat.submit(try record(), client: rpc, drafts: drafts)
-        rpc.delayedHistory?.resume(returning: ["messages": []])
-        await refresh.value
-        #expect(chat.running)
-    }
 }

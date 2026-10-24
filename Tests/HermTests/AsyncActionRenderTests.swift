@@ -41,11 +41,19 @@ struct AsyncActionRenderTests {
                     stroke: .dockBorderLight)
             }
             .padding(20).frame(width: 520).background(Color.dockCanvas).dockThemedRoot()
-            let renderer = ImageRenderer(content: content)
-            renderer.scale = 2
-            let image = try #require(renderer.nsImage)
-            let tiff = try #require(image.tiffRepresentation)
-            let bitmap = try #require(NSBitmapImageRep(data: tiff))
+            let host = NSHostingView(rootView: content)
+            host.frame = NSRect(x: 0, y: 0, width: 520, height: host.fittingSize.height)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSApplication.shared.appearance
+            window.contentView = host
+            window.orderFrontRegardless()
+            for _ in 0..<5 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            window.orderOut(nil)
             let png = try #require(bitmap.representation(using: .png, properties: [:]))
             try png.write(to: root.appendingPathComponent("async-\(raw).png"))
         }
