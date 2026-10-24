@@ -43,6 +43,7 @@ struct ArtifactActionPresentation: Equatable {
 struct ArtifactsInspectorView: View {
     @ObservedObject var model: DockModel
     let presentation: ArtifactsPresentationMode
+    let sessionScope: ProfileScopedID?
     /// Hosts that own navigation route here so opening a source session also
     /// leaves the Artifacts surface; without it the session only resumes.
     let onOpenSession: ((HermesSession) -> Void)?
@@ -50,13 +51,18 @@ struct ArtifactsInspectorView: View {
     init(
         model: DockModel,
         presentation: ArtifactsPresentationMode = .inspector,
+        sessionScope: ProfileScopedID? = nil,
         onOpenSession: ((HermesSession) -> Void)? = nil
     ) {
         self.model = model
         self.presentation = presentation
+        self.sessionScope = sessionScope
         self.onOpenSession = onOpenSession
     }
 
+    @ObservedObject private var savedTools = RichArtifactStateStore.shared
+    @State private var selectedVersionID: String?
+    @State private var comparingVersions = false
     @State private var records: [ArtifactRecord] = []
     @State private var indexedSessions: [HermesSession] = []
     @State private var artifactCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
@@ -82,6 +88,8 @@ struct ArtifactsInspectorView: View {
         case image = "Images"
         case file = "Files"
         case link = "Links"
+        case interactive = "Interactive"
+        case saved = "Saved"
 
         var id: String { rawValue }
         var icon: Ph {
@@ -90,20 +98,30 @@ struct ArtifactsInspectorView: View {
             case .image: .image
             case .file: .file
             case .link: .link
+            case .interactive: .squaresFour
+            case .saved: .pushPin
             }
         }
         var showsIcon: Bool { self != .all }
     }
 
+    private var availableRecords: [ArtifactRecord] {
+        records.filter { $0.unavailableBookmark == nil || savedTools.isSaved($0) }
+    }
+
     private var visibleRecords: [ArtifactRecord] {
         let kind: ArtifactKind? =
             switch filter {
-            case .all: nil
+            case .all, .saved: nil
             case .image: .image
             case .file: .file
             case .link: .link
+            case .interactive: .interactive
             }
-        return ArtifactService.filter(records, query: query, kind: kind)
+        let entries =
+            filter == .saved
+            ? availableRecords.filter { savedTools.isSaved($0) } : RichArtifactIndex.latest(availableRecords)
+        return ArtifactService.filter(entries, query: query, kind: kind)
     }
 
     private var visibleImages: [ArtifactRecord] {
@@ -111,7 +129,7 @@ struct ArtifactsInspectorView: View {
     }
 
     private var visibleFiles: [ArtifactRecord] {
-        visibleRecords.filter { $0.kind != .image }
+        visibleRecords.filter { $0.kind != .image && (presentation == .page || $0.kind != .interactive) }
     }
 
     private var imagePageCount: Int {
@@ -142,10 +160,26 @@ struct ArtifactsInspectorView: View {
                 inspectorBody
             }
         }
-        .task(id: refreshID) { await refresh() }
+        .task(id: "\(sessionScope.map { "\($0.profileID ?? "default"):\($0.resourceID)" } ?? "global"):\(refreshID)") {
+            await refresh()
+        }
+        .onChange(of: model.isSending) { _, sending in if !sending { refreshID += 1 } }
         .onChange(of: query) { resetPages() }
         .onChange(of: filter) { resetPages() }
         .onChange(of: visibleRecords.map(\.id)) { _, _ in reconcileSelection() }
+        .onChange(of: selectedArtifactID) { _, _ in selectedVersionID = nil }
+        .sheet(isPresented: $comparingVersions) {
+            if let current = selectedRecord, let generated = current.generated,
+                let previous = RichArtifactIndex.versions(of: current, in: records)
+                    .first(where: {
+                        $0.timestamp < current.timestamp
+                            || ($0.generated?.reference.rowID ?? 0) < (generated.reference.rowID ?? 0)
+                    })?.generated
+            {
+                RichRevisionComparisonView(previous: previous, current: generated, close: { comparingVersions = false })
+                    .frame(minWidth: 640, minHeight: 500).modifier(ReviewSheetContext())
+            }
+        }
     }
 
     private var inspectorBody: some View {
@@ -367,7 +401,13 @@ struct ArtifactsInspectorView: View {
                 return .handled
             }
             .onKeyPress(.return) {
-                if let selectedRecord { open(selectedRecord.value) }
+                if let selectedRecord {
+                    if selectedRecord.kind == .interactive {
+                        showsNarrowDetail = true
+                    } else {
+                        open(selectedRecord.value)
+                    }
+                }
                 return .handled
             }
             .onChange(of: selectedArtifactID) { _, id in
@@ -456,7 +496,7 @@ struct ArtifactsInspectorView: View {
         } else if record.kind == .file {
             systemFileIcon(record)
         } else {
-            DockIcon(.link)
+            DockIcon(record.kind == .interactive ? .squaresFour : .link)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
@@ -507,7 +547,7 @@ struct ArtifactsInspectorView: View {
     }
 
     private var selectedRecord: ArtifactRecord? {
-        visibleRecords.first { $0.id == selectedArtifactID }
+        records.first { $0.id == (selectedVersionID ?? selectedArtifactID) }
     }
 
     private func detailHeader(_ record: ArtifactRecord) -> some View {
@@ -558,7 +598,30 @@ struct ArtifactsInspectorView: View {
 
     @ViewBuilder
     private func detailPreview(_ record: ArtifactRecord) -> some View {
-        if record.kind == .image {
+        if let generated = record.generated {
+            VStack(alignment: .leading, spacing: 12) {
+                let versions = RichArtifactIndex.versions(
+                    of: records.first { $0.id == selectedArtifactID } ?? record, in: records)
+                if versions.count > 1 {
+                    Picker(
+                        "Version",
+                        selection: Binding(
+                            get: { selectedVersionID ?? selectedArtifactID ?? record.id },
+                            set: { selectedVersionID = $0 })
+                    ) {
+                        ForEach(versions) { item in Text(item.timestamp.formatted()).tag(item.id) }
+                    }.pickerStyle(.menu)
+                    Button("Compare with previous version") { comparingVersions = true }.buttonStyle(.dockCompact)
+                        .disabled(record.id == versions.last?.id)
+                }
+                RichArtifactPreview(model: model, generated: generated)
+            }
+        } else if record.unavailableBookmark != nil {
+            previewPlaceholder(
+                icon: .warning, title: "Source unavailable",
+                detail:
+                    "Refresh to retry, or remove the saved reference. Export a tool to keep an independent document.")
+        } else if record.kind == .image {
             imagePreview(for: record)
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
@@ -643,28 +706,37 @@ struct ArtifactsInspectorView: View {
 
     private func detailActions(_ record: ArtifactRecord) -> some View {
         HStack(spacing: 8) {
-            Button {
-                open(record.value)
-            } label: {
-                DockIconLabel(record.kind == .link ? "Open link" : "Open", icon: .arrowSquareOut)
-            }
-            .buttonStyle(.dockPrimary)
-            DockCopyButton(
-                record.value,
-                label: "Copy \(record.kind == .link ? "link" : "path")",
-                accessibilityLabel: "Copy \(record.kind == .link ? "link" : "path")",
-                presentation: .iconAndText,
-                iconSize: 12,
-                color: .dockPrimaryText
-            )
-            .buttonStyle(.dockSecondary)
-            if isLocalFile(record) {
+            if let bookmark = record.unavailableBookmark {
+                Button("Remove saved reference") {
+                    savedTools.toggle(bookmark)
+                    refreshID += 1
+                }.buttonStyle(.dockSecondary)
+            } else if record.generated == nil {
+                Button(savedTools.isSaved(record) ? "Unsave" : "Save") { savedTools.toggleResource(record) }
+                    .buttonStyle(.dockCompact)
                 Button {
-                    reveal(record.value)
+                    open(record.value)
                 } label: {
-                    DockIconLabel("Reveal in Finder", icon: .folderOpen)
+                    DockIconLabel(record.kind == .link ? "Open link" : "Open", icon: .arrowSquareOut)
                 }
+                .buttonStyle(.dockPrimary)
+                DockCopyButton(
+                    record.value,
+                    label: "Copy \(record.kind == .link ? "link" : "path")",
+                    accessibilityLabel: "Copy \(record.kind == .link ? "link" : "path")",
+                    presentation: .iconAndText,
+                    iconSize: 12,
+                    color: .dockPrimaryText
+                )
                 .buttonStyle(.dockSecondary)
+                if isLocalFile(record) {
+                    Button {
+                        reveal(record.value)
+                    } label: {
+                        DockIconLabel("Reveal in Finder", icon: .folderOpen)
+                    }
+                    .buttonStyle(.dockSecondary)
+                }
             }
             if let session = sourceSession(for: record) {
                 Button {
@@ -692,8 +764,11 @@ struct ArtifactsInspectorView: View {
 
     @ViewBuilder
     private func artifactContextActions(_ record: ArtifactRecord) -> some View {
-        Button("Open") { open(record.value) }
-        Button("Copy \(record.kind == .link ? "Link" : "Path")") { copy(record.value) }
+        if record.kind != .interactive {
+            Button(savedTools.isSaved(record) ? "Unsave" : "Save") { savedTools.toggleResource(record) }
+            Button("Open") { open(record.value) }
+            Button("Copy \(record.kind == .link ? "Link" : "Path")") { copy(record.value) }
+        }
         if isLocalFile(record) {
             Button("Reveal in Finder") { reveal(record.value) }
         }
@@ -783,6 +858,23 @@ struct ArtifactsInspectorView: View {
                     pagination(current: min(imagePage, imagePageCount), total: imagePageCount) { imagePage = $0 }
                 }
 
+                ForEach(visibleRecords.filter { $0.generated != nil }) { record in
+                    if let generated = record.generated {
+                        RichArtifactPreview(model: model, generated: generated)
+                    }
+                }
+                ForEach(visibleRecords.filter { $0.unavailableBookmark != nil }) { record in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(record.label).fontWeight(.semibold)
+                        Text("Source unavailable. Refresh to retry.").foregroundStyle(Color.dockSecondaryText)
+                        if let bookmark = record.unavailableBookmark {
+                            Button("Remove saved reference") {
+                                savedTools.toggle(bookmark)
+                                refreshID += 1
+                            }.buttonStyle(.dockCompact)
+                        }
+                    }
+                }
                 if !pagedFiles.isEmpty {
                     sectionHeader("FILES AND LINKS", count: visibleFiles.count)
                     LazyVStack(alignment: .leading, spacing: 6) {
@@ -864,11 +956,14 @@ struct ArtifactsInspectorView: View {
     }
 
     private func count(for item: ArtifactFilter) -> Int {
-        switch item {
-        case .all: records.count
-        case .image: records.filter { $0.kind == .image }.count
-        case .file: records.filter { $0.kind == .file }.count
-        case .link: records.filter { $0.kind == .link }.count
+        let latest = RichArtifactIndex.latest(availableRecords)
+        return switch item {
+        case .all: latest.count
+        case .image: latest.filter { $0.kind == .image }.count
+        case .file: latest.filter { $0.kind == .file }.count
+        case .link: latest.filter { $0.kind == .link }.count
+        case .interactive: latest.filter { $0.kind == .interactive }.count
+        case .saved: availableRecords.filter { savedTools.isSaved($0) }.count
         }
     }
 
@@ -1107,7 +1202,24 @@ struct ArtifactsInspectorView: View {
         let sessions: [HermesSession]
         let indexIncomplete: Bool
         do {
-            let index = try await model.artifactSessions()
+            let index: (sessions: [HermesSession], isIncomplete: Bool)
+            if let sessionScope {
+                var selected = model.sessions.filter { $0.scopedID == sessionScope }
+                if selected.isEmpty, model.navigationSessionID == sessionScope.resourceID,
+                    (model.sessionProfileID ?? model.profileScopeID) == sessionScope.profileID
+                {
+                    selected = [
+                        HermesSession(
+                            id: sessionScope.resourceID, profileID: sessionScope.profileID,
+                            title: model.currentSessionTitle ?? "Session", preview: "", startedAt: nil,
+                            messageCount: model.messages.count, source: HermesFeatureIDs.sessionSource)
+                    ]
+                }
+                index = (selected, false)
+            } else {
+                let result = try await model.artifactSessions()
+                index = (result.sessions, result.isIncomplete)
+            }
             guard !Task.isCancelled, refreshGeneration == generation else { return }
             sessions = index.sessions
             indexIncomplete = index.isIncomplete
@@ -1124,7 +1236,8 @@ struct ArtifactsInspectorView: View {
         guard !Task.isCancelled, refreshGeneration == generation else { return }
         indexedSessions = sessions
         let results = await ArtifactIndexLoader.load(
-            sessions: sessions, cache: artifactCache,
+            sessions: sessions, cache: artifactCache, index: .shared,
+            owner: ObjectIdentifier(model), force: refreshID > 0,
             onSession: { result in
                 guard !Task.isCancelled, refreshGeneration == generation, result.error == nil else { return }
                 let key = ProfileScopedID(profileID: result.profileID, resourceID: result.sessionID)
@@ -1170,6 +1283,20 @@ struct ArtifactsInspectorView: View {
         if !failedSessionIDs.isEmpty && records.isEmpty {
             errorMessage =
                 "Hermes couldn't read \(failedSessionIDs.count) of \(sessions.count) sessions. \(lastFailure ?? "")"
+        }
+        for bookmark in savedTools.resourceBookmarks where !records.contains(where: { $0.id == bookmark.id }) {
+            guard sessionScope == nil || sessionScope == bookmark.record.scopedSessionID else { continue }
+            records.append(bookmark.record)
+        }
+        savedTools.reconcile(records.compactMap { $0.generated?.reference })
+        for bookmark in savedTools.bookmarks where !records.contains(where: { $0.id == bookmark.id }) {
+            let reference = bookmark.reference
+            let scope = ProfileScopedID(profileID: reference.profileID, resourceID: reference.sessionID)
+            guard sessionScope == nil || sessionScope == scope else { continue }
+            records.append(
+                ArtifactRecord(
+                    value: "", sessionID: reference.sessionID, sessionTitle: bookmark.sessionTitle,
+                    timestamp: .distantPast, profileID: reference.profileID, unavailableBookmark: bookmark))
         }
         resetPages()
         reconcileSelection()

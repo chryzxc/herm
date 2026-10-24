@@ -77,7 +77,28 @@ struct ArtifactService {
             let text = messageText(message)
 
             if role == "assistant" {
-                collectText(text, push)
+                let document = RichDocument(text)
+                for segment in document.segments {
+                    switch segment {
+                    case .markdown(let markdown): collectText(markdown, push)
+                    case .surface(let surface, let source):
+                        let rowID =
+                            TranscriptHistoryPaging.rowID(message, key: "row_id")
+                            ?? TranscriptHistoryPaging.rowID(message)
+                        let uid = message["message_uid"] as? String
+                        guard rowID != nil || uid != nil else { continue }
+                        let reference = RichArtifactReference(
+                            profileID: session.profileID, sessionID: session.id,
+                            rowID: rowID, messageUID: uid, surfaceID: surface.id,
+                            sourceDigest: RichArtifactReference.digest(source))
+                        let record = ArtifactRecord(
+                            value: "", sessionID: session.id, sessionTitle: session.displayTitle,
+                            timestamp: date, origin: .generated, profileID: session.profileID,
+                            generated: RichGeneratedArtifact(reference: reference, surface: surface, source: source))
+                        found[record.id] = record
+                    case .unavailable, .pending: break
+                    }
+                }
                 continue
             }
             guard role == "tool" else { continue }

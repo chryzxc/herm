@@ -24,13 +24,24 @@ enum ArtifactIndexLoader {
     static func load(
         sessions: [HermesSession],
         cache: [ProfileScopedID: CachedSession] = [:],
+        index: ArtifactIndexStore? = nil,
+        owner: ObjectIdentifier? = nil,
+        force: Bool = false,
         onSession: @MainActor (SessionResult) -> Void = { _ in },
         messages: @escaping @MainActor @Sendable (HermesSession, Int) async throws -> [String: Any]
     ) async -> [SessionResult] {
         await withTaskGroup(of: SessionResult.self) { group in
             var remaining = sessions.makeIterator()
             func add(_ session: HermesSession) {
-                group.addTask { await loadSession(session, cached: cache[session.scopedID], messages: messages) }
+                group.addTask {
+                    if let index, let owner {
+                        return await index.load(owner: owner, session: session, force: force) {
+                            await loadSession(
+                                session, cached: force ? nil : cache[session.scopedID], messages: messages)
+                        }
+                    }
+                    return await loadSession(session, cached: force ? nil : cache[session.scopedID], messages: messages)
+                }
             }
             for _ in 0..<4 {
                 guard !Task.isCancelled, let session = remaining.next() else { break }

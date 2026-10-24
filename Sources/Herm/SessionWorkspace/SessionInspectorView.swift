@@ -67,6 +67,7 @@ struct SessionInspector: View {
 
     private enum Section: String, CaseIterable, Identifiable {
         case timeline = "Timeline"
+        case artifacts = "Artifacts"
         case files = "Files"
         case changes = "Source Control"
         case diff = "Diff"
@@ -80,6 +81,7 @@ struct SessionInspector: View {
             case .files: "Explorer"
             case .terminal: "Terminal"
             case .timeline: "Timeline"
+            case .artifacts: "Artifacts"
             case .changes: "Source Control"
             case .diff: "Diff"
             case .browser: "Browser"
@@ -89,6 +91,7 @@ struct SessionInspector: View {
         var icon: Ph {
             switch self {
             case .timeline: .chartBarHorizontal
+            case .artifacts: .files
             case .files: .folder
             case .changes: .gitBranch
             case .diff: .gitDiff
@@ -106,7 +109,8 @@ struct SessionInspector: View {
             }
             sessionModePicker
 
-            if selectedSection != .timeline, selectedSection != .github, let workflowError = workflow.error,
+            if selectedSection != .timeline, selectedSection != .github, selectedSection != .artifacts,
+                let workflowError = workflow.error,
                 filePreview.attachmentDiff == nil
             {
                 HStack(spacing: 8) {
@@ -229,6 +233,15 @@ struct SessionInspector: View {
             }
             restoringPresentation = false
         }
+        .onReceive(NotificationCenter.default.publisher(for: .hermOpenRichTrace)) { event in
+            guard let scope = event.object as? ProfileScopedID,
+                scope
+                    == ProfileScopedID(
+                        profileID: model.sessionProfileID ?? model.profileScopeID,
+                        resourceID: model.navigationSessionID ?? "")
+            else { return }
+            reopen(.timeline)
+        }
         .onChange(of: selectedExtraID) { _, _ in savePresentation() }
         .onChange(of: gitHub.revision) { _, _ in
             if gitHub.item(for: WorkspaceIdentity.session(model))?.reference != nil { reopen(.github) }
@@ -261,6 +274,7 @@ struct SessionInspector: View {
     private var baseContent: some View {
         if selectedSection == .github || selectedSection == .timeline || selectedSection == .terminal
             || selectedSection == .files || selectedSection == .browser || selectedSection == .diff
+            || selectedSection == .artifacts
         {
             inspectorContent
                 .padding(.horizontal, selectedSection == .github ? 0 : 12)
@@ -371,7 +385,8 @@ struct SessionInspector: View {
 
     // Keep Source Control reachable while its repository snapshot loads or refreshes.
     private var visibleSections: [Section] {
-        [.timeline, .terminal, .files, .changes, .browser] + (filePreview.attachmentDiff == nil ? [] : [.diff])
+        [.timeline, .terminal, .files, .artifacts, .changes, .browser]
+            + (filePreview.attachmentDiff == nil ? [] : [.diff])
             + (gitHub.item(for: WorkspaceIdentity.session(model))?.reference == nil ? [] : [.github])
     }
 
@@ -663,6 +678,14 @@ struct SessionInspector: View {
                     IssueDetailView(center: item.issues, onOpenChat: onOpenIssueChat, isInspector: true)
                 }
             }
+        case .artifacts:
+            ArtifactsInspectorView(
+                model: model, presentation: .page,
+                sessionScope: ProfileScopedID(
+                    profileID: model.sessionProfileID ?? model.profileScopeID,
+                    resourceID: model.navigationSessionID ?? "")
+            )
+            .id(WorkspaceIdentity.session(model))
         case .timeline:
             SessionTraceView(model: model, isVisible: selectedExtraID == nil)
                 .equatable()
