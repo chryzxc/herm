@@ -142,7 +142,7 @@ struct PullRequestDetailView: View {
                     GeometryReader { geometry in
                         ScrollView {
                             summary(pr, wide: geometry.size.width >= 840)
-                                .padding(.horizontal, isInspector ? 12 : 24)
+                                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
                         }.clipped()
                     }
                     .padding(.bottom, chatBottomPadding)
@@ -150,7 +150,7 @@ struct PullRequestDetailView: View {
                     PullRequestReviewView(
                         model: center.review(for: pr), record: pr, viewer: center.viewerLogin,
                         onChanged: { Task { await center.refreshSelectedDetail() } },
-                        horizontalPadding: isInspector ? 12 : 20,
+                        horizontalPadding: isInspector ? DockSpacing.inspectorInset : 20,
                         onReviewCode: { detailTab = 1 },
                         onEditComment: { target in
                             guard center.review(for: pr).beginInline(target, record: pr) else { return }
@@ -167,7 +167,7 @@ struct PullRequestDetailView: View {
                     )
                     .padding(.bottom, chatBottomPadding)
                 } else {
-                    code(pr).padding(.horizontal, isInspector ? 12 : 16)
+                    code(pr).padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
                         .padding(.bottom, chatBottomPadding)
                 }
             }
@@ -205,7 +205,7 @@ struct PullRequestDetailView: View {
                 Spacer()
                 RepositoryShimmerBlock(width: 88, height: 28, cornerRadius: 7)
             }
-            .padding(.horizontal, isInspector ? 12 : 16)
+            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
             .frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
@@ -236,7 +236,7 @@ struct PullRequestDetailView: View {
                     RepositoryShimmerBlock(width: nil, height: 82, cornerRadius: 10)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, isInspector ? 12 : 24)
+                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
                 .padding(.top, 24)
                 .padding(.bottom, 40)
             }
@@ -268,7 +268,7 @@ struct PullRequestDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, isInspector ? 12 : 16)
+            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
             .padding(.vertical, 12)
             .background(Color.dockCanvas)
 
@@ -290,7 +290,7 @@ struct PullRequestDetailView: View {
                 }
                 .dockFont(.navigation, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
-                .padding(.horizontal, isInspector ? 12 : 16)
+                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
                 .frame(height: 62)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             }

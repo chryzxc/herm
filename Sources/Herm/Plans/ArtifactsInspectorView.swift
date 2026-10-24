@@ -44,6 +44,7 @@ struct ArtifactsInspectorView: View {
     @ObservedObject var model: DockModel
     let presentation: ArtifactsPresentationMode
     let sessionScope: ProfileScopedID?
+    let contentHorizontalPadding: CGFloat
     /// Hosts that own navigation route here so opening a source session also
     /// leaves the Artifacts surface; without it the session only resumes.
     let onOpenSession: ((HermesSession) -> Void)?
@@ -52,11 +53,13 @@ struct ArtifactsInspectorView: View {
         model: DockModel,
         presentation: ArtifactsPresentationMode = .inspector,
         sessionScope: ProfileScopedID? = nil,
-        onOpenSession: ((HermesSession) -> Void)? = nil
+        onOpenSession: ((HermesSession) -> Void)? = nil,
+        contentHorizontalPadding: CGFloat = 16
     ) {
         self.model = model
         self.presentation = presentation
         self.sessionScope = sessionScope
+        self.contentHorizontalPadding = contentHorizontalPadding
         self.onOpenSession = onOpenSession
     }
 
@@ -244,7 +247,8 @@ struct ArtifactsInspectorView: View {
                 title: "Artifacts",
                 subtitle: pageSummaryText,
                 onRefresh: { refreshID += 1 },
-                isRefreshing: isLoading
+                isRefreshing: isLoading,
+                horizontalPadding: contentHorizontalPadding
             )
             pageToolbar
             pageContent
@@ -266,7 +270,7 @@ struct ArtifactsInspectorView: View {
                 ScrollView(.horizontal, showsIndicators: false) { filterBar }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, contentHorizontalPadding)
         .padding(.bottom, 12)
     }
 

@@ -199,7 +199,8 @@ struct SessionBrowserView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-                .padding(8)
+                .padding(.horizontal, DockSpacing.inspectorInset)
+                .padding(.vertical, 8)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                 .overlay(alignment: .bottom) {
                     if navigation.isLoading { DockShimmerTrack(tone: .working, muted: true) }

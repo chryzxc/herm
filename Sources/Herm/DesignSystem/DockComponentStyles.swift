@@ -906,6 +906,7 @@ struct DockPageHeader<Trailing: View>: View {
     let subtitle: String
     let onRefresh: (() -> Void)?
     let isRefreshing: Bool
+    let horizontalPadding: CGFloat
     /// Pages with a list column pass this to get the sidebar toggle before the title.
     let sidebarCollapsed: Binding<Bool>?
     @ViewBuilder let trailing: () -> Trailing
@@ -916,12 +917,14 @@ struct DockPageHeader<Trailing: View>: View {
         onRefresh: (() -> Void)? = nil,
         isRefreshing: Bool = false,
         sidebarCollapsed: Binding<Bool>? = nil,
+        horizontalPadding: CGFloat = 16,
         @ViewBuilder trailing: @escaping () -> Trailing
     ) {
         self.title = title
         self.subtitle = subtitle
         self.onRefresh = onRefresh
         self.isRefreshing = isRefreshing
+        self.horizontalPadding = horizontalPadding
         self.sidebarCollapsed = sidebarCollapsed
         self.trailing = trailing
     }
@@ -1016,7 +1019,7 @@ struct DockPageHeader<Trailing: View>: View {
         .padding(.bottom, 10)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         .padding(.bottom, 10)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalPadding)
         .padding(.top, 16)
     }
 }
@@ -1034,11 +1037,11 @@ extension EnvironmentValues {
 extension DockPageHeader where Trailing == EmptyView {
     init(
         title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false,
-        sidebarCollapsed: Binding<Bool>? = nil
+        sidebarCollapsed: Binding<Bool>? = nil, horizontalPadding: CGFloat = 16
     ) {
         self.init(
             title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing,
-            sidebarCollapsed: sidebarCollapsed
+            sidebarCollapsed: sidebarCollapsed, horizontalPadding: horizontalPadding
         ) { EmptyView() }
     }
 }
@@ -1555,7 +1558,7 @@ extension View {
     /// Shared compact surface for secondary inspectors and detail groups.
     /// It uses the same low-contrast treatment as the main Control panel.
     @ViewBuilder
-    func dockCard(padding: CGFloat = 12) -> some View {
+    func dockCard(padding: CGFloat = 12, isQuiet: Bool = false) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
         let style = DockThemeStyle.current
         if style.chrome == .open {
@@ -1565,6 +1568,11 @@ extension View {
             self
                 .padding(padding)
                 .dockLiquidGlass(shape)
+        } else if isQuiet {
+            self
+                .padding(padding)
+                .background(shape.fill(Color.dockSurface))
+                .overlay(shape.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
         } else {
             self
                 .padding(padding)

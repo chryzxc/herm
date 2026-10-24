@@ -287,8 +287,6 @@ struct SessionFilesView: View {
             .dockHoverTip("Explorer options", edge: .leading)
             .accessibilityLabel("Explorer options")
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 2)
         .frame(height: ExplorerWorkspaceMetrics.headerHeight)
     }
 
@@ -323,7 +321,6 @@ struct SessionFilesView: View {
                 Color.dockSurface2.opacity(0.72))
         )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
-        .padding(.horizontal, 4)
         .padding(.bottom, 8)
     }
 

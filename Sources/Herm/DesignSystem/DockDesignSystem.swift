@@ -69,6 +69,7 @@ enum DockSpacing {
     static let micro: CGFloat = 4
     static let tight: CGFloat = 6
     static let control: CGFloat = 8
+    static let inspectorInset: CGFloat = 12
     static let group: CGFloat = 12
     static let section: CGFloat = 16
     static let page: CGFloat = 20

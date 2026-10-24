@@ -47,7 +47,7 @@ struct IssueDetailView: View {
                 RepositoryShimmerBlock(width: 76, height: 26, cornerRadius: 7)
                 RepositoryShimmerBlock(width: 104, height: 28, cornerRadius: 7)
             }
-            .padding(.horizontal, isInspector ? 12 : 24)
+            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
             .frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
@@ -85,7 +85,7 @@ struct IssueDetailView: View {
                     .padding(.bottom, 48)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, isInspector ? 12 : 28)
+                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -138,7 +138,7 @@ struct IssueDetailView: View {
                 }
                 AttachToChatMenu(pill: true) { ChatContext(issue: displayedIssue) }
             }
-            .padding(.horizontal, isInspector ? 12 : 24)
+            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
             .frame(height: 52)
             .background(titleRow != nil ? Color.dockSidebar : .clear)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -190,7 +190,8 @@ struct IssueDetailView: View {
                         .id("conversation:" + issue.id)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, isInspector ? 12 : 16).padding(.top, 20).padding(.bottom, 32)
+                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16).padding(.top, 20).padding(
+                    .bottom, 32)
             }
             .clipped()
         }

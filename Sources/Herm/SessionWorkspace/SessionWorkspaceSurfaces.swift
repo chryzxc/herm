@@ -85,7 +85,7 @@ struct SessionPullRequestsSurface: View {
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .padding(.horizontal, 18)
-                    .padding(.bottom, 8)
+                    .padding(.vertical, DockSpacing.control)
             }
             ScrollView {
                 LazyVStack(spacing: 2) {
@@ -178,7 +178,7 @@ struct SessionIssuesSurface: View {
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
                             .padding(.horizontal, 18)
-                            .padding(.bottom, 8)
+                            .padding(.vertical, DockSpacing.control)
                     }
                     ScrollView {
                         LazyVStack(spacing: 2) {
