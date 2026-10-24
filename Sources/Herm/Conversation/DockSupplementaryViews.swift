@@ -5,15 +5,7 @@ import UniformTypeIdentifiers
 
 struct StartupAssistantView: View {
     var hermFaceID: String?
-    var onSuggestion: (String) -> Void = { _ in }
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
-
-    private static let suggestions: [(icon: String, text: String)] = [
-        ("doc.text.magnifyingglass", "Summarize this project"),
-        ("checklist", "Review my recent changes"),
-        ("lightbulb", "Plan a new feature"),
-    ]
 
     var body: some View {
         VStack(spacing: 6) {
@@ -29,18 +21,6 @@ struct StartupAssistantView: View {
             Text("Ask a question, give it a task, or attach files and folders.")
                 .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
-            HStack(spacing: 8) {
-                ForEach(Array(Self.suggestions.enumerated()), id: \.offset) { index, item in
-                    StartupSuggestionChip(icon: item.icon, text: item.text) { onSuggestion(item.text) }
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 10)
-                        .animation(
-                            reduceMotion
-                                ? nil : .spring(response: 0.5, dampingFraction: 0.8).delay(0.25 + Double(index) * 0.08),
-                            value: appeared)
-                }
-            }
-            .padding(.top, 14)
             Spacer(minLength: 0)
         }
         .multilineTextAlignment(.center)
@@ -48,39 +28,6 @@ struct StartupAssistantView: View {
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 6)
         .onAppear { withAnimation(.easeOut(duration: 0.5)) { appeared = true } }
-    }
-}
-
-private struct StartupSuggestionChip: View {
-    let icon: String
-    let text: String
-    let action: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .dockFont(.metadata, weight: .medium)
-                    .foregroundStyle(isHovering ? Color.dockAccent : Color.dockSecondaryText)
-                    .scaleEffect(isHovering ? 1.12 : 1)
-                Text(text)
-                    .dockFont(size: 11.5, weight: .medium)
-                    .foregroundStyle(isHovering ? Color.dockPrimaryText : Color.dockSecondaryText)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .background(Capsule().fill(Color.dockAccent.opacity(isHovering ? 0.12 : 0.05)))
-            .overlay(Capsule().stroke(Color.dockAccent.opacity(isHovering ? 0.35 : 0.12), lineWidth: 0.7))
-            .shadow(color: Color.dockAccent.opacity(isHovering ? 0.25 : 0), radius: 10)
-            .offset(y: isHovering ? -2 : 0)
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) { isHovering = hovering }
-        }
     }
 }
 

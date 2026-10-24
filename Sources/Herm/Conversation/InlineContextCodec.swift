@@ -68,26 +68,23 @@ final class InlineContextAttachment: NSTextAttachment {
 }
 
 extension DockModel {
-    func embedInlineContexts(previous: [ChatContext], caret: Int? = nil) {
+    /// The composer owns one removable tray chip per source, including restored inline drafts.
+    func moveContextsToTray(previous: [ChatContext] = []) {
         var text = draft
-        var contexts = attachedContexts
-        for removed in previous where !contexts.contains(where: { $0.id == removed.id }) {
-            if let token = removed.inlineToken, !contexts.contains(where: { $0.inlineToken == token }) {
+        for context in previous + attachedContexts {
+            if let token = context.inlineToken {
                 text = text.replacingOccurrences(of: token, with: "")
             }
         }
-        var position = min(caret ?? (text as NSString).length, (text as NSString).length)
-        for index in contexts.indices {
-            if contexts[index].inlineToken == nil {
-                contexts[index].inlineToken = InlineContextCodec.nextToken(excluding: text)
-            }
-            if let token = contexts[index].inlineToken, !text.contains(token),
-                !previous.contains(where: { $0.id == contexts[index].id && $0.inlineToken != nil })
-            {
-                let value = NSMutableString(string: text)
-                value.insert(token, at: position)
-                text = value as String
-                position += 1
+        var contexts: [ChatContext] = []
+        var indices: [String: Int] = [:]
+        for var context in attachedContexts {
+            context.inlineToken = nil
+            if let index = indices[context.id] {
+                contexts[index] = context
+            } else {
+                indices[context.id] = contexts.count
+                contexts.append(context)
             }
         }
         if contexts != attachedContexts { attachedContexts = contexts }

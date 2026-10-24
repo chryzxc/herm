@@ -14,6 +14,50 @@ private final class InlineContextRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct InlineContextTests {
+    @Test func attachedAndRestoredContextsAppearOnlyInTheRemovableTray() {
+        let model = DockModel(rpcClient: InlineContextRPC())
+        defer { model.shutdown() }
+        var inline = ChatContext(id: "pr", title: "PR #93", body: "PR details")
+        inline.inlineToken = "\u{E000}"
+        let browser = ChatContext(id: "page", title: "Page", body: "Page details")
+        model.attachedContexts = [inline, browser]
+        model.draft = "Review \u{E000} 日本語 🐈"
+
+        model.moveContextsToTray()
+
+        #expect(model.attachedContexts.count == 2)
+        #expect(model.attachedContexts.allSatisfy { $0.inlineToken == nil })
+        #expect(model.draft == "Review  日本語 🐈")
+        #expect(
+            ChatContext.prompt(model.draft, contexts: model.attachedContexts)
+                == "PR details\n\nPage details\n\nReview  日本語 🐈")
+        model.removeAttachedContext(inline)
+        #expect(model.attachedContexts == [browser])
+        #expect(model.draft == "Review  日本語 🐈")
+    }
+
+    @Test(arguments: [false, true])
+    func reattachingRefreshesOneChipAndRemovesOldInlineReferences(retainsOldEntry: Bool) {
+        let model = DockModel(rpcClient: InlineContextRPC())
+        defer { model.shutdown() }
+        var previous = ChatContext(id: "source", title: "Old", body: "Old details")
+        previous.inlineToken = "\u{E000}"
+        let updated = ChatContext(id: "source", title: "Updated", body: "New details")
+        model.draft = "Before \u{E000} after"
+        model.attachedContexts = retainsOldEntry ? [previous, updated] : [updated]
+
+        model.moveContextsToTray(previous: [previous])
+
+        #expect(model.attachedContexts == [updated])
+        #expect(model.draft == "Before  after")
+        #expect(ChatContext.prompt(model.draft, contexts: model.attachedContexts) == "New details\n\nBefore  after")
+        var publications = 0
+        let subscription = model.objectWillChange.sink { publications += 1 }
+        defer { subscription.cancel() }
+        model.moveContextsToTray()
+        #expect(publications == 0)
+    }
+
     @Test func editorRoundTripAndPromptExpansionKeepUnicode() throws {
         var context = ChatContext(id: "excerpt", title: "Terminal excerpt", body: "selected output")
         context.inlineToken = "\u{E000}"

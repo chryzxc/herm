@@ -12,6 +12,7 @@ struct ChatComposerView: View {
     @ObservedObject var speechInput: SpeechInput
     @ObservedObject var botMode: BotModeModel
     var onStop: () -> Void
+    var requiredContext: ChatContext? = nil
     var isFullscreen = false
     var metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false)
     /// Nil hides the quota chip (previews and snapshots).
@@ -28,7 +29,7 @@ struct ChatComposerView: View {
     @State private var contextPreviewOwner: String?
     @State private var showingSavedPrompts = false
     @State private var showingConversationContext = false
-    @State private var pasteMonitor: Any?
+    @State private var historyMonitor: Any?
     @State private var showingAttachmentPopover = false
     @State private var showingFilePicker = false
     @State private var attachmentPicker: AttachmentPopoverFilePicker = .files
@@ -91,7 +92,7 @@ struct ChatComposerView: View {
                 dictation.reset()
             }
             .onChange(of: model.attachedContexts) { previous, _ in
-                model.embedInlineContexts(previous: previous, caret: isComposerFocused ? contextCaret : nil)
+                model.moveContextsToTray(previous: previous)
             }
             .sheet(item: $inspectingContext) { context in
                 ComposerContextPreview(context: context) { text in
@@ -110,6 +111,7 @@ struct ChatComposerView: View {
             .sheet(isPresented: $showingConversationContext) { ConversationContextPicker(model: model) }
             .onAppear {
                 DebugLog.write("composer: appeared")
+                model.moveContextsToTray()
                 completions.configure(
                     model: model, botMode: botMode,
                     text: { composer.text },
@@ -118,12 +120,13 @@ struct ChatComposerView: View {
                         composer.text = text
                         isComposerFocused = true
                     },
-                    onOpenChanged: { composer.isCompletionOpen = $0 }
+                    onOpenChanged: { composer.isCompletionOpen = $0 },
+                    onBotSelected: { composer.selectBot($0, range: $1) }
                 )
-                if pasteMonitor == nil {
+                if historyMonitor == nil {
                     let dockModel = model
                     let composerText = composer
-                    pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    historyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                         let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
                         // History navigation must not swallow Up/Down in other text fields.
                         if event.modifierFlags.intersection(editingModifiers).isEmpty,
@@ -158,21 +161,7 @@ struct ChatComposerView: View {
                             }
                         }
 
-                        // isComposerEditing only flips on the first keystroke, so an
-                        // untouched composer must be recognised by its first responder.
-                        guard event.window?.firstResponder is ComposerInputTextView,
-                            event.modifierFlags.contains(.command),
-                            event.charactersIgnoringModifiers?.lowercased() == "v"
-                        else {
-                            return event
-                        }
-                        let consumed = MainActor.assumeIsolated {
-                            // Let the editor paste files through the same path as drops.
-                            guard AttachmentPopoverFileSelection.fileURLs(from: .general).isEmpty else { return false }
-                            if !event.modifierFlags.contains(.shift), dockModel.stageLargePaste() { return true }
-                            return dockModel.pasteImageFromPasteboard()
-                        }
-                        return consumed ? nil : event
+                        return event
                     }
                 }
             }
@@ -186,9 +175,9 @@ struct ChatComposerView: View {
             }
             .onDisappear {
                 completions.close()
-                if let pasteMonitor {
-                    NSEvent.removeMonitor(pasteMonitor)
-                    self.pasteMonitor = nil
+                if let historyMonitor {
+                    NSEvent.removeMonitor(historyMonitor)
+                    self.historyMonitor = nil
                 }
             }
     }
@@ -272,6 +261,10 @@ struct ChatComposerView: View {
                             onSubmit: submitComposerInput,
                             onCompletionKey: completions.handleKey,
                             onDropFiles: stageAttachmentFiles,
+                            onPaste: {
+                                if !NSEvent.modifierFlags.contains(.shift), model.stageLargePaste() { return true }
+                                return model.pasteImageFromPasteboard()
+                            },
                             onFocusChanged: { focused in
                                 isComposerFocused = focused
                                 model.isComposerEditing = focused
@@ -290,6 +283,7 @@ struct ChatComposerView: View {
                                 model.removeDeletedInlineContexts()
                                 completions.update(for: text, caret: caret)
                             },
+                            onTextReplaced: { composer.noteEdit(range: $0, replacement: $1) },
                             onContentHeightChanged: { contentHeight in
                                 composerHeight = ComposerLayout.height(for: contentHeight)
                             },
@@ -302,7 +296,7 @@ struct ChatComposerView: View {
                         // The native scroll view remains bounded while its document
                         // grows, so wheel and trackpad scrolling stay inside the
                         // editor after the composer reaches its maximum height.
-                        .frame(height: max(1, effectiveComposerHeight - textTopPadding))
+                        .frame(height: effectiveComposerHeight)
                         .frame(maxWidth: .infinity)
                         .disabled(model.isRestoringSession)
 
@@ -318,7 +312,6 @@ struct ChatComposerView: View {
                     // Move the native editor and the placeholder together; applying
                     // padding to only the placeholder would reintroduce caret drift.
                     .padding(.top, textTopPadding)
-                    .frame(height: effectiveComposerHeight)
                     .frame(maxWidth: .infinity)
                     // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
                     // proposal while its intrinsic text height changes. Mask the
@@ -464,14 +457,7 @@ struct ChatComposerView: View {
                             Button {
                                 showingAttachmentPopover = true
                             } label: {
-                                DockIcon(.plus, size: 14, color: Color.dockSecondaryText)
-                                    .frame(width: 28, height: 28)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                            .fill(DockSkinPresentation.current.composerControlFill)
-                                    )
-                                    .frame(width: 32, height: 32)
-                                    .contentShape(Rectangle())
+                                ComposerControlLabel(icon: .plus)
                             }
                             .buttonStyle(.dockHover)
                             .help("Attach or insert content")
@@ -499,7 +485,9 @@ struct ChatComposerView: View {
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.dockHover)
-                                .help("Rewrite or proofread with Apple Intelligence")
+                                .help(
+                                    "Rewrite or proofread with Apple Intelligence. Generated text may be inaccurate; review it before sending."
+                                )
                                 .accessibilityLabel("Writing Tools")
                             }
 
@@ -568,23 +556,17 @@ struct ChatComposerView: View {
                             Button(action: {
                                 if speechInput.isRecording {
                                     speechInput.stop()
-                                    model.send()
+                                    prepareRequiredContext()
+                                    submitComposerInput()
                                 } else if showStop {
                                     onStop()
                                 } else {
                                     submitComposerInput()
                                 }
                             }) {
-                                ZStack {
-                                    (DockSkinPresentation.current.composer != .floating
-                                        ? AnyShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
-                                        : AnyShape(Circle()))
-                                        .fill(
-                                            canSubmit && !model.isRestoringSession
-                                                ? Color.dockAccent : Color.dockSurface6
-                                        )
-                                        .frame(width: isFullscreen ? 36 : 32, height: isFullscreen ? 36 : 32)
-
+                                ComposerSubmitLabel(
+                                    isEnabled: canSubmit && !model.isRestoringSession, isFullscreen: isFullscreen
+                                ) {
                                     Group {
                                         if speechInput.isRecording {
                                             DockIcon(.stop, weight: .fill)
@@ -686,41 +668,10 @@ struct ChatComposerView: View {
                 .padding(.trailing, 8)
                 .padding(.top, 6)
                 .padding(.bottom, 6)
-                .background {
-                    let skin = DockSkinPresentation.current
-                    let shape = DockThemeShape(cornerRadius: skin.composerRadius, role: .pane)
-                    if skin.composer == .line {
-                        // Typographic skins replace the input box with one rule.
-                        Rectangle()
-                            .fill(
-                                speechInput.isRecording
-                                    ? Color.dockDestructiveFill
-                                    : isComposerFocused ? Color.dockAccent : Color.dockPrimaryText
-                            )
-                            .frame(height: isComposerFocused ? 2 : 1)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
-                    } else {
-                        shape.dockInputFill()
-                            .overlay {
-                                shape.stroke(
-                                    speechInput.isRecording
-                                        ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
-                                        : (isComposerFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder),
-                                    lineWidth: isComposerFocused || speechInput.isRecording
-                                        ? max(1, DockLayout.outline) : DockLayout.outline
-                                )
-                                .opacity(DockLayout.outline > 0 || isComposerFocused || speechInput.isRecording ? 1 : 0)
-                            }
-                            .dockStickerShadow(shape)
-                            .dockFoldCrease()
-                            .dockEmboss(shape)
-                            .dockBevel(pressed: true)
-                            .dockCardMarks()
-                            .shadow(
-                                color: Color.black.opacity(0.10), radius: skin.composerShadow,
-                                y: skin.composerShadow == 0 ? 0 : 2)
-                    }
-                }
+                .modifier(
+                    ComposerInputSurface(
+                        isFocused: isComposerFocused, isRecording: speechInput.isRecording, isPulsing: isComposerPulsing
+                    ))
 
                 if let worktreeBar { worktreeBar.padding(.vertical, 2) }
             }
@@ -825,19 +776,25 @@ struct ChatComposerView: View {
         dictation.stop()
         if !reduceMotion { sendKick += 1 }
         completions.close()
-        model.submitComposerInput(bots: botMode.visibleBots)
+        prepareRequiredContext()
+        model.submitComposerInput(bots: botMode.bots.filter { !$0.isHidden })
+    }
+
+    private func prepareRequiredContext() {
+        guard let requiredContext, !model.attachedContexts.contains(where: { $0.id == requiredContext.id }) else {
+            return
+        }
+        model.attachedContexts.append(requiredContext)
     }
 
     private func mentionRelayNotice(_ trigger: ComposerCompletionTrigger) -> String? {
         guard case .mention = trigger, completions.result.items.contains(where: { $0.bot != nil }) else { return nil }
-        let current = model.sessionStorageID ?? model.sessionID
         return ComposerMentionPresentation.relayNotice(
             draft: composer.text,
-            profileIDs: botMode.visibleBots.map(\.id),
+            profileIDs: botMode.bots.filter { !$0.isHidden }.map(\.id),
             hasAttachments: !model.attachedContexts.isEmpty || !model.pendingImages.isEmpty
                 || model.pendingPDFURL != nil,
-            isQueued: model.hasQueuedOrRedirectingPrompt,
-            inBotChat: current != nil && botMode.visibleBots.contains { $0.chat?.sessionID == current }
+            isQueued: model.hasQueuedOrRedirectingPrompt
         )
     }
 
@@ -1228,15 +1185,18 @@ enum ComposerCompletionKey {
 
 struct ComposerInputEditor: NSViewRepresentable {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.isEnabled) private var isEnabled
     @Binding var text: String
     let isFocused: Bool
     let onSubmit: () -> Void
     let onCompletionKey: (ComposerCompletionKey) -> Bool
     var onDropFiles: (([URL]) -> Void)? = nil
+    var onPaste: (() -> Bool)? = nil
     let onFocusChanged: (Bool) -> Void
     let onCaretMoved: (String, Int) -> Void
     let takePendingCaret: () -> Int?
     let onTextChanged: (String, Int) -> Void
+    var onTextReplaced: ((NSRange, String) -> Void)? = nil
     let onContentHeightChanged: (CGFloat) -> Void
     var inset = NSSize(width: 16, height: 0)
     var contexts: [ChatContext] = []
@@ -1258,6 +1218,12 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
+        textView.onPaste = onPaste
+        textView.isEditable = isEnabled
+        textView.onWidthChanged = { [weak coordinator = context.coordinator, weak textView] in
+            guard let textView else { return }
+            coordinator?.schedulePresentationUpdate(for: textView)
+        }
         textView.contexts = contexts
         textView.onInspectContext = onInspectContext
         textView.font = DockSkinPresentation.nativeFont(size: DockTypography.size(.conversation))
@@ -1294,6 +1260,8 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
         textView.onDropFiles = onDropFiles
+        textView.onPaste = onPaste
+        textView.isEditable = isEnabled
         textView.contexts = contexts
         textView.onInspectContext = onInspectContext
         context.coordinator.synchronize(textView)
@@ -1315,6 +1283,7 @@ struct ComposerInputEditor: NSViewRepresentable {
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerInputEditor
         var isSynchronizingText = false
+        private var presentationUpdatePending = false
         let synchronization = ComposerEditorSynchronization()
 
         func synchronize(_ textView: NSTextView) {
@@ -1352,6 +1321,13 @@ struct ComposerInputEditor: NSViewRepresentable {
             synchronization.revealCaret(in: textView) { [weak self] in self?.parent.isFocused == true }
         }
 
+        func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+            if !isSynchronizingText, let replacementString {
+                parent.onTextReplaced?(range, replacementString)
+            }
+            return true
+        }
+
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isSynchronizingText, let textView = notification.object as? NSTextView else { return }
             parent.onCaretMoved(synchronization.markdown(in: textView), textView.selectedRange().location)
@@ -1373,6 +1349,17 @@ struct ComposerInputEditor: NSViewRepresentable {
         func reportContentHeight(for textView: NSTextView) {
             synchronization.updatePresentation(textView, publishHeight: parent.onContentHeightChanged)
         }
+
+        func schedulePresentationUpdate(for textView: NSTextView) {
+            guard !presentationUpdatePending else { return }
+            presentationUpdatePending = true
+            // Native wrapping settles after SwiftUI assigns the scroll view's width.
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self else { return }
+                self.presentationUpdatePending = false
+                if let textView { self.reportContentHeight(for: textView) }
+            }
+        }
     }
 }
 
@@ -1380,8 +1367,16 @@ private final class ComposerInputTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
     var onDropFiles: (([URL]) -> Void)?
+    var onPaste: (() -> Bool)?
+    var onWidthChanged: (() -> Void)?
     var contexts: [ChatContext] = []
     var onInspectContext: ((ChatContext) -> Void)?
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = frame.width != newSize.width
+        super.setFrameSize(newSize)
+        if widthChanged { onWidthChanged?() }
+    }
 
     override func mouseDown(with event: NSEvent) {
         let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
@@ -1415,11 +1410,12 @@ private final class ComposerInputTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let urls = AttachmentPopoverFileSelection.fileURLs(from: .general)
-        guard !urls.isEmpty, let onDropFiles else {
+        guard isEditable else { return }
+        if !urls.isEmpty, let onDropFiles {
+            onDropFiles(urls)
+        } else if onPaste?() != true {
             super.paste(sender)
-            return
         }
-        onDropFiles(urls)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

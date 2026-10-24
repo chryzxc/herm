@@ -78,7 +78,7 @@ struct ConversationTranscriptView: View, Equatable {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
                                 if snapshot.messages.isEmpty && snapshot.context.status != .working {
-                                    StartupAssistantView(hermFaceID: conversationHermFaceID) { model.draft = $0 }
+                                    StartupAssistantView(hermFaceID: conversationHermFaceID)
                                         .frame(maxWidth: .infinity)
                                         .frame(minHeight: max(300, viewport.size.height - 16))
                                 } else if snapshot.messages.isEmpty {

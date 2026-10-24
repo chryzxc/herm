@@ -41,12 +41,93 @@ struct ComposerInlineEditorTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func nativeEditorRespectsDisabledState(disabled: Bool) async throws {
+        let editor = ComposerInputEditor(
+            text: .constant("Saved draft"), isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
+            onFocusChanged: { _ in }, onCaretMoved: { _, _ in }, takePendingCaret: { nil },
+            onTextChanged: { _, _ in }, onContentHeightChanged: { _ in })
+        let host = NSHostingView(rootView: editor.disabled(disabled).frame(width: 352, height: 100))
+        host.frame = NSRect(x: 0, y: 0, width: 352, height: 100)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        func find(_ view: NSView) -> NSTextView? {
+            if let text = view as? NSTextView { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let text = try #require(find(host))
+        #expect(text.isEditable == !disabled)
+        #expect(text.string == "Saved draft")
+        host.rootView = editor.disabled(!disabled).frame(width: 352, height: 100)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(text.isEditable == disabled)
+        #expect(text.string == "Saved draft")
+    }
+
+    @Test func nativeEditorRemeasuresWrappedDraftAfterResize() async throws {
+        var heights: [CGFloat] = []
+        let editor = ComposerInputEditor(
+            text: .constant(String(repeating: "Please review the test failures. ", count: 8)),
+            isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
+            onFocusChanged: { _ in }, onCaretMoved: { _, _ in }, takePendingCaret: { nil },
+            onTextChanged: { _, _ in }, onContentHeightChanged: { heights.append($0) })
+        let host = NSHostingView(rootView: editor)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 120),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        let wideHeight = try #require(heights.last)
+        #expect(wideHeight > ComposerLayout.minHeight)
+        window.setContentSize(NSSize(width: 220, height: 120))
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(try #require(heights.last) > wideHeight)
+    }
+
+    @Test func nativePasteUsesTheOwningComposersHandler() async throws {
+        var handled = false
+        let editor = ComposerInputEditor(
+            text: .constant("Saved draft"), isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
+            onPaste: {
+                handled = true
+                return true
+            },
+            onFocusChanged: { _ in }, onCaretMoved: { _, _ in }, takePendingCaret: { nil },
+            onTextChanged: { _, _ in }, onContentHeightChanged: { _ in })
+        let host = NSHostingView(rootView: editor.frame(width: 352, height: 100))
+        host.frame = NSRect(x: 0, y: 0, width: 352, height: 100)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        func find(_ view: NSView) -> NSTextView? {
+            if let text = view as? NSTextView { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let text = try #require(find(host))
+        NSPasteboard.general.clearContents()
+        defer { NSPasteboard.general.clearContents() }
+        NSPasteboard.general.setString("Pasted content", forType: .string)
+        text.paste(nil)
+        #expect(handled)
+        #expect(text.string == "Saved draft")
+    }
+
     @Test func nativeFilePasteStagesURLsWithoutInsertingAnIcon() async throws {
         _ = NSApplication.shared
         var files: [URL] = []
+        var handledPaste = false
         let editor = ComposerInputEditor(
             text: .constant("Keep this draft"), isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
-            onDropFiles: { files = $0 }, onFocusChanged: { _ in }, onCaretMoved: { _, _ in },
+            onDropFiles: { files = $0 },
+            onPaste: {
+                handledPaste = true
+                return true
+            },
+            onFocusChanged: { _ in }, onCaretMoved: { _, _ in },
             takePendingCaret: { nil }, onTextChanged: { _, _ in }, onContentHeightChanged: { _ in })
         let host = NSHostingView(rootView: editor.frame(width: 352, height: 100))
         host.frame = NSRect(x: 0, y: 0, width: 352, height: 100)
@@ -65,6 +146,7 @@ struct ComposerInlineEditorTests {
         pasteboard.setData(Data("file icon".utf8), forType: .tiff)
         text.paste(nil)
         #expect(files == [url])
+        #expect(!handledPaste)
         #expect(text.string == "Keep this draft")
         #expect(text.attributedString().attribute(.attachment, at: 0, effectiveRange: nil) == nil)
     }
