@@ -85,6 +85,13 @@ final class ChatContextRouter {
     /// Called once the target session is active, so the host can navigate to it.
     var onOpened: (String?) -> Void = { _ in }
 
+    func attachToCurrentChat(_ context: ChatContext) {
+        guard let model else { return }
+        model.attachedContexts.removeAll { $0.id == context.id }
+        model.attachedContexts.append(context)
+        model.requestComposerFocus()
+    }
+
     var recentSessions: [HermesSession] {
         (model?.sessions ?? [])
             .filter { !$0.isHidden }

@@ -79,4 +79,26 @@ struct BrowserViewportTests {
         canvas.setFrameSize(.zero)
         #expect(browser.panelSize == NSSize(width: 1280, height: 480))
     }
+
+    @Test func fractionalPanelBoundsKeepAutoAtOneCSSPixelPerPoint() {
+        let browser = AgentBrowser(key: .init(profileID: nil, sessionID: "fractional-viewport"))
+        let canvas = AgentBrowserCanvas(frame: .zero)
+        canvas.browser = browser
+        for size in [NSSize(width: 833.5, height: 501.75), NSSize(width: 390.25, height: 480.5)] {
+            canvas.setFrameSize(size)
+            let viewport = browser.captureViewportSize
+            #expect(viewport.width == size.width.rounded(.down))
+            #expect(viewport.height == size.height.rounded(.down))
+            browser.onFrame?(NSImage(size: viewport), viewport)
+            #expect(canvas.pageRect.size == viewport)
+            #expect(canvas.pageRect.minX * 2 == (canvas.pageRect.minX * 2).rounded())
+            #expect(canvas.bounds.contains(canvas.pageRect))
+        }
+        browser.presetWidth = 1280
+        let viewport = browser.captureViewportSize
+        #expect(viewport.width == 1280)
+        browser.onFrame?(NSImage(size: viewport), viewport)
+        #expect(canvas.pageRect.width <= canvas.bounds.width)
+        #expect(canvas.pageRect.height <= canvas.bounds.height)
+    }
 }

@@ -262,12 +262,14 @@ struct SessionBrowserView: View {
                 navigationButtons
                 addressField.frame(minWidth: 180)
                 annotationButton
+                attachPageButton(compact: false)
                 viewportMenu(compact: false)
                 moreMenu
             }
             HStack(spacing: 6) {
                 navigationButtons
                 addressField.frame(minWidth: 220)
+                attachPageButton(compact: false)
                 viewportMenu(compact: true)
                 moreMenu
             }
@@ -276,7 +278,8 @@ struct SessionBrowserView: View {
                 HStack(spacing: 6) {
                     navigationButtons
                     Spacer(minLength: 8)
-                    viewportMenu(compact: false)
+                    attachPageButton(compact: true)
+                    viewportMenu(compact: true)
                     moreMenu
                 }
             }
@@ -327,6 +330,21 @@ struct SessionBrowserView: View {
             }
     }
 
+    private func attachPageButton(compact: Bool) -> some View {
+        Button {
+            Task { await sendPage() }
+        } label: {
+            HStack(spacing: 4) {
+                if sendingPage { ProgressView().controlSize(.mini) }
+                Text(compact ? "Attach" : "Attach Page").fixedSize()
+            }
+        }
+        .buttonStyle(.dockCompact)
+        .disabled(sendingPage || pageURL.isEmpty || pageURL == "about:blank")
+        .help("Attach this page and selected text to the session composer without sending")
+        .accessibilityLabel("Attach page to chat")
+    }
+
     private var annotationButton: some View {
         DockIconButton(
             icon: .cursorClick,
@@ -373,7 +391,7 @@ struct SessionBrowserView: View {
         DockMenu {
             Button(annotating ? "Stop Annotating" : "Annotate Page", icon: .cursorClick) { toggleAnnotation() }
                 .disabled(pageURL.isEmpty || pageURL == "about:blank")
-            Button("Send Page to Chat", icon: .paperPlaneTilt) { Task { await sendPage() } }
+            Button("Attach Page to Chat", icon: .paperPlaneTilt) { Task { await sendPage() } }
                 .disabled(sendingPage || pageURL.isEmpty || pageURL == "about:blank")
             Button("Copy Address", icon: .copy) {
                 NSPasteboard.general.clearContents()
@@ -389,7 +407,9 @@ struct SessionBrowserView: View {
                 sendConsole()
             }
             .disabled(consoleErrors.isEmpty)
-            if showsAgent, agent.pages.count > 1 {
+            if showsAgent {
+                Button("New Agent Tab", icon: .plus) { agent.newTab() }
+                    .disabled(agent.state != .running || model.status == .working)
                 DockMenuSection("Agent Tabs") {
                     ForEach(agent.pages) { page in
                         Button {
@@ -475,16 +495,17 @@ struct SessionBrowserView: View {
         sendingPage = true
         defer { sendingPage = false }
         let url = pageURL
-        guard !url.isEmpty else { return }
+        let title = pageTitle
+        let targetID = showsAgent ? agent.activeTargetID : nil
+        let generation = model.sessionResumeGeneration
+        guard !url.isEmpty, url != "about:blank" else { return }
         let selection = showsAgent ? await agent.selection() : await browser.selection()
-        guard model.browserSessionKey == workspace.key else { return }
-        var body = "Regarding the page \(url)" + (pageTitle.isEmpty ? "" : " (\"\(pageTitle)\")")
-        if !selection.isEmpty {
-            body += "\nSelected text:\n> " + selection.replacingOccurrences(of: "\n", with: "\n> ")
-        }
-        let title = pageTitle.isEmpty ? (URL(string: url)?.host() ?? url) : pageTitle
-        BrowserAnnotation.deliver(
-            ChatContext(id: "browser-page:\(url)", title: title, body: body), image: nil, to: model)
+        guard model.browserSessionKey == workspace.key, model.sessionResumeGeneration == generation,
+            pageURL == url, (showsAgent ? agent.activeTargetID : nil) == targetID
+        else { return }
+        model.attachBrowserPage(
+            BrowserPageContext.make(url: url, title: title, targetID: targetID, selection: selection),
+            owner: workspace.key)
     }
 
     private func sendConsole() {

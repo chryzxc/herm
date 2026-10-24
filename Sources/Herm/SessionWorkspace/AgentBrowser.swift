@@ -279,6 +279,8 @@ final class AgentBrowser: ObservableObject {
             "--headless=new", "--remote-debugging-port=\(busy ? 0 : Self.preferredPort)",
             "--user-data-dir=\(profile.path)",
             "--no-first-run", "--no-default-browser-check", "--window-size=1280,800",
+            // Emulated DPR alone leaves headless screencast frames at 1x; the compositor must render at 2x too.
+            "--force-device-scale-factor=2",
             // Headless Chrome announces itself (HeadlessChrome UA, navigator.webdriver), and sites
             // like Google answer with a degraded no-JS page. Look like the regular browser.
             "--disable-blink-features=AutomationControlled", "--user-agent=\(Self.userAgent(for: executable))",
@@ -408,16 +410,21 @@ final class AgentBrowser: ObservableObject {
         }
     }
 
+    var captureViewportSize: CGSize {
+        let width = presetWidth > 0 ? CGFloat(presetWidth) : panelSize.width.rounded(.down)
+        // Wider than the panel scales down; narrower keeps the panel's height at 1:1.
+        let height = (panelSize.height * max(1, width / panelSize.width)).rounded(.down)
+        return CGSize(width: width, height: height)
+    }
+
     private func applyViewport() async throws {
         guard let cdp, let sid = sessionID else { return }
-        let width = presetWidth > 0 ? CGFloat(presetWidth) : panelSize.width
-        // Wider than the panel scales down; narrower keeps the panel's height at 1:1.
-        let height = (panelSize.height * max(1, width / panelSize.width)).rounded()
+        let size = captureViewportSize
         _ = try await cdp.send(
             "Emulation.setDeviceMetricsOverride",
             [
-                "width": Int(width), "height": Int(height), "deviceScaleFactor": backingScale,
-                "screenWidth": Int(width), "screenHeight": Int(height),
+                "width": Int(size.width), "height": Int(size.height), "deviceScaleFactor": backingScale,
+                "screenWidth": Int(size.width), "screenHeight": Int(size.height),
                 "mobile": presetWidth > 0 && presetWidth < 800,
             ], session: sid)
         guard !Task.isCancelled, sessionID == sid else { return }
@@ -426,8 +433,8 @@ final class AgentBrowser: ObservableObject {
         cdp.fire(
             "Page.startScreencast",
             [
-                "format": "jpeg", "quality": 80, "everyNthFrame": 2,  // ~30fps is plenty to watch
-                "maxWidth": Int(width * backingScale), "maxHeight": Int(height * backingScale),
+                "format": "png", "everyNthFrame": 2,  // Lossless text at ~30fps while the pane is visible.
+                "maxWidth": Int(size.width * backingScale), "maxHeight": Int(size.height * backingScale),
             ], session: sid)
     }
 
@@ -829,6 +836,7 @@ final class AgentBrowserCanvas: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
         let viewing = window != nil
         guard viewing != isViewing else { return }
         isViewing = viewing
@@ -844,11 +852,13 @@ final class AgentBrowserCanvas: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     /// Fit the page into the panel, never scaled above 1 CSS px per point; top-centred.
-    private var pageRect: CGRect {
+    var pageRect: CGRect {
         guard cssSize.width > 0, cssSize.height > 0 else { return bounds }
         let scale = min(1, bounds.width / cssSize.width, bounds.height / cssSize.height)
         let size = CGSize(width: cssSize.width * scale, height: cssSize.height * scale)
-        return CGRect(x: (bounds.width - size.width) / 2, y: 0, width: size.width, height: size.height)
+        let backingScale = window?.backingScaleFactor ?? 2
+        let x = (((bounds.width - size.width) / 2) * backingScale).rounded() / backingScale
+        return CGRect(x: x, y: 0, width: size.width, height: size.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
