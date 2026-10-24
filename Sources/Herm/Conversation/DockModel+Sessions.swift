@@ -33,6 +33,7 @@ extension DockModel {
         sessionLoadTask?.cancel()
         sessionLoadTask = nil
         isLoadingSessions = false
+        isPollingSessions = false
         sessions = []
         sessionProjectionState = .loading
         // Keep the outgoing session profile until its draft has been saved.
@@ -100,7 +101,7 @@ extension DockModel {
             sessionProjectionState = .empty
             return nil
         }
-        guard !isLoadingSessions, !(quiet && isPollingSessions) else { return nil }
+        guard !isLoadingSessions, !(quiet && isPollingSessions) else { return sessionLoadTask }
         if quiet { isPollingSessions = true } else { isLoadingSessions = true }
         sessionLoadGeneration &+= 1
         let generation = sessionLoadGeneration
@@ -108,7 +109,13 @@ extension DockModel {
         if !quiet { sessionProjectionState = Self.refreshingProjectionState(sessionProjectionState) }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { if quiet { isPollingSessions = false } else { isLoadingSessions = false } }
+            defer {
+                if self.sessionLoadGeneration == generation {
+                    isLoadingSessions = false
+                    isPollingSessions = false
+                    sessionLoadTask = nil
+                }
+            }
             do {
                 try await sessionRPCClient.connect()
                 var params: [String: Any] = ["limit": 50]
@@ -396,9 +403,7 @@ extension DockModel {
         restoreGeneration &+= 1
         let generation = restoreGeneration
         isRestoringSession = true
-        let previousProjectionState = sessionProjectionState
         let scope = profileScopeID
-        sessionProjectionState = .loading
         return Task {
             defer { isRestoringSession = false }
             do {
@@ -413,31 +418,22 @@ extension DockModel {
                 {
                     return
                 }
-                var listParams: [String: Any] = ["limit": 1]
-                if let scope, !scope.isEmpty { listParams["profile"] = scope }
-                let result = try await sessionRPCClient.request(
-                    HermesFeatureIDs.ID.sessionList.rawValue, params: listParams)
+                // Restoration selects from the shared index; a one-row lookup
+                // must never replace the sidebar's complete snapshot.
+                let indexLoad = isPollingSessions ? sessionLoadTask : loadSessions()
+                await indexLoad?.value
                 guard generation == restoreGeneration else { return }
-                guard let rawSessions = result["sessions"] as? [[String: Any]] else {
-                    throw HermesGateway.GatewayError.malformedResponse
-                }
-                let latest = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }.first
-                guard generation == restoreGeneration else { return }
-                guard let latest else {
-                    sessionProjectionState = .empty
+                if case .empty = sessionProjectionState {
                     defaults.removeObject(forKey: scopedLastSessionKey)
                     DebugLog.write("model: no saved session to restore")
                     return
                 }
-                guard generation == restoreGeneration else { return }
-                sessions = [latest]
-                sessionProjectionState = .ready([latest])
-                guard generation == restoreGeneration else { return }
+                guard case .ready(let loaded) = sessionProjectionState, let latest = loaded.first else { return }
                 _ = await resumeSession(latest, reportFailure: true)
             } catch {
                 guard generation == restoreGeneration else { return }
                 sessionProjectionState = Self.failedOrStale(
-                    previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
+                    sessionProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
                 DebugLog.write(
                     "model: latest session restore failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
