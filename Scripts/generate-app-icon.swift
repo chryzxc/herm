@@ -1,4 +1,4 @@
-// Draws Herm's app icon (a gradient "h" under a notch on a black tile) as a 1024px PNG.
+// Draws Herm's app icon (the website's off-white "H" and mint brand dot on a black tile) as a 1024px PNG.
 // Usage: swift Scripts/generate-app-icon.swift <output.png>
 import AppKit
 
@@ -39,57 +39,32 @@ ctx.addPath(tile)
 ctx.setFillColor(color(0x141416))
 ctx.fillPath()
 ctx.restoreGState()
-fill(ctx, tile, [color(0x202024), color(0x0A0A0B)])
+fill(ctx, tile, [color(0x16171A), color(0x08090A)])
 
-// Soft glow behind the letter and a thin highlight on the tile edge.
-ctx.saveGState()
-ctx.addPath(tile)
-ctx.clip()
-ctx.drawRadialGradient(gradient([color(0x2FC1E8, 0.18), color(0x2FC1E8, 0)]),
-                       startCenter: CGPoint(x: 512, y: 540), startRadius: 0,
-                       endCenter: CGPoint(x: 512, y: 540), endRadius: 400, options: [])
-ctx.restoreGState()
+// A thin highlight on the tile edge.
 ctx.addPath(CGPath(roundedRect: tileRect.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 184, cornerHeight: 184, transform: nil))
-ctx.setStrokeColor(color(0xFFFFFF, 0.12))
+ctx.setStrokeColor(color(0xFFFFFF, 0.10))
 ctx.setLineWidth(3)
 ctx.strokePath()
 
-// The mark: a lowercase "h" — a stem plus an arch, filled with one shared gradient.
-let stroke: CGFloat = 132
-let stem = CGMutablePath()
-stem.move(to: CGPoint(x: 400, y: 300))
-stem.addLine(to: CGPoint(x: 400, y: 724))
-let arch = CGMutablePath()
-arch.move(to: CGPoint(x: 400, y: 600))
-arch.addCurve(to: CGPoint(x: 624, y: 560), control1: CGPoint(x: 400, y: 430), control2: CGPoint(x: 624, y: 400))
-arch.addLine(to: CGPoint(x: 624, y: 724))
-let letterBox = CGRect(x: 334, y: 234, width: 356, height: 556)
-let letterColors = [color(0x7CF2C9), color(0x2FC1E8), color(0x6C63FF)]
+// The mark: the website's chunky "H" — two rounded stems joined by a crossbar, in soft off-white.
+let stemWidth: CGFloat = 150
+let mark = CGMutablePath()
+mark.addPath(CGPath(roundedRect: CGRect(x: 252, y: 282, width: stemWidth, height: 460), cornerWidth: 44, cornerHeight: 44, transform: nil))
+mark.addPath(CGPath(roundedRect: CGRect(x: 522, y: 282, width: stemWidth, height: 460), cornerWidth: 44, cornerHeight: 44, transform: nil))
+mark.addRect(CGRect(x: 252 + stemWidth - 20, y: 448, width: 522 - 252 - stemWidth + 40, height: 124))
 ctx.saveGState()
 ctx.setShadow(offset: CGSize(width: 0, height: 10), blur: 30, color: color(0x000000, 0.5))
 ctx.beginTransparencyLayer(auxiliaryInfo: nil)
-for part in [stem, arch] {
-    fill(ctx, part.copy(strokingWithWidth: stroke, lineCap: .round, lineJoin: .round, miterLimit: 10), letterColors, over: letterBox)
-}
+fill(ctx, mark, [color(0xEEF1EC), color(0xC9D1CA)])
 ctx.endTransparencyLayer()
 ctx.restoreGState()
 
-// The MacBook notch bitten out of the top edge, with a green status light.
-let notchRect = CGRect(x: 402, y: 100, width: 220, height: 64)
-let notch = CGMutablePath()
-notch.move(to: CGPoint(x: notchRect.minX, y: notchRect.minY))
-notch.addLine(to: CGPoint(x: notchRect.maxX, y: notchRect.minY))
-notch.addArc(tangent1End: CGPoint(x: notchRect.maxX, y: notchRect.maxY), tangent2End: CGPoint(x: notchRect.minX, y: notchRect.maxY), radius: 30)
-notch.addArc(tangent1End: CGPoint(x: notchRect.minX, y: notchRect.maxY), tangent2End: CGPoint(x: notchRect.minX, y: notchRect.minY), radius: 30)
-notch.closeSubpath()
-ctx.addPath(notch)
-ctx.setFillColor(color(0x000000))
-ctx.fillPath()
-
+// The brand period from "herm." in mint, glowing like an "agent is live" status light.
 ctx.saveGState()
-ctx.setShadow(offset: .zero, blur: 18, color: color(0x7CF2C9))
-ctx.setFillColor(color(0x7CF2C9))
-ctx.fillEllipse(in: CGRect(x: 584, y: 122, width: 18, height: 18))
+ctx.setShadow(offset: .zero, blur: 40, color: color(0x8FD9B6, 0.8))
+ctx.setFillColor(color(0x8FD9B6))
+ctx.fillEllipse(in: CGRect(x: 702, y: 652, width: 90, height: 90))
 ctx.restoreGState()
 
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output))
