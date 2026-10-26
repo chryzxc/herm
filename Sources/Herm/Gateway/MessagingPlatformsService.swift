@@ -28,6 +28,24 @@ struct MessagingPlatform: Identifiable, Equatable {
     let errorMessage: String?
     let envVars: [MessagingEnvVar]
 
+    func hasChanges(enabled: Bool, drafts: [String: String]) -> Bool {
+        enabled != self.enabled
+            || envVars.contains { field in
+                guard let value = drafts[field.key] else { return false }
+                if value.isEmpty { return field.isList && field.isSet && field.value != "" }
+                return value != field.value
+            }
+    }
+
+    static func matching(_ platforms: [Self], query: String) -> [Self] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty
+            ? platforms
+            : platforms.filter {
+                "\($0.id) \($0.name) \($0.description)".localizedStandardContains(query)
+            }
+    }
+
     var statusTone: DockStatusTone {
         switch state {
         case "connected", "running": .complete
@@ -68,6 +86,10 @@ final class MessagingPlatformsModel: ObservableObject {
 
     @Published private(set) var platforms: [MessagingPlatform] = []
     @Published private(set) var busy = false
+    @Published private(set) var loading = false
+    @Published private(set) var hasLoaded = false
+    private var loadedProfileID: String?
+    private var loadGeneration = UUID()
     @Published var error: String?
     @Published var notice: String?
     @Published var testResult: (ok: Bool, message: String)?
@@ -88,12 +110,30 @@ final class MessagingPlatformsModel: ObservableObject {
     }
 
     func load(profileID: String?) async {
+        let generation = UUID()
+        loadGeneration = generation
+        if loadedProfileID != profileID {
+            platforms = []
+            error = nil
+            notice = nil
+            testResult = nil
+            hasLoaded = false
+            loadedProfileID = profileID
+        }
+        loading = true
+        defer { if generation == loadGeneration { loading = false } }
         do {
             let result = try await client.fetchHTTP("/api/messaging/platforms\(query(profileID))")
-            platforms = ((result["platforms"] as? [[String: Any]]) ?? []).compactMap(Self.platform)
+            guard !Task.isCancelled, generation == loadGeneration else { return }
+            guard let rows = result["platforms"] as? [[String: Any]] else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            platforms = rows.compactMap(Self.platform)
+            hasLoaded = true
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            guard !Task.isCancelled, generation == loadGeneration else { return }
+            self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
         }
     }
 
@@ -121,7 +161,7 @@ final class MessagingPlatformsModel: ObservableObject {
             await load(profileID: profileID)
             return true
         } catch {
-            self.error = error.localizedDescription
+            self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
             return false
         }
     }
@@ -134,7 +174,7 @@ final class MessagingPlatformsModel: ObservableObject {
                 "POST", path: "/api/messaging/platforms/\(platform.id)/test\(query(profileID))", body: [:])
             testResult = (result["ok"] as? Bool ?? false, (result["message"] as? String) ?? "No result.")
         } catch {
-            self.error = error.localizedDescription
+            self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
         }
     }
 
@@ -146,14 +186,14 @@ final class MessagingPlatformsModel: ObservableObject {
                 "POST", path: "/api/gateway/\(start ? "start" : "restart")\(query(profileID))", body: [:])
             notice = start ? "Starting the gateway…" : "Restarting the gateway…"
         } catch {
-            self.error = error.localizedDescription
+            self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
             busy = false
             return
         }
-        busy = false
+        defer { busy = false }
         // ponytail: fixed re-polls; a gateway that takes >10s just needs one more manual visit.
         for delay in [3, 7] {
-            try? await Task.sleep(for: .seconds(delay))
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             await load(profileID: profileID)
         }
     }
@@ -175,7 +215,7 @@ final class MessagingPlatformsModel: ObservableObject {
                 qrPayload: (result["qr_payload"] as? String) ?? deepLink?.absoluteString ?? "", deepLink: deepLink)
             pollTask = Task { [weak self] in await self?.pollQR(platform: platform, id: id, profileID: profileID) }
         } catch {
-            self.error = error.localizedDescription
+            self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
         }
     }
 
@@ -221,7 +261,7 @@ final class MessagingPlatformsModel: ObservableObject {
                 return
             } catch {
                 pairing = nil
-                self.error = error.localizedDescription
+                self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
                 return
             }
         }

@@ -21,12 +21,15 @@ struct MessagingWorkspaceView: View {
 
     private var profile: BotSummary? { botMode.bots.first { $0.id == profileID } }
     private var filtered: [MessagingPlatform] {
-        let needle = search.lowercased()
-        return needle.isEmpty
-            ? model.platforms : model.platforms.filter { "\($0.id) \($0.name)".lowercased().contains(needle) }
+        MessagingPlatform.matching(model.platforms, query: search)
     }
     private var current: MessagingPlatform? {
-        model.platforms.first { $0.id == selection } ?? filtered.first
+        filtered.first { $0.id == selection } ?? filtered.first
+    }
+
+    private var hasPendingEdits: Bool {
+        guard let current else { return false }
+        return current.hasChanges(enabled: enabledDraft ?? current.enabled, drafts: drafts)
     }
 
     var body: some View {
@@ -38,8 +41,7 @@ struct MessagingWorkspaceView: View {
                 if let current {
                     detail(current).id(current.id)
                 } else {
-                    Text(model.platforms.isEmpty && model.error == nil ? "Loading…" : "No platforms match.")
-                        .dockFont(.body).foregroundStyle(Color.dockMetadataText)
+                    emptyState
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -47,17 +49,40 @@ struct MessagingWorkspaceView: View {
         .onAppear { if profileID == nil { profileID = botMode.bots.first(where: \.isDefault)?.id } }
         .task(id: profileID) { await model.load(profileID: profileID) }
         .onChange(of: profileID) { resetDrafts() }
-        .onChange(of: selection) { resetDrafts() }
+        .onChange(of: current?.id) { resetDrafts() }
         .onDisappear { model.cancelQR() }
     }
 
     private func resetDrafts() {
         drafts = [:]
         enabledDraft = nil
-        model.error = nil
         model.notice = nil
         model.testResult = nil
         model.cancelQR()
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(
+                model.loading
+                    ? "Loading platforms…"
+                    : model.error != nil
+                        ? "Messaging unavailable"
+                        : model.hasLoaded && model.platforms.isEmpty
+                            ? "No messaging platforms" : "No matching platforms"
+            )
+            .dockFont(.body, weight: .semibold)
+            Text(
+                model.error
+                    ?? (model.platforms.isEmpty
+                        ? "Refresh to read the platforms available in this profile."
+                        : "Try another platform name or clear the search.")
+            )
+            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+            if !search.isEmpty {
+                Button("Clear search") { search = "" }.buttonStyle(.dockCompact)
+            }
+        }.padding(20)
     }
 
     // MARK: Header
@@ -66,17 +91,29 @@ struct MessagingWorkspaceView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 DockIcon(.magnifyingGlass, size: 12, color: .dockMetadataText)
-                DockTextField("Try \u{201C}discord\u{201D}", text: $search).textFieldStyle(.plain)
+                DockTextField("Search messaging platforms", text: $search).textFieldStyle(.plain)
+                    .disabled(model.busy || model.loading || hasPendingEdits)
+                if !search.isEmpty {
+                    Button("Clear") { search = "" }.buttonStyle(.dockCompact)
+                        .disabled(model.busy || model.loading || hasPendingEdits)
+                }
+                DockAsyncButton("Refresh") { await model.load(profileID: profileID) }
+                    .buttonStyle(.dockSecondary)
+                    .disabled(model.busy || model.loading || hasPendingEdits)
             }
             if !botMode.bots.isEmpty {
-                Text("Applies to").dockFont(.body, weight: .medium).foregroundStyle(Color.dockSecondaryText)
+                Text("Configure profile").dockFont(.body, weight: .medium).foregroundStyle(Color.dockSecondaryText)
                 DockChipFlow(spacing: 6) {
                     ForEach(botMode.bots) { bot in
                         chip(bot.name, selected: bot.id == profileID) { profileID = bot.id }
                     }
-                }
-                Text("Changes on this page apply to the \u{201C}\(profile?.name ?? "launch")\u{201D} profile.")
-                    .dockFont(.metadata).foregroundStyle(Color.dockAccent)
+                }.disabled(model.busy || model.loading || hasPendingEdits)
+                Text(
+                    hasPendingEdits
+                        ? "Save or discard changes before switching profile or platform."
+                        : "Changes apply to the \u{201C}\(profile?.name ?? "launch")\u{201D} profile."
+                )
+                .dockFont(.metadata).foregroundStyle(Color.dockAccent)
             }
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
@@ -94,7 +131,7 @@ struct MessagingWorkspaceView: View {
                 )
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -110,16 +147,22 @@ struct MessagingWorkspaceView: View {
                     } label: {
                         HStack(spacing: 10) {
                             MessagingPlatformIcon(platform: platform)
-                            Text(platform.name).dockFont(.navigation, weight: selected ? .semibold : .regular)
-                                .foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(platform.name).dockFont(.body, weight: selected ? .semibold : .regular)
+                                    .foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                                Text(platform.statusLabels.map(\.1).joined(separator: " · "))
+                                    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                            }
                             Spacer(minLength: 6)
                             DockStatusDot(tone: platform.enabled ? platform.statusTone : .inactive, size: 6)
                         }
-                        .padding(.horizontal, 8).frame(height: 36)
+                        .padding(.horizontal, 8).frame(height: 48)
                         .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Color.dockSurface : .clear))
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
+                    .disabled(model.busy || model.loading || hasPendingEdits)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
@@ -138,7 +181,7 @@ struct MessagingWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(spacing: 10) {
                         MessagingPlatformIcon(platform: platform)
-                        Text(platform.name).dockFont(size: 18, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                        Text(platform.name).dockFont(size: 16, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                         ForEach(platform.statusLabels.indices, id: \.self) {
                             DockStatusPill(tone: platform.statusLabels[$0].0, text: platform.statusLabels[$0].1)
                         }
@@ -148,7 +191,7 @@ struct MessagingWorkspaceView: View {
                     }
                     if let message = model.error {
                         DockCallout(
-                            tone: .danger, icon: .warningCircle, title: "Couldn't update messaging", message: message
+                            tone: .danger, icon: .warningCircle, title: "Messaging needs attention", message: message
                         ) { EmptyView() }
                     } else if let message = platform.errorMessage, !message.isEmpty {
                         DockCallout(
@@ -166,11 +209,11 @@ struct MessagingWorkspaceView: View {
                     }
                     if MessagingPlatformsModel.qrPlatforms.contains(platform.id) { quickSetup(platform.id) }
                     credentialsGuide(platform, first: required.first)
-                    section("Required", required)
-                    section("Recommended", recommended)
+                    section("Required", required).disabled(model.busy || model.loading)
+                    section("Recommended", recommended).disabled(model.busy || model.loading)
                     if !advanced.isEmpty {
                         DisclosureGroup(isExpanded: $showsAdvanced) {
-                            fields(advanced).padding(.top, 10)
+                            fields(advanced).padding(.top, 10).disabled(model.busy || model.loading)
                         } label: {
                             sectionLabel("Advanced")
                         }
@@ -318,11 +361,14 @@ struct MessagingWorkspaceView: View {
 
     private func footer(_ platform: MessagingPlatform) -> some View {
         let enabled = Binding(get: { enabledDraft ?? platform.enabled }, set: { enabledDraft = $0 })
-        let changed = (enabledDraft.map { $0 != platform.enabled } ?? false) || !drafts.isEmpty
+        let changed = platform.hasChanges(enabled: enabled.wrappedValue, drafts: drafts)
         return HStack {
             Toggle(isOn: enabled) { Text(enabled.wrappedValue ? "Enabled" : "Disabled").dockFont(.body) }
                 .toggleStyle(.dockSwitch)
             Spacer()
+            if !drafts.isEmpty || enabledDraft != nil {
+                Button("Discard") { resetDrafts() }.buttonStyle(.dockCompact).disabled(model.busy)
+            }
             if ["pending_restart", "gateway_stopped", "startup_failed"].contains(platform.state) {
                 let start = platform.state == "gateway_stopped"
                 DockAsyncButton(start ? "Start gateway" : "Restart gateway") {
@@ -350,6 +396,7 @@ struct MessagingWorkspaceView: View {
             }
             .buttonStyle(.dockPrimary).disabled(model.busy || !changed)
         }
+        .disabled(model.loading || model.busy)
         .padding(.horizontal, 20).padding(.vertical, 10)
         .overlay(alignment: .top) { Rectangle().fill(Color.dockBorderLight).frame(height: 0.5) }
     }

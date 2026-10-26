@@ -24,3 +24,69 @@ struct MessagingPlatformsTests {
         #expect(MessagingPlatformsModel.platform(["name": "no id"]) == nil)
     }
 }
+
+@MainActor
+private final class MessagingPageClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var response: [String: Any] = ["platforms": []]
+    var failure = false
+    var blockedPath: String?
+    var pending: CheckedContinuation<Void, Never>?
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        let captured = response
+        if path == blockedPath { await withCheckedContinuation { pending = $0 } }
+        if failure { throw HermesGateway.GatewayError.malformedResponse }
+        return captured
+    }
+}
+
+@MainActor
+struct MessagingPageStateTests {
+    @Test func emptyFailureAndProfileChangeRemainDistinct() async {
+        let client = MessagingPageClient()
+        let model = MessagingPlatformsModel(client: client)
+        await model.load(profileID: "one")
+        #expect(model.hasLoaded && model.platforms.isEmpty && !model.loading)
+        client.response = ["platforms": [["id": "telegram"]]]
+        await model.load(profileID: "one")
+        client.failure = true
+        await model.load(profileID: "one")
+        #expect(model.platforms.count == 1 && model.error != nil)
+        await model.load(profileID: "two")
+        #expect(model.platforms.isEmpty && !model.hasLoaded && model.error != nil)
+    }
+
+    @Test func oldProfileResponseCannotReplaceNewProfile() async {
+        let client = MessagingPageClient()
+        let model = MessagingPlatformsModel(client: client)
+        client.response = ["platforms": [["id": "old"]]]
+        client.blockedPath = "/api/messaging/platforms?profile=one"
+        let old = Task { await model.load(profileID: "one") }
+        while client.pending == nil { await Task.yield() }
+        client.response = ["platforms": [["id": "new"]]]
+        await model.load(profileID: "two")
+        client.pending?.resume()
+        await old.value
+        #expect(model.platforms.map(\.id) == ["new"])
+        #expect(!model.loading)
+    }
+
+    @Test func searchAndDraftsReflectEffectiveChanges() throws {
+        let platform = try #require(
+            MessagingPlatformsModel.platform([
+                "id": "telegram", "name": "Telegram", "description": "Bot messages", "enabled": true,
+                "env_vars": [
+                    ["key": "TOKEN", "is_password": true, "is_set": true],
+                    ["key": "USERS", "is_list": true, "is_set": true, "value": "42"],
+                ],
+            ]))
+        #expect(MessagingPlatform.matching([platform], query: "  BOT  ").count == 1)
+        #expect(MessagingPlatform.matching([platform], query: "discord").isEmpty)
+        #expect(!platform.hasChanges(enabled: true, drafts: ["TOKEN": "", "USERS": "42"]))
+        #expect(platform.hasChanges(enabled: true, drafts: ["USERS": ""]))
+        #expect(platform.hasChanges(enabled: false, drafts: [:]))
+    }
+}
