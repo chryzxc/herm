@@ -53,6 +53,7 @@ final class WorkflowIntegrationModel: ObservableObject {
         await refresh(section: section)
     }
     func searchHub(_ query: String) async {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !busy, !query.isEmpty else { return }
         busy = true
         defer { busy = false }
@@ -172,8 +173,8 @@ final class WorkflowIntegrationModel: ObservableObject {
             loadedSections.insert(.connectors)
         } catch {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
-            connectors = []
-            status += "\nConnectors: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+            status +=
+                "\nConnectors: Refresh failed; displayed data may be stale. \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
     }
     private func refreshToolsets() async {
@@ -185,8 +186,8 @@ final class WorkflowIntegrationModel: ObservableObject {
             loadedSections.insert(.tools)
         } catch {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
-            toolsets = []
-            status += "\nTools: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+            status +=
+                "\nTools: Refresh failed; displayed data may be stale. \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
     }
     func perform(
@@ -721,6 +722,16 @@ struct WorkflowIntegrationView: View {
                         text: $filter
                     ).textFieldStyle(.dockGlass)
                         .onSubmit { if discover && section == .skills { Task { await model.searchHub(filter) } } }
+                    HStack {
+                        if discover && section == .skills {
+                            DockAsyncButton("Search Skills Hub") { await model.searchHub(filter) }
+                                .buttonStyle(.dockSecondary)
+                                .disabled(model.busy || filter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                        if !filter.isEmpty {
+                            Button("Clear filter") { filter = "" }.buttonStyle(.dockCompact)
+                        }
+                    }
                     if discover && section == .plugins && !model.catalog.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             DockTabBar(options: [""] + catalogCategories, selection: $category) {
@@ -818,8 +829,23 @@ struct WorkflowIntegrationView: View {
                     ? "Loading plugin catalog…" : "Loading \(section.rawValue.lowercased())…",
                 minHeight: 160)
         } else {
-            Text(filter.isEmpty ? "Nothing here yet." : "No matches for “\(filter)”.").dockFont(.body)
-                .foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity).padding(.top, 24)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(
+                    filter.isEmpty
+                        ? "No \(section.rawValue.lowercased()) to show" : "No matching \(section.rawValue.lowercased())"
+                )
+                .dockFont(.body, weight: .semibold)
+                Text(
+                    discover && section == .skills
+                        ? "Search the Skills Hub to find skills to install."
+                        : !filter.isEmpty
+                            ? "Clear the filter or try another name."
+                            : discover
+                                ? "Available additions will appear here."
+                                : "Refresh the inventory or browse Discover where available."
+                )
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
         }
     }
     /// Installed rows for a tab; Discover swaps in hub, catalog, or not-yet-added MCP servers.
@@ -949,6 +975,13 @@ struct WorkflowIntegrationView: View {
         }
         .dockListRow(isHighlighted: selected)
         .onTapGesture { selection = entry.id }
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "Show details") { selection = entry.id }
+        .focusable()
+        .onKeyPress(.return) {
+            selection = entry.id
+            return .handled
+        }
     }
     private func starCount(_ stars: Int) -> some View {
         HStack(spacing: 3) {

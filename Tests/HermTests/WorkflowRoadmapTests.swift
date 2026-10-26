@@ -193,6 +193,33 @@ struct WorkflowRoadmapTests {
         #expect(result.isEmpty)
     }
 
+    @Test func failedToolsAndConnectorsRefreshRetainsLastInventory() async {
+        let client = WorkflowFixture()
+        let model = WorkflowIntegrationModel(client: client, profileID: nil)
+        client.replies["GET"] = ["items": [["name": "browser", "enabled": true]]]
+        client.replies["connectors.list"] = ["available": true, "connectors": [["connector": "calendar"]]]
+        await model.load(.tools)
+        await model.load(.connectors)
+        #expect(model.toolsets.map(\.id) == ["browser"])
+        #expect(model.connectors.map(\.id) == ["calendar"])
+        client.replies["GET"] = [:]
+        client.failures.insert("connectors.list")
+        await model.refresh(section: .tools)
+        await model.refresh(section: .connectors)
+        #expect(model.toolsets.map(\.id) == ["browser"])
+        #expect(model.connectors.map(\.id) == ["calendar"])
+        #expect(model.status.contains("Tools: Refresh failed"))
+        #expect(model.status.contains("Connectors: Refresh failed"))
+    }
+
+    @Test func whitespaceHubSearchDoesNotRequestRuntime() async {
+        let client = WorkflowFixture()
+        let model = WorkflowIntegrationModel(client: client, profileID: nil)
+        await model.searchHub("   ")
+        #expect(client.calls.isEmpty)
+        #expect(!model.busy)
+    }
+
     @Test func pluginPageLoadsOnlyItsInventoryAndReusesItUntilRefresh() async {
         let client = WorkflowFixture()
         client.replies["plugins.manage"] = ["plugins": []]
