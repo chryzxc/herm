@@ -167,7 +167,6 @@ struct DockOnboardingView: View {
                 }
                 Text("Use an existing bot, or create a named Hermes profile for future chats.")
                     .foregroundStyle(Color.dockSecondaryText)
-
             }
             if bots.inventory.availability == .ready {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
@@ -184,9 +183,10 @@ struct DockOnboardingView: View {
 
     private var botPluginSection: some View {
         DockCallout(
-            tone: .warning, icon: .info, title: "Hermes Bots", badge: "Required for Herm",
+            tone: .warning, icon: .info, title: "Hermes Bots",
             message:
-                "Herm needs Hermes bot support to manage your bots and chats. Enable the Bots plugin in your existing Hermes configuration. Runtimes with built-in bot support are ready without a separate plugin."
+                "Herm needs Hermes bot support to manage your bots and chats. Enable the Bots plugin in your existing Hermes configuration. Runtimes with built-in bot support are ready without a separate plugin.",
+            badge: "Required for Herm"
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
