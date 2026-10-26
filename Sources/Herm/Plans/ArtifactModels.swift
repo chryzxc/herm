@@ -81,36 +81,50 @@ enum RichArtifactIndex {
         else { return nil }
         return previous
     }
-    private static func root(
-        of record: ArtifactRecord, lookup: [String: ArtifactRecord], aliases: [String: ArtifactRecord]
-    ) -> String {
-        var current = record
-        var seen: Set<String> = [record.id]
-        while let previous = parent(of: current, lookup: lookup, aliases: aliases), seen.insert(previous.id).inserted {
-            current = previous
+    /// Construct once per record change; rendering only looks up the resulting groups.
+    final class Snapshot {
+        let records: [ArtifactRecord]
+        let latest: [ArtifactRecord]
+        private let roots: [String: String]
+        private let groups: [String: [ArtifactRecord]]
+
+        init(_ records: [ArtifactRecord]) {
+            self.records = records
+            let lookup = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let aliases = Dictionary(
+                records.compactMap { value in value.generated.map { ($0.reference.presentationKey, value) } },
+                uniquingKeysWith: { first, _ in first })
+            var roots: [String: String] = [:]
+            for record in records {
+                var current = record
+                var path: [String] = []
+                var seen = Set<String>()
+                while roots[current.id] == nil, seen.insert(current.id).inserted {
+                    path.append(current.id)
+                    guard let previous = parent(of: current, lookup: lookup, aliases: aliases) else { break }
+                    current = previous
+                }
+                let root = roots[current.id] ?? current.id
+                for id in path { roots[id] = root }
+            }
+            let groups = Dictionary(grouping: records) { roots[$0.id] ?? $0.id }
+                .mapValues { $0.sorted { earlier($1, than: $0) } }
+            let ids = Set(groups.values.compactMap { $0.first?.id })
+            self.roots = roots
+            self.groups = groups
+            latest = records.filter { ids.contains($0.id) }
         }
-        return current.id
+
+        func versions(of record: ArtifactRecord) -> [ArtifactRecord] {
+            groups[roots[record.id] ?? record.id] ?? []
+        }
     }
+
     static func latest(_ records: [ArtifactRecord]) -> [ArtifactRecord] {
-        let lookup = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let aliases = Dictionary(
-            records.compactMap { value in value.generated.map { ($0.reference.presentationKey, value) } },
-            uniquingKeysWith: { first, _ in first })
-        let groups = Dictionary(grouping: records) { root(of: $0, lookup: lookup, aliases: aliases) }
-        let ids = Set(
-            groups.values.compactMap { values in
-                values.max { earlier($0, than: $1) }?.id
-            })
-        return records.filter { ids.contains($0.id) }
+        Snapshot(records).latest
     }
+
     static func versions(of record: ArtifactRecord, in records: [ArtifactRecord]) -> [ArtifactRecord] {
-        let lookup = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let aliases = Dictionary(
-            records.compactMap { value in value.generated.map { ($0.reference.presentationKey, value) } },
-            uniquingKeysWith: { first, _ in first })
-        let rootID = root(of: record, lookup: lookup, aliases: aliases)
-        return records.filter { root(of: $0, lookup: lookup, aliases: aliases) == rootID }.sorted {
-            earlier($1, than: $0)
-        }
+        Snapshot(records).versions(of: record)
     }
 }

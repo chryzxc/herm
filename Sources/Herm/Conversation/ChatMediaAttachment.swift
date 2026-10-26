@@ -241,10 +241,12 @@ struct SessionAttachmentDiffTab: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(changes.files) { file in
-                    Text(file.isStaged ? "Staged changes" : "Working tree changes")
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .padding(.horizontal, 14)
+                    if file.isStaged {
+                        Text("Staged changes")
+                            .dockFont(.body, weight: .semibold)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .padding(.horizontal, 14)
+                    }
                     SessionChangeDiffPreview(file: file, diff: diffs[file.id], isLoading: isLoading)
                 }
             }

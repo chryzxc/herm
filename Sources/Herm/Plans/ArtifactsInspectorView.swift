@@ -66,7 +66,12 @@ struct ArtifactsInspectorView: View {
     @ObservedObject private var savedTools = RichArtifactStateStore.shared
     @State private var selectedVersionID: String?
     @State private var comparingVersions = false
-    @State private var records: [ArtifactRecord] = []
+    @State private var recordIndex = RichArtifactIndex.Snapshot([])
+    private var records: [ArtifactRecord] {
+        get { recordIndex.records }
+        nonmutating set { recordIndex = RichArtifactIndex.Snapshot(newValue) }
+    }
+    @State private var presentationCache = ArtifactBrowserProjectionCache()
     @State private var indexedSessions: [HermesSession] = []
     @State private var artifactCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
     @State private var query = ""
@@ -75,6 +80,9 @@ struct ArtifactsInspectorView: View {
     @State private var filePage = 1
     @State private var isLoading = false
     @State private var refreshID = 0
+    @State private var automaticRefreshID = 0
+    @State private var completedManualRefreshID = 0
+    @State private var completedAutomaticRefreshID = 0
     @State private var refreshGeneration = UUID()
     @State private var errorMessage: String?
     @State private var failedSessionCount = 0
@@ -108,11 +116,7 @@ struct ArtifactsInspectorView: View {
         var showsIcon: Bool { self != .all }
     }
 
-    private var availableRecords: [ArtifactRecord] {
-        records.filter { $0.unavailableBookmark == nil || savedTools.isSaved($0) }
-    }
-
-    private var visibleRecords: [ArtifactRecord] {
+    private var projection: ArtifactBrowserProjectionCache.Projection {
         let kind: ArtifactKind? =
             switch filter {
             case .all, .saved: nil
@@ -121,11 +125,13 @@ struct ArtifactsInspectorView: View {
             case .link: .link
             case .interactive: .interactive
             }
-        let entries =
-            filter == .saved
-            ? availableRecords.filter { savedTools.isSaved($0) } : RichArtifactIndex.latest(availableRecords)
-        return ArtifactService.filter(entries, query: query, kind: kind)
+        return presentationCache.project(
+            index: recordIndex, query: query, kind: kind, savedOnly: filter == .saved,
+            bookmarks: savedTools.bookmarks, resources: savedTools.resourceBookmarks,
+            isSaved: savedTools.isSaved)
     }
+
+    private var visibleRecords: [ArtifactRecord] { projection.visible }
 
     private var visibleImages: [ArtifactRecord] {
         visibleRecords.filter { $0.kind == .image }
@@ -163,17 +169,20 @@ struct ArtifactsInspectorView: View {
                 inspectorBody
             }
         }
-        .task(id: "\(sessionScope.map { "\($0.profileID ?? "default"):\($0.resourceID)" } ?? "global"):\(refreshID)") {
-            await refresh()
+        .task(
+            id:
+                "\(sessionScope.map { "\($0.profileID ?? "default"):\($0.resourceID)" } ?? "global"):\(refreshID):\(automaticRefreshID)"
+        ) {
+            await refresh(force: refreshID != completedManualRefreshID)
         }
-        .onChange(of: model.isSending) { _, sending in if !sending { refreshID += 1 } }
+        .onChange(of: model.isSending) { _, sending in if !sending { automaticRefreshID += 1 } }
         .onChange(of: query) { resetPages() }
         .onChange(of: filter) { resetPages() }
         .onChange(of: visibleRecords.map(\.id)) { _, _ in reconcileSelection() }
         .onChange(of: selectedArtifactID) { _, _ in selectedVersionID = nil }
         .sheet(isPresented: $comparingVersions) {
             if let current = selectedRecord, let generated = current.generated,
-                let previous = RichArtifactIndex.versions(of: current, in: records)
+                let previous = recordIndex.versions(of: current)
                     .first(where: {
                         $0.timestamp < current.timestamp
                             || ($0.generated?.reference.rowID ?? 0) < (generated.reference.rowID ?? 0)
@@ -365,7 +374,7 @@ struct ArtifactsInspectorView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
-                    ForEach(ArtifactDaySection.group(visibleRecords)) { section in
+                    ForEach(projection.sections) { section in
                         Section {
                             ForEach(section.records) { record in
                                 artifactBrowserRow(record)
@@ -604,8 +613,7 @@ struct ArtifactsInspectorView: View {
     private func detailPreview(_ record: ArtifactRecord) -> some View {
         if let generated = record.generated {
             VStack(alignment: .leading, spacing: 12) {
-                let versions = RichArtifactIndex.versions(
-                    of: records.first { $0.id == selectedArtifactID } ?? record, in: records)
+                let versions = recordIndex.versions(of: records.first { $0.id == selectedArtifactID } ?? record)
                 if versions.count > 1 {
                     Picker(
                         "Version",
@@ -818,6 +826,17 @@ struct ArtifactsInspectorView: View {
     private func loadTextPreview(for record: ArtifactRecord) async {
         guard record.kind == .file, let url = artifactURL(record.value), url.isFileURL else { return }
         let content = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
+        guard !Task.isCancelled else { return }
+        if isMarkdown(record), case .text(let source, _) = content {
+            let key = MarkdownMessageView.renderKey(for: source)
+            if MarkdownRenderDocumentCache.cached(source: source, key: key) == nil {
+                let document = await Task.detached(priority: .userInitiated) {
+                    MarkdownRenderDocumentBuilder.build(source: source, key: key)
+                }.value
+                guard !Task.isCancelled else { return }
+                MarkdownRenderDocumentCache.insert(document, prefetched: true)
+            }
+        }
         textPreview = ArtifactTextPreview(id: record.id, content: content)
     }
 
@@ -960,14 +979,14 @@ struct ArtifactsInspectorView: View {
     }
 
     private func count(for item: ArtifactFilter) -> Int {
-        let latest = RichArtifactIndex.latest(availableRecords)
+        let value = projection
         return switch item {
-        case .all: latest.count
-        case .image: latest.filter { $0.kind == .image }.count
-        case .file: latest.filter { $0.kind == .file }.count
-        case .link: latest.filter { $0.kind == .link }.count
-        case .interactive: latest.filter { $0.kind == .interactive }.count
-        case .saved: availableRecords.filter { savedTools.isSaved($0) }.count
+        case .all: value.total
+        case .image: value.images
+        case .file: value.files
+        case .link: value.links
+        case .interactive: value.interactive
+        case .saved: value.saved
         }
     }
 
@@ -1024,15 +1043,9 @@ struct ArtifactsInspectorView: View {
 
     @ViewBuilder
     private func imagePreview(for record: ArtifactRecord, compact: Bool = false) -> some View {
-        // AsyncImage loads file URLs too, off the main thread; a synchronous
-        // NSImage(contentsOf:) here decoded every image on each scroll render.
         if let url = artifactURL(record.value) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else {
-                    previewUnavailable(compact: compact)
-                }
+            ArtifactImagePreview(url: url, maximumPixelSize: compact ? 96 : 1_040) {
+                previewUnavailable(compact: compact)
             }
         } else {
             previewUnavailable(compact: compact)
@@ -1195,7 +1208,15 @@ struct ArtifactsInspectorView: View {
         )
     }
 
-    private func refresh() async {
+    private func refresh(force: Bool) async {
+        let manualRefreshID = refreshID
+        let automaticID = automaticRefreshID
+        let changedSession =
+            automaticID != completedAutomaticRefreshID
+            ? model.navigationSessionID.map {
+                ProfileScopedID(profileID: model.sessionProfileID ?? model.profileScopeID, resourceID: $0)
+            }
+            : nil
         guard !Task.isCancelled else { return }
         let generation = UUID()
         refreshGeneration = generation
@@ -1241,13 +1262,13 @@ struct ArtifactsInspectorView: View {
         indexedSessions = sessions
         let results = await ArtifactIndexLoader.load(
             sessions: sessions, cache: artifactCache, index: .shared,
-            owner: ObjectIdentifier(model), force: refreshID > 0,
+            owner: ObjectIdentifier(model), force: force,
+            invalidatedSessions: Set(changedSession.map { [$0] } ?? []),
             onSession: { result in
                 guard !Task.isCancelled, refreshGeneration == generation, result.error == nil else { return }
                 let key = ProfileScopedID(profileID: result.profileID, resourceID: result.sessionID)
-                records.removeAll { $0.scopedSessionID == key }
-                records.append(contentsOf: result.records)
-                records.sort { $0.timestamp > $1.timestamp }
+                records = (records.filter { $0.scopedSessionID != key } + result.records)
+                    .sorted { $0.timestamp > $1.timestamp }
                 reconcileSelection()
             },
             messages: { session, offset in
@@ -1302,6 +1323,8 @@ struct ArtifactsInspectorView: View {
                     value: "", sessionID: reference.sessionID, sessionTitle: bookmark.sessionTitle,
                     timestamp: .distantPast, profileID: reference.profileID, unavailableBookmark: bookmark))
         }
+        completedManualRefreshID = manualRefreshID
+        completedAutomaticRefreshID = automaticID
         resetPages()
         reconcileSelection()
     }

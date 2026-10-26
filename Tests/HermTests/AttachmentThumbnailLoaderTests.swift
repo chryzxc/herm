@@ -27,6 +27,11 @@ struct AttachmentThumbnailLoaderTests {
         #expect(first.width == AttachmentThumbnailLoader.maximumPixelSize)
         #expect(first.height == first.width / 2)
         #expect(await loader.image(at: url) === first)
+        let icon = try #require(await loader.image(at: url, maximumPixelSize: 96))
+        #expect(icon.width == 96)
+        #expect(icon.height == 48)
+        #expect(icon !== first)
+        #expect(await loader.image(at: url, maximumPixelSize: 96) === icon)
 
         try writeImage(width: 100, height: 200)
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: url.path)

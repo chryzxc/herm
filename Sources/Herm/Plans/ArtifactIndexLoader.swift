@@ -27,12 +27,14 @@ enum ArtifactIndexLoader {
         index: ArtifactIndexStore? = nil,
         owner: ObjectIdentifier? = nil,
         force: Bool = false,
+        invalidatedSessions: Set<ProfileScopedID> = [],
         onSession: @MainActor (SessionResult) -> Void = { _ in },
         messages: @escaping @MainActor @Sendable (HermesSession, Int) async throws -> [String: Any]
     ) async -> [SessionResult] {
         await withTaskGroup(of: SessionResult.self) { group in
             var remaining = sessions.makeIterator()
             func add(_ session: HermesSession) {
+                let force = force || invalidatedSessions.contains(session.scopedID)
                 group.addTask {
                     if let index, let owner {
                         return await index.load(owner: owner, session: session, force: force) {
