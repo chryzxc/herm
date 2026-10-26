@@ -271,7 +271,11 @@ struct EdgeNotchRenderSnapshotTests {
                 lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
         ]
         let tasks = state.tasks
-        for name in ["tasks", "tasks-many", "tasks-empty", "kanban-unavailable", "quick-message", "quick-reply"] {
+        for name in [
+            "tasks", "tasks-top", "tasks-top-empty", "tasks-many", "tasks-empty", "kanban-unavailable",
+            "quick-message", "quick-reply",
+        ] {
+            state.side = name.contains("top") ? .top : .right
             state.tasks = tasks
             if name == "tasks-many" {
                 state.tasks = EdgeNotchTask.merged(
@@ -292,10 +296,11 @@ struct EdgeNotchRenderSnapshotTests {
                 state.selectQuickTarget(task.session, task: task)
             }
             state.quickDraft = "Review the latest changes and summarize anything that needs attention."
+            let size = state.panelSize
             let content = EdgeNotchView(state: state, controlCenter: control, quickMessageModel: model, openDock: {})
-                .frame(width: 368, height: 360)
+                .frame(width: size.width, height: size.height)
             let host = NSHostingView(rootView: content)
-            host.frame = NSRect(x: 0, y: 0, width: 368, height: 360)
+            host.frame = NSRect(origin: .zero, size: size)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .darkAqua)
             window.contentView = host

@@ -225,7 +225,7 @@ struct EdgeTaskPreview: View {
     var recall: (() -> Void)? = nil
     var steer: ((EdgeNotchTask) -> Void)? = nil
     var beginEditing: () -> Void = {}
-    /// The top island's icon-only action strip in place of the labelled footer.
+    /// The top island keeps the shared labelled actions without a divider.
     var compactFooter = false
     /// An announcement: only the updated rows (and quota change), measured to size the shell.
     var glimpse = false
@@ -303,12 +303,10 @@ struct EdgeTaskPreview: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if compactFooter {
-                    islandFooter
-                } else {
+                if !compactFooter {
                     Divider().overlay(Color.dockBorderLight)
-                    footer
                 }
+                footer
             }
             .foregroundStyle(Color.dockPrimaryText)
             .padding(.horizontal, 6)
@@ -365,9 +363,7 @@ struct EdgeTaskPreview: View {
                         replyToggle(task, isReplying: isReplying, visible: showsReply, reply: reply)
                             .padding(.top, 5)
                             .padding(.trailing, 4)
-                            .offset(x: showsReply ? 0 : 12)
-                            .frame(width: showsReply ? 34 : 0, alignment: .trailing)
-                            .clipped()
+                            .frame(width: 34, alignment: .trailing)
                     }
                 }
                 .animation(
@@ -698,6 +694,7 @@ struct EdgeTaskPreview: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 10)
         .padding(.top, DockSpacing.group)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -714,26 +711,14 @@ struct EdgeTaskPreview: View {
             : "Running sessions, Kanban cards and unopened results appear here."
     }
 
-    /// Round icon buttons in a centered capsule, the island's answer to the side panel's footer row.
-    private var islandFooter: some View {
-        HStack(spacing: 2) {
-            if let quickMessage { islandAction("Quick message", icon: .chats, action: quickMessage) }
-            secondaryActions
-        }
-        .padding(3)
-        .background(Capsule().fill(Color.dockSurface4.opacity(0.6)))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-    }
-
-    /// The side panel leads with a composer-style entry, then the shared icon actions.
+    /// Both placements lead with a labelled message entry, then the shared icon actions.
     private var footer: some View {
         HStack(spacing: 4) {
             if let quickMessage {
                 Button(action: quickMessage) {
                     HStack(spacing: 8) {
                         DockIcon(.chats, size: 13, color: .dockSecondaryText)
-                        Text("Quick message…").dockFont(.body).foregroundStyle(Color.dockMetadataText)
+                        Text("Quick message…").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }

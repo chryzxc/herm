@@ -2254,17 +2254,17 @@ struct EdgeNotchView: View {
         Button(action: action) {
             Text(title)
                 .dockFont(.body, weight: isSelected ? .semibold : .medium)
-                .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
-                .padding(.horizontal, 8)
+                .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .padding(.horizontal, 10)
                 .frame(height: 24)
                 .background(
                     DockThemeShape(cornerRadius: 12).dockSelectionFill(
-                        isSelected, fallback: isSelected ? Color.dockAccentMuted : .clear)
+                        isSelected, fallback: isSelected ? Color.dockSurface : .clear)
                 )
                 .overlay(
                     DockThemeShape(cornerRadius: 12).stroke(
                         isSelected && DockThemeStyle.current.material != .glass
-                            ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1)
+                            ? Color.dockBorderLight : .clear, lineWidth: 1)
                 )
                 .contentShape(Rectangle())
         }
