@@ -1312,7 +1312,6 @@ private struct MarkdownCodeCopyButton: View {
     var body: some View {
         DockCopyButton(code, accessibilityLabel: "Copy code", presentation: .text)
             .dockFont(.control)
-            .padding(.horizontal, 6).frame(height: 28).contentShape(Rectangle())
             .buttonStyle(.dockCompact)
     }
 }

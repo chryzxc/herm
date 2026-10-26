@@ -269,8 +269,7 @@ struct ConversationMessageRow: View, Equatable {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     let attributedBotID =
-                        message.systemEvent == nil && message.kanbanNotice == nil
-                        ? message.botProfileID ?? activeBotProfileID : nil
+                        SessionBotParticipants.authorID(message, activeProfileID: activeBotProfileID)
                     if let botProfileID = attributedBotID {
                         let bot = botsByID[botProfileID]
                         HStack(spacing: 7) {
