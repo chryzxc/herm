@@ -356,6 +356,7 @@ struct ReminderSummary: Identifiable, Codable, Equatable {
 
 struct SessionSummary: Identifiable, Codable, Equatable {
     let id: String
+    let storedSessionID: String?
     let profileID: String?
     let title: String
     let state: String
@@ -368,7 +369,11 @@ struct SessionSummary: Identifiable, Codable, Equatable {
 
     var lastUpdatedAt: Date? { updatedAt }
 
-    init(id: String, title: String, state: String, preview: String?, updatedAt: Date? = nil, profileID: String? = nil) {
+    init(
+        id: String, title: String, state: String, preview: String?, updatedAt: Date? = nil,
+        profileID: String? = nil, storedSessionID: String? = nil
+    ) {
+        self.storedSessionID = storedSessionID
         self.id = id
         self.profileID = profileID
         self.title = title

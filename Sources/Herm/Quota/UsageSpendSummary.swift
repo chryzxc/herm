@@ -118,18 +118,22 @@ struct UsageSpendSummary: View {
 
 struct UsageSpendTotals: View {
     let report: TokenUsageReport
+    var isWide = false
     private var monochrome: Bool { DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             DockSectionLabel(title: "Token totals")
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 18) { totals }
-                    .frame(minWidth: 900)
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 160), alignment: .leading)],
-                    alignment: .leading, spacing: 18
-                ) { totals }
+            if isWide {
+                HStack(alignment: .top, spacing: 18) {
+                    inputTotals
+                    outputTotals
+                }
+            } else {
+                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 18) {
+                    GridRow { inputTotals }
+                    GridRow { outputTotals }
+                }
             }
 
             ViewThatFits(in: .horizontal) {
@@ -163,11 +167,15 @@ struct UsageSpendTotals: View {
     }
 
     @ViewBuilder
-    private var totals: some View {
+    private var inputTotals: some View {
         total("Processed tokens", UsageWorkspaceView.tokens(report.processedTokens))
             .help("Input, output, and reported cache reads, including background input and output.")
         total("Cache reads", UsageWorkspaceView.tokens(report.cacheReadTokens))
         total("Uncached input", UsageWorkspaceView.tokens(report.totalInputTokens))
+    }
+
+    @ViewBuilder
+    private var outputTotals: some View {
         total("Output", UsageWorkspaceView.tokens(report.totalOutputTokens))
         total("Cache hit rate", report.cacheHitRate.map { UsageWorkspaceView.percent($0 * 100) } ?? "—")
     }

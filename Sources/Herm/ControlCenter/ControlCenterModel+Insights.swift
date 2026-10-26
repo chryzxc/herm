@@ -55,6 +55,7 @@ extension ControlCenterModel {
             {
                 await refreshYearActivity()
             }
+            await providerUsageTask?.value
         }
         spendRefreshTask = task
         return task
@@ -64,6 +65,8 @@ extension ControlCenterModel {
     func refreshTokenUsage(days: Int) -> Task<Void, Never>? {
         if tokenUsageDays == days, let tokenUsageTask { return tokenUsageTask }
         tokenUsageTask?.cancel()
+        providerUsageTask?.cancel()
+        providerUsageTask = nil
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -85,7 +88,8 @@ extension ControlCenterModel {
                 recordProjectionSuccess("token.usage", count: tokenUsage?.sessions ?? 0)
                 // Slower provider accounting enriches the visible report without blocking yearly activity.
                 beginProjectionRefresh("usage.providers")
-                Task { @MainActor in
+                providerUsageTask = Task { @MainActor in
+                    defer { if generation == tokenUsageGeneration { providerUsageTask = nil } }
                     do {
                         let modelRows = try await rpc.modelAnalytics(days: days)
                         guard generation == tokenUsageGeneration,
@@ -144,18 +148,30 @@ extension ControlCenterModel {
         }
     }
 
-    /// Loads one month of work for the Calendar tab. A month already fetched
-    /// is rebuilt from cache unless `force` is set.
+    /// Shares in-flight month reads and reuses successful sources for one minute.
     func refreshWorkCalendar(month: Date, repoPaths: [String], force: Bool = false) {
         let calendar = Calendar.current
         let monthStart = calendar.dateInterval(of: .month, for: month)?.start ?? calendar.startOfDay(for: month)
         let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart
-        workCalendarMonth = monthStart
         workCalendarRepoPaths = repoPaths
+        let paths = workCalendarRepoPaths(monthStart: monthStart, monthEnd: monthEnd)
+        if workCalendarMonth == monthStart, workCalendarTask != nil,
+            paths.isSubset(of: workCalendarPaths[monthStart] ?? [])
+        {
+            return
+        }
+        workCalendarTask?.cancel()
+        workCalendarTask = nil
+        workCalendarGeneration = UUID()
+        workCalendarMonth = monthStart
         if globalKanbanTasks.isEmpty { refreshGlobalKanban(trigger: .background) }
         if cronRuns.isEmpty { refreshCronRuns() }
-        if !force, workCalendarSources[monthStart] != nil {
+        if !force, workCalendarSources[monthStart] != nil,
+            paths.isSubset(of: workCalendarPaths[monthStart] ?? []),
+            (workCalendarLoadedAt[monthStart]?.timeIntervalSinceNow ?? -.infinity) > -60
+        {
             rebuildWorkCalendar()
+            recordProjectionSuccess("work.calendar", count: workCalendar?.activeDays ?? 0)
             return
         }
         let generation = UUID()
@@ -167,13 +183,13 @@ extension ControlCenterModel {
             return
         }
         beginProjectionRefresh("work.calendar")
-        let paths = workCalendarRepoPaths(monthStart: monthStart, monthEnd: monthEnd)
         workCalendarPaths[monthStart] = paths
-        Task { @MainActor in
+        workCalendarTask = Task { @MainActor in
+            defer { if generation == workCalendarGeneration { workCalendarTask = nil } }
             do {
                 async let commits = RepositoryService.commits(paths: paths, since: monthStart, until: monthEnd)
                 async let pullRequests = GitHubCodeHostService().mergedPullRequests(since: monthStart, until: monthEnd)
-                let sessions = try await Self.workCalendarSessions(rpc: rpc, since: monthStart)
+                async let sessions = Self.workCalendarSessions(rpc: rpc, since: monthStart)
                 // Usage is best-effort: older Hermes builds lack the web server.
                 let usageDays = (calendar.dateComponents([.day], from: monthStart, to: Date()).day ?? -1) + 1
                 var usage: [TokenUsageReport.Day] = []
@@ -181,16 +197,21 @@ extension ControlCenterModel {
                     usage = Self.parseTokenUsage(result).daily
                 }
                 let fetched = (
-                    sessions: sessions, commits: await commits, pullRequests: await pullRequests, usage: usage
+                    sessions: try await sessions, commits: await commits, pullRequests: await pullRequests, usage: usage
                 )
                 guard generation == workCalendarGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
                 workCalendarSources[monthStart] = fetched
+                workCalendarLoadedAt[monthStart] = Date()
                 rebuildWorkCalendar()
+                guard generation == workCalendarGeneration else { return }
                 recordProjectionSuccess("work.calendar", count: workCalendar?.activeDays ?? 0)
             } catch {
-                guard generation == workCalendarGeneration else { return }
+                guard generation == workCalendarGeneration,
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
+                workCalendarLoadedAt[monthStart] = nil
                 recordProjectionFailure("work.calendar", error: error.localizedDescription)
             }
         }
@@ -234,6 +255,7 @@ extension ControlCenterModel {
         var sessions: [SessionSummary] = []
         var offset = 0
         for _ in 0..<50 {
+            try Task.checkCancellation()
             let page = try await rpc.sessionPages(limit: 100, offset: offset, order: "recent")
             guard let rows = page["data"] as? [[String: Any]] else {
                 throw HermesGateway.GatewayError.malformedResponse

@@ -7,6 +7,9 @@ extension ControlCenterModel {
         if dockModel !== model {
             refreshGeneration &+= 1
             clientBindingGeneration &+= 1
+            latestActivityRefreshTask?.cancel()
+            latestActivityRefreshTask = nil
+            latestActivityCache = [:]
             refreshTask?.cancel()
             refreshTask = nil
             initialProjectNavigationTask?.cancel()
@@ -74,6 +77,17 @@ extension ControlCenterModel {
             tokenUsageDays = nil
             spendRefreshTask?.cancel()
             spendRefreshTask = nil
+            providerUsageTask?.cancel()
+            providerUsageTask = nil
+            workCalendarGeneration = UUID()
+            workCalendarTask?.cancel()
+            workCalendarTask = nil
+            workCalendar = nil
+            workCalendarMonth = nil
+            workCalendarSources = [:]
+            workCalendarPaths = [:]
+            workCalendarLoadedAt = [:]
+            workCalendarRepoPaths = []
             tokenUsage = nil
             sessionContext = nil
             sessionCockpitSessionID = nil
@@ -189,6 +203,7 @@ extension ControlCenterModel {
         let generation = refreshGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         isRefreshing = true
+        refreshLatestActivityProjection()
         lastError = nil
         rebuildAttention()
         // The left Kanban is a global Control projection. Hydrate it with the
@@ -197,7 +212,7 @@ extension ControlCenterModel {
         refreshGlobalKanban()
         if remindersAdapter != nil { beginProjectionRefresh("reminders") }
         if rpc != nil {
-            ["cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects"].forEach(
+            ["cron.jobs", "sessions", "agents", "processes", "projects"].forEach(
                 beginProjectionRefresh)
         }
         if dockModel != nil { beginProjectionRefresh("core") }
@@ -284,17 +299,6 @@ extension ControlCenterModel {
                         Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("sessions", error: message)
                     lastError = message
-                }
-
-                do {
-                    try await refreshLatestActivities(rpc: rpc, generation: generation, clientIdentity: clientIdentity)
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    recordProjectionSuccess("latest.activity")
-                } catch {
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(
-                        Self.safeUserDiagnostic(error.localizedDescription))
-                    recordProjectionFailure("latest.activity", error: message)
                 }
 
                 do {

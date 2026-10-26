@@ -96,6 +96,30 @@ extension ControlCenterModel {
         return ""
     }
 
+    /// Archive enrichment must not delay live agent, capability, or project state.
+    func refreshLatestActivityProjection() {
+        guard latestActivityRefreshTask == nil, let rpc else { return }
+        let generation = refreshGeneration
+        let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        beginProjectionRefresh("latest.activity")
+        latestActivityRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if isCurrentRefresh(generation, clientIdentity: identity) { latestActivityRefreshTask = nil }
+            }
+            do {
+                try await refreshLatestActivities(rpc: rpc, generation: generation, clientIdentity: identity)
+                try Task.checkCancellation()
+                guard isCurrentRefresh(generation, clientIdentity: identity) else { return }
+                recordProjectionSuccess("latest.activity")
+            } catch {
+                guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+                recordProjectionFailure(
+                    "latest.activity", error: HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            }
+        }
+    }
+
     func refreshLatestActivities(
         rpc: HermesControlRPC,
         generation: UInt64,
@@ -108,6 +132,8 @@ extension ControlCenterModel {
         var seenSessionIDs = Set<String>()
         let maximumPageCount = 1_000
         repeat {
+            try Task.checkCancellation()
+            guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
             guard pageCount < maximumPageCount else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
@@ -138,16 +164,35 @@ extension ControlCenterModel {
         }
         var stepsBySessionID: [String: [SessionActivityStep]] = [:]
         var failedSessionCount = 0
+        let revisions = Dictionary(
+            sessionRows.compactMap { row -> (String, LatestActivityRevision)? in
+                guard let id = row["id"] as? String, let revision = LatestActivityRevision(row) else { return nil }
+                return (id, revision)
+            }, uniquingKeysWith: { first, _ in first })
+        var nextCache: [String: LatestActivityCacheEntry] = [:]
+        var cachedStepCount = 0
 
         for start in stride(from: 0, to: sessions.count, by: 8) {
+            try Task.checkCancellation()
+            guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
             let end = min(start + 8, sessions.count)
             let batch = Array(sessions[start..<end])
             let fetched = await withTaskGroup(
                 of: (String, [SessionActivityStep], Bool).self, returning: [(String, [SessionActivityStep], Bool)].self
             ) { group in
                 for session in batch {
+                    if let revision = revisions[session.id], let cached = latestActivityCache[session.id],
+                        cached.revision == revision
+                    {
+                        stepsBySessionID[session.id] = cached.steps
+                        if cachedStepCount + cached.steps.count <= 10_000, nextCache.count < 512 {
+                            nextCache[session.id] = cached
+                            cachedStepCount += cached.steps.count
+                        }
+                        continue
+                    }
                     group.addTask { [weak self] in
-                        guard let self else { return (session.id, [], false) }
+                        guard let self, !Task.isCancelled else { return (session.id, [], false) }
                         let result = await self.fetchActivitySteps(rpc: rpc, sessionID: session.id)
                         return (session.id, result.steps, result.succeeded)
                     }
@@ -162,8 +207,17 @@ extension ControlCenterModel {
             for (sessionID, steps, succeeded) in fetched {
                 stepsBySessionID[sessionID] = steps
                 if !succeeded { failedSessionCount += 1 }
+                if succeeded, let revision = revisions[sessionID],
+                    cachedStepCount + steps.count <= 10_000, nextCache.count < 512
+                {
+                    nextCache[sessionID] = LatestActivityCacheEntry(revision: revision, steps: steps)
+                    cachedStepCount += steps.count
+                }
             }
         }
+        try Task.checkCancellation()
+        guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+        latestActivityCache = nextCache
 
         let projectedActivities = GlobalSessionActivityPresentation.latestActivity(
             sessions,
@@ -334,7 +388,11 @@ extension ControlCenterModel {
                 ?? activityDate(row["last_active"])
                 ?? activityDate(row["last_message_at"])
                 ?? activityDate(row["started_at"])
-            sessions.append(SessionSummary(id: id, title: title, state: state, preview: preview, updatedAt: updatedAt))
+            sessions.append(
+                SessionSummary(
+                    id: id, title: title, state: state, preview: preview, updatedAt: updatedAt,
+                    profileID: nonEmpty(row["profile_id"] as? String) ?? nonEmpty(row["profile"] as? String),
+                    storedSessionID: nonEmpty(row["session_key"] as? String)))
         }
         return sessions
     }

@@ -4,6 +4,12 @@ import SwiftUI
 struct UsageHeatmap: View, Equatable {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     let daily: [TokenUsageReport.Day]
+    private let values: [Date: TokenUsageReport.Day]
+
+    init(daily: [TokenUsageReport.Day]) {
+        self.daily = daily
+        values = Dictionary(daily.map { (Calendar.current.startOfDay(for: $0.day), $0) }, uniquingKeysWith: { $1 })
+    }
     private let today = Calendar.current.startOfDay(for: Date())
     @State private var metric: Metric = .tokens
     @State private var selected: Date?
@@ -39,7 +45,6 @@ struct UsageHeatmap: View, Equatable {
 
     var body: some View {
         let start = start
-        let values = Dictionary(daily.map { (calendar.startOfDay(for: $0.day), $0) }, uniquingKeysWith: { $1 })
         let peak = values.values.map(metric.value).max() ?? 0
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -84,7 +89,9 @@ struct UsageHeatmap: View, Equatable {
                 for row in 0..<7 {
                     guard let date = calendar.date(byAdding: .day, value: week * 7 + row, to: start), date <= today
                     else { continue }
-                    if row == 0, calendar.component(.month, from: date) != lastMonth {
+                    if row == 0, calendar.component(.month, from: date) != lastMonth,
+                        week > 0 || calendar.component(.day, from: date) <= 7
+                    {
                         lastMonth = calendar.component(.month, from: date)
                         context.draw(
                             Text(date, format: .dateTime.month(.abbreviated)).font(

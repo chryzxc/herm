@@ -164,40 +164,31 @@ struct UsageReportContent: View, Equatable {
     var providersRefreshing = false
     @State private var expandedModels: Set<String> = []
     @State private var grouping: UsageCostGrouping = .models
+    @State private var expandedShares: Set<String> = []
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.report == rhs.report && lhs.isWide == rhs.isWide && lhs.providersRefreshing == rhs.providersRefreshing
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        LazyVStack(alignment: .leading, spacing: 16) {
             spendOverview(report)
-            UsageSpendTotals(report: report)
+            UsageDailyInsights(daily: report.daily)
+            UsageSpendTotals(report: report, isWide: isWide)
             modelsSection(report)
             if !report.tasks.isEmpty { tasksSection(report) }
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    shareSection(
-                        title: "Tools", detail: "\(report.tools.reduce(0) { $0 + $1.count }.formatted()) calls",
-                        rows: report.tools, tint: .dockInfo
-                    )
-                    .frame(minWidth: 300)
-                    shareSection(
-                        title: "Skills",
-                        detail: "\(report.skillLoads.formatted()) loads · \(report.distinctSkills) distinct",
-                        rows: report.skills, tint: .dockMerged
-                    )
-                    .frame(minWidth: 300)
-                }
-                VStack(spacing: 16) {
-                    shareSection(
-                        title: "Tools", detail: "\(report.tools.reduce(0) { $0 + $1.count }.formatted()) calls",
-                        rows: report.tools, tint: .dockInfo)
-                    shareSection(
-                        title: "Skills",
-                        detail: "\(report.skillLoads.formatted()) loads · \(report.distinctSkills) distinct",
-                        rows: report.skills, tint: .dockMerged)
-                }
+            let layout =
+                isWide
+                ? AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+                : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+            layout {
+                shareSection(
+                    title: "Tools", detail: "\(report.tools.reduce(0) { $0 + $1.count }.formatted()) calls",
+                    rows: report.tools, tint: .dockInfo)
+                shareSection(
+                    title: "Skills",
+                    detail: "\(report.skillLoads.formatted()) loads · \(report.distinctSkills) distinct",
+                    rows: report.skills, tint: .dockMerged)
             }
         }
     }
@@ -337,7 +328,7 @@ struct UsageReportContent: View, Equatable {
     // MARK: Tools & skills
 
     private func shareSection(title: String, detail: String, rows: [TokenUsageReport.Share], tint: Color) -> some View {
-        let top = Array(rows.prefix(10))
+        let top = expandedShares.contains(title) ? rows : Array(rows.prefix(10))
         let maxShare = max(0.01, top.map(\.percentage).max() ?? 1)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -366,6 +357,16 @@ struct UsageReportContent: View, Equatable {
                     }
                     meter(row.percentage / maxShare, tint: tint)
                 }
+            }
+            if rows.count > 10 {
+                Button(expandedShares.contains(title) ? "Show less" : "Show all \(rows.count)") {
+                    if expandedShares.contains(title) {
+                        expandedShares.remove(title)
+                    } else {
+                        expandedShares.insert(title)
+                    }
+                }
+                .buttonStyle(.dockCompact)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

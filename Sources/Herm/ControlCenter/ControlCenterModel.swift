@@ -73,6 +73,7 @@ final class ControlCenterModel: ObservableObject {
     var tokenUsageTask: Task<Void, Never>?
     var tokenUsageDays: Int?
     var spendRefreshTask: Task<Void, Never>?
+    var providerUsageTask: Task<Void, Never>?
     @Published var workCalendar: WorkCalendarIndex?
     /// Fetched sessions/commits/usage per month start; Kanban and cron runs are
     /// folded in from the live projections at build time.
@@ -86,6 +87,8 @@ final class ControlCenterModel: ObservableObject {
     var workCalendarPaths: [Date: Set<String>] = [:]
     var workCalendarRepoPaths: [String] = []
     var workCalendarGeneration = UUID()
+    var workCalendarTask: Task<Void, Never>?
+    var workCalendarLoadedAt: [Date: Date] = [:]
     @Published var providerQuotas: [ProviderQuotaSnapshot] = []
     /// Hermes' provider catalog (Settings → Providers); nil until first loaded.
     /// It is the source of truth for which quota providers the Quota page offers.
@@ -163,6 +166,8 @@ final class ControlCenterModel: ObservableObject {
     lazy var configEditor = HermesConfigEditor { [weak self] in self?.rpc }
     var cli: HermesCLIAdapter?
     var refreshTask: Task<Void, Never>?
+    var latestActivityRefreshTask: Task<Void, Never>?
+    var latestActivityCache: [String: LatestActivityCacheEntry] = [:]
     var eventRefreshTask: Task<Void, Never>?
     var initialProjectNavigationTask: Task<Void, Never>?
     var refreshGeneration: UInt64 = 0

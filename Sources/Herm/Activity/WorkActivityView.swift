@@ -15,6 +15,17 @@ struct WorkActivityView: View {
     /// What the detail area summarizes: the selected day, its week, or the whole month.
     @AppStorage("dock.calendar.scope") private var scopeRaw = CalendarScope.day.rawValue
     @FocusState private var gridFocused: Bool
+    @State private var selectedActivity = WorkRange()
+    @State private var projectedSelection: Selection?
+
+    private struct Selection: Equatable {
+        let index: WorkCalendarIndex?
+        let date: Date
+        let scope: CalendarScope
+    }
+
+    private var selection: Selection { Selection(index: loadedIndex, date: selected, scope: scope) }
+    private var activity: WorkRange { projectedSelection == selection ? selectedActivity : WorkRange() }
 
     private let calendar = Calendar.current
     private var jobNames: [String: String] {
@@ -54,7 +65,7 @@ struct WorkActivityView: View {
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 16) {
                                     gridCard(index, wide: true)
-                                    summaryCard(index)
+                                    summaryCard
                                 }
                                 .padding(.bottom, 16)
                             }
@@ -90,7 +101,19 @@ struct WorkActivityView: View {
         // Centered like the other monitoring pages, so wide windows don't stretch the cells.
         .frame(maxWidth: 1480, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // Kanban and cron load on their own schedule; fold them in as they land.
+        // Reuse one projection for summary and details until their inputs change.
+        .onChange(of: selection, initial: true) { _, selection in
+            projectedSelection = selection
+            guard let index = selection.index else {
+                selectedActivity = WorkRange()
+                return
+            }
+            switch selection.scope {
+            case .day: selectedActivity = index.range(from: selected, to: selected)
+            case .week: selectedActivity = index.range(from: weekBounds.start, to: weekBounds.end)
+            case .month: selectedActivity = index.range(from: index.month, to: .distantFuture)
+            }
+        }
         .onChange(of: control.globalKanbanTasks) { _, _ in control.rebuildWorkCalendar() }
         .onChange(of: control.cronRuns) { _, _ in control.rebuildWorkCalendar() }
         // Projects can land after the first load; the rebuild re-reads git for any new repo.
@@ -123,18 +146,26 @@ struct WorkActivityView: View {
     @ViewBuilder
     private func detail(_ index: WorkCalendarIndex, includesSummary: Bool = false) -> some View {
         if loadedIndex == nil {
-            ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(alignment: .leading, spacing: 6) {
+                if refreshState?.isRefreshing != true, let error = refreshState?.error {
+                    Text("Activity unavailable").dockFont(.body, weight: .semibold)
+                    Text(error).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 VStack(spacing: 16) {
-                    if includesSummary { summaryCard(index) }
+                    if includesSummary { summaryCard }
                     switch scope {
                     case .day:
                         CalendarDayPane(
                             date: selected,
                             day: index.day(selected) ?? WorkDay(),
                             usualActivity: index.usualActivity(excluding: selected...selected),
-                            activity: index.range(from: selected, to: selected),
+                            activity: activity,
                             jobNames: jobNames,
                             botsByID: botsByID,
                             avatarImages: avatarImages,
@@ -146,11 +177,11 @@ struct WorkActivityView: View {
                     case .week:
                         let bounds = weekBounds
                         rangePane(
-                            index.range(from: bounds.start, to: bounds.end),
+                            activity,
                             title: (bounds.start..<bounds.end).formatted(.interval.month(.abbreviated).day()))
                     case .month:
                         rangePane(
-                            index.range(from: index.month, to: .distantFuture),
+                            activity,
                             title: month.formatted(.dateTime.month(.wide).year()))
                     }
                 }
@@ -162,16 +193,10 @@ struct WorkActivityView: View {
         }
     }
 
-    private func summaryCard(_ index: WorkCalendarIndex) -> some View {
-        let range: WorkRange =
-            switch scope {
-            case .day: index.range(from: selected, to: selected)
-            case .week: index.range(from: weekBounds.start, to: weekBounds.end)
-            case .month: index.range(from: index.month, to: .distantFuture)
-            }
+    private var summaryCard: some View {
         return WorkActivitySummaryView(
             input: loadedIndex == nil || refreshState?.isStale == true
-                ? nil : WorkActivitySummaryInput(range: range, scope: scope.title))
+                ? nil : WorkActivitySummaryInput(range: activity, scope: scope.title))
     }
 
     private func rangePane(_ range: WorkRange, title: String) -> some View {
@@ -293,7 +318,7 @@ private struct CalendarDivided<Item: Identifiable, Row: View>: View {
     @ViewBuilder let row: (Item) -> Row
 
     var body: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 if index > 0 { Color.dockBorderLight.frame(height: DockLayout.hairline) }
                 row(item)
@@ -601,11 +626,11 @@ private struct CalendarRangePane: View, Equatable {
             }
             if range.activeHours > 0 {
                 metric(
-                    "Active hours", "\(range.activeHours)h",
+                    "Hours with events", "\(range.activeHours)h",
                     detail: range.vsUsual.map { "\($0 > 0 ? "↑" : "↓") \(abs($0))% vs usual" })
             }
             if range.longestStretch > 1 {
-                metric("Longest stretch", "\(range.longestStretch)h", detail: "within a day")
+                metric("Consecutive hours", "\(range.longestStretch)h", detail: "within a day")
             }
             if !range.runs.isEmpty { metric("Automation runs", "\(range.runs.count)", detail: nil) }
             if range.streak > 0 { metric("Streak", "\(range.streak)", detail: range.streak == 1 ? "day" : "days") }
@@ -883,8 +908,8 @@ private struct CalendarDayPane: View, Equatable {
             HStack(alignment: .top, spacing: 24) {
                 if day.activeHours > 0 {
                     calendarStat(
-                        "\(day.activeHours)h active",
-                        day.longestStretch > 1 ? "longest stretch \(day.longestStretch)h" : "focus time")
+                        "\(day.activeHours) hours with events",
+                        day.longestStretch > 1 ? "\(day.longestStretch) consecutive hours" : "recorded timestamps")
                 }
                 if let change { calendarStat("\(change > 0 ? "↑" : "↓") \(abs(change))%", "vs your usual day") }
                 if let perItem { calendarStat(UsageWorkspaceView.cost(perItem), "cost per item shipped") }
@@ -908,7 +933,8 @@ private struct CalendarActivityDetails: View {
     private let rowCap = 8
 
     var body: some View {
-        VStack(spacing: 12) {
+        LazyVStack(spacing: 12) {
+            if !activity.isEmpty { WorkActivityBreakdown(activity: activity) }
             if !activity.tasks.isEmpty || !activity.commits.isEmpty || !activity.pullRequests.isEmpty { shippedColumn }
             if !activity.sessions.isEmpty || !activity.runs.isEmpty || activity.hasUsage { workedColumn }
         }
@@ -1103,11 +1129,13 @@ private struct CalendarActivityDetails: View {
     ) -> some View {
         HStack(spacing: 8) {
             DockIcon(icon).dockFont(.body).foregroundStyle(tint).frame(width: 14)
-            Text(title).dockFont(.rowTitle).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.tail)
-            Spacer(minLength: 8)
-            if let meta {
-                Text(meta).dockFont(.machineMetadata).foregroundStyle(metaTint).lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).dockFont(.rowTitle).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
+                if let meta {
+                    Text(meta).dockFont(.metadata).foregroundStyle(metaTint).lineLimit(2)
+                }
             }
+            Spacer(minLength: 8)
             if let trailingIcon {
                 DockIcon(trailingIcon).dockFont(.compactStatus, weight: .regular).foregroundStyle(
                     Color.dockMetadataText)
@@ -1164,7 +1192,10 @@ private struct CalendarHourlyRhythm: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Activity by hour. Peak at \(Self.hourLabel(peakHour)) with \(peak) events.")
+        .accessibilityLabel(
+            hours.contains(where: { $0 > 0 })
+                ? "Activity by hour. Peak at \(Self.hourLabel(peakHour)) with \(peak) events."
+                : "Activity by hour. No recorded events.")
     }
 
     private static func hourLabel(_ hour: Int) -> String {

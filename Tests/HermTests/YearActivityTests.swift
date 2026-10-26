@@ -39,6 +39,73 @@ struct YearActivityTests {
         #expect(client.paths.filter { $0.contains("/usage?") }.count == 4)
     }
 
+    @Test func spendWaitsForSlowProviderAccountingWithoutBlockingYear() async {
+        let client = YearActivityClient()
+        client.modelDelay = .milliseconds(150)
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        client.onFetch = {
+            if client.paths.last == "/api/analytics/usage?days=365" {
+                #expect(control.refreshState(for: "usage.providers")?.isRefreshing == true)
+            }
+        }
+        await control.refreshSpend().value
+        #expect(control.refreshState(for: "usage.providers")?.isRefreshing == false)
+        #expect(control.providerUsageTask == nil)
+        #expect(control.spendRefreshTask == nil)
+    }
+
+    @Test func switchingRuntimeClearsWorkCalendarCaches() {
+        let control = ControlCenterModel()
+        let month = Calendar.current.dateInterval(of: .month, for: Date())!.start
+        control.workCalendar = WorkCalendarIndex.build(
+            month: month, sessions: [], tasks: [], commits: [], runs: [], usage: [])
+        control.workCalendarMonth = month
+        control.workCalendarSources[month] = (sessions: [], commits: [], pullRequests: [], usage: [])
+        control.workCalendarPaths[month] = ["/fixture"]
+        control.workCalendarLoadedAt[month] = Date()
+        control.bind(to: DockModel(rpcClient: YearActivityClient()))
+        #expect(control.workCalendar == nil)
+        #expect(control.workCalendarMonth == nil)
+        #expect(control.workCalendarSources.isEmpty)
+        #expect(control.workCalendarPaths.isEmpty)
+        #expect(control.workCalendarLoadedAt.isEmpty)
+    }
+
+    @Test func sameMonthReadIsSharedAndExpiredCacheRetries() {
+        let control = ControlCenterModel()
+        let month = Calendar.current.dateInterval(of: .month, for: Date())!.start
+        control.workCalendarMonth = month
+        control.workCalendarPaths[month] = []
+        let pending = Task { @MainActor in }
+        control.workCalendarTask = pending
+        let generation = control.workCalendarGeneration
+        control.refreshWorkCalendar(month: month, repoPaths: [], force: true)
+        #expect(control.workCalendarGeneration == generation)
+        #expect(!pending.isCancelled)
+        control.workCalendarTask = nil
+        control.workCalendarSources[month] = (sessions: [], commits: [], pullRequests: [], usage: [])
+        control.workCalendarLoadedAt[month] = Date().addingTimeInterval(-120)
+        control.refreshWorkCalendar(month: month, repoPaths: [])
+        // No RPC is bound: an expired cache must expose unavailable, never certify stale data.
+        #expect(control.refreshState(for: "work.calendar")?.lastSuccess == nil)
+        #expect(control.workCalendar == nil)
+    }
+
+    @Test func cachedMonthCancelsPreviousMonthAndSettlesRefresh() {
+        let control = ControlCenterModel()
+        let month = Calendar.current.dateInterval(of: .month, for: Date())!.start
+        let previous = Calendar.current.date(byAdding: .month, value: -1, to: month)!
+        control.workCalendarMonth = previous
+        control.workCalendarSources[month] = (sessions: [], commits: [], pullRequests: [], usage: [])
+        control.workCalendarLoadedAt[month] = Date()
+        let oldGeneration = control.workCalendarGeneration
+        control.beginProjectionRefresh("work.calendar")
+        control.refreshWorkCalendar(month: month, repoPaths: [])
+        #expect(control.workCalendar?.month == month)
+        #expect(control.workCalendarGeneration != oldGeneration)
+        #expect(control.refreshState(for: "work.calendar")?.isRefreshing == false)
+    }
+
     @Test func tokenUsageSharesInflightReadsAndKeepsGoodDataOnTimeout() async {
         let client = YearActivityClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
@@ -136,13 +203,14 @@ private final class YearActivityClient: HermesRPCClientProtocol {
     var response: [String: Any] = ["period_days": 30, "daily": [["day": "2026-10-20", "input_tokens": 100]]]
     var modelResponse: [String: Any] = ["period_days": 30, "models": [[String: Any]]()]
     var modelFailure: Error?
+    var modelDelay: Duration = .zero
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         paths.append(path)
         onFetch?()
-        try await Task.sleep(for: .milliseconds(10))
+        try await Task.sleep(for: path.contains("/models?") ? modelDelay : .milliseconds(10))
         if let failure { throw failure }
         if path.contains("/models?"), let modelFailure { throw modelFailure }
         return path.contains("/models?") ? modelResponse : response
