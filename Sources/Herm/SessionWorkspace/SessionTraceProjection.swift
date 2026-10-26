@@ -29,6 +29,8 @@ struct SessionTraceRow: Identifiable, Equatable {
     var context: String? = nil
     /// What a running delegate last reported doing.
     var activity: String? = nil
+    /// Exact profile identity for an explicitly dispatched Bot; generic delegates remain anonymous.
+    var crewProfileID: String? = nil
 
     var failed: Bool { outcome == "Failed" || outcome == "Error" }
 
@@ -45,7 +47,7 @@ struct SessionTraceRow: Identifiable, Equatable {
         guard let start, let finish = end ?? (active ? now : nil) else { return nil }
         return max(0, finish.timeIntervalSince(start))
     }
-    var status: String { active ? "Running" : outcome ?? "Finished · outcome unavailable" }
+    var status: String { outcome ?? (active ? "Running" : "Finished · outcome unavailable") }
 }
 
 struct SessionTraceTurn: Identifiable, Equatable {
@@ -58,7 +60,7 @@ struct SessionTraceTurn: Identifiable, Equatable {
     var outcome: String? = nil
     var rows: [SessionTraceRow] = []
     var toolCount: Int { rows.filter { $0.kind == .tool }.count }
-    var agentCount: Int { rows.filter { $0.kind == .agent }.count }
+    var agentCount: Int { rows.filter { $0.kind == .agent && $0.crewProfileID == nil }.count }
     var errorCount: Int { rows.filter { $0.kind != .turn && $0.failed }.count }
     /// Derived model spans plus what delegates report; never a guess for the rest.
     var modelCallCount: Int {

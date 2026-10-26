@@ -10,6 +10,7 @@ final class SessionTraceModel: ObservableObject {
     /// An expanded copy is on screen and still needs updates while the inspector is covered.
     @Published var isExpanded = false
     private var previous: Inputs?
+    private var transcriptBots: [SessionBotParticipants.Participant] = []
     /// Set while hidden: a stop seen on resume happened at an unknown time.
     private var suspended = false
     private(set) var projectionCount = 0
@@ -28,6 +29,8 @@ final class SessionTraceModel: ObservableObject {
         let activities: [AgentActivity]
         let working: Bool
         let connected: Bool
+        let botRecords: [BotActivityRecord]
+        let participants: [SessionBotParticipants.Participant]
     }
 
     /// Hidden timelines stop projecting; the next update must not time a stop it missed.
@@ -44,6 +47,7 @@ final class SessionTraceModel: ObservableObject {
             self.model = model
             observe(model.$messages)
             observe(model.$activityPresentationRevision)
+            observe(model.$botActivityRevision)
             observe(model.$status.removeDuplicates())
             observe(model.$isHermesConnected.removeDuplicates())
             observe(model.$isRestoringSession.removeDuplicates())
@@ -80,6 +84,7 @@ final class SessionTraceModel: ObservableObject {
             if !turns.isEmpty { turns = [] }
             previous = nil
             cachedHistory = nil
+            transcriptBots = []
             return
         }
         var requests: [SessionTraceTurn]
@@ -88,6 +93,8 @@ final class SessionTraceModel: ObservableObject {
         } else {
             historyScanCount += 1
             requests = Self.requests(model.messages)
+            transcriptBots = SessionBotParticipants.collect(
+                messages: model.messages, activeProfileID: model.activeBotProfileID)
             cachedHistory = (identity, model.messagesRevision, requests)
         }
         if requests.isEmpty, model.streamingMessageSessionID == model.sessionID,
@@ -122,14 +129,47 @@ final class SessionTraceModel: ObservableObject {
             live: model.streamingTurnActivity + model.activeToolCalls,
             agents: model.agentPresentationSnapshot.displayedSubagents,
             activities: model.agentActivities,
-            working: model.status == .working, connected: model.isHermesConnected)
+            working: model.status == .working, connected: model.isHermesConnected,
+            botRecords: SessionBotActivityPresentation.snapshot(
+                records: model.botActivityBySessionID.values.flatMap { $0 },
+                sessionIDs: model.botActivitySessionIDs
+            ).list, participants: transcriptBots)
         guard previous != inputs else { return }
         previous = inputs
         projectionCount += 1
         if connected != inputs.connected { connected = inputs.connected }
-        turns = SessionTraceProjection.make(
+        var projected = SessionTraceProjection.make(
             turns: requests, live: inputs.live, agents: inputs.agents,
             working: inputs.working, connected: inputs.connected, activities: inputs.activities)
+        let botTurns = SessionCrewProjection.botTurns(inputs.botRecords, connected: inputs.connected)
+            .sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+        // Transcript order is authoritative, including prepended history whose
+        // timestamps may arrive out of order. Insert dispatches without sorting it.
+        for turn in botTurns {
+            let index = projected.firstIndex { $0.start > turn.start } ?? projected.endIndex
+            projected.insert(turn, at: index)
+        }
+        for bot in inputs.participants {
+            for requestID in bot.requestIDs {
+                guard let index = projected.firstIndex(where: { $0.id == requestID }) else { continue }
+                projected[index].rows.append(
+                    SessionTraceRow(
+                        id: "transcript-bot:" + requestID + ":" + bot.id, kind: .agent, title: bot.name,
+                        timing: .unavailable, outcome: "Appeared in conversation", crewProfileID: bot.id))
+            }
+            if bot.requestIDs.isEmpty {
+                projected.append(
+                    SessionTraceTurn(
+                        id: "transcript-bot:" + bot.id, title: bot.name,
+                        start: model.messages.first?.timestamp ?? Date(),
+                        rows: [
+                            SessionTraceRow(
+                                id: "transcript-bot:" + bot.id, kind: .agent, title: bot.name,
+                                timing: .unavailable, outcome: "Appeared in conversation", crewProfileID: bot.id)
+                        ]))
+            }
+        }
+        turns = projected
     }
 
     private static func requests(_ messages: [ChatMessage]) -> [SessionTraceTurn] {

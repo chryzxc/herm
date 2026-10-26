@@ -54,7 +54,17 @@ struct SessionTraceView: View, Equatable {
         }
     }
 
-    private func open(_ id: String) {
+    private func open(_ id: String, _ profileID: String?) {
+        if let profileID {
+            Task {
+                _ = await model.resumeSession(
+                    HermesSession(
+                        id: id, title: "Bot conversation", preview: "", startedAt: nil, messageCount: 0,
+                        source: "hermes-bot"),
+                    reportFailure: true, profileID: profileID)
+            }
+            return
+        }
         if let session = model.sessions.first(where: { $0.id == id }) {
             model.resumeSession(session)
         }
@@ -74,7 +84,7 @@ struct SessionTraceView: View, Equatable {
 /// timeline stays mounted and keeps feeding `trace`.
 private struct SessionTraceExpanded: View {
     @ObservedObject var trace: SessionTraceModel
-    let open: (String) -> Void
+    let open: (String, String?) -> Void
     let close: () -> Void
 
     var body: some View {
@@ -82,9 +92,9 @@ private struct SessionTraceExpanded: View {
             SessionTraceCanvas(
                 turns: trace.turns, connected: trace.connected,
                 availableSessionIDs: trace.sessionIDs, isLoading: trace.isLoading,
-                openSession: { id in
+                openSession: { id, profile in
                     close()
-                    open(id)
+                    open(id, profile)
                 }
             )
             .padding(.horizontal, 16)
@@ -141,12 +151,14 @@ struct SessionTraceCanvas: View {
     /// Inspector cap; the step detail docks below the list instead of floating.
     var listMaxHeight: CGFloat? = nil
     var expand: (() -> Void)? = nil
-    var openSession: (String) -> Void = { _ in }
+    var openSession: (String, String?) -> Void = { _, _ in }
     @State private var selectedTurnID: String? = SessionTraceProjection.allTurnsID
     @State private var selectedRowID: String?
     @State private var selectionRevision = 0
     @State private var collapsed = Set<String>()
-    @State private var showsSubagents = true
+    @State private var showsSubagents: Bool?
+    @State private var showsBots: Bool?
+    @State private var agentFilter = SessionSubagentFilter.all
     @State private var showsSteps = true
     @State private var search = ""
     @State private var query = ""
@@ -180,11 +192,17 @@ struct SessionTraceCanvas: View {
         return GeometryReader { geometry in
             let labelWidth = min(280, max(150, geometry.size.width * 0.42))
             let floats =
-                listMaxHeight == nil && geometry.size.width >= 620 && geometry.size.height >= 520
+                listMaxHeight == nil && geometry.size.width >= 620 && geometry.size.height >= 900
             VStack(spacing: 0) {
                 header(turn)
                 if let turn {
-                    trace(turn, size: geometry.size, labelWidth: labelWidth, floats: floats)
+                    if geometry.size.width < 620 || geometry.size.height < 900 || listMaxHeight != nil {
+                        ScrollView(.vertical) {
+                            trace(turn, size: geometry.size, labelWidth: labelWidth, floats: false)
+                        }
+                    } else {
+                        trace(turn, size: geometry.size, labelWidth: labelWidth, floats: floats)
+                    }
                 } else if isLoading {
                     DockLoadingState(title: "Loading timeline…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -282,7 +300,7 @@ struct SessionTraceCanvas: View {
     private var stepControls: some View {
         HStack(spacing: 6) {
             searchField
-            Button("Fit") { fit() }
+            Button("Fit time") { fit() }
                 .buttonStyle(.dockCompact).disabled(turns.isEmpty)
                 .help("Fit the whole request in view")
             Button {
@@ -293,7 +311,7 @@ struct SessionTraceCanvas: View {
                 HStack(spacing: 5) {
                     Circle().fill(follow ? Color.dockSuccess : Color.dockSecondaryText)
                         .frame(width: 6, height: 6)
-                    Text("Live")
+                    Text("Follow")
                 }
             }
             .buttonStyle(.dockCompact)
@@ -306,7 +324,7 @@ struct SessionTraceCanvas: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(Color.dockSecondaryText)
-            TextField("Search", text: $search).textFieldStyle(.plain).dockFont(.body)
+            TextField("Find steps", text: $search).textFieldStyle(.plain).dockFont(.body)
                 .focused($searchFocused)
                 .onExitCommand {
                     search = ""
@@ -382,16 +400,50 @@ struct SessionTraceCanvas: View {
         let live = connected && turn.rows.contains(where: \.active)
         let plotWidth = max(100, size.width - 16 - labelWidth)
         let selected = turn.rows.first { $0.id == selectedRowID }
+        let crew = SessionCrewProjection(rows: turn.rows.filter { $0.crewProfileID != nil })
+        let botsExpanded = Binding(
+            get: { showsBots ?? !crew.bots.isEmpty },
+            set: { showsBots = $0 })
         return VStack(spacing: DockSpacing.group) {
             metrics(turn, bounds: bounds, live: live)
-            agentList(turn, live: live)
-                .fixedSize(horizontal: false, vertical: true)
-                .dockCard(padding: 8)
-            VStack(spacing: 0) {
-                sectionHeader("Steps", count: turn.rows.count, isExpanded: $showsSteps) {
-                    if showsSteps { stepControls }
+            VStack(spacing: 4) {
+                sectionHeader(
+                    "Bots", count: crew.bots.count, isExpanded: botsExpanded)
+                if botsExpanded.wrappedValue {
+                    clock(live) { now in
+                        SessionCrewView(
+                            projection: crew, selectedRowID: selectedRowID,
+                            replayDate: replay.map {
+                                bounds.origin.addingTimeInterval($0.time(at: now, span: bounds.span(at: now)))
+                            },
+                            now: now, connected: connected, animated: isVisible && animates,
+                            expanded: listMaxHeight == nil && size.width >= 620, select: select)
+                    }
                 }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .dockCard(padding: 8)
+            agentList(turn, live: live).dockCard(padding: 8)
+            VStack(spacing: 0) {
+                sectionHeader("Steps", count: turn.rows.count, isExpanded: $showsSteps)
                 if showsSteps {
+                    stepControls.padding(.horizontal, 4).padding(.vertical, 6)
+                    HStack(spacing: 8) {
+                        Text(
+                            query.isEmpty
+                                ? "Select a step to inspect its input and result"
+                                : "\(visible.count) matching steps and parents"
+                        )
+                        .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                        Spacer(minLength: 0)
+                        if turn.errorCount > 0 {
+                            Button("Next error") {
+                                search = ""
+                                query = ""
+                                select(SessionTraceNavigation.nextFailure(in: turn.rows, after: selectedRowID))
+                            }.buttonStyle(.dockCompact)
+                        }
+                    }.padding(.horizontal, 4).padding(.bottom, 6)
                     HStack(spacing: 0) {
                         Text("Step").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                             .padding(.leading, 4)
@@ -413,9 +465,22 @@ struct SessionTraceCanvas: View {
                         visible, turn: turn, bounds: bounds, live: live, labelWidth: labelWidth,
                         plotWidth: plotWidth, selectionFloats: floats
                     )
-                    .frame(maxHeight: listMaxHeight ?? .infinity)
+                    .frame(height: listMaxHeight ?? (size.width < 620 || size.height < 900 ? 280 : nil))
+                    .frame(minHeight: 160, maxHeight: .infinity)
                     .id(turn.id)
                     footer(turn)
+                    if replay != nil {
+                        clock(false) { now in
+                            let span = bounds.span(at: now)
+                            Slider(
+                                value: Binding(
+                                    get: { replay?.time(at: now, span: span) ?? 0 },
+                                    set: { replay = SessionTraceReplay(position: $0, speed: speed) }),
+                                in: 0...span
+                            ).accessibilityLabel("Replay position")
+                                .padding(.horizontal, 8).padding(.bottom, 6)
+                        }
+                    }
                 }
                 if !floats, let selected {
                     detail(selected, turn: turn, live: live)
@@ -445,7 +510,7 @@ struct SessionTraceCanvas: View {
     }
 
     private func metrics(_ turn: SessionTraceTurn, bounds: SessionTraceTimeBounds, live: Bool) -> some View {
-        HStack(spacing: 0) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), alignment: .leading)], alignment: .leading, spacing: 8) {
             clock(live) { now in
                 metric(
                     "Duration", value: bounds.hasTiming ? time(bounds.span(at: now)) : "—",
@@ -453,24 +518,19 @@ struct SessionTraceCanvas: View {
                         ? "Active time across requests; idle time between them is collapsed"
                         : "Wall time from the request to its last traced step")
             }
-            divider
             metric(
                 "Model calls", value: "\(turn.modelCallCount)",
                 help:
                     "Derived from Hermes step timestamps plus calls delegates report. The final reply is not counted."
             )
-            divider
             metric("Tool calls", value: "\(turn.toolCount)")
             if turn.agentCount > 0 {
-                divider
-                metric("Delegates", value: "\(turn.agentCount)")
+                metric("Subagents", value: "\(turn.agentCount)")
             }
             if let tokens = turn.reportedTokens {
-                divider
                 metric(
                     "Tokens", value: compact(tokens), help: "Tokens reported by delegates")
             }
-            divider
             metric(
                 "Errors", value: "\(turn.errorCount)",
                 tint: turn.errorCount > 0 ? .dockDestructive : nil)
@@ -480,8 +540,6 @@ struct SessionTraceCanvas: View {
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
-
-    private var divider: some View { Color.dockBorderLight.frame(width: 0.5) }
 
     private func metric(_ title: String, value: String, help: String? = nil, tint: Color? = nil)
         -> some View
@@ -525,6 +583,8 @@ struct SessionTraceCanvas: View {
         let slowest = turn.slowestRowID
         let childIDs = Set(turn.rows.compactMap(\.parentID))
         let last = items.last?.row.id
+        let ownership = SessionCrewProjection(rows: turn.rows).ownerByRow
+        let selectedActor = selectedRowID.flatMap { ownership[$0] }
         return ScrollViewReader { vertical in
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
@@ -532,7 +592,9 @@ struct SessionTraceCanvas: View {
                         stepLabel(
                             row, depth: depth,
                             hasChildren: childIDs.contains(row.id)
-                        ).id("trace-label:" + row.id)
+                        )
+                        .opacity(selectedActor == nil || ownership[row.id] == selectedActor ? 1 : 0.5)
+                        .id("trace-label:" + row.id)
                     }.frame(width: labelWidth)
                     Color.dockBorderLight.frame(width: 0.5)
                     clock(live) { now in
@@ -644,17 +706,29 @@ struct SessionTraceCanvas: View {
 
     /// Below the steps: one card per delegate (who, its task, what it is doing), or why there are none.
     private func agentList(_ turn: SessionTraceTurn, live: Bool) -> some View {
-        let agents = turn.rows.filter { $0.kind == .agent }
+        let agents = turn.rows.filter { $0.kind == .agent && $0.crewProfileID == nil }
+        let agentsExpanded = Binding(
+            get: { showsSubagents ?? !agents.isEmpty },
+            set: { showsSubagents = $0 })
+        let filtered = SessionSubagentFilter.rows(agents, matching: agentFilter)
         let cards = VStack(spacing: 0) {
-            ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
+            ForEach(Array(filtered.enumerated()), id: \.element.id) { index, agent in
                 agentCard(
-                    agent, number: index + 1, live: live,
+                    agent, number: (agents.firstIndex { $0.id == agent.id } ?? index) + 1, live: live,
                     steps: turn.rows.filter { $0.parentID == agent.id }.count)
             }
         }
         return VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Subagents", count: agents.count, isExpanded: $showsSubagents)
-            if !showsSubagents {
+            sectionHeader("Subagents", count: agents.count, isExpanded: agentsExpanded) {
+                if agentsExpanded.wrappedValue, !agents.isEmpty {
+                    Picker("Subagent filter", selection: $agentFilter) {
+                        ForEach(SessionSubagentFilter.allCases, id: \.self) { filter in
+                            Text(filter.rawValue).tag(filter)
+                        }
+                    }.labelsHidden().fixedSize().help("Filter subagents by status")
+                }
+            }
+            if !agentsExpanded.wrappedValue {
                 EmptyView()
             } else if agents.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
@@ -665,29 +739,24 @@ struct SessionTraceCanvas: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 4).padding(.top, 2).padding(.bottom, 12)
+            } else if filtered.isEmpty {
+                Text("No \(agentFilter.rawValue.lowercased()) subagents")
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
             } else {
                 ViewThatFits(in: .vertical) {
                     cards
                     ScrollView(.vertical) { cards }
                 }
-                .frame(maxHeight: 240)
+                .frame(maxHeight: 180)
             }
         }
     }
 
-    /// Steps and Subagents share one collapsible header so the sections read alike.
-    private func sectionHeader<Actions: View>(
-        _ title: String, count: Int, isExpanded: Binding<Bool>,
-        @ViewBuilder actions: @escaping () -> Actions = { EmptyView() }
-    ) -> some View {
-        DockSectionHeader(
-            title: title, count: count, isExpanded: isExpanded,
-            style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true,
-            titleRole: .conversation,
-            actions: actions
-        )
-        .padding(.leading, 4)
-        .padding(.top, 4)
+    private func turnStepForAgent(_ id: String) -> SessionTraceRow? {
+        let rows = currentTurn?.rows ?? []
+        let owned = rows.filter { $0.parentID == id && $0.kind != .agent }
+        return owned.last(where: \.active) ?? owned.first
     }
 
     private func agentCard(_ agent: SessionTraceRow, number: Int, live: Bool, steps: Int)
@@ -709,19 +778,24 @@ struct SessionTraceCanvas: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             Text(name).dockFont(.metadata, weight: .semibold)
+                                .foregroundStyle(Color.dockPrimaryText)
+                            Spacer(minLength: 4)
+                            statusPill(agent)
+                        }
+                        .dockFont(.metadata).lineLimit(1)
+                        HStack(spacing: 6) {
                             if let model = agent.model { Text(model) }
                             Text(steps == 1 ? "1 step" : "\(steps) steps")
                             Spacer(minLength: 4)
                             clock(live && agent.active) { now in
                                 Text(agent.elapsed(at: now).map(time) ?? "—").monospacedDigit()
                             }
-                            statusPill(agent)
                         }
                         .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                         Text(task).dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText).lineLimit(2)
-                        if let activity = agent.activity {
+                        if agent.active, let activity = agent.activity {
                             HStack(spacing: 6) {
                                 ProgressView().controlSize(.mini).accessibilityLabel("Running")
                                 Text(activity).lineLimit(1)
@@ -739,9 +813,20 @@ struct SessionTraceCanvas: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
+            .help("Inspect task, output, and execution details")
+            if let step = turnStepForAgent(agent.id) {
+                Button {
+                    select(step.id)
+                } label: {
+                    DockIcon(.list, size: 12, color: Color.dockSecondaryText)
+                        .frame(width: 24, height: 24)
+                }.buttonStyle(.dockHover).help("Show subagent steps")
+                    .accessibilityLabel("Show \(name)'s steps")
+                    .padding(.top, 9)
+            }
             if let related = agent.relatedSessionID, availableSessionIDs.contains(related) {
                 Button {
-                    openSession(related)
+                    openSession(related, nil)
                 } label: {
                     DockIcon(.arrowSquareOut, size: 11, color: Color.dockSecondaryText)
                         .frame(width: 20, height: 20)
@@ -754,6 +839,21 @@ struct SessionTraceCanvas: View {
         }
         .background(selectedRowID == agent.id ? Color.dockSurface2 : Color.clear)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    /// Steps and Crew share one collapsible header so the sections read alike.
+    private func sectionHeader<Actions: View>(
+        _ title: String, count: Int, isExpanded: Binding<Bool>,
+        @ViewBuilder actions: @escaping () -> Actions = { EmptyView() }
+    ) -> some View {
+        DockSectionHeader(
+            title: title, count: count, isExpanded: isExpanded,
+            style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true,
+            titleRole: .conversation,
+            actions: actions
+        )
+        .padding(.leading, 4)
+        .padding(.top, 4)
     }
 
     private func stepLabel(_ row: SessionTraceRow, depth: Int, hasChildren: Bool) -> some View {
@@ -806,10 +906,10 @@ struct SessionTraceCanvas: View {
             }
             .buttonStyle(.dockHover)
             if row.kind == .agent, let related = row.relatedSessionID,
-                availableSessionIDs.contains(related)
+                row.crewProfileID != nil || availableSessionIDs.contains(related)
             {
                 Button {
-                    openSession(related)
+                    openSession(related, row.crewProfileID)
                 } label: {
                     DockIcon(.arrowSquareOut, size: 11, color: Color.dockSecondaryText)
                         .frame(width: 20, height: 20)
@@ -994,7 +1094,7 @@ struct SessionTraceCanvas: View {
                     .frame(width: 24, height: 24)
                     .background(tile(row), in: RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(row.title).dockFont(.body, weight: .semibold).lineLimit(1)
+                    Text(row.title).dockFont(.body, weight: .semibold).lineLimit(2)
                     if let subtitle = detailSubtitle(row, turn: turn) {
                         Text(subtitle).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1).truncationMode(.middle).help(subtitle)
@@ -1025,8 +1125,8 @@ struct SessionTraceCanvas: View {
                         row.result, .result, row)
                     detailSection("Diff", icon: .gitDiff, row.diff, .diff, row)
                     if let related = row.relatedSessionID {
-                        if availableSessionIDs.contains(related) {
-                            Button("Open conversation") { openSession(related) }
+                        if row.crewProfileID != nil || availableSessionIDs.contains(related) {
+                            Button("Open conversation") { openSession(related, row.crewProfileID) }
                                 .buttonStyle(.dockLink)
                         } else {
                             Text("Session · " + related).dockFont(.metadata)
@@ -1046,7 +1146,7 @@ struct SessionTraceCanvas: View {
         let color = statusColor(row)
         let label =
             row.active
-            ? "Running"
+            ? row.status
             : row.failed ? "Failed" : row.outcome == "Succeeded" ? "Done" : "Finished"
         return Text(label).dockFont(.metadata, weight: .medium)
             .foregroundStyle(color)
@@ -1141,12 +1241,13 @@ struct SessionTraceCanvas: View {
                 }
                 replay = next
             } label: {
-                Image(systemName: replay?.resumedAt != nil ? "pause.fill" : "play.fill")
-                    .font(.system(size: 10)).frame(width: 24, height: 24)
-                    .background(Color.dockSurface2, in: Circle())
-                    .overlay(Circle().stroke(Color.dockBorderLight, lineWidth: 0.5))
+                Label(
+                    replay?.resumedAt != nil ? "Pause" : "Replay",
+                    systemImage: replay?.resumedAt != nil ? "pause.fill" : "play.fill"
+                )
+                .dockFont(.metadata)
             }
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockCompact)
             .disabled(!finished)
             .help(finished ? "Replay this request" : "Replay is available once the request finishes")
             .accessibilityLabel(replay?.resumedAt != nil ? "Pause replay" : "Play replay")
@@ -1187,7 +1288,7 @@ struct SessionTraceCanvas: View {
             coverage(turn)
             legend("Model", fills: [DockAccentColor.violet.fill.opacity(0.75)])
             legend(
-                "Tool by type",
+                "Tools",
                 fills: [DockAccentColor.teal, .orange, .blue].map { $0.fill.opacity(0.9) })
         }
         .frame(height: 38)
@@ -1228,7 +1329,19 @@ struct SessionTraceCanvas: View {
     }
 
     private func select(_ id: String?) {
-        if id != nil { follow = false }
+        if id != nil {
+            follow = false
+            showsSteps = true
+        }
+        if let id, let turn = currentTurn {
+            let byID = Dictionary(turn.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var parent = byID[id]?.parentID
+            var visited = Set<String>()
+            while let ancestor = parent, visited.insert(ancestor).inserted {
+                collapsed.remove(ancestor)
+                parent = byID[ancestor]?.parentID
+            }
+        }
         withAnimation(animates ? .dockEase(duration: 0.2) : nil) { selectedRowID = id }
         selectionRevision &+= 1
     }

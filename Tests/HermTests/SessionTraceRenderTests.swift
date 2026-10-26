@@ -55,11 +55,19 @@ struct SessionTraceRenderTests {
                 startedAt: start.addingTimeInterval(14), completedAt: start.addingTimeInterval(40),
                 durationSeconds: 26),
         ]
-        let turns = SessionTraceProjection.make(
+        var turns = SessionTraceProjection.make(
             turns: [
                 .init(id: "fixture", title: "Build the pricing page", start: start, calls: calls)
             ],
             live: [], agents: agents, working: false, connected: true)
+        turns[0].rows.append(contentsOf: [
+            SessionTraceRow(
+                id: "bot:archon", kind: .agent, title: "Archon", timing: .unavailable,
+                outcome: "Appeared in conversation", crewProfileID: "archon"),
+            SessionTraceRow(
+                id: "bot:sentry", kind: .agent, title: "Sentry", timing: .unavailable,
+                outcome: "Appeared in conversation", crewProfileID: "sentry"),
+        ])
         for theme: DockThemeID in [.clean, .island, .glass, .mono, .eInk] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
