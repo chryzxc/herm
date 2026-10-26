@@ -1,0 +1,106 @@
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('herm_simulator_plugin', Path(__file__).with_name('__init__.py'))
+p = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(p)
+
+
+class SimulatorTests(unittest.TestCase):
+    def test_project_detection_and_ambiguity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'ios').mkdir()
+            self.assertEqual(p.resolve_platform('auto', directory), 'ios')
+            (root / 'android').mkdir()
+            with self.assertRaises(RuntimeError):
+                p.resolve_platform('auto', directory)
+            self.assertEqual(p.resolve_platform('android', directory), 'android')
+
+    def test_running_reuse_and_no_guessing(self):
+        a = dict(id='a', name='Phone', running=False)
+        b = dict(id='b', name='Tablet', running=True)
+        self.assertEqual(p.choose([a, b], None), b)
+        self.assertEqual(p.choose([a, b], 'a'), a)
+        self.assertIsNone(p.choose([a, b], 'unknown'))
+        self.assertIsNone(p.choose([a, dict(b, running=False)], None))
+        self.assertIsNone(p.choose([a, dict(a, id='duplicate')], 'Phone'))
+
+    @patch.object(p, 'ios_inventory')
+    @patch.object(p, 'launch_ios')
+    def test_structured_receipt_only_after_confirmed_launch(self, launch, inventory):
+        inventory.return_value = [dict(id='uuid', name='Phone', running=True)]
+        launch.return_value = 'uuid'
+        result = json.loads(p.handle(dict(action='launch', platform='ios')))
+        self.assertEqual(result['schema'], 'herm.simulator.v1')
+        self.assertEqual(result['device_id'], 'uuid')
+        self.assertEqual(result['status'], 'ready')
+        launch.side_effect = RuntimeError('Device failed to boot.')
+        result = json.loads(p.handle(dict(action='launch', platform='ios')))
+        self.assertIn('error', result)
+        self.assertNotIn('schema', result)
+
+    @patch.object(p, 'ios_inventory')
+    @patch.object(p, 'launch_ios')
+    def test_ambiguous_device_and_list_never_launch(self, launch, inventory):
+        inventory.return_value = [dict(id=str(i), name=str(i), running=False) for i in range(2)]
+        self.assertEqual(json.loads(p.handle(dict(action='launch', platform='ios')))['status'], 'selection_required')
+        self.assertEqual(json.loads(p.handle(dict(action='list', platform='ios')))['status'], 'devices')
+        launch.assert_not_called()
+
+    @patch.object(p, 'run')
+    @patch.object(p, 'executable', return_value='/usr/bin/xcrun')
+    def test_inventory_excludes_unavailable_and_other_platforms(self, executable, run):
+        run.return_value = json.dumps({'devices': {
+            'com.apple.CoreSimulator.SimRuntime.iOS-18-0': [
+                dict(udid='ok', name='Phone', state='Booted', isAvailable=True),
+                dict(udid='bad', name='Other', state='Shutdown', isAvailable=False)],
+            'com.apple.CoreSimulator.SimRuntime.watchOS-11-0': [
+                dict(udid='watch', name='Watch', state='Booted', isAvailable=True)]}})
+        self.assertEqual(p.ios_inventory(), [dict(id='ok', name='Phone', running=True)])
+
+    def test_invalid_arguments_fail_without_launch(self):
+        for args in [None, {'platform': []}, {'platform': 'windows'}, {'platform': 'ios', 'action': 'delete'}]:
+            self.assertIn('error', json.loads(p.handle(args)))
+
+    @patch.object(p, 'android_tools', return_value=('/sdk/emulator', '/sdk/adb'))
+    @patch.object(p, 'android_running', return_value={'Phone': 'emulator-5554'})
+    @patch.object(p, 'run', return_value='1')
+    @patch.object(p.subprocess, 'Popen')
+    def test_android_running_device_is_reused(self, popen, run, running, tools):
+        self.assertEqual(p.launch_android(dict(id='Phone', running=True)), 'emulator-5554')
+        popen.assert_not_called()
+        run.assert_called_once_with(['/sdk/adb', '-s', 'emulator-5554', 'shell', 'getprop', 'sys.boot_completed'])
+
+    @patch.object(p, 'android_tools', return_value=('/sdk/emulator', '/sdk/adb'))
+    @patch.object(p, 'android_running', return_value={'Phone': 'emulator-5554'})
+    @patch.object(p, 'run', return_value='1')
+    @patch.object(p.subprocess, 'Popen')
+    def test_new_android_device_has_no_window_and_requires_token(self, popen, run, running, tools):
+        popen.return_value.poll.return_value = None
+        p.launch_android(dict(id='Phone', running=False))
+        self.assertEqual(popen.call_args.args[0], ['/sdk/emulator', '-avd', 'Phone', '-no-window', '-grpc-use-token'])
+
+    @patch.object(p, 'executable', return_value='/usr/bin/xcrun')
+    @patch.object(p, 'run', return_value='')
+    def test_ios_boot_never_opens_simulator_app(self, run, executable):
+        self.assertEqual(p.launch_ios(dict(id='uuid', running=False)), 'uuid')
+        self.assertEqual([call.args[0] for call in run.call_args_list], [
+            ['/usr/bin/xcrun', 'simctl', 'boot', 'uuid'],
+            ['/usr/bin/xcrun', 'simctl', 'bootstatus', 'uuid', '-b']])
+
+    @patch.object(p.subprocess, 'run')
+    def test_commands_are_argument_vectors_with_timeout_and_no_shell(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = 'ok'
+        words = ['/sdk/emulator', '-avd', 'name with spaces; echo unsafe']
+        self.assertEqual(p.run(words), 'ok')
+        run.assert_called_once_with(words, capture_output=True, text=True, timeout=20, check=False)
+
+
+if __name__ == '__main__':
+    unittest.main()

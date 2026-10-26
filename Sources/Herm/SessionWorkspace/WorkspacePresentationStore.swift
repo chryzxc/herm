@@ -10,6 +10,7 @@ struct InspectorPresentation: Codable {
     var browserTabs: [String]?
     var selectedExtra: UUID?
     var selectedBrowser: Int?
+    var simulatorSections: [String]?
 
     /// Activity became Trace, which became Timeline.
     static func migratedTab(_ value: String) -> String { value == "Activity" || value == "Trace" ? "Timeline" : value }

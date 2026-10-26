@@ -1095,6 +1095,15 @@ extension DockModel {
             if Self.isVisionUnsupportedError(result) {
                 activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
             } else if let index = activeToolCalls.firstIndex(where: { $0.id == id }) {
+                if HermesSimulatorPreference.isEnabled(), !activeToolCalls[index].isComplete,
+                    params["herm_trace_replayed"] as? Bool != true, eventSessionID == currentSessionID,
+                    let receipt = SessionSimulatorLaunch.receipt(
+                        tool: activeToolCalls[index].name, result: result,
+                        isError: payload["is_error"] as? Bool == true, localHost: ProcessInfo.processInfo.hostName)
+                {
+                    SessionSimulatorLaunchStore.shared.present(
+                        receipt, session: WorkspaceIdentity.session(self), callID: id)
+                }
                 let wasDelegation = Self.isDelegationTool(activeToolCalls[index].name)
                 if wasDelegation, let args = payload["args"] as? [String: Any] {
                     refreshSynthesizedSubagents(toolCallID: id, args: args)

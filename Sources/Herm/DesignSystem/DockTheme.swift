@@ -732,3 +732,8 @@ enum DockThemeRuntime {
         set { state.revision = newValue }
     }
 }
+
+extension Color {
+    /// Device pixels contain black corner masks; keep their surrounding canvas black in every skin.
+    static var dockDeviceCanvas: Color { .black }
+}

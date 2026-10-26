@@ -205,7 +205,8 @@ final class HermesGateway: NSObject {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         DebugLog.write("request: \(method)")
         if socket == nil { try await connect() }
-        let response = try await send(method: method, params: params)
+        let response = try await send(
+            method: method, params: HermesSimulatorPreference.applying(to: params, method: method))
         return response.object
     }
 

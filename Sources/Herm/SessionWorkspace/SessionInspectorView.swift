@@ -32,6 +32,7 @@ struct SessionInspector: View {
     /// opened in (by Hermes or a chat link) and stays out of every other session.
     @AppStorage("sessionInspector.browserSessions") private var browserSessionsRaw = ""
     @State private var isShowingNewTab = false
+    @State private var simulatorSections: [String] = []
     @State private var reopenMonitor: Any?
     @State private var closingExtra: ExtraTab?
     @State private var closingTerminal = false
@@ -80,6 +81,8 @@ struct SessionInspector: View {
         case terminal = "Terminal"
         case browser = "Browser"
         case github = "GitHub"
+        case iosSimulator = "iOS Simulator"
+        case androidEmulator = "Android Emulator"
 
         var id: Self { self }
         var navigationTitle: String {
@@ -92,6 +95,7 @@ struct SessionInspector: View {
             case .diff: "Diff"
             case .browser: "Browser"
             case .github: "GitHub"
+            case .iosSimulator, .androidEmulator: rawValue
             }
         }
         var icon: Ph {
@@ -104,6 +108,7 @@ struct SessionInspector: View {
             case .terminal: .terminal
             case .browser: .globe
             case .github: .gitPullRequest
+            case .iosSimulator, .androidEmulator: .deviceMobile
             }
         }
     }
@@ -116,6 +121,7 @@ struct SessionInspector: View {
             sessionModePicker
 
             if selectedSection != .timeline, selectedSection != .github, selectedSection != .artifacts,
+                selectedSection != .iosSimulator, selectedSection != .androidEmulator,
                 let workflowError = workflow.error,
                 filePreview.attachmentDiff == nil
             {
@@ -199,7 +205,9 @@ struct SessionInspector: View {
             }
             closedRaw = closedRaw.split(separator: "|").map { InspectorPresentation.migratedTab(String($0)) }.joined(
                 separator: "|")
+            simulatorSections = []
             if let saved = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model)) {
+                simulatorSections = saved.simulatorSections ?? []
                 closedRaw = saved.closed
                 recentClosed = saved.recentClosed
                 for id in (saved.terminalTabs ?? []).prefix(16) where !terminalExtras.contains(where: { $0.id == id }) {
@@ -236,6 +244,11 @@ struct SessionInspector: View {
                 reopen(.diff)
             } else if selectedSection == .diff {
                 selectedSection = .changes
+            }
+            if selectedSection == .iosSimulator || selectedSection == .androidEmulator,
+                !simulatorSections.contains(selectedSection.rawValue)
+            {
+                selectedSection = .timeline
             }
             restoringPresentation = false
             consumeTabRequest()
@@ -284,7 +297,7 @@ struct SessionInspector: View {
     private var baseContent: some View {
         if selectedSection == .github || selectedSection == .timeline || selectedSection == .terminal
             || selectedSection == .files || selectedSection == .browser || selectedSection == .diff
-            || selectedSection == .artifacts
+            || selectedSection == .artifacts || selectedSection == .iosSimulator || selectedSection == .androidEmulator
         {
             inspectorContent
                 .padding(
@@ -342,7 +355,7 @@ struct SessionInspector: View {
     private var baseTerminalKey: String { WorkspaceIdentity.session(model) + ":" + (sessionRepositoryPath ?? "home") }
     private func hasRunningCommand(_ key: String) -> Bool {
         TerminalWorkspaceStore.shared.workspace(key: key).sessions.contains {
-            $0.hasForegroundJob || $0.projectCommand?.isRunning == true
+            $0.hasForegroundJob
         }
     }
     private func closeExtra(_ extra: ExtraTab) {
@@ -398,7 +411,7 @@ struct SessionInspector: View {
 
     // Keep Source Control reachable while its repository snapshot loads or refreshes.
     private var visibleSections: [Section] {
-        [.timeline, .terminal, .files, .artifacts, .changes, .browser]
+        [.timeline, .terminal, .files, .artifacts, .changes, .browser, .iosSimulator, .androidEmulator]
             + (filePreview.attachmentDiff == nil ? [] : [.diff])
             + (gitHub.item(for: WorkspaceIdentity.session(model))?.reference == nil ? [] : [.github])
     }
@@ -424,7 +437,10 @@ struct SessionInspector: View {
     /// Browser follows this session's own open state instead of the shared list.
     private var openSections: [Section] {
         let closed = Set(closedRaw.split(separator: "|").map(String.init))
-        let open = visibleSections.filter { $0 == .browser ? isBrowserOpenHere : !closed.contains($0.rawValue) }
+        let open = visibleSections.filter {
+            if $0 == .iosSimulator || $0 == .androidEmulator { return simulatorSections.contains($0.rawValue) }
+            return $0 == .browser ? isBrowserOpenHere : !closed.contains($0.rawValue)
+        }
         return open.isEmpty ? [selectedSection] : open
     }
 
@@ -440,7 +456,8 @@ struct SessionInspector: View {
                     WorkspacePresentationStore.restorableBrowserURL($0.currentURL ?? $0.address)
                 },
                 selectedExtra: selectedExtraID,
-                selectedBrowser: browserWorkspace?.extras.firstIndex(where: { $0.id == selectedExtraID })),
+                selectedBrowser: browserWorkspace?.extras.firstIndex(where: { $0.id == selectedExtraID }),
+                simulatorSections: simulatorSections),
             identity: WorkspaceIdentity.session(model))
     }
 
@@ -455,6 +472,7 @@ struct SessionInspector: View {
 
     /// Closed tabs stop their work: shells exit and the browser pages unload.
     private func finishClose(_ section: Section) {
+        simulatorSections.removeAll { $0 == section.rawValue }
         if section != .diff { recentClosed.append(section.rawValue) }
         if section == .diff { filePreview.attachmentDiff = nil }
         if section == .terminal { TerminalWorkspaceStore.shared.closeWorkspace(key: baseTerminalKey) }
@@ -470,6 +488,9 @@ struct SessionInspector: View {
     }
 
     private func reopen(_ section: Section) {
+        if section == .iosSimulator || section == .androidEmulator, !simulatorSections.contains(section.rawValue) {
+            simulatorSections.append(section.rawValue)
+        }
         if section == .browser { setBrowserOpenHere(true) }
         closedRaw = closedRaw.split(separator: "|").filter { $0 != section.rawValue }.joined(separator: "|")
         selectedSection = section
@@ -689,6 +710,13 @@ struct SessionInspector: View {
     @ViewBuilder
     private var inspectorContent: some View {
         switch selectedSection {
+        case .iosSimulator, .androidEmulator:
+            SessionSimulatorView(
+                platform: selectedSection == .iosSimulator ? .ios : .android,
+                sessionKey: WorkspaceIdentity.session(model),
+                isActive: selectedExtraID == nil
+            )
+            .id(WorkspaceIdentity.session(model) + selectedSection.rawValue)
         case .github:
             if let item = gitHub.item(for: WorkspaceIdentity.session(model)), let reference = item.reference {
                 if reference.kind == .pullRequest {
