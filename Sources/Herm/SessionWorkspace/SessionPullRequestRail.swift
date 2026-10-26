@@ -186,9 +186,13 @@ struct SessionRailCard: View {
                 DisclosureGroup(isExpanded: $expandedChanges) {
                     VStack(alignment: .leading, spacing: 8) {
                         if let repositoryPath {
-                            ForEach(changes.files) { file in
-                                SessionRailFileQuickView(
-                                    path: repositoryPath, file: file, revision: changesRevision)
+                            SessionRailExpandedContent {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(changes.files) { file in
+                                        SessionRailFileQuickView(
+                                            path: repositoryPath, file: file, revision: changesRevision)
+                                    }
+                                }
                             }
                         }
                         Button("View all changes", action: onViewAllChanges)
@@ -282,40 +286,42 @@ struct SessionRailCard: View {
                     }
                 })
         ) {
-            VStack(alignment: .leading, spacing: 6) {
-                if let record {
-                    Text(record.repository.id).foregroundStyle(Color.dockMetadataText)
-                    Text("\(record.headBranch) → \(record.baseBranch)")
-                        .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                    Text("By \(record.author)").foregroundStyle(Color.dockSecondaryText)
-                    if let additions = record.additions, let deletions = record.deletions {
-                        HStack(spacing: 6) {
-                            Text("+\(additions.formatted())").foregroundStyle(Color.dockSuccess)
-                            Text("−\(deletions.formatted())").foregroundStyle(Color.dockDestructive)
-                        }.monospacedDigit()
+            SessionRailExpandedContent {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let record {
+                        Text(record.repository.id).foregroundStyle(Color.dockMetadataText)
+                        Text("\(record.headBranch) → \(record.baseBranch)")
+                            .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                        Text("By \(record.author)").foregroundStyle(Color.dockSecondaryText)
+                        if let additions = record.additions, let deletions = record.deletions {
+                            HStack(spacing: 6) {
+                                Text("+\(additions.formatted())").foregroundStyle(Color.dockSuccess)
+                                Text("−\(deletions.formatted())").foregroundStyle(Color.dockDestructive)
+                            }.monospacedDigit()
+                        }
+                        if let warning = record.detailWarning {
+                            Text(warning).foregroundStyle(Color.dockWarning)
+                        }
                     }
-                    if let warning = record.detailWarning {
-                        Text(warning).foregroundStyle(Color.dockWarning)
+                    if let failure = failures[reference.id] {
+                        Text(record == nil ? "Details unavailable. \(failure)" : "Last fetched details. \(failure)")
+                            .foregroundStyle(Color.dockWarning)
+                    } else if record == nil {
+                        Text("Loading details…").foregroundStyle(Color.dockSecondaryText)
                     }
-                }
-                if let failure = failures[reference.id] {
-                    Text(record == nil ? "Details unavailable. \(failure)" : "Last fetched details. \(failure)")
-                        .foregroundStyle(Color.dockWarning)
-                } else if record == nil {
-                    Text("Loading details…").foregroundStyle(Color.dockSecondaryText)
-                }
-                Button(openingPullRequestID == reference.id ? "Opening…" : "View in GitHub panel") {
-                    openingPullRequestID = reference.id
-                    failedPullRequestID = nil
-                    Task {
-                        let opened = await onViewPullRequest(reference)
-                        openingPullRequestID = nil
-                        if !opened { failedPullRequestID = reference.id }
+                    Button(openingPullRequestID == reference.id ? "Opening…" : "View in GitHub panel") {
+                        openingPullRequestID = reference.id
+                        failedPullRequestID = nil
+                        Task {
+                            let opened = await onViewPullRequest(reference)
+                            openingPullRequestID = nil
+                            if !opened { failedPullRequestID = reference.id }
+                        }
                     }
-                }
-                .buttonStyle(.dockLink).disabled(openingPullRequestID != nil)
-                if failedPullRequestID == reference.id {
-                    Text("Could not open pull request. Refresh and try again.").foregroundStyle(Color.dockWarning)
+                    .buttonStyle(.dockLink).disabled(openingPullRequestID != nil)
+                    if failedPullRequestID == reference.id {
+                        Text("Could not open pull request. Refresh and try again.").foregroundStyle(Color.dockWarning)
+                    }
                 }
             }
             .dockFont(.body).padding(.top, 8)
@@ -342,6 +348,26 @@ struct SessionRailCard: View {
     }
 }
 
+/// Every expanded rail section fits short content and scrolls overflow within the same cap.
+struct SessionRailExpandedContent<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var contentHeight: CGFloat = 1
+
+    var body: some View {
+        ScrollView(.vertical) {
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: {
+                    contentHeight = $0
+                }
+        }
+        .frame(height: min(280, contentHeight))
+    }
+}
+
 private struct SessionRailFileQuickView: View {
     let path: String
     let file: RepositoryFileChange
@@ -353,28 +379,30 @@ private struct SessionRailFileQuickView: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 6) {
-                if isLoading {
-                    Text("Loading diff…").foregroundStyle(Color.dockSecondaryText)
-                } else if let document {
-                    if let notice = document.fileNotice {
-                        Text(notice).foregroundStyle(Color.dockSecondaryText)
-                    }
-                    if document.lines.isEmpty {
-                        Text("No text changes to preview.").foregroundStyle(Color.dockSecondaryText)
+            SessionRailExpandedContent {
+                VStack(alignment: .leading, spacing: 6) {
+                    if isLoading {
+                        Text("Loading diff…").foregroundStyle(Color.dockSecondaryText)
+                    } else if let document {
+                        if let notice = document.fileNotice {
+                            Text(notice).foregroundStyle(Color.dockSecondaryText)
+                        }
+                        if document.lines.isEmpty {
+                            Text("No text changes to preview.").foregroundStyle(Color.dockSecondaryText)
+                        } else {
+                            NativeDiffCanvas(
+                                document: document, split: false, wraps: true, wordDiffs: true,
+                                findRequest: 0, onNote: nil, onComment: nil
+                            )
+                            .frame(height: min(240, max(100, CGFloat(document.lines.count) * 20)))
+                        }
+                        if isTruncated {
+                            Text("Partial preview. View all changes for the full review.")
+                                .foregroundStyle(Color.dockMetadataText)
+                        }
                     } else {
-                        NativeDiffCanvas(
-                            document: document, split: false, wraps: true, wordDiffs: true,
-                            findRequest: 0, onNote: nil, onComment: nil
-                        )
-                        .frame(height: min(240, max(100, CGFloat(document.lines.count) * 20)))
+                        Text("Diff unavailable. Collapse and reopen to retry.").foregroundStyle(Color.dockWarning)
                     }
-                    if isTruncated {
-                        Text("Partial preview. View all changes for the full review.")
-                            .foregroundStyle(Color.dockMetadataText)
-                    }
-                } else {
-                    Text("Diff unavailable. Collapse and reopen to retry.").foregroundStyle(Color.dockWarning)
                 }
             }
             .dockFont(.body).padding(.top, 6)

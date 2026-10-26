@@ -29,6 +29,19 @@ private actor RailPRTransport: GitHubIssueTransport {
 
 @Suite @MainActor
 struct SessionPullRequestRailTests {
+    @Test func hidesRailAndToggleWhenTheConversationColumnIsTooNarrow() {
+        for width in [CGFloat(0), 448, 515, 799] {
+            #expect(ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: width) == 0)
+        }
+        for width in [CGFloat(800), 850, 900, 1_200] {
+            let rail = ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: width)
+            #expect(rail >= 320 && rail <= 360)
+            #expect(width - rail >= 480)
+        }
+        #expect(ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: 800) == 320)
+        #expect(ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: 1_200) == 360)
+    }
+
     @Test func localChangesAreScopedAndCountStagedFilesOnce() {
         let path = "/tmp/rail-project"
         var repository = RepositorySnapshot(

@@ -13,6 +13,12 @@ struct ConversationWorkspaceMetrics: Equatable {
     let composerBottomInset: CGFloat
     let usesCompactToolbarLabels: Bool
 
+    static func sessionRailWidth(availableWidth: CGFloat) -> CGFloat {
+        // Keep at least 480pt for chat alongside a readable rail.
+        guard availableWidth >= 800 else { return 0 }
+        return min(360, availableWidth * 0.4)
+    }
+
     static func resolve(isFullscreen: Bool) -> Self {
         if isFullscreen {
             return Self(

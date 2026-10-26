@@ -7,7 +7,11 @@ import Testing
 @Suite @MainActor
 struct SessionRailCardVisualTests {
     @Test func summariesExpandWithoutOpeningPanelsUntilViewAllIsPressed() async throws {
-        _ = NSApplication.shared
+        let app = NSApplication.shared
+        // SwiftUI builds its accessibility tree only when an accessibility client is active.
+        let enhancedAccessibility = app.value(forKey: "accessibilityEnhancedUserInterface")
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer { app.setValue(enhancedAccessibility, forKey: "accessibilityEnhancedUserInterface") }
         let repository = GitHubRepositoryReference(
             owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
         let reference = GitHubItemReference(repository: repository, number: 42, kind: .pullRequest)
@@ -36,31 +40,42 @@ struct SessionRailCardVisualTests {
                 try await Task.sleep(for: .milliseconds(30))
             }
         }
-        func elements(_ element: any NSAccessibilityProtocol) -> [any NSAccessibilityProtocol] {
-            [element]
-                + (element.accessibilityChildren() ?? []).compactMap { $0 as? any NSAccessibilityProtocol }
-                .flatMap(elements)
+        // SwiftUI's lightweight accessibility children expose selectors without full protocol conformance.
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            let children = element.accessibilityChildren?() ?? []
+            return [element] + children.flatMap { elements($0 as AnyObject) }
         }
-        func button(_ label: String) throws -> any NSAccessibilityProtocol {
-            try #require(
-                elements(host).first {
-                    $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? "").contains(label)
-                })
+        func press(_ label: String) throws {
+            let candidates = elements(host)
+            let button = candidates.first { element in
+                let role = element.accessibilityRole?()
+                let title = element.accessibilityTitle?() ?? ""
+                let description = element.accessibilityLabel?() ?? ""
+                return (role == .button || role == .disclosureTriangle) && (title + description).contains(label)
+            }
+            if button == nil {
+                print(
+                    "Missing \(label): "
+                        + candidates.map {
+                            "\($0.accessibilityRole?()?.rawValue ?? "nil") \($0.accessibilityTitle?() ?? "") \($0.accessibilityLabel?() ?? "")"
+                        }.joined(separator: " | "))
+            }
+            #expect(try #require(button).accessibilityPerformPress?() == true)
         }
         try await settle()
-        #expect(try button("Changes").accessibilityPerformPress())
+        try press("Changes")
         try await settle()
         #expect(changesOpened == 0 && pullRequestsOpened == 0)
-        #expect(try button("file.swift").accessibilityPerformPress())
+        try press("file.swift")
         try await settle()
         #expect(changesOpened == 0 && pullRequestsOpened == 0)
-        #expect(try button("Pull request #42").accessibilityPerformPress())
+        try press("Pull request #42")
         try await settle()
         #expect(changesOpened == 0 && pullRequestsOpened == 0)
-        #expect(try button("View all changes").accessibilityPerformPress())
+        try press("View all changes")
         try await settle()
         #expect(changesOpened == 1 && pullRequestsOpened == 0)
-        #expect(try button("View in GitHub panel").accessibilityPerformPress())
+        try press("View in GitHub panel")
         try await settle()
         #expect(changesOpened == 1 && pullRequestsOpened == 1)
     }

@@ -62,8 +62,8 @@ struct RepositoryChangesBrowser: View {
     private func browser(_ changes: RepositoryChangeSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             sourceControlHeader(changes)
-            HStack {
-                Button("Review comparisons") {
+            HStack(spacing: DockSpacing.control) {
+                Button {
                     if let projectPath, let reviewRouter,
                         reviewRouter.present(
                             LocalReviewWorkspace(closeAction: { reviewRouter.close() }, path: projectPath, model: model)
@@ -72,8 +72,11 @@ struct RepositoryChangesBrowser: View {
                         return
                     }
                     showingReview = true
-                }.buttonStyle(.dockCompact)
-                if let projectPath { ProjectActionsMenu(path: projectPath, model: model) }
+                } label: {
+                    DockIconLabel("Review comparisons", icon: .gitDiff)
+                }
+                .buttonStyle(.dockCompact)
+                .help("Review working-tree, staged, branch, or commit comparisons")
                 Spacer()
                 if !showsBranch { refreshButton }
             }.padding(.vertical, 8)
@@ -143,7 +146,7 @@ struct RepositoryChangesBrowser: View {
             DockSectionHeader(
                 title: title, count: files.count, isExpanded: isExpanded, style: style,
                 icon: staged ? .checkCircle : .pencilSimple,
-                tint: staged ? .dockSuccess : DockCategoryTone.modified.color
+                tint: .dockSecondaryText
             ) {
                 if staged {
                     DockIconButton(
@@ -228,7 +231,7 @@ struct RepositoryChangesBrowser: View {
         return VStack(alignment: .leading, spacing: 0) {
             DockSectionHeader(
                 title: "Graph", count: workflow.commits.count, isExpanded: $isCommitsExpanded, style: style,
-                icon: .gitFork, tint: RepositoryCommitGraphPalette.accent(0).color
+                icon: .gitFork, tint: .dockSecondaryText
             ) {
                 remoteActions
             }
@@ -351,31 +354,50 @@ struct RepositoryChangesBrowser: View {
         _ commit: RepositoryCommit, references: [RepositoryCommitReference], accent: DockAccentColor
     ) -> some View {
         let detail = commitDetails[commit.id]
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(commit.author)
+                    .dockFont(size: 12, weight: .semibold)
+                    .foregroundStyle(Color.dockPrimaryText)
+                if let email = detail?.email, !email.isEmpty {
+                    Text(email)
+                        .dockFont(size: 12)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(
+                    "\(commit.date.formatted(date: .abbreviated, time: .shortened)) · \(commit.date.formatted(.relative(presentation: .named)))"
+                )
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .textSelection(.enabled)
             if let body = detail?.body, body != commit.subject {
                 Text(body).dockFont(.body).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(detail.map { "\(commit.author) <\($0.email)>" } ?? commit.author)
+            if !commit.parents.isEmpty {
                 Text(
-                    "\(commit.date.formatted(date: .abbreviated, time: .shortened)) · \(commit.date.formatted(.relative(presentation: .named)))"
+                    "\(commit.parents.count > 1 ? "Merge of" : "Parent") \(commit.parents.map { String($0.prefix(7)) }.joined(separator: ", "))"
                 )
-                Text(commit.id).dockFont(.metadata, weight: .regular, design: .monospaced)
-                if !commit.parents.isEmpty {
-                    Text(
-                        "\(commit.parents.count > 1 ? "Merge of" : "Parent") \(commit.parents.map { String($0.prefix(7)) }.joined(separator: ", "))"
-                    )
-                    .dockFont(.metadata, weight: .regular, design: .monospaced)
-                }
+                .dockFont(.metadata, weight: .regular, design: .monospaced)
+                .foregroundStyle(Color.dockMetadataText)
+                .textSelection(.enabled)
             }
-            .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).textSelection(.enabled)
             if references.count > 3 {
                 DockChipFlow { ForEach(references) { RepositoryCommitReferencePill(reference: $0, accent: accent) } }
             }
-            HStack(spacing: 8) {
-                DockCopyButton(commit.id, label: "Copy hash", accessibilityLabel: "Copy commit hash")
-                    .buttonStyle(.dockCompact)
+            DockChipFlow(spacing: 8) {
+                HStack(spacing: 8) {
+                    Text(String(commit.id.prefix(10)))
+                        .dockFont(.metadata, weight: .regular, design: .monospaced)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .textSelection(.enabled)
+                        .help(commit.id)
+                    DockCopyButton(commit.id, label: "Copy hash", accessibilityLabel: "Copy commit hash")
+                        .buttonStyle(.dockCompact)
+                }
                 if let repository = workflow.githubRepository {
                     Button {
                         NSWorkspace.shared.open(repository.webURL.appendingPathComponent("commit/\(commit.id)"))
@@ -385,6 +407,7 @@ struct RepositoryChangesBrowser: View {
                     .buttonStyle(.dockCompact)
                 }
             }
+            Divider().overlay(Color.dockBorderLight)
             if let detail {
                 commitFiles(commit, detail: detail)
             } else if failedCommitDetailIDs.contains(commit.id) {
@@ -397,7 +420,7 @@ struct RepositoryChangesBrowser: View {
                 }
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
@@ -417,10 +440,16 @@ struct RepositoryChangesBrowser: View {
         let showsAll = allFilesCommitIDs.contains(commit.id)
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text("\(detail.files.count) file\(detail.files.count == 1 ? "" : "s") changed").foregroundStyle(
-                    Color.dockSecondaryText)
-                Text("+\(additions)").foregroundStyle(Color.dockSuccess)
-                Text("−\(deletions)").foregroundStyle(Color.dockDestructive)
+                Text(
+                    detail.files.isEmpty
+                        ? "No files changed" : "\(detail.files.count) file\(detail.files.count == 1 ? "" : "s") changed"
+                )
+                .foregroundStyle(Color.dockSecondaryText)
+                Spacer(minLength: 4)
+                if !detail.files.isEmpty {
+                    Text("+\(additions)").foregroundStyle(Color.dockSuccess)
+                    Text("−\(deletions)").foregroundStyle(Color.dockDestructive)
+                }
             }
             .dockFont(.metadata, weight: .semibold).monospacedDigit()
             .padding(.bottom, 2)
