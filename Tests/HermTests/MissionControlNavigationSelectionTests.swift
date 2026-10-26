@@ -5,6 +5,36 @@ import Testing
 
 @MainActor
 struct MissionControlNavigationSelectionTests {
+    @Test func gitHubNavigationRemembersTheLastSectionAcrossOtherDestinations() {
+        let state = MissionControlNavigationState()
+        #expect(state.selectedGitHubSection == .pullRequests)
+
+        state.selectIssues()
+        #expect(state.selection.selection == .issues)
+        state.openSession("session-a")
+        #expect(state.selectedGitHubSection == .issues)
+
+        state.selectPullRequests()
+        #expect(state.selection.selection == .pullRequests)
+        state.selectGlobal(.kanban)
+        #expect(state.selectedGitHubSection == .pullRequests)
+    }
+
+    @Test func gitHubNavigationFallsBackToAVisibleSection() {
+        let both = GitHubWorkspaceSection.visible(showsPullRequests: true, showsIssues: true)
+        #expect(both == [.pullRequests, .issues, .projects, .repositories])
+        #expect(GitHubWorkspaceSection.issues.available(in: both) == .issues)
+        let issues = GitHubWorkspaceSection.visible(showsPullRequests: false, showsIssues: true)
+        #expect(issues == [.issues, .projects, .repositories])
+        #expect(GitHubWorkspaceSection.pullRequests.available(in: issues) == .issues)
+        let pullRequests = GitHubWorkspaceSection.visible(showsPullRequests: true, showsIssues: false)
+        #expect(pullRequests == [.pullRequests, .projects, .repositories])
+        #expect(GitHubWorkspaceSection.issues.available(in: pullRequests) == .pullRequests)
+        let neither = GitHubWorkspaceSection.visible(showsPullRequests: false, showsIssues: false)
+        #expect(neither.isEmpty)
+        #expect(GitHubWorkspaceSection.pullRequests.available(in: neither) == nil)
+    }
+
     @Test func selectingASurfaceReplacesThePreviousSidebarIdentity() {
         let state = MissionControlNavigationSelectionState()
 

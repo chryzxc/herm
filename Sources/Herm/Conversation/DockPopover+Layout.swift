@@ -71,6 +71,10 @@ extension DockPopover {
                     isWorkspaceManuallyExpanded = true
                 }
             }
+            .onReceive(SessionSimulatorLaunchStore.shared.$latest) { request in
+                guard let request, request.session == WorkspaceIdentity.session(model) else { return }
+                showSessionRailInspector(request.receipt.target == .ios ? .iosSimulator : .androidEmulator)
+            }
             .onChange(of: botMode.selectedProfileID) { _, profileID in
                 handleProfileScopeChange(profileID)
             }
@@ -393,12 +397,12 @@ extension DockPopover {
             agentUpdateService: agentUpdateService,
             navigationState: missionControlNavigation,
             dockThemeStore: dockThemeStore,
-            isChatsActive: showsChatsPanel,
-            isIssuesActive: fullscreenSurface == .issues,
+            isChatsActive: showsChatsPanel || fullscreenSurface == .chatGrid,
+            isGitHubActive: fullscreenSurface == .pullRequests || fullscreenSurface == .issues,
             onOpenChats: {
                 missionControlNavigation.clearSelection()
                 if sessionWorkspaceMode == .voice { selectSessionMode(.chat) }
-                fullscreenSurface = .conversation
+                fullscreenSurface = prefersChatGrid ? .chatGrid : .conversation
                 inspectorScope = .session
                 // Narrow layout shows the inspector instead of the chat; Chats brings the chat back.
                 if isNarrowLayout { isNarrowControlVisible = false }
@@ -417,14 +421,7 @@ extension DockPopover {
                 Task { await botMode.refreshNow(force: true) }
                 fullscreenSurface = .bots
             },
-            onOpenPullRequests: {
-                missionControlNavigation.selectPullRequests()
-                fullscreenSurface = .pullRequests
-            },
-            onOpenIssues: {
-                missionControlNavigation.selectIssues()
-                fullscreenSurface = .issues
-            },
+            onOpenGitHub: selectGitHubSection,
             isFullscreen: isFullscreen,
             isHermesConnected: model.isHermesConnected,
             onReconnect: { Task { try? await model.gateway.connect() } },
@@ -495,7 +492,7 @@ extension DockPopover {
 
     var isGlobalSurfaceActive: Bool {
         switch fullscreenSurface {
-        case .global, .artifacts, .bots, .groupChat, .pullRequests, .issues: true
+        case .global, .artifacts, .bots, .groupChat, .pullRequests, .issues, .chatGrid: true
         case .conversation: false
         }
     }
@@ -556,10 +553,12 @@ extension DockPopover {
             switch sessionWorkspaceMode {
             case .chat:
                 GeometryReader { geometry in
-                    let railWidth = isSessionRailVisible ? min(360, max(220, geometry.size.width * 0.4)) : 0
+                    let railWidth =
+                        isSessionRailVisible
+                        ? ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) : 0
                     chatConversationContent(railWidth: railWidth)
                         .overlay(alignment: .trailing) {
-                            if isSessionRailVisible {
+                            if railWidth > 0 {
                                 SessionPullRequestRail(
                                     model: model, workflow: developerWorkflow,
                                     repositoryPath: activeSessionRepositoryScope?.repositoryPath,

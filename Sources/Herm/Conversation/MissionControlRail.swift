@@ -137,7 +137,7 @@ struct ConversationRepositoryBadgeAssociationProjection {
 }
 
 /// Primary navigation: icon-only destinations, always visible. Chats opens the
-/// session lists panel; every other destination renders full-width.
+/// session lists panel; GitHub supplies its own section navigation beside its page.
 struct MissionControlRail: View {
     let model: DockModel
     let controlCenter: ControlCenterModel
@@ -152,13 +152,12 @@ struct MissionControlRail: View {
     @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
     @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendar = true
     let isChatsActive: Bool
-    let isIssuesActive: Bool
+    let isGitHubActive: Bool
     let onOpenChats: () -> Void
     let onOpenGlobal: (ControlTab) -> Void
     let onOpenArtifacts: () -> Void
     let onOpenBots: () -> Void
-    let onOpenPullRequests: () -> Void
-    let onOpenIssues: () -> Void
+    let onOpenGitHub: (GitHubWorkspaceSection) -> Void
     let isFullscreen: Bool
     var isHermesConnected = true
     var onReconnect: () -> Void = {}
@@ -177,14 +176,12 @@ struct MissionControlRail: View {
             }
             VStack(spacing: 4) {
                 if showsKanban { globalDestination(.kanban, style: style) }
-                if showsPullRequests {
+                if let section = navigationState.selectedGitHubSection.available(
+                    in: GitHubWorkspaceSection.visible(showsPullRequests: showsPullRequests, showsIssues: showsIssues))
+                {
                     destination(
-                        "Pull requests", icon: .gitPullRequest,
-                        isSelected: navigationState.selection.selection == .pullRequests, style: style,
-                        action: onOpenPullRequests)
-                }
-                if showsIssues {
-                    destination("Issues", icon: .record, isSelected: isIssuesActive, style: style, action: onOpenIssues)
+                        "GitHub", icon: .githubLogo, isSelected: isGitHubActive, style: style,
+                        action: { onOpenGitHub(section) })
                 }
             }
             VStack(spacing: 4) {

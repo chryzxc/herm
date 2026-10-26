@@ -138,16 +138,45 @@ extension DockPopover {
 
     var fullscreenGlobalSurface: some View {
         Group {
-            if fullscreenSurface == .pullRequests {
-                PullRequestWorkspace(
-                    center: pullRequestCenter, projects: controlCenter.projects, onOpenChat: openPullRequestChat
-                )
+            if fullscreenSurface == .chatGrid {
+                MissionControlDashboard(
+                    model: model, bots: botMode, control: controlCenter, store: workspaceStore,
+                    onNewConversation: {
+                        missionControlNavigation.beginNewConversation()
+                        fullscreenSurface = .conversation
+                        inspectorScope = .session
+                        model.newChat()
+                        model.requestComposerFocus()
+                    },
+                    onOpenWorkspace: {
+                        missionControlNavigation.synchronizeActiveSession(model.navigationSessionID)
+                        fullscreenSurface = .conversation
+                        inspectorScope = .session
+                    }
+                ) {
+                    chatConversationContent(railWidth: 0)
+                }
+            } else if fullscreenSurface == .pullRequests || fullscreenSurface == .issues {
+                GitHubWorkspace(
+                    selection: Binding(
+                        get: { () -> GitHubWorkspaceSection in
+                            return missionControlNavigation.selectedGitHubSection
+                        },
+                        set: { selectGitHubSection($0) })
+                ) {
+                    if fullscreenSurface == .pullRequests {
+                        PullRequestWorkspace(
+                            center: pullRequestCenter, projects: controlCenter.projects, onOpenChat: openPullRequestChat
+                        )
+                        .id("fullscreen-pull-requests")
+                    } else {
+                        IssueWorkspacePage(
+                            center: issueCenter, projects: controlCenter.projects, onOpenChat: openIssueChat
+                        )
+                        .id("fullscreen-issues")
+                    }
+                }
                 .environment(\.openGitHubItem, openGitHubReference)
-                .id("fullscreen-pull-requests")
-            } else if fullscreenSurface == .issues {
-                IssueWorkspacePage(center: issueCenter, projects: controlCenter.projects, onOpenChat: openIssueChat)
-                    .environment(\.openGitHubItem, openGitHubReference)
-                    .id("fullscreen-issues")
             } else if fullscreenSurface == .artifacts {
                 ArtifactsInspectorView(model: model, presentation: .page) { session in
                     missionControlNavigation.openSession(session.id)
@@ -202,14 +231,28 @@ extension DockPopover {
         }
     }
 
-    func openGitHubReference(_ reference: GitHubItemReference) {
-        if reference.kind == .pullRequest {
+    func selectGitHubSection(_ section: GitHubWorkspaceSection) {
+        if section == .repositories {
+            missionControlNavigation.selectGitHubRepositories()
+            fullscreenSurface = .pullRequests
+        } else if section == .projects {
+            missionControlNavigation.selectGitHubProjects()
+            fullscreenSurface = .pullRequests
+        } else if section == .pullRequests {
             missionControlNavigation.selectPullRequests()
             fullscreenSurface = .pullRequests
-            Task { await pullRequestCenter.open(reference) }
         } else {
             missionControlNavigation.selectIssues()
             fullscreenSurface = .issues
+        }
+    }
+
+    func openGitHubReference(_ reference: GitHubItemReference) {
+        if reference.kind == .pullRequest {
+            selectGitHubSection(.pullRequests)
+            Task { await pullRequestCenter.open(reference) }
+        } else {
+            selectGitHubSection(.issues)
             Task { await issueCenter.open(reference) }
         }
     }
@@ -648,7 +691,9 @@ extension DockPopover {
 
                 sessionModeSwitcher(style: style)
 
-                if sessionWorkspaceMode == .chat {
+                if sessionWorkspaceMode == .chat,
+                    ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) > 0
+                {
                     Button {
                         isSessionRailVisible.toggle()
                     } label: {

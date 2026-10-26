@@ -89,6 +89,7 @@ final class MissionControlNavigationState: ObservableObject {
     @Published var selectedSessionID: String?
     @Published var areConversationsExpanded = true
     @Published var arePinnedExpanded = true
+    @Published private(set) var selectedGitHubSection: GitHubWorkspaceSection = .pullRequests
     var hasRequestedSessionIndex = false
 
     var selectedProjectSessionID: String? {
@@ -178,12 +179,24 @@ final class MissionControlNavigationState: ObservableObject {
     }
 
     func selectPullRequests() {
+        selectedGitHubSection = .pullRequests
         selection.selectPullRequests()
         selectedTaskID = nil
         selectedSessionID = nil
     }
 
+    func selectGitHubRepositories() {
+        selectPullRequests()
+        selectedGitHubSection = .repositories
+    }
+
+    func selectGitHubProjects() {
+        selectPullRequests()
+        selectedGitHubSection = .projects
+    }
+
     func selectIssues() {
+        selectedGitHubSection = .issues
         selection.selectIssues()
         selectedTaskID = nil
         selectedSessionID = nil

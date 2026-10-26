@@ -157,13 +157,15 @@ struct DockPopover: View {
     @State var isMissionInspectorVisible = false
 
     enum FullscreenSurface: Equatable {
-        case conversation, pullRequests, issues
+        case conversation, pullRequests, issues, chatGrid
         case global
         case artifacts
         case bots
         case groupChat(String)
     }
-    @State var fullscreenSurface: FullscreenSurface = .conversation
+    @AppStorage(ChatViewSettings.gridViewKey) var prefersChatGrid = false
+    @State var fullscreenSurface: FullscreenSurface =
+        UserDefaults.standard.bool(forKey: ChatViewSettings.gridViewKey) ? .chatGrid : .conversation
     @State var fullscreenGlobalTab: ControlTab = .kanban
 
     enum SessionWorkspaceMode: CaseIterable, Identifiable {
