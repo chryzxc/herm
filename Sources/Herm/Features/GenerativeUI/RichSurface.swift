@@ -51,7 +51,8 @@ struct RichSurface: Codable, Equatable, Identifiable, Sendable {
 struct RichBlock: Codable, Equatable, Sendable {
     enum Kind: String, Codable, CaseIterable, Sendable {
         case text, table, sources, gallery, chart, form
-        case section, metrics, comparison, checklist, timeline, graph, tree, imageComparison, record
+        case section, metrics, comparison, checklist, timeline, graph, tree, imageComparison, record, code, findings,
+            workflow
     }
     let type: Kind
     var text: String?
@@ -83,7 +84,8 @@ struct RichBlock: Codable, Equatable, Sendable {
             guard ["bar", "line"].contains(style), let points, !points.isEmpty, points.count <= 1_000
             else { return false }
             return points.allSatisfy { !$0.label.isEmpty && $0.value.isFinite }
-        case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record:
+        case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
+            .findings, .workflow:
             return false
         case .form:
             guard let fields, !fields.isEmpty, fields.count <= 64,
@@ -105,7 +107,9 @@ struct RichBlock: Codable, Equatable, Sendable {
     var plainText: String {
         if let payload { return payload.plainText }
         return switch type {
-        case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record: ""
+        case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
+            .findings, .workflow:
+            ""
         case .text: text ?? ""
         case .table:
             ([columns ?? []] + (rows ?? [])).map { $0.joined(separator: " | ") }.joined(separator: "\n")

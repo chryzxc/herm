@@ -221,8 +221,34 @@ inspection, developer exploration, UI review, and delivery workflows. These exer
 reusable native components and offline HTML, rather than installing separate apps.
 Run the original Generative UI/HTML suites plus
 `RichExpansionTests|RichLifecycleTests|RichTemplateContractTests|RichTemplateInteractionTests`.
-The template suites cover every catalog entry, all ten recipe families, documented
+The template suites cover every catalog entry, all sixteen recipe families, documented
 `herm-ui` examples, mixed dashboards, all form controls, and linked multi-series
 charts. HTML examples execute in the real offline WebKit host to check input changes,
 quiz scoring, and reset. Optional `HERM_TEMPLATE_REVIEW_DIR` writes native captures
 at 320/640/1000pt and HTML snapshots without relaunching Herm.
+
+
+### Task and development visual replies
+
+Generated replies support native `code`, `findings`, and `workflow` blocks in version 2.
+Code has a bounded, selectable monospaced viewport and an explicit Copy code action.
+It displays commands without executing them. Findings show severity, detail, optional
+location, and recommendation. Workflow steps show ordered proposed work or supplied
+outcomes; every non-proposed status requires evidence and the view is labelled
+Reported snapshot. Generated evidence remains an assistant claim, not live provider state.
+Comparisons adapt to columns at wider sizes and visibly mark the selected option;
+checklist details align beneath their labels. All use existing theme and action tokens.
+
+The generation catalog guides planning, debugging, code review, CI-log review,
+runbooks, configuration, onboarding, research, and budgeting toward appropriate
+combinations of supported components. Simple answers still use Markdown.
+
+| Block | Version-2 payload |
+| --- | --- |
+| code | `code`, optional `language`, `filename`; up to 64 KiB of code |
+| findings | `items: [{id,title,severity,detail,location?,recommendation?}]`; severity `info`, `warning`, `critical`; up to 200 |
+| workflow | `items: [{id,title,status,detail?,evidence?}]`; status `proposed`, `running`, `passed`, `failed`, `blocked`, `skipped`; up to 200; non-proposed states require nonblank evidence |
+
+These formats participate in readable projections, exports, saved artifacts, and
+registry-driven rendering tests. Filenames and finding locations are display text,
+not filesystem access or executable actions.

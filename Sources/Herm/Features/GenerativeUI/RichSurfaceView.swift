@@ -266,7 +266,7 @@ struct RichSurfaceView: View {
                                             DockIcon(.image, size: 24, color: .dockSecondaryText)
                                             DockIconLabel("Open image", icon: .arrowSquareOut)
                                         }.frame(maxWidth: .infinity, minHeight: 120)
-                                    }.buttonStyle(.dockSecondary)
+                                    }.buttonStyle(.dockHover)
                                 }
                                 Text(item.title).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
                             }
@@ -275,7 +275,8 @@ struct RichSurfaceView: View {
                 }
             case .chart:
                 RichLegacyChartView(block: block, blockID: "legacy-chart:\(index)", state: presentation)
-            case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record:
+            case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record,
+                .code, .findings, .workflow:
                 EmptyView()
             case .form:
                 if let state, let context {

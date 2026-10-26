@@ -22,6 +22,25 @@ struct RichFeatureDescriptor: Identifiable, Sendable {
 /// Every advertised example is decoded through the production format and rendered by its typed block view.
 enum RichFeatureRegistry {
     static let local: [RichFeatureDescriptor] = [
+        .init(
+            id: "code", version: 2, guidance: "Copyable code, commands, config or logs; display only, never executed",
+            example:
+                #"{"id":"snippet","type":"code","payload":{"language":"sh","filename":"Suggested check","code":"swift test --filter ExampleTests"}}"#
+        ),
+        .init(
+            id: "findings", version: 2,
+            guidance:
+                "Reviews, research caveats and diagnostics; severity info/warning/critical, detail, optional location and recommendation",
+            example:
+                #"{"id":"review","type":"findings","payload":{"items":[{"id":"coverage","title":"Missing failure coverage","severity":"warning","detail":"The supplied test only covers success.","location":"Tests/ExampleTests.swift","recommendation":"Cover an unavailable response."}]}}"#
+        ),
+        .init(
+            id: "workflow", version: 2,
+            guidance:
+                "Task plans, CI snapshots, release checks and runbooks; status proposed/running/passed/failed/blocked/skipped. Every non-proposed status requires supplied evidence; never implies live execution",
+            example:
+                #"{"id":"checks","type":"workflow","payload":{"items":[{"id":"build","title":"Build","status":"passed","evidence":"Supplied build log: exit 0"},{"id":"review","title":"Review changes","status":"proposed","detail":"Inspect the diff before publishing."}]}}"#
+        ),
         .init(id: "text", version: 1, guidance: "Readable text", example: #"{"type":"text","text":"Explanation"}"#),
         .init(
             id: "table", version: 1, guidance: "String or number cells, matching columns",
@@ -124,6 +143,7 @@ enum RichFeatureRegistry {
             Respect explicit requests for plain text, code listings, or project/file changes. Use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes.
             Envelope: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Use version 2 for new components, datasets or revisionOf. Native surfaces omit html. HTML uses kind "html", complete inline HTML/CSS/JS in html, and omits blocks. Include a useful fallback. HTML is offline and has no host bridge, credentials, storage, files, tools, downloads, popups or device access. Never request secrets.
             V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; dataset cells, metric values, comparison values and tree values are strings. Share datasets to link selection. Optional metadata example: \(metadataExample). assumptions accepts a string or an array of strings; source and observedAt are strings, fictional is a boolean. Supply only known metadata. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.
+            Compose task-focused views: planning and runbooks use workflow + checklist; debugging and code review use findings + code; research uses sources + comparison; budgets use metrics + shared table/chart; onboarding uses tree + code; release reviews use workflow + findings. Ask for missing requirements with form. Use only the blocks that help the current task, not every component. Workflows and findings are supplied snapshots, never verified runtime records. Non-proposed workflow states require evidence from the input. Use readable headings, short detail, and one primary working surface; avoid decorative dashboards.
             Limits: 1 MiB per surface, 100 blocks, 1000 rows/items/points, 20 table columns. Available blocks:
             \(catalog)
             [/Herm rendering context]

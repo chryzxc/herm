@@ -152,6 +152,9 @@ struct RichRecordTarget: Codable, Equatable, Sendable {
 
 /// V2 payloads stay typed; legacy fields are decoded only for V1-compatible blocks.
 enum RichBlockPayload: Equatable, Sendable {
+    case code(RichCode)
+    case findings(RichFindings)
+    case workflow(RichWorkflow)
     case section(RichSection)
     case metrics(RichMetrics)
     case comparison(RichComparison)
@@ -167,6 +170,9 @@ enum RichBlockPayload: Equatable, Sendable {
     static func decode(type: RichBlock.Kind, decoder: Decoder) throws -> Self {
         let value = try decoder.singleValueContainer()
         switch type {
+        case .code: return .code(try value.decode(RichCode.self))
+        case .findings: return .findings(try value.decode(RichFindings.self))
+        case .workflow: return .workflow(try value.decode(RichWorkflow.self))
         case .section: return .section(try value.decode(RichSection.self))
         case .metrics: return .metrics(try value.decode(RichMetrics.self))
         case .comparison: return .comparison(try value.decode(RichComparison.self))
@@ -186,6 +192,9 @@ enum RichBlockPayload: Equatable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         switch self {
+        case .code(let value): try value.encode(to: encoder)
+        case .findings(let value): try value.encode(to: encoder)
+        case .workflow(let value): try value.encode(to: encoder)
         case .section(let value): try value.encode(to: encoder)
         case .metrics(let value): try value.encode(to: encoder)
         case .comparison(let value): try value.encode(to: encoder)
@@ -201,6 +210,9 @@ enum RichBlockPayload: Equatable, Sendable {
 
     func validate(in surface: RichSurface? = nil) -> Bool {
         switch self {
+        case .code(let value): return value.validate()
+        case .findings(let value): return value.validate()
+        case .workflow(let value): return value.validate()
         case .section(let value):
             guard !value.title.isEmpty, !value.blocks.isEmpty, RichIdentity.unique(value.blocks) else { return false }
             guard let surface else { return true }
@@ -247,6 +259,9 @@ enum RichBlockPayload: Equatable, Sendable {
 
     var plainText: String {
         switch self {
+        case .code(let value): return value.plainText
+        case .findings(let value): return value.items.map(\.plainText).joined(separator: "\n\n")
+        case .workflow(let value): return value.items.map(\.plainText).joined(separator: "\n\n")
         case .section(let value): return value.title
         case .metrics(let value):
             return value.items.map { "\($0.label): \($0.value) \($0.unit ?? "")" }.joined(separator: "\n")

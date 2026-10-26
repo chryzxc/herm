@@ -13,6 +13,9 @@ struct RichNativeBlockView: View {
     var body: some View {
         Group {
             switch block.payload {
+            case .code(let code): RichCodeView(code: code)
+            case .findings(let findings): RichFindingsView(findings: findings)
+            case .workflow(let workflow): RichWorkflowView(workflow: workflow)
             case .metrics(let metrics): metricsView(metrics)
             case .comparison(let comparison): comparisonView(comparison)
             case .checklist(let list): checklistView(list)
@@ -53,10 +56,17 @@ struct RichNativeBlockView: View {
     }
 
     private func comparisonView(_ comparison: RichComparison) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), alignment: .top)], alignment: .leading, spacing: 12) {
             ForEach(comparison.options) { option in
                 VStack(alignment: .leading, spacing: 6) {
-                    Button(option.title) { state.snapshot.selected[selectionID] = option.id }.buttonStyle(
+                    Button {
+                        state.snapshot.selected[selectionID] = option.id
+                    } label: {
+                        HStack {
+                            Text(option.title).multilineTextAlignment(.leading)
+                            if selected == option.id { Image(systemName: "checkmark").accessibilityLabel("Selected") }
+                        }
+                    }.buttonStyle(
                         .dockSecondary)
                     ForEach(Array(zip(comparison.criteria, option.values).enumerated()), id: \.offset) { _, pair in
                         HStack(alignment: .top) {
@@ -76,7 +86,10 @@ struct RichNativeBlockView: View {
             ForEach(list.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(item.title, isOn: state.checked(blockID + ":" + item.id)).toggleStyle(.checkbox)
-                    if let detail = item.detail { Text(detail).foregroundStyle(Color.dockSecondaryText) }
+                    if let detail = item.detail {
+                        Text(detail).foregroundStyle(Color.dockSecondaryText).padding(.leading, 20)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         }

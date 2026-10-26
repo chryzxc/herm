@@ -9,6 +9,21 @@ enum RichGenerationRecipes {
     }
     static let all: [Recipe] = [
         Recipe(
+            id: "debugging", prompt: "Explain these errors with severity, location and a suggested fix.",
+            feature: "findings"),
+        Recipe(
+            id: "code-review", prompt: "Review the supplied diff and show actionable findings.", feature: "findings"),
+        Recipe(
+            id: "runbook",
+            prompt: "Turn this procedure into proposed steps; retain supplied evidence for completed steps.",
+            feature: "workflow"),
+        Recipe(
+            id: "ci-results", prompt: "Summarize this CI log as a workflow snapshot with evidence for each result.",
+            feature: "workflow"),
+        Recipe(
+            id: "configuration", prompt: "Show this configuration as copyable code with its filename.", feature: "code"),
+        Recipe(id: "onboarding", prompt: "Explain these setup commands in a copyable code view.", feature: "code"),
+        Recipe(
             id: "calculations",
             prompt: "Create a savings calculator with editable contributions and interest assumptions.", feature: "html"
         ),
