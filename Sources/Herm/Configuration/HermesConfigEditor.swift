@@ -39,6 +39,8 @@ enum HermesConfigCatalog {
                         "Overrides the detected context window of the MAIN chat model only (tokens). Leave at 0 to use the selected model's detected value. Does not affect auxiliary/MoA models."
                     )
                 ]),
+        ],
+        .providers: [
             Page(
                 title: "Account pooling",
                 fields: [
@@ -46,7 +48,7 @@ enum HermesConfigCatalog {
                         "credential_pool_strategies.openai-codex", "Codex Account Rotation",
                         "How Hermes picks between pooled Codex accounts. round_robin cycles accounts evenly after each selection; fill_first (default) uses the first healthy account until it runs out. Applies from the next request."
                     )
-                ]),
+                ])
         ],
         .chat: [
             Page(
@@ -106,6 +108,13 @@ enum HermesConfigCatalog {
                     .init(
                         "file_read_max_chars", "File Read Limit",
                         "Maximum characters Hermes can read from one file request."),
+                ]),
+            Page(
+                title: "Output limits",
+                fields: [
+                    .init("tool_output.max_bytes", "Terminal Output Limit", nil),
+                    .init("tool_output.max_lines", "File Page Limit", nil),
+                    .init("tool_output.max_line_length", "Line Length Limit", nil),
                 ]),
         ],
         .safety: [
@@ -189,8 +198,20 @@ enum HermesConfigCatalog {
                 title: "Voice conversation",
                 fields: [
                     .init(
-                        "voice.voice_chat_mode", "Voice Chat Mode",
-                        "chained: speech-to-text → Hermes → text-to-speech with the providers below. gpt-live: one full-duplex OpenAI voice model (gpt-live-1) listens and talks, and hands every real request to Hermes — any model you have selected answers with the full toolset. Needs an OpenAI API key; the voice layer bills $0.05 per minute."
+                        "auxiliary.voice_chat.provider", "Voice Conversation Provider",
+                        "Use auto to follow the session provider. A configured provider can run spoken turns on a faster model while Hermes keeps the session context and tools. Applies to subsequent voice turns."
+                    ),
+                    .init(
+                        "auxiliary.voice_chat.model", "Voice Conversation Model",
+                        "Leave blank to follow the session model with auto, or use the selected provider’s fast auxiliary model. This does not change the main chat model."
+                    ),
+                    .init(
+                        "auxiliary.voice_chat.reasoning_effort", "Voice Reasoning Effort",
+                        "Lower effort can reduce response latency. Hermes uses the lowest supported effort when a model cannot disable reasoning."
+                    ),
+                    .init(
+                        "voice.voice_chat_mode", "Hermes Voice Chat Mode",
+                        "Herm uses the chained speech-to-text → Hermes → text-to-speech pipeline with sentence streaming. This setting also configures other Hermes clients; selecting gpt-live does not switch Herm’s voice stage to a full-duplex connection."
                     ),
                     .init(
                         "voice.gpt_live.voice", "GPT-Live Voice",
@@ -296,13 +317,6 @@ enum HermesConfigCatalog {
                     .init("delegation.child_timeout_seconds", "Subagent Timeout", nil),
                     .init("delegation.reasoning_effort", "Subagent Reasoning Effort", nil),
                 ]),
-            Page(
-                title: "Output limits",
-                fields: [
-                    .init("tool_output.max_bytes", "Terminal Output Limit", nil),
-                    .init("tool_output.max_lines", "File Page Limit", nil),
-                    .init("tool_output.max_line_length", "Line Length Limit", nil),
-                ]),
         ],
     ]
 
@@ -318,6 +332,7 @@ enum HermesConfigCatalog {
         "stt.elevenlabs.model_id": ["scribe_v2", "scribe_v1"],
         "stt.local.model": ["tiny", "base", "small", "medium", "large-v3"],
         "stt.provider": ["local", "groq", "openai", "mistral", "xai", "elevenlabs"],
+        "auxiliary.voice_chat.reasoning_effort": ["none", "minimal", "low", "medium", "high"],
         "voice.voice_chat_mode": ["chained", "gpt-live"],
         "voice.gpt_live.voice": [
             "marin", "cedar", "quartz", "ripple", "vesper", "willow", "stone", "gleam", "meridian", "bossa", "tempo",
