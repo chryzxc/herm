@@ -136,19 +136,6 @@ enum QuickDraftSubmission {
                 return runtime
             }
             let runtime = try await validateDestination(directoryRetries: creatingSession ? 10 : 0)
-            if creatingSession, let path = draft.destination.projectPath,
-                let preferred = ProjectPreferences.shared.modelID(path), let session = draft.destination.session
-            {
-                let workflow = HermesWorkflowRPC(client: client, profileID: draft.destination.profileID)
-                let available = try DockModel.runtimeModelOptions(from: await workflow.modelOptions(runtime))
-                guard let option = available.first(where: { $0.id == preferred }) else {
-                    throw QuickDraftError.message(
-                        "The preferred project model is unavailable. Open the new session and choose an available model. Your draft was kept."
-                    )
-                }
-                try await workflow.setSessionModel(session, option: option)
-            }
-
             if let old = draft.destination.runtimeID, old != runtime,
                 draft.files.contains(where: \.uploaded)
             {

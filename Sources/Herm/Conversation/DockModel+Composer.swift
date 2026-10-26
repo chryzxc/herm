@@ -23,16 +23,6 @@ extension DockModel {
             sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession)
         else { return }
 
-        if sessionID == nil, let path = newSessionProjectPath,
-            let preferred = ProjectPreferences.shared.modelID(path), sessionModelOptionID == nil,
-            !runtimeModelOptions.contains(where: { $0.id == preferred })
-        {
-            reportAttachmentError(
-                "The preferred project model is unavailable. Select an available model before sending. Your draft is kept."
-            )
-            return
-        }
-
         if queued == nil, hasQueuedOrRedirectingPrompt {
             queueDraft()
             return

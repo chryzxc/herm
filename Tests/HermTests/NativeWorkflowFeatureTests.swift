@@ -52,34 +52,4 @@ struct NativeWorkflowFeatureTests {
         #expect(note.context(currentIdentity: "changed").body.contains("Source comparison changed"))
         #expect(note.context(currentIdentity: a.identity).body.contains("日本語"))
     }
-
-    @Test func projectActionsRejectEscapingAndMissingDirectories() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        #expect(
-            try ProjectAction(name: "Test", command: "swift test").workingDirectory(project: root.path)
-                == root.resolvingSymlinksInPath().path)
-        #expect(throws: (any Error).self) {
-            try ProjectAction(name: "Test", command: "test", directory: "../").workingDirectory(project: root.path)
-        }
-        #expect(throws: (any Error).self) {
-            try ProjectAction(name: "Test", command: "test", directory: "/tmp").workingDirectory(project: root.path)
-        }
-        #expect(throws: (any Error).self) {
-            try ProjectAction(name: "Test", command: "test", directory: "missing").workingDirectory(project: root.path)
-        }
-    }
-
-    @Test func preferencesStayProjectScoped() throws {
-        let suite = "HermWorkflow.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = ProjectPreferences(defaults: defaults)
-        try store.save([ProjectAction(name: "Build", command: "swift build")], path: "/tmp/project-a")
-        store.setModel("provider/model", path: "/tmp/project-a")
-        #expect(store.actions("/tmp/project-a").count == 1)
-        #expect(store.actions("/tmp/project-b").isEmpty)
-        #expect(store.modelID("/tmp/project-b") == nil)
-    }
 }

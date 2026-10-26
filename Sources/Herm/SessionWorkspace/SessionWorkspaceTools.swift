@@ -194,14 +194,6 @@ struct SessionTerminalView: View {
                 Button("Restart") { terminal.start(directory: directory) }
                     .buttonStyle(.dockCompact)
             }
-            if let command = terminal.projectCommand {
-                Text(
-                    command.isRunning
-                        ? "Running action…" : command.exitCode.map { "Action exited \($0)" } ?? "Action interrupted"
-                )
-                .dockFont(.metadata).foregroundStyle(
-                    command.exitCode.map { $0 == 0 ? Color.dockSuccess : Color.dockWarning } ?? Color.dockSecondaryText)
-            }
             Spacer(minLength: 8)
 
             if !recipes.isEmpty {

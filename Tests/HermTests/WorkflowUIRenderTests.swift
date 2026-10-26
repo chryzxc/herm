@@ -26,9 +26,6 @@ struct WorkflowUIRenderTests {
             sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
             defaults: defaults, initialSessionID: "ui-fixture", rpcClient: WorkflowUIRPC())
         defer { model.shutdown() }
-        let preferences = ProjectPreferences(defaults: defaults)
-        try preferences.save(
-            [ProjectAction(name: "Run focused tests", command: "swift test --filter DiffSearchTests")], path: "/tmp")
         let terminalKey = "ui-review-" + UUID().uuidString
         let terminalStore = TerminalWorkspaceStore.shared.workspace(key: terminalKey + ":/tmp")
         for _ in 0..<3 { terminalStore.add(directory: "/tmp") }
@@ -89,9 +86,6 @@ struct WorkflowUIRenderTests {
                         body:
                             "swift test --filter DiffSearchTests\n✓ Search reveals a matching collapsed file\n✓ Unicode source remains selectable"
                     )), root: root, name: "context-preview-\(raw)", width: 540, height: 420)
-            try await capture(
-                ProjectActionsEditor(path: "/tmp", preferences: preferences), root: root,
-                name: "project-actions-\(raw)", width: 560, height: 500)
             let expanded = ExpandedReviewRouter()
             expanded.availableWidth = 1000
             #expect(
@@ -133,9 +127,6 @@ struct WorkflowUIRenderTests {
                     name: "terminal-splits-\(raw)-\(Int(width))", width: width, height: 640)
                 #expect(terminalStore.splitAxis == 0)
             }
-            try await capture(
-                ModelComparisonView(path: "/tmp", model: model), root: root, name: "model-comparison-\(raw)",
-                width: 650, height: 540)
         }
     }
 
