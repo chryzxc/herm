@@ -62,16 +62,25 @@ final class SessionBrowserStore: ObservableObject {
     static let shared = SessionBrowserStore()
     @Published var presentation: SessionBrowserKey?
     private var workspaces: [SessionBrowserKey: SessionBrowserWorkspace] = [:]
-    private var subscriptions: [AnyCancellable] = []
+    private var subscriptions: [SessionBrowserKey: AnyCancellable] = [:]
     private var activeKey: SessionBrowserKey?
 
     func workspace(for key: SessionBrowserKey) -> SessionBrowserWorkspace {
         if let existing = workspaces[key] { return existing }
         let workspace = SessionBrowserWorkspace(key: key)
         workspaces[key] = workspace
-        workspace.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &subscriptions)
+        subscriptions[key] = workspace.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         return workspace
+    }
+
+    /// Only dispose after Hermes confirms deletion; retained live pages otherwise belong to the user.
+    func remove(_ key: SessionBrowserKey) {
+        guard let workspace = workspaces.removeValue(forKey: key) else { return }
+        subscriptions.removeValue(forKey: key)?.cancel()
+        workspace.suspend()
+        for tab in workspace.extras { workspace.closeTab(tab.id) }
+        if presentation == key { presentation = nil }
+        if activeKey == key { activeKey = nil }
     }
 
     func activate(model: DockModel, reconnect: Bool = false) {

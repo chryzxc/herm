@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ImageIO
 import SwiftUI
 
 /// A headless Chromium shared with Hermes: Herm launches it, points Hermes' browser
@@ -79,6 +80,7 @@ final class AgentBrowser: ObservableObject {
         }
     }
 
+    private var startupTask: Task<Void, Never>?
     private var process: Process?
     private var cdp: CDPConnection?
     private var sessionID: String?
@@ -114,16 +116,18 @@ final class AgentBrowser: ObservableObject {
         default: break
         }
         state = .starting
-        Task {
+        startupTask = Task {
             do {
                 guard model != nil else { throw Self.error("No Hermes session is available.") }
                 let endpoint = try await launch()
+                try Task.checkCancellation()
                 let cdp = CDPConnection(url: endpoint.ws)
                 cdp.onEvent = { [weak self] method, params, session in self?.handle(method, params, session) }
                 cdp.onClose = { [weak self] in self?.relaunch() }
                 self.cdp = cdp
                 _ = try await cdp.send("Target.setDiscoverTargets", ["discover": true])
                 let infos = try await cdp.send("Target.getTargets")["targetInfos"] as? [[String: Any]] ?? []
+                try Task.checkCancellation()
                 for page in infos.compactMap(Page.init(info:)) where !pages.contains(where: { $0.id == page.id }) {
                     pages.append(page)
                 }
@@ -134,6 +138,7 @@ final class AgentBrowser: ObservableObject {
                 {
                     try await attach(id)
                 }
+                try Task.checkCancellation()
                 cdpURL = "http://127.0.0.1:\(endpoint.port)"
                 state = .running
                 reconnectHermes()
@@ -142,7 +147,7 @@ final class AgentBrowser: ObservableObject {
                     navigate(url)
                 }
             } catch {
-                fail(error.localizedDescription)
+                if !Task.isCancelled { fail(error.localizedDescription) }
             }
         }
     }
@@ -181,6 +186,8 @@ final class AgentBrowser: ObservableObject {
     }
 
     private func teardown() {
+        startupTask?.cancel()
+        startupTask = nil
         if let cdp {
             cdp.onEvent = nil
             cdp.onClose = nil
@@ -464,15 +471,14 @@ final class AgentBrowser: ObservableObject {
             break
         }
         guard let session, session == sessionID else { return }
-        navigation.receiveCDP(method, params: params, mainFrameID: mainFrameID)
+        receiveNavigation(method, params: params)
         switch method {
         case "Page.screencastFrame":
             if let ack = params["sessionId"] {
                 cdp?.fire("Page.screencastFrameAck", ["sessionId": ack], session: session)
             }
-            guard let base64 = params["data"] as? String, let data = Data(base64Encoded: base64),
-                let image = NSImage(data: data)
-            else { return }
+            guard let decoded = params["decodedFrame"] as? CDPConnection.Frame else { return }
+            let image = NSImage(cgImage: decoded.image, size: .zero)
             let meta = params["metadata"] as? [String: Any]
             let css = CGSize(
                 width: meta?["deviceWidth"] as? Double ?? image.size.width,
@@ -530,6 +536,13 @@ final class AgentBrowser: ObservableObject {
         default:
             break
         }
+    }
+
+    // Mutating a @Published struct publishes even when the event changes nothing.
+    func receiveNavigation(_ method: String, params: [String: Any]) {
+        var next = navigation
+        next.receiveCDP(method, params: params, mainFrameID: mainFrameID)
+        if next != navigation { navigation = next }
     }
 
     private func appendConsole(_ line: String) {
@@ -708,6 +721,8 @@ final class AgentBrowser: ObservableObject {
 /// Minimal Chrome DevTools Protocol client: JSON over a websocket, flat sessions.
 @MainActor
 final class CDPConnection {
+    struct Frame: Sendable { let image: CGImage }
+
     private let task: URLSessionWebSocketTask
     private var nextID = 0
     /// CDP results are plain JSON values, only touched on the main actor.
@@ -784,7 +799,27 @@ final class CDPConnection {
             case .data(let data): data
             @unknown default: nil
             }
-        return data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        guard let data, var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        if object["method"] as? String == "Page.screencastFrame",
+            var params = object["params"] as? [String: Any]
+        {
+            // Decode on the socket callback, before handing the frame to the main actor.
+            params["decodedFrame"] = (params.removeValue(forKey: "data") as? String).flatMap(decodeFrame).map {
+                Frame(image: $0)
+            }
+            object["params"] = params
+        }
+        return object
+    }
+
+    nonisolated static func decodeFrame(_ base64: String) -> CGImage? {
+        guard let data = Data(base64Encoded: base64),
+            let source = CGImageSourceCreateWithData(data as CFData, nil)
+        else { return nil }
+        return CGImageSourceCreateImageAtIndex(
+            source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
     }
 
     private func dispatch(_ object: [String: Any]) {
