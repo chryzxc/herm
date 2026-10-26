@@ -87,6 +87,155 @@ struct VoiceQueueLifecycleTests {
         await model.voiceRequestChain?.value
     }
 
+    @Test func repeatedStartDoesNotCancelSpeechAndBargeInDropsTheRemainingQueue() async throws {
+        let playback = VoiceQueuePlayback()
+        playback.hold = true
+        let model = model(VoiceQueueRPCClient(), playback: playback)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        event(model, "message.start")
+        event(model, "message.delta", ["delta": "The first answer is ready. Next"])
+        for _ in 0..<100 where playback.continuation == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let stopped = playback.stopped
+        event(model, "message.start")
+        #expect(playback.stopped == stopped)
+        event(model, "message.delta", ["delta": " comes another sentence. Last"])
+        #expect(!model.voiceSpeechQueue.isEmpty)
+        model.interruptVoiceTurn()
+        #expect(model.voiceSpeechQueue.isEmpty)
+        playback.continuation?.resume()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(playback.speeches.count == 1)
+        model.stopVoiceConversation()
+    }
+
+    @Test func subagentCompletionNoticeIsScopedAndDeduplicated() async throws {
+        let model = model(VoiceQueueRPCClient())
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        model.receiveGatewayEvent(
+            "subagent.complete",
+            params: [
+                "session_id": "unrelated", "payload": ["subagent_id": "other", "name": "Other agent"],
+            ])
+        #expect(model.voiceCompletionAnnouncements.isEmpty)
+        event(model, "subagent.start", ["subagent_id": "worker", "name": "Researcher"])
+        event(model, "subagent.complete", ["subagent_id": "worker", "name": "Researcher"])
+        event(model, "subagent.complete", ["subagent_id": "worker", "name": "Researcher"])
+        #expect(model.voiceCompletionAnnouncements == ["Researcher finished."])
+        model.stopVoiceConversation()
+    }
+
+    @Test func disablingStreamedRepliesKeepsSpokenSteeringAvailable() async throws {
+        let playback = VoiceQueuePlayback()
+        playback.hold = true
+        let model = model(VoiceQueueRPCClient(), playback: playback)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        event(model, "message.start")
+        event(model, "message.delta", ["delta": "I am checking that. Next"])
+        for _ in 0..<100 where playback.continuation == nil { try await Task.sleep(for: .milliseconds(10)) }
+        model.toggleVoiceReplies()
+        #expect(model.voiceState == .thinking)
+        #expect(model.isSending)
+        #expect(model.voiceSpeechQueue.isEmpty)
+        playback.continuation?.resume()
+        model.stopVoiceConversation()
+    }
+
+    @Test func queuedVoiceFollowUpRetainsTheFastVoiceRoute() async throws {
+        let client = VoiceQueueRPCClient()
+        let model = model(client)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        model.draft = "Follow up aloud"
+        model.queueDraft()
+        for _ in 0..<100 where client.submitted.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        let request = client.requests.last(where: { $0.method == "prompt.submit" })
+        #expect(request?.params["voice_turn"] as? Bool == true)
+        #expect(client.submitted.first == VoicePrompts.conversationPrompt("Follow up aloud"))
+        model.stopVoiceConversation()
+    }
+
+    @Test func speechStartsBeforeCompletionAndFinalDoesNotRepeatThePrefix() async throws {
+        let client = VoiceQueueRPCClient()
+        let playback = VoiceQueuePlayback()
+        playback.hold = true
+        let model = model(client, playback: playback)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        event(model, "message.start")
+        event(model, "message.delta", ["delta": "The first answer is ready. Here is"])
+        for _ in 0..<100 where playback.continuation == nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.isSending)
+        #expect(playback.speeches.count == 1)
+        #expect(
+            playback.speeches.first?.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                == "The first answer is ready.")
+        event(model, "message.complete", ["text": "The first answer is ready. Here is the rest."])
+        #expect(playback.speeches.count == 1)
+        playback.hold = false
+        playback.continuation?.resume()
+        for _ in 0..<100 where model.voiceState != .listening { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(playback.speeches.map(\.text).joined() == "The first answer is ready. Here is the rest.")
+        #expect(model.voiceState == .listening)
+        #expect(model.nativeVoiceCapture.captureArmed)
+    }
+
+    @Test func aGapInStreamedSpeechKeepsTheAgentTurnWorking() async throws {
+        let client = VoiceQueueRPCClient()
+        let model = model(client)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        event(model, "message.start")
+        event(model, "message.delta", ["delta": "I will check that. Next"])
+        for _ in 0..<100 where model.voiceState != .thinking { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.isSending)
+        #expect(!model.nativeVoiceCapture.captureArmed)
+        #expect(model.voiceState == .thinking)
+        model.stopVoiceConversation()
+    }
+
+    @Test func backgroundCompletionWaitsForQuietAndIsNotAnnouncedTwice() async throws {
+        let playback = VoiceQueuePlayback()
+        let model = model(VoiceQueueRPCClient(), playback: playback)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        model.registerBackgroundTask(id: "work", prompt: "Check the build", parentSessionID: "voice-queue")
+        event(model, "background.complete", ["task_id": "work", "text": "Build passed"])
+        event(model, "background.complete", ["task_id": "work", "text": "Build passed"])
+        #expect(model.voiceCompletionAnnouncements.count == 1)
+        #expect(playback.speeches.isEmpty)
+        model.isVoicePromptActive = true
+        model.speakPendingVoiceAnnouncements()
+        #expect(model.voiceCompletionAnnouncements.count == 1)
+        model.isVoicePromptActive = false
+        model.speakPendingVoiceAnnouncements()
+        for _ in 0..<100 where playback.speeches.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(playback.speeches.count == 1)
+        #expect(playback.speeches.first?.text.contains("Check the build") == true)
+        model.stopVoiceConversation()
+        #expect(model.voiceCompletionAnnouncements.isEmpty)
+    }
+
+    @Test func streamedSpeechIsCancelledOnSessionChange() async throws {
+        let playback = VoiceQueuePlayback()
+        playback.hold = true
+        let model = model(VoiceQueueRPCClient(), playback: playback)
+        model.canTranscribeVoice = { true }
+        try await startVoice(model)
+        event(model, "message.start")
+        event(model, "message.delta", ["delta": "The first sentence is ready. Another follows."])
+        for _ in 0..<100 where playback.continuation == nil { try await Task.sleep(for: .milliseconds(10)) }
+        model.sessionID = "elsewhere"
+        playback.continuation?.resume()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(model.voiceState == .inactive)
+        #expect(model.voiceSpeechQueue.isEmpty)
+        #expect(model.voiceReplyStream == nil)
+        #expect(model.voiceSpokenCaption == nil)
+    }
+
     @Test func localBargeInStopsAudioWithoutInterruptingAnAlreadyCompletedTurn() async throws {
         let client = VoiceQueueRPCClient()
         let playback = VoiceQueuePlayback()
@@ -109,7 +258,7 @@ struct VoiceQueueLifecycleTests {
         playback.continuation?.resume()
         model.finishVoiceUtterance(transcript: "Actually tell me about tomorrow")
         for _ in 0..<100 where client.submitted.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(client.submitted == [GenerativeUIIntegration.preparePrompt("Actually tell me about tomorrow")])
+        #expect(client.submitted == [VoicePrompts.conversationPrompt("Actually tell me about tomorrow")])
         model.stopVoiceConversation()
     }
 
@@ -351,7 +500,7 @@ struct VoiceQueueLifecycleTests {
         try await startVoice(model)
         event(model, "voice.transcript", ["text": "Stop"])
         for _ in 0..<100 where model.isSending { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(client.submitted == [GenerativeUIIntegration.preparePrompt("Stop")])
+        #expect(client.submitted == [VoicePrompts.conversationPrompt("Stop")])
         #expect(!model.isSending)
         #expect(model.status == .idle)
         #expect(model.voiceState == .inactive)
@@ -377,7 +526,7 @@ struct VoiceQueueLifecycleTests {
 
         let voiceRequests = client.requests.filter { $0.method.hasPrefix("voice.") || $0.method == "prompt.submit" }
         #expect(voiceRequests.allSatisfy { $0.params["profile"] as? String == "voice-bot" })
-        #expect(client.submitted == [GenerativeUIIntegration.preparePrompt("Hello")])
+        #expect(client.submitted == [VoicePrompts.conversationPrompt("Hello")])
         #expect(model.voiceState == .thinking)
         event(model, "message.start")
         event(model, "message.delta", ["delta": "Hello back."])
@@ -418,7 +567,7 @@ struct VoiceQueueLifecycleTests {
         for _ in 0..<100 where client.submitted.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
 
         #expect(client.requests.last?.params["profile"] as? String == "voice-bot")
-        #expect(client.submitted == [GenerativeUIIntegration.preparePrompt("Hello")])
+        #expect(client.submitted == [VoicePrompts.conversationPrompt("Hello")])
         #expect(model.draft == "Keep this draft")
         #expect(model.isSending)
         #expect(model.voiceState == .thinking)
@@ -435,7 +584,7 @@ struct VoiceQueueLifecycleTests {
         event(model, "voice.transcript", ["text": "Another question"])
         for _ in 0..<100 where client.submitted.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
 
-        #expect(client.submitted == ["Hello", "Another question"].map { GenerativeUIIntegration.preparePrompt($0) })
+        #expect(client.submitted == ["Hello", "Another question"].map { VoicePrompts.conversationPrompt($0) })
         #expect(model.voiceState == .thinking)
         #expect(model.nativeVoiceCapture.hasPendingTranscript)
         #expect(!model.nativeVoiceCapture.isAwaitingPlaybackDrain)
@@ -529,7 +678,7 @@ struct VoiceQueueLifecycleTests {
         while client.submitted.count < 2, Date() < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        #expect(client.submitted == ["First request", "Follow up"].map { GenerativeUIIntegration.preparePrompt($0) })
+        #expect(client.submitted == ["First request", "Follow up"].map { VoicePrompts.conversationPrompt($0) })
         #expect(client.queuedSubmissions == [false, true])
         #expect(model.queuedPrompts.isEmpty)
         #expect(model.isSending)

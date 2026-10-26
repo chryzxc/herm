@@ -23,23 +23,42 @@ enum VoicePrompts {
         return parts.joined(separator: " ")
     }
 
+    /// Uses the same removable context envelope as visual chat, without its
+    /// large UI catalog. Hermes still owns persona, memory, tools and approvals.
+    static func conversationPrompt(_ text: String) -> String {
+        GenerativeUIIntegration.displayUserText(text) + """
+
+
+            [Herm rendering context v1]
+            This is a spoken conversation. Answer naturally in brief, speakable sentences. Avoid visual UI blocks unless requested. For substantial tasks, use available background delegation so we can keep talking; acknowledge only confirmed dispatches and report results when delivered. Preserve all approval requirements. Do not claim a tool or background capability you do not have.
+            [/Herm rendering context]
+            """
+    }
+
     static let approvalRetry = "Sorry, I didn't catch that. Say yes to allow it, or no to deny it."
 
     /// "always" is deliberately not voice-answerable: a misheard reply must not
     /// permanently allowlist a command. That choice stays on the card.
     static func approvalChoice(for spoken: String, choices: [String]) -> String? {
+        let phrase = tokens(spoken).joined(separator: " ")
         let words = Set(tokens(spoken))
         let deny: Set = [
             "no", "nope", "nah", "deny", "don't", "don’t", "dont", "stop", "cancel", "reject", "decline", "never",
             "not",
         ]
-        let allow: Set = [
-            "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "approve", "allow", "go", "proceed", "run", "fine",
-            "continue", "do",
+        if !words.isDisjoint(with: deny) {
+            return choices.contains(ApprovalChoice.deny) ? ApprovalChoice.deny : nil
+        }
+        let session: Set = [
+            "this session", "allow this session", "allow for this session", "allow it for this session",
         ]
-        if !words.isDisjoint(with: deny) { return ApprovalChoice.deny }
-        if words.contains("session"), choices.contains(ApprovalChoice.session) { return ApprovalChoice.session }
-        if !words.isDisjoint(with: allow), choices.contains(ApprovalChoice.once) { return ApprovalChoice.once }
+        if session.contains(phrase), choices.contains(ApprovalChoice.session) { return ApprovalChoice.session }
+        let allow: Set = [
+            "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "approve", "allow", "proceed",
+            "go ahead", "yes go ahead", "yeah go ahead", "yes please", "allow once", "allow it",
+            "yes do it", "do it", "run it", "yes run it",
+        ]
+        if allow.contains(phrase), choices.contains(ApprovalChoice.once) { return ApprovalChoice.once }
         return nil
     }
 

@@ -14,6 +14,21 @@ struct VoicePromptsTests {
         #expect(VoicePrompts.approvalChoice(for: "hmm", choices: choices) == nil)
     }
 
+    @Test(arguments: [
+        "do you need access", "can you run it", "what does allow mean", "yes but wait", "what is this session",
+        "always allow", "yes always allow",
+    ])
+    func questionsAndAmbiguousRepliesCannotApprove(_ text: String) {
+        #expect(VoicePrompts.approvalChoice(for: text, choices: ApprovalChoice.all) == nil)
+    }
+
+    @Test func voiceContextIsCompactAndRemovedFromDisplayedHistory() {
+        let prompt = VoicePrompts.conversationPrompt("Check the build")
+        #expect(GenerativeUIIntegration.displayUserText(prompt) == "Check the build")
+        #expect(prompt.count < 700)
+        #expect(prompt.contains("approval requirements"))
+    }
+
     @Test func spokenClarifyAnswerMatchesOptions() {
         let choices = ["Postgres", "SQLite", "Use both"]
         #expect(

@@ -33,6 +33,10 @@ final class TurnModelStore: ObservableObject {
     ]
     static let downloadSize = files.reduce(0) { $0 + $1.size }
 
+    static func downloadProgress(completedBytes: Int, fileBytes: Int, fraction: Double) -> Double {
+        (Double(completedBytes) + min(max(fraction, 0), 1) * Double(fileBytes)) / Double(downloadSize)
+    }
+
     private static var directory: URL {
         (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
@@ -58,7 +62,7 @@ final class TurnModelStore: ObservableObject {
                     let base = done
                     let fetched = try await self?.fetch(Self.repository + file.path) { fraction in
                         self?.phase = .downloading(
-                            Double(base) + fraction * Double(file.size) / Double(Self.downloadSize))
+                            Self.downloadProgress(completedBytes: base, fileBytes: file.size, fraction: fraction))
                     }
                     guard let fetched else { return }
                     try Task.checkCancellation()
@@ -229,14 +233,18 @@ struct TurnModelSettingsView: View {
                 HStack(spacing: 8) {
                     ProgressView(value: fraction)
                         .frame(width: 120)
+                        .accessibilityLabel("Turn model download")
                     Text("\(Int(fraction * 100))%")
                         .dockFont(.metadata).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
-                        .frame(width: 32, alignment: .trailing)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(minWidth: 40, alignment: .trailing)
                     Button("Cancel") { store.cancel() }
                         .buttonStyle(.dockCompact)
                         .dockFont(.body, weight: .medium)
                 }
+                .fixedSize(horizontal: true, vertical: false)
             case .installed:
                 Button("Remove") { store.remove() }
                     .buttonStyle(.dockCompact)

@@ -59,6 +59,7 @@ extension DockModel {
         } else {
             text = "[image]"
         }
+        let isVoiceTurn = voiceState.isNativeConversationActive && voiceSessionID == sessionID
         let richContext = generationContext()
         let submittedText = GenerativeUIIntegration.preparePrompt(
             ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles), context: richContext
@@ -231,7 +232,9 @@ extension DockModel {
                 let acknowledgment = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
                     params: scopedSessionParams([
-                        "session_id": promptSessionID, "text": outgoingText, "queued": queued != nil,
+                        "session_id": promptSessionID,
+                        "text": isVoiceTurn ? VoicePrompts.conversationPrompt(outgoingText) : outgoingText,
+                        "voice_turn": isVoiceTurn, "queued": queued != nil,
                     ]))
                 if acknowledgment["status"] as? String == "streaming" {
                     DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(

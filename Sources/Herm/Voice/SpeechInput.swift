@@ -327,6 +327,8 @@ final class MicLevelMeter: ObservableObject {
     var onUtteranceEnd: ((String?) -> Void)?
     /// Called while endpointing once nobody has spoken for `idleLimit`.
     var onIdle: (() -> Void)?
+    /// A quiet gap with no partial words, safe for a pending result announcement.
+    var onQuiet: (() -> Void)?
     var idleLimit: TimeInterval = 30
     /// Hermes' own VAD uses a fixed RMS threshold, so steady room noise keeps
     /// it recording until the user presses send. While this is on, Herm ends
@@ -562,10 +564,12 @@ final class MicLevelMeter: ObservableObject {
                     // Each utterance starts from a clean transcript, so words
                     // heard while asleep never pile up into the next one.
                     if self.isEndpointing { self.restartRecognition() }
-                } else if self.pendingEndSince == nil, self.transcript.isEmpty,
-                    self.endpoint.heardNothing(for: self.idleLimit, at: now)
-                {
-                    self.onIdle?()
+                } else if self.pendingEndSince == nil, self.transcript.isEmpty {
+                    if self.endpoint.heardNothing(for: self.idleLimit, at: now) {
+                        self.onIdle?()
+                    } else if self.endpoint.heardNothing(for: 1.5, at: now) {
+                        self.onQuiet?()
+                    }
                 }
             }
         }

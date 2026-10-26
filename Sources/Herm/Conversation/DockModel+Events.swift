@@ -647,6 +647,7 @@ extension DockModel {
                 tone: level == "warning" || level == "error" ? .attention : .inactive)
             appendSystemEvent(event, text: payload["text"] as? String ?? "", key: payload["key"] as? String)
         case "message.interim":
+            flushVoiceNarration()
             completeLiveReasoning()
             // Already-streamed commentary is in the live row; the rest would
             // otherwise only appear after a reload.
@@ -664,9 +665,11 @@ extension DockModel {
             guard !taskID.isEmpty,
                 let index = backgroundTasks.firstIndex(where: { $0.id == taskID })
             else { break }
+            let wasCompleted = backgroundTasks[index].status == .completed
             backgroundTasks[index].status = .completed
             backgroundTasks[index].output = payload["text"] as? String
             backgroundTasks[index].completedAt = .now
+            if !wasCompleted { announceVoiceBackgroundCompletion(backgroundTasks[index]) }
         case "voice.transcript":
             guard voiceState.isNativeConversationActive, !isVoiceMicMuted else { return }
             let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -724,7 +727,7 @@ extension DockModel {
         case "message.start":
             status = .working
             isSending = true
-            if voiceState.isNativeConversationActive, !isVoicePromptActive {
+            if voiceState.isNativeConversationActive, !isVoicePromptActive, streamingMessageID == nil {
                 stopVoicePlayback()
                 nativeVoiceCapture.receivedTranscript(hasText: true)
                 voiceState = .thinking
@@ -761,6 +764,7 @@ extension DockModel {
             streamingMessageBuffer.append(delta)
             streamingMessagePendingPresentationDelta.append(delta)
             scheduleStreamingMessageFlush()
+            streamVoiceReply(delta)
         case "message.complete":
             isAwaitingClarificationResume = false
             let completedMessageIDForPin = streamingMessageID
@@ -776,6 +780,7 @@ extension DockModel {
                     streamingMessageBuffer = completedText
                 }
             }
+            let voiceResponseText = turnCommittedText + streamingMessageBuffer
             var turnTokens: Int?
             compactingSessionID = nil
             if let id = sessionID, let usageDict = payload["usage"] as? [String: Any] {
@@ -834,11 +839,9 @@ extension DockModel {
                 skipNextVoicePlaybackDrain = false
                 voiceTelemetry.completedResponse()
                 resumeVoiceListening(force: true)
-            } else if voiceState.isNativeConversationActive, voiceState != .preparing {
+            } else if voiceState.isNativeConversationActive, voiceState != .preparing, voiceState != .paused {
                 voiceTelemetry.completedResponse()
-                let response =
-                    messages.last(where: { $0.role == .hermes }).map(GenerativeUIIntegration.readableText) ?? ""
-                speakNativeVoiceReply(response)
+                finishStreamedVoiceReply(voiceResponseText)
             }
             if let sessionStorageID {
                 cacheAgentState(for: sessionStorageID)
@@ -996,6 +999,7 @@ extension DockModel {
             completeLiveReasoning()
 
         case "tool.call", "tool.start", "tool.use", "tool_use":
+            flushVoiceNarration()
             completeLiveReasoning()
             let name =
                 (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String)

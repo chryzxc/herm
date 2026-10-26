@@ -90,14 +90,6 @@ extension DockModel {
             )
         }
 
-        let project = newSessionProjectPath
-        if sessionModelOptionID == nil, let project, let preferred = ProjectPreferences.shared.modelID(project),
-            !runtimeModelOptions.contains(where: { $0.id == preferred })
-        {
-            throw QuickDraftError.message(
-                "The preferred project model is unavailable. Select an available model before sending. Your draft is kept."
-            )
-        }
         isCreatingSession = true
         defer { isCreatingSession = false }
         var createParams: [String: Any] = ["source": source]
@@ -109,7 +101,7 @@ extension DockModel {
         }
         // Hermes rejects sessionless model switches; a new-chat pick rides on
         // session.create as a per-session override instead.
-        if let id = sessionModelOptionID ?? project.flatMap({ ProjectPreferences.shared.modelID($0) }),
+        if let id = sessionModelOptionID,
             let option = runtimeModelOptions.first(where: { $0.id == id })
         {
             createParams["model"] = option.model
@@ -159,6 +151,7 @@ extension DockModel {
         voiceProfileID = nil
         voiceRecorderSessionID = nil
         voiceRecorderEnabled = false
+        voiceCompletionAnnouncements.removeAll()
         stopVoicePlayback()
         skipNextVoicePlaybackDrain = false
         isVoicePromptActive = false
@@ -274,6 +267,12 @@ extension DockModel {
         guard voiceState == .listening, nativeCaptureIsLocal, voiceFollowUpArmed,
             !isVoicePromptActive, !isSending
         else { return }
+        if voiceRepliesEnabled, !voiceCompletionAnnouncements.isEmpty {
+            let announcements = voiceCompletionAnnouncements.joined(separator: " ")
+            voiceCompletionAnnouncements.removeAll()
+            speakNativeVoiceReply(announcements)
+            return
+        }
         nativeVoiceCapture.reset()
         voiceState = .paused
         NSSound(named: "Pop")?.play()
@@ -329,7 +328,12 @@ extension DockModel {
         voiceRepliesEnabled.toggle()
         if !voiceRepliesEnabled, voiceState == .speaking {
             stopVoicePlayback()
-            resumeVoiceListening(force: true)
+            if isSending && !isVoicePromptActive {
+                nativeVoiceCapture.receivedTranscript(hasText: true)
+                voiceState = .thinking
+            } else {
+                resumeVoiceListening(force: true)
+            }
         }
     }
 
@@ -533,6 +537,9 @@ extension DockModel {
     }
 
     func stopVoicePlayback() {
+        voicePlaybackGeneration &+= 1
+        voiceReplyStream = nil
+        voiceSpeechQueue.removeAll()
         voicePlaybackTask?.cancel()
         voicePlaybackTask = nil
         voicePlayback.stop()
@@ -541,43 +548,67 @@ extension DockModel {
 
     func speakNativeVoiceReply(_ responseText: String) {
         guard voiceState.isNativeConversationActive, voiceState != .preparing,
-            voiceSessionID == sessionID, let sessionID
+            voiceSessionID == sessionID, sessionID != nil
         else { return }
         stopVoicePlayback()
+        enqueueVoiceSpeech(responseText)
+    }
+
+    func enqueueVoiceSpeech(_ text: String) {
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { voiceSpeechQueue.append(text) }
+        guard voicePlaybackTask == nil, voiceState.isNativeConversationActive,
+            voiceSessionID == sessionID, let sessionID
+        else { return }
         voiceState = .speaking
-        voiceSpokenCaption = nil
-        lastVoiceSpeech = responseText
         let generation = voiceConversationGeneration
+        let playbackGeneration = voicePlaybackGeneration
         let captureGeneration = nativeVoiceCapture.completedResponse()
         let profile = voiceProfileID
         voicePlaybackTask = Task {
             do {
-                try Task.checkCancellation()
-                if !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    try await voicePlayback.speak(responseText, profileID: profile, client: sessionRPCClient) {
+                while !voiceSpeechQueue.isEmpty {
+                    try Task.checkCancellation()
+                    let speech = voiceSpeechQueue.removeFirst()
+                    lastVoiceSpeech = speech
+                    try await voicePlayback.speak(speech, profileID: profile, client: sessionRPCClient) {
                         [weak self] cue in
                         guard let self, self.voiceConversationGeneration == generation,
+                            self.voicePlaybackGeneration == playbackGeneration,
                             self.sessionID == sessionID,
                             self.nativeVoiceCapture.isCurrent(generation: captureGeneration)
                         else { return }
                         self.voiceSpokenCaption = cue
                     }
+                    try Task.checkCancellation()
+                    guard voicePlaybackGeneration == playbackGeneration else { return }
                 }
                 guard !Task.isCancelled, voiceConversationGeneration == generation,
                     self.sessionID == sessionID,
                     nativeVoiceCapture.playbackDrainCompleted(generation: captureGeneration)
                 else { return }
-                voiceTelemetry.beginListening()
+                voicePlaybackTask = nil
                 voiceSpokenCaption = nil
+                if isSending && !isVoicePromptActive {
+                    nativeVoiceCapture.receivedTranscript(hasText: true)
+                    voiceState = .thinking
+                    return
+                }
+                if !isVoicePromptActive, voiceRepliesEnabled, !voiceCompletionAnnouncements.isEmpty {
+                    let announcements = voiceCompletionAnnouncements.joined(separator: " ")
+                    voiceCompletionAnnouncements.removeAll()
+                    enqueueVoiceSpeech(announcements)
+                    return
+                }
+                voiceTelemetry.beginListening()
                 voiceState = .listening
                 drainQueuedPromptIfIdle()
                 armNativeVoiceCapture()
             } catch {
                 guard !Task.isCancelled, voiceConversationGeneration == generation,
-                    self.sessionID == sessionID
+                    voicePlaybackGeneration == playbackGeneration, self.sessionID == sessionID
                 else { return }
+                stopVoicePlayback()
                 nativeVoiceCapture.reset()
-                voiceSpokenCaption = nil
                 voiceState = .paused
                 messages.append(
                     ChatMessage(
@@ -588,11 +619,54 @@ extension DockModel {
         }
     }
 
+    func streamVoiceReply(_ delta: String) {
+        guard voiceRepliesEnabled, !isVoicePromptActive, !skipNextVoicePlaybackDrain,
+            voiceState.isNativeConversationActive, voiceState != .paused,
+            voiceSessionID == sessionID
+        else { return }
+        if voiceReplyStream == nil { voiceReplyStream = VoiceReplyStream() }
+        if let sentence = voiceReplyStream?.append(delta) { enqueueVoiceSpeech(sentence) }
+    }
+
+    func flushVoiceNarration() {
+        guard voiceRepliesEnabled, !isVoicePromptActive, !skipNextVoicePlaybackDrain,
+            voiceState.isNativeConversationActive, voiceState != .paused,
+            voiceSessionID == sessionID
+        else { return }
+        if let sentence = voiceReplyStream?.flushSentence() { enqueueVoiceSpeech(sentence) }
+    }
+
+    func finishStreamedVoiceReply(_ text: String) {
+        let remainder = voiceReplyStream?.finish(text) ?? text
+        voiceReplyStream = nil
+        enqueueVoiceSpeech(remainder)
+    }
+
+    func speakPendingVoiceAnnouncements() {
+        guard voiceState == .listening, !isSending, !isVoicePromptActive,
+            !isVoiceMicMuted, voiceRepliesEnabled, !voiceCompletionAnnouncements.isEmpty
+        else { return }
+        let announcements = voiceCompletionAnnouncements.joined(separator: " ")
+        voiceCompletionAnnouncements.removeAll()
+        speakNativeVoiceReply(announcements)
+    }
+
+    func announceVoiceBackgroundCompletion(_ task: HermesBackgroundTask) {
+        guard voiceState.isNativeConversationActive, voiceRepliesEnabled,
+            voiceSessionID == task.parentSessionID, voiceSessionID == sessionID
+        else { return }
+        let label = String(task.prompt.prefix(100))
+        voiceCompletionAnnouncements.append(
+            "Background task finished: \(label). The result is available in background tasks.")
+        // Never replace a reply, an approval, or a user's current utterance.
+        // Deliver at the next playback boundary or quiet microphone gap.
+    }
+
     func submitNativeVoiceTranscript(_ text: String) {
         guard let sessionID, !isSending else { return }
         let requestGeneration = sessionResumeGeneration
         let params = scopedSessionParams([
-            "session_id": sessionID, "text": GenerativeUIIntegration.preparePrompt(text, context: generationContext()),
+            "session_id": sessionID, "text": VoicePrompts.conversationPrompt(text),
             "voice_turn": true,
         ])
         messages.append(ChatMessage(role: .user, text: text))

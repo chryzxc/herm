@@ -67,6 +67,10 @@ extension DockPopover {
             guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
             model.finishVoiceUtterance(transcript: transcript, overPlayback: micLevelMeter.heardPlayback)
         }
+        micLevelMeter.onQuiet = { [model] in
+            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
+            model.speakPendingVoiceAnnouncements()
+        }
         micLevelMeter.onIdle = { [model] in
             guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
             model.sleepVoiceConversation()

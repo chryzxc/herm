@@ -617,6 +617,7 @@ extension DockModel {
             agent.filesRead = hydrated.filesRead.isEmpty ? agent.filesRead : hydrated.filesRead
             agent.filesWritten = hydrated.filesWritten.isEmpty ? agent.filesWritten : hydrated.filesWritten
         }
+        let previousStatus = agent.status
         agent.status = Self.agentStatus(
             current: agent.status,
             eventType: type,
@@ -628,6 +629,12 @@ extension DockModel {
         }
         if let preview = payload["tool_preview"] as? String ?? payload["text"] as? String {
             agent.latestActivity = preview
+        }
+        if !Self.isTerminalAgentStatus(previousStatus), Self.isTerminalAgentStatus(agent.status),
+            voiceState.isNativeConversationActive, voiceRepliesEnabled, voiceSessionID == sessionID
+        {
+            let outcome = agent.status == "complete" ? "finished" : "stopped with status \(agent.status)"
+            voiceCompletionAnnouncements.append("\(agent.name ?? "Background agent") \(outcome).")
         }
         reconcileSyntheticPlaceholder(for: agent)
         upsertSessionAgent(agent)

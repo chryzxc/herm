@@ -407,6 +407,10 @@ final class DockModel: ObservableObject {
     var canTranscribeVoice: () -> Bool = { MicLevelMeter.canTranscribe }
     let voicePlayback: HermesVoicePlaybackProtocol
     var voicePlaybackTask: Task<Void, Never>?
+    var voiceReplyStream: VoiceReplyStream?
+    var voiceSpeechQueue: [String] = []
+    var voiceCompletionAnnouncements: [String] = []
+    var voicePlaybackGeneration = 0
     /// The user interrupted a generating turn; its `message.complete` has no
     /// speech left to drain, so listening resumes immediately.
     var skipNextVoicePlaybackDrain = false
