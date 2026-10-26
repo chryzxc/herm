@@ -104,6 +104,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private var dockPanel: DockPanelController?
     private var edgeDock: EdgeDockController?
     private var dockWindow: DockWindowController?
+    private let onboarding = DockOnboardingWindow()
     private var commandDoubleTapDetector = CommandDoubleTapDetector()
     private var optionDoubleTapDetector = CommandDoubleTapDetector()
     private var commandEventMonitors: [Any] = []
@@ -196,6 +197,11 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         writeStatusItemDiagnosticIfRequested()
         HermAppUpdater.shared.isBusy = { [model] in model.isSending || model.status == .working }
         HermAppUpdater.shared.start()
+        if !UserDefaults.standard.bool(forKey: DockOnboardingModel.completedKey),
+            !ScrollPerformanceFixture.isRequested
+        {
+            showOnboarding()
+        }
         if CommandLine.arguments.contains("--show-panel") {
             // The production app starts quietly in the menu bar. The debug
             // launcher passes this explicit argument so a manual run provides
@@ -204,6 +210,12 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             DispatchQueue.main.async { [weak self] in
                 self?.edgeDock?.toggleQuickPreview()
             }
+        }
+    }
+
+    func showOnboarding() {
+        onboarding.open(client: model.controlRPCClient) { [weak self] in
+            self?.dockPanel?.showFromNotification()
         }
     }
 

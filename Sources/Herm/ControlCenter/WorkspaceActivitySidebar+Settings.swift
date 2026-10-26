@@ -8,10 +8,22 @@ extension WorkspaceActivitySidebar {
     var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
             if selectedSettingsCategory == .general {
+                SettingsSection(title: "Set up Herm", subtitle: "", tint: .dockAccent) {
+                    SettingsPreferenceRow(
+                        title: "Welcome guide", detail: "Bots, notch position, skins, and Apple Intelligence."
+                    ) {
+                        Button("Set up Herm") { HermDelegate.current?.showOnboarding() }
+                            .buttonStyle(.dockSecondary)
+                    }
+                }
                 generalPreferencesSection
+                powerPreferencesSection
             }
             if selectedSettingsCategory == .gateway {
                 GatewayConnectionSettingsView(onRestart: onRestartDock)
+                SettingsSection(title: "Messaging gateway", subtitle: "Service on this Mac", tint: .dockAccent) {
+                    HermesGatewaySettingsView(service: control.gatewayService)
+                }
             }
             if selectedSettingsCategory == .notifications {
                 notificationPreferencesSection
@@ -20,18 +32,41 @@ extension WorkspaceActivitySidebar {
                 SettingsSection(title: "Theme", subtitle: "Colors and skins", tint: .dockAccent) {
                     appearanceSection
                 }
-                SettingsSection(title: "Replies", subtitle: "Visual content", tint: .dockAccent) {
-                    GenerativeUISettings()
-                        .padding(.vertical, -8)
-                }
                 sidebarPreferencesSection
-                chatQuotaPreferencesSection
                 SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
                     NotchDisplaySettings()
                 }
                 SettingsSection(title: "Hermes companion", subtitle: "", tint: .dockAccent) {
                     HermesPetSettingsView(pet: control.pet)
                 }
+            }
+            if selectedSettingsCategory == .chat {
+                SettingsSection(title: "Layout", subtitle: "", tint: .dockAccent) {
+                    ChatViewSettings()
+                        .padding(.vertical, -8)
+                }
+                SettingsSection(title: "Typing", subtitle: "", tint: .dockAccent) {
+                    ComposerTypingSettings()
+                        .padding(.vertical, -8)
+                }
+                SettingsSection(title: "Replies", subtitle: "Visual content", tint: .dockAccent) {
+                    GenerativeUISettings()
+                        .padding(.vertical, -8)
+                }
+                SettingsSection(title: "Simulators", subtitle: "Device launch", tint: .dockAccent) {
+                    SimulatorSettings()
+                        .padding(.vertical, -8)
+                }
+                chatAssistancePreferencesSection
+                chatQuotaPreferencesSection
+            }
+            if selectedSettingsCategory == .safety {
+                privacyPreferencesSection
+                SettingsSection(title: "Window capture", subtitle: "", tint: .dockAccent) {
+                    DesktopCaptureSettings()
+                        .padding(.vertical, -8)
+                }
+                approvalPreferencesSection
             }
             if selectedSettingsCategory == .voice {
                 SettingsSection(title: "Turn detection", subtitle: "When to reply", tint: .dockAccent) {
@@ -753,15 +788,7 @@ extension WorkspaceActivitySidebar {
 
     var generalPreferencesSection: some View {
         VStack(alignment: .leading, spacing: 17) {
-            SettingsSection(title: "Typing", subtitle: "", tint: .dockAccent) {
-                ComposerTypingSettings()
-                    .padding(.vertical, -8)
-            }
-            SettingsSection(title: "Window capture", subtitle: "", tint: .dockAccent) {
-                DesktopCaptureSettings()
-                    .padding(.vertical, -8)
-            }
-            SettingsSection(title: "Restart", subtitle: "Herm and Hermes gateway", tint: .dockAccent) {
+            SettingsSection(title: "Restart", subtitle: "Herm app", tint: .dockAccent) {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
@@ -783,8 +810,6 @@ extension WorkspaceActivitySidebar {
                             .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
-                    Divider().overlay(Color.dockBorderLight)
-                    HermesGatewaySettingsView(service: control.gatewayService)
                 }
             }
             .confirmationDialog("Restart Herm?", isPresented: $isShowingDockRestartConfirmation) {
@@ -893,12 +918,41 @@ extension WorkspaceActivitySidebar {
                             }
                         ))
                 }
-                Divider().overlay(Color.dockBorderLight)
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    var privacyPreferencesSection: some View {
+        SettingsSection(title: "Privacy", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
                 SettingsPreferenceRow(
                     title: "Hide notch from screen sharing",
                     detail: "Keep the notch and floating panel out of screen shares and recordings."
                 ) {
                     settingsSwitch(isOn: $hidesFromScreenSharing)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(
+                    title: "Show sessions in Spotlight",
+                    detail:
+                        "Search session titles and short previews from Spotlight and open them in Herm. Titles and previews are stored in Spotlight's index on this Mac; turning this off removes them."
+                ) {
+                    settingsSwitch(isOn: $showsSessionsInSpotlight)
+                }
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    var approvalPreferencesSection: some View {
+        SettingsSection(title: "Approval assistance", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsPreferenceRow(
+                    title: "Require Touch ID for broad approvals",
+                    detail: "Ask for Touch ID or your password before \"for session\" or \"always allow\" approvals."
+                ) {
+                    settingsSwitch(isOn: $requiresAuthForBroadApprovals)
                 }
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(
@@ -909,7 +963,17 @@ extension WorkspaceActivitySidebar {
                 ) {
                     settingsSwitch(isOn: $explainsApprovalsOnDevice)
                 }
-                Divider().overlay(Color.dockBorderLight)
+                OnDeviceAssistNotice(
+                    text: "Apple Intelligence runs on this Mac. Generated text may be inaccurate."
+                )
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    var chatAssistancePreferencesSection: some View {
+        SettingsSection(title: "Reply summaries & session titles", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
                 SettingsPreferenceRow(
                     title: "Summarize replies with Apple Intelligence",
                     detail: OnDeviceAssist.isAvailable
@@ -930,22 +994,14 @@ extension WorkspaceActivitySidebar {
                 OnDeviceAssistNotice(
                     text: "Apple Intelligence runs on this Mac. Generated text may be inaccurate."
                 )
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(
-                    title: "Show sessions in Spotlight",
-                    detail:
-                        "Search session titles and short previews from Spotlight and open them in Herm. Titles and previews are stored in Spotlight's index on this Mac; turning this off removes them."
-                ) {
-                    settingsSwitch(isOn: $showsSessionsInSpotlight)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(
-                    title: "Require Touch ID for broad approvals",
-                    detail: "Ask for Touch ID or your password before \"for session\" or \"always allow\" approvals."
-                ) {
-                    settingsSwitch(isOn: $requiresAuthForBroadApprovals)
-                }
-                Divider().overlay(Color.dockBorderLight)
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    var powerPreferencesSection: some View {
+        SettingsSection(title: "Power", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
                 SettingsPreferenceRow(
                     title: "Keep Mac awake while working",
                     detail: "Prevent idle sleep during a running turn. Only affects this Mac."
@@ -967,13 +1023,13 @@ extension WorkspaceActivitySidebar {
                 }
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(
-                    title: "Show Pull requests in sidebar", detail: "List pull requests in the workspace side panel."
+                    title: "Show Pull requests in GitHub", detail: "Include Pull requests in GitHub navigation."
                 ) {
                     settingsSwitch(isOn: $showsPullRequestsInSidebar)
                 }
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(
-                    title: "Show Issues in sidebar", detail: "List GitHub issues in the workspace side panel."
+                    title: "Show Issues in GitHub", detail: "Include Issues in GitHub navigation."
                 ) {
                     settingsSwitch(isOn: $showsIssuesInSidebar)
                 }

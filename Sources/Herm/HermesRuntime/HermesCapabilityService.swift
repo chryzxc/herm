@@ -746,6 +746,12 @@ final class HermesCapabilityService {
         }
     }
 
+    /// Verify the canonical plugin keys and statuses through the installed RPC contract.
+    /// A missing or malformed inventory must never enable onboarding mutations.
+    func probeOnboardingPlugins(client: HermesRPCClientProtocol) async throws -> [WorkflowPlugin] {
+        try await HermesWorkflowRPC(client: client, profileID: nil).plugins()
+    }
+
     func probeProfileDeletion(client: HermesRPCClientProtocol) async -> Bool {
         let result = try? await HermesCLIAdapter(rpc: HermesControlRPC(client: client)).profileDeleteHelp()
         return cliCapability(
