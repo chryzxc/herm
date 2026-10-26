@@ -171,6 +171,7 @@ struct BotRosterPage: View {
                         } label: {
                             DockIconLabel("New Bot", icon: .plus)
                         }
+                        .buttonStyle(.dockPrimary)
                         .controlSize(.regular)
                         .disabled(!model.canCreateBots)
                         .help(
@@ -183,6 +184,7 @@ struct BotRosterPage: View {
                             DockActionLabel(
                                 title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
                         }
+                        .buttonStyle(.dockSecondary)
                         .controlSize(.regular)
                         .disabled(isPopulatingAvatars)
                         .popover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
@@ -348,7 +350,7 @@ struct BotRosterPage: View {
                     if showsHiddenBots { Label("Include hidden", icon: .check) } else { Text("Include hidden") }
                 }
             } label: {
-                Label(showsHiddenBots ? "All Bots" : "Visible", icon: showsHiddenBots ? .eye : .eyeSlash)
+                Label(showsHiddenBots ? "All Bots" : "Visible", icon: .eye)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
@@ -946,17 +948,14 @@ struct MissionControlBotRow: View, Equatable {
                 identity
                     .frame(maxWidth: .infinity, alignment: .leading)
                 actions
-                    .opacity(isHovering || isFocused || isDeleting ? 1 : 0)
-                    .allowsHitTesting(isHovering || isFocused)
-                    .accessibilityHidden(!(isHovering || isFocused || isDeleting))
             }
             activity
                 .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
-            runtimeDetails
-            Divider().overlay(Color.dockBorderLight)
+            Color.dockBorderLight.frame(height: DockLayout.hairline)
             footer
+            runtimeDetails
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(rowBackground)
         .disabled(isDeleting)
@@ -999,8 +998,8 @@ struct MissionControlBotRow: View, Equatable {
                     .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(bot.isHidden ? Color.dockSecondaryText : Color.dockPrimaryText)
                     .lineLimit(1)
-                if isSelected { chip("Active", color: Color.dockSuccess) }
-                if bot.isDefault { chip("Default", color: Color.dockAccent) }
+                if isSelected { chip("Selected", color: Color.dockAccent) }
+                if bot.isDefault { chip("Default", color: Color.dockMetadataText) }
                 if bot.isHidden { chip("Hidden", color: Color.dockMetadataText) }
             }
             Text(BotRosterPresentation.role(for: bot))
@@ -1010,27 +1009,31 @@ struct MissionControlBotRow: View, Equatable {
         }
     }
 
-    /// Fixed-height slot so cards don't resize when the config arrives.
+    /// Config and counts retain their slot while the runtime inventory loads.
     private var runtimeDetails: some View {
-        let fallbacks = runtime?.fallbacks ?? []
-        return HStack(spacing: 6) {
-            if let modelLabel {
-                chip(modelLabel, color: Color.dockSecondaryText, monospaced: true)
-                    .help(bot.provider.map { "\($0) / \(modelLabel)" } ?? modelLabel)
-            }
+        HStack(spacing: 6) {
             if let effort = runtime?.reasoningEffort {
-                chip("Thinking \(effort.capitalized)", color: Color.dockAccent)
+                Text("Thinking \(effort.capitalized)")
+                    .lineLimit(1)
             }
-            if let first = fallbacks.first {
-                chip(
-                    "Fallback \(first.model)\(fallbacks.count > 1 ? " +\(fallbacks.count - 1)" : "")",
-                    color: Color.dockSecondaryText, monospaced: true
-                )
-                .help(fallbacks.map { "\($0.provider) / \($0.model)" }.joined(separator: "\n"))
+            Spacer(minLength: 8)
+            if let counts {
+                Text(counts.label)
+                    .lineLimit(1)
+                    .help(counts.label)
             }
-            Spacer(minLength: 0)
         }
+        .dockFont(.metadata)
+        .foregroundStyle(Color.dockMetadataText)
         .frame(height: 18)
+    }
+
+    private var modelHelp: String {
+        var lines = [bot.provider, modelLabel].compactMap { $0 }
+        if let runtime {
+            lines += runtime.fallbacks.map { "Fallback: \($0.provider) / \($0.model)" }
+        }
+        return lines.joined(separator: "\n")
     }
 
     private var isActive: Bool { bot.isWorkingNow || bot.isRecentlyActive }
@@ -1044,10 +1047,16 @@ struct MissionControlBotRow: View, Equatable {
 
     private var footer: some View {
         HStack(spacing: 6) {
+            if let modelLabel {
+                Text(modelLabel)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(modelHelp)
+            }
+            Spacer(minLength: 8)
             if isActive {
                 DockActivityIndicator(state: .running, size: 10)
-            } else {
-                Circle().fill(Color.dockMetadataText.opacity(0.5)).frame(width: 6, height: 6)
             }
             Group {
                 if bot.isWorkingNow {
@@ -1058,17 +1067,11 @@ struct MissionControlBotRow: View, Equatable {
                     Text("Never active")
                 }
             }
-            .dockFont(.metadata)
             .foregroundStyle(isActive ? Color.dockAccent : Color.dockMetadataText)
             .lineLimit(1)
-            Spacer(minLength: 8)
-            if let counts {
-                Text(counts.label)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
-            }
+            .fixedSize(horizontal: true, vertical: false)
         }
+        .dockFont(.metadata)
     }
 
     private func chip(_ text: String, color: Color, monospaced: Bool = false) -> some View {
@@ -1128,17 +1131,14 @@ struct MissionControlBotRow: View, Equatable {
     }
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-            .fill(
-                isHovering || isFocused ? Color.dockSurface4 : isSelected ? Color.dockAccentMuted : Color.dockSurface2
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .stroke(
-                        isFocused || isSelected ? Color.dockAccent : Color.dockBorderLight,
-                        lineWidth: isFocused || isSelected ? 1.5 : DockLayout.hairline)
-            }
+        DockThemeShape(cornerRadius: DockLayout.controlRadius)
+            .dockSurfaceFill(
+                isHovering || isFocused ? Color.dockSurface4 : Color.dockSurface2,
+                stroke: isFocused || isSelected ? Color.dockAccent : Color.dockBorderLight,
+                lineWidth: isFocused || isSelected ? 1.5 : DockLayout.hairline,
+                strokeOnGlass: isFocused || isSelected)
     }
+
 }
 
 /// Live preview for Generate Avatars: the exact Hermes faces it will save,
