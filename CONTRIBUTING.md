@@ -19,7 +19,7 @@ make check
 ```
 
 Start iteration with `make guard`. It runs strict Swift syntax/style lint, the
-color contract and its self-tests, and Git's conflict-marker/whitespace check.
+button sizing contract, the color contract and its self-tests, and Git's conflict-marker/whitespace check.
 It needs no model calls, network, app launch, or Swift build. Fix its file/line
 diagnostics before asking for AI review; reserve review for behavior, ownership,
 concurrency, and UI decisions. These checks do not replace focused tests.
@@ -91,3 +91,8 @@ refresh, and the narrow-screen Ask/Control transition. For terminal or
 integration work, additionally verify that session/project switches cannot
 route an action to the previous context and that unavailable providers fail
 closed.
+
+Button layout changes follow [the sizing contract](docs/button-sizing.md).
+`make button-contract` catches label overrides; `DockButtonSizingTests` compares
+rendered heights and writes theme reference images. Review those images rather
+than relying on build success as evidence of visual consistency.

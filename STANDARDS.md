@@ -41,3 +41,11 @@ Secrets never enter Herm state (single sanctioned exception: the explicit SOUL.m
 ## Exceptions
 
 None. Record any deviation as an ADR in `docs/adr/` with an expiry.
+
+## Action sizing
+
+All filled/outlined text actions use shared `DockButtonMetrics`; role changes
+emphasis, not height. Set `.dockButtonSize` on the common action container.
+`make button-contract` is required through `make guard`; no label-height or
+per-button size exceptions are accepted. Follow `docs/button-sizing.md` and run
+`DockButtonSizingTests` after changing shared action metrics.

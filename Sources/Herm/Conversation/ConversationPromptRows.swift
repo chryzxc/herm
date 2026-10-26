@@ -100,7 +100,7 @@ struct ConversationPromptRows: View {
                                 title: "Allow once", pendingTitle: "Allowing…", isPending: isPending,
                                 tint: .dockPrimaryText
                             )
-                            .frame(minHeight: DockControlMetrics.hitTarget)
+
                         }
                         .buttonStyle(DockPrimaryButtonStyle())
                     }
@@ -108,7 +108,7 @@ struct ConversationPromptRows: View {
                         Button {
                             if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.session) }
                         } label: {
-                            Text("Allow this session").frame(minHeight: DockControlMetrics.hitTarget)
+                            Text("Allow this session")
                         }
                         .buttonStyle(DockSecondaryButtonStyle())
                         .help("Don't ask again for this command until the session ends.")
@@ -117,7 +117,7 @@ struct ConversationPromptRows: View {
                         Button {
                             if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.always) }
                         } label: {
-                            Text("Always allow").frame(minHeight: DockControlMetrics.hitTarget)
+                            Text("Always allow")
                         }
                         .buttonStyle(DockSecondaryButtonStyle())
                         .help(alwaysAllowCaption)
@@ -125,7 +125,7 @@ struct ConversationPromptRows: View {
                     Button(role: .destructive) {
                         if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.deny) }
                     } label: {
-                        Text("Deny").frame(minHeight: DockControlMetrics.hitTarget)
+                        Text("Deny")
                     }
                     .buttonStyle(DockSecondaryButtonStyle())
                 }
@@ -141,6 +141,7 @@ struct ConversationPromptRows: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .dockButtonSize(.accessible)
         .padding(.horizontal, conversationMetrics.contentInset + 4)
         .padding(.vertical, 8)
     }
@@ -190,9 +191,8 @@ struct ConversationPromptRows: View {
                                         DockIcon(.arrowRight, size: 12, color: .dockAccent)
                                     }
                                 }
-                                .padding(.vertical, 5)
                                 .frame(
-                                    maxWidth: .infinity, minHeight: DockControlMetrics.hitTarget, alignment: .leading)
+                                    maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(DockSecondaryButtonStyle())
                             .overlay {
@@ -221,7 +221,7 @@ struct ConversationPromptRows: View {
                                 ? "Send selection" : "Send \(clarificationSelection.count) selected",
                             pendingTitle: "Sending…", isPending: isPending, tint: .dockPrimaryText
                         )
-                        .frame(minHeight: DockControlMetrics.hitTarget)
+
                     }
                     .buttonStyle(DockPrimaryButtonStyle())
                     .controlSize(.small)
@@ -234,6 +234,7 @@ struct ConversationPromptRows: View {
                 .foregroundStyle(Color.dockMetadataText)
             }
         }
+        .dockButtonSize(.accessible)
         .padding(.horizontal, conversationMetrics.contentInset + 4)
         .padding(.vertical, 8)
     }
@@ -282,14 +283,14 @@ struct ConversationPromptRows: View {
                             title: prompt.asksForLogin ? "Send login" : "Send", pendingTitle: "Sending…",
                             isPending: isPending, tint: .dockPrimaryText
                         )
-                        .frame(minHeight: DockControlMetrics.hitTarget)
+
                     }
                     .buttonStyle(DockPrimaryButtonStyle())
                     .disabled(!canSubmit)
                     Button {
                         if state.matchesPrompt(in: model) { model.respondToValuePrompt("") }
                     } label: {
-                        Text("Skip").frame(minHeight: DockControlMetrics.hitTarget)
+                        Text("Skip")
                     }
                     .buttonStyle(DockSecondaryButtonStyle())
                 }
@@ -301,6 +302,7 @@ struct ConversationPromptRows: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .dockButtonSize(.accessible)
         .padding(.horizontal, conversationMetrics.contentInset + 4)
         .padding(.vertical, 8)
     }

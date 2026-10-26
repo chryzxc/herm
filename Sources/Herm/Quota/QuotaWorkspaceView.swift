@@ -861,7 +861,7 @@ struct QuotaWorkspaceView: View {
             } label: {
                 Text(signedIn ? "Update…" : "Connect…")
                     .dockFont(.control)
-                    .frame(minWidth: 76, minHeight: DockControlMetrics.compactHeight)
+                    .frame(minWidth: 76)
             }
             .buttonStyle(.dockSecondary)
             if let website = descriptor.website {

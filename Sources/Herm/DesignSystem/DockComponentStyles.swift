@@ -364,7 +364,8 @@ extension Animation {
     /// Hover and press feedback. Snap skins paint the active state in the
     /// current frame and ease only the return, like the Hermes desktop.
     static func dockFeedback(_ active: Bool, duration: TimeInterval = 0.16) -> Animation? {
-        DockThemeStyle.current.motion == .snap && active ? nil : .dockEase(duration: duration)
+        guard DockThemeStyle.current.animates else { return nil }
+        return DockThemeStyle.current.motion == .snap && active ? nil : .dockEase(duration: duration)
     }
 }
 
@@ -388,13 +389,7 @@ extension View {
             // scheme, not our tokens; pin it so a light skin under dark macOS
             // (or vice versa) doesn't get invisible placeholder text.
             .modifier(DockPinnedColorScheme())
-            .transaction { transaction in
-                // E-Ink: state changes land instantly, like a screen refresh.
-                if !DockThemeStyle.current.animates {
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
-                }
-            }
+            .modifier(DockMotionAccessibility())
     }
 
     /// Marks an active/hovered tab, row, or control per the theme's selection
@@ -645,7 +640,10 @@ struct DockPressButtonStyle: ButtonStyle {
                 }
             }
             .contentShape(shape)
-            .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
+            .scaleEffect(
+                DockMotion.pressScale(
+                    isPressed: configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
+            )
             .opacity(!isEnabled ? 0.42 : configuration.isPressed ? 0.86 : 1)
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
@@ -695,7 +693,10 @@ struct DockHoverButtonStyle: ButtonStyle {
             .brightness(configuration.isPressed ? -0.06 : isHovering && isEnabled ? 0.12 : 0)
             .opacity(isEnabled ? 1 : 0.42)
             // Squash on press, spring back on release.
-            .scaleEffect(configuration.isPressed && !reduceMotion ? DockThemeStyle.current.pressScale : 1)
+            .scaleEffect(
+                DockMotion.pressScale(
+                    isPressed: configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
+            )
             .animation(
                 reduceMotion ? nil : .dockFeedback(configuration.isPressed, duration: 0.2),
                 value: configuration.isPressed
@@ -714,37 +715,32 @@ extension View {
 /// The single accent-tinted action treatment from DESIGN.md. Use it only for the
 /// primary action in a section; secondary actions keep a neutral outline.
 struct DockPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
     /// Split actions keep the shared fill readable while their selector is enabled.
     var dimsWhenDisabled = true
     static var foregroundColor: Color {
         DockThemeStyle.current.material == .glass || !DockThemePalette(theme: DockThemeRuntime.current).neonHues.isEmpty
             ? .dockOnAccentText : .dockPrimaryText
     }
-    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let isCompact = controlSize == .small || controlSize == .mini
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         let tint = configuration.role == .destructive ? Color.dockDestructive : Color.dockAccent
         let highlighted = isHovering && isEnabled
-        // Glass matches macOS `.glassProminent`: accent-tinted glass, no outline or canvas.
+        // Light glass uses the frosted treatment to avoid broad native button shadows.
         let isGlass = DockThemeStyle.current.material == .glass
         let neon = DockThemePalette(theme: DockThemeRuntime.current).neonHues
         configuration.label
-            .dockFont(.control)
-            .foregroundStyle(Self.foregroundColor)
-            .padding(.horizontal, DockWorkspaceScale.points(isCompact ? 10 : 12, scale: workspaceScale))
-            .frame(
-                minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale)
-            )
+            .foregroundStyle(isGlass && colorScheme == .light ? Color.dockPrimaryText : Self.foregroundColor)
+            .dockButtonMetrics()
             .background {
                 if isGlass {
                     Color.clear.dockLiquidGlass(
-                        shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true, elevated: true)
+                        shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true,
+                        elevated: colorScheme == .dark)
                 } else if !neon.isEmpty {
                     // Neon skins: a solid accent-to-magenta fill that glows brighter on hover.
                     shape.fill(
@@ -775,9 +771,12 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .dockBevel(pressed: configuration.isPressed)
             .contentShape(shape)
             .opacity(isEnabled || !dimsWhenDisabled ? 1 : 0.42)
-            .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
+            .scaleEffect(
+                DockMotion.pressScale(
+                    isPressed: configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
+            )
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
-            .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: highlighted)
+            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: highlighted)
             .onHover { isHovering = $0 }
     }
 }
@@ -785,27 +784,25 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 /// The outlined companion to the primary action (Cancel, Remove, Copy). A
 /// destructive role tints the label instead of filling the control.
 struct DockSecondaryButtonStyle: ButtonStyle {
-    @Environment(\.dockWorkspaceScale) private var workspaceScale
-    var compact = false
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let isCompact = compact || controlSize == .small || controlSize == .mini
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration.label
-            .dockFont(.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
-            .padding(.horizontal, DockWorkspaceScale.points(isCompact ? 10 : 12, scale: workspaceScale))
-            .frame(
-                minHeight: DockWorkspaceScale.points(isCompact ? 26 : DockLayout.controlHeight, scale: workspaceScale)
-            )
+            .dockButtonMetrics()
             .background {
-                // Glass matches macOS `.glass`: interactive glass supplies hover/press and rim, so no outline.
+                // Keep light-mode controls frosted without native drop shadows.
                 if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, interactive: true, elevated: true)
+                    Color.clear.dockLiquidGlass(shape, interactive: true, elevated: colorScheme == .dark)
+                        .overlay(
+                            shape.fill(
+                                Color.dockPrimaryText.opacity(
+                                    colorScheme == .light && isHovering && isEnabled ? 0.07 : 0))
+                        )
                 } else {
                     shape.fill(
                         configuration.isPressed
@@ -820,7 +817,10 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .dockBevel(pressed: configuration.isPressed)
             .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.42)
-            .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
+            .scaleEffect(
+                DockMotion.pressScale(
+                    isPressed: configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
+            )
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
             .onHover { isHovering = $0 }
@@ -861,7 +861,7 @@ struct DockToggleStyle: ToggleStyle {
         }
         .buttonStyle(.dockHover)
         .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
-        .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isOn)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: configuration.isOn)
     }
 }
 
@@ -1055,6 +1055,7 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
     var help: String? = nil
     var onRefresh: (() -> Void)? = nil
     var isRefreshing = false
+    var showsClose = true
     let close: () -> Void
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
@@ -1064,11 +1065,14 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
             DockPageHeader(title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) {
                 HStack(spacing: 8) {
                     trailing()
-                    Button("Close", action: close).buttonStyle(.dockCompact).keyboardShortcut(.cancelAction)
+                    if showsClose {
+                        Button("Close", action: close).buttonStyle(.dockCompact).keyboardShortcut(.cancelAction)
+                    }
                 }
             }
             .help(help ?? "")
             content()
+                .dockSurfaceReveal()
                 .environment(\.dockTitleRow, nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -1091,6 +1095,7 @@ extension DockExpandedPage where Trailing == EmptyView {
 /// Shows or hides a page's first column (session list, PR list, settings
 /// categories). Sits right after the traffic lights, like a native sidebar toggle.
 struct DockSidebarToggle: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     enum Edge { case leading, trailing }
 
     let isCollapsed: Bool
@@ -1100,7 +1105,7 @@ struct DockSidebarToggle: View {
 
     init(isCollapsed: Binding<Bool>) {
         self.isCollapsed = isCollapsed.wrappedValue
-        self.action = { withAnimation(.dockEase(duration: 0.2)) { isCollapsed.wrappedValue.toggle() } }
+        self.action = { isCollapsed.wrappedValue.toggle() }
     }
 
     /// Panel toggles on either side share one look: outline glyph, no selected fill.
@@ -1114,7 +1119,9 @@ struct DockSidebarToggle: View {
     private var noun: String { panel ?? (edge == .leading ? "sidebar" : "inspector") }
 
     var body: some View {
-        let button = Button(action: action) {
+        let button = Button {
+            withAnimation(DockMotion.animation(reduceMotion: reduceMotion)) { action() }
+        } label: {
             // The collapsed glyph shows the hidden panel's rows; trailing panels mirror it.
             DockIcon(isCollapsed ? .sidebar : .sidebarSimple, size: DockLayout.toolbarIconSize)
                 .scaleEffect(x: edge == .trailing ? -1 : 1)
@@ -1235,6 +1242,7 @@ struct DockCallout<Content: View>: View {
 /// A labelled, collapsed-by-default block for supporting detail (scope, limits,
 /// stack traces) so the decision and its buttons stay above the fold.
 struct DockCalloutDisclosure: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let text: String
     @State private var isOpen = false
@@ -1242,10 +1250,11 @@ struct DockCalloutDisclosure: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DockSpacing.tight) {
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { isOpen.toggle() }
+                withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) { isOpen.toggle() }
             } label: {
                 HStack(spacing: DockSpacing.tight) {
-                    DockIcon(isOpen ? .caretDown : .caretRight, size: 11, color: .dockMetadataText)
+                    DockIcon(.caretRight, size: 11, color: .dockMetadataText)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
                     Text(title)
                         .dockFont(.body, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
@@ -1283,6 +1292,7 @@ struct DockCalloutDisclosure: View {
 /// long scope or error never pushes the actions off screen. Short text renders
 /// as plain text with no toggle.
 struct DockExpandableText: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let text: String
     var lineLimit = 4
     var monospaced = false
@@ -1313,7 +1323,9 @@ struct DockExpandableText: View {
                 .fixedSize(horizontal: false, vertical: true)
             if isLong {
                 Button(isExpanded ? "Show less" : "Show more") {
-                    withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
+                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) {
+                        isExpanded.toggle()
+                    }
                 }
                 .buttonStyle(.dockLink)
             }
@@ -1356,8 +1368,6 @@ struct DockLoadingState: View {
     var detail: String? = nil
     var minHeight: CGFloat = 120
 
-    @State private var isVisible = false
-
     var body: some View {
         VStack(spacing: 10) {
             ProgressView()
@@ -1377,8 +1387,7 @@ struct DockLoadingState: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: .infinity)
-        .opacity(isVisible ? 1 : 0)
-        .onAppear { withAnimation(.dockEase(duration: 0.2)) { isVisible = true } }
+        .dockSurfaceReveal()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
     }
@@ -1398,11 +1407,13 @@ extension ButtonStyle where Self == DockPrimaryButtonStyle {
 
 extension ButtonStyle where Self == DockSecondaryButtonStyle {
     static var dockSecondary: Self { Self() }
-    static var dockCompact: Self { Self(compact: true) }
+    /// Compatibility alias. Size is inherited from the enclosing action group.
+    static var dockCompact: Self { Self() }
 }
 
 /// Inline navigation and disclosure stay recognizable in monochrome themes too.
 struct DockLinkButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -1415,6 +1426,8 @@ struct DockLinkButtonStyle: ButtonStyle {
             .underline(true, color: tint)
             .contentShape(Rectangle())
             .opacity(isEnabled ? (configuration.isPressed ? 0.7 : isHovering ? 0.85 : 1) : 0.42)
+            .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
+            .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .onHover { isHovering = $0 }
     }
 }
@@ -1606,6 +1619,7 @@ extension View {
 
 /// The standard tab control for mutually exclusive scopes on every page.
 struct DockTabButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let isSelected: Bool
     let action: () -> Void
@@ -1638,6 +1652,7 @@ struct DockTabButton: View {
         }
         .buttonStyle(.dockHover)
         .contentShape(shape)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

@@ -28,6 +28,9 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
                 configuration.content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 16)
+                    .transition(
+                        DockMotion.isEnabled(reduceMotion: reduceMotion)
+                            ? .opacity.combined(with: .offset(y: -4)) : .identity)
             }
         }
     }

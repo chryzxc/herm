@@ -44,10 +44,12 @@ struct DockModal<Content: View, Footer: View>: View {
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             VStack(alignment: .leading, spacing: 16) { content }
                 .padding(contentPadding)
+                .dockSurfaceReveal()
                 .frame(maxWidth: .infinity, maxHeight: width == nil ? .infinity : nil, alignment: .topLeading)
             if Footer.self != EmptyView.self {
                 Color.dockBorderLight.frame(height: DockLayout.hairline)
                 HStack(spacing: DockLayout.controlGap) { footer }
+                    .dockButtonSize(.standard)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity)
@@ -195,19 +197,21 @@ func modalActions(
 /// fill for the primary action and a quiet outline for Cancel, all from theme tokens.
 struct DockModalButtonStyle: ButtonStyle {
     let isPrimary: Bool
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
+        let usesOnAccentInk = isPrimary && (DockThemeStyle.current.material != .glass || colorScheme == .dark)
         configuration.label
-            .dockFont(.navigation, weight: .semibold)
-            .foregroundStyle(isPrimary ? Color.dockOnAccentText : Color.dockPrimaryText)
-            .padding(.horizontal, 16)
-            .frame(minWidth: 92, minHeight: DockLayout.controlHeight)
+            .foregroundStyle(usesOnAccentInk ? Color.dockOnAccentText : Color.dockPrimaryText)
+            .dockButtonMetrics()
+            .frame(minWidth: 92)
             .background {
                 if DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(
-                        shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true, elevated: true
+                        shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true,
+                        elevated: colorScheme == .dark
                     )
                 } else {
                     shape.fill(isPrimary ? Color.dockAccent : Color.dockControlSurface)

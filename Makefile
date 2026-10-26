@@ -3,7 +3,7 @@ SHELL := /bin/sh
 PROJECT_ROOT := $(CURDIR)
 SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 
-.PHONY: test build build-release run guard lint format smoke-contract color-contract check package
+.PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract check package
 
 test:
 	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
@@ -34,7 +34,11 @@ color-contract:
 	python3 Scripts/test-color-contract.py
 	python3 Scripts/check-colors.py
 
-guard: color-contract lint
+button-contract:
+	python3 Scripts/test-button-contract.py
+	python3 Scripts/check-button-contract.py
+
+guard: color-contract button-contract lint
 	git diff --check
 
 check: guard test smoke-contract build-release

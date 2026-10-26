@@ -323,6 +323,7 @@ struct DockNavRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -535,7 +536,7 @@ struct DockCopyButton: View {
     }
 
     private func setCopied(_ copied: Bool) {
-        if reduceMotion {
+        if !DockMotion.isEnabled(reduceMotion: reduceMotion) {
             didCopy = copied
         } else {
             withAnimation(.dockEase(duration: 0.18)) { didCopy = copied }
@@ -563,7 +564,9 @@ struct DockSectionHeader<Actions: View>: View {
         HStack(spacing: 2) {
             if let isExpanded {
                 Button {
-                    withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.wrappedValue.toggle() }
+                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) {
+                        isExpanded.wrappedValue.toggle()
+                    }
                 } label: {
                     label(isExpanded: isExpanded.wrappedValue)
                 }

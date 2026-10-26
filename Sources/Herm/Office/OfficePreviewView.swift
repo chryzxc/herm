@@ -268,8 +268,6 @@ private struct OfficeCrewStatusBar: View {
                                 .dockFont(.metadata, weight: .semibold).monospacedDigit()
                                 .foregroundStyle(count > 0 ? Color.dockSecondaryText : Color.dockMetadataText)
                         }
-                        .padding(.horizontal, 9)
-                        .frame(height: 44)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.dockCompact)
@@ -281,6 +279,7 @@ private struct OfficeCrewStatusBar: View {
                     .accessibilityLabel("\(status.label): \(count) bots")
                 }
             }
+            .dockButtonSize(.accessible)
             .padding(3)
         }
         .fixedSize()

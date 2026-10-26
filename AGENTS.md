@@ -83,15 +83,19 @@ user-visible changes. Do not commit or push unless asked.
   it draws under the window controls.
 - Match the closest existing component before introducing a new visual
   treatment. Reuse shared `Dock*` components and color tokens.
-- Clickable text must be recognizable before hover: use `.dockCompact` for
-  small actions, `.dockSecondary` for standard actions, `.dockPrimary` for the
-  local primary action, and `.dockLink` for inline navigation or Show more.
-  Never style a standalone text action as `.plain`, `.borderless`, or
-  `.dockHover`. Reserve `.dockHover` for rows, tabs, icons, and disclosures
-  whose label already supplies a visible interaction cue. Linked metadata
-  pills must include a navigation icon and underline; static pills must not.
-  Check resting, disabled, keyboard-focus, and pending states in light, dark,
-  Glass, and monochrome themes. Hover feedback alone is insufficient.
+- Text actions use `.dockPrimary` for local priority and `.dockSecondary` for
+  companions. Size belongs to their common container: `.dockButtonSize(.compact)`
+  (28pt default), `.standard` (36pt forms), or `.accessible` (44pt decisions).
+  `.dockCompact` is a compatibility alias, not an independent size. Never size
+  individual action labels with height/vertical padding or use native
+  `.controlSize` to size Herm actions. Modal footers supply standard size.
+  Run `make button-contract`; see `docs/button-sizing.md` for rules and audit.
+  Clickable text must be recognizable before hover. Use `.dockLink` for inline
+  navigation; reserve `.dockHover` for rows, tabs, icons, disclosures, and content
+  tiles with a visible interaction cue. Never use `.plain` or `.borderless` for
+  standalone text actions. Linked metadata pills need a navigation icon and
+  underline; static pills must not. Check disabled, pending, keyboard-focus,
+  Light, Dark, Glass, and Monochrome states. Hover alone is insufficient.
 - Use 16pt semibold only for page headers. Use 12pt semibold titles and 12pt
   detail text for compact empty states, matching existing repository and
   session empty-state components. Dense metadata may use 11pt where an

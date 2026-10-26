@@ -584,13 +584,13 @@ extension WorkspaceActivitySidebar {
                                 .dockFont(.navigation, weight: .bold)
                         }
                     }
-                    .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.dockPrimary)
                 .opacity(canCreateKanbanTask && !control.isCreatingKanbanTask ? 1 : 0.42)
                 .disabled(!canCreateKanbanTask || control.isCreatingKanbanTask)
                 .help("Create task")
             }
+            .dockButtonSize(.standard)
             DockTextField("Add context for Hermes (optional)", text: $kanbanBody, axis: .vertical)
                 .lineLimit(1...3)
                 .textFieldStyle(.plain)
