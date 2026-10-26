@@ -20,20 +20,13 @@ struct SessionModeTabStrip: View {
                     onSelect(mode)
                 } label: {
                     Text(mode == .pullRequests ? "PRs" : mode.label)
-                        .dockFont(.body, weight: isSelected ? .semibold : .medium)
+                        .dockFont(.control, weight: isSelected ? .semibold : .medium)
                         .foregroundStyle(isSelected ? selectedInk : style.secondaryText)
-                        .padding(.horizontal, 10)
-                        .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight)
+                        .padding(.horizontal, 8)
+                        .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight - 4)
                         .dockSelectionBackground(
                             segment, active: isSelected, fill: style.selectedFill, theme: style.theme
                         )
-                        .overlay(alignment: .bottom) {
-                            if isSelected && selection != .underline {
-                                Capsule().fill(selection == .invert ? selectedInk : style.accent)
-                                    .frame(width: 16, height: 2)
-                                    .padding(.bottom, 2)
-                            }
-                        }
                         .frame(height: DockControlMetrics.hitTarget)
                         .contentShape(Rectangle())
                 }
@@ -45,9 +38,8 @@ struct SessionModeTabStrip: View {
         }
         .padding(.horizontal, 2)
         .background {
-            shape.fill(style.surface4.opacity(0.5))
-                .overlay(shape.stroke(style.divider, lineWidth: DockLayout.hairline))
-                .frame(height: DockControlMetrics.compactHeight + 4)
+            shape.dockSurfaceFill(style.surface4.opacity(0.5))
+                .frame(height: DockControlMetrics.compactHeight)
         }
         .fixedSize()
         .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: selectedMode)

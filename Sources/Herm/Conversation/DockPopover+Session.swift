@@ -469,30 +469,43 @@ extension DockPopover {
             } else {
                 List {
                     ForEach(sessions) { session in
-                        SessionPickerRow(
+                        MissionControlSidebarSessionRow(
                             session: session,
-                            projectName: conversationProjectName(for: session),
-                            status: statuses[session.id] ?? .none,
-                            isCurrent: session.id == model.navigationSessionID,
-                            canDelete: session.id != model.sessionID && model.deletingSessionID == nil,
-                            isUpdatingVisibility: model.updatingSessionVisibilityID == session.id,
+                            selectedSessionID: model.navigationSessionID,
+                            sessionStatus: statuses[session.id] ?? .none,
                             style: style,
-                            onOpen: {
+                            repositoryName: conversationProjectName(for: session),
+                            isPinned: model.isSessionPinned(session.id),
+                            isActive: session.id == model.sessionID,
+                            isDeleting: model.deletingSessionID == session.id,
+                            isUpdatingVisibility: model.updatingSessionVisibilityID == session.id,
+                            isRenaming: model.renamingSessionID == session.id,
+                            onSelect: { selected in
                                 sidebarSessionSeenStore.markSeen(
-                                    profileID: session.profileID ?? model.profileScopeID,
-                                    sessionID: session.id,
-                                    at: session.lastUpdatedAt
+                                    profileID: selected.profileID ?? model.profileScopeID,
+                                    sessionID: selected.id,
+                                    at: selected.lastUpdatedAt
                                 )
-                                model.resumeSession(session)
+                                model.resumeSession(selected)
                             },
-                            onToggleHidden: {
-                                Task { @MainActor in
-                                    if await model.setSessionHidden(session, hidden: !session.isHidden) {
-                                        controlCenter.refreshProjectNavigation()
-                                    }
-                                }
+                            onTogglePin: { selected in
+                                Task { await model.toggleSessionPinned(selected) }
                             },
-                            onDelete: { sessionPendingDeletion = session }
+                            onRename: { selected, title in
+                                let succeeded = await model.renameSession(selected, title: title)
+                                if succeeded { controlCenter.refreshProjectNavigation() }
+                                return succeeded
+                            },
+                            onToggleHidden: { selected, hidden in
+                                let succeeded = await model.setSessionHidden(selected, hidden: hidden)
+                                if succeeded { controlCenter.refreshProjectNavigation() }
+                                return succeeded
+                            },
+                            onRequestDelete: { selected in
+                                guard model.deletingSessionID == nil else { return }
+                                sessionPendingDeletion = selected
+                            },
+                            isPinning: model.pinningSessionID == session.id
                         )
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
