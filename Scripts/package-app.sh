@@ -12,6 +12,7 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 APP_NAME="Herm"
 APP_DISPLAY="Herm"
 VERSION="${1:-}"
+SIGNING_IDENTITY="${HERM_CODESIGN_IDENTITY:--}"
 
 . "$ROOT_DIR/Scripts/appintents.sh"
 
@@ -49,8 +50,12 @@ if [ -n "$VERSION" ]; then
         /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$PLIST"
 fi
 
-# Ad-hoc sign so the bundle launches on a clean macOS install.
-codesign --force --deep --sign - --identifier io.github.chryzxc.Herm "$APP_DIR"
+# Keep the signing identity stable across releases when a certificate is configured.
+if [ "$SIGNING_IDENTITY" = "-" ]; then
+    echo "Warning: ad-hoc signing changes Herm’s privacy identity on rebuild."
+    echo "Set HERM_CODESIGN_IDENTITY to a stable signing certificate to retain permission grants."
+fi
+codesign --force --deep --sign "$SIGNING_IDENTITY" --identifier io.github.chryzxc.Herm "$APP_DIR"
 echo "==> Verifying code signature…"
 codesign --verify --strict --verbose=2 "$APP_DIR"
 codesign -dv --verbose=2 "$APP_DIR" >/dev/null 2>&1

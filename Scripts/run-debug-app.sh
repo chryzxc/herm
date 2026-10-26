@@ -8,6 +8,8 @@ set -eu
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 APP_IDENTIFIER="io.github.chryzxc.Herm"
 PROCESS_NAME="Herm"
+# Use the same certificate across rebuilds so macOS privacy grants retain identity.
+SIGNING_IDENTITY="${HERM_CODESIGN_IDENTITY:--}"
 
 cd "$PROJECT_DIR"
 . "$PROJECT_DIR/Scripts/appintents.sh"
@@ -124,7 +126,11 @@ embed_appintents_metadata "$BUILD_DIR" "$APP_PATH/Contents/Resources"
 # `cp` can retain a restrictive mode from an older bundle. Launch Services
 # requires the bundle executable to be discoverable as a normal app binary.
 chmod 755 "$APP_PATH/Contents/MacOS/Herm"
-codesign --force --sign - --identifier "$APP_IDENTIFIER" "$APP_PATH"
+if [ "$SIGNING_IDENTITY" = "-" ]; then
+    echo "Warning: ad-hoc signing changes Herm’s privacy identity on rebuild."
+    echo "Set HERM_CODESIGN_IDENTITY to a stable signing certificate to retain permission grants."
+fi
+codesign --force --sign "$SIGNING_IDENTITY" --identifier "$APP_IDENTIFIER" "$APP_PATH"
 codesign --verify --strict "$APP_PATH"
 
 echo "[4/4] Launching the newly-built app..."
