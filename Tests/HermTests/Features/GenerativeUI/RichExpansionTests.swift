@@ -84,6 +84,31 @@ struct RichExpansionTests {
         #expect(RichSelectionIdentity.edge("shared") != RichSelectionIdentity.block("shared:edge"))
     }
 
+    @Test func graphNodesCarryReportedStatusAndEdgesCarryStyle() throws {
+        let descriptor = try #require(RichFeatureRegistry.local.first { $0.id == "graph" })
+        let source = RichFeatureRegistry.exampleSurface(descriptor)
+        let parsed = try surface(source)
+        #expect(parsed.validate())
+        guard case .graph(let graph)? = try #require(parsed.blocks?.first).payload else {
+            Issue.record("Expected a graph block")
+            return
+        }
+        #expect(graph.nodes.map(\.status) == [.passed, .failed])
+        #expect(graph.edges.first?.style == .dashed)
+        #expect(RichBlockPayload.graph(graph).plainText == "Passed: UI\nFailed: Runtime")
+        #expect(throws: (any Error).self) {
+            try surface(source.replacingOccurrences(of: "\"failed\"", with: "\"broken\""))
+        }
+        #expect(throws: (any Error).self) {
+            try surface(source.replacingOccurrences(of: "\"dashed\"", with: "\"dotted\""))
+        }
+        let plain = try surface(
+            source.replacingOccurrences(of: ",\"status\":\"passed\"", with: "")
+                .replacingOccurrences(of: ",\"style\":\"dashed\"", with: ""))
+        guard case .graph(let unstyled)? = try #require(plain.blocks?.first).payload else { return }
+        #expect(unstyled.nodes.first?.status == nil && unstyled.edges.first?.style == nil)
+    }
+
     @Test func typedReferencesRejectMissingDatasetsCyclesAndUnknownParents() throws {
         let descriptor = try #require(RichFeatureRegistry.local.first { $0.id == "section" })
         let source = RichFeatureRegistry.exampleSurface(descriptor)

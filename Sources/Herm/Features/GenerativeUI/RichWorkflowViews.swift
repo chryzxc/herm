@@ -96,13 +96,17 @@ struct RichWorkflowView: View {
     }
 
     private func status(_ status: RichWorkflow.Item.Status) -> some View {
-        let color: Color =
-            switch status {
-            case .passed: .dockSuccess
-            case .failed: .dockDestructive
-            case .blocked: .dockWarning
-            case .proposed, .running, .skipped: .dockSecondaryText
-            }
-        return Text(status.rawValue.capitalized).foregroundStyle(color).fixedSize()
+        Text(status.rawValue.capitalized).foregroundStyle(status.color).fixedSize()
+    }
+}
+
+extension RichWorkflow.Item.Status {
+    var color: Color {
+        switch self {
+        case .passed: .dockSuccess
+        case .failed: .dockDestructive
+        case .blocked: .dockWarning
+        case .proposed, .running, .skipped: .dockSecondaryText
+        }
     }
 }

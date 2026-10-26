@@ -291,7 +291,8 @@ extension RichArtifactPresentationState {
                 }
             case .graph(let value):
                 if let item = value.nodes.first(where: { $0.id == selected }) {
-                    parts.append(item.title + "\n" + (item.detail ?? ""))
+                    let status = item.status.map { $0.rawValue.capitalized + ": " } ?? ""
+                    parts.append(status + item.title + "\n" + (item.detail ?? ""))
                 }
                 if let edge = snapshot.selected[RichSelectionIdentity.edge(id)], let index = Int(edge),
                     value.edges.indices.contains(index)

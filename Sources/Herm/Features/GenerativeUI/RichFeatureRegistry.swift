@@ -88,9 +88,11 @@ enum RichFeatureRegistry {
                 #"{"id":"plan","type":"timeline","payload":{"items":[{"id":"first","title":"Prepare","date":"2026-10-24"},{"id":"next","title":"Review","dependencies":["first"]}]}}"#
         ),
         .init(
-            id: "graph", version: 2, guidance: "Selectable nodes and directed edges; 200 nodes, 500 edges",
+            id: "graph", version: 2,
+            guidance:
+                "Selectable nodes and directed edges; 200 nodes, 500 edges. Optional node status uses workflow states; edge style solid or dashed",
             example:
-                #"{"id":"architecture","type":"graph","payload":{"nodes":[{"id":"ui","title":"UI"},{"id":"runtime","title":"Runtime"}],"edges":[{"source":"ui","target":"runtime","label":"request"}]}}"#
+                #"{"id":"architecture","type":"graph","payload":{"nodes":[{"id":"ui","title":"UI","status":"passed"},{"id":"runtime","title":"Runtime","status":"failed"}],"edges":[{"source":"ui","target":"runtime","label":"retry","style":"dashed"}]}}"#
         ),
         .init(
             id: "tree", version: 2, guidance: "Flat items with optional parent ID; at most 1000 items, no cycles",
