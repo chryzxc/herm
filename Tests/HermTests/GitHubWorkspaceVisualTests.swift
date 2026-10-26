@@ -118,6 +118,64 @@ private struct WorkspaceVisualTransport: GitHubIssueTransport {
 
 @MainActor
 struct GitHubWorkspaceVisualTests {
+    @Test func renderGitHubNavigation() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["GITHUB_NAVIGATION_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let savedTheme = DockThemeRuntime.current
+        let savedRevision = DockThemeRuntime.revision
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision = savedRevision
+        }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let transport = WorkspaceVisualTransport()
+        let repo = GitHubReferenceParser.repository("owner/repo")!
+        let pr = PullRequestCenterModel(
+            api: PullRequestCenterAPI(transport: transport), details: PullRequestDetailStore())
+        let issues = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
+        await pr.open(.init(repository: repo, number: 1, kind: .pullRequest))
+        await issues.open(.init(repository: repo, number: 1, kind: .issue))
+        for (theme, dark): (DockThemeID, Bool) in [(.clean, false), (.clean, true), (.glass, true), (.mono, true)] {
+            DockThemeRuntime.current = theme
+            DockThemeRuntime.revision &+= 1
+            for width: CGFloat in [440, 960, 1200] {
+                for section in [GitHubWorkspaceSection.pullRequests, .issues] {
+                    let root = GitHubWorkspace(selection: .constant(section)) {
+                        if section == .pullRequests {
+                            PullRequestWorkspace(center: pr, projects: [], onOpenChat: { _ in })
+                        } else {
+                            IssueWorkspacePage(center: issues, projects: [], onOpenChat: { _ in })
+                        }
+                    }
+                    .defaultAppStorage(defaults)
+                    .environment(\.dockTitleRow, DockTitleRow(height: 52, leadingClearance: 28))
+                    .environment(\.colorScheme, dark ? .dark : .light)
+                    .frame(width: width, height: 800)
+                    .dockThemedRoot()
+                    let host = NSHostingView(rootView: root)
+                    host.frame = CGRect(x: 0, y: 0, width: width, height: 800)
+                    let window = NSWindow(
+                        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                    window.contentView = host
+                    window.orderFrontRegardless()
+                    for _ in 0..<3 {
+                        host.layoutSubtreeIfNeeded()
+                        try await Task.sleep(for: .milliseconds(80))
+                    }
+                    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try data.write(
+                        to: URL(fileURLWithPath: directory).appendingPathComponent(
+                            "github-navigation-\(section.rawValue)-\(Int(width))-\(theme.rawValue)-\(dark ? "dark" : "light").png"
+                        ))
+                    window.orderOut(nil)
+                }
+            }
+        }
+    }
+
     @Test func iconActionsKeepTheirExactFootprintAcrossThemesAndStates() {
         let savedTheme = DockThemeRuntime.current
         defer { DockThemeRuntime.current = savedTheme }

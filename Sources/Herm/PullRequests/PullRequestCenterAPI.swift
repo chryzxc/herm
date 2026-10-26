@@ -56,11 +56,18 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     }
 
     func workPage(viewer: String, localPaths: [String: String]) async throws -> GitHubPage<PullRequestRecord> {
-        async let authored = try? searchPage("is:pr is:open author:\(viewer)", localPaths: localPaths)
-        async let other = try? searchPage("is:pr is:open review-requested:\(viewer)", localPaths: localPaths)
-        let (a, b) = await (authored, other)
+        async let authored = searchPageResult("is:pr is:open author:\(viewer)", localPaths: localPaths)
+        async let other = searchPageResult("is:pr is:open review-requested:\(viewer)", localPaths: localPaths)
+        let (authoredResult, otherResult) = await (authored, other)
+        let a = try? authoredResult.get()
+        let b = try? otherResult.get()
         try Task.checkCancellation()
-        guard a != nil || b != nil else { throw GitHubRequestError.unavailable }
+        if a == nil && b == nil {
+            for result in [authoredResult, otherResult] {
+                if case .failure(let error) = result, GitHubAccessRequirement(error: error) != nil { throw error }
+            }
+            throw GitHubRequestError.unavailable
+        }
         var unique = Dictionary((a?.items ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for var row in b?.items ?? [] {
             row.requestedReviewers = [viewer]
@@ -81,6 +88,12 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         }
         coverage.loaded = unique.count
         return GitHubPage(items: Array(unique.values), coverage: coverage)
+    }
+
+    private func searchPageResult(_ query: String, localPaths: [String: String]) async -> Result<
+        GitHubPage<PullRequestRecord>, Error
+    > {
+        do { return .success(try await searchPage(query, localPaths: localPaths)) } catch { return .failure(error) }
     }
 
     func searchPage(_ query: String, localPaths: [String: String]) async throws -> GitHubPage<PullRequestRecord> {

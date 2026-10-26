@@ -14,13 +14,21 @@ struct IssueWorkspace: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        AdaptiveSplit(
-            primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, hidesPrimary: hidesList,
-            showsSecondary: showsDetail, onBack: { showsDetail = false }
-        ) {
-            listPane.frame(idealWidth: 390, maxWidth: 460)
-        } secondary: {
-            IssueDetailView(center: center, onOpenChat: onOpenChat)
+        Group {
+            if let requirement = center.accessRequirement, center.records.isEmpty {
+                GitHubAccessRecoveryView(feature: "Issues", requirement: requirement, isRetrying: center.isRefreshing) {
+                    refresh()
+                }
+            } else {
+                AdaptiveSplit(
+                    primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, hidesPrimary: hidesList,
+                    showsSecondary: showsDetail, onBack: { showsDetail = false }
+                ) {
+                    listPane.frame(idealWidth: 390, maxWidth: 460)
+                } secondary: {
+                    IssueDetailView(center: center, onOpenChat: onOpenChat)
+                }
+            }
         }
         .background(Color.dockCanvas)
         .task(id: refreshID) {

@@ -24,15 +24,24 @@ struct PullRequestWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            AdaptiveSplit(
-                primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true, hidesPrimary: isListCollapsed,
-                showsSecondary: showsDetail, onBack: { showsDetail = false }
-            ) {
-                listPane.frame(idealWidth: 390, maxWidth: 460)
-            } secondary: {
-                PullRequestDetailView(center: center, onOpenChat: onOpenChat)
+            if let requirement = center.accessRequirement, center.records.isEmpty {
+                GitHubAccessRecoveryView(
+                    feature: "Pull requests", requirement: requirement, isRetrying: center.isRefreshing
+                ) {
+                    refreshID += 1
+                }
+            } else {
+                AdaptiveSplit(
+                    primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true,
+                    hidesPrimary: isListCollapsed,
+                    showsSecondary: showsDetail, onBack: { showsDetail = false }
+                ) {
+                    listPane.frame(idealWidth: 390, maxWidth: 460)
+                } secondary: {
+                    PullRequestDetailView(center: center, onOpenChat: onOpenChat)
+                }
+                .environment(\.dockTitleRow, nil)
             }
-            .environment(\.dockTitleRow, nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.dockCanvas)

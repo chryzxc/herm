@@ -18,6 +18,7 @@ final class IssueCenterModel: ObservableObject {
     }
     @Published private(set) var changedIDs = Set<String>()
     @Published private(set) var isRefreshing = false
+    @Published private(set) var accessRequirement: GitHubAccessRequirement?
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasLoaded = false
     @Published var viewerLogin: String?
@@ -123,12 +124,13 @@ final class IssueCenterModel: ObservableObject {
         errorMessage = nil
         defer { if token == generation { isRefreshing = false } }
         let paths = Array(Set(projects.filter(\.isRenderableProject).map(\.name))).filter { !$0.isEmpty }
-        async let viewerLookup = api.viewer()
+        async let viewerLookup = api.client.viewerLogin()
         let resolved = await RepositoryService.githubRemotes(paths: paths, resolve: repositoryRemote)
         let remotes = Dictionary(resolved.map { ($0.1.id, $0.0) }, uniquingKeysWith: { first, _ in first })
         let viewerResult = await viewerLookup
         guard token == generation, !Task.isCancelled else { return }
         guard case .success(let viewer) = viewerResult else {
+            if case .failure(let error) = viewerResult { accessRequirement = GitHubAccessRequirement(error: error) }
             viewerLogin = nil
             errorMessage =
                 hasLoaded
@@ -137,6 +139,7 @@ final class IssueCenterModel: ObservableObject {
             repairSelection()
             return
         }
+        accessRequirement = nil
         viewerLogin = viewer
         repositories = Array(Set(resolved.map { $0.1 } + records.map(\.repository))).sorted { $0.id < $1.id }
         if browsing.usesCustomQuery {
@@ -148,7 +151,12 @@ final class IssueCenterModel: ObservableObject {
                 coverage = page.coverage.label
                 hasLoaded = true
                 repairSelection()
-            } catch { if token == generation { errorMessage = error.localizedDescription } }
+            } catch {
+                if token == generation {
+                    accessRequirement = GitHubAccessRequirement(error: error)
+                    errorMessage = error.localizedDescription
+                }
+            }
             return
         }
         let result: Result<GitHubPage<GitHubIssueRecord>, Error>
@@ -165,7 +173,8 @@ final class IssueCenterModel: ObservableObject {
             loadingDetailID = nil
             hasLoaded = true
             errorMessage = nil
-        case .failure:
+        case .failure(let error):
+            accessRequirement = GitHubAccessRequirement(error: error)
             errorMessage =
                 hasLoaded
                 ? "Using last known GitHub issues. Refresh to retry."

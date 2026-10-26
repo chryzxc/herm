@@ -7,6 +7,10 @@ The app routes typed item references between features and prepares chat context.
 
 ## Behavior
 
+- The primary rail has one GitHub destination. Its inner navigation selects Pull
+  requests, Issues, or Projects beside the existing page; narrow workspaces use a section
+  picker. Returning restores the last section used in the app session. Existing
+  section visibility preferences are preserved, with a visible-section fallback.
 - Global and session PR lists keep their own filters and selections, while sharing
   detail records, discussion data, and per-item drafts. Drafts remain in memory.
 - My work and repository browsing support history, sorting, metadata filters, and
@@ -63,6 +67,10 @@ GITHUB_WORKSPACE_SNAPSHOT_DIR=/tmp/herm-github-renders \
   swift test --filter GitHubWorkspaceVisualTests
 ```
 
+Set `GITHUB_NAVIGATION_SNAPSHOT_DIR=/tmp/herm-github-navigation` to render the shared
+GitHub section navigation with both pages at narrow and wide sizes in light, dark,
+Glass, and Monochrome themes.
+
 The focused run passed 159 tests across 14 suites in an isolated source snapshot
 (to avoid concurrent unrelated source edits). Notebook and Terminal fixture
 renders were inspected at narrow and wide sizes.
@@ -79,3 +87,41 @@ production repository rule combinations still require integration/manual checks.
 Run the full required suite in CI. No system notifications are enabled by this
 feature. Native conflict editing and arbitrary Project custom-field editing are
 outside its scope.
+
+## Projects browsing
+
+`GitHubProjectsService` reads paginated Projects V2 and board items through the
+shared GitHub client. A blank owner browses the signed-in account; an explicit
+owner resolves either a user or organization. Boards include draft, issue, PR,
+and restricted items; archived items are omitted from the active board.
+Search operates on loaded titles and repositories. Pagination failure reports an
+unavailable state rather than silently presenting incomplete results.
+
+Personal project creation, draft-item creation, and Status updates require explicit
+confirmation. Status updates re-read project permission, item membership, and the
+previous status before writing. Custom fields, saved GitHub views, archive/delete,
+and organization project creation are outside this initial native workspace.
+GitHubProjectsTests covers paging, parsing, stale and denied writes, invalid status
+options, draft/project creation, and navigation memory.
+
+Projects reuses the same `gh` credential as Issues and Pull requests. Missing
+Projects scope shows explicit authorization guidance and Copy command / Retry
+actions. The compact toolbar groups account selection in a popover with themed
+search and state controls; failed same-account refreshes retain loaded projects.
+
+GitHub Issues, Pull requests, and Projects share `GitHubAccessRecoveryView`: a
+compact permission panel with a selectable CLI command, Copy command, and pending
+Retry feedback. Typed sign-in and permission errors show this panel when no cached
+records exist; ordinary outages and rate limits retain their existing error UI.
+
+GitHub includes a Repositories tab listing repositories accessible to the existing
+GitHub credential, ordered by recent updates. Search matches names and descriptions;
+visibility and archived filters operate on the loaded inventory. Compact repository rows open a side inspector on wide windows (a detail page on narrow windows) with description, language, visibility,
+stars, forks, combined open issue/PR count, default branch, last push, and license.
+The overview uses the loaded inventory and supports refresh; missing values remain
+unavailable. Open on GitHub is a separate action, and Copy clone URL copies the
+HTTPS address without cloning. The tab
+uses the shared access-recovery panel, reports partial coverage, and retains data
+on refresh failure. Filters survive switching between GitHub sections.
+
+Repository browsing explicitly includes owner, collaborator, and organization-member affiliations available to the active GitHub credential. The owner filter includes all returned accounts and organizations; search and archive filters apply across them. Rows use separators and small language accents, and the inspector uses compact metadata rows.

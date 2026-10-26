@@ -1,11 +1,12 @@
 import Foundation
 
 enum GitHubRequestError: Error, LocalizedError, Equatable {
-    case unauthorized, forbidden, notFound, unavailable, malformed, changed
+    case unauthorized, forbidden, insufficientScopes, notFound, unavailable, malformed, changed
     case rateLimited(Date?)
     var errorDescription: String? {
         switch self {
         case .unauthorized: "GitHub sign-in is required. Check your credentials and retry."
+        case .insufficientScopes: "Your GitHub credential needs additional permissions for this operation."
         case .forbidden: "GitHub denied access to this operation. Check repository or Projects permissions."
         case .notFound: "This GitHub resource was not found or is not accessible."
         case .unavailable: "GitHub is unavailable. Your last successful data has been retained."
@@ -108,6 +109,15 @@ struct GitHubClient: Sendable {
         return try JSONSerialization.jsonObject(with: data)
     }
 
+    func viewerLogin() async -> Result<String, GitHubRequestError> {
+        do {
+            guard let row = try await request("/user") as? [String: Any],
+                let login = row["login"] as? String, !login.isEmpty
+            else { return .failure(.malformed) }
+            return .success(login)
+        } catch let error as GitHubRequestError { return .failure(error) } catch { return .failure(.unavailable) }
+    }
+
     func graphQL(_ query: String, variables: [String: Any] = [:]) async throws -> [String: Any] {
         guard
             let payload = try await request("/graphql", method: "POST", body: ["query": query, "variables": variables])
@@ -117,6 +127,9 @@ struct GitHubClient: Sendable {
             if errors.contains(where: { ($0["type"] as? String) == "RATE_LIMITED" }) {
                 await rateLimit.deferRequests(until: nil)
                 throw GitHubRequestError.rateLimited(nil)
+            }
+            if errors.contains(where: { ($0["type"] as? String) == "INSUFFICIENT_SCOPES" }) {
+                throw GitHubRequestError.insufficientScopes
             }
             if errors.contains(where: { ($0["type"] as? String) == "FORBIDDEN" }) { throw GitHubRequestError.forbidden }
             throw GitHubRequestError.unavailable

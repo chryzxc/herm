@@ -49,6 +49,7 @@ final class PullRequestCenterModel: ObservableObject {
     @Published private(set) var isPostingComment = false
     @Published private(set) var isUpdatingStatus = false
     @Published private(set) var updatingStatusID: String?
+    @Published private(set) var accessRequirement: GitHubAccessRequirement?
     @Published private(set) var errorMessage: String?
     @Published private(set) var failedRepositories: [String] = []
     @Published private(set) var viewerLogin: String?
@@ -162,11 +163,17 @@ final class PullRequestCenterModel: ObservableObject {
         resetSummaryCache()
         loadingDetailIDs.removeAll()
         // Resolve the viewer while local git remotes are being read.
-        async let viewerLookup = api.viewer()
+        async let viewerLookup = api.client.viewerLogin()
         let remotes = await RepositoryService.githubRemotes(paths: paths)
-        let viewer = await viewerLookup
+        let viewerResult = await viewerLookup
+        let viewer = try? viewerResult.get()
         guard token == generation, !Task.isCancelled else { return }
         let localPaths = Dictionary(remotes.map { ($0.1.id, $0.0) }, uniquingKeysWith: { first, _ in first })
+        if case .failure(let error) = viewerResult {
+            accessRequirement = GitHubAccessRequirement(error: error)
+        } else {
+            accessRequirement = nil
+        }
         viewerLogin = viewer
         repositories = Array(Set(remotes.map { $0.1 } + records.map(\.repository))).sorted { $0.id < $1.id }
         if browsing.usesCustomQuery {
@@ -178,7 +185,12 @@ final class PullRequestCenterModel: ObservableObject {
                 coverage = page.coverage.label
                 hasLoaded = true
                 repairSelection()
-            } catch { if token == generation { errorMessage = error.localizedDescription } }
+            } catch {
+                if token == generation {
+                    accessRequirement = GitHubAccessRequirement(error: error)
+                    errorMessage = error.localizedDescription
+                }
+            }
             return
         }
 
@@ -204,7 +216,8 @@ final class PullRequestCenterModel: ObservableObject {
                 repairSelection()
                 hasLoaded = true
                 return
-            case .failure:
+            case .failure(let error):
+                accessRequirement = GitHubAccessRequirement(error: error)
                 // Keep the attached-repository path as a useful fallback if
                 // GitHub search is temporarily rate-limited or unavailable.
                 errorMessage = "GitHub account search failed. Showing attached repositories."
