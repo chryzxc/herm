@@ -292,7 +292,13 @@ final class DiffCanvasContainer: NSView {
 }
 
 private final class DiffSelectableTextView: NSTextView {
-    var lines: [DiffLine?] = []
+    var lines: [DiffLine?] = [] {
+        didSet {
+            lineOffsets = DiffLineOffsets(
+                lengths: lines.map { (($0.map(DiffDocument.source) ?? "") as NSString).length })
+        }
+    }
+    private(set) var lineOffsets = DiffLineOffsets(lengths: [])
     var side: String?
     var onNote: ((DiffSelection) -> Void)?
     var onComment: ((DiffLine) -> Void)?
@@ -353,10 +359,16 @@ private final class DiffLineRuler: NSRulerView {
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
             .foregroundColor: NSColor(Color.dockMetadataText),
         ]
-        var offset = 0
+        let visible = text.visibleRect.offsetBy(dx: -text.textContainerInset.width, dy: -text.textContainerInset.height)
+        let glyphs = manager.glyphRange(forBoundingRect: visible, in: container)
+        let character = manager.characterIndexForGlyph(at: min(glyphs.location, manager.numberOfGlyphs - 1))
+        let first = text.lineOffsets.row(containing: character)
+        let length = (text.string as NSString).length
         var visibleComments = Set<Int>()
-        for line in text.lines {
-            let glyph = manager.glyphIndexForCharacter(at: min(offset, max(0, (text.string as NSString).length - 1)))
+        for index in first..<text.lines.count {
+            let line = text.lines[index]
+            let offset = text.lineOffsets.starts[index]
+            let glyph = manager.glyphIndexForCharacter(at: min(offset, max(0, length - 1)))
             let frame = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
             let y = frame.minY + text.textContainerInset.height - (scrollView?.contentView.bounds.minY ?? 0)
             if y > bounds.maxY { break }
@@ -387,7 +399,6 @@ private final class DiffLineRuler: NSRulerView {
                     button.setAccessibilityLabel("Add review comment on \(location)")
                 }
             }
-            offset += ((line.map(DiffDocument.source) ?? "") as NSString).length + 1
         }
         for key in Array(commentButtons.keys) where !visibleComments.contains(key) {
             commentButtons.removeValue(forKey: key)?.removeFromSuperview()
