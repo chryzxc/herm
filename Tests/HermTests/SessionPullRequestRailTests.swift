@@ -91,6 +91,37 @@ struct SessionPullRequestRailTests {
         #expect(SessionPullRequestReferences.extract(texts: texts, defaults: defaults).map(\.number) == [8])
     }
 
+    @Test func broadToolResultsDoNotLinkOtherSessionsPullRequests() {
+        let unrelated = "https://github.com/owner/repo/pull/7 https://github.com/owner/repo/pull/8"
+        let calls = ["gh pr list --state all", "gh search prs", "cat session-history.json"].enumerated().map {
+            ActiveToolCall(
+                id: "tool-\($0.offset)", name: "terminal", input: $0.element, context: "", startedAt: .now,
+                result: unrelated, isComplete: true)
+        }
+        let rail = SessionPullRequestRailModel(details: PullRequestDetailStore())
+        rail.discover(
+            messages: [ChatMessage(role: .hermes, text: "Checked repository activity.", activity: calls)],
+            activity: calls)
+        rail.discoverActivity(calls)
+        #expect(rail.references.isEmpty)
+        rail.discover(
+            messages: [ChatMessage(role: .user, text: "Work on https://github.com/owner/repo/pull/9")], activity: calls)
+        #expect(rail.references.map(\.number) == [9])
+    }
+
+    @Test func targetedToolInputsAndCreatedPullRequestsStayLinked() {
+        let targeted = ActiveToolCall(
+            id: "target", name: "terminal", input: "gh pr view https://github.com/owner/repo/pull/8", context: "",
+            startedAt: .now,
+            result: "Related: https://github.com/owner/repo/pull/99", isComplete: true)
+        let created = ActiveToolCall(
+            id: "create", name: "terminal", input: "gh pr create --title Fix", context: "", startedAt: .now,
+            result: "https://github.com/owner/repo/pull/10", isComplete: true)
+        let rail = SessionPullRequestRailModel(details: PullRequestDetailStore())
+        rail.discover(messages: [], activity: [targeted, created])
+        #expect(rail.references.map(\.number) == [8, 10])
+    }
+
     @Test func respectsDisabledPRNavigation() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         defaults.set(false, forKey: SidebarVisibilityKey.github)

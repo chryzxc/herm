@@ -59,6 +59,13 @@ struct SessionRepositoryScope: Equatable {
     var identity: String { "\(sessionID):\(repositoryPath)" }
 }
 
+struct SessionRepositoryPathCache: Equatable {
+    let workspace: String
+    let path: String
+
+    func path(for workspace: String) -> String? { self.workspace == workspace ? path : nil }
+}
+
 struct ScopedRepositoryDocument: Equatable {
     let scope: SessionRepositoryScope
     let document: RepositoryFileDocument
@@ -152,7 +159,7 @@ struct DockPopover: View {
     /// Only updated when a non-nil value is resolved — never cleared on transient
     /// refresh-cycle gaps where projectIDBySessionID is momentarily empty.
     @State var cachedProjectName: String? = nil
-    @State var cachedSessionRepositoryPath: String? = nil
+    @State var cachedSessionRepository: SessionRepositoryPathCache? = nil
     @State var lastSessionTitleAtIdentityChange: String?
     @State var isFullscreen = false
     @State var isMissionInspectorVisible = false

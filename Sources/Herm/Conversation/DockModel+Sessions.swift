@@ -624,6 +624,7 @@ extension DockModel {
         // the new session ID during that request's loading window.
         if !isRefreshingActiveSession {
             messages = []
+            todoPlan = nil
         }
         streamingText.clearPresentation()
         newSessionCreationAuthorized = false

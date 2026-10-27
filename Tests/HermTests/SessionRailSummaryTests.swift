@@ -8,7 +8,9 @@ private final class SummaryRPC: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     func connect() async throws {}
     func close() {}
-    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        method == "session.resume" ? ["session_id": params["session_id"] ?? "", "messages": []] : [:]
+    }
     func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
 }
 
@@ -32,6 +34,15 @@ struct SessionRailSummaryTests {
         let summary = SessionRailSummary.make(
             model: model(), repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
         #expect(summary.isEmpty)
+    }
+
+    @Test func cachedWorkspaceCannotFollowSessionOrProfileSwitches() {
+        let workspace = WorkspaceIdentity.session(profileID: "profile", sessionID: "session")
+        let cached = SessionRepositoryPathCache(workspace: workspace, path: "/tmp/project")
+        #expect(cached.path(for: workspace) == "/tmp/project")
+        #expect(cached.path(for: WorkspaceIdentity.session(profileID: "profile", sessionID: "other")) == nil)
+        #expect(cached.path(for: WorkspaceIdentity.session(profileID: "other", sessionID: "session")) == nil)
+        #expect(cached.path(for: WorkspaceIdentity.session(profileID: "profile", sessionID: nil)) == nil)
     }
 
     @Test func scopesPlanOutputsAndWorkspaceToTheSelectedSession() {
@@ -71,6 +82,90 @@ struct SessionRailSummaryTests {
         model.approvalText = nil
         model.status = .idle
         #expect(summary().attention.isEmpty)
+    }
+
+    @Test func detachedLiveActivityCannotSeedAnotherSessionsPullRequests() {
+        let model = model()
+        let call = ActiveToolCall(
+            id: "old-tool", name: "terminal", input: "gh pr view", context: "", startedAt: .now,
+            result: "https://github.com/owner/repo/pull/8", isComplete: true)
+        let message = ChatMessage(role: .hermes, text: "")
+        model.messages = [message]
+        model.streamingMessageID = message.id
+        model.streamingMessageSessionID = model.sessionID
+        model.streamingTurnActivity = [call]
+        #expect(SessionPullRequestReferences.liveActivity(model: model) == [call])
+        model.streamingMessageSessionID = "other"
+        #expect(SessionPullRequestReferences.liveActivity(model: model).isEmpty)
+        model.streamingMessageSessionID = model.sessionID
+        model.messages = []
+        #expect(SessionPullRequestReferences.liveActivity(model: model).isEmpty)
+        model.messages = [message]
+        model.streamingMessageID = nil
+        #expect(SessionPullRequestReferences.liveActivity(model: model).isEmpty)
+        model.streamingMessageID = message.id
+        model.sessionID = nil
+        model.streamingMessageSessionID = nil
+        #expect(SessionPullRequestReferences.liveActivity(model: model).isEmpty)
+    }
+
+    @Test func switchingProfilesCannotReuseAnySummaryFromTheSameSessionID() async {
+        let model = model()
+        model.todoPlan = .init(sessionID: "session", items: [.init(content: "Old task", status: "pending")])
+        let current = HermesSession(
+            id: "session", profileID: "profile", title: "Current", preview: "", startedAt: nil, messageCount: 0,
+            source: "test")
+        #expect(await model.resumeSession(current, reportFailure: true))
+        #expect(model.todoPlan?.items.first?.content == "Old task")
+        model.approvalText = "Old approval"
+        model.clarificationQuestion = "Old question"
+        model.status = .needsClarification
+        model.pinnedMessages = [.init(rowID: 4, uid: "pin", role: "assistant", preview: "Old decision")]
+        model.valuePrompt = .from(payload: ["request_id": "old", "method": "vault.code", "site": "Old site"])
+        let next = HermesSession(
+            id: "session", profileID: "other", title: "Other", preview: "", startedAt: nil, messageCount: 0,
+            source: "test")
+        #expect(await model.resumeSession(next, reportFailure: true))
+        let summary = SessionRailSummary.make(
+            model: model, repositoryPath: nil, repository: .empty, outputs: [output()], outputsError: nil)
+        #expect(summary.isEmpty)
+        #expect(model.todoPlan == nil)
+    }
+
+    @Test func restoringOrUnselectedSessionsDoNotRenderSummaries() {
+        let model = model()
+        model.approvalText = "Previous approval"
+        model.isRestoringSession = true
+        func summary() -> SessionRailSummary {
+            .make(
+                model: model, repositoryPath: "/tmp/project", repository: .empty, outputs: [output()], outputsError: nil
+            )
+        }
+        #expect(summary().isEmpty)
+        model.isRestoringSession = false
+        model.sessionID = nil
+        model.sessionStorageID = nil
+        #expect(summary().isEmpty)
+    }
+
+    @Test func backgroundSessionEventsCannotReplaceTheSelectedSummary() {
+        let model = model()
+        model.todoPlan = .init(sessionID: "session", items: [.init(content: "Current task", status: "pending")])
+        model.pinnedMessages = [.init(rowID: 4, uid: "pin", role: "assistant", preview: "Current decision")]
+        let currentOutput = output()
+        func summary() -> SessionRailSummary {
+            .make(model: model, repositoryPath: nil, repository: .empty, outputs: [currentOutput], outputsError: nil)
+        }
+        let selected = summary()
+        for (type, payload): (String, [String: Any]) in [
+            ("approval.request", ["request_id": "foreign-approval", "command": "Foreign command"]),
+            ("clarification.request", ["request_id": "foreign-question", "question": "Foreign question"]),
+            ("prompt.request", ["request_id": "foreign-value", "method": "vault.code", "site": "Foreign site"]),
+            ("todo.updated", ["todos": [["content": "Foreign task", "status": "in_progress"]]]),
+        ] {
+            model.receiveGatewayEvent(type, params: ["session_id": "other", "profile": "profile", "payload": payload])
+            #expect(summary() == selected)
+        }
     }
 
     @Test func failedOutputRefreshRetainsPreviousDataAndSwitchingClearsIt() async {

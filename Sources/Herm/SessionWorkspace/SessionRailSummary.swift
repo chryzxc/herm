@@ -32,10 +32,11 @@ struct SessionRailSummary: Equatable {
         model: DockModel, repositoryPath: String?, repository: RepositorySnapshot,
         outputs: [ArtifactRecord], outputsError: String?
     ) -> Self {
+        guard let sessionID = model.navigationSessionID, !model.isRestoringSession else { return Self() }
         let ids = model.currentSessionIDs
         let owner = ProfileScopedID(
             profileID: model.sessionProfileID ?? model.profileScopeID,
-            resourceID: model.navigationSessionID ?? "")
+            resourceID: sessionID)
         var summary = Self()
         summary.isWorking = model.status == .working
         if let detail = model.approvalText {

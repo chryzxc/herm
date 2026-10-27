@@ -577,6 +577,20 @@ extension DockPopover {
         return name.isEmpty ? nil : name
     }
 
+    var sessionWorkspaceIdentity: String {
+        WorkspaceIdentity.session(
+            profileID: model.sessionProfileID ?? model.profileScopeID, sessionID: model.navigationSessionID)
+    }
+
+    var cachedSessionRepositoryPath: String? {
+        get {
+            cachedSessionRepository?.path(for: sessionWorkspaceIdentity)
+        }
+        nonmutating set {
+            cachedSessionRepository = newValue.map { .init(workspace: sessionWorkspaceIdentity, path: $0) }
+        }
+    }
+
     var activeSessionRepositoryPath: String? {
         liveSessionRepositoryPath ?? cachedSessionRepositoryPath
     }

@@ -362,12 +362,17 @@ file-type icons for images, documents, archives, and code. Outputs reuse the sha
 artifact index and refresh after a turn or from the rail's refresh action.
 Disclosure carets align with the first-row icons, including wrapped titles and task summaries.
 Pull requests also collapse as a group, with a count and a bounded list of individual PR quick views.
+PR membership comes from explicit links in the selected chat or targeted PR tool operations;
+repository listings, searches, and other sessions' history do not add their results.
+Live results must belong to the selected response. Switching sessions or profiles resets
+rail state and its cached workspace folder; tasks, outputs, attention, and pins use that session's data.
 Workspace uses a colored folder icon, a project name and path, and labelled branch
 and latest-commit details.
+Changes reflects Git status for the selected worktree. Chats sharing a worktree share its local edits.
 The icon has no background and highlights when the rail is open. Its floating
 cards sit over the same continuous conversation background, with the conversation's
 scrollbar at the far-right edge beyond the rail. The rail discovers PR
-links in loaded conversation messages and tool results, fetches their GitHub details,
+links in loaded conversation messages and targeted PR tool activity, fetches their GitHub details,
 and expands PR details in place. Refresh updates details; missing access shows
 an unavailable state. The rail uses a quiet repository card with compact PR rows
 and a **Changes** row when that session's repository has local edits. The wider card

@@ -404,6 +404,14 @@ Rail disclosures align their caret and 14pt icon to the first title row, keeping
 wrapped titles, task summaries, and secondary metadata below that shared line.
 Pull requests uses the same section disclosure, icon, count, and 280pt list cap;
 individual PR rows retain their own inline details inside it.
+PR membership requires an explicit URL in the selected chat/tool input or a single-PR
+result from a targeted `gh pr` operation. Broad list, search, and history results do
+not establish membership. Live tool activity must have a mounted response owned by
+the selected session; detached turn buffers are never discovery inputs. Rail identity
+and cached repository paths include the owning profile/session and backend. Session
+switches clear the old todo projection, including when two profiles use the same
+session ID. Pins retain their existing session/profile/generation guards, and outputs
+are filtered by their scoped session identity. Restoring or unselected chats omit summaries.
 Output file rows use the shared `ArtifactFileIcon` renderer at the compact row size;
 links and interactive outputs retain their semantic icons. Output rows preview images
 or local text on expansion; interactive outputs remain in
@@ -432,6 +440,8 @@ description "Session details will appear here." Pending and
 unavailable states stay in the card and never claim that failed data is empty.
 Changes appears only for a fresh snapshot matching the active session/worktree,
 with unique file counts and tracked text additions/deletions measured against HEAD.
+Git status describes the worktree, so sessions sharing it share local edits; the rail
+does not infer which session authored each change.
 New files contribute to the file count; the count tooltip explains that untracked
 and binary lines are excluded. Without readable line counts, show the file count.
 Changes and PR rows are disclosures: ordinary rail clicks only expand or collapse

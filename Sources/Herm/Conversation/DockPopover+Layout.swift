@@ -627,7 +627,7 @@ extension DockPopover {
                                         return true
                                     }
                                 )
-                                .id(WorkspaceIdentity.session(model))
+                                .id(sessionWorkspaceIdentity)
                                 .frame(width: railWidth - DockSpacing.section)
                                 .padding(.trailing, DockSpacing.section)
                             }

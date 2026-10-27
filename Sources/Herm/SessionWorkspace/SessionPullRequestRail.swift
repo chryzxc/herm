@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// References are projected from loaded Hermes history, never a repository-wide PR list.
+/// Explicit session links and targeted PR operations, never broad tool-result listings.
 enum SessionPullRequestReferences {
     static func extract(texts: [String], defaults: UserDefaults = .standard) -> [GitHubItemReference] {
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
@@ -21,7 +21,36 @@ enum SessionPullRequestReferences {
     }
 
     static func texts(messages: [ChatMessage], activity: [ActiveToolCall]) -> [String] {
-        messages.flatMap { [$0.text] + $0.activity.compactMap(\.result) } + activity.compactMap(\.result)
+        messages.map(\.text)
+            + (messages.flatMap(\.activity) + activity).flatMap { call -> [String] in
+                let inputs = [call.input] + Array((call.args ?? [:]).values)
+                let directOperation = inputs.contains {
+                    $0.range(
+                        of:
+                            #"\bgh\s+pr\s+(?:view|create|diff|checks|checkout|edit|review|merge|close|reopen|ready|comment)\b"#,
+                        options: .regularExpression) != nil
+                }
+                // A list, search, session-history read, or repository scan does not link its results to this chat.
+                guard directOperation, let result = call.result else { return inputs }
+                let references = extract(texts: [result])
+                let targets = extract(texts: inputs)
+                guard references.count == 1,
+                    targets.isEmpty || targets.contains(references[0])
+                        || inputs.contains(where: {
+                            $0.range(of: #"\bgh\s+pr\s+create\b"#, options: .regularExpression) != nil
+                        })
+                else { return inputs }
+                return inputs + [result]
+            }
+    }
+
+    @MainActor
+    static func liveActivity(model: DockModel) -> [ActiveToolCall] {
+        guard let owner = model.sessionID, let id = model.streamingMessageID,
+            model.streamingMessageSessionID == owner,
+            model.messages.contains(where: { $0.id == id })
+        else { return [] }
+        return model.streamingTurnActivity
     }
 }
 
@@ -46,7 +75,8 @@ final class SessionPullRequestRailModel: ObservableObject {
     }
 
     func discoverActivity(_ activity: [ActiveToolCall]) {
-        let found = SessionPullRequestReferences.extract(texts: activity.compactMap(\.result))
+        let found = SessionPullRequestReferences.extract(
+            texts: SessionPullRequestReferences.texts(messages: [], activity: activity))
         let existing = Set(references.map { $0.id.lowercased() })
         let added = found.filter { !existing.contains($0.id.lowercased()) }
         if !added.isEmpty { references += added }
@@ -138,10 +168,10 @@ struct SessionPullRequestRail: View {
         }
         .foregroundStyle(Color.dockPrimaryText)
         .onChange(of: model.messagesRevision, initial: true) { _, _ in
-            rail.discover(messages: model.messages, activity: model.streamingTurnActivity)
+            rail.discover(messages: model.messages, activity: SessionPullRequestReferences.liveActivity(model: model))
         }
         .onChange(of: model.activityPresentationRevision) { _, _ in
-            rail.discoverActivity(model.streamingTurnActivity)
+            rail.discoverActivity(SessionPullRequestReferences.liveActivity(model: model))
         }
         .task(id: rail.references.map(\.id) + [refreshID.uuidString]) { await rail.refresh() }
         .task(id: [repositoryPath ?? "", refreshID.uuidString]) { await onRefreshChanges() }
