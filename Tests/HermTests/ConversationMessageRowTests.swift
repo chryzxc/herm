@@ -11,7 +11,8 @@ struct ConversationMessageRowTests {
         message: ChatMessage,
         isStreamingMessage: Bool = false,
         activeBotProfileID: String? = nil,
-        botRosterRevision: Int = 0
+        botRosterRevision: Int = 0,
+        actionTarget: MessageNavigatorTarget? = nil
     ) -> ConversationMessageRow {
         ConversationMessageRow(
             message: message,
@@ -21,7 +22,8 @@ struct ConversationMessageRowTests {
             botsByID: [:],
             avatarImages: [:],
             botRosterRevision: botRosterRevision,
-            onImagePreview: { _ in }
+            onImagePreview: { _ in },
+            actionTarget: actionTarget
         )
     }
 
@@ -30,6 +32,14 @@ struct ConversationMessageRowTests {
         let first = makeRow(message: message)
         let second = makeRow(message: message)
         #expect(first == second)
+    }
+
+    @Test func sessionChangesRefreshMessageActionClosures() {
+        let message = ChatMessage(role: .hermes, text: "saved reply")
+        let original = MessageNavigatorTarget(sessionID: "original", messageID: message.id)
+        let resumed = MessageNavigatorTarget(sessionID: "resumed", messageID: message.id)
+        #expect(makeRow(message: message, actionTarget: original) == makeRow(message: message, actionTarget: original))
+        #expect(makeRow(message: message, actionTarget: original) != makeRow(message: message, actionTarget: resumed))
     }
 
     @Test func everyComparedFieldBreaksEquality() {

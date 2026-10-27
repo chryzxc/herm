@@ -18,6 +18,19 @@
     <string>DockAppIcon</string>
     <key>LSUIElement</key>
     <true/>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>io.github.chryzxc.Herm.inspector-tab</string>
+            <key>UTTypeDescription</key>
+            <string>Herm inspector tab</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
+    </array>
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>Herm shows your events beside Hermes' scheduled runs and can attach them to a chat. It never changes your calendar.</string>
     <key>NSRemindersFullAccessUsageDescription</key>

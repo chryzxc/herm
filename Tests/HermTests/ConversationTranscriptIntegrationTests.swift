@@ -142,6 +142,31 @@ struct ConversationTranscriptIntegrationTests {
         #expect(try #require(fixture.controller.geometry).visibleTop < before.visibleTop)
     }
 
+    @Test func explicitRailReplyJumpRevealsTheTailWhileBrowsingHistory() async throws {
+        let fixture = Fixture()
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+        let geometry = try #require(fixture.controller.geometry)
+        try fixture.move(to: max(0, geometry.visibleTop - 200))
+        fixture.coordinator.presentation.isAtBottom = false
+        try await fixture.settle()
+        let original = fixture.host.rootView.parent.transcript
+        let jumping = ConversationTranscriptView(
+            model: original.model, controlCenter: original.controlCenter, botMode: original.botMode,
+            messageActionState: original.messageActionState, voiceOutput: original.voiceOutput,
+            conversationMetrics: original.conversationMetrics, conversationHermFaceID: nil,
+            isShowingMessageSearch: .constant(false), pinnedMessageJumpID: .constant(nil),
+            selectedChatImage: .constant(nil), latestJumpRequest: 1, coordinator: fixture.coordinator)
+        #expect(original != jumping)
+        fixture.host.rootView = Root(
+            parent: Parent(model: fixture.model, transcript: jumping), evaluations: fixture.evaluations)
+        try await fixture.settle()
+        #expect(fixture.coordinator.presentation.isAtBottom)
+        #expect(fixture.coordinator.mountedRange.upperBound == fixture.model.messages.count)
+        let after = try #require(fixture.controller.geometry)
+        #expect(after.documentHeight - after.visibleHeight - after.visibleTop < 2)
+    }
+
     @Test func productionPagingKeepsTheVisibleMessageWithoutManualCorrection() async throws {
         try await checkProductionPaging()
     }

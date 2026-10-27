@@ -158,6 +158,8 @@ struct SessionTraceCanvas: View {
     @State private var collapsed = Set<String>()
     @State private var showsSubagents: Bool?
     @State private var showsBots: Bool?
+    @State private var botDisplay = SessionCrewDisplay.list
+    @State private var subagentDisplay = SessionCrewDisplay.list
     @State private var agentFilter = SessionSubagentFilter.all
     @State private var showsSteps = true
     @State private var search = ""
@@ -297,9 +299,9 @@ struct SessionTraceCanvas: View {
     }
 
     /// Search, Fit and Live act only on the steps, so they sit on the Steps header.
-    private var stepControls: some View {
+    private func stepControls(matches: Int?) -> some View {
         HStack(spacing: 6) {
-            searchField
+            searchField(matches: matches)
             Button("Fit time") { fit() }
                 .buttonStyle(.dockCompact).disabled(turns.isEmpty)
                 .help("Fit the whole request in view")
@@ -321,7 +323,7 @@ struct SessionTraceCanvas: View {
         }
     }
 
-    private var searchField: some View {
+    private func searchField(matches: Int?) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(Color.dockSecondaryText)
             TextField("Find steps", text: $search).textFieldStyle(.plain).dockFont(.body)
@@ -337,6 +339,11 @@ struct SessionTraceCanvas: View {
                         RoundedRectangle(cornerRadius: 4).stroke(
                             Color.dockBorderLight, lineWidth: 0.5))
             } else {
+                if let matches {
+                    Text("\(matches) found").dockFont(.metadata).monospacedDigit()
+                        .foregroundStyle(Color.dockSecondaryText).lineLimit(1).fixedSize()
+                        .help("Matching steps and their parents")
+                }
                 Button {
                     search = ""
                 } label: {
@@ -345,7 +352,7 @@ struct SessionTraceCanvas: View {
                 .buttonStyle(.dockHover).accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 8).frame(minWidth: 110, maxWidth: 220).frame(height: 26)
+        .padding(.horizontal, 8).frame(minWidth: 110, maxWidth: .infinity).frame(height: 26)
         .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 6))
         .background {
             Button("Search steps") { searchFocused = true }
@@ -400,42 +407,36 @@ struct SessionTraceCanvas: View {
         let live = connected && turn.rows.contains(where: \.active)
         let plotWidth = max(100, size.width - 16 - labelWidth)
         let selected = turn.rows.first { $0.id == selectedRowID }
-        let crew = SessionCrewProjection(rows: turn.rows.filter { $0.crewProfileID != nil })
+        let crew = SessionCrewProjection(rows: turn.rows)
+        let bots = crew.bots
         let botsExpanded = Binding(
-            get: { showsBots ?? !crew.bots.isEmpty },
+            get: { showsBots ?? !bots.isEmpty },
             set: { showsBots = $0 })
         return VStack(spacing: DockSpacing.group) {
             metrics(turn, bounds: bounds, live: live)
             VStack(spacing: 4) {
-                sectionHeader(
-                    "Bots", count: crew.bots.count, isExpanded: botsExpanded)
+                sectionHeader("Bots", count: bots.count, isExpanded: botsExpanded) {
+                    if botsExpanded.wrappedValue, !bots.isEmpty { displayToggle($botDisplay) }
+                }
                 if botsExpanded.wrappedValue {
                     clock(live) { now in
                         SessionCrewView(
-                            projection: crew, selectedRowID: selectedRowID,
+                            projection: crew, members: bots, display: botDisplay, selectedRowID: selectedRowID,
                             replayDate: replay.map {
                                 bounds.origin.addingTimeInterval($0.time(at: now, span: bounds.span(at: now)))
                             },
-                            now: now, connected: connected, animated: isVisible && animates,
-                            expanded: listMaxHeight == nil && size.width >= 620, select: select)
+                            now: now, connected: connected, animated: isVisible && animates, select: select)
                     }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
             .dockCard(padding: 8)
-            agentList(turn, live: live).dockCard(padding: 8)
+            agentList(turn, crew: crew, live: live).dockCard(padding: 8)
             VStack(spacing: 0) {
                 sectionHeader("Steps", count: turn.rows.count, isExpanded: $showsSteps)
                 if showsSteps {
-                    stepControls.padding(.horizontal, 4).padding(.vertical, 6)
-                    HStack(spacing: 8) {
-                        Text(
-                            query.isEmpty
-                                ? "Select a step to inspect its input and result"
-                                : "\(visible.count) matching steps and parents"
-                        )
-                        .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
-                        Spacer(minLength: 0)
+                    HStack(spacing: 6) {
+                        stepControls(matches: query.isEmpty ? nil : visible.count)
                         if turn.errorCount > 0 {
                             Button("Next error") {
                                 search = ""
@@ -443,7 +444,7 @@ struct SessionTraceCanvas: View {
                                 select(SessionTraceNavigation.nextFailure(in: turn.rows, after: selectedRowID))
                             }.buttonStyle(.dockCompact)
                         }
-                    }.padding(.horizontal, 4).padding(.bottom, 6)
+                    }.padding(.horizontal, 4).padding(.vertical, 6)
                     HStack(spacing: 0) {
                         Text("Step").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                             .padding(.leading, 4)
@@ -560,7 +561,7 @@ struct SessionTraceCanvas: View {
         Canvas { context, size in
             let step = tickStep(scale)
             for tick in stride(
-                from: floor(offset / scale / step) * step, through: Double((offset + width) / scale), by: step)
+                from: ceil(offset / scale / step) * step, through: Double((offset + width) / scale), by: step)
             {
                 context.draw(
                     Text(Self.tickLabel(tick)).font(DockTypography.metadata)
@@ -705,7 +706,7 @@ struct SessionTraceCanvas: View {
     }
 
     /// Below the steps: one card per delegate (who, its task, what it is doing), or why there are none.
-    private func agentList(_ turn: SessionTraceTurn, live: Bool) -> some View {
+    private func agentList(_ turn: SessionTraceTurn, crew: SessionCrewProjection, live: Bool) -> some View {
         let agents = turn.rows.filter { $0.kind == .agent && $0.crewProfileID == nil }
         let agentsExpanded = Binding(
             get: { showsSubagents ?? !agents.isEmpty },
@@ -726,6 +727,7 @@ struct SessionTraceCanvas: View {
                             Text(filter.rawValue).tag(filter)
                         }
                     }.labelsHidden().fixedSize().help("Filter subagents by status")
+                    displayToggle($subagentDisplay)
                 }
             }
             if !agentsExpanded.wrappedValue {
@@ -743,6 +745,14 @@ struct SessionTraceCanvas: View {
                 Text("No \(agentFilter.rawValue.lowercased()) subagents")
                     .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            } else if subagentDisplay == .tree {
+                let ids = Set(filtered.map(\.id))
+                clock(live) { now in
+                    SessionCrewView(
+                        projection: crew, members: crew.actors.filter { ids.contains($0.id) }, display: .tree,
+                        selectedRowID: selectedRowID, replayDate: nil, now: now, connected: connected,
+                        animated: false, select: select)
+                }
             } else {
                 ViewThatFits(in: .vertical) {
                     cards
@@ -839,6 +849,10 @@ struct SessionTraceCanvas: View {
         }
         .background(selectedRowID == agent.id ? Color.dockSurface2 : Color.clear)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private func displayToggle(_ display: Binding<SessionCrewDisplay>) -> some View {
+        DockSegmentedPicker(selection: display, options: [(.list, "List"), (.tree, "Tree")]).fixedSize()
     }
 
     /// Steps and Crew share one collapsible header so the sections read alike.
@@ -1367,20 +1381,17 @@ struct SessionTraceCanvas: View {
             ? time(elapsed) : time(elapsed) + " · " + compact(tokens.reduce(0, +)) + " tok"
     }
 
-    /// Leave room for readable minute-and-second labels.
+    /// Leave room for readable compact labels.
     private func tickStep(_ scale: CGFloat) -> Double {
-        let target = 140 / Double(max(scale, 0.0001))
+        let target = 96 / Double(max(scale, 0.0001))
         let steps: [Double] = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]
         return steps.first { $0 >= target } ?? ceil(target / 3600) * 3600
     }
     nonisolated static func tickLabel(_ seconds: Double) -> String {
         let total = Int(seconds.rounded())
-        let minutes = total / 60
-        let remainder = total % 60
-        let secondsLabel = "\(remainder) \(remainder == 1 ? "sec" : "secs")"
-        guard minutes > 0 else { return secondsLabel }
-        let minutesLabel = "\(minutes) \(minutes == 1 ? "min" : "mins")"
-        return remainder == 0 ? minutesLabel : "\(minutesLabel) \(secondsLabel)"
+        let parts = [(total / 3600, "h"), (total % 3600 / 60, "m"), (total % 60, "s")]
+            .filter { $0.0 > 0 }.map { "\($0.0)\($0.1)" }
+        return parts.isEmpty ? "0s" : parts.joined(separator: " ")
     }
     private func time(_ seconds: Double) -> String {
         if seconds >= 60 {

@@ -41,6 +41,22 @@ enum BotMentions {
         }
     }
 
+    static func previewURL(_ id: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "herm-bot-preview"
+        components.host = "bot"
+        components.queryItems = [URLQueryItem(name: "id", value: id)]
+        return components.url!
+    }
+
+    static func previewBotID(_ url: URL) -> String? {
+        guard url.scheme == "herm-bot-preview", url.host == "bot",
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+            items.count == 1, items[0].name == "id", let id = items[0].value, !id.isEmpty
+        else { return nil }
+        return id
+    }
+
     static func pill(for bot: BotSummary, colorScheme: ColorScheme? = nil) -> NSImage? {
         let dark =
             colorScheme.map { $0 == .dark }
@@ -48,8 +64,10 @@ enum BotMentions {
         let key = "\(bot.id)|\(bot.name)|\(dark)|\(DockThemeRuntime.revision)"
         if let cached = pills[key] { return cached }
         let renderer = ImageRenderer(
-            content: BotChip(id: bot.id, botsByID: botsByID, avatarImages: avatars, displayName: bot.name)
-                .environment(\.colorScheme, dark ? .dark : .light))
+            content: BotChip(
+                id: bot.id, botsByID: botsByID, avatarImages: avatars, displayName: bot.name, showsPreview: true
+            )
+            .environment(\.colorScheme, dark ? .dark : .light))
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
         let image = renderer.nsImage
         pills[key] = image
@@ -77,6 +95,8 @@ enum BotMentions {
             attachment.image = image
             attachment.bounds = CGRect(x: 0, y: -4, width: image.size.width, height: image.size.height)
             let replacement = NSMutableAttributedString(attachment: attachment)
+            replacement.addAttribute(.link, value: previewURL(bot.id), range: NSRange(location: 0, length: 1))
+            replacement.addAttribute(.toolTip, value: "Preview " + bot.name, range: NSRange(location: 0, length: 1))
             if let style = attributes[.paragraphStyle] {
                 replacement.addAttribute(
                     .paragraphStyle, value: style, range: NSRange(location: 0, length: replacement.length))

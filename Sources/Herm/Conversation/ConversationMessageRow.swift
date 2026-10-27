@@ -53,6 +53,7 @@ struct ConversationMessageRow: View, Equatable {
     let areSessionActionsAvailable: Bool
     let isSpeaking: Bool
     let metrics: ConversationWorkspaceMetrics
+    let actionTarget: MessageNavigatorTarget?
     let onCopy: () -> Void
     let onBranch: () -> Void
     let onReadAloud: () -> Void
@@ -61,8 +62,11 @@ struct ConversationMessageRow: View, Equatable {
     let showsPinAction: Bool
     let isPinAvailable: Bool
     let isPinned: Bool
+    let onOpenInTab: (() -> Void)?
+    let showsOpenInTabAction: Bool
     let onPin: () -> Void
     let forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)?
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     @State private var sendTarget: BotSummary?
     @State private var hoverPresentation: ConversationRowHoverPresentation
     #if DEBUG
@@ -85,6 +89,7 @@ struct ConversationMessageRow: View, Equatable {
         areSessionActionsAvailable: Bool = true,
         isSpeaking: Bool = false,
         metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false),
+        actionTarget: MessageNavigatorTarget? = nil,
         onCopy: @escaping () -> Void = {},
         onBranch: @escaping () -> Void = {},
         onReadAloud: @escaping () -> Void = {},
@@ -94,6 +99,7 @@ struct ConversationMessageRow: View, Equatable {
         isPinAvailable: Bool = false,
         isPinned: Bool = false,
         onPin: @escaping () -> Void = {},
+        onOpenInTab: (() -> Void)? = nil,
         forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)? = nil,
         loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)? = nil,
         hoverPresentation: ConversationRowHoverPresentation = ConversationRowHoverPresentation()
@@ -112,6 +118,7 @@ struct ConversationMessageRow: View, Equatable {
         self.areSessionActionsAvailable = areSessionActionsAvailable
         self.isSpeaking = isSpeaking
         self.metrics = metrics
+        self.actionTarget = actionTarget
         self.onCopy = onCopy
         self.onBranch = onBranch
         self.onReadAloud = onReadAloud
@@ -120,6 +127,8 @@ struct ConversationMessageRow: View, Equatable {
         self.showsPinAction = showsPinAction
         self.isPinAvailable = isPinAvailable
         self.isPinned = isPinned
+        self.onOpenInTab = onOpenInTab
+        self.showsOpenInTabAction = onOpenInTab != nil
         self.onPin = onPin
         self.forwardContent = forwardContent
         self.loadKanbanDetail = loadKanbanDetail
@@ -156,7 +165,9 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.showsPinAction == rhs.showsPinAction
             && lhs.isPinAvailable == rhs.isPinAvailable
             && lhs.isPinned == rhs.isPinned
+            && lhs.showsOpenInTabAction == rhs.showsOpenInTabAction
             && lhs.metrics == rhs.metrics
+            && lhs.actionTarget == rhs.actionTarget
     }
 
     private func imageThumbnail(at index: Int, @ViewBuilder layout: (Image) -> some View) -> some View {
@@ -287,16 +298,24 @@ struct ConversationMessageRow: View, Equatable {
                             let requester =
                                 message.isBotHandoffReply
                                 ? activeBotProfileID.flatMap { $0 == botProfileID ? nil : botsByID[$0] } : nil
-                            (Text(bot?.name ?? message.botDisplayName ?? botProfileID)
-                                .foregroundStyle(Color.dockSecondaryText)
-                                + Text(requester.map { " replied to \($0.name)" } ?? "")
-                                .fontWeight(.regular)
-                                .foregroundStyle(Color.dockMetadataText))
+                            if let bot, let previewWorkspace {
+                                Button(bot.name) {
+                                    SessionMessageTabs.shared.open(.bot(bot), in: previewWorkspace)
+                                }
+                                .buttonStyle(.dockLink)
                                 .dockFont(.metadata, weight: .medium)
-                                .lineLimit(1)
+                                .help("Preview " + bot.name)
+                                if let requester {
+                                    Text("replied to " + requester.name)
+                                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                                }
+                            } else {
+                                Text(message.botDisplayName ?? botProfileID)
+                                    .dockFont(.metadata, weight: .medium).foregroundStyle(Color.dockSecondaryText)
+                            }
                         }
                         .padding(.horizontal, 4)
-                        .accessibilityElement(children: .combine)
+                        .accessibilityElement(children: .contain)
                         .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
                     }
 
@@ -484,6 +503,16 @@ struct ConversationMessageRow: View, Equatable {
                     isAvailable: kind == .pin
                         ? isPinAvailable : kind == .copy || kind == .reply || areSessionActionsAvailable
                 )
+            }
+            if let onOpenInTab {
+                Button(action: onOpenInTab) {
+                    DockIcon(.arrowSquareOut, size: 12, color: .dockSecondaryText)
+                }
+                .buttonStyle(DockPressButtonStyle())
+                .frame(width: 28, height: 28)
+                .help("Open message in new tab")
+                .accessibilityLabel("Open message in new tab")
+                .disabled(isStreamingMessage)
             }
             sendToBotMenu
             messageMetadata
@@ -796,15 +825,16 @@ struct BotChip: View {
     let botsByID: [String: BotSummary]
     let avatarImages: [String: Data]
     var displayName: String? = nil
+    var showsPreview = false
 
     var body: some View {
         HStack(spacing: 4) {
             if let bot = botsByID[id] {
                 BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 16, orbits: false)
-                Text(bot.name)
+                Text(bot.name).underline(showsPreview)
             } else {
                 BotFaceMark(id: id, size: 16, animated: true)
-                Text(displayName ?? id)
+                Text(displayName ?? id).underline(showsPreview)
             }
         }
         .dockFont(.body, weight: .medium)

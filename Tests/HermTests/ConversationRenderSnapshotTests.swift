@@ -23,6 +23,7 @@ struct ConversationRenderSnapshotTests {
         }
         let isFullscreen = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_FULLSCREEN"] == "1"
         let showsSidebar = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_SIDEBAR"] == "1"
+        let isEmpty = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_EMPTY"] == "1"
         let width: CGFloat = showsSidebar ? 1200 : isFullscreen ? 980 : 420
         let metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: isFullscreen)
         let model = DockModel(initialSessionID: "snapshot")
@@ -55,7 +56,7 @@ struct ConversationRenderSnapshotTests {
                 role: .user, text: "Great, ship it.", timestamp: now, isSteering: true, steeringStatus: "APPLIED"),
             ChatMessage(role: .hermes, text: "The request could not reach the gateway.", timestamp: now, isError: true),
         ]
-        model.messages = messages
+        model.messages = isEmpty ? [] : messages
         model.composer.text = ""
 
         let botMode = BotModeModel()
@@ -87,10 +88,10 @@ struct ConversationRenderSnapshotTests {
                 )
                 .frame(width: 250)
             }
-            VStack(spacing: 0) {
+            ConversationComposerLayout(showsWelcome: isEmpty, hermFaceID: nil) {
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(messages) { message in
+                        ForEach(model.messages) { message in
                             ConversationMessageRow(
                                 message: message,
                                 isStreamingMessage: false,
@@ -108,6 +109,7 @@ struct ConversationRenderSnapshotTests {
                     .frame(maxWidth: metrics.readingWidth)
                     .frame(maxWidth: .infinity)
                 }
+            } composer: {
                 composer
             }
         }

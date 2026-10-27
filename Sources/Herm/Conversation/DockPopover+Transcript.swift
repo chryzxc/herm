@@ -11,8 +11,10 @@ extension DockPopover {
             messageActionState: messageActionState, voiceOutput: voiceOutput,
             conversationMetrics: conversationMetrics, conversationHermFaceID: conversationHermFaceID,
             isShowingMessageSearch: $isShowingMessageSearch, pinnedMessageJumpID: $pinnedMessageJumpID,
-            selectedChatImage: $selectedChatImage, trailingContentInset: trailingContentInset
+            selectedChatImage: $selectedChatImage, trailingContentInset: trailingContentInset,
+            latestJumpRequest: sessionRailReplyRequest
         ).equatable()
+            .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
     }
     func reasoningBlock(_ reasoning: ReasoningState) -> some View {
         DisclosureGroup(isExpanded: $model.isShowingReasoning) {

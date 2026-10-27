@@ -29,7 +29,17 @@ struct SessionCrewTests {
         #expect(crew.root(selectedRowID: "tool", replayDate: nil) == "one")
         #expect(crew.root(selectedRowID: nil, replayDate: origin.addingTimeInterval(35)) == "two")
         #expect(crew.branch("one").map(\.id) == ["one", "a", "b"])
-        #expect(SessionCrewLayout.focused(crew.actors, on: "a").map(\.id) == ["a", "b"])
+    }
+
+    @Test func outlineKeepsDelegatorsOfMembersOnly() {
+        let crew = SessionCrewProjection(rows: [
+            row("one", .turn), row("a", .agent, parent: "one"), row("b", .agent, parent: "a"),
+            row("idle", .agent, parent: "one"), row("two", .turn), row("c", .agent, parent: "two"),
+        ])
+        let lines = SessionCrewOutline.lines(crew.actors, members: ["b", "c"])
+        #expect(lines.map(\.id) == ["one", "a", "b", "two", "c"])
+        #expect(lines.map(\.depth) == [0, 1, 2, 0, 1])
+        #expect(lines.filter(\.member).map(\.id) == ["b", "c"])
     }
 
     @Test func replayDoesNotLeakCurrentActivityOrFinalOutcome() throws {
@@ -65,8 +75,7 @@ struct SessionCrewTests {
         ])
         #expect(crew.actors.count == 2)
         #expect(crew.actors.allSatisfy { $0.parentID == nil })
-        let layout = SessionCrewLayout(actors: crew.actors, width: 380, zoom: 1)
-        #expect(layout.positions.count == 2)
+        #expect(SessionCrewOutline.lines(crew.actors, members: ["a", "b"]).count == 2)
     }
 
     @Test func directBotJobsKeepInstanceIdentityAndUnknownHistory() throws {
@@ -120,25 +129,6 @@ struct SessionCrewTests {
             let display = SessionCrewProjection.state(actor, at: nil, connected: true)
             #expect(display.label == state.label)
             #expect(!display.moving)
-        }
-    }
-
-    @Test func fortyWorkersHaveDistinctReadablePositions() {
-        let rows = [row("root", .turn)] + (0..<40).map { row("worker-\($0)", .agent, parent: "root") }
-        let actors = SessionCrewProjection(rows: rows).actors
-        for width in [320.0, 380, 900] {
-            let layout = SessionCrewLayout(actors: actors, width: width, zoom: 1)
-            let positions = Array(layout.positions.values)
-            #expect(positions.count == 41)
-            #expect(layout.nodeWidth >= 100)
-            for (index, position) in positions.enumerated() {
-                #expect(position.x >= layout.nodeWidth / 2)
-                #expect(position.x + layout.nodeWidth / 2 <= layout.size.width)
-                #expect(position.y + 63 <= layout.size.height)
-                for other in positions.dropFirst(index + 1) {
-                    #expect(abs(position.x - other.x) >= layout.nodeWidth || abs(position.y - other.y) >= 126)
-                }
-            }
         }
     }
 

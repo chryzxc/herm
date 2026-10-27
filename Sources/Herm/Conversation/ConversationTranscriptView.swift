@@ -14,6 +14,7 @@ struct ConversationTranscriptView: View, Equatable {
     let conversationMetrics: ConversationWorkspaceMetrics
     let conversationHermFaceID: String?
     let trailingContentInset: CGFloat
+    let latestJumpRequest: Int
     @Binding var isShowingMessageSearch: Bool
     @Binding var pinnedMessageJumpID: UUID?
     @Binding var selectedChatImage: ChatImagePreview?
@@ -31,6 +32,7 @@ struct ConversationTranscriptView: View, Equatable {
         isShowingMessageSearch: Binding<Bool>, pinnedMessageJumpID: Binding<UUID?>,
         selectedChatImage: Binding<ChatImagePreview?>,
         trailingContentInset: CGFloat = 0,
+        latestJumpRequest: Int = 0,
         coordinator: @autoclosure @escaping () -> ConversationTranscriptCoordinator =
             ConversationTranscriptCoordinator()
     ) {
@@ -42,6 +44,7 @@ struct ConversationTranscriptView: View, Equatable {
         self.conversationMetrics = conversationMetrics
         self.conversationHermFaceID = conversationHermFaceID
         self.trailingContentInset = trailingContentInset
+        self.latestJumpRequest = latestJumpRequest
         self._isShowingMessageSearch = isShowingMessageSearch
         self._pinnedMessageJumpID = pinnedMessageJumpID
         self._selectedChatImage = selectedChatImage
@@ -61,6 +64,7 @@ struct ConversationTranscriptView: View, Equatable {
             && lhs.conversationMetrics == rhs.conversationMetrics
             && lhs.conversationHermFaceID == rhs.conversationHermFaceID
             && lhs.trailingContentInset == rhs.trailingContentInset
+            && lhs.latestJumpRequest == rhs.latestJumpRequest
             && lhs.searchPresented == rhs.searchPresented && lhs.jumpID == rhs.jumpID
             && lhs.themeRevision == rhs.themeRevision
     }
@@ -169,6 +173,9 @@ struct ConversationTranscriptView: View, Equatable {
                     }
                     .onChange(of: snapshot.context.latestRequest) { _, _ in
                         if coordinator.presentation.isAtBottom { coordinator.jumpToLatest() }
+                    }
+                    .onChange(of: latestJumpRequest) { _, _ in
+                        coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
                     }
                     ConversationLatestMessageControl(presentation: coordinator.presentation) {
                         coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
@@ -361,6 +368,7 @@ struct ConversationTranscriptView: View, Equatable {
                     !(model.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
                 isSpeaking: voiceOutput.speakingMessageID == message.id,
                 metrics: conversationMetrics,
+                actionTarget: target,
                 onCopy: { source.perform(.copy, target: target) },
                 onBranch: { source.perform(.branch, target: target) },
                 onReadAloud: { source.perform(.readAloud, target: target) },
@@ -372,6 +380,10 @@ struct ConversationTranscriptView: View, Equatable {
                 isPinAvailable: model.canPinMessage(message),
                 isPinned: model.isMessagePinned(message),
                 onPin: { source.perform(.pin, target: target) },
+                onOpenInTab: {
+                    guard let current = source.message(for: target) else { return }
+                    SessionMessageTabs.shared.open(current, in: WorkspaceIdentity.session(model))
+                },
                 forwardContent: { bot, dismiss in
                     guard let current = source.message(for: target) else { return AnyView(EmptyView()) }
                     return AnyView(

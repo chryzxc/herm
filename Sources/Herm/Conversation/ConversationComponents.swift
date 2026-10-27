@@ -710,6 +710,7 @@ struct BotDispatchCard: View {
     var botsByID: [String: BotSummary] = [:]
     var avatars: [String: Data] = [:]
     @State private var openIDs: Set<String> = []
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
 
     var body: some View {
         VStack(alignment: .center, spacing: 6) {
@@ -727,6 +728,10 @@ struct BotDispatchCard: View {
         DockLiveActivityDecoration(active: record.isLive) {
             VStack(alignment: .center, spacing: isOpen ? DockSpacing.group : DockSpacing.micro) {
                 Button {
+                    if let previewWorkspace {
+                        SessionMessageTabs.shared.open(.dispatch(record), in: previewWorkspace)
+                        return
+                    }
                     guard canOpen else { return }
                     withAnimation(.easeOut(duration: 0.18)) {
                         if isOpen { openIDs.remove(record.id) } else { openIDs.insert(record.id) }
@@ -743,14 +748,15 @@ struct BotDispatchCard: View {
                         .frame(width: 16, height: 16)
                         (Text(assignedIDs.contains(record.id) ? "Assigned " : "Messaged ").foregroundStyle(
                             Color.dockSecondaryText)
-                            + Text(bot?.name ?? record.botName).fontWeight(.semibold).foregroundStyle(
+                            + Text(bot?.name ?? record.botName).underline(previewWorkspace != nil).fontWeight(.semibold)
+                            .foregroundStyle(
                                 Color.dockPrimaryText)
                             + Text(record.summary.isEmpty ? "" : "  \(record.summary)").foregroundStyle(
                                 Color.dockMetadataText))
                             .dockFont(.body)
                             .lineLimit(1).truncationMode(.tail)
                         status(record)
-                        if canOpen {
+                        if previewWorkspace == nil, canOpen {
                             DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                         }
                     }
@@ -762,7 +768,9 @@ struct BotDispatchCard: View {
                 .buttonStyle(.dockHover)
                 .help(record.state == .failed ? (reply ?? "Failed") : record.linkedCardID.map { "Kanban \($0)" } ?? "")
                 .accessibilityLabel(
-                    canOpen ? (isOpen ? "Hide reply" : "Show reply") : "Messaged \(bot?.name ?? record.botName)")
+                    previewWorkspace != nil
+                        ? "Preview task for \(bot?.name ?? record.botName)"
+                        : canOpen ? (isOpen ? "Hide reply" : "Show reply") : "Messaged \(bot?.name ?? record.botName)")
                 if isOpen, let reply {
                     Text(DockModel.botReply(from: reply).reply)
                         .dockFont(.body)
@@ -863,6 +871,7 @@ struct TurnActivityView: View, Equatable {
     var rosterRevision = 0
     /// Live reasoning for an open, unfinished thought row; excluded from `==`.
     var liveReasoning: LiveReasoningText? = nil
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     @State private var isExpanded = false
     @State private var expandedThoughtIDs: Set<String> = []
     @State private var expandedDiffIDs: Set<String> = []
@@ -935,20 +944,22 @@ struct TurnActivityView: View, Equatable {
                 }
                 .transition(.opacity)
             } else {
-                Button {
-                    withAnimation(disclosureMotion) { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(summary).dockFont(.body, weight: .medium)
-                        DockIcon(isExpanded ? .caretDown : .caretRight, size: 10)
+                HStack {
+                    Button {
+                        withAnimation(disclosureMotion) { isExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(summary).dockFont(.body, weight: .medium)
+                            DockIcon(isExpanded ? .caretDown : .caretRight, size: 10)
+                        }
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.dockHover)
+                    .accessibilityLabel(isExpanded ? "Hide activity" : "Show activity")
+                    .transition(.opacity)
                 }
-                .buttonStyle(.dockHover)
-                .accessibilityLabel(isExpanded ? "Hide activity" : "Show activity")
-                .transition(.opacity)
                 if isExpanded {
                     steps
                 } else if segments.contains(where: { !$0.records.isEmpty }) {
@@ -1024,15 +1035,27 @@ struct TurnActivityView: View, Equatable {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(segments) { segment in
                 let call = segment.calls[0]
-                if !segment.records.isEmpty {
-                    card(segment)
-                } else if call.name == ActiveToolCall.thinkingName {
-                    thoughtRow(call)
-                } else if call.name == ActiveToolCall.compactionName {
-                    if call.isComplete { CompactionStepRow(call: call) }
-                } else {
-                    toolRow(call)
+                Group {
+                    if !segment.records.isEmpty {
+                        card(segment)
+                    } else if call.name == ActiveToolCall.thinkingName {
+                        thoughtRow(call)
+                    } else if call.name == ActiveToolCall.compactionName {
+                        if call.isComplete { CompactionStepRow(call: call) }
+                    } else if call.diffPreview == nil, let previewWorkspace {
+                        Button {
+                            SessionMessageTabs.shared.open(.tool(call), in: previewWorkspace)
+                        } label: {
+                            toolLabel(call)
+                        }
+                        .buttonStyle(.dockHover)
+                        .help("Preview full activity details")
+                    } else {
+                        toolRow(call)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             }
             .transition(stepMotion == nil ? .identity : .opacity.combined(with: .offset(y: 6)))
         }
