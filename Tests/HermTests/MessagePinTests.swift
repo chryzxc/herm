@@ -75,6 +75,27 @@ private final class MessagePinRPCClient: HermesRPCClientProtocol {
     }
 }
 
+private struct PinTranscriptParent: View {
+    @ObservedObject var model: DockModel
+    let actions: ConversationMessageActionState
+    let controlCenter = ControlCenterModel()
+    let bots = BotModeModel()
+    let voice = VoiceOutput()
+
+    var body: some View {
+        let _ = model.isLoadingSessions
+        DockWindowWorkspace {
+            ConversationTranscriptView(
+                model: model, controlCenter: controlCenter, botMode: bots,
+                messageActionState: actions, voiceOutput: voice,
+                conversationMetrics: .resolve(isFullscreen: true), conversationHermFaceID: nil,
+                isShowingMessageSearch: .constant(false), pinnedMessageJumpID: .constant(nil),
+                selectedChatImage: .constant(nil)
+            ).equatable().dockThemedRoot()
+        }
+    }
+}
+
 @MainActor
 struct MessagePinTests {
     private func loaded(_ rpc: MessagePinRPCClient) async throws -> DockModel {
@@ -119,6 +140,100 @@ struct MessagePinTests {
         #expect(model.messagePinError?.contains("does not support") == true)
         await model.toggleMessagePinned(try #require(model.messages.last))
         #expect(rpc.writes.isEmpty)
+    }
+
+    @Test(arguments: [false, true]) func bubblePinClickWritesAndChangesToUnpin(mouseClick: Bool) async throws {
+        let app = NSApplication.shared
+        let accessibility = app.value(forKey: "accessibilityEnhancedUserInterface")
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer { app.setValue(accessibility, forKey: "accessibilityEnhancedUserInterface") }
+        let rpc = MessagePinRPCClient()
+        rpc.rows = (1...40).map { rowID in
+            [
+                "role": rowID.isMultiple(of: 2) ? "assistant" : "user", "text": "Message \(rowID)",
+                "row_id": rowID, "message_uid": rowID == 40 ? "reply" : "uid-\(rowID)",
+            ]
+        }
+        let model = try await loaded(rpc)
+        defer { model.shutdown() }
+        let actions = ConversationMessageActionState()
+        let host = NSHostingView(rootView: PinTranscriptParent(model: model, actions: actions))
+        host.frame = NSRect(x: 0, y: 0, width: 1000, height: 500)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
+        }
+        for _ in 0..<8 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        model.isLoadingSessions.toggle()
+        model.sessionID = "resumed-chat"
+        for _ in 0..<4 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        let pin = try #require(
+            elements(host).last {
+                $0.accessibilityRole?() == .button && $0.accessibilityLabel?() == "Pin message"
+            })
+        if mouseClick {
+            let frame = try #require(pin.accessibilityFrame?())
+            let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try #require(
+                    NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                        context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                window.sendEvent(event)
+            }
+        } else {
+            #expect(pin.accessibilityPerformPress?() == true)
+        }
+        try await waitUntil { !rpc.writes.isEmpty }
+        try await waitUntil { !model.isUpdatingMessagePin && actions.pendingActions.isEmpty }
+        #expect(model.isMessagePinned(try #require(model.messages.last)))
+        for _ in 0..<4 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        #expect(elements(host).contains { $0.accessibilityLabel?() == "Unpin message" })
+    }
+
+    @Test func acceptedPinSurvivesTranscriptProjectionReplacement() async throws {
+        let rpc = MessagePinRPCClient()
+        let model = try await loaded(rpc)
+        defer { model.shutdown() }
+        let actions = ConversationMessageActionState()
+        let message = try #require(model.messages.last)
+        var source: ConversationTranscriptSource? = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: actions, voice: VoiceOutput(),
+            coordinator: ConversationTranscriptCoordinator())
+        source?.perform(.pin, target: .init(sessionID: "chat", messageID: message.id))
+        source = nil
+        try await waitUntil { actions.pendingActions.isEmpty }
+        #expect(rpc.writes.count == 1)
+        #expect(model.isMessagePinned(message))
+    }
+
+    @Test func queuedPinDoesNotWriteAfterLeavingTheConversation() async throws {
+        let rpc = MessagePinRPCClient()
+        let model = try await loaded(rpc)
+        defer { model.shutdown() }
+        let actions = ConversationMessageActionState()
+        let message = try #require(model.messages.last)
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: actions, voice: VoiceOutput(),
+            coordinator: ConversationTranscriptCoordinator())
+        source.perform(.pin, target: .init(sessionID: "chat", messageID: message.id))
+        model.newChat()
+        try await waitUntil { actions.pendingActions.isEmpty }
+        #expect(rpc.writes.isEmpty)
+        #expect(model.pinnedMessages.isEmpty)
     }
 
     @Test func referencesKeepStableUIDAcrossCompactionAndRejectForeignResponses() throws {

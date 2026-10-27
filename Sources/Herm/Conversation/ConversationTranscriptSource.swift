@@ -262,7 +262,7 @@ extension ConversationTranscriptSource {
         case .reply:
             model.replyQuote = ReplyQuote(
                 author: message.botDisplayName ?? bots.botsByID[message.botProfileID ?? model.activeBotProfileID ?? ""]?
-                    .name ?? "Hermes",
+                    .name ?? "Herm",
                 text: GenerativeUIIntegration.readableText(message))
         case .branch:
             actions.run(message.id, action: kind) { [weak self] in
@@ -275,9 +275,11 @@ extension ConversationTranscriptSource {
                 await self.model.refreshCurrentSession()
             }
         case .pin:
-            actions.run(message.id, action: kind) { [weak self] in
-                guard let self, let current = self.message(for: target) else { return }
-                await self.model.toggleMessagePinned(current)
+            actions.run(message.id, action: kind) { [model] in
+                guard target.sessionID == model.sessionID,
+                    let current = model.messages.first(where: { $0.id == target.messageID })
+                else { return }
+                await model.toggleMessagePinned(current)
             }
         }
     }
