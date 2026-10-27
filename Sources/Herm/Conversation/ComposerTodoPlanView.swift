@@ -35,7 +35,8 @@ struct ComposerTodoPlanView: View {
                     Text(
                         isExpanded
                             ? "Tasks · \(plan.done) of \(plan.items.count) done"
-                            : plan.current?.content ?? "Plan finished"
+                            : plan.inProgress.map { "In progress: \($0.content)" }
+                                ?? plan.current?.content ?? "Plan finished"
                     )
                     .dockFont(.body, weight: isExpanded ? .medium : .regular)
                     .foregroundStyle(isExpanded ? Color.dockPrimaryText : Color.dockSecondaryText)
@@ -59,12 +60,7 @@ struct ComposerTodoPlanView: View {
 
             if isExpanded {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        // Hermes supplies ordered steps without IDs; keep each slot stable across status updates.
-                        ForEach(Array(plan.items.enumerated()), id: \.offset) { _, item in
-                            taskRow(item)
-                        }
-                    }
+                    TodoPlanTaskList(plan: plan, isWorking: isWorking)
                 }
                 .defaultScrollAnchor(.top)
                 .frame(maxHeight: 220)
@@ -79,6 +75,26 @@ struct ComposerTodoPlanView: View {
             if motion == nil {
                 $0.animation = nil
                 $0.disablesAnimations = true
+            }
+        }
+    }
+
+}
+
+/// Shared task order, status indicators, and emphasis for the composer and session rail.
+struct TodoPlanTaskList: View {
+    let plan: TodoPlan
+    let isWorking: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var motion: Animation? {
+        reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.22)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(plan.orderedItemIndices, id: \.self) { index in
+                taskRow(plan.items[index])
             }
         }
     }
@@ -107,17 +123,22 @@ struct ComposerTodoPlanView: View {
             .id(item.status)
             .transition(.opacity.combined(with: .scale(scale: 0.8)))
             .accessibilityHidden(true)
-            Text(item.content)
-                .dockFont(.body, weight: active ? .semibold : .regular)
-                .foregroundStyle(
-                    active
-                        ? Color.dockPrimaryText
-                        : completed || cancelled ? Color.dockMetadataText : Color.dockSecondaryText
-                )
-                .strikethrough(completed || cancelled, color: .dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.content)
+                    .dockFont(.body, weight: active ? .semibold : .regular)
+                    .foregroundStyle(
+                        active
+                            ? Color.dockPrimaryText
+                            : completed || cancelled ? Color.dockMetadataText : Color.dockSecondaryText
+                    )
+                    .strikethrough(completed || cancelled, color: .dockMetadataText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Text(item.status.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .dockFont(.metadata, weight: active ? .semibold : .regular)
+                    .foregroundStyle(active ? Color.dockAccent : Color.dockMetadataText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)

@@ -115,7 +115,7 @@ struct VoiceConversationStateTests {
         #expect(HermesVoiceState.paused.isNativeConversationActive)
         #expect(HermesVoiceState.transcribing.isNativeConversationActive)
         #expect(HermesVoiceState.paused.label(agentName: "Nexus") == "PAUSED — TAP TO RESUME")
-        #expect(HermesVoiceState.listening.label(agentName: " ") == "HERMES IS LISTENING")
+        #expect(HermesVoiceState.listening.label(agentName: " ") == "HERM IS LISTENING")
     }
 
     @Test func orbMotionEasesBetweenModesInsteadOfSnapping() {

@@ -49,11 +49,11 @@ enum HermesVoiceState: Equatable {
         }
     }
 
-    var label: String { label(agentName: "Hermes") }
+    var label: String { label(agentName: "Herm") }
 
     func label(agentName: String) -> String {
         let trimmed = agentName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = (trimmed.isEmpty ? "Hermes" : trimmed).uppercased()
+        let name = (trimmed.isEmpty ? "Herm" : trimmed).uppercased()
         return switch self {
         case .inactive: "VOICE OFF"
         case .preparing: "CONNECTING " + name + " VOICE"
@@ -109,7 +109,24 @@ struct TodoPlan: Equatable {
     let items: [Item]
 
     var done: Int { items.filter { $0.status == "completed" || $0.status == "cancelled" }.count }
-    var current: Item? { items.first { $0.status == "in_progress" } ?? items.first { $0.status == "pending" } }
+    var inProgress: Item? { items.first { $0.status == "in_progress" } }
+    var current: Item? { inProgress ?? items.first { $0.status == "pending" } }
+
+    /// Presentation order only; original slots remain stable identities as statuses change.
+    var orderedItemIndices: [Int] {
+        func rank(_ item: Item) -> Int {
+            switch item.status {
+            case "in_progress": 0
+            case "completed", "cancelled": 2
+            default: 1
+            }
+        }
+        return items.indices.sorted {
+            let left = rank(items[$0])
+            let right = rank(items[$1])
+            return left == right ? $0 < $1 : left < right
+        }
+    }
 }
 
 struct ReasoningState: Equatable {
