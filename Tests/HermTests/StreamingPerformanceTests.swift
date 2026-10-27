@@ -245,6 +245,20 @@ struct StreamingPerformanceTests {
         withExtendedLifetime(cancellable) {}
     }
 
+    @Test func visionErrorSplitAcrossFlushesIsStillDetected() {
+        let sessionID = "vision-split"
+        let model = DockModel(initialSessionID: sessionID)
+        model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": sessionID, "payload": ["delta": "Error: model does not sup"]])
+        model.flushStreamingMessage()
+        #expect(!model.streamingMessageIsVisionNotice)
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": sessionID, "payload": ["delta": "port images."]])
+        model.flushStreamingMessage()
+        #expect(model.streamingMessageIsVisionNotice)
+    }
+
     @Test func streamedDeltasPublishExactTextOnlyAtCompletionBoundary() {
         let sessionID = "stream-session"
         let model = DockModel(

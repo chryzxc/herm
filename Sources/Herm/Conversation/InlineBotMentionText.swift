@@ -8,23 +8,39 @@ struct InlineBotMentionText: NSViewRepresentable {
     var botMentions: [ComposerBotMention] = []
     let themeRevision: Int
 
+    /// What the rendered text depends on. Unrelated environment changes call
+    /// updateNSView too, and rebuilding every bubble on each one was heavy.
+    struct RenderKey: Equatable {
+        let text: String
+        let botMentions: [ComposerBotMention]
+        let colorScheme: ColorScheme
+        let themeRevision: Int
+        let rosterRevision: Int
+    }
+
+    final class Coordinator {
+        var applied: RenderKey?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NativeMarkdownTextView {
         // Fill before the first sizeThatFits: SwiftUI can measure a fresh view
         // before updateNSView, which cached a zero-height (empty) bubble.
         let view = NativeMarkdownTextView()
-        view.markdownOpenURL = context.environment.markdownOpenURL
-        apply(to: view, colorScheme: context.environment.colorScheme)
+        updateNSView(view, context: context)
         return view
     }
 
     func updateNSView(_ view: NativeMarkdownTextView, context: Context) {
         view.markdownOpenURL = context.environment.markdownOpenURL
-        apply(to: view, colorScheme: context.environment.colorScheme)
-    }
-
-    private func apply(to view: NativeMarkdownTextView, colorScheme: ColorScheme) {
+        let key = RenderKey(
+            text: text, botMentions: botMentions, colorScheme: context.environment.colorScheme,
+            themeRevision: themeRevision, rosterRevision: BotMentions.revision)
+        guard key != context.coordinator.applied else { return }
+        context.coordinator.applied = key
         view.textStorage?.setAttributedString(
-            Self.attributedString(text: text, botMentions: botMentions, colorScheme: colorScheme))
+            Self.attributedString(text: text, botMentions: botMentions, colorScheme: key.colorScheme))
         view.setAccessibilityLabel(text)
         view.invalidateIntrinsicContentSize()
     }

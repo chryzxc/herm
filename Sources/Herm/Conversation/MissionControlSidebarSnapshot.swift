@@ -323,7 +323,7 @@ final class MissionControlSidebarModel: ObservableObject {
         self.store = store
         self.snapshot = MissionControlSidebarSnapshot(
             inputs: MissionControlSidebarSnapshot.inputs(
-                model: model, control: control, localProjectPaths: Self.localPaths(store)))
+                model: model, control: control, localProjectPaths: store.projectPathsBySessionID))
 
         Publishers.Merge3(
             model.sidebarPresentationChanges, control.sidebarPresentationChanges, store.objectWillChange.map { _ in }
@@ -336,16 +336,10 @@ final class MissionControlSidebarModel: ObservableObject {
         .store(in: &cancellables)
     }
 
-    private static func localPaths(_ store: WorkspaceStore) -> [String: String] {
-        store.tasks.reduce(into: [:]) { result, task in
-            if let id = task.sessionID, let path = task.projectPath, !path.isEmpty { result[id] = path }
-        }
-    }
-
     func refresh() {
         let startedAt = Date()
         let inputs = MissionControlSidebarSnapshot.inputs(
-            model: model, control: control, localProjectPaths: Self.localPaths(store))
+            model: model, control: control, localProjectPaths: store.projectPathsBySessionID)
         guard inputs != snapshot.inputs else { return }
         snapshot = MissionControlSidebarSnapshot(inputs: inputs)
         DebugLog.writePerformance(

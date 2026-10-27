@@ -54,19 +54,24 @@ extension DockModel {
         let sessionID = rowSessionID(rawSessionID)
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let session = sessions[index]
-        sessions[index] = HermesSession(
-            id: session.id,
-            profileID: session.profileID,
-            title: session.title,
-            preview: session.preview,
-            startedAt: session.startedAt,
-            updatedAt: session.updatedAt,
-            messageCount: session.messageCount,
-            source: session.source,
-            isHidden: session.isHidden,
-            isWorking: isWorking ?? session.isWorking,
-            hasUnreadUpdate: unread ?? session.hasUnreadUpdate
-        )
+        let working = isWorking ?? session.isWorking
+        let hasUnread = unread ?? session.hasUnreadUpdate
+        // An unchanged row must not republish `sessions` to every observer.
+        if working != session.isWorking || hasUnread != session.hasUnreadUpdate {
+            sessions[index] = HermesSession(
+                id: session.id,
+                profileID: session.profileID,
+                title: session.title,
+                preview: session.preview,
+                startedAt: session.startedAt,
+                updatedAt: session.updatedAt,
+                messageCount: session.messageCount,
+                source: session.source,
+                isHidden: session.isHidden,
+                isWorking: working,
+                hasUnreadUpdate: hasUnread
+            )
+        }
         if let unread {
             var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
             if unread { unreadIDs.insert(sessionID) } else { unreadIDs.remove(sessionID) }

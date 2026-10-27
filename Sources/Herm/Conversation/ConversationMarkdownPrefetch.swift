@@ -39,7 +39,7 @@ final class ConversationMarkdownPrefetch {
         for index in indices {
             let message = messages[index]
             guard message.id != streamingID, message.role == .hermes, !message.isError,
-                message.systemEvent == nil, message.kanbanNotice == nil, !message.text.contains("herm-ui")
+                message.systemEvent == nil, message.kanbanNotice == nil, !RichDocument.mentionsSurface(message.text)
             else { continue }
             completed.append(message)
         }

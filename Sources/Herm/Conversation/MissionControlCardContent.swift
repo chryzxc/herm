@@ -32,7 +32,7 @@ final class MissionControlCardContent: ObservableObject {
     }
 
     static func preview(_ value: String) -> String? {
-        if value.contains("herm-ui") {
+        if RichDocument.mentionsSurface(value) {
             let text = GenerativeUIIntegration.plainText(value).trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
         }

@@ -70,7 +70,7 @@ struct RichDocumentParseRequest: Equatable {
     let identity: String
 
     init?(_ source: String, streaming: Bool, identity: String) {
-        guard source.contains("herm-ui") else { return nil }
+        guard RichDocument.mentionsSurface(source) else { return nil }
         self.source = source
         self.streaming = streaming
         self.identity = identity

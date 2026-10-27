@@ -18,6 +18,22 @@ struct WorkspaceStoreTests {
         #expect(store.tasks.first?.title == "Resolved session title")
     }
 
+    @Test func sessionLookupFollowsInsertionsAndRemovals() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+        let first = store.ensureTask(title: "First", sessionID: "session-1")
+        _ = store.ensureTask(title: "Second", sessionID: "session-2")
+        store.attachProject(at: "/tmp/one", toSessionID: "session-1")
+
+        #expect(store.task(forSessionID: "session-1")?.id == first.id)
+        #expect(store.projectPathsBySessionID == ["session-1": "/tmp/one"])
+        store.deleteTask(first.id)
+        #expect(store.task(forSessionID: "session-1") == nil)
+        #expect(store.task(forSessionID: "session-2")?.title == "Second")
+        #expect(store.projectPathsBySessionID.isEmpty)
+    }
+
     @Test func statusUpdatesAreScopedToTheOwningSession() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }

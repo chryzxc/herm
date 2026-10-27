@@ -96,7 +96,20 @@ struct WorkspaceTask: Identifiable, Codable, Equatable {
 
 @MainActor
 final class WorkspaceStore: ObservableObject {
-    @Published private(set) var tasks: [WorkspaceTask] = []
+    @Published private(set) var tasks: [WorkspaceTask] = [] {
+        didSet {
+            taskIndexBySessionID = Dictionary(
+                tasks.indices.compactMap { index in tasks[index].sessionID.map { ($0, index) } },
+                uniquingKeysWith: { first, _ in first })
+            projectPathsBySessionID = tasks.reduce(into: [:]) { result, task in
+                if let id = task.sessionID, let path = task.projectPath, !path.isEmpty { result[id] = path }
+            }
+        }
+    }
+    /// Views read these several times per render across thousands of tasks;
+    /// both are rebuilt only when `tasks` changes.
+    private var taskIndexBySessionID: [String: Int] = [:]
+    private(set) var projectPathsBySessionID: [String: String] = [:]
     @Published private(set) var agentRuns: [WorkspaceAgentRun] = []
     @Published private(set) var controlReferences: [ControlReference] = []
     @Published var projectPath: String?
@@ -125,7 +138,7 @@ final class WorkspaceStore: ObservableObject {
     var activeTask: WorkspaceTask? { tasks.first(where: { $0.status != .done }) }
 
     func task(forSessionID sessionID: String) -> WorkspaceTask? {
-        tasks.first(where: { $0.sessionID == sessionID })
+        taskIndexBySessionID[sessionID].map { tasks[$0] }
     }
 
     /// A Hermes session is the canonical identity for a conversation-backed task.

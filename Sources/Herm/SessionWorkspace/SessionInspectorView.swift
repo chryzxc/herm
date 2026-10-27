@@ -548,7 +548,8 @@ struct SessionInspector: View {
     }
 
     private var newTabMenu: some View {
-        let closedSections = visibleSections.filter { !openSections.contains($0) }
+        let open = openSections
+        let closedSections = visibleSections.filter { !open.contains($0) }
         return Button {
             isShowingNewTab.toggle()
         } label: {

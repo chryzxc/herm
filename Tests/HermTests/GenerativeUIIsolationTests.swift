@@ -12,6 +12,13 @@ struct GenerativeUIIsolationTests {
         ```
         """
 
+    @Test func surfaceMarkerIsFoundAfterNonASCIIText() {
+        #expect(RichDocument.mentionsSurface("é 👋\n" + surface))
+        #expect(!RichDocument.mentionsSurface(""))
+        #expect(!RichDocument.mentionsSurface("herm-u"))
+        #expect(!RichDocument.mentionsSurface(String(repeating: "é plain reply ", count: 1_000)))
+    }
+
     @Test func promptRemainsSelfContainedWithoutTheOptionalReferencePlugin() {
         let context = RichGenerationContext(
             profileID: "p", sessionID: "s", availableRecords: [.trace],

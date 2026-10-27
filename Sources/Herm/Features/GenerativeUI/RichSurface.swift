@@ -212,6 +212,13 @@ enum RichResourcePolicy {
 /// Assistant-only extension of the canonical fence grammar. GitHub/user Markdown stays ordinary Markdown.
 struct RichDocument: Equatable, Sendable {
     static let maximumBytes = 1_048_576
+
+    /// `String.contains` takes milliseconds on a long reply, and streaming rows
+    /// and the markdown prefetcher ask on every update; search the bytes.
+    static func mentionsSurface(_ text: String) -> Bool {
+        var text = text
+        return text.withUTF8 { memmem($0.baseAddress, $0.count, "herm-ui", 7) != nil }
+    }
     enum Segment: Equatable, Sendable {
         case markdown(String)
         case surface(RichSurface, source: String)
@@ -237,7 +244,7 @@ struct RichDocument: Equatable, Sendable {
     }
 
     init(_ text: String, streaming: Bool = false) {
-        guard text.contains("herm-ui") else {
+        guard Self.mentionsSurface(text) else {
             segments = [.markdown(text)]
             return
         }

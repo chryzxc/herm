@@ -139,9 +139,12 @@ extension DockModel {
                     .map { Self.withRecency($0, from: index?.lastActive ?? [:]) }
                 // Events delivered during the read are newer than its snapshot.
                 let working = activityGeneration == sessionActivityGeneration ? index?.working : nil
+                // Every completed turn re-reads the index; an unchanged read must not
+                // invalidate every view observing the model.
                 if let index {
-                    pinnedSessions = Self.mergingSessionIndex(
+                    let pinned = Self.mergingSessionIndex(
                         index.pinned, with: sessions + pinnedSessions, working: working)
+                    if pinned != pinnedSessions { pinnedSessions = pinned }
                 }
                 // The session index can lag behind the live gateway stream.
                 // Keep a newer event timestamp until Hermes publishes an equal
@@ -150,8 +153,9 @@ extension DockModel {
                 let merged = self.applyPersistedUnreadState(
                     Self.mergingSessionIndex(
                         loaded, with: sessions, keeping: self.navigationSessionID, working: working))
-                sessions = merged
-                sessionProjectionState = merged.isEmpty ? .empty : .ready(merged)
+                if merged != sessions { sessions = merged }
+                let projection: HermesProjectionState<[HermesSession]> = merged.isEmpty ? .empty : .ready(merged)
+                if projection != sessionProjectionState { sessionProjectionState = projection }
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
             } catch {
                 guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }

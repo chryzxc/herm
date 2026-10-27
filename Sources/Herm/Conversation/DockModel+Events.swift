@@ -1694,7 +1694,11 @@ extension DockModel {
             streamingMessageSessionID == sessionID,
             let newText = pendingStreamingText()
         else { return }
-        applyVisionNoticeDetectionIfNeeded(to: newText)
+        // Only the delta is new; the published tail catches a phrase split
+        // across flushes. Commit re-checks the whole buffer.
+        applyVisionNoticeDetectionIfNeeded(
+            to: String(streamingMessagePublishedText.suffix(Self.visionUnsupportedPhrase.count - 1))
+                + streamingMessagePendingPresentationDelta)
         let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
         if streamingMessageIsVisionNotice {
             streamingText.replacePresentation(with: publishedText)
@@ -1820,8 +1824,9 @@ extension DockModel {
         return value
     }
 
+    static let visionUnsupportedPhrase = "does not support image"
+
     static func isVisionUnsupportedError(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        return lower.contains("does not support image")
+        text.lowercased().contains(visionUnsupportedPhrase)
     }
 }
