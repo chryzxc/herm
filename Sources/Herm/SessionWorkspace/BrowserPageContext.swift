@@ -15,6 +15,15 @@ enum BrowserPageContext {
     }
 }
 
+extension AgentBrowser {
+    /// Rules only: an explicit request for an external browser is legitimate, so nothing is blocked.
+    static let agentSurface = HermAgentSurface(
+        id: "herm.browser",
+        rules: """
+            Web pages: use the Hermes browser tools to visit and inspect pages. When Herm's shared browser is connected, Herm shows it live in this chat's Browser tab, where the user can watch and take over. Do not open pages in an external browser (open <url>, Safari, Chrome) unless the user explicitly asks for one.
+            """)
+}
+
 extension DockModel {
     func attachBrowserPage(_ context: ChatContext, owner: SessionBrowserKey) {
         guard browserSessionKey == owner else { return }

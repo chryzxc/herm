@@ -176,7 +176,7 @@ struct SessionBrowserView: View {
                 Text("Agent browser offline")
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
-                Text("Hermes can't browse. \(message)")
+                Text("Herm can't browse. \(message)")
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
@@ -270,6 +270,7 @@ struct SessionBrowserView: View {
             HStack(spacing: 6) {
                 navigationButtons
                 addressField.frame(minWidth: 220)
+                annotationButton
                 attachPageButton(compact: false)
                 viewportMenu(compact: true)
                 moreMenu
@@ -279,6 +280,7 @@ struct SessionBrowserView: View {
                 HStack(spacing: 6) {
                     navigationButtons
                     Spacer(minLength: 8)
+                    annotationButton
                     attachPageButton(compact: true)
                     viewportMenu(compact: true)
                     moreMenu
@@ -390,10 +392,6 @@ struct SessionBrowserView: View {
 
     private var moreMenu: some View {
         DockMenu {
-            Button(annotating ? "Stop Annotating" : "Annotate Page", icon: .cursorClick) { toggleAnnotation() }
-                .disabled(pageURL.isEmpty || pageURL == "about:blank")
-            Button("Attach Page to Chat", icon: .paperPlaneTilt) { Task { await sendPage() } }
-                .disabled(sendingPage || pageURL.isEmpty || pageURL == "about:blank")
             Button("Copy Address", icon: .copy) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(pageURL, forType: .string)
