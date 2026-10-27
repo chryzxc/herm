@@ -272,7 +272,6 @@ struct MissionControlRail: View {
         case .bots: onOpenBots()
         default:
             if let tab = item.tab {
-                navigationState.selectGlobal(tab)
                 onOpenGlobal(tab)
             }
         }
