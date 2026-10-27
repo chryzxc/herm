@@ -326,8 +326,8 @@ struct BotFacePose {
 }
 
 /// Drives a pose from the clock while the Bot is busy. Idle faces stay still:
-/// one 15fps timeline per visible avatar made every list scroll heavy.
-/// Paused under Reduce Motion.
+/// one 15fps timeline per visible avatar made every list scroll heavy. Busy
+/// faces take every other tick of the shared clock. Paused under Reduce Motion.
 private struct BotMotion<Content: View>: View {
     let id: String
     let animated: Bool
@@ -339,7 +339,7 @@ private struct BotMotion<Content: View>: View {
     var body: some View {
         if animated && busy && !reduceMotion && DockThemeStyle.current.animates && focus.engaged {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
-            TimelineView(.dockMotion()) { context in
+            TimelineView(.dockMotion(rate: 15)) { context in
                 content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: true))
             }
         } else {

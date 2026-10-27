@@ -211,7 +211,7 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
-                TimelineView(.periodic(from: agentUpdateService.updateStartedAt ?? Date(), by: 1)) { context in
+                TimelineView(.dockMotion(rate: 1)) { context in
                     Text(agentUpdateElapsedText(until: context.date))
                         .dockFont(.machineMetadata).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)

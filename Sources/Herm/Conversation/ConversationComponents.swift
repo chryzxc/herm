@@ -12,9 +12,9 @@ struct ThinkingDots: View {
         if reduceMotion {
             dots(at: 0)
         } else {
-            // This indicator is informative, not motion-critical. Eight updates a
-            // second reads smoothly enough while avoiding a display-rate wakeup.
-            TimelineView(.periodic(from: .now, by: 1.0 / 8.0)) { context in
+            // This indicator is informative, not motion-critical. Ten updates a
+            // second on the shared clock reads smoothly without adding renders.
+            TimelineView(.dockMotion(rate: 10)) { context in
                 dots(at: context.date.timeIntervalSinceReferenceDate)
             }
         }
@@ -674,7 +674,7 @@ struct BotCrewRow: View {
                         .foregroundStyle(Color.dockMetadataText))
                         .dockFont(.body, weight: .semibold)
                         .lineLimit(1)
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                    TimelineView(.dockMotion(rate: 1)) { context in
                         Text(
                             "Working for about \(TurnActivityView.roughDuration(context.date.timeIntervalSince(since)))"
                         )
@@ -798,7 +798,7 @@ struct BotDispatchCard: View {
         Group {
             switch record.state {
             case .working, .queued:
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.dockMotion(rate: 1)) { context in
                     Text(
                         "\(record.state == .queued && record.linkedCardID != nil ? "queued" : "working") · \(Self.clock(context.date.timeIntervalSince(record.createdAt)))"
                     )
@@ -928,7 +928,7 @@ struct TurnActivityView: View, Equatable {
                                     .dockFont(.body, weight: .semibold)
                                     .lineLimit(1)
                             }
-                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                            TimelineView(.dockMotion(rate: 1)) { context in
                                 Text(
                                     "Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))"
                                         + (crew.isEmpty
@@ -1176,7 +1176,7 @@ struct TurnActivityView: View, Equatable {
                     }
                 } else {
                     // Real elapsed time is independent of the decorative block clock.
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                    TimelineView(.dockMotion(rate: 1)) { context in
                         Text("running · \(BotDispatchCard.clock(context.date.timeIntervalSince(call.startedAt)))")
                             .contentTransition(.numericText())
                     }
@@ -1276,20 +1276,23 @@ private struct CompactionStepRow: View {
                     .transition(.scale.combined(with: .opacity))
                 Text(title).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             } else {
-                TimelineView(.dockMotion(paused: reduceMotion)) { context in
-                    HStack(spacing: 8) {
-                        squeezeGlyph(reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 1.4)).frame(
-                            width: 16, height: 16)
-                        Text("Compacting context")
-                            .dockFont(.body, weight: .medium)
-                            .foregroundStyle(Color.dockAccent)
-                            .overlay {
-                                if !reduceMotion {
-                                    shimmerOverlay(-1 + 2 * DockMotionSchedule.loop(context.date, period: 1.4))
-                                }
-                            }
-                    }
+                TimelineView(.dockMotion(rate: 10, paused: reduceMotion)) { context in
+                    squeezeGlyph(reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 1.4))
                 }
+                .frame(width: 16, height: 16)
+                Text("Compacting context")
+                    .dockFont(.body, weight: .medium)
+                    .foregroundStyle(Color.dockAccent)
+                    .overlay {
+                        if !reduceMotion {
+                            DockLayerMotion(
+                                kind: .sweep(period: 1.4, fraction: 0.5, clamp: 0...(.infinity)),
+                                color: .white.opacity(0.55)
+                            )
+                            .mask(Text("Compacting context").dockFont(.body, weight: .medium))
+                            .allowsHitTesting(false)
+                        }
+                    }
             }
         }
         .animation(.dockEase(duration: 0.25), value: call.isComplete)
@@ -1315,16 +1318,6 @@ private struct CompactionStepRow: View {
                     .offset(y: line.0 * (1 - squeeze))
             }
         }
-    }
-
-    private func shimmerOverlay(_ shimmer: Double) -> some View {
-        GeometryReader { proxy in
-            LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
-                .frame(width: proxy.size.width * 0.5)
-                .offset(x: shimmer * proxy.size.width)
-        }
-        .mask(Text("Compacting context").dockFont(.body, weight: .medium))
-        .allowsHitTesting(false)
     }
 }
 

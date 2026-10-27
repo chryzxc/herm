@@ -27,7 +27,7 @@ struct ResponseDurationLabel: View {
         if let finishedDuration {
             label(for: finishedDuration)
         } else {
-            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            TimelineView(.dockMotion(rate: 2)) { context in
                 label(for: context.date.timeIntervalSince(startedAt))
             }
         }
@@ -571,7 +571,7 @@ struct StreamingResponseMetadata: View {
     let responseDuration: TimeInterval?
 
     var body: some View {
-        if !streaming.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if streaming.text.contains(where: { !$0.isWhitespace }) {
             HStack(spacing: 6) {
                 Text(timeLabel)
                 ResponseDurationLabel(startedAt: timestamp, finishedDuration: responseDuration)

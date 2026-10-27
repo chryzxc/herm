@@ -52,7 +52,7 @@ struct DockBotFrameClock<Content: View>: View {
             content(externalFrame)
         } else {
             let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
-            TimelineView(.dockMotion(paused: !moves)) { context in
+            TimelineView(.dockMotion(rate: 15, paused: !moves)) { context in
                 let frame = DockBotIndicatorFrame(date: context.date, moves: moves)
                 content(frame).environment(\.dockBotIndicatorFrame, frame)
             }

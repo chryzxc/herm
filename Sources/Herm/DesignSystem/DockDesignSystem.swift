@@ -138,15 +138,15 @@ struct DockStatusDot: View {
     }
 
     var body: some View {
-        let duration = pulses && !reduceMotion ? tone.pulseDuration : nil
-        TimelineView(.dockMotion(paused: duration == nil)) { context in
-            let dim = duration.map { DockMotionSchedule.breath(context.date, period: $0 * 2) } ?? 0
-            Circle()
-                .fill(fill)
-                .frame(width: size, height: size)
-                .shadow(color: muted ? .clear : tone.color.opacity(0.6), radius: 3)
-                .opacity(1 - 0.7 * dim)
+        let glow = muted ? nil : tone.color.opacity(0.6)
+        Group {
+            if pulses, !reduceMotion, let duration = tone.pulseDuration {
+                DockLayerMotion(kind: .breathe(period: duration * 2), color: fill, glow: glow)
+            } else {
+                Circle().fill(fill).shadow(color: glow ?? .clear, radius: 3)
+            }
         }
+        .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
 }
@@ -206,29 +206,15 @@ struct DockShimmerTrack: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.dockMotion(paused: reduceMotion)) { context in
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                let sweep = DockMotionSchedule.loop(context.date, period: 1.6)
-                Capsule().fill(Color.dockPrimaryText.opacity(0.08))
-                    .overlay(alignment: .leading) {
-                        Group {
-                            if muted {
-                                Capsule().fill(Color.dockSecondaryText.opacity(0.55))
-                            } else {
-                                LinearGradient(
-                                    colors: [tone.color.opacity(0), tone.color, tone.color.opacity(0)],
-                                    startPoint: .leading, endPoint: .trailing)
-                            }
-                        }
-                        .frame(width: min(80, width * 0.4))
-                        .offset(x: reduceMotion ? width * 0.3 : -80 + (width + 80) * sweep)
-                    }
-                    .clipShape(Capsule())
+        Capsule().fill(Color.dockPrimaryText.opacity(0.08))
+            .overlay {
+                DockLayerMotion(
+                    kind: .sweep(period: 1.6, fraction: 0.4, clamp: 0...80, solid: muted),
+                    color: muted ? Color.dockSecondaryText.opacity(0.55) : tone.color, paused: reduceMotion)
             }
-        }
-        .frame(height: 2)
-        .accessibilityHidden(true)
+            .clipShape(Capsule())
+            .frame(height: 2)
+            .accessibilityHidden(true)
     }
 }
 
@@ -640,17 +626,20 @@ extension DockSectionHeader where Actions == EmptyView {
 /// `repeatForever` ran at the display's full 120Hz, so a working turn rendered
 /// the whole window several times per frame. Occluded windows drop to 1Hz.
 struct DockMotionSchedule: TimelineSchedule {
-    static let step = 1.0 / 30
+    /// Ticks per second. A rate that divides 30 lands on a subset of the 30fps
+    /// instants, so slower clocks share those renders instead of adding their own.
+    var rate = 30
     var paused = false
 
     func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
         if paused { return AnyIterator([startDate].makeIterator()) }
-        let step = mode == .lowFrequency ? 1 : Self.step
-        // Count whole ticks so every view computes bit-identical instants.
-        var tick = (startDate.timeIntervalSinceReferenceDate / step).rounded(.down)
+        let rate = Double(mode == .lowFrequency ? 1 : rate)
+        // Whole ticks divided by the rate: correctly rounded, so every view and
+        // every dividing rate computes bit-identical instants.
+        var tick = (startDate.timeIntervalSinceReferenceDate * rate).rounded(.down)
         return AnyIterator {
             defer { tick += 1 }
-            return Date(timeIntervalSinceReferenceDate: tick * step)
+            return Date(timeIntervalSinceReferenceDate: tick / rate)
         }
     }
 
@@ -666,5 +655,7 @@ struct DockMotionSchedule: TimelineSchedule {
 }
 
 extension TimelineSchedule where Self == DockMotionSchedule {
-    static func dockMotion(paused: Bool = false) -> DockMotionSchedule { DockMotionSchedule(paused: paused) }
+    static func dockMotion(rate: Int = 30, paused: Bool = false) -> DockMotionSchedule {
+        DockMotionSchedule(rate: rate, paused: paused)
+    }
 }

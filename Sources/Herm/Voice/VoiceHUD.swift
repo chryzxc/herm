@@ -616,7 +616,7 @@ struct VoiceStatusStrip: View {
                 .help(repositoryPath)
             }
             if model.status == .working, let start = turnStart {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.dockMotion(rate: 1)) { context in
                     let elapsed = Int(context.date.timeIntervalSince(start))
                     let steps = model.activeToolCalls.filter { !$0.name.hasPrefix("__") }.count
                     chip(

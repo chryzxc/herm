@@ -668,7 +668,7 @@ struct AgentBoardView: View {
     @ViewBuilder
     private func pipelineDuration(_ item: PipelineItem) -> some View {
         if item.isActive, item.startedAt != nil {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
+            TimelineView(.dockMotion(rate: 1)) { context in
                 durationText(item, at: context.date)
             }
         } else {

@@ -121,9 +121,9 @@ struct VoiceOrbView: View {
             orb(VoiceOrbMotion.target(mode: mode, level: Double(audioLevel), time: 0), time: 0)
         } else {
             // Idle keeps a slow breathing cadence unless the pointer is engaging it.
+            // Both rates ride the shared clock so the orb never adds its own renders.
             GeometryReader { proxy in
-                TimelineView(.animation(minimumInterval: mode == .idle && !isHovering ? 1.0 / 15.0 : 1.0 / 60.0)) {
-                    context in
+                TimelineView(.dockMotion(rate: mode == .idle && !isHovering ? 15 : 30)) { context in
                     let time = context.date.timeIntervalSinceReferenceDate
                     orb(motion.advance(to: time, mode: mode, level: Double(audioLevel)), time: time)
                 }
@@ -352,7 +352,7 @@ struct MicWaveform: View {
 
     var body: some View {
         if isActive && !reduceMotion {
-            TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { context in
+            TimelineView(.dockMotion(rate: 10)) { context in
                 waveform(at: context.date.timeIntervalSinceReferenceDate)
             }
         } else {

@@ -34,18 +34,9 @@ struct WorkingTitleShimmer: ViewModifier {
     func body(content: Content) -> some View {
         if isActive && !reduceMotion {
             content.overlay {
-                TimelineView(.dockMotion()) { context in
-                    GeometryReader { geo in
-                        let phase =
-                            context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
-                        let band = max(geo.size.width * 0.4, 40)
-                        LinearGradient(colors: [.clear, color, .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: band)
-                            .offset(x: -band + (geo.size.width + band) * phase)
-                    }
-                }
-                .mask(content)
-                .allowsHitTesting(false)
+                DockLayerMotion(kind: .sweep(period: 2.2, fraction: 0.4, clamp: 40...(.infinity)), color: color)
+                    .mask(content)
+                    .allowsHitTesting(false)
             }
         } else if isActive {
             content.foregroundStyle(color)
