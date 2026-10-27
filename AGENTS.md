@@ -66,6 +66,19 @@ Conventional Commits (`feat: …`, `fix: …`), lowercase, imperative, one
 reviewable behavior per commit. Update `README.md` (and `DESIGN.md`) for
 user-visible changes. Do not commit or push unless asked.
 
+## Product naming
+
+- **Herm** is the client app. Use it for app chrome, navigation, local companion
+  headings, default assistant labels, and actions that open Herm chats or reviews.
+- **Hermes Agent** is the backend. Keep Hermes in backend connection/setup,
+  runtime diagnostics, profiles, shared configuration, provider credentials,
+  updates, and references to the official Hermes Desktop client.
+- Never rename Hermes commands, executable names, API/RPC methods, wire values,
+  environment variables, storage paths, error domains, or source identifiers as
+  part of a copy change. Preserve user-configured bot and agent names.
+- Run `make naming-contract`. It catches bare Hermes default labels and common
+  client-branding regressions; review other copy using the distinction above.
+
 ## UI consistency
 
 - Color changes start in `Sources/Herm/DesignSystem/DockAccentPalette.swift`

@@ -1744,7 +1744,7 @@ final class EdgeNotchState: ObservableObject {
     @Published var side: EdgeDockSide = .right
     @Published var activity = EdgeNotchActivity()
     @Published var agentUpdatePhase: HermesUpdatePhase = .idle
-    @Published var name = "Hermes"
+    @Published var name = "Herm"
     @Published var sessionTitle = "Herm"
     @Published var updateTitle = "No activity yet"
     @Published var showsQuota = false

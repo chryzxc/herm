@@ -370,7 +370,7 @@ extension WorkspaceActivitySidebar {
     var agentRoster: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                rosterTile(title: "ALL", subtitle: "Hermes", status: model.status.title, color: statusColor, id: nil)
+                rosterTile(title: "ALL", subtitle: "Herm", status: model.status.title, color: statusColor, id: nil)
                 ForEach(model.displayedSubagents) { agent in
                     rosterTile(
                         title: agent.role ?? initials(for: agent.goal), subtitle: shortGoal(agent.goal),

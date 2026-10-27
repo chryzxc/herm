@@ -279,7 +279,7 @@ enum DockActionRegistry {
                 keywords: ["screenshot", "window", "capture"], isAvailable: true, unavailableReason: nil,
                 requiresConfirmation: false),
             DockActionDescriptor(
-                action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: .notePencil,
+                action: .newChat, title: "New chat", subtitle: "Start a Herm session", icon: .notePencil,
                 category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil,
                 requiresConfirmation: false),
             DockActionDescriptor(
@@ -287,7 +287,7 @@ enum DockActionRegistry {
                 category: "Session", keywords: ["ask", "prompt"], isAvailable: true, unavailableReason: nil,
                 requiresConfirmation: false),
             DockActionDescriptor(
-                action: .stop, title: "Stop active request", subtitle: "Interrupt the active Hermes turn",
+                action: .stop, title: "Stop active request", subtitle: "Interrupt the active Herm turn",
                 icon: .stopCircle, category: "Session", keywords: ["interrupt", "cancel"], isAvailable: isWorking,
                 unavailableReason: isWorking ? nil : "No active request", requiresConfirmation: false),
             DockActionDescriptor(

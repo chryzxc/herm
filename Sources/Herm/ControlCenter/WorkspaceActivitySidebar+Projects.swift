@@ -218,7 +218,7 @@ extension WorkspaceActivitySidebar {
     func chooseProjectDirectory() {
         let panel = NSOpenPanel()
         panel.title = "Choose a project directory"
-        panel.message = "Select the folder to use as the working directory for a new Hermes chat."
+        panel.message = "Select the folder to use as the working directory for a new Herm chat."
         panel.prompt = "Use Directory"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true

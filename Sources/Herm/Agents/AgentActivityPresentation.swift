@@ -147,7 +147,7 @@ enum AgentActivityPresentation {
                 status: status,
                 task: activityTitle(for: activity),
                 agent: activity.agentID.flatMap { agentByID[$0].map { agentLabel(name: $0.name, role: $0.role) } }
-                    ?? "Hermes",
+                    ?? "Herm",
                 agentID: activity.agentID,
                 parentAgentID: activity.parentAgentID,
                 childSessionID: activity.childSessionID,

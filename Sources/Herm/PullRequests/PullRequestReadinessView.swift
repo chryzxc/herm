@@ -61,7 +61,7 @@ struct PullRequestReadinessView: View {
                             Task { await prepareResolution() }
                         } label: {
                             GitHubActionLabel(
-                                title: preparingResolution ? "Preparing…" : "Prepare resolution in Hermes",
+                                title: preparingResolution ? "Preparing…" : "Prepare resolution in Herm",
                                 isBusy: preparingResolution)
                         }
                         .buttonStyle(.dockCompact).disabled(preparingResolution)

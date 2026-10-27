@@ -39,7 +39,7 @@ extension WorkspaceActivitySidebar {
                             preferences: commandCenterPreferences, acknowledgedFindingIDs: review.findings.map(\.id))
                     }
                     .disabled(!workflow.canSaveReviewBaseline)
-                    DockAsyncButton("REVIEW WITH HERMES") {
+                    DockAsyncButton("REVIEW WITH HERM") {
                         let prompt =
                             "Review the current repository changes without editing files. Local findings: \(review.blockerCount) blockers, \(review.warningCount) warnings, \(review.noteCount) notes. Inspect safely and report risks, missing tests, and verification scope."
                         _ = await control.startBackgroundTask(prompt, kind: .review)
@@ -287,7 +287,7 @@ extension WorkspaceActivitySidebar {
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 10) {
                             Button("OPEN SOURCE CONTROL") { select(.changes) }
-                            DockAsyncButton("REVIEW WITH HERMES") {
+                            DockAsyncButton("REVIEW WITH HERM") {
                                 let prompt =
                                     "Review repository \(notice.displayName) without editing files. Herm detected \(notice.changedFiles) changed files. Report risks, missing tests, and verification scope without quoting suspected credential values."
                                 _ = await control.startBackgroundTask(prompt, kind: .review)
@@ -303,7 +303,7 @@ extension WorkspaceActivitySidebar {
             if paths.isEmpty {
                 emptyState(
                     icon: .folder, title: "No repositories attached",
-                    detail: "Use Change Repository from Today to attach a local repository to a Hermes session.")
+                    detail: "Use Change Repository from Today to attach a local repository to a Herm session.")
             } else {
                 if !workflow.worktrees.isEmpty {
                     DisclosureGroup("WORKTREES  ·  \(workflow.worktrees.count)") {

@@ -420,7 +420,7 @@ final class OfficePreviewSimulation: ObservableObject {
     {
         var seen = Set<String>()
         // The default bot's current name; users can rename it in Hermes.
-        let orchestrator = bots.first(where: \.isDefault)?.name ?? "Hermes"
+        let orchestrator = bots.first(where: \.isDefault)?.name ?? "Herm"
         let main = sessions.filter {
             seen.insert($0.id).inserted && ($0.isCurrent || [.running, .blocked].contains($0.lane))
         }

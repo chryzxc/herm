@@ -7,7 +7,7 @@ struct ObservedRequestReview: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         DockExpandedPage(
-            title: "Local changes since request", subtitle: "Captured local changes · includes edits outside Hermes",
+            title: "Local changes since request", subtitle: "Captured local changes · includes edits outside Herm",
             close: { if let closeAction { closeAction() } else { dismiss() } }
         ) {
             HSplitView {

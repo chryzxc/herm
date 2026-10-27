@@ -58,7 +58,7 @@ enum MessageNavigator {
             return MessageNavigatorItem(
                 target: MessageNavigatorTarget(sessionID: sessionID, messageID: message.id),
                 ordinal: index + 1,
-                roleLabel: message.role == .user ? "You" : "Hermes",
+                roleLabel: message.role == .user ? "You" : "Herm",
                 preview: boundedPreview(text, limit: limit),
                 contentRevision: message.contentRevision,
                 hasImages: !message.images.isEmpty,

@@ -364,12 +364,12 @@ extension DockPopover {
 
     var voiceActivityText: String {
         if let reasoning = model.reasoningState, !reasoning.text.isEmpty {
-            return "HERMES IS REASONING"
+            return "HERM IS REASONING"
         }
         if let tool = model.activeToolCalls.first(where: { !$0.isComplete }) {
             return "RUNNING \(tool.name.uppercased())"
         }
-        return "HERMES IS THINKING"
+        return "HERM IS THINKING"
     }
 }
 

@@ -87,7 +87,7 @@ struct MessagePinsView: View {
                                 onSelect(pin)
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(pin.role == "user" ? "You" : "Hermes")
+                                    Text(pin.role == "user" ? "You" : "Herm")
                                         .dockFont(.body, weight: .semibold)
                                     Text(pin.preview.isEmpty ? "Message with an attachment" : pin.preview)
                                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)

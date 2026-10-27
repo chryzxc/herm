@@ -78,7 +78,7 @@ extension ProviderPeakSchedule {
         let lines = names.sorted { $0.key < $1.key }.compactMap { id, name in
             schedule(for: id).map { "\(name): \($0.windowText(now: now))" }
         }
-        return (["Peak hours synced \(when) (\(ago))."] + lines + ["Click to ask Hermes to search the web again."])
+        return (["Peak hours synced \(when) (\(ago))."] + lines + ["Click to ask Herm to search the web again."])
             .joined(separator: "\n")
     }
 
