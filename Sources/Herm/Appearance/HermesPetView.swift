@@ -172,13 +172,13 @@ struct HermesPetSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Hermes companion").dockFont(.body, weight: .semibold)
+                Text("Herm companion").dockFont(.body, weight: .semibold)
                 Spacer()
                 DockAsyncButton("Refresh") {
                     pet.refresh()
                     await pet.loadGallery()
                 }
-                .buttonStyle(.dockPress).disabled(pet.isLoading || !pet.online)
+                .buttonStyle(.dockSecondary).disabled(pet.isLoading || !pet.online)
             }
             HStack(spacing: 12) {
                 HermesPetView(pet: pet).frame(width: 44, height: 44)
@@ -253,7 +253,7 @@ struct HermesPetSettingsView: View {
                 )
                 .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 Spacer()
-                if changedElsewhere { Button("Reload", action: reload).buttonStyle(.dockPress) }
+                if changedElsewhere { Button("Reload", action: reload).buttonStyle(.dockSecondary) }
             }.frame(minHeight: 30)
             Button(pet.isApplying ? "Applying…" : "Apply to Hermes") { confirming = true }
                 .buttonStyle(.dockPrimary)

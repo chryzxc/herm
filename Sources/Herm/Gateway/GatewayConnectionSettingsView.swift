@@ -99,7 +99,7 @@ struct GatewayConnectionSettingsView: View {
                         if store.connections.contains(where: { $0.id == model.draft.id }) {
                             Button("Remove saved connection", role: .destructive) { confirmsRemoval = true }
                         }
-                    }.buttonStyle(.dockPress).dockFont(.body, weight: .medium)
+                    }.buttonStyle(.dockSecondary).dockFont(.body, weight: .medium)
                 }.disabled(model.isBusy)
             }
         }
@@ -198,7 +198,7 @@ struct GatewayConnectionSettingsView: View {
                         Button(organization.name) {
                             model.draft.cloudOrganization = organization.slug
                             Task { await model.refreshCloud() }
-                        }.buttonStyle(.dockPress).dockFont(.body)
+                        }.buttonStyle(.dockSecondary).dockFont(.body)
                     }
                 }
                 ForEach(model.agents) { agent in
@@ -234,7 +234,7 @@ struct GatewayConnectionSettingsView: View {
             if portal && signedIn { DockAsyncButton("Refresh agents") { await model.refreshCloud() } }
             DockAsyncButton(signedIn ? "Sign in again" : "Sign in") { await model.signIn() }
             if signedIn { DockAsyncButton("Sign out") { await model.signOut() } }
-        }.buttonStyle(.dockPress).dockFont(.body, weight: .medium)
+        }.buttonStyle(.dockSecondary).dockFont(.body, weight: .medium)
     }
 
     private var actions: some View {
@@ -249,9 +249,9 @@ struct GatewayConnectionSettingsView: View {
             Task { await model.test() }
         } label: {
             DockActionLabel(title: "Test connection", pendingTitle: "Connecting…", isPending: model.isBusy)
-        }.buttonStyle(.dockPress)
+        }.buttonStyle(.dockSecondary)
         if !store.environmentOverride {
-            Button("Save for next restart") { model.save() }.buttonStyle(.dockPress)
+            Button("Save for next restart") { model.save() }.buttonStyle(.dockSecondary)
             Button("Save and restart Herm") { confirmsRestart = true }.buttonStyle(.dockPrimary)
         }
     }

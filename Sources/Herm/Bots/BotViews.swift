@@ -661,7 +661,7 @@ struct BotCreationSheet: View {
                     .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
             }
-            .buttonStyle(.dockPress)
+            .buttonStyle(.dockSecondary)
             if showsAdvanced {
                 DockMenuPicker(
                     "Clone from", title: roster.first { $0.id == cloneFrom }?.name ?? "Fresh profile",

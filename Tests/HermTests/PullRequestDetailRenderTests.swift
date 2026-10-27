@@ -36,7 +36,7 @@ private actor PullRequestDetailRenderTransport: GitHubIssueTransport {
                     """,
                 ] as [String: Any]
         } else if path == "/graphql" {
-            payload = ["data": ["node": ["projectItems": ["nodes": [], "pageInfo": ["hasNextPage": false]]]]]
+            payload = ["data": ["node": ["viewerCanUpdate": false]]]
         } else if path == "/repos/owner/repo" {
             payload = ["permissions": ["push": false, "triage": false]]
         } else {

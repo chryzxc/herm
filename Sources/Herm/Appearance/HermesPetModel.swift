@@ -185,7 +185,7 @@ final class HermesPetModel: ObservableObject {
             do { try await self.readInfo(service, generation: generation) } catch {
                 if self.generation == generation {
                     self.stale = true
-                    self.notice = "Hermes companion unavailable. Reconnect or update Hermes, then retry."
+                    self.notice = "Herm companion unavailable. Reconnect or update Hermes, then retry."
                     self.updatePose()
                 }
             }

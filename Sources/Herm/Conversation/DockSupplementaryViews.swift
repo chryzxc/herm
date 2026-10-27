@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct StartupAssistantView: View {
     var hermFaceID: String?
     @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
@@ -27,7 +28,11 @@ struct StartupAssistantView: View {
         .padding(.horizontal, 24)
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 6)
-        .onAppear { withAnimation(.easeOut(duration: 0.5)) { appeared = true } }
+        .onAppear {
+            withAnimation(reduceMotion || !DockThemeStyle.current.animates ? nil : .easeOut(duration: 0.5)) {
+                appeared = true
+            }
+        }
     }
 }
 
@@ -392,7 +397,7 @@ struct KanbanMutationEditor: View {
 
     private var placeholder: String {
         switch request.kind {
-        case .comment: "Comment for Hermes"
+        case .comment: "Comment for Herm"
         case .schedule: "Reason or timing note"
         case .assign, .reassign: "Profile name, or none to unassign"
         case .promote, .reclaim: "Audit reason"

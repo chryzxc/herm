@@ -249,7 +249,7 @@ struct QuotaWorkspaceView: View {
                     .dockFont(.control)
                     .foregroundStyle(Color.dockSecondaryText)
             }
-            .buttonStyle(.dockPress)
+            .buttonStyle(.dockSecondary)
             .dockHitTarget()
             .fixedSize()
             .disabled(isSyncingPeak)

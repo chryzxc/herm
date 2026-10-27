@@ -34,7 +34,7 @@ struct HermesGatewaySettingsView: View {
                     )
                     .frame(width: 140)
                 }
-                .buttonStyle(.dockPress)
+                .buttonStyle(.dockSecondary)
                 .dockFont(.body, weight: .medium)
                 .disabled(!service.canRestart)
             }
