@@ -5,22 +5,25 @@ struct ConversationLatestMessageControl: View {
     let onSelect: () -> Void
 
     var body: some View {
-        if presentation.unseenMessageCount > 0 {
+        if presentation.showsLatestControl {
+            let unread = presentation.unseenMessageCount
             Button(action: onSelect) {
                 HStack(spacing: 7) {
                     DockIcon(.arrowDown, size: 11, color: Color.dockPrimaryText)
-                    Text(
-                        "\(presentation.unseenMessageCount) new \(presentation.unseenMessageCount == 1 ? "message" : "messages")"
-                    )
-                    .dockFont(.body, weight: .semibold)
+                    if unread > 0 {
+                        Text("\(unread) new \(unread == 1 ? "message" : "messages")")
+                            .dockFont(.body, weight: .semibold)
+                    }
                 }
                 .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 14)
-                .frame(height: 34)
+                .padding(.horizontal, unread > 0 ? 14 : 0)
+                .frame(minWidth: 34, minHeight: 34)
                 .background(
                     Capsule().fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
             }
             .buttonStyle(.dockHover)
+            .help("Scroll to bottom")
+            .accessibilityLabel(unread > 0 ? "Scroll to bottom, \(unread) new" : "Scroll to bottom")
             .padding(.bottom, 12)
         }
     }

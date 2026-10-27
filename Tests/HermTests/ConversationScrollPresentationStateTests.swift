@@ -6,6 +6,21 @@ import Testing
 
 @MainActor
 struct ConversationScrollPresentationStateTests {
+    @Test func latestControlShowsAwayFromBottomWithoutUnreadMessages() {
+        let state = ConversationScrollPresentationState()
+        #expect(!state.showsLatestControl)
+        state.isAtBottom = false
+        #expect(state.unseenMessageCount == 0)
+        #expect(state.showsLatestControl)
+        state.updatePosition(
+            ConversationScrollGeometry(visibleTop: 2_600, visibleHeight: 400, documentHeight: 3_000), isLiveTail: true)
+        #expect(!state.showsLatestControl)
+        // A transcript that fits its viewport is already at the bottom.
+        state.updatePosition(
+            ConversationScrollGeometry(visibleTop: 0, visibleHeight: 400, documentHeight: 200), isLiveTail: true)
+        #expect(!state.showsLatestControl)
+    }
+
     @Test func contentGrowthKeepsFollowingUntilTheReaderScrollsAway() {
         let state = ConversationScrollPresentationState()
         state.updatePosition(
