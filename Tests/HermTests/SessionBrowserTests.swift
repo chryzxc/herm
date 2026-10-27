@@ -7,7 +7,7 @@ import WebKit
 
 @MainActor
 struct SessionBrowserTests {
-    @Test func sessionSwitchesRetainBrowsersAndIsolateTheirData() {
+    @Test func sessionSwitchesRetainBrowsersAndShareSignIns() {
         let store = SessionBrowserStore()
         let a = SessionBrowserKey(profileID: nil, sessionID: "a")
         let b = SessionBrowserKey(profileID: nil, sessionID: "b")
@@ -23,7 +23,8 @@ struct SessionBrowserTests {
         #expect(first.agent !== second.agent)
         #expect(
             first.primary.web.configuration.websiteDataStore
-                !== second.primary.web.configuration.websiteDataStore)
+                === second.primary.web.configuration.websiteDataStore)
+        #expect(first.primary.web.configuration.websiteDataStore.isPersistent)
         #expect(
             first.primary.web.configuration.websiteDataStore === extra.web.configuration.websiteDataStore)
         first.closeTab(extra.id)

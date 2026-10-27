@@ -123,6 +123,12 @@ final class AgentBrowser: ObservableObject {
     private var themeCancellable: AnyCancellable?
     private var navigationRequestID = UUID()
     private var historyRequestID = UUID()
+    /// The cookies this Chrome last agreed on with the shared jar; nil until restored.
+    private var loginBaseline: BrowserCookieJar?
+    /// Bumped whenever the jar pushes into this Chrome, so an in-flight read can't undo it.
+    private var loginGeneration = 0
+    private var loginSyncTask: Task<Void, Never>?
+    private var loginsCancellable: AnyCancellable?
 
     init(key: SessionBrowserKey) {
         self.key = key
@@ -132,6 +138,10 @@ final class AgentBrowser: ObservableObject {
                 guard let self, self.annotating else { return }
                 self.applyAnnotating()
             }
+        loginsCancellable = SharedBrowserLogins.shared.changes.sink { [weak self] origin, change in
+            guard let self, origin != ObjectIdentifier(self) else { return }
+            self.receiveLogins(change)
+        }
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -156,6 +166,7 @@ final class AgentBrowser: ObservableObject {
                 cdp.onEvent = { [weak self] method, params, session in self?.handle(method, params, session) }
                 cdp.onClose = { [weak self] in self?.relaunch() }
                 self.cdp = cdp
+                restoreLogins(cdp)
                 _ = try await cdp.send("Target.setDiscoverTargets", ["discover": true])
                 let infos = try await cdp.send("Target.getTargets")["targetInfos"] as? [[String: Any]] ?? []
                 try Task.checkCancellation()
@@ -227,6 +238,9 @@ final class AgentBrowser: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { cdp.close() }
         }
         cdp = nil
+        loginSyncTask?.cancel()
+        loginSyncTask = nil
+        loginBaseline = nil
         lastFrame = nil
         process?.terminate()
         process = nil
@@ -290,9 +304,21 @@ final class AgentBrowser: ObservableObject {
         }
     }
 
+    /// Hermes deleted the session: its Chrome profile (history, cache, site storage) goes too.
+    nonisolated static func removeProfile(_ key: SessionBrowserKey) {
+        let profile = profileRoot.appendingPathComponent(key.profileDirectory, isDirectory: true)
+        Task.detached {
+            try? await Task.sleep(for: .seconds(2))  // ponytail: fixed wait for its Chrome to quit
+            try? FileManager.default.removeItem(at: profile)
+        }
+    }
+
     private func launch() async throws -> Endpoint {
         let profile = Self.profileRoot.appendingPathComponent(key.profileDirectory, isDirectory: true)
-        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        // Profiles hold signed-in cookies: owner-only, including a root made by an older Herm.
+        try FileManager.default.createDirectory(
+            at: profile, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: Self.profileRoot.path)
         let portFile = profile.appendingPathComponent("DevToolsActivePort")
         // A browser left running by an earlier Herm keeps the profile locked; reuse it.
         if let live = await Self.endpoint(portFile) { return live }
@@ -540,6 +566,7 @@ final class AgentBrowser: ObservableObject {
                 pages[index].url = url
             }
             refreshHistory()
+            scheduleLoginSync()
         case "Page.javascriptDialogOpening":
             dialog = Dialog(
                 type: params["type"] as? String ?? "alert", message: params["message"] as? String ?? "",
@@ -592,6 +619,56 @@ final class AgentBrowser: ObservableObject {
 
     private func appendConsole(_ line: String) {
         consoleErrors = Array((consoleErrors + [String(line.prefix(2000))]).suffix(50))
+    }
+
+    // MARK: Shared logins
+
+    /// The jar is authoritative: a Chrome reopened on an old profile drops sign-ins made
+    /// or cleared elsewhere since. Fire-only, so later pushes stay ordered after it.
+    private func restoreLogins(_ cdp: CDPConnection) {
+        let jar = SharedBrowserLogins.shared.jar
+        cdp.fire("Storage.clearCookies")
+        Self.push(BrowserCookieJar().changes(to: jar), to: cdp)
+        loginBaseline = jar
+    }
+
+    /// One cookie per call: Chrome rejects a whole batch over a single bad cookie.
+    private static func push(_ changes: BrowserCookieJar.Changes, to cdp: CDPConnection) {
+        for param in changes.removed.map({ $0.cdpParam(expired: true) }) + changes.updated.map({ $0.cdpParam() }) {
+            cdp.fire("Storage.setCookies", ["cookies": [param]])
+        }
+    }
+
+    private func receiveLogins(_ change: SharedBrowserLogins.Change) {
+        guard let cdp, var baseline = loginBaseline else { return }
+        loginGeneration += 1
+        switch change {
+        case .updated(let changes):
+            Self.push(changes, to: cdp)
+            baseline.apply(changes)
+            loginBaseline = baseline
+        case .cleared:
+            cdp.fire("Storage.clearCookies")
+            loginBaseline = BrowserCookieJar()
+        }
+    }
+
+    /// After each top-level load, share what this page's sign-in (or sign-out) changed.
+    private func scheduleLoginSync() {
+        loginSyncTask?.cancel()
+        loginSyncTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let cdp, loginBaseline != nil else { return }
+            let generation = loginGeneration
+            guard let result = try? await cdp.send("Storage.getCookies"), !Task.isCancelled, self.cdp === cdp,
+                let baseline = loginBaseline
+            else { return }
+            guard loginGeneration == generation else { return scheduleLoginSync() }
+            let current = BrowserCookieJar(
+                (result["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:)))
+            loginBaseline = current
+            SharedBrowserLogins.shared.record(baseline.changes(to: current), from: ObjectIdentifier(self))
+        }
     }
 
     // MARK: Annotate

@@ -197,7 +197,7 @@ extension DockModel {
                 for: SessionComposerDraft.Key(
                     profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id
                 ))
-            SessionBrowserStore.shared.remove(
+            SessionBrowserStore.shared.delete(
                 SessionBrowserKey(profileID: session.profileID ?? profileScopeID, sessionID: session.id))
             sessions.removeAll { $0.id == session.id }
             DebugLog.write("model: deleted saved session \(session.id)")

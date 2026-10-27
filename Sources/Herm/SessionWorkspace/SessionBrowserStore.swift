@@ -25,16 +25,17 @@ final class SessionBrowserWorkspace: ObservableObject {
     let agent: AgentBrowser
     let primary: BrowserController
     @Published private(set) var extras: [BrowserController] = []
-    private let dataStore = WKWebsiteDataStore.nonPersistent()
+    /// WebKit tabs share one persistent store, so a sign-in carries across sessions like the agent browser's.
+    static let dataStore = WKWebsiteDataStore(forIdentifier: UUID(uuidString: "DA9890F2-CB88-46F5-9F29-97475D8B7B7B")!)
 
     init(key: SessionBrowserKey) {
         self.key = key
         agent = AgentBrowser(key: key)
-        primary = BrowserController(key: key, dataStore: dataStore)
+        primary = BrowserController(key: key, dataStore: Self.dataStore)
     }
 
     func addTab() -> BrowserController {
-        let tab = BrowserController(key: key, dataStore: dataStore)
+        let tab = BrowserController(key: key, dataStore: Self.dataStore)
         extras.append(tab)
         return tab
     }
@@ -71,6 +72,12 @@ final class SessionBrowserStore: ObservableObject {
         workspaces[key] = workspace
         subscriptions[key] = workspace.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         return workspace
+    }
+
+    /// Hermes deleted the session: its browser and its Chrome profile both go.
+    func delete(_ key: SessionBrowserKey) {
+        remove(key)
+        AgentBrowser.removeProfile(key)
     }
 
     /// Only dispose after Hermes confirms deletion; retained live pages otherwise belong to the user.

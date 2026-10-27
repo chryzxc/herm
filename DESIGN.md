@@ -2848,7 +2848,8 @@ failures and the agent-offline notice overlay the page below the toolbar,
 preserving the browser viewport and page geometry through recovery.
 Retry and dismissal stay local to the failure. Empty tabs offer address
 entry. Back/Forward availability follows each engine’s live history, including
-same-document changes. Copy Address and Open in Default Browser live in More.
+same-document changes. Copy Address, Open in Default Browser, and Sign Out of All
+Sites (clears the cookies every session's browser shares) live in More.
 
 PR list rows separate repository/number, title, branch, and readiness into a clear
 reading order. State icons use green for open work, neutral ink for drafts,
