@@ -5,8 +5,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
-    var coreContent: some View {
-        VStack(alignment: .leading, spacing: 17) {
+    // Bound the category tuple before the parent copies it; the unbounded view
+    // crashes Settings construction in debug builds (SettingsConstructionTests).
+    var coreContent: AnyView {
+        let content = VStack(alignment: .leading, spacing: 17) {
             if selectedSettingsCategory == .general {
                 SettingsSection(title: "Set up Herm", subtitle: "", tint: .dockAccent) {
                     SettingsPreferenceRow(
@@ -36,7 +38,7 @@ extension WorkspaceActivitySidebar {
                 SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
                     NotchDisplaySettings()
                 }
-                SettingsSection(title: "Hermes companion", subtitle: "", tint: .dockAccent) {
+                SettingsSection(title: "Herm companion", subtitle: "", tint: .dockAccent) {
                     HermesPetSettingsView(pet: control.pet)
                 }
             }
@@ -503,6 +505,7 @@ extension WorkspaceActivitySidebar {
             guard let matching else { return }
             selectedModelID = matching.id
         }
+        return AnyView(content)
     }
 
     var runtimeSettingsSection: some View {
@@ -802,7 +805,7 @@ extension WorkspaceActivitySidebar {
                             } label: {
                                 Text("Restart Herm").frame(width: 140)
                             }
-                            .buttonStyle(.dockPress)
+                            .buttonStyle(.dockSecondary)
                             .dockFont(.body, weight: .medium)
                             .disabled(agentUpdateService.isBusy)
                         }
@@ -1023,15 +1026,10 @@ extension WorkspaceActivitySidebar {
                 }
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(
-                    title: "Show Pull requests in GitHub", detail: "Include Pull requests in GitHub navigation."
+                    title: "Show GitHub in sidebar",
+                    detail: "List GitHub repositories, issues, and pull requests in the workspace side panel."
                 ) {
-                    settingsSwitch(isOn: $showsPullRequestsInSidebar)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(
-                    title: "Show Issues in GitHub", detail: "Include Issues in GitHub navigation."
-                ) {
-                    settingsSwitch(isOn: $showsIssuesInSidebar)
+                    settingsSwitch(isOn: $showsGitHubInSidebar)
                 }
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(

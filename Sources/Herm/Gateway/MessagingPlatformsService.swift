@@ -88,6 +88,7 @@ final class MessagingPlatformsModel: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var loading = false
     @Published private(set) var hasLoaded = false
+    @Published private(set) var isStale = false
     private var loadedProfileID: String?
     private var loadGeneration = UUID()
     @Published var error: String?
@@ -96,9 +97,26 @@ final class MessagingPlatformsModel: ObservableObject {
     @Published private(set) var pairing: QRPairing?
     let client: HermesRPCClientProtocol
     private var pollTask: Task<Void, Never>?
+    private var pairingGeneration = UUID()
 
     init(client: HermesRPCClientProtocol) {
         self.client = client
+    }
+
+    func invalidateReads() {
+        loadGeneration = UUID()
+        loading = false
+    }
+    func invalidate() {
+        invalidateReads()
+        cancelQR()
+        platforms = []
+        isStale = false
+        hasLoaded = false
+        loadedProfileID = nil
+        error = nil
+        notice = nil
+        testResult = nil
     }
 
     static let qrPlatforms: Set<String> = ["telegram", "whatsapp"]
@@ -130,9 +148,11 @@ final class MessagingPlatformsModel: ObservableObject {
             }
             platforms = rows.compactMap(Self.platform)
             hasLoaded = true
+            isStale = false
             error = nil
         } catch {
             guard !Task.isCancelled, generation == loadGeneration else { return }
+            isStale = true
             self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
         }
     }
@@ -201,6 +221,7 @@ final class MessagingPlatformsModel: ObservableObject {
     /// QR onboarding for Telegram (Hermes creates the bot) and WhatsApp (links this device).
     func startQR(platform: String, whatsappMode: String = "bot", profileID: String?) async {
         cancelQR()
+        let generation = pairingGeneration
         busy = true
         defer { busy = false }
         do {
@@ -208,6 +229,7 @@ final class MessagingPlatformsModel: ObservableObject {
             if platform == "whatsapp", let profileID { body["profile"] = profileID }
             let result = try await client.sendHTTP(
                 "POST", path: "/api/messaging/\(platform)/onboarding/start", body: body)
+            guard !Task.isCancelled, generation == pairingGeneration else { return }
             guard let id = result["pairing_id"] as? String else { throw HermesGateway.GatewayError.malformedResponse }
             let deepLink = (result["deep_link"] as? String).flatMap(URL.init(string:))
             pairing = QRPairing(
@@ -215,11 +237,13 @@ final class MessagingPlatformsModel: ObservableObject {
                 qrPayload: (result["qr_payload"] as? String) ?? deepLink?.absoluteString ?? "", deepLink: deepLink)
             pollTask = Task { [weak self] in await self?.pollQR(platform: platform, id: id, profileID: profileID) }
         } catch {
+            guard !Task.isCancelled, generation == pairingGeneration else { return }
             self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
         }
     }
 
     func cancelQR() {
+        pairingGeneration = UUID()
         pollTask?.cancel()
         pollTask = nil
         if let pairing {
@@ -238,6 +262,7 @@ final class MessagingPlatformsModel: ObservableObject {
             guard !Task.isCancelled, pairing?.id == id else { return }
             do {
                 let status = try await client.fetchHTTP(base)
+                guard !Task.isCancelled, pairing?.id == id else { return }
                 let state = status["status"] as? String
                 if state == "error" {
                     throw HermesGateway.GatewayError.httpRefused(409, (status["error"] as? String) ?? "Pairing failed.")
@@ -252,6 +277,7 @@ final class MessagingPlatformsModel: ObservableObject {
                 }
                 if let profileID { body["profile"] = profileID }
                 let applied = try await client.sendHTTP("POST", path: "\(base)/apply\(query(profileID))", body: body)
+                guard !Task.isCancelled, pairing?.id == id else { return }
                 pairing = nil
                 let account =
                     (applied["bot_username"] as? String).map { " as @\($0)" }
@@ -260,6 +286,7 @@ final class MessagingPlatformsModel: ObservableObject {
                 await load(profileID: profileID)
                 return
             } catch {
+                guard !Task.isCancelled, pairing?.id == id else { return }
                 pairing = nil
                 self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
                 return

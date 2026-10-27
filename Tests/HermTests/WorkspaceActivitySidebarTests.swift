@@ -82,7 +82,7 @@ struct WorkspaceActivitySidebarTests {
                 fileURL: FileManager.default.temporaryDirectory
                     .appendingPathComponent("herm-plugins-\(UUID().uuidString).json")),
             control: ControlCenterModel(), workflow: DeveloperWorkflowModel(),
-            initialMode: .capabilities, agentUpdateService: HermesUpdateService()
+            initialMode: .integrations, agentUpdateService: HermesUpdateService()
         )
         let pages = [
             AnyView(sidebar),

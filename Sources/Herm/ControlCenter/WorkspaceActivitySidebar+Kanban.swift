@@ -270,7 +270,7 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockAccent)
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockSecondary)
                 .help("Clear Kanban filters")
             }
 
@@ -591,7 +591,7 @@ extension WorkspaceActivitySidebar {
                 .help("Create task")
             }
             .dockButtonSize(.standard)
-            DockTextField("Add context for Hermes (optional)", text: $kanbanBody, axis: .vertical)
+            DockTextField("Add context for Herm (optional)", text: $kanbanBody, axis: .vertical)
                 .lineLimit(1...3)
                 .textFieldStyle(.plain)
                 .dockFont(.navigation)

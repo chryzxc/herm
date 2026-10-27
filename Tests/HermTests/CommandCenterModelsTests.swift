@@ -25,6 +25,9 @@ struct CommandCenterModelsTests {
             SessionPreviewPresentation.summary("Hello hello\n\n[Herm rendering context v1]\nWhen useful")
                 == "Hello hello")
         #expect(SessionPreviewPresentation.summary("[Herm rendering context v1]\nWhen useful") == nil)
+        #expect(
+            SessionPreviewPresentation.summary("Launch it\n\n<herm-simulator-preference>\nHerm setting")
+                == "Launch it")
     }
 
     @MainActor @Test func sessionParsingUsesLastActivityForUpdatedTime() {

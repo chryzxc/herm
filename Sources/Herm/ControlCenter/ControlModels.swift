@@ -447,10 +447,10 @@ enum SessionLifecyclePresentation {
 enum SessionPreviewPresentation {
     static func summary(_ value: String?) -> String? {
         guard var value else { return nil }
-        // Herm appends a rendering-context block to prompts; Hermes previews
-        // are truncated, so the closing marker is often missing.
-        if let context = value.range(of: "[Herm rendering context v1]") {
-            value = String(value[..<context.lowerBound])
+        // Older Herm builds appended instruction blocks to prompts; Hermes
+        // previews are truncated, so the closing marker is often missing.
+        for marker in ["[Herm rendering context v1]", "<herm-simulator-preference>"] {
+            if let context = value.range(of: marker) { value = String(value[..<context.lowerBound]) }
         }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -1639,8 +1639,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case quota = "Quota"
     case usage = "Usage"
     case calendar = "Calendar"
-    case capabilities = "Capabilities"
-    case messaging = "Messaging"
+    case integrations = "Integrations"
 
     /// The fixed navigation strip is deliberately limited to the destinations
     /// used to orient, triage, and act on work. Everything else remains one
@@ -1649,7 +1648,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
     static let globalNavigation: [ControlTab] = [
-        .kanban, .projects, .capabilities, .messaging, .quota, .usage, .calendar,
+        .kanban, .projects, .integrations, .quota, .usage, .calendar,
     ]
     static let sessionNavigation: [ControlTab] = [.changes]
     static let workspaceNavigation: [ControlTab] = [.projects]
@@ -1694,8 +1693,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .quota: .gauge
         case .usage: .pulse
         case .calendar: .calendarBlank
-        case .capabilities: .puzzlePiece
-        case .messaging: .paperPlaneTilt
+        case .integrations: .puzzlePiece
         }
     }
 
@@ -1722,8 +1720,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .quota: "Provider capacity and reset windows"
         case .usage: "What shipped, what was worked on, and what it cost"
         case .calendar: "Your Mac calendar, reminders, and upcoming agent runs"
-        case .capabilities: "Connectors, plugins, skills and MCP servers"
-        case .messaging: "Run Hermes from Telegram, Discord, Slack and more"
+        case .integrations: "Messaging, skills, tools and connected services"
         }
     }
 }
@@ -1738,8 +1735,7 @@ struct ControlTabBadgeState: Equatable {
     func count(for tab: ControlTab) -> Int {
         switch tab {
         case .changes: changeCount
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities,
-            .messaging:
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .integrations:
             0
         }
     }
@@ -1747,8 +1743,7 @@ struct ControlTabBadgeState: Equatable {
     func isUrgent(for tab: ControlTab) -> Bool {
         switch tab {
         case .changes: changeCount > 0
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities,
-            .messaging:
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .integrations:
             false
         }
     }

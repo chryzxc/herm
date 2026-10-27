@@ -44,7 +44,7 @@ struct WorkspaceActivitySidebar: View {
     var showsHeader = true
     var showsModePicker = true
     @State var selectedMode: ControlTab = .kanban
-    @State var capabilitySection: WorkflowIntegrationView.Section = .skills
+    @StateObject var integrationsWorkspace: IntegrationsWorkspaceState
     @State var isShowingCommandPalette = false
     @State var searchQuery = ""
     @State var selectedModelID = ""
@@ -142,8 +142,7 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(ApprovalAuthGate.key) var requiresAuthForBroadApprovals = false
     @AppStorage(HermDelegate.keepAwakeKey) var keepsAwakeWhileWorking = false
     @AppStorage(SidebarVisibilityKey.kanban) var showsKanbanInSidebar = true
-    @AppStorage(SidebarVisibilityKey.pullRequests) var showsPullRequestsInSidebar = true
-    @AppStorage(SidebarVisibilityKey.issues) var showsIssuesInSidebar = true
+    @AppStorage(SidebarVisibilityKey.github) var showsGitHubInSidebar = true
     @AppStorage(SidebarVisibilityKey.office) var showsOfficeInSidebar = true
     @AppStorage(SidebarVisibilityKey.calendar) var showsCalendarInSidebar = true
     @AppStorage("dock.activity.tab") var activityTab = ActivityTab.work
@@ -170,8 +169,12 @@ struct WorkspaceActivitySidebar: View {
         showsHeader: Bool = true,
         showsModePicker: Bool = true,
         initialMode: ControlTab = .kanban,
-        agentUpdateService: HermesUpdateService
+        agentUpdateService: HermesUpdateService,
+        integrationsWorkspace: IntegrationsWorkspaceState? = nil
     ) {
+        _integrationsWorkspace = StateObject(
+            wrappedValue: integrationsWorkspace
+                ?? IntegrationsWorkspaceState(client: model.controlRPCClient, store: store))
         self.model = model
         self.botMode = botMode
         self.store = store
@@ -355,7 +358,7 @@ struct WorkspaceActivitySidebar: View {
             } message: {
                 Text("Hermes will summarize the current session context. The session remains authoritative.")
             }
-            .confirmationDialog("Create Hermes Handoff?", isPresented: $isShowingHandoffConfirmation) {
+            .confirmationDialog("Create Herm Handoff?", isPresented: $isShowingHandoffConfirmation) {
                 Button("Create Handoff") {
                     let prompt = workflow.handoffPrompt(
                         focus: handoffFocus, verification: control.verification, review: workflow.review)

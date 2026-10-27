@@ -10,7 +10,7 @@ struct ControlTabBadgeStateTests {
         #expect(ControlTab.workspaceNavigation == [.projects])
         #expect(ControlTab.toolsNavigation == [.automations, .search, .officePreview, .core])
         #expect(
-            ControlTab.globalNavigation == [.kanban, .projects, .capabilities, .messaging, .quota, .usage, .calendar])
+            ControlTab.globalNavigation == [.kanban, .projects, .integrations, .quota, .usage, .calendar])
         #expect(Set(ControlTab.globalNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
     }
 

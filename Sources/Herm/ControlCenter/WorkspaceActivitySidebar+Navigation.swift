@@ -38,19 +38,8 @@ extension WorkspaceActivitySidebar {
                     .padding(.horizontal, 16)
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-            } else if selectedMode == .capabilities {
-                VStack(alignment: .leading, spacing: 0) {
-                    pageHeader
-                    // ponytail: launch profile only; bots open their own profile from the bot editor.
-                    WorkflowIntegrationView(
-                        destination: IntegrationDestination(profileID: nil), client: model.controlRPCClient,
-                        pageSection: $capabilitySection)
-                }
-            } else if selectedMode == .messaging {
-                VStack(alignment: .leading, spacing: 0) {
-                    pageHeader
-                    MessagingWorkspaceView(botMode: botMode, client: model.controlRPCClient)
-                }
+            } else if selectedMode == .integrations {
+                IntegrationsWorkspaceView(state: integrationsWorkspace)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     pageHeader
@@ -66,7 +55,7 @@ extension WorkspaceActivitySidebar {
                             case .core: coreContent
                             case .quota: quotaContent
                             // Rendered outside this ScrollView so the work calendar can stay pinned.
-                            case .usage, .calendar, .capabilities, .messaging: EmptyView()
+                            case .usage, .calendar, .integrations: EmptyView()
                             }
                         }
                         .frame(
@@ -688,7 +677,7 @@ extension WorkspaceActivitySidebar {
     /// Compact mode mirrors the fullscreen rail's daily operator destinations.
     /// Repository and setup surfaces remain available from More.
     var compactRailLeading: [ControlTab] {
-        [.kanban, .calendar, .automations, .capabilities].filter { $0 != .kanban || showsKanbanInSidebar }.filter {
+        [.kanban, .calendar, .automations, .integrations].filter { $0 != .kanban || showsKanbanInSidebar }.filter {
             $0 != .calendar || showsCalendarInSidebar
         }
     }
@@ -809,6 +798,14 @@ extension WorkspaceActivitySidebar {
     }
 
     func select(_ mode: ControlTab) {
+        if selectedMode == .integrations, mode != .integrations {
+            integrationsWorkspace.requestNavigation { applySelection(mode) }
+        } else {
+            applySelection(mode)
+        }
+    }
+
+    private func applySelection(_ mode: ControlTab) {
         withAnimation(.dockEase(duration: 0.2)) { selectedMode = mode }
         if mode == .core {
             model.refreshRuntimeConfiguration()

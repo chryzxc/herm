@@ -16,6 +16,7 @@ final class WorkflowIntegrationModel: ObservableObject {
     private var starsLoading = false
     @Published private(set) var catalogIndex = WorkflowPluginCatalogIndex()
     @Published private(set) var catalogLoading = false
+    @Published private(set) var catalogIsStale = false
     /// `owner/name` → GitHub stars; empty without a launch GitHub token.
     @Published private(set) var stars: [String: Int] = [:] { didSet { rebuildCatalogIndex() } }
     @Published var toolsets: [WorkflowToolset] = []
@@ -23,10 +24,16 @@ final class WorkflowIntegrationModel: ObservableObject {
     private var connectTask: Task<Void, Never>?
     @Published var status = ""
     @Published var busy = false
+    @Published private(set) var staleSections = Set<WorkflowIntegrationSection>()
+    @Published private(set) var lastActionSucceeded = false
     @Published private(set) var loadedSections = Set<WorkflowIntegrationSection>()
     private var refreshGeneration = UUID()
     private var refreshOwnsBusy = false
+    private var searchOwnsBusy = false
     private var pluginReadGeneration = UUID()
+    private var inspectGeneration = UUID()
+    var activeSection: WorkflowIntegrationSection?
+    @Published private(set) var inspecting = false
     @Published var preview: String?
     @Published var oauth: WorkflowOAuthFlow?
     private var removalTasks: [String: Task<Void, Never>] = [:]
@@ -46,18 +53,39 @@ final class WorkflowIntegrationModel: ObservableObject {
     /// Capabilities' "Configuring:" picker: drop the old profile's inventory, then reload.
     func useProfile(_ profileID: String?, section: WorkflowIntegrationSection? = nil) async {
         guard profileID != service.profileID, !busy else { return }
+        resetProfile(profileID)
+        await refresh(section: section)
+    }
+    func resetProfile(_ profileID: String?) {
         cancelActiveReads()
         service = HermesWorkflowRPC(client: client, profileID: profileID)
         (skills, servers, plugins, connectors, toolsets, hub, preview) = ([], [], [], [], [], [], nil)
         loadedSections = []
-        await refresh(section: section)
+        staleSections = []
+        unsupported = []
+        status = ""
     }
     func searchHub(_ query: String) async {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !busy, !query.isEmpty else { return }
+        let generation = refreshGeneration
+        let scope = service
         busy = true
-        defer { busy = false }
-        do { hub = try await service.skills(query: query) } catch {
+        searchOwnsBusy = true
+        defer {
+            if generation == refreshGeneration {
+                busy = false
+                searchOwnsBusy = false
+            }
+        }
+        do {
+            let result = try await scope.skills(query: query)
+            guard !Task.isCancelled, generation == refreshGeneration, scope === service else { return }
+            hub = result
+            status = status.split(separator: "\n").filter { !$0.hasPrefix("Skills Hub:") }.joined(separator: "\n")
+        } catch {
+            guard !Task.isCancelled, generation == refreshGeneration, scope === service else { return }
+            hub = []
             status = "Skills Hub: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
     }
@@ -113,7 +141,10 @@ final class WorkflowIntegrationModel: ObservableObject {
             let result = try await service.skills(query: query)
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
             skills = result
-            if query == nil { loadedSections.insert(.skills) }
+            if query == nil {
+                staleSections.remove(.skills)
+                loadedSections.insert(.skills)
+            }
             if query == nil {
                 for (id, process) in removalProcesses {
                     if let outcome = try? await service.skillRemovalOutcome(process) {
@@ -132,6 +163,7 @@ final class WorkflowIntegrationModel: ObservableObject {
             }
         } catch {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+            staleSections.insert(.skills)
             status += "\nSkills: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
     }
@@ -141,9 +173,11 @@ final class WorkflowIntegrationModel: ObservableObject {
             let result = try await service.mcpCatalog()
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
             servers = result
+            staleSections.remove(.mcp)
             loadedSections.insert(.mcp)
         } catch {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+            staleSections.insert(.mcp)
             status += "\nMCP: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
     }
@@ -158,9 +192,11 @@ final class WorkflowIntegrationModel: ObservableObject {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
             if result != plugins { loadedSections = [] }
             plugins = result
+            staleSections.remove(.plugins)
             loadedSections.insert(.plugins)
         } catch {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+            staleSections.insert(.plugins)
             status += "\nPlugins: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
     }
@@ -170,9 +206,11 @@ final class WorkflowIntegrationModel: ObservableObject {
             let result = try await service.connectors()
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
             connectors = result
+            staleSections.remove(.connectors)
             loadedSections.insert(.connectors)
         } catch {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+            staleSections.insert(.connectors)
             status +=
                 "\nConnectors: Refresh failed; displayed data may be stale. \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
@@ -183,9 +221,11 @@ final class WorkflowIntegrationModel: ObservableObject {
             let result = try await service.toolsets()
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
             toolsets = result
+            staleSections.remove(.tools)
             loadedSections.insert(.tools)
         } catch {
             guard !Task.isCancelled, requestGeneration == refreshGeneration else { return }
+            staleSections.insert(.tools)
             status +=
                 "\nTools: Refresh failed; displayed data may be stale. \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
@@ -197,18 +237,23 @@ final class WorkflowIntegrationModel: ObservableObject {
         if action == "Inspect" {
             guard !unsupported.contains(action) else { return }
             let scope = service
+            let generation = UUID()
+            inspectGeneration = generation
+            inspecting = true
+            defer { if generation == inspectGeneration { inspecting = false } }
             do {
                 let result = try await scope.inspectSkill(item.id)
-                guard !Task.isCancelled, scope === service else { return }
+                guard !Task.isCancelled, scope === service, generation == inspectGeneration else { return }
                 preview = result
             } catch {
-                guard !Task.isCancelled, scope === service else { return }
+                guard !Task.isCancelled, scope === service, generation == inspectGeneration else { return }
                 if BotService.isUnsupportedMethod(error) { unsupported.insert(action) }
                 status += "\nSkills: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
             }
             return
         }
         guard !busy, !unsupported.contains(action) else { return }
+        lastActionSucceeded = false
         busy = true
         defer { busy = false }
         do {
@@ -231,7 +276,7 @@ final class WorkflowIntegrationModel: ObservableObject {
                             if let code = try await service.skillRemovalOutcome(removal) {
                                 pendingRemovals.remove(item.id)
                                 removalProcesses.removeValue(forKey: item.id)
-                                await refresh()
+                                await refresh(section: activeSection == nil ? nil : .skills)
                                 status =
                                     code == 0
                                     ? "Removal acknowledged. Inventory refreshed."
@@ -261,7 +306,7 @@ final class WorkflowIntegrationModel: ObservableObject {
                 return
             case "Enable toolset", "Disable toolset":
                 try await service.setToolset(item.id, enabled: action == "Enable toolset")
-                await refresh()
+                await refresh(section: activeSection == nil ? nil : .tools)
                 status =
                     "\(item.detail) \(action == "Enable toolset" ? "enabled" : "disabled"). Changes apply to new sessions."
                 return
@@ -307,7 +352,8 @@ final class WorkflowIntegrationModel: ObservableObject {
                             return
                         }
                     }
-                    await refresh()
+                    guard !Task.isCancelled else { return }
+                    await refresh(section: activeSection == nil ? nil : .connectors)
                     status =
                         operation.connected
                         ? "\(item.detail) connected."
@@ -340,7 +386,7 @@ final class WorkflowIntegrationModel: ObservableObject {
                             if result != .pending {
                                 oauth = nil
                                 oauthName = nil
-                                await refresh()
+                                await refresh(section: activeSection == nil ? nil : .mcp)
                                 status =
                                     result == .approved
                                     ? "Authorization confirmed. Test the connection."
@@ -360,9 +406,12 @@ final class WorkflowIntegrationModel: ObservableObject {
                 return
             default: return
             }
-            await refresh()
+            await refresh(section: activeSection)
+            lastActionSucceeded = true
+            let readStatus = status
             status =
                 "Change acknowledged. New sessions use the updated configuration; an explicit runtime reload may be needed for existing sessions."
+            if !readStatus.isEmpty { status += "\n" + readStatus }
         } catch {
             if BotService.isUnsupportedMethod(error) { unsupported.insert(action) }
             status =
@@ -384,9 +433,11 @@ final class WorkflowIntegrationModel: ObservableObject {
                 try Task.checkCancellation()
                 catalog = result
                 catalogLoaded = true
+                catalogIsStale = false
             } catch {
                 catalogLoading = false
                 if !Task.isCancelled {
+                    catalogIsStale = true
                     status += "\nPlugin catalog: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
                 }
                 return
@@ -407,8 +458,9 @@ final class WorkflowIntegrationModel: ObservableObject {
         starsLoaded = true
     }
     /// Plain fields go through `plugins.manage settings`; secrets through Hermes' env store.
-    func saveSettings(_ plugin: WorkflowPlugin, drafts: [String: String]) async {
-        guard !busy else { return }
+    @discardableResult
+    func saveSettings(_ plugin: WorkflowPlugin, drafts: [String: String]) async -> Bool {
+        guard !busy else { return false }
         busy = true
         defer { busy = false }
         do {
@@ -421,13 +473,39 @@ final class WorkflowIntegrationModel: ObservableObject {
             status = ""
             loadedSections = []
             await refreshPlugins()
-            guard status.isEmpty else { return }
+            guard status.isEmpty else { return false }
             status = "\(plugin.name) settings saved. Restart the Hermes gateway if the plugin reads them at startup."
+            return true
         } catch {
             status = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            return false
         }
     }
+    /// Load errors are tagged by kind ("Connectors: …"); show a tab only its own, plus untagged results.
+    func sectionStatus(_ section: WorkflowIntegrationSection) -> String {
+        let tags = ["Skills", "Skills Hub", "Tools", "Connectors", "Plugins", "Plugin catalog", "MCP"]
+        let own: Set<String> =
+            switch section {
+            case .skills: ["Skills", "Skills Hub"]
+            case .plugins: ["Plugins", "Plugin catalog"]
+            default: [section.rawValue]
+            }
+        return status.split(separator: "\n").filter { line in
+            guard let tag = line.split(separator: ":").first.map(String.init), tags.contains(tag) else { return true }
+            return own.contains(tag)
+        }.joined(separator: "\n")
+    }
     func cancelActiveReads() {
+        refreshGeneration = UUID()
+        pluginReadGeneration = UUID()
+        inspectGeneration = UUID()
+        inspecting = false
+        if refreshOwnsBusy || searchOwnsBusy {
+            busy = false
+            refreshOwnsBusy = false
+            searchOwnsBusy = false
+        }
+
         for task in removalTasks.values { task.cancel() }
         removalTasks = [:]
         connectTask?.cancel()
@@ -455,15 +533,15 @@ struct WorkflowIntegrationView: View {
         let title: String
         let subtitle: String
         var badge: (DockStatusTone, String)?
-        /// Non-nil shows a switch driving `toggle`'s enable/disable actions.
+        /// Enablement is a row status; mutations belong to the inspector.
         var on: Bool?
-        var actions = ("", "")
         /// Discover-only: list section header, GitHub stars, curated-tier mark.
         var group = ""
         var stars: Int?
         var official = false
     }
     let destination: IntegrationDestination
+    let workspace: IntegrationsWorkspaceState?
     /// Non-nil renders the full-page Capabilities surface with tabs instead of the modal.
     var pageSection: Binding<Section>?
     @StateObject private var model: WorkflowIntegrationModel
@@ -480,20 +558,67 @@ struct WorkflowIntegrationView: View {
     @State private var pluginDrafts: [String: String] = [:]
     @State private var renaming: String?
     @State private var alias = ""
-    @State private var selection: String?
-    @State private var filter = ""
-    @State private var discover = false
-    @State private var category = ""
-    @State private var byStars = true
-    @State private var profiles: [BotSummary] = []
+    @State private var localBrowsing = IntegrationsBrowsingState()
+    @State private var showsCustomServer = false
+    private var browsing: IntegrationsBrowsingState {
+        get { workspace?.currentBrowsing ?? localBrowsing }
+        nonmutating set {
+            if let workspace { workspace.currentBrowsing = newValue } else { localBrowsing = newValue }
+        }
+    }
+    private var selection: String? {
+        get { browsing.selection }
+        nonmutating set { browsing.selection = newValue }
+    }
+    private var filter: String {
+        get { browsing.search }
+        nonmutating set { browsing.search = newValue }
+    }
+    private var discover: Bool {
+        get { browsing.discover }
+        nonmutating set { browsing.discover = newValue }
+    }
+    private var category: String {
+        get { browsing.pluginCategory }
+        nonmutating set { browsing.pluginCategory = newValue }
+    }
+    private var byStars: Bool {
+        get { browsing.byStars }
+        nonmutating set { browsing.byStars = newValue }
+    }
+
     init(
         destination: IntegrationDestination, client: HermesRPCClientProtocol,
         pageSection: Binding<Section>? = nil
     ) {
         self.destination = destination
+        self.workspace = nil
         self.pageSection = pageSection
         _model = StateObject(
             wrappedValue: WorkflowIntegrationModel(client: client, profileID: destination.profileID))
+    }
+    init(workspace: IntegrationsWorkspaceState, section: Section) {
+        self.destination = IntegrationDestination(profileID: workspace.profileID)
+        self.workspace = workspace
+        self.pageSection = .constant(section)
+        _model = StateObject(wrappedValue: workspace.workflow)
+    }
+    private var hasPendingEdits: Bool {
+        !credential.isEmpty || !customName.isEmpty || !customURL.isEmpty || !alias.isEmpty
+            || model.plugins.contains { plugin in
+                !HermesWorkflowRPC.pluginSettingValues(plugin.settings, drafts: pluginDrafts).isEmpty
+                    || plugin.settings.contains { $0.kind == "secret" && !(pluginDrafts[$0.id] ?? "").isEmpty }
+            }
+    }
+    private func discardEditors() {
+        credential = ""
+        customName = ""
+        customURL = ""
+        alias = ""
+        renaming = nil
+        selectedServer = nil
+        pluginDrafts = [:]
+        showsCustomServer = false
     }
     var body: some View {
         Group {
@@ -507,14 +632,46 @@ struct WorkflowIntegrationView: View {
                     ScrollView { sections }.frame(height: 440)
                 } footer: {
                     HStack {
-                        if model.busy { ProgressView().controlSize(.small) }
+                        if model.busy { ProgressView() }
                         Spacer()
                         Button("Done") { dismiss() }.buttonStyle(.dockSecondary)
                     }
                 }
             }
         }
-        .task(id: pageSection?.wrappedValue) { await model.load(pageSection?.wrappedValue) }
+        .task(id: pageSection?.wrappedValue) {
+            model.activeSection = pageSection?.wrappedValue
+            if workspace == nil { await model.load(pageSection?.wrappedValue) }
+        }
+        .onChange(of: hasPendingEdits) { _, value in
+            workspace?.isDirty = value
+            if value { browsing.showsDetail = true }
+        }
+        .onChange(of: workspace?.discardRevision) { discardEditors() }
+        .sheet(isPresented: $showsCustomServer) {
+            DockModal(
+                title: "Add custom server", subtitle: "Profile: \(profileName(model.service.profileID))", width: 400
+            ) {
+                customServerCard
+            } footer: {
+                Button("Cancel") {
+                    discardEditors()
+                    workspace?.isDirty = false
+                }.buttonStyle(.dockSecondary).disabled(model.busy)
+            }
+            .interactiveDismissDisabled(hasPendingEdits || model.busy)
+            .confirmationDialog(
+                "Add custom server?",
+                isPresented: Binding(
+                    get: { request?.0 == "Custom server" }, set: { if !$0 { request = nil } }
+                )
+            ) {
+                Button("Add server", action: confirmRequestedAction)
+                Button("Keep editing", role: .cancel) { request = nil }
+            } message: {
+                Text(confirmationMessage)
+            }
+        }
         .onDisappear {
             credential = ""
             pluginDrafts = [:]
@@ -523,26 +680,41 @@ struct WorkflowIntegrationView: View {
         }
         .confirmationDialog(
             "\(request?.0 ?? "Change integration")?",
-            isPresented: Binding(get: { request != nil }, set: { if !$0 { request = nil } })
+            isPresented: Binding(get: { request != nil && !showsCustomServer }, set: { if !$0 { request = nil } })
         ) {
-            Button(request?.0 ?? "Confirm") {
-                guard let (action, item) = request else { return }
-                request = nil
-                let value = credential
-                credential = ""
-                Task {
-                    await model.perform(action, item: item, credentialKey: credentialKey, credential: value)
-                }
-            }
+            Button(request?.0 ?? "Confirm", action: confirmRequestedAction)
             Button("Cancel", role: .cancel) {
                 request = nil
                 credential = ""
             }
         } message: {
-            Text(
-                "\(request?.0 == "Reload live sessions" ? "Reload affects all live sessions connected to this Hermes runtime. " : "")\((request?.0.hasSuffix(" plugin") == true || request?.0.hasSuffix(" connector") == true || ["Disconnect", "Reconnect"].contains(request?.0) ? request?.1.detail : request?.1.id) ?? "Integration") in profile \(model.service.profileID ?? "Launch profile"). Hermes performs its own installation and authorization checks."
-            )
+            Text(confirmationMessage)
         }
+    }
+    private func confirmRequestedAction() {
+        guard let (action, item) = request else { return }
+        request = nil
+        let value = credential
+        let key = credentialKey
+        Task {
+            await model.perform(action, item: item, credentialKey: key, credential: value)
+            if model.lastActionSucceeded {
+                credential = ""
+                if action == "Custom server" { discardEditors() }
+            }
+        }
+    }
+    static func isAccountAction(_ action: String) -> Bool {
+        ["Connect", "Reconnect", "Disconnect", "Rename account", "Enable connector", "Disable connector"].contains(
+            action)
+    }
+    private var confirmationMessage: String {
+        if Self.isAccountAction(request?.0 ?? "") {
+            return
+                "\(request?.0 ?? "Change connection"): \(request?.1.detail ?? "Connection"). This changes your account connection or member access policy, not only this profile."
+        }
+        return
+            "\(request?.0 == "Reload live sessions" ? "Reload affects all live sessions connected to this Hermes runtime. " : "")\((request?.0.hasSuffix(" plugin") == true || request?.0.hasSuffix(" connector") == true || ["Disconnect", "Reconnect"].contains(request?.0) ? request?.1.detail : request?.1.id) ?? "Integration") in profile \(model.service.profileID ?? "Launch profile"). Hermes performs its own installation and authorization checks."
     }
     private var sections: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -574,7 +746,7 @@ struct WorkflowIntegrationView: View {
                     DockTextField("Search skill hub", text: $query).textFieldStyle(.dockGlass)
                         .onSubmit { Task { await model.refresh(query: query.isEmpty ? nil : query) } }
                     DockAsyncButton("Search") { await model.refresh(query: query.isEmpty ? nil : query) }
-                        .buttonStyle(.dockSecondary).controlSize(.small)
+                        .buttonStyle(.dockSecondary)
                     if !query.isEmpty {
                         Button("Installed") {
                             query = ""
@@ -637,7 +809,7 @@ struct WorkflowIntegrationView: View {
                         }
                         SecureField("Credential", text: $credential).textFieldStyle(.dockGlass)
                         Button("Save credential…") { request = ("Save credential", item) }
-                            .buttonStyle(.dockSecondary).controlSize(.small).disabled(credential.isEmpty)
+                            .buttonStyle(.dockSecondary).disabled(credential.isEmpty)
                     }
                 }
                 DisclosureGroup("Add an HTTP MCP server") {
@@ -646,7 +818,7 @@ struct WorkflowIntegrationView: View {
                         DockTextField("HTTP or HTTPS URL", text: $customURL).textFieldStyle(.dockGlass)
                         Button("Add custom server…") {
                             request = ("Custom server", WorkflowIntegrationItem(id: customName, detail: customURL))
-                        }.buttonStyle(.dockSecondary).controlSize(.small).disabled(
+                        }.buttonStyle(.dockSecondary).disabled(
                             model.busy || customName.isEmpty || customURL.isEmpty)
                     }.padding(.top, 8)
                 }.dockFont(.body)
@@ -656,11 +828,11 @@ struct WorkflowIntegrationView: View {
                         request = (
                             "Reload live sessions", WorkflowIntegrationItem(id: "Live runtime sessions", detail: "")
                         )
-                    }.buttonStyle(.dockSecondary).controlSize(.small).disabled(
+                    }.buttonStyle(.dockSecondary).disabled(
                         model.busy || model.unsupported.contains("Reload live sessions"))
                     if model.oauth != nil {
                         Button("Cancel authorization") { Task { await model.cancelOAuth() } }
-                            .buttonStyle(.dockSecondary).controlSize(.small)
+                            .buttonStyle(.dockSecondary)
                     }
                 }
             }
@@ -678,139 +850,132 @@ struct WorkflowIntegrationView: View {
         let canDiscover = [.skills, .plugins, .mcp].contains(section)
         let list = visibleEntries(section, discovering: canDiscover && discover)
         let current = list.first { $0.id == selection } ?? list.first
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                DockTabBar(options: Section.allCases, selection: tab) { section in
-                    model.loadedSections.contains(section)
-                        ? "\(section.rawValue)  \(entryCount(section))" : section.rawValue
+        return AdaptiveSplit(
+            breakpoint: 800, primaryMinWidth: 280, primaryIdealWidth: 320, primaryMaxWidth: 380, secondaryMinWidth: 400,
+            alwaysSplitWhenWide: true, showsSecondary: browsing.showsDetail,
+            onBack: { if !hasPendingEdits { browsing.showsDetail = false } }
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                if canDiscover {
+                    DockTabBar(options: [false, true], selection: binding(\.discover)) { $0 ? "Discover" : "Installed" }
+                        .disabled(hasPendingEdits || model.busy)
                 }
-                Spacer(minLength: 8)
-                if model.busy { ProgressView().controlSize(.small) }
-                DockMenu {
-                    DockMenuSection("Configure profile") {
-                        profileOption("Launch profile", nil)
-                        ForEach(profiles) { bot in profileOption(bot.name, bot.id) }
+                DockTextField(
+                    discover && section == .skills
+                        ? "Search the Skills Hub" : "Search \(section.rawValue.lowercased())",
+                    text: binding(\.search)
+                ).textFieldStyle(.dockGlass)
+                    .disabled(hasPendingEdits || model.busy)
+                    .onSubmit { if discover && section == .skills { Task { await model.searchHub(filter) } } }
+                HStack {
+                    if discover && section == .skills {
+                        DockAsyncButton("Search Skills Hub") { await model.searchHub(filter) }
+                            .buttonStyle(.dockSecondary)
+                            .disabled(model.busy || filter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                } label: {
-                    HStack(spacing: 6) {
-                        DockIcon(.user, size: 12, color: .dockSecondaryText)
-                        Text(profileName(model.service.profileID)).dockFont(.body, weight: .medium)
-                            .foregroundStyle(Color.dockPrimaryText)
-                        DockIcon(.caretDown, size: 9, color: .dockMetadataText)
-                    }.padding(.horizontal, 10).frame(height: 30)
-                        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill())
-                }.buttonStyle(.dockHover).disabled(model.busy).help("Which Hermes profile these changes apply to")
-                Button {
-                    Task {
-                        async let inventory: Void = model.refresh(section: section)
-                        if discover && section == .plugins { await model.loadCatalog(force: true) }
-                        await inventory
+                    if !filter.isEmpty {
+                        Button("Clear filter") { filter = "" }.buttonStyle(.dockSecondary).disabled(hasPendingEdits)
                     }
-                } label: {
-                    DockIcon(.arrowClockwise, size: 13, color: .dockSecondaryText).frame(width: 28, height: 28)
-                }.buttonStyle(.dockHover).disabled(model.busy).help("Refresh")
-            }.padding(.horizontal, 20).padding(.vertical, 10)
-            Color.dockBorderLight.frame(height: DockLayout.hairline)
-            HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if canDiscover {
-                        DockTabBar(options: [false, true], selection: $discover) { $0 ? "Discover" : "Installed" }
+                }
+                if discover && section == .plugins && !model.catalog.isEmpty {
+                    DockMenuPicker(
+                        title: category.isEmpty ? "All categories" : category.capitalized,
+                        selection: binding(\.pluginCategory)
+                    ) {
+                        DockMenuOption("All categories", value: "")
+                        ForEach(catalogCategories, id: \.self) { DockMenuOption($0.capitalized, value: $0) }
+                    }.disabled(hasPendingEdits)
+                    if !model.stars.isEmpty {
+                        DockSegmentedPicker(selection: binding(\.byStars), options: [(true, "Stars"), (false, "A–Z")])
                     }
-                    DockTextField(
-                        discover && section == .skills
-                            ? "Search the Skills Hub, press Return" : "Filter \(section.rawValue.lowercased())",
-                        text: $filter
-                    ).textFieldStyle(.dockGlass)
-                        .onSubmit { if discover && section == .skills { Task { await model.searchHub(filter) } } }
-                    HStack {
-                        if discover && section == .skills {
-                            DockAsyncButton("Search Skills Hub") { await model.searchHub(filter) }
-                                .buttonStyle(.dockSecondary)
-                                .disabled(model.busy || filter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                        if !filter.isEmpty {
-                            Button("Clear filter") { filter = "" }.buttonStyle(.dockCompact)
-                        }
-                    }
-                    if discover && section == .plugins && !model.catalog.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            DockTabBar(options: [""] + catalogCategories, selection: $category) {
-                                $0.isEmpty ? "All" : $0.capitalized
+                }
+                Text(summary(section, list: list)).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(2).frame(minHeight: 28, alignment: .leading)
+                if section == .mcp && discover {
+                    Button("Add custom server") { showsCustomServer = true }.buttonStyle(.dockSecondary)
+                        .disabled(hasPendingEdits || model.busy || model.staleSections.contains(section))
+                }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(grouped(list), id: \.0) { name, rows in
+                            if !name.isEmpty {
+                                DockSectionLabel(title: name.uppercased(), count: rows.count).padding(.top, 10)
                             }
-                        }
-                    }
-                    HStack {
-                        Text(summary(section, list: list)).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                        Spacer(minLength: 6)
-                        if discover && section == .plugins && !model.stars.isEmpty {
-                            DockSegmentedPicker(selection: $byStars, options: [(true, "Stars"), (false, "A–Z")])
-                                .controlSize(.small)
-                        }
-                    }
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(grouped(list), id: \.0) { name, rows in
-                                if !name.isEmpty {
-                                    DockSectionLabel(title: name.uppercased(), count: rows.count)
-                                        .padding(.top, 10).padding(.bottom, 4).padding(.horizontal, 10)
-                                }
-                                ForEach(rows) { entry in listRow(entry, selected: entry.id == current?.id) }
-                            }
+                            ForEach(rows) { entry in listRow(entry, selected: entry.id == current?.id) }
                         }
                         if list.isEmpty {
-                            emptyList(
-                                section,
-                                loading: section == .plugins
-                                    ? (discover ? model.catalogLoading : model.pluginsLoading) : model.busy)
+                            emptyList(section, loading: model.busy || (discover && model.catalogLoading))
                         }
-                        if section == .mcp && discover { customServerCard.padding(.top, 12) }
                     }
-                }.padding(14).frame(width: 330)
-                Color.dockBorderLight.frame(width: DockLayout.hairline)
+                }
+            }.padding(14).frame(maxWidth: .infinity)
+        } secondary: {
+            VStack(spacing: 0) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if let current { inspector(section, current) }
-                        let status = statusLines(section)
-                        if !status.isEmpty {
-                            DockCallout(tone: .info, icon: .info, title: "Hermes", message: status) { EmptyView() }
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(
+                            section == .connectors
+                                ? "Account connections" : "Profile: \(profileName(model.service.profileID))"
+                        )
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        if let current {
+                            inspector(section, current).disabled(
+                                model.busy || model.staleSections.contains(section)
+                                    || (discover && section == .plugins && model.catalogIsStale))
+                        } else {
+                            emptyList(section, loading: model.busy)
                         }
                     }.padding(20).frame(maxWidth: 760, alignment: .leading).frame(
                         maxWidth: .infinity, alignment: .leading)
                 }
-                .task(id: section == .skills && !discover ? [model.service.profileID, current?.id] : nil) {
-                    model.preview = nil
-                    guard section == .skills, !discover, let current else { return }
-                    await model.perform(
-                        "Inspect", item: WorkflowIntegrationItem(id: current.id, detail: current.subtitle))
+                if hasPendingEdits {
+                    HStack {
+                        Text("Unsaved changes").dockFont(.body)
+                        Spacer()
+                        Button("Discard") {
+                            discardEditors()
+                            workspace?.isDirty = false
+                        }.buttonStyle(.dockSecondary)
+                    }.padding(12)
                 }
+                Text(model.sectionStatus(section)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(2).frame(maxWidth: .infinity, minHeight: 40, alignment: .leading).padding(
+                        .horizontal, 20)
+            }
+            .task(id: section == .skills && !discover ? [model.service.profileID, current?.id] : nil) {
+                model.preview = nil
+                guard section == .skills, !discover, let current else { return }
+                await model.perform("Inspect", item: WorkflowIntegrationItem(id: current.id, detail: current.subtitle))
             }
         }
-        .onChange(of: tab.wrappedValue) {
+        .onChange(of: discover) {
             selection = nil
-            filter = ""
-            discover = false
-            category = ""
+            browsing.showsDetail = false
         }
-        .onChange(of: discover) { selection = nil }
-        .onChange(of: category) { selection = nil }
-        .task(id: discover && section == .plugins) { if discover && section == .plugins { await model.loadCatalog() } }
-        .task { profiles = await BotService(client: model.client).rosterList().bots }
-    }
-    private func profileOption(_ title: String, _ id: String?) -> some View {
-        Button {
-            Task { await model.useProfile(id, section: pageSection?.wrappedValue) }
-        } label: {
-            HStack {
-                Text(title)
-                if model.service.profileID == id { DockIcon(.check) }
+        .onChange(of: category) {
+            selection = nil
+            browsing.showsDetail = false
+        }
+        .onChange(of: list.map(\.id)) { _, ids in
+            if let selection, !ids.contains(selection) {
+                self.selection = nil
+                browsing.showsDetail = false
             }
         }
+        .task(id: discover && section == .plugins) { if discover && section == .plugins { await model.loadCatalog() } }
+        .dockButtonSize(.compact)
+    }
+    private func binding<Value>(_ key: WritableKeyPath<IntegrationsBrowsingState, Value>) -> Binding<Value> {
+        Binding(get: { browsing[keyPath: key] }, set: { browsing[keyPath: key] = $0 })
     }
     private func profileName(_ id: String?) -> String {
         guard let id else { return "Launch profile" }
-        return profiles.first { $0.id == id }?.name ?? id
+        return workspace?.profiles.first { $0.id == id }?.name ?? id
     }
     private func summary(_ section: Section, list: [Entry]) -> String {
+        if !discover && !model.loadedSections.contains(section) {
+            return model.busy ? "Reading inventory…" : "Refresh to read inventory."
+        }
         if discover && section == .plugins && model.catalogLoading { return "Fetching the catalog from Hermes…" }
         if discover && section == .skills && model.hub.isEmpty { return "Search to find skills to install." }
         if discover { return "\(list.count) available" }
@@ -831,8 +996,11 @@ struct WorkflowIntegrationView: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text(
-                    filter.isEmpty
-                        ? "No \(section.rawValue.lowercased()) to show" : "No matching \(section.rawValue.lowercased())"
+                    model.staleSections.contains(section)
+                        ? "\(section.rawValue) unavailable"
+                        : filter.isEmpty
+                            ? "No \(section.rawValue.lowercased()) to show"
+                            : "No matching \(section.rawValue.lowercased())"
                 )
                 .dockFont(.body, weight: .semibold)
                 Text(
@@ -887,48 +1055,23 @@ struct WorkflowIntegrationView: View {
         return out
     }
     private var catalogCategories: [String] { model.catalogIndex.categories }
-    /// Load errors are tagged by kind ("Connectors: …"); show a tab only its own, plus untagged results.
-    private func statusLines(_ section: Section) -> String {
-        let tags = ["Skills", "Skills Hub", "Tools", "Connectors", "Plugins", "Plugin catalog", "MCP"]
-        let own: Set<String> =
-            switch section {
-            case .skills: ["Skills", "Skills Hub"]
-            case .plugins: ["Plugins", "Plugin catalog"]
-            default: [section.rawValue]
-            }
-        return model.status.split(separator: "\n").filter { line in
-            guard let tag = line.split(separator: ":").first.map(String.init), tags.contains(tag) else { return true }
-            return own.contains(tag)
-        }.joined(separator: "\n")
-    }
     /// ForEach needs unique ids; Hermes can list a name twice (e.g. a skill in two categories).
     private func unique(_ rows: [Entry]) -> [Entry] {
         var seen = Set<String>()
         return rows.filter { seen.insert($0.id).inserted }
-    }
-    private func entryCount(_ section: Section) -> Int {
-        switch section {
-        case .skills: model.skills.count
-        case .tools: model.toolsets.count
-        case .connectors: model.connectors.count
-        case .plugins: model.plugins.count
-        case .mcp: model.servers.count(where: \.installed)
-        }
     }
     private func entries(_ section: Section) -> [Entry] {
         switch section {
         case .skills:
             return model.skills.map {
                 Entry(
-                    id: $0.id, title: $0.id, subtitle: $0.detail, on: $0.enabled,
-                    actions: ("Enable skill", "Disable skill"))
+                    id: $0.id, title: $0.id, subtitle: $0.detail, on: $0.enabled)
             }
         case .tools:
             return model.toolsets.map {
                 Entry(
                     id: $0.id, title: $0.label, subtitle: "\($0.tools.count) tools",
-                    badge: $0.configured ? nil : (.attention, "Setup"), on: $0.enabled,
-                    actions: ("Enable toolset", "Disable toolset"))
+                    badge: $0.configured ? nil : (.attention, "Setup"), on: $0.enabled)
             }
         case .connectors:
             return model.connectors.map {
@@ -937,8 +1080,7 @@ struct WorkflowIntegrationView: View {
         case .plugins:
             return model.plugins.map {
                 Entry(
-                    id: $0.id, title: $0.name, subtitle: $0.detail, on: $0.enabled,
-                    actions: ("Enable plugin", "Disable plugin"))
+                    id: $0.id, title: $0.name, subtitle: $0.detail, on: $0.enabled)
             }
         case .mcp:
             return model.servers.filter(\.installed).map {
@@ -952,36 +1094,37 @@ struct WorkflowIntegrationView: View {
         return connector.connected ? (.complete, "Connected") : (.queued, "Available")
     }
     private func listRow(_ entry: Entry, selected: Bool) -> some View {
-        HStack(spacing: 10) {
-            Circle().fill(dotColor(entry)).frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.title).dockFont(.navigation, weight: .medium).foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                if !entry.subtitle.isEmpty, entry.subtitle != entry.title {
-                    Text(entry.subtitle).dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
-                }
-            }
-            Spacer(minLength: 6)
-            if entry.official {
-                DockIcon(.sealCheck, size: 12, color: DockCategoryTone.integration.color).help("Official Hermes plugin")
-            }
-            if let stars = entry.stars { starCount(stars) }
-            if let badge = entry.badge, badge.0 == .attention { DockStatusPill(tone: badge.0, text: badge.1) }
-            if let on = entry.on {
-                toggle(
-                    on, enable: entry.actions.0, disable: entry.actions.1,
-                    WorkflowIntegrationItem(id: entry.id, detail: entry.title))
-            }
-        }
-        .dockListRow(isHighlighted: selected)
-        .onTapGesture { selection = entry.id }
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "Show details") { selection = entry.id }
-        .focusable()
-        .onKeyPress(.return) {
+        Button {
             selection = entry.id
-            return .handled
+            browsing.showsDetail = true
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                DockIcon(
+                    workspace?.category.icon ?? .puzzlePiece, size: 16, color: .dockSecondaryText
+                )
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(2)
+                    if !entry.subtitle.isEmpty, entry.subtitle != entry.title {
+                        Text(entry.subtitle).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+                    }
+                    HStack(spacing: 6) {
+                        Circle().fill(dotColor(entry)).frame(width: 6, height: 6)
+                        if let badge = entry.badge {
+                            Text(badge.1)
+                        } else if let on = entry.on {
+                            Text(on ? "Enabled" : "Disabled")
+                        }
+                        if let stars = entry.stars { starCount(stars) }
+                        if entry.official { Text("Official") }
+                    }.dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                }
+                Spacer(minLength: 0)
+            }.dockListRow(isHighlighted: selected)
         }
+        .buttonStyle(.dockHover).disabled(hasPendingEdits)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityLabel("Show details for \(entry.title)")
     }
     private func starCount(_ stars: Int) -> some View {
         HStack(spacing: 3) {
@@ -1005,7 +1148,7 @@ struct WorkflowIntegrationView: View {
     private func inspectorHeader(_ entry: Entry, pills: [(DockStatusTone, String)], _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(entry.title).dockFont(.metric, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                Text(entry.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                     .textSelection(.enabled)
                 ForEach(pills.indices, id: \.self) { DockStatusPill(tone: pills[$0].0, text: pills[$0].1) }
             }
@@ -1019,7 +1162,9 @@ struct WorkflowIntegrationView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockSectionText)
             content()
-        }.frame(maxWidth: .infinity, alignment: .leading).dockCard()
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
     private func enabledPill(_ on: Bool) -> (DockStatusTone, String) { on ? (.complete, "On") : (.inactive, "Off") }
     private var appliesNote: some View {
@@ -1028,7 +1173,7 @@ struct WorkflowIntegrationView: View {
     }
     private func destructive(_ title: String, _ request: (String, WorkflowIntegrationItem)) -> some View {
         Button(title, role: .destructive) { self.request = request }
-            .buttonStyle(.dockSecondary).controlSize(.small).foregroundStyle(Color.dockDestructive)
+            .buttonStyle(.dockSecondary).foregroundStyle(Color.dockDestructive)
             .disabled(model.busy)
     }
     @ViewBuilder
@@ -1040,7 +1185,7 @@ struct WorkflowIntegrationView: View {
             switch section {
             case .skills: action("Install skill", WorkflowIntegrationItem(id: entry.id, detail: entry.subtitle))
             case .plugins:
-                HStack {
+                DockChipFlow(spacing: 8) {
                     action("Install plugin", WorkflowIntegrationItem(id: entry.id, detail: entry.title))
                     if let plugin = model.catalog.first(where: { $0.id == entry.id }) {
                         if let repo = plugin.repo {
@@ -1080,7 +1225,7 @@ struct WorkflowIntegrationView: View {
                 if let skill = model.skills.first(where: { $0.id == entry.id }) {
                     inspectorHeader(entry, pills: [enabledPill(skill.enabled)], skill.detail)
                     quickDetails([("Skill", skill.id), ("Profile", profileName(model.service.profileID))])
-                    HStack {
+                    DockChipFlow(spacing: 8) {
                         action(skill.enabled ? "Disable skill" : "Enable skill", skill, confirm: false)
                         destructive("Remove…", ("Remove skill", skill))
                             .disabled(model.pendingRemovals.contains(skill.id))
@@ -1091,8 +1236,11 @@ struct WorkflowIntegrationView: View {
                                 Color.dockPrimaryText
                             )
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        } else if model.inspecting {
+                            ProgressView()
                         } else {
-                            ProgressView().controlSize(.small)
+                            Text("Skill preview unavailable. Refresh to try again.").dockFont(.body)
+                                .foregroundStyle(Color.dockSecondaryText)
                         }
                     }
                     appliesNote
@@ -1136,6 +1284,14 @@ struct WorkflowIntegrationView: View {
                         ("Connection", connector.status ?? (connector.connected ? "Connected" : "Not connected")),
                         ("Accounts", String(connector.accounts.count)),
                     ])
+                    Text(
+                        connector.policyWritable == true
+                            ? "Member access rules are editable."
+                            : connector.policyWritable == false
+                                ? "Access rules are read-only for this account."
+                                : "Access-rule availability could not be verified. Refresh to check."
+                    )
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     panel(connector.accounts.isEmpty ? "CONNECTION" : "ACCOUNTS") { connectorRow(connector) }
                 }
             case .plugins:
@@ -1147,7 +1303,7 @@ struct WorkflowIntegrationView: View {
                         ("Status", plugin.status), ("Catalog version", plugin.catalogVersion),
                         ("Pinned revision", plugin.pinnedRevision),
                     ])
-                    HStack {
+                    DockChipFlow(spacing: 8) {
                         action(plugin.enabled ? "Disable plugin" : "Enable plugin", item, confirm: false)
                         if plugin.removable { destructive("Remove…", ("Remove plugin", item)) }
                     }
@@ -1157,7 +1313,7 @@ struct WorkflowIntegrationView: View {
                             message: "Its Hermes Desktop panel can't run in Herm; the plugin's agent tools still load."
                         ) { EmptyView() }
                     }
-                    if !plugin.settings.isEmpty { panel("SETTINGS") { settingsForm(plugin).padding(-10) } }
+                    if !plugin.settings.isEmpty { panel("SETTINGS") { settingsForm(plugin) } }
                 }
             case .mcp:
                 if let server = model.servers.first(where: { $0.id == entry.id }) {
@@ -1166,7 +1322,7 @@ struct WorkflowIntegrationView: View {
                         ("Server", server.id), ("State", server.enabled ? "Enabled" : "Disabled"),
                         ("Transport", server.transport), ("Required keys", server.requiredKeys.joined(separator: ", ")),
                     ])
-                    HStack {
+                    DockChipFlow(spacing: 8) {
                         action("Test", server, confirm: false)
                         action("Authorize", server)
                         if !server.requiredKeys.isEmpty {
@@ -1174,7 +1330,7 @@ struct WorkflowIntegrationView: View {
                                 selectedServer = server
                                 credentialKey = server.requiredKeys.first ?? ""
                                 credential = ""
-                            }.buttonStyle(.dockSecondary).controlSize(.small)
+                            }.buttonStyle(.dockSecondary)
                         }
                         destructive("Remove…", ("Remove server", server))
                     }
@@ -1185,10 +1341,10 @@ struct WorkflowIntegrationView: View {
                             }
                             SecureField("Credential", text: $credential).textFieldStyle(.dockGlass)
                             Button("Save credential…") { request = ("Save credential", item) }
-                                .buttonStyle(.dockSecondary).controlSize(.small).disabled(credential.isEmpty)
+                                .buttonStyle(.dockSecondary).disabled(credential.isEmpty)
                         }.dockFont(.body)
                     }
-                    HStack {
+                    DockChipFlow(spacing: 8) {
                         Button("Reload live sessions…") {
                             request = (
                                 "Reload live sessions", WorkflowIntegrationItem(id: "Live runtime sessions", detail: "")
@@ -1231,8 +1387,10 @@ struct WorkflowIntegrationView: View {
             DockTextField("https://…", text: $customURL).textFieldStyle(.dockGlass)
             Button("Add server…") {
                 request = ("Custom server", WorkflowIntegrationItem(id: customName, detail: customURL))
-            }.buttonStyle(.dockSecondary).controlSize(.small).disabled(
+            }.buttonStyle(.dockSecondary).disabled(
                 model.busy || customName.isEmpty || customURL.isEmpty)
+            Text(model.sectionStatus(.mcp)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                .lineLimit(3).frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
         }
     }
     private func connectorRow(_ connector: WorkflowConnector) -> some View {
@@ -1248,13 +1406,15 @@ struct WorkflowIntegrationView: View {
                 } else if connector.connected {
                     DockStatusPill(tone: .complete, text: "Connected")
                 } else {
-                    action("Connect", item, confirm: false)
+                    action("Connect", item)
                 }
                 moreMenu {
                     if connector.allowed {
                         Button("Disable connector…") { request = ("Disable connector", item) }
+                            .disabled(connector.policyWritable != true)
                     } else {
                         Button("Enable connector…") { request = ("Enable connector", item) }
+                            .disabled(connector.policyWritable != true)
                     }
                 }
             }
@@ -1264,7 +1424,7 @@ struct WorkflowIntegrationView: View {
                     if renaming == account.id {
                         DockTextField("account-name", text: $alias).textFieldStyle(.dockGlass)
                             .onSubmit { saveAlias(account.id) }
-                        Button("Save") { saveAlias(account.id) }.buttonStyle(.dockSecondary).controlSize(.small)
+                        Button("Save") { saveAlias(account.id) }.buttonStyle(.dockSecondary)
                             .disabled(model.busy || !HermesWorkflowRPC.validConnectorAlias(alias))
                         Button("Cancel") { renaming = nil }.buttonStyle(.dockCompact)
                     } else {
@@ -1297,7 +1457,7 @@ struct WorkflowIntegrationView: View {
                     Button(editingPlugin == plugin.id ? "Done" : "Settings") {
                         editingPlugin = editingPlugin == plugin.id ? nil : plugin.id
                         pluginDrafts = [:]
-                    }.buttonStyle(.dockSecondary).controlSize(.small)
+                    }.buttonStyle(.dockSecondary)
                 }
                 toggle(plugin.enabled, enable: "Enable plugin", disable: "Disable plugin", item)
                 if plugin.removable {
@@ -1311,8 +1471,14 @@ struct WorkflowIntegrationView: View {
     }
     private func saveAlias(_ id: String) {
         guard HermesWorkflowRPC.validConnectorAlias(alias) else { return }
-        renaming = nil
-        Task { await model.perform("Rename account", item: WorkflowIntegrationItem(id: id, detail: alias)) }
+        let value = alias
+        Task {
+            await model.perform("Rename account", item: WorkflowIntegrationItem(id: id, detail: value))
+            if model.lastActionSucceeded {
+                renaming = nil
+                alias = ""
+            }
+        }
     }
     private func group<Content: View>(_ title: String, count: Int, @ViewBuilder _ content: () -> Content)
         -> some View
@@ -1412,10 +1578,13 @@ struct WorkflowIntegrationView: View {
             }
             Button("Save settings") {
                 let drafts = pluginDrafts
-                pluginDrafts = [:]
-                editingPlugin = nil
-                Task { await model.saveSettings(plugin, drafts: drafts) }
-            }.buttonStyle(.dockSecondary).controlSize(.small).disabled(model.busy || pluginDrafts.isEmpty)
+                Task {
+                    if await model.saveSettings(plugin, drafts: drafts) {
+                        pluginDrafts = [:]
+                        editingPlugin = nil
+                    }
+                }
+            }.buttonStyle(.dockSecondary).disabled(model.busy || !hasPendingEdits)
         }.dockFont(.body).padding(10)
     }
     private func action(_ action: String, _ item: WorkflowIntegrationItem, confirm: Bool = true)
@@ -1427,7 +1596,7 @@ struct WorkflowIntegrationView: View {
             } else {
                 Task { await model.perform(action, item: item) }
             }
-        }.buttonStyle(.dockSecondary).controlSize(.small).disabled(
+        }.buttonStyle(.dockSecondary).disabled(
             model.busy || model.unsupported.contains(action)
                 || (action == "Remove skill" && model.pendingRemovals.contains(item.id))
                 || (action == "Authorize" && model.oauth != nil)

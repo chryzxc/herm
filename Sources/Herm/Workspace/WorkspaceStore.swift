@@ -101,6 +101,14 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var controlReferences: [ControlReference] = []
     @Published var projectPath: String?
 
+    @Published private(set) var lastIntegrationsCategory: IntegrationsCategory = .skills
+
+    func selectIntegrationsCategory(_ category: IntegrationsCategory) {
+        guard category != lastIntegrationsCategory else { return }
+        lastIntegrationsCategory = category
+        save()
+    }
+
     private let fileURL: URL
     init(fileURL: URL? = nil) {
         let supportRoot =
@@ -268,6 +276,8 @@ final class WorkspaceStore: ObservableObject {
         guard let data = try? Data(contentsOf: fileURL),
             let state = try? JSONDecoder.workspace.decode(WorkspaceState.self, from: data)
         else { return }
+        lastIntegrationsCategory =
+            state.lastIntegrationsCategory.flatMap(IntegrationsCategory.init(rawValue:)) ?? .skills
         tasks = state.tasks
         agentRuns = state.agentRuns
         projectPath = state.projectPath
@@ -327,7 +337,8 @@ final class WorkspaceStore: ObservableObject {
 
     private func save() {
         let state = WorkspaceState(
-            tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences)
+            tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences,
+            lastIntegrationsCategory: lastIntegrationsCategory.rawValue)
         Self.saveQueue.async { [fileURL] in
             Self.write(state, to: fileURL)
         }
@@ -352,6 +363,7 @@ final class WorkspaceStore: ObservableObject {
 private struct WorkspaceState: Codable {
     static let currentSchemaVersion = 2
     var schemaVersion: Int
+    var lastIntegrationsCategory: String?
     var tasks: [WorkspaceTask]
     var agentRuns: [WorkspaceAgentRun]
     var projectPath: String?
@@ -359,8 +371,9 @@ private struct WorkspaceState: Codable {
 
     init(
         tasks: [WorkspaceTask], agentRuns: [WorkspaceAgentRun] = [], projectPath: String?,
-        controlReferences: [ControlReference] = []
+        controlReferences: [ControlReference] = [], lastIntegrationsCategory: String? = nil
     ) {
+        self.lastIntegrationsCategory = lastIntegrationsCategory
         self.schemaVersion = Self.currentSchemaVersion
         self.tasks = tasks
         self.agentRuns = agentRuns
@@ -370,6 +383,7 @@ private struct WorkspaceState: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        lastIntegrationsCategory = try container.decodeIfPresent(String.self, forKey: .lastIntegrationsCategory)
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         tasks = try container.decodeIfPresent([WorkspaceTask].self, forKey: .tasks) ?? []
         agentRuns = try container.decodeIfPresent([WorkspaceAgentRun].self, forKey: .agentRuns) ?? []
@@ -378,7 +392,7 @@ private struct WorkspaceState: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, tasks, agentRuns, projectPath, controlReferences
+        case schemaVersion, tasks, agentRuns, projectPath, controlReferences, lastIntegrationsCategory
     }
 }
 

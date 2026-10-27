@@ -77,6 +77,8 @@ struct WorkflowConnector: Identifiable, Equatable {
     let connected: Bool
     let status: String?
     let accounts: [WorkflowConnectorAccount]
+    /// Nil means the policy read was unavailable; only a verified member revision enables edits.
+    var policyWritable: Bool? = nil
 }
 struct WorkflowConnectorOperation: Equatable {
     let id: String
@@ -540,6 +542,11 @@ final class HermesWorkflowRPC {
         // Names and accounts are presentation extras; the list alone is enough to connect.
         let catalog = (try? await request(.connectorsCatalog, [:]))?["connectors"] as? [[String: Any]] ?? []
         let accounts = (try? await request(.connectorsAccounts, [:]))?["accounts"] as? [[String: Any]] ?? []
+        let policy = try? await request(.connectorsPolicyGet, [:])
+        let layers = policy?["layers"] as? [[String: Any]]
+        let policyWritable = layers.map { layers in
+            layers.contains { $0["kind"] as? String == "member" && $0["revision"] is String }
+        }
         return try rows.map { row in
             guard let slug = row["connector"] as? String, !slug.isEmpty else {
                 throw HermesGateway.GatewayError.malformedResponse
@@ -557,7 +564,7 @@ final class HermesWorkflowRPC {
                     return WorkflowConnectorAccount(
                         id: id, label: $0["alias"] as? String ?? $0["label"] as? String ?? id,
                         status: $0["status"] as? String ?? "")
-                })
+                }, policyWritable: policyWritable)
         }
     }
     func connectConnector(_ slug: String, reconnect: Bool) async throws -> WorkflowConnectorOperation {
