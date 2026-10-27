@@ -123,8 +123,7 @@ features do not reach into one another's models.
 
 `GitHub/` owns REST/GraphQL transport, pagination, errors, shared metadata editors,
 authoring, and discussion presentation. Provider dictionaries stay in services.
-Labels are changed with add/remove deltas. Projects use V2 item IDs and actual
-Status option IDs. Provider data remains authoritative; persistence is limited to
+Labels are changed with add/remove deltas. Provider data remains authoritative; persistence is limited to
 references and presentation preferences.
 
 `Markdown/` owns `MarkdownRenderDocumentBuilder`, block parsing, attributed text,
@@ -137,3 +136,10 @@ base and PR ref, verifies both snapshot revisions, then runs `merge-tree` with N
 output. It never operates on the user's checkout/index/refs. Cancellation, a
 120-second deadline, and a 512 MiB repository budget bound the operation. Landing
 mutations refresh capabilities and supply the confirmed expected head to GitHub.
+
+
+Native generated command blocks route explicit clicks through `RichHostActionRouter`
+to the existing `TerminalTabStore` and session inspector navigation. The router checks
+the loaded reply revision and profile/session; app composition rechecks the captured
+local project/worktree directory. Each command starts in a fresh terminal shell.
+No generated executor, output store, Hermes RPC or HTML host bridge is added.

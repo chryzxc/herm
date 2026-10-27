@@ -26,6 +26,14 @@ This document is the source of truth for UI decisions. When implementing or
 reviewing a view, prefer the rules here over generic macOS defaults or a visual
 reference from another project.
 
+### Product naming
+
+Use **Herm** for client UI, navigation, local companions, and default chat identities.
+Keep **Hermes** for the backend agent, its connections, commands, API contracts,
+profiles, shared configuration, and the official Hermes Desktop client. Preserve
+user-configured bot and agent names. `make naming-contract` guards default labels
+and common client-branding regressions; backend references still need copy review.
+
 ## Product principles
 
 1. Hermes owns operational data. Herm renders canonical sessions, agents,
@@ -378,7 +386,33 @@ The session mode switch uses a borderless 28pt track, 24pt visible segments,
 shared fill or marker treatment without an additional underline.
 
 **Session rail.** Chat has a stacked-cards Show/Hide session rail icon immediately before
-Conversation actions. The icon has no background fill; accent ink indicates that
+Conversation actions. The summary card includes Needs attention (current approvals,
+questions, and value prompts), Tasks (the selected session's Hermes todo plan),
+Outputs (the existing session artifact index), Pinned items (canonical message pins),
+and Workspace (path and a matching fresh Git snapshot). Omit sections without data.
+Tasks and the composer reuse `TodoPlanTaskList`: in-progress tasks first, pending
+tasks next, and completed/cancelled tasks last, preserving original order within each
+group and original slots for identity. The active task has a progress indicator,
+semibold title, accent status, and shared selection fill. With reduced motion or a
+non-working session the indicator is static. The rail's Tasks label names the active
+task even while collapsed; pending tasks are never labelled as in progress.
+Workspace uses the palette's amber folder icon and violet branch icon, adapting to
+monochrome skins. Expanded details lead with the project name and secondary path,
+followed by labelled Branch and Latest commit rows with their existing Git icons.
+These are disclosures with the same bounded inline scroll area as Changes and PRs.
+Rail disclosures align their caret and 14pt icon to the first title row, keeping
+wrapped titles, task summaries, and secondary metadata below that shared line.
+Output file rows use the shared `ArtifactFileIcon` renderer at the compact row size;
+links and interactive outputs retain their semantic icons. Output rows preview images
+or local text on expansion; interactive outputs remain in
+Artifacts. View all outputs selects the third panel's Artifacts tab. Pin rows expand
+their preview before an explicit Show in chat jump. Respond in chat reveals the pending
+request at the transcript tail and focuses the composer; the rail never duplicates approval or credential submission controls.
+Outputs refresh on mount, after a turn, and on manual refresh using ArtifactIndexStore;
+failures retain prior outputs with an unavailable state. Session/profile identity and
+request generations prevent results from one conversation replacing another's summaries.
+
+The icon has no background fill; accent ink indicates that
 the rail is open. The optional rail sits to the right of the transcript and
 composer below their shared header. Below 800pt of actual conversation-column width,
 hide both the rail and its toggle and release its reserved space to chat. Keep the
@@ -388,10 +422,10 @@ continuous background. The rail has no full-height fill or vertical divider; its
 repository heading, Changes row, and PR section share one floating card. Use
 `dockCard(isQuiet: true)`: a solid theme surface and neutral hairline without glow
 or decorative edges. Glass and typographic skins retain their shared treatments.
-The heading uses 12pt secondary text and an overflow menu for Refresh session rail;
+The heading uses the repository name or "Session overview", with 12pt secondary text and an overflow menu for Refresh session rail;
 the pending spinner occupies that same 24pt slot. Hide the entire PR section when
-there are no linked PRs, including its divider and heading. When there are neither
-changes nor PRs, show a compact empty state inside the same card with the general
+there are no linked PRs, including its divider and heading. When no section has data,
+show a compact empty state inside the same card with the general
 description "Session details will appear here." Pending and
 unavailable states stay in the card and never claim that failed data is empty.
 Changes appears only for a fresh snapshot matching the active session/worktree,
@@ -442,8 +476,8 @@ icon. Hover transitions use `dockEase(0.16)` and are disabled under Reduce
 Motion. Hover is never the only way to find an action: trailing actions stay
 visible at rest in their quiet color.
 
-**Navigation identity.** Chats keeps its speech bubbles; Messaging uses a paper plane
-for external delivery, and Artifacts uses stacked files for saved outputs across
+**Navigation identity.** Chats keeps its speech bubbles; Integrations uses a puzzle piece
+for configuration, and Artifacts uses stacked files for saved outputs across
 the rail, compact navigation, and inspector. Preserve the Bots ghost glyph.
 The Chats rail button overlays a compact badge without changing its footprint:
 the shared running spinner plus the unread completed-session count (capped at
@@ -894,8 +928,7 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   discard; interrupted sends also expose review and retry. Project choices appear
   only for a new session, with a directory reset only when a project has been chosen.
 - Inline quick reply uses the task row as its only title. Destination stays tied
-  to that row's captured session. Low quota uses one quiet provider/allowance line,
-  with sending availability and freshness in its tooltip and accessibility hint.
+  to that row's captured session. Quick message and inline reply omit quota advisories.
   Actual preparation, errors, and unavailable states use the feedback area; the
   send shortcut stays in the Send tooltip. Draft errors remain visible and prevent
   sending. The replying task row yields keyboard focus and its selection outline
@@ -964,18 +997,18 @@ Skills & MCP repair opens the existing workspace modal with the captured profile
 operations keep Hermes' installation checks; credentials use secure fields and never enter
 preview/draft persistence. OAuth polling and skill-removal outcome checks run only during
 an explicit action. A live MCP reload warns that it affects all connected runtime sessions.
-The Capabilities page (rail and compact sidebar) covers what Hermes Desktop's Capabilities
-route does in Herm's own idiom: `DockTabBar` tabs with counts (Skills / Tools / Connectors /
-Plugins / MCP), a profile menu, and a filterable list (`dockListRow`, status dot, `dockSwitch`)
-beside a `dockCard` inspector (SKILL.md preview, toolset tools, connector accounts, plugin
-settings). Skills, Plugins and MCP add an Installed / Discover scope (Skills Hub search, the
+The Integrations workspace (rail and compact sidebar) combines Messaging with the
+Skills, Tools, Connectors, Plugins, and MCP inventories. Shared category navigation,
+a profile menu, and a filterable `dockListRow` list sit beside an inspector for
+SKILL.md previews, toolsets, accounts, plugin settings, and platform setup.
+Skills, Plugins and MCP add an Installed / Discover scope (Skills Hub search, the
 plugin catalog, unadded and custom MCP servers) instead of an embedded hub page. Only theme
 tokens are used, so every skin restyles it. Tools reads `GET /api/tools/toolsets` and toggles via
 `PUT /api/tools/toolsets/{name}`, hiding the same internal toolsets Desktop hides. Plugin
-Discover groups the whole catalog by its `category` (chips narrow to one) and ranks each group
+Discover groups the whole catalog by its `category` (a menu narrows to one) and ranks each group
 by GitHub stars or A–Z; Hermes has no popularity data, so stars come from one batched GitHub
 GraphQL read using the launch `GH_TOKEN`/`GITHUB_TOKEN` and are simply absent without one. Load
-errors show only on their own tab. Capabilities loads inventories on first visiting each tab; successful inventories are reused until explicit Refresh or a profile change. Counts remain absent until their inventory has loaded. Page Refresh reads only its selected tab, and plugin mutations refresh only the plugin inventory (and an already-open catalog after install/remove). Plugin changes invalidate the other tab inventories so the next visit reloads their authoritative state. The profile picker uses the profile-only roster without plugin or live-session probes. Catalog sorting and normalized search text are indexed only when catalog, installed plugins or star counts change. Empty catalogs are valid loaded results, concurrent catalog reads coalesce, and cancellation discards responses. Optional GitHub stars do not keep the catalog loading and are attempted once per page; catalogs without GitHub repositories skip that work. Quick-view details show installed plugin version, source, runtime status, catalog version and pinned revision when supplied; toolset configuration and counts; connector policy, connection and account count; MCP enabled state, transport and required key names; and skill identity and profile alongside its preview. Missing version fields are omitted.
+errors show only in their own category. Integrations loads inventories on first visiting each category; successful inventories are reused until explicit Refresh or a profile change. Counts remain absent until their inventory has loaded. Page Refresh reads only its selected category, and plugin mutations refresh only the plugin inventory (and an already-open catalog after install/remove). Plugin changes invalidate the other tab inventories so the next visit reloads their authoritative state. The profile picker uses the profile-only roster without plugin or live-session probes. Catalog sorting and normalized search text are indexed only when catalog, installed plugins or star counts change. Empty catalogs are valid loaded results, concurrent catalog reads coalesce, and cancellation discards responses. Optional GitHub stars do not keep the catalog loading and are attempted once per page; catalogs without GitHub repositories skip that work. Quick-view details show installed plugin version, source, runtime status, catalog version and pinned revision when supplied; toolset configuration and counts; connector policy, connection and account count; MCP enabled state, transport and required key names; and skill identity and profile alongside its preview. Missing version fields are omitted.
 The same Integrations modal lists Hermes plugins (`plugins.manage`: enable, disable, remove
 user installs) and hosted connectors (`connectors.*`, account owner: connect via the browser
 link Hermes mints, disconnect per account). Plugins that ship a Hermes Desktop UI half say so;
@@ -1270,8 +1303,8 @@ while either page is open. GitHub shows a 200pt section panel with shared
 `DockNavRow` controls beside the selected page at widths of 960pt and above.
 Narrower workspaces use a section picker in the GitHub header. Section navigation
 retains each page's model-owned filters, selection, and drafts; returning to GitHub
-reopens the last section used in this app session. Existing visibility preferences
-apply to the inner sections, and the GitHub icon hides when both are hidden.
+reopens the last section used in this app session. Settings → General → Sidebar has one Show GitHub in sidebar switch.
+Pull requests, Issues, and Repositories are always available within GitHub.
 The section panel reserves the window-control clearance; the page title row beside
 it starts without a second traffic-light inset. Session inspector tabs remain scoped
 to their conversation and repository.
@@ -1356,6 +1389,11 @@ Message pins are Hermes-owned bookmarks, separate from conversation pins and
 model context. Completed user and assistant messages with verified stored row
 identities offer Pin/Unpin in their existing action row. An unpersisted or
 streaming row never guesses its durable identity from text or position.
+The row's equality boundary includes its action target so a resumed runtime
+session refreshes callbacks even when the retained message content is unchanged.
+Accepted pin operations belong to the conversation model and survive replacement
+of the disposable transcript projection. Revalidate the selected session and
+message before a queued pin starts.
 
 The conversation header's pin action opens a fixed-size popover with 12pt
 titles and previews. Selecting a pin pages in older history if necessary and
@@ -1557,6 +1595,59 @@ previews; reports stay attached to their owning job and profile.
 
 ### Session inspector
 
+Inspector tabs share a fixed-height 32pt row with separate selection and 28×32pt
+close targets. Use the full available strip width. Collapse only as many background
+tabs to icons as needed for the open tabs to fit, starting farthest from the active
+tab; keep the active name visible when it fits. A narrow pane alone does not force
+collapse. Hovering a collapsed icon expands that tab in place to show its entire
+single-line title and close button. Moving from the name to Close keeps it expanded;
+leaving the tab collapses it. Native tracking areas own this hover behavior so the
+unified titlebar and drag surface cannot swallow it. Expansion is immediate, without width animation; the row stays leading-aligned.
+The drag preview captures the complete rendered tab, including its background and close action.
+
+Tab name/icon pointer input is owned by a native drag surface that refuses window
+dragging and starts a tab move after a short drag threshold. A click still selects;
+a drag does not trigger selection or Close. Drop targets explicitly negotiate Move.
+Entering an already visible close button does not move its target. Tab hover never
+opens a popover. The + menu and panel toggle stay outside the scrolling strip.
+The active tab is revealed on selection, workspace change, reorder, and resize;
+if even the icons cannot all fit, horizontal scrolling remains available. The
+content below the title row does not move.
+
+Built-in tabs, extra browsers/terminals, and previews share one draggable order.
+Dropping onto a tab moves to its position without changing selection or restarting
+content. The tab context menu offers Move tab left/right as a non-drag alternative.
+Order is presentation state scoped to the backend/profile/session workspace for the
+current app run. New tabs append, and closed tabs disappear without leaving gaps.
+
+
+Bot and activity previews share the message reading tab strip and its workspace
+scope. Known mention pills have an underlined name; clicking
+opens the bot's available roster data. Unknown mentions stay plain text. Bot
+dispatch pills open their full task, state, timestamps and reported reply. Activity
+keeps its existing disclosures, with tool details available by clicking existing
+rows. No separate preview links or menu actions are added to the transcript. The open-preview icon
+appears only in the whole message bubble action row beside Copy and Reply, never
+on inline bot pills or activity text. Preview tabs deduplicate by data kind and exact source identity.
+
+Detail pages use an identity/avatar header, compact metadata, and shared quiet
+surfaces for execution facts and full selectable Markdown payloads, with Copy at
+the trailing inset. Tool payload formatting reuses Timeline's safe code/diff
+formatting. No inferred capabilities or fabricated outcomes appear. Current loaded
+projections refresh previews; unavailable projections retain explicitly labelled
+captured data. Tabs remain temporary and scoped by backend, profile and session.
+
+
+Message bubbles offer **Open message in new tab** for completed messages. It reveals
+and selects a closable reading tab in the third panel without navigating the chat.
+Each message opens once per backend/profile/session workspace; opening it again
+selects the existing tab. Tabs contain a disposable reading copy with the user or configured bot name when available,
+time, selectable text, shared Markdown rendering, images, attachments, and Copy.
+They remain available when switching tabs or conversations during the current app
+run and are released when closed. They are independent of backend message pins
+and are not restored after quitting. Streaming messages finish before opening.
+
+
 Chat attachment **Open diff** opens a dedicated, closable Diff tab in the session
 inspector with read-only staged and working-tree changes from the attachment's own
 worktree. Source Control keeps its inline file previews. Both reuse `SharedDiffView`;
@@ -1719,7 +1810,7 @@ action tokens. Tables scroll within bounded containers; charts use Apple Charts
 and the theme accent; gallery images do not fetch arbitrary remote resources
 on display. Forms reuse native Dock controls and destination-validated drafts.
 Generated content cannot declare verified Herm records, approvals, credentials,
-or direct tool actions. Source inspection is explicit. Expanded source uses a
+or automatic tool actions. Explicit command-card Run actions use the existing local Terminal. Source inspection is explicit. Expanded source uses a
 bounded, padded panel with a theme-aware surface and border; its top-right Copy
 source action stays above the scrollable, selectable monospaced content. Plain-text projections
 serve copy, search, speech, and Result Peek. Existing runtime-owned export
@@ -1831,7 +1922,10 @@ a large board does not process offscreen task bodies. Card comparisons include
 only their own selection, pending actions, drag state, and displayed activity age;
 updates to another card must not rebuild unchanged card content or menus.
 
-Cards drag between lanes, matching the Hermes desktop board. Expanded lanes and
+Cards drag between lanes, matching the Hermes desktop board. The native drag
+captures the full rendered card at its current size and pointer offset, leaving a
+faint source placeholder. Cancellation restores the card and clears drag targeting.
+Confirmed lane ordering changes use a short dockEase transition, respecting Reduce Motion. Expanded lanes and
 collapsed rails are both drop targets and highlight in the lane color while a
 droppable card is over them. Running, Review, and Scheduled are system-owned:
 cards can leave them but never enter, and those lanes show the forbidden cursor
@@ -1894,6 +1988,14 @@ in the originating conversation, without navigating away from it. Queued mention
 retain the recipient selected at submission and cannot steer the current bot.
 Unsupported selected-bot payloads keep the draft and explain the text-only,
 single-recipient requirement, including in Bot Chats.
+
+Navigation cancels only mentions whose submission has not started. Submitted
+mentions retain their origin and recipient session identities while another chat
+is open. Returning restores the request and the pending bot bubble; completion
+updates the originating activity even while it is hidden, and the saved reply
+rehydrates with its bot name and avatar attribution. The recipient’s canonical
+Bot Chat is persistent and hidden from the regular session list by Hermes;
+opening its bot on the Bots page reaches that same conversation.
 
 Native typing supersedes queued completion caret moves in the shared composer,
 including Forward to Bot. Redraws must not restore a selection from before the edit.
@@ -2030,6 +2132,8 @@ references move into the tray while preserving their payload and the surrounding
 draft text; repeated sources keep the latest context.
 Pasted file URLs take precedence over clipboard icon bitmaps and use the same
 attachment path as picked or dropped files; ordinary image pastes keep thumbnails.
+Native Paste validation accepts file and image clipboards when the editor is editable
+and its composer provides the corresponding attachment handler.
 Folder selection inserts its path into the draft.
 Unsent text, images, PDFs, context chips, reply quotes, and attachment errors stay
 with their profile and session while Herm is open. Navigation restores that
@@ -2140,6 +2244,9 @@ concept colors.
 The fullscreen Artifacts destination is a two-pane output browser. Its fixed
 header and toolbar keep search, type scope, counts, and refresh visible while a
 lazy newest-first results list drives a selected detail pane. Images use an
+explicitly bounded, clipped thumbnail in each browser row. When the type segments
+cannot fit, a checked type menu retains every filter and count below search.
+Detail images use an
 aspect-fit preview; files and links use semantic previews with selectable
 paths or URLs. Open, Copy, optional Reveal in Finder, and source-session
 navigation are the only artifact actions. The compact conversation inspector
@@ -2448,7 +2555,8 @@ Minimized chat floats over the page without reserving a bottom strip; the page's
 content viewport continues to the bottom edge. Only expanded chat reserves its
 measured height plus outer gutters in Summary, Changes, and Reviews, keeping
 content and scroll controls above the composer at every pane width.
-Expansion respects Reduce Motion. Each PR has an independent presentation model over
+Expansion is immediate, without width animation; the row stays leading-aligned.
+The drag preview captures the complete rendered tab, including its background and close action. Each PR has an independent presentation model over
 Hermes-owned history. Herm saves only the PR-to-session reference (profile and stable
 session ID), so reopening the PR after navigation or an app restart resumes the same
 conversation rather than creating another one. A new conversation uses the explicit
@@ -2477,7 +2585,7 @@ Monochrome and E-Ink preserve neutral tones.
 
 Both modules use the existing Dock canvas, cards, disclosures, modal editor,
 button styles, color tokens, and 12pt body typography. Metadata uses the same
-Labels, Projects, Milestone, Assignees, and Development presentation in each
+Labels, Milestone, Assignees, and Development presentation in each
 feature. An empty assignment, restricted access, loading, and a failed refresh
 must be distinguishable. Provider permission failures retain the edit draft.
 
@@ -2585,15 +2693,24 @@ repository, branch, and revision; compare-and-delete the remote ref, preserve
 local worktrees, and keep a failed deletion separate from the successful merge.
 
 PR Summary shows the description directly beneath the title/author using the
-canonical Markdown view, without a card or a redundant Description heading. Optional Projects failures occupy one quiet value/Retry row;
-keep diagnostic detail in help/accessibility text instead of a repeated orange
-provider-error paragraph. Retain previously loaded memberships on refresh errors.
+canonical Markdown view, without a card or a redundant Description heading.
 
 GitHub label pills use the repository-provided six-digit RGB color as their fill
 in both item details and label editors. Keep the shared pill geometry and regular
 text weight; choose black or white ink for maximum contrast. Invalid/missing
 provider colors retain the neutral theme treatment. Other metadata stays neutral.
 
+
+### Empty session inspector
+
+The third panel allows closing every tab, including the final tab. No closed section
+is rendered or forced back into the strip. With no tabs open, show a compact
+“Open a new tab” heading and actionable cards for Browser, Terminal, Explorer,
+Artifacts, Source Control, and Timeline. Cards use existing section icons, theme
+surfaces, and 12pt title/detail text; they adapt to one column in narrow panes.
+The tab strip, + menu, and panel toggle keep their positions. Cards reuse the
+existing section-opening actions; terminal foreground-job confirmation and
+Command-Shift-T reopening continue to apply. Empty state persists on restoration.
 
 ### Native review and local workflows
 
@@ -2687,11 +2804,11 @@ the chat draft. It captures the title, URL, shared Chromium tab ID when availabl
 and selected text as untrusted page context. Reattaching the same page refreshes
 its chip; navigation does not silently change attached context. Async selection
 capture is discarded if the session, page, or tab changes. The action shows pending
-feedback and is disabled on blank pages. More retains New Agent Tab and the
-annotation and console-context actions.
+feedback and is disabled on blank pages. Annotation and attachment stay in the
+toolbar at every width; More retains New Agent Tab and console-context actions.
 
 The Browser toolbar uses 28pt controls and a compact themed address field. It
-first collapses viewport labels and moves annotation into More; phone-width
+first collapses viewport labels; phone-width
 panels give the address a full-width row above navigation and viewport actions.
 Browser has no Local Previews control or discovery polling. Auto follows native
 page bounds on every resize without reloading; device presets retain their CSS
@@ -2708,8 +2825,9 @@ while the pane is hidden. The viewport menu stays visible and names the
 selected CSS width; its accessible label includes the device preset. Page loading
 uses a reserved address-field spinner and a slim indeterminate track over the
 toolbar’s bottom edge; Reload becomes Stop in the same footprint. Navigation
-failures and the agent-offline notice overlay the page rather than inserting rows
-above it. Retry and dismissal stay local to the failure. Empty tabs offer address
+failures and the agent-offline notice overlay the page below the toolbar,
+preserving the browser viewport and page geometry through recovery.
+Retry and dismissal stay local to the failure. Empty tabs offer address
 entry. Back/Forward availability follows each engine’s live history, including
 same-document changes. Copy Address and Open in Default Browser live in More.
 
@@ -2727,6 +2845,11 @@ themes, and neutral ink in Monochrome/E-Ink. Description prose stays within an
 
 
 ### Calendar workspace
+
+Calendar and Reminders permission requests require an explicit Connect or enable action.
+Never reset macOS privacy decisions; denied access exposes Privacy Settings immediately.
+Page construction and cleanup must not initialize microphone capture. Cancelled voice
+startup must not advance to another permission request.
 
 Week and Month share a search row with Agenda, a weekly list grouped by date.
 Search matches titles, source names, and locations within the displayed range;
@@ -2945,9 +3068,9 @@ and offers retry on failure. Missing patches show an unavailable message.
 Review actions group pull-request watching and guide actions in a compact menu. Raw submission diagnostics stay in the guide; startup shows a loading indicator. New review sessions wait briefly for project-directory confirmation, and active first turns wait for saved history.
 
 Markdown GitHub pull request and issue overview links open the shared PR or issue detail view in chat’s Pull Request or Issue inspector tab
-when that page is enabled in Settings and GitHub resolves the item. Each chat keeps
-its own GitHub selection; opening a link leaves the conversation visible. Disabled pages,
-unavailable items, and links to anchors or subpages retain the browser fallback.
+when GitHub is enabled in Settings and GitHub resolves the item. Each chat keeps
+its own GitHub selection; opening a link leaves the conversation visible. Links retain
+the browser fallback when GitHub is hidden, the item is unavailable, or the URL targets an anchor or subpage.
 
 Chat’s Pull Request and Issue tabs use the standard 12pt inspector side gutters.
 
@@ -3005,7 +3128,7 @@ state controls required-check and branch-protection gating; optional failing
 checks remain warnings when GitHub reports the PR mergeable. Disabled Merge
 keeps an active hover-tip anchor and the separate requirements dropdown.
 
-The empty chat welcome shows the orb and introductory text without suggested-prompt pills.
+The empty chat centers the orb, introductory text, and composer as one group, with the composer directly below the text. Once a message appears, the welcome fades and the same mounted composer moves to the bottom with a short spring transition. Reduce Motion and motion-free skins disable these animations. Recording retains the existing voice layout.
 
 
 ### Task and development visual replies
@@ -3025,34 +3148,36 @@ combinations of supported components. Simple answers still use Markdown.
 
 Timeline uses compact 36pt bot faces and shows bot context only after selection. Summary metrics wrap at narrow widths. Steps has a dedicated search/navigation row, explicit Follow and Fit time actions, and Next error navigation that wraps through failed steps. Replay is labeled, and bot/subagent sections remain separate.
 
-### Capabilities and Messaging browsing
+### Integrations workspace
 
-Capabilities offers an explicit Skills Hub search action, clear-filter recovery,
-and keyboard-focusable inventory rows (Return opens details). Failed Tools and
-Connectors refreshes retain the last inventory alongside the refresh diagnostic.
+**Integrations** replaces the separate Capabilities and Messaging destinations.
+Its categories are Messaging, Skills, Tools, Connectors, Plugins, and MCP servers.
+The first visit opens Skills; later visits restore the last category. Search,
+selection, discovery scope, and plugin filters stay separate per category in memory.
+Only the category preference is persisted; Hermes owns all inventories and settings.
 
-Messaging shows readable connection/setup status in each platform row, searches
-names and descriptions, and keeps the inspector within the search results. Refresh
-re-reads the selected profile; empty inventories and unavailable reads have distinct
-recovery states. Pending edits offer Discard and keep platform/profile navigation
-locked until saved or discarded. Save only enables for effective changes; blank
-saved secrets are preserved. Superseded profile reads cannot replace current data.
+One shared title row provides profile selection, Refresh, and a fixed status subtitle.
+Connectors instead identifies Account connections, including account-wide connection
+and member-policy effects in confirmations. Choosing a configuration profile never
+changes the active chat. Skills, Plugins, and MCP servers retain Installed / Discover
+lists; Skills Hub search requires explicit submission. All existing messaging setup,
+QR pairing, tests, gateway recovery, plugin settings, and MCP management remain available.
+Custom HTTP MCP setup opens a separate form.
 
-### GitHub Projects
+At 1100pt content width and above, a 180pt category column sits beside a resizable
+280–380pt inventory list and detail pane. At 800–1099pt, a category picker replaces
+the category column. Below 800pt, selecting an inventory row opens its detail with
+Back navigation. Detail content is capped at 760pt. Headers and diagnostic slots
+remain stable across loading, empty, unavailable, and stale states. Inventory rows
+navigate; management actions belong to the inspector. Counts appear only after reads.
 
-Projects joins Pull requests and Issues in GitHub’s existing section navigation.
-The project index uses full-width rows, account/organization browsing, Open/Closed
-filtering, search, and a New project action for the signed-in account. Opening a
-project presents horizontally scrolling status columns with readable item cards.
-Issue and PR titles open Herm’s existing detail pages. Empty columns remain visible;
-refresh and save feedback stay in the fixed page header. Project state remains in
-memory while switching GitHub sections.
+Unsaved forms offer Save and Discard and lock category, profile, search, and item
+changes. Navigation away offers Keep editing or Discard changes. Failed saves retain
+inputs; blank saved-secret fields preserve their value. Same-scope refresh failures
+retain stale inventories and disable actions requiring current data. Superseded reads
+cannot replace a newer profile. Pairing and authorization work is cancelled when its
+owning context closes. Existing profile-scoped bot/routine repair dialogs are retained.
 
-Status menus and Add item require current edit permission and an open project.
-Writes confirm their target, recheck provider state, prevent repeat submission, and
-reload GitHub’s authoritative board. Failed writes retain draft text. Failed board
-refreshes retain the previous board with a diagnostic and disable edits until
-refreshed. Draft creation and personal project creation are explicit GitHub writes.
 
 ### Chats grid view
 
@@ -3092,10 +3217,7 @@ session store is introduced. Open workspace returns to the full chat tools.
 Disconnected or stale inventories retain their rows, label statuses not current,
 and suppress running indicators. Session and project refreshes retain selection.
 
-Projects reuses the same `gh` credential as Issues and Pull requests. Missing
-Projects scope shows explicit authorization guidance and Copy command / Retry
-actions. The compact toolbar groups account selection in a popover with themed
-search and state controls; failed same-account refreshes retain loaded projects.
+
 
 ### Performance boundaries for artifacts and review
 
@@ -3113,22 +3235,64 @@ Diff gutters use cached UTF-16 row offsets to start at the visible range. Confir
 session deletion releases its browser pages and subscription; merely switching
 sessions continues to preserve user page state.
 
-GitHub Issues, Pull requests, and Projects share `GitHubAccessRecoveryView`: a
+GitHub Issues, Pull requests, and Repositories share `GitHubAccessRecoveryView`: a
 compact permission panel with a selectable CLI command, Copy command, and pending
 Retry feedback. Typed sign-in and permission errors show this panel when no cached
 records exist; ordinary outages and rate limits retain their existing error UI.
 
 GitHub includes a Repositories tab listing repositories accessible to the existing
-GitHub credential, ordered by recent updates. Search matches names and descriptions;
-visibility and archived filters operate on the loaded inventory. Compact repository rows open a side inspector on wide windows (a detail page on narrow windows) with description, language, visibility,
-stars, forks, combined open issue/PR count, default branch, last push, and license.
-The overview uses the loaded inventory and supports refresh; missing values remain
-unavailable. Open on GitHub is a separate action, and Copy clone URL copies the
-HTTPS address without cloning. The tab
-uses the shared access-recovery panel, reports partial coverage, and retains data
-on refresh failure. Filters survive switching between GitHub sections.
+GitHub credential, ordered by GitHub’s last-updated timestamp, newest first, with undated entries last.
+List timestamps show that same update time; the detail pane separately shows the last push. Search matches names and descriptions;
+visibility and archived filters operate on the loaded inventory. Repository browsing
+uses the same single page header and resizable list/detail layout as Issues and Pull
+requests. On wide windows, a compact list opens a spacious native detail pane; narrow
+windows use the shared Back navigation. Details include description, language,
+visibility, stars, forks, combined open issue/PR count, default branch, last push, and
+license. The overview uses the loaded inventory and supports refresh; missing values
+remain unavailable. Open on GitHub is a separate action, and Copy clone URL copies the
+HTTPS address without cloning. The tab uses the shared access-recovery panel, reports
+partial coverage, and retains data on refresh failure. Filters survive switching between
+GitHub sections.
 
-Repository browsing explicitly includes owner, collaborator, and organization-member affiliations available to the active GitHub credential. The owner filter includes all returned accounts and organizations; search and archive filters apply across them. Rows use separators and small language accents, and the inspector uses compact metadata rows.
+Repository browsing explicitly includes owner, collaborator, and organization-member
+affiliations available to the active GitHub credential. The owner filter includes all
+returned accounts and organizations; search and archive filters apply across them. Rows
+use shared typography, compact descriptions, and the standard divider-led selection
+treatment. Repository glyphs, visibility, and star metadata use neutral theme ink.
+Language names use neutral pills with the existing bundled file icons; unknown languages
+use a generic file icon, and Monochrome/E-Ink render the glyphs in neutral ink. Search,
+visibility tabs, and a fixed status slot match the GitHub list controls. Details use
+shared section headers and inspector groups; actions share compact sizing, and the
+standard copy control confirms temporarily. The repository detail pane also loads the
+five most recent commits on the default branch and the first release returned by GitHub,
+including its tag, publication date, and draft or pre-release state. Commit links, SHA
+copying, release notes, and an explicit external Actions link support deeper inspection.
+Issues and Pull requests open the existing native browsers scoped to the selected
+repository, with open state and recently updated sorting. Previous list filters and rows
+reset on entry; cached details and comment drafts remain available. Search,
+state/history, conversations, reviews, authoring, and recovery use the existing
+features. The inventory supplies your highest reported repository permission and last-
+updated time; absent permissions remain unavailable. Commit and release reads share the
+existing GitHub credential, load independently, retain prior data with a stale note on
+refresh failure, and cancel when the detail pane closes or changes repository. The
+detail toolbar refreshes these reads and a recent activity feed. The feed shows up to
+ten events returned by GitHub, ordered newest first, with actor, action, target, time,
+and safe links to the relevant repository page. It includes pushes, issue and PR
+updates/comments/reviews, releases, branch/tag changes, and other reported events.
+Counts are labeled Statistics; recent issue, comment, and release events remain in
+Overview. GitHub can delay events and limits the available history; an empty response
+does not imply the repository has never been active. Activity has independent
+unavailable, retry, and stale-data states and cancels with the selected repository. A
+separate Activity tab follows GitHub’s repository code activity view: compact commit-
+message rows, actor avatars, branch links, revision ranges, and semantic merge/force-
+push badges. Branch, activity type, user, time-period, and oldest/newest filters query
+GitHub’s repository activity endpoint. Branch/user menus list values discovered in
+loaded activity. Up to 30 matching records are shown per query, with an explicit
+coverage note at the limit. Visible rows load commit messages and comparison counts
+using shared, bounded requests; missing counts are never invented, and immutable details
+are retained if a refresh fails. Row menus open changes, copy links or SHAs, and retry
+failed commit details. Switching filters cancels old work and clears rows from the
+previous scope; leaving the pane cancels pending reads.
 
 ### Session simulator tabs
 
@@ -3140,8 +3304,8 @@ launch receipt selects its exact device ID in the owning session.
 
 The display fits available space with aspect ratio preserved. Click to focus;
 click/drag sends touch events and typing sends device key events. Home and Power
-are available on both platforms; Android adds Back and Apps. Controls stay in fixed
-toolbar/footer slots during loading and failure. Narrow layouts stack recovery
+are available on both platforms; Android adds Back and Apps. Debugging and device
+controls appear when a display is connected; setup and failures use the same recovery region. Narrow layouts stack recovery
 actions and scroll long setup instructions. Input is released when focus is lost
 or the connection closes. Closing a tab does not shut down a device.
 
@@ -3199,6 +3363,9 @@ inherit 36pt from `DockModal`; approval decisions use 44pt. Set
 or vertical padding. Multiline content can grow beyond the shared minimum.
 See [Button sizing contract](docs/button-sizing.md) for examples, audit scope,
 exceptions by interaction type, visual verification, and the enforced source gate.
+Legacy `.dockPress` is reserved for icons and content rows. Text actions, including
+container-inherited styles in settings and connection management, must use
+`.dockPrimary` or `.dockSecondary` so they inherit the shared size.
 
 Direct simulator displays use a black canvas in every theme to blend with device
 corner masks. Bridge input pipes suppress SIGPIPE per descriptor, so a helper that
@@ -3213,3 +3380,117 @@ open the matching session tab only while this preference is on. Turning it off
 sends an explicit override of previous ON instructions on the next message and
 stops automatic tab opening; existing devices and manually opened tabs stay intact.
 This is agent guidance, not a terminal-command security boundary or runtime veto.
+
+The bot step begins with a required Hermes Bots callout. Enable Bots plugin and
+Check bot support stay inside it, with verified success, unavailable, disabled,
+and restart-required feedback. Continue requires freshly verified bot support on
+this step; Back and Set up later remain available. Hermes runtimes with built-in
+bot support satisfy the same gate without a separate plugin mutation.
+
+A compact banner at the top of the chat identifies a simulator launched through
+that session's tool flow once its direct display is connected. **Open tab** focuses
+the matching simulator tab. A launch receipt alone never shows Connected. Other
+sessions and manually selected unrelated devices do not acquire the banner. It
+clears on disconnect, tab closure, or when the simulator surface becomes inactive;
+the virtual device may remain running. The banner shares the existing chat overlay
+slot so connection changes do not shift the header or transcript.
+
+Simulator controls use a vertical action rail immediately to the right of the
+fitted device, inside the black canvas. The top bar keeps only device selection
+and reconnect. Debugging, hardware controls, and presentation/copy actions form
+separate vertical groups. Power and Copy screenshot have independent icons;
+there is no overflow menu. Every icon has a tooltip and accessibility label.
+Feedback uses an information popover in the rail instead of reserving a text row
+above the device. The rail scrolls if the panel is short and never covers device
+pixels. Its width is reserved before fitting the display, preserving input geometry.
+
+The cube action enables an optional 3D presentation preview: a rounded solid
+shell with live device pixels, drag/arrow-key rotation, and vertical tilt limits. It is a
+generic hardware model. Device touch,
+keyboard, annotation, and hardware input pause at the capture boundary; held
+input and annotations are released on entry. Screenshots and logs remain available.
+The cube action or Escape restores the flat interactive screen.
+Disconnect and device changes reset preview mode. Screenshot attachments always
+contain original device pixels, excluding the rail, shell, and 3D transform.
+
+Annotate freezes the display and highlights accessible elements. Clicking an element
+or dragging a region opens an anchored comment popover, matching the browser's
+Describe the change / Cancel / Send flow. Send stages the cropped screenshot,
+metadata and comment in the owning draft and restores live input. Escape exits
+annotation. Send screenshot and Copy screenshot use the full live display. App
+logs retain an explicit app filter and editable excerpt because native device logs
+are not scoped to a browser page. Send logs stages context without sending a chat
+message. Disconnect invalidates pending diagnostics and dismisses annotation.
+
+Simulator picker changes invalidate the old stream immediately and take priority
+over previously received launch receipts. Automatic sole-device selection applies
+only before a manual choice. Inspector/log observations follow the retained capture
+object across view reconstruction; controls and results share that same owner.
+
+Both simulator platforms share a compact device toolbar and a neutral device shell
+around the direct display: black bezel, subtle outline, rounded screen corners.
+The shell scales with the display, preserves aspect ratio and input coordinates,
+and is excluded from screenshots. Flat and 3D presentations share softer screen
+corners to reduce black wedges around rounded device displays. The 3D bezel sits
+outside the display to preserve its aspect ratio. It does not duplicate camera cutouts or status
+bars already present in device pixels, or claim model-specific hardware fidelity.
+Disconnected tabs hide debugging and hardware actions. A quiet, unboxed recovery
+column anchors 16pt from the leading edge and 20pt below the toolbar, never centered.
+Its compact icon and heading share a row; readable copy is capped at 480pt and the
+device picker at 320pt. The column places device selection next to its explanation and Start action; the header
+keeps platform identity and the single refresh control. Setup help uses an inline
+disclosure, and IDE launch is shown for setup rather than alongside normal device
+selection. The same column distinguishes missing SDK tools, no installed devices, stopped devices (explicit
+Start device), and connection errors. Discovery checks SDK tools rather than IDE
+presence; installed IDEs provide an Open action for setup. Both tabs remain in the
++ menu, which marks detected missing tooling as Setup required. Launch is headless;
+window mirroring is never a fallback. Action sizing uses the shared compact container.
+
+The simulator action rail is vertically centered beside the display and fits its visible actions. Empty feedback adds no row. The 3D preview uses a rounded solid body with a live front screen, continuous horizontal orbit, constrained vertical tilt, scroll zoom, double-click/Reset view, and Escape to return.
+
+
+### Generated command cards
+
+A version-2 command card shows selectable monospaced command text in a horizontally
+scrollable themed surface, followed by Run in Terminal and Copy at shared compact
+button size. A fixed position below the controls identifies “On this Mac” and the
+actual working directory, or an honest unavailable/error reason. Generated text
+cannot supply a different working directory. Run is a labelled primary action with
+a play icon; Copy is secondary. Cards remain legible at narrow widths.
+
+Only an explicit click from the loaded original reply revision can run a command.
+Execution revalidates session/profile, enabled setting and captured directory.
+The action selects the existing Terminal tab and a fresh shell, without sending input
+to an existing process or unfinished prompt. Existing split shells remain alive;
+the newly selected shell receives a single focused pane. Generated Run does not add
+a shell to a group already containing 16 shells.
+Failures stay on the card, and a submitted command never becomes a fabricated success
+badge or verification result. Ordered cards run independently. HTML and ordinary
+code blocks gain no execution access. Saved and expanded views retain source identity.
+
+Both simulator tabs open 3D preview flat and front-facing. Dragging uses viewport-relative orbit with fixed framing, so rotation does not pump the zoom. Reset view returns to flat; the cube icon or Escape exits preview. App logs groups the app filter and severity above an editable excerpt, with a clear empty state and Attach logs action that adds only the reviewed text to the chat draft.
+
+Repository browsing uses a compact filter toolbar and one detail tab bar. Overview uses an unboxed identity, compact statistics, and divider-separated repository details, release, commits, and events. Shared theme typography, language pills, native navigation, copy actions, and Activity filters remain consistent across widths.
+
+
+### Compact workspace controls
+
+Floating panels expose chat-list collapse/restore and Switch to window; the side navigation omits Expand panel.
+Side-attached workspaces use 24pt vertical and 12pt horizontal clearance; the top island
+retains its menu-bar clearance. The sidebar surface fills the side panel’s outer clearance,
+so decorative gutters do not surround the navigation and conversation list. Navigation destinations scroll on short displays while
+connection and window actions remain reachable. When a desktop chat cannot fit its list,
+conversation, and inspector, the list temporarily collapses. Restoring it hides the
+inspector if necessary; resizing wider restores the list unless it was manually hidden.
+Window title-row drag regions occupy empty space only, outside action and menu targets.
+
+
+### Pinned navigation destinations
+
+The side rail keeps Chats and pinned destinations visible. Kanban, GitHub, and Calendar
+start pinned. The **…** menu lists enabled destinations with a separate pin/unpin button;
+opening a destination closes the menu, while pinning keeps it open. Right-click a pinned
+icon to unpin it. Pins persist locally and are shared by floating and window mode.
+Existing visibility settings still hide disabled destinations without erasing their pins.
+The menu indicates an active unpinned destination, and Settings update badges remain
+visible through More. Connection and window-switch actions stay directly accessible.
