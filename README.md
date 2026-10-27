@@ -361,6 +361,7 @@ the existing request at the end of chat and focuses the composer, **Show in chat
 file-type icons for images, documents, archives, and code. Outputs reuse the shared
 artifact index and refresh after a turn or from the rail's refresh action.
 Disclosure carets align with the first-row icons, including wrapped titles and task summaries.
+Pull requests also collapse as a group, with a count and a bounded list of individual PR quick views.
 Workspace uses a colored folder icon, a project name and path, and labelled branch
 and latest-commit details.
 The icon has no background and highlights when the rail is open. Its floating

@@ -402,6 +402,8 @@ followed by labelled Branch and Latest commit rows with their existing Git icons
 These are disclosures with the same bounded inline scroll area as Changes and PRs.
 Rail disclosures align their caret and 14pt icon to the first title row, keeping
 wrapped titles, task summaries, and secondary metadata below that shared line.
+Pull requests uses the same section disclosure, icon, count, and 280pt list cap;
+individual PR rows retain their own inline details inside it.
 Output file rows use the shared `ArtifactFileIcon` renderer at the compact row size;
 links and interactive outputs retain their semantic icons. Output rows preview images
 or local text on expansion; interactive outputs remain in

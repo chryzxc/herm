@@ -256,13 +256,12 @@ struct SessionRailCard: View {
                 if changes != nil || changesUnavailable {
                     Color.dockBorderLight.frame(height: DockLayout.hairline)
                 }
-                HStack(spacing: 6) {
-                    Text("Pull requests").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                    Spacer(minLength: 0)
-                    Text(references.count.formatted()).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                }
-                ForEach(references) { reference in
-                    entry(reference)
+                SessionRailSummarySection(title: "Pull requests", icon: .gitPullRequest, count: references.count) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(references) { reference in
+                            entry(reference)
+                        }
+                    }
                 }
             } else if changes == nil && !changesUnavailable && summary.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {

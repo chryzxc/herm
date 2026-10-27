@@ -95,7 +95,7 @@ struct SessionRailSummarySections: View {
 }
 
 /// All summary disclosures use the rail's existing bounded inline presentation.
-private struct SessionRailSummarySection<Content: View, Footer: View>: View {
+struct SessionRailSummarySection<Content: View, Footer: View>: View {
     let title: String
     let icon: Ph
     var count: Int? = nil
