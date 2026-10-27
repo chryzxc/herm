@@ -93,14 +93,16 @@ struct SessionRailCardVisualTests {
         defer { app.setValue(enhancedAccessibility, forKey: "accessibilityEnhancedUserInterface") }
         let repository = GitHubRepositoryReference(
             owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
-        let reference = GitHubItemReference(repository: repository, number: 42, kind: .pullRequest)
+        let references = (42..<67).map {
+            GitHubItemReference(repository: repository, number: $0, kind: .pullRequest)
+        }
         let file = RepositoryFileChange(path: "file.swift", status: .modified, isStaged: false, renameSource: nil)
         var changesOpened = 0
         var pullRequestsOpened = 0
         let root = SessionRailCard(
             repositoryName: "repo", repositoryPath: "/tmp/rail-ui-test",
             changes: .init(repositoryName: "repo", fileCount: 1, untrackedCount: 0, files: [file]),
-            lines: .init(additions: 1, deletions: 1), references: [reference], records: [:], failures: [:],
+            lines: .init(additions: 1, deletions: 1), references: references, records: [:], failures: [:],
             isRefreshing: false, onRefresh: {}, onViewAllChanges: { changesOpened += 1 },
             onViewPullRequest: { _ in
                 pullRequestsOpened += 1
@@ -147,6 +149,10 @@ struct SessionRailCardVisualTests {
         try await settle()
         #expect(changesOpened == 0 && pullRequestsOpened == 0)
         #expect(elements(host).contains { ($0.accessibilityLabel?() ?? "").contains("Pull request #42") })
+        let listHeights = elements(host).filter { $0.accessibilityRole?() == .scrollArea }
+            .compactMap { $0.accessibilityFrame?().height }
+        #expect(!listHeights.isEmpty && listHeights.allSatisfy { $0 <= 281 })
+        #expect(listHeights.contains { $0 >= 279 })
         try press("Pull requests")
         try await settle()
         #expect(!elements(host).contains { ($0.accessibilityLabel?() ?? "").contains("Pull request #42") })
