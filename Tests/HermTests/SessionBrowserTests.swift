@@ -31,6 +31,25 @@ struct SessionBrowserTests {
         #expect(store.workspace(for: b) === second)
     }
 
+    @Test func leavingReleasesOnlyUnusedBrowsers() {
+        let store = SessionBrowserStore()
+        let unused = SessionBrowserKey(profileID: nil, sessionID: "unused")
+        let tabbed = SessionBrowserKey(profileID: nil, sessionID: "tabbed")
+        let presented = SessionBrowserKey(profileID: nil, sessionID: "presented")
+        let released = store.workspace(for: unused)
+        let withTab = store.workspace(for: tabbed)
+        _ = withTab.addTab()
+        let shown = store.workspace(for: presented)
+        store.presentation = presented
+
+        for key in [unused, tabbed, presented] { store.releaseIfUnused(key) }
+
+        #expect(!released.isInUse)
+        #expect(store.workspace(for: unused) !== released)
+        #expect(store.workspace(for: tabbed) === withTab)
+        #expect(store.workspace(for: presented) === shown)
+    }
+
     @Test func reapsOnlyOrphanedAgentBrowserChromes() {
         let root = "/Users/me/Library/Application Support/Herm/AgentBrowser"
         let chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new"

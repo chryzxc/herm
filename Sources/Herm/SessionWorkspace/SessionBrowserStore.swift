@@ -51,6 +51,13 @@ final class SessionBrowserWorkspace: ObservableObject {
         primary.web.load(URLRequest(url: URL(string: "about:blank")!))
     }
 
+    /// A tab, loaded page or pending link the user could lose. Without one, quitting loses nothing.
+    var isInUse: Bool {
+        let loaded = { (url: String?) in url.map { !$0.isEmpty && !$0.hasPrefix("about:") } ?? false }
+        return !extras.isEmpty || agent.pendingURL != nil || loaded(primary.web.url?.absoluteString)
+            || agent.pages.contains { loaded($0.url) }
+    }
+
     func open(_ url: URL) {
         primary.address = url.absoluteString
         if agent.isActive { agent.navigate(url) } else { primary.open(url) }
@@ -85,6 +92,7 @@ final class SessionBrowserStore: ObservableObject {
 
     func activate(model: DockModel, reconnect: Bool = false) {
         guard let key = model.browserSessionKey else { return }
+        if let activeKey, activeKey != key { releaseIfUnused(activeKey) }
         let agent = workspace(for: key).agent
         agent.model = model
         if !agent.isActive {
@@ -93,6 +101,13 @@ final class SessionBrowserStore: ObservableObject {
             agent.reconnectHermes()
         }
         activeKey = key
+    }
+
+    /// Selecting a session launches its Chrome so Hermes' browser tools reach it. Leaving one
+    /// that was never used quits it, so visited sessions don't each keep a Chrome alive.
+    func releaseIfUnused(_ key: SessionBrowserKey) {
+        guard presentation != key, let workspace = workspaces[key], !workspace.isInUse else { return }
+        remove(key)
     }
 
     func present(_ url: URL?, model: DockModel) {
