@@ -39,7 +39,7 @@ final class HermesSimulatorBridge {
     }
 
     func start(
-        platform: String, device: String,
+        platform: String, device: String, boot: Bool = false,
         receive: @escaping @MainActor @Sendable (UInt8, Data) -> Void,
         ended: @escaping @MainActor @Sendable () -> Void
     ) throws {
@@ -56,7 +56,7 @@ final class HermesSimulatorBridge {
         }
         let child = Process()
         child.executableURL = Self.python
-        child.arguments = [folder.appendingPathComponent("bridge.py").path, platform, device]
+        child.arguments = [folder.appendingPathComponent("bridge.py").path, platform, device] + (boot ? ["boot"] : [])
         child.environment = ProcessInfo.processInfo.environment.merging(["PYTHONDONTWRITEBYTECODE": "1"]) { _, new in
             new
         }

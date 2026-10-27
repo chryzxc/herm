@@ -283,8 +283,27 @@ def main():
     done = threading.Event()
     try:
         platform, device = sys.argv[1:3]
-        emit('J', dict(devices=devices(platform)))
+        import devices as device_manager
+        if len(sys.argv) > 3 and sys.argv[3] == 'boot':
+            emit('J', dict(booted=device_manager.boot(platform, device)))
+            return
+        try:
+            inventory = device_manager.inventory(platform)
+        except RuntimeError as error:
+            emit('J', dict(devices=[], setup=str(error)))
+            return
+        import importlib.util
+        setup = None
+        if importlib.util.find_spec('grpc') is None or (importlib.util.find_spec('google') is None or importlib.util.find_spec('google.protobuf') is None):
+            setup = 'Install the Herm simulator bridge dependencies, then check again.'
+        elif platform == 'ios' and not any(os.access(p, os.X_OK) for p in ['/opt/homebrew/bin/idb_companion', '/usr/local/bin/idb_companion']):
+            setup = 'Install the iOS companion with brew install facebook/fb/idb-companion, then check again.'
+        emit('J', dict(devices=inventory, setup=setup))
+        if setup:
+            return
         if not device:
+            return
+        if any(d['id'] == device and not d['running'] for d in inventory):
             return
         backend = Android(device) if platform == 'android' else IOS(device)
         def frames():
@@ -297,11 +316,31 @@ def main():
                 if not done.is_set():
                     emit('J', dict(error='Device stream failed. Check the device and bridge version, then reconnect.'))
         threading.Thread(target=frames, daemon=True).start()
+        diagnostic_busy = threading.Lock()
+        def diagnostic(event):
+            request = event.get('request', '')
+            try:
+                import diagnostics
+                result = (diagnostics.inspect(backend, platform, device) if event['kind'] == 'inspect'
+                          else diagnostics.logs(platform, device, event.get('app', ''), event.get('severity', 'errors')))
+                emit('J', dict(diagnostic=dict(request=request, **result)))
+            except Exception:
+                emit('J', dict(diagnostic=dict(request=request, error=(
+                    'Inspection unavailable. Open the app and retry, or drag a screenshot region.' if event['kind'] == 'inspect'
+                    else 'Logs unavailable. Check the app filter, running process, and SDK tools, then retry.'))))
+            finally:
+                diagnostic_busy.release()
         for line in sys.stdin:
             if len(line) > 8192:
                 raise ValueError('Input too large')
             event = json.loads(line)
-            backend.input(event)
+            if event.get('kind') in ('inspect', 'logs'):
+                if diagnostic_busy.acquire(blocking=False):
+                    threading.Thread(target=diagnostic, args=(event,), daemon=True).start()
+                else:
+                    emit('J', dict(diagnostic=dict(request=event.get('request', ''), error='Another diagnostic request is still running. Retry shortly.')))
+            else:
+                backend.input(event)
     except (KeyboardInterrupt, SystemExit):
         pass
     except ImportError:

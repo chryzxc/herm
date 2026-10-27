@@ -38,11 +38,45 @@ final class SessionSimulatorLaunchStore: ObservableObject {
         let callID: String
         let receipt: SessionSimulatorLaunch
     }
+    struct Connection: Identifiable {
+        let id: UUID
+        let session: String
+        let platform: SessionSimulatorPlatform
+        let deviceID: String
+    }
+    @Published private(set) var connections: [UUID: Connection] = [:]
     @Published private(set) var latest: Request?
     private var requests: [String: Request] = [:]
 
     func request(for session: String, platform: SessionSimulatorPlatform) -> Request? {
         requests[session + ":" + platform.rawValue]
+    }
+
+    func setConnected(
+        _ connected: Bool, owner: UUID, session: String, platform: SessionSimulatorPlatform, deviceID: String
+    ) {
+        if connected {
+            if let existing = connections[owner], existing.session == session,
+                existing.platform == platform, existing.deviceID == deviceID
+            {
+                return
+            }
+            connections[owner] = Connection(id: owner, session: session, platform: platform, deviceID: deviceID)
+        } else if connections[owner] != nil {
+            connections.removeValue(forKey: owner)
+        }
+    }
+
+    /// A launch receipt alone is not evidence of a connected display.
+    func connectedLaunches(for session: String) -> [Request] {
+        SessionSimulatorPlatform.allCases.compactMap { platform in
+            guard let request = request(for: session, platform: platform),
+                connections.values.contains(where: {
+                    $0.session == session && $0.platform == platform && $0.deviceID == request.receipt.deviceID
+                })
+            else { return nil }
+            return request
+        }
     }
 
     func present(_ receipt: SessionSimulatorLaunch, session: String, callID: String) {

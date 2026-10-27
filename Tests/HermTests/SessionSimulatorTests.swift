@@ -22,6 +22,34 @@ struct SessionSimulatorTests {
         #expect(SessionSimulatorGeometry.fittedRect(source: .zero, bounds: rect) == .zero)
     }
 
+    @Test func stageReservesRailAndPreservesScreenAspect() {
+        let source = CGSize(width: 390, height: 844)
+        for available in [
+            CGSize(width: 320, height: 720), CGSize(width: 600, height: 720), CGSize(width: 600, height: 200),
+        ] {
+            let canvas = SessionSimulatorGeometry.stageCanvasSize(source: source, available: available)
+            #expect(canvas.width + 62 <= available.width + 0.001)
+            #expect(canvas.height + 16 <= available.height + 0.001)
+            #expect(abs((canvas.width - 20) / (canvas.height - 20) - source.width / source.height) < 0.001)
+        }
+    }
+
+    @Test func deviceShellPreservesAspectRatioAndScreenCoordinates() {
+        for platform in SessionSimulatorPlatform.allCases {
+            for size in [CGSize(width: 390, height: 844), CGSize(width: 844, height: 390)] {
+                let rect = SessionSimulatorGeometry.fittedRect(
+                    source: size, bounds: CGRect(x: 10, y: 10, width: 280, height: 500))
+                #expect(abs(rect.width / rect.height - size.width / size.height) < 0.001)
+                #expect(
+                    SessionSimulatorGeometry.screenRadius(rect: rect, platform: platform) < min(rect.width, rect.height)
+                        / 2)
+                #expect(
+                    SessionSimulatorGeometry.normalizedPoint(
+                        CGPoint(x: rect.midX, y: rect.midY), imageRect: rect) == CGPoint(x: 0.5, y: 0.5))
+            }
+        }
+    }
+
     @Test @MainActor func simulatorTabsRestoreOnlyInTheirSessionAndLegacyLayoutsDecode() throws {
         let legacy = Data(#"{"selected":"Timeline","closed":"Browser","recentClosed":[]}"#.utf8)
         #expect(try JSONDecoder().decode(InspectorPresentation.self, from: legacy).simulatorSections == nil)
@@ -91,6 +119,27 @@ struct SessionSimulatorTests {
         #expect(throws: (any Error).self) {
             try pipe.fileHandleForWriting.write(contentsOf: Data("release\n".utf8))
         }
+    }
+
+    @Test @MainActor func connectionBannerRequiresMatchingSessionLaunchAndLiveDisplay() {
+        let store = SessionSimulatorLaunchStore()
+        let receipt = SessionSimulatorLaunch(
+            schema: "herm.simulator.v1", status: "ready", platform: "android",
+            deviceID: "emulator-5554", deviceName: "Pixel", host: "local")
+        store.present(receipt, session: "a", callID: "launch")
+        #expect(store.connectedLaunches(for: "a").isEmpty)
+        let owner = UUID()
+        store.setConnected(true, owner: owner, session: "b", platform: .android, deviceID: receipt.deviceID)
+        #expect(store.connectedLaunches(for: "a").isEmpty)
+        #expect(store.connectedLaunches(for: "b").isEmpty)
+        store.setConnected(true, owner: owner, session: "a", platform: .android, deviceID: "emulator-5556")
+        #expect(store.connectedLaunches(for: "a").isEmpty)
+        store.setConnected(true, owner: owner, session: "a", platform: .android, deviceID: receipt.deviceID)
+        #expect(store.connectedLaunches(for: "a").count == 1)
+        store.setConnected(false, owner: UUID(), session: "a", platform: .android, deviceID: receipt.deviceID)
+        #expect(store.connectedLaunches(for: "a").count == 1)
+        store.setConnected(false, owner: owner, session: "a", platform: .android, deviceID: receipt.deviceID)
+        #expect(store.connectedLaunches(for: "a").isEmpty)
     }
 
     @Test func directBridgeRejectsOversizedAndUnknownPackets() throws {

@@ -79,3 +79,74 @@ open the matching session tab only while this preference is on. Turning it off
 sends an explicit override of previous ON instructions on the next message and
 stops automatic tab opening; existing devices and manually opened tabs stay intact.
 This is agent guidance, not a terminal-command security boundary or runtime veto.
+
+A compact banner at the top of the chat identifies a simulator launched through
+that session's tool flow once its direct display is connected. **Open tab** focuses
+the matching simulator tab. A launch receipt alone never shows Connected. Other
+sessions and manually selected unrelated devices do not acquire the banner. It
+clears on disconnect, tab closure, or when the simulator surface becomes inactive;
+the virtual device may remain running. The banner shares the existing chat overlay
+slot so connection changes do not shift the header or transcript.
+
+## Inspect and attach debugging context
+
+**Annotate** freezes the displayed frame and reads the device UI hierarchy. Hover
+highlights accessible elements; click selects the smallest matching element, or
+drag to select a screenshot region. A comment popover opens at the selection. **Send** adds your comment, the cropped image
+and available label, identifier, role, value, and normalized bounds to the current
+session's draft. Custom-drawn controls may have no accessible metadata; region
+selection remains available. **Stop annotating** or Escape returns to live input; sending also resumes input. Hierarchy reads
+and display frames are separate snapshots, so animated screens can differ slightly.
+
+**Send screenshot** adds a screenshot and device context. The debugging menu also
+provides **Copy screenshot** and **App logs**. Android logs require an explicit
+package ID and SDK platform-tools; they read up to 500 buffered entries for the
+main app PID. iOS logs require the executable process name and read the last two
+minutes of unified logs. Choose Errors or All levels, then edit the excerpt before
+attaching it. These are on-demand snapshots, not continuous recording. They do
+not include every crash report or stdout-only message. No message is sent automatically.
+
+Requests have timeouts and bounded output. Diagnostic failures do not close the
+direct display. Switching devices or disconnecting clears the inspector and logs;
+stale responses cannot attach to another session. No desktop mirroring is used.
+
+Manual device selection takes priority over an already-present launch receipt.
+Choosing the empty device option stays unselected instead of reconnecting to the
+only running device. Switching immediately invalidates the previous stream.
+Inspector and log state belong to the retained device connection, so parent view
+updates do not detach the controls from their results. The log sheet explains
+that an app filter is required before Read logs becomes available.
+
+## Setup and device shell
+
+Both tabs remain available from + even before SDK installation. Discovery checks
+Xcode's simctl or Android SDK emulator/adb, not IDE installation alone. Missing
+tools produce setup guidance; an empty inventory explains where to create a device.
+Stopped devices appear in the picker and require **Start device**. A sole running
+device can connect automatically until the user makes a manual choice. Android
+starts with `-no-window -grpc-use-token`; iOS boots through simctl without opening
+Simulator.app. Boot timeouts leave the virtual device intact; check again before
+retrying. Closing Herm's connection does not shut down the virtual device.
+
+The neutral rounded device shell is presentation only, not a model-specific skin.
+It uses the same screen rectangle for drawing, touch, and annotation. Screenshots
+contain original device pixels, without the shell. Camera cutouts and system bars
+are not overlaid or duplicated. No desktop window is captured.
+
+## Device-side actions and 3D preview
+
+Actions are arranged vertically beside the device in the black canvas. Power and
+Copy screenshot are separate icons. The rail never covers the screen; its width
+is reserved before scaling the display and it scrolls in short panels.
+
+The cube icon opens a rotatable presentation of the live display. Drag or use
+arrow keys to tilt the device; horizontal rotation is continuous, vertical tilt is limited, and scrolling controls zoom.
+This neutral shell is a presentation effect, not an exact hardware model. Device
+input and annotation pause while previewing; screenshots and logs remain available.
+Return to device, the cube icon, or Escape restores flat interaction. Switching
+devices or disconnecting resets the preview. Captured screenshots contain original
+pixels without the shell, rotation, or action rail.
+
+The simulator action rail is vertically centered beside the display and fits its visible actions. Empty feedback adds no row. The 3D preview uses a rounded solid body with a live front screen, continuous horizontal orbit, constrained vertical tilt, scroll zoom, double-click/Reset view, and Escape to return.
+
+Both simulator tabs open 3D preview flat and front-facing. Dragging uses viewport-relative orbit with fixed framing, so rotation does not pump the zoom. Reset view returns to flat; the cube icon or Escape exits preview. App logs groups the app filter and severity above an editable excerpt, with a clear empty state and Attach logs action that adds only the reviewed text to the chat draft.

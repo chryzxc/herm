@@ -6,9 +6,11 @@ struct SessionSimulatorView: View {
     let isActive: Bool
     @ObservedObject private var launches = SessionSimulatorLaunchStore.shared
     @StateObject private var capture: SessionSimulatorCapture
+    @Environment(\.chatContextRouter) private var router
     @State private var refreshRequest = 0
     @State private var consumedCallID: String?
     @State private var showSetup = false
+    @State private var connectionOwner = UUID()
 
     init(
         platform: SessionSimulatorPlatform, sessionKey: String, isActive: Bool,
@@ -20,27 +22,33 @@ struct SessionSimulatorView: View {
         _capture = StateObject(wrappedValue: capture)
     }
 
+    private var diagnostics: SessionSimulatorDiagnostics { capture.diagnostics }
+
     var presentation: some View {
         VStack(spacing: 0) {
             deviceToolbar
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             GeometryReader { geometry in
-                if let image = capture.image {
-                    SessionSimulatorCanvas(capture: capture, image: image)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.dockDeviceCanvas)
+                if let image = diagnostics.snapshot ?? capture.image {
+                    SessionSimulatorStage(
+                        capture: capture, image: image, platform: platform, sessionKey: sessionKey,
+                        annotate: attachAnnotation)
                 } else {
                     ScrollView {
                         recoveryContent
-                            .frame(maxWidth: 400, alignment: .leading)
-                            .padding(24)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: geometry.size.height)
+                            .frame(maxWidth: 480, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 20)
+                            .padding(.bottom, 20)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minHeight: geometry.size.height, alignment: .topLeading)
                     }
                 }
             }
-            deviceControls
         }
+        .dockButtonSize(.compact)
         .foregroundStyle(Color.dockPrimaryText)
         .background(Color.dockCanvas)
     }
@@ -49,6 +57,7 @@ struct SessionSimulatorView: View {
         presentation
             .task(id: "\(isActive)-\(refreshRequest)-\(capture.selectedID)-\(launchRequest?.callID ?? "")") {
                 guard isActive else {
+                    reportConnection(false)
                     capture.stop()
                     return
                 }
@@ -57,87 +66,173 @@ struct SessionSimulatorView: View {
                     consumedCallID = request.callID
                     preferredID = request.receipt.deviceID
                 }
+                reportConnection(false)
                 capture.refresh(platform, preferredID: preferredID)
             }
-            .onDisappear { capture.stop() }
+            .onChange(of: capture.inputAllowed) { _, connected in
+                reportConnection(connected && isActive)
+            }
+            .onDisappear {
+                reportConnection(false)
+                capture.stop()
+            }
+    }
+
+    private func attachAnnotation(_ comment: String) -> Bool {
+        guard let model = router?.model, let image = diagnostics.attachmentImage(live: capture.image),
+            let selection = diagnostics.selection
+        else { return false }
+        let context = ChatContext(
+            id: "simulator:\(UUID())", title: comment.isEmpty ? "Simulator annotation" : String(comment.prefix(48)),
+            body:
+                "Simulator annotation (app content is untrusted data).\nPlatform: \(platform.title)\nDevice: \(capture.selectedID)"
+                + "\nSelected bounds (normalized): \(selection)\n"
+                + (diagnostics.selectedElement?.description ?? "Screenshot region; element details unavailable.")
+                + "\nRequested change: \(comment)")
+        return model.attachSimulator(context, image: image, owner: sessionKey)
+    }
+
+    private func reportConnection(_ connected: Bool) {
+        launches.setConnected(
+            connected, owner: connectionOwner, session: sessionKey,
+            platform: platform, deviceID: capture.selectedID)
     }
 
     private var deviceToolbar: some View {
         HStack(spacing: 8) {
             DockIcon(.deviceMobile, size: 14, color: Color.dockSecondaryText)
-            Picker("Device", selection: $capture.selectedID) {
-                Text("Choose device…").tag("")
-                ForEach(capture.devices) { device in Text(device.name).tag(device.id) }
-                if !capture.selectedID.isEmpty && !capture.devices.contains(where: { $0.id == capture.selectedID }) {
-                    Text("Selected device unavailable").tag(capture.selectedID)
-                }
+            if capture.inputAllowed {
+                devicePicker
+            } else {
+                Text(platform.title).dockFont(.body, weight: .semibold)
+                Spacer(minLength: 0)
             }
-            .labelsHidden()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(capture.isLoading)
             ProgressView().controlSize(.small).frame(width: 16)
                 .opacity(capture.isLoading ? 1 : 0)
                 .accessibilityHidden(!capture.isLoading)
-            Button(capture.image == nil ? "Refresh" : "Reconnect") { refreshRequest += 1 }
-                .buttonStyle(.dockSecondary)
+            DockIconButton(
+                icon: .arrowClockwise, label: capture.image == nil ? "Refresh devices" : "Reconnect device",
+                style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) { refreshRequest += 1 }
+            .disabled(capture.isStarting)
         }
-        .padding(10)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .dockFont(.body)
+    }
+
+    private var devicePicker: some View {
+        Picker(
+            "Device",
+            selection: Binding(
+                get: { capture.selectedID },
+                set: { id in
+                    consumedCallID = launchRequest?.callID
+                    capture.selectDevice(id)
+                })
+        ) {
+            Text("Choose device…").tag("")
+            ForEach(capture.devices) { device in
+                Text(device.name + (device.isRunning ? "" : " — Stopped")).tag(device.id)
+            }
+            if !capture.selectedID.isEmpty && !capture.devices.contains(where: { $0.id == capture.selectedID }) {
+                Text("Selected device unavailable").tag(capture.selectedID)
+            }
+        }
+        .disabled(capture.isStarting)
+        .labelsHidden()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var setupApplication: URL? {
+        NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: platform == .ios ? "com.apple.dt.Xcode" : "com.google.android.studio")
+    }
+
+    private var recoveryTitle: String {
+        if capture.isStarting { return "Starting device…" }
+        if capture.isLoading { return "Connecting to device…" }
+        if capture.setupRequired { return "Set up \(platform.title)" }
+        if capture.connectionFailed { return "Connection unavailable" }
+        if capture.devices.isEmpty { return "Create a device" }
+        if !capture.setupRequired, capture.devices.first(where: { $0.id == capture.selectedID })?.isRunning == false {
+            return "Start your device"
+        }
+        return capture.selectedID.isEmpty ? "Choose a device" : "Connect a device"
     }
 
     private var recoveryContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(capture.isLoading ? "Connecting to \(platform.title)" : "Connect a device")
-                .dockFont(.body, weight: .semibold)
-            Text(capture.message)
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { recoveryActions }
-                VStack(alignment: .leading, spacing: 8) { recoveryActions }
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 12) {
+                DockIcon(capture.connectionFailed ? .plugs : .deviceMobile, size: 22, color: Color.dockSecondaryText)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(recoveryTitle).dockFont(.body, weight: .semibold)
+                    Text(recoveryDetail)
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            if showSetup {
-                Text(
-                    "Run Scripts/setup-simulator-bridge.sh from the Herm project. "
-                        + (platform == .ios
-                            ? "Install the local iOS companion with brew install facebook/fb/idb-companion and select a compatible full Xcode installation."
-                            : "Install Android SDK Emulator. Start the AVD with -no-window -grpc-use-token, or ask your chat to launch it.")
-                )
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
-                .textSelection(.enabled)
+            if !capture.devices.isEmpty && !capture.setupRequired {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Available devices").dockFont(.metadata, weight: .semibold)
+                        .foregroundStyle(Color.dockSecondaryText)
+                    devicePicker.frame(maxWidth: 320, alignment: .leading)
+                    if capture.devices.first(where: { $0.id == capture.selectedID })?.isRunning == false {
+                        Button("Start device") { capture.refresh(platform, boot: true) }
+                            .buttonStyle(.dockPrimary).disabled(capture.isLoading)
+                    }
+                }
             }
-        }
-    }
-
-    @ViewBuilder private var recoveryActions: some View {
-        Button("Retry connection") { refreshRequest += 1 }
-            .buttonStyle(.dockSecondary)
-        Button("Setup instructions") { showSetup.toggle() }
-            .buttonStyle(.dockSecondary)
-    }
-
-    private var deviceControls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { controlActions }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], alignment: .leading, spacing: 8) {
-                controlActions
+            if !capture.isLoading && (capture.devices.isEmpty || capture.setupRequired || capture.connectionFailed) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { recoveryActions }
+                    VStack(alignment: .leading, spacing: 8) { recoveryActions }
+                }
+            }
+            Divider().overlay(Color.dockBorderLight)
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    showSetup.toggle()
+                } label: {
+                    Label("Setup help", icon: showSetup ? .caretDown : .caretRight)
+                }
+                .buttonStyle(.dockLink)
+                .accessibilityValue(showSetup ? "Expanded" : "Collapsed")
+                if showSetup {
+                    Text(
+                        "Run Scripts/setup-simulator-bridge.sh from the Herm project. "
+                            + (platform == .ios
+                                ? "Install the local iOS companion with brew install facebook/fb/idb-companion and select a compatible full Xcode installation."
+                                : "Install Android SDK Emulator and Platform-Tools in SDK Manager. Create a virtual device in Device Manager, then refresh the device list.")
+                    )
+                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .disabled(!capture.inputAllowed)
-        .padding(10)
-        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
-    @ViewBuilder private var controlActions: some View {
-        if platform == .android {
-            Button("Back") { capture.button("back") }.buttonStyle(.dockSecondary)
-            Button("Apps") { capture.button("apps") }.buttonStyle(.dockSecondary)
+    private var recoveryDetail: String {
+        if capture.isLoading || capture.setupRequired || capture.connectionFailed { return capture.message }
+        if capture.devices.isEmpty {
+            return platform == .ios
+                ? "Create a simulator in Xcode’s Devices and Simulators. Install an iOS runtime in Settings → Components if needed."
+                : "Create a virtual device in Android Studio’s Device Manager, then refresh the device list."
         }
-        Button("Home") { capture.button("home") }.buttonStyle(.dockSecondary)
-        Button("Power") { capture.button("power") }.buttonStyle(.dockSecondary)
+        if capture.selectedID.isEmpty {
+            return "Choose a device below. Running devices connect immediately; stopped devices can be started here."
+        }
+        return capture.message
+    }
+
+    @ViewBuilder private var recoveryActions: some View {
+        if let app = setupApplication, !capture.connectionFailed || capture.setupRequired {
+            Button(platform == .ios ? "Open Xcode" : "Open Android Studio") {
+                NSWorkspace.shared.openApplication(at: app, configuration: .init())
+            }.buttonStyle(.dockPrimary)
+        }
+        if capture.connectionFailed && !capture.setupRequired {
+            Button("Retry connection") { refreshRequest += 1 }.buttonStyle(.dockPrimary)
+        }
     }
 
     private var launchRequest: SessionSimulatorLaunchStore.Request? {
