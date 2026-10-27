@@ -608,11 +608,11 @@ struct CalendarWorkspaceView: View {
                         .controlSize(.small)
                         .help("Hide this. Turn it on later from the Calendars menu.")
                     Spacer(minLength: 8)
-                    // Only after Connect could not get past a refusal.
+                    // Existing refusals are changed in System Settings.
                     if system.stillRefused {
                         Button("Privacy Settings") { SystemCalendarService.openPrivacySettings() }
                             .buttonStyle(.dockLink)
-                            .help("macOS did not show the prompt. Allow Herm under Calendars and Reminders there.")
+                            .help("Allow Herm under Calendars and Reminders in Privacy & Security.")
                     }
                 }
             }

@@ -31,7 +31,7 @@ final class SpeechInput: ObservableObject {
     }
 
     private let recognizer = SFSpeechRecognizer(locale: Locale.current)
-    private let audioEngine = AVAudioEngine()
+    private(set) var audioEngine: AVAudioEngine?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var isStopping = false
@@ -67,8 +67,9 @@ final class SpeechInput: ObservableObject {
         isStopping = true
         silenceTask?.cancel()
         silenceTask = nil
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine = nil
         request?.endAudio()
         recognitionTask?.cancel()
         request = nil
@@ -128,27 +129,31 @@ final class SpeechInput: ObservableObject {
             return
         }
         Task { [weak self] in
+            guard let self, self.startGeneration == generation, !self.isStopping else { return }
             guard await Self.requestSpeechAuthorization() == .authorized else {
-                guard let self, self.startGeneration == generation, !self.isStopping else { return }
+                guard self.startGeneration == generation, !self.isStopping else { return }
                 self.isStarting = false
                 self.isUnavailable = true
                 self.errorMessage = "Speech recognition permission is required."
                 return
             }
+            guard self.startGeneration == generation, !self.isStopping else { return }
             guard await Self.requestMicrophoneAuthorization() else {
-                guard let self, self.startGeneration == generation, !self.isStopping else { return }
+                guard self.startGeneration == generation, !self.isStopping else { return }
                 self.isStarting = false
                 self.isUnavailable = true
                 self.errorMessage = "Microphone permission is required."
                 return
             }
-            guard let self, self.startGeneration == generation, !self.isStopping else { return }
+            guard self.startGeneration == generation, !self.isStopping else { return }
             self.start(generation: generation)
         }
     }
 
     nonisolated static func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
-        await withCheckedContinuation { continuation in
+        let status = SFSpeechRecognizer.authorizationStatus()
+        guard status == .notDetermined else { return status }
+        return await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status)
             }
@@ -156,7 +161,9 @@ final class SpeechInput: ObservableObject {
     }
 
     nonisolated static func requestMicrophoneAuthorization() async -> Bool {
-        await withCheckedContinuation { continuation in
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        guard status == .notDetermined else { return status == .authorized }
+        return await withCheckedContinuation { continuation in
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 continuation.resume(returning: granted)
             }
@@ -207,10 +214,12 @@ final class SpeechInput: ObservableObject {
         request.taskHint = .dictation
         self.request = request
 
+        let audioEngine = AVAudioEngine()
+        self.audioEngine = audioEngine
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            self.request = nil
+            stop()
             isStarting = false
             isUnavailable = true
             errorMessage = "No microphone input device is available."
@@ -417,18 +426,21 @@ final class MicLevelMeter: ObservableObject {
         let expected = generation
         recognitionFailures = 0
         Task { [weak self] in
+            guard let self, self.generation == expected, self.isStarting else { return }
             // TCC answers on a background queue; main-actor callbacks trap there.
             let granted = await SpeechInput.requestMicrophoneAuthorization()
-            if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-                _ = await SpeechInput.requestSpeechAuthorization()
-            }
-            guard let self, self.generation == expected, self.engine == nil else { return }
-            self.isStarting = false
+            guard self.generation == expected, self.isStarting else { return }
             guard granted else {
+                self.isStarting = false
                 self.errorMessage =
                     "Allow microphone access in System Settings → Privacy & Security → Microphone, then retry."
                 return
             }
+            if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+                _ = await SpeechInput.requestSpeechAuthorization()
+            }
+            guard self.generation == expected, self.engine == nil else { return }
+            self.isStarting = false
             self.startEngine()
         }
     }

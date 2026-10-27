@@ -22,10 +22,9 @@ final class SystemCalendarService: ObservableObject {
     /// Why the last access request failed, if macOS returned an error.
     @Published private(set) var isRequestingAccess = false
     @Published private(set) var requestError: String?
-    /// Connect ran and macOS still refused; only then is System Settings the way out.
-    @Published private(set) var stillRefused = false
+    var stillRefused: Bool { anyDenied }
 
-    private let store = EKEventStore()
+    private lazy var store = EKEventStore()
     private var range: DateInterval?
     /// The user's "Show Mac Calendar" choice. Off means EventKit is not read at all.
     private var isEnabled = true
@@ -36,7 +35,7 @@ final class SystemCalendarService: ObservableObject {
 
     init() {
         readAccess()
-        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) {
+        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) {
             [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
@@ -48,40 +47,28 @@ final class SystemCalendarService: ObservableObject {
         isRequestingAccess = true
         defer { isRequestingAccess = false }
         requestError = nil
-        // macOS only prompts while a service is undecided. After an earlier refusal
-        // or write-only grant, reset Herm's own decision so the prompt shows here
-        // instead of sending the user to System Settings.
-        if eventAccess == .denied { await Self.resetDecision("Calendar") }
-        if reminderAccess == .denied { await Self.resetDecision("Reminders") }
+        readAccess()
         // A menu-bar app must be frontmost or the system prompt can open behind other windows.
         NSApp.activate(ignoringOtherApps: true)
         do {
-            // Ask whenever full access is missing, not only when undecided: write-only
-            // access can be upgraded, and a refusal just returns without a prompt.
-            if eventAccess != .granted { _ = try await store.requestFullAccessToEvents() }
-            if reminderAccess != .granted { _ = try await store.requestFullAccessToReminders() }
+            // Only undecided or upgradeable access can show a consent prompt.
+            if Self.shouldRequestAccess(EKEventStore.authorizationStatus(for: .event)) {
+                _ = try await store.requestFullAccessToEvents()
+            }
+            if Self.shouldRequestAccess(EKEventStore.authorizationStatus(for: .reminder)) {
+                _ = try await store.requestFullAccessToReminders()
+            }
         } catch {
             requestError = HermesDiagnosticsService.safeSummary(error.localizedDescription)
         }
         // A store created before access was granted keeps an empty calendar list.
-        store.reset()
         readAccess()
-        stillRefused = anyDenied
+        if eventAccess == .granted || reminderAccess == .granted { store.reset() }
         reload()
     }
 
-    /// Clears only this app's own privacy decision for one service.
-    private static func resetDecision(_ service: String) async {
-        guard let bundleID = Bundle.main.bundleIdentifier else { return }
-        await Task.detached {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-            process.arguments = ["reset", service, bundleID]
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            guard (try? process.run()) != nil else { return }
-            process.waitUntilExit()
-        }.value
+    static func shouldRequestAccess(_ status: EKAuthorizationStatus) -> Bool {
+        status == .notDetermined || status == .writeOnly
     }
 
     /// Re-reads permissions too, so access granted in System Settings shows up on return.
