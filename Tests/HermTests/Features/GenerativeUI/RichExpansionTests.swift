@@ -199,7 +199,7 @@ struct RichExpansionTests {
     }
 
     @Test func allRecipeFamiliesHaveValidFixtures() throws {
-        #expect(RichGenerationRecipes.all.count == 16)
+        #expect(RichGenerationRecipes.all.count == 20)
         for recipe in RichGenerationRecipes.all {
             #expect(!recipe.prompt.isEmpty)
             #expect(try surface(RichGenerationRecipes.fixture(for: recipe)).validate())

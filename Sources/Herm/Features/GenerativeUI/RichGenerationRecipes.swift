@@ -9,6 +9,19 @@ enum RichGenerationRecipes {
     }
     static let all: [Recipe] = [
         Recipe(
+            id: "database-setup",
+            prompt: "Show bun run db:migrate followed by bun run start as separate runnable command cards.",
+            feature: "command"),
+        Recipe(
+            id: "install-dependencies", prompt: "Show the supplied dependency-install command with Run in Terminal.",
+            feature: "command"),
+        Recipe(
+            id: "focused-tests", prompt: "Make the supplied focused-test command runnable in the session Terminal.",
+            feature: "command"),
+        Recipe(
+            id: "dev-server", prompt: "Show the supplied dev-server command as a runnable command card.",
+            feature: "command"),
+        Recipe(
             id: "debugging", prompt: "Explain these errors with severity, location and a suggested fix.",
             feature: "findings"),
         Recipe(
@@ -60,6 +73,22 @@ enum RichGenerationRecipes {
             feature: "checklist"),
     ]
     static func fixture(for recipe: Recipe) -> String {
+        if recipe.feature == "command" {
+            let commands: [String] =
+                switch recipe.id {
+                case "database-setup": ["bun run db:migrate", "bun run start"]
+                case "install-dependencies": ["bun install"]
+                case "focused-tests": ["swift test --filter ExampleTests"]
+                default: ["bun run dev"]
+                }
+            let surface = RichSurface(
+                version: 2, id: recipe.id, title: "Suggested commands", fallback: commands.joined(separator: "\n"),
+                kind: .native,
+                blocks: commands.enumerated().map { index, command in
+                    RichBlock(type: .command, id: "step-\(index)", payload: .command(.init(command: command)))
+                })
+            return (try? JSONEncoder().encode(surface)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        }
         if recipe.feature == "html" {
             let learning = recipe.id == "learning"
             let html = learning ? quiz : savings

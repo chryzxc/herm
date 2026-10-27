@@ -13,6 +13,7 @@ struct RichNativeBlockView: View {
     var body: some View {
         Group {
             switch block.payload {
+            case .command(let command): RichCommandView(command: command)
             case .code(let code): RichCodeView(code: code)
             case .findings(let findings): RichFindingsView(findings: findings)
             case .workflow(let workflow): RichWorkflowView(workflow: workflow)

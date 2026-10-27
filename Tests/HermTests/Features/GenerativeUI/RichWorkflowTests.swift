@@ -20,7 +20,7 @@ struct RichWorkflowTests {
         for theme in [DockThemeID.warmLight, .slate, .glass, .mono] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
-            for id in ["code", "findings", "workflow", "comparison"] {
+            for id in ["code", "command", "findings", "workflow", "comparison"] {
                 let descriptor = try #require(RichFeatureRegistry.local.first { $0.id == id })
                 let source = RichFeatureRegistry.exampleSurface(descriptor)
                 let surface = try JSONDecoder().decode(RichSurface.self, from: Data(source.utf8))

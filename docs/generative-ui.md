@@ -221,7 +221,7 @@ inspection, developer exploration, UI review, and delivery workflows. These exer
 reusable native components and offline HTML, rather than installing separate apps.
 Run the original Generative UI/HTML suites plus
 `RichExpansionTests|RichLifecycleTests|RichTemplateContractTests|RichTemplateInteractionTests`.
-The template suites cover every catalog entry, all sixteen recipe families, documented
+The template suites cover every catalog entry, all twenty recipe families, documented
 `herm-ui` examples, mixed dashboards, all form controls, and linked multi-series
 charts. HTML examples execute in the real offline WebKit host to check input changes,
 quiz scoring, and reset. Optional `HERM_TEMPLATE_REVIEW_DIR` writes native captures
@@ -252,3 +252,37 @@ combinations of supported components. Simple answers still use Markdown.
 These formats participate in readable projections, exports, saved artifacts, and
 registry-driven rendering tests. Filenames and finding locations are display text,
 not filesystem access or executable actions.
+
+
+## Runnable command cards
+
+Version-2 `command` blocks render selectable shell text with Copy and Run in Terminal.
+Use one block per step, in execution order. For example:
+
+```herm-ui
+{"version":2,"id":"drizzle-setup","title":"Drizzle setup","fallback":"Run bun run db:migrate, then bun run start after the migration succeeds.","kind":"native","blocks":[{"id":"migrate","type":"command","payload":{"command":"bun run db:migrate"}},{"id":"seed","type":"command","payload":{"command":"bun run start"}}]}
+```
+
+The card shows the local working directory before execution. Run uses this Mac's
+session Terminal tab, with the selected worktree/project directory or Home when
+unbound. The generated payload cannot override that directory. Each explicit Run
+opens a fresh shell (reusing an unstarted initial shell), selects it and opens the
+Terminal inspector. Existing jobs and partially typed input remain untouched.
+Split shells remain alive; the new command is shown as a single focused pane.
+Commands are not chained across cards: inspect the first result before running the next.
+
+Run is available only while the original reply revision is loaded in its owning
+profile/session and Generative UI is enabled. The action rechecks those conditions
+and the captured directory at click time. Historical artifacts from other sessions
+remain copyable; opening them never executes anything. Output, interruption and
+shell lifetime belong to the existing Terminal workspace. A click is not a verified
+success result, and it does not create verification evidence.
+
+Commands are limited to 512 UTF-8 bytes and one line, without control or invisible
+format characters. This stays below the initial PTY line buffer while its shell
+starts. Longer scripts belong in copyable `code` blocks or project files.
+Generated Run opens no additional shell once a group contains 16 shells; reaching
+that limit or losing the directory
+produces an in-card error. HTML remains offline without an execution bridge.
+The generation recipes now include ordered database setup, dependency installation,
+focused tests and development servers.

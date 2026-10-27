@@ -189,11 +189,15 @@ struct RichSurfaceView: View {
             }
         }
     }
-    private func expandedPage(close: @escaping () -> Void) -> some View {
+    private func expandedPage(close: @escaping @MainActor () -> Void) -> some View {
         DockExpandedPage(title: surface.title, subtitle: "Generated artifact", close: close) {
             ScrollView {
                 RichSurfaceView(surface: surface, source: source, expanded: true)
-                    .environment(\.richArtifactReference, reference).padding(16)
+                    .environment(\.richArtifactReference, reference)
+                    .environment(\.richReplyContext, context)
+                    .environment(\.richReplyState, state)
+                    .environment(\.richHostActionRouter, hostRouter)
+                    .environment(\.richCommandCompletion, close).padding(16)
             }
         }
     }
@@ -276,7 +280,7 @@ struct RichSurfaceView: View {
             case .chart:
                 RichLegacyChartView(block: block, blockID: "legacy-chart:\(index)", state: presentation)
             case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record,
-                .code, .findings, .workflow:
+                .code, .findings, .workflow, .command:
                 EmptyView()
             case .form:
                 if let state, let context {

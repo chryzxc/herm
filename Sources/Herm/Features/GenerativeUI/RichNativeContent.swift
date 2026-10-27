@@ -152,6 +152,7 @@ struct RichRecordTarget: Codable, Equatable, Sendable {
 
 /// V2 payloads stay typed; legacy fields are decoded only for V1-compatible blocks.
 enum RichBlockPayload: Equatable, Sendable {
+    case command(RichCommand)
     case code(RichCode)
     case findings(RichFindings)
     case workflow(RichWorkflow)
@@ -170,6 +171,7 @@ enum RichBlockPayload: Equatable, Sendable {
     static func decode(type: RichBlock.Kind, decoder: Decoder) throws -> Self {
         let value = try decoder.singleValueContainer()
         switch type {
+        case .command: return .command(try value.decode(RichCommand.self))
         case .code: return .code(try value.decode(RichCode.self))
         case .findings: return .findings(try value.decode(RichFindings.self))
         case .workflow: return .workflow(try value.decode(RichWorkflow.self))
@@ -192,6 +194,7 @@ enum RichBlockPayload: Equatable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         switch self {
+        case .command(let value): try value.encode(to: encoder)
         case .code(let value): try value.encode(to: encoder)
         case .findings(let value): try value.encode(to: encoder)
         case .workflow(let value): try value.encode(to: encoder)
@@ -210,6 +213,7 @@ enum RichBlockPayload: Equatable, Sendable {
 
     func validate(in surface: RichSurface? = nil) -> Bool {
         switch self {
+        case .command(let value): return value.validate()
         case .code(let value): return value.validate()
         case .findings(let value): return value.validate()
         case .workflow(let value): return value.validate()
@@ -259,6 +263,7 @@ enum RichBlockPayload: Equatable, Sendable {
 
     var plainText: String {
         switch self {
+        case .command(let value): return value.command
         case .code(let value): return value.plainText
         case .findings(let value): return value.items.map(\.plainText).joined(separator: "\n\n")
         case .workflow(let value): return value.items.map(\.plainText).joined(separator: "\n\n")

@@ -7,6 +7,11 @@ final class RichHostActionRouter: ObservableObject {
         let detail: String
         let open: @MainActor () -> Void
     }
+    struct TerminalAction {
+        let directory: String
+        let run: @MainActor (String) throws -> Void
+    }
+    let terminal: TerminalAction?
     let scope: ProfileScopedID?
     var openSource: @MainActor (RichArtifactReference) async throws -> Void
     struct Feature {
@@ -19,17 +24,34 @@ final class RichHostActionRouter: ObservableObject {
         scope: ProfileScopedID? = nil,
         openSource: @escaping @MainActor (RichArtifactReference) async throws -> Void = { _ in
             throw QuickDraftError.message("Open the source session to inspect this reply.")
-        }, features: [Feature]
+        }, terminal: TerminalAction? = nil, features: [Feature]
     ) {
+        self.terminal = terminal
         self.scope = scope
         self.openSource = openSource
         self.features = features
     }
+    func canRunCommand(context: RichReplyContext?) -> Bool {
+        guard UserDefaults.standard.object(forKey: GenerativeUIIntegration.preferenceKey) as? Bool != false,
+            let terminal, !terminal.directory.isEmpty, let scope, let context, context.isCurrent,
+            context.model?.isRestoringSession == false
+        else { return false }
+        return scope.resourceID == context.destination.sessionID && scope.profileID == context.destination.profileID
+    }
+
+    func run(_ command: RichCommand, context: RichReplyContext?) throws {
+        guard command.validate(), canRunCommand(context: context), let terminal else {
+            throw QuickDraftError.message("This command is unavailable. Open the original reply in its session.")
+        }
+        try terminal.run(command.command)
+    }
+
     func resolve(_ target: RichRecordTarget) -> ResolvedRecord? {
         features.first { $0.kind == target.kind }?.resolve(target.id)
     }
     func contextProvider() -> (QuickDestination) -> RichGenerationContext {
         let scope = scope
+        let terminalDirectory = terminal?.directory
         // Capture only data readers, never navigation handlers that retain their view.
         let readers = features.map { ($0.kind, $0.ids) }
         return { destination in
@@ -41,7 +63,8 @@ final class RichHostActionRouter: ObservableObject {
             }
             return RichGenerationContext(
                 profileID: scope.profileID, sessionID: scope.resourceID,
-                availableRecords: Set(records.map(\.kind)), recordReferences: records)
+                availableRecords: Set(records.map(\.kind)), recordReferences: records,
+                terminalDirectory: terminalDirectory)
         }
     }
     func generationContext() -> RichGenerationContext {

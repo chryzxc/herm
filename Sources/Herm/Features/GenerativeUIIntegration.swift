@@ -8,6 +8,22 @@ enum GenerativeUIIntegration {
         UserDefaults.standard.object(forKey: preferenceKey) as? Bool ?? true
     }
 
+    static let surfaceID = "herm.generative-ui"
+
+    static func agentSurface(defaults: UserDefaults = .standard) -> HermAgentSurface? {
+        guard defaults.object(forKey: preferenceKey) as? Bool ?? true else { return nil }
+        return HermAgentSurface(
+            id: surfaceID, rules: RichFeatureRegistry.rules, reference: RichFeatureRegistry.reference())
+    }
+
+    /// Publishes the records this chat can reference before its prompt is sent.
+    @MainActor static func noteGenerationContext(_ context: RichGenerationContext) {
+        HermAgentSurfaces.note(
+            sessionID: context.sessionID, surface: surfaceID,
+            reference: RichFeatureRegistry.sessionReference(context: context))
+    }
+
+    /// Keep prompts self-contained until the optional Hermes reference plugin is available.
     static func preparePrompt(
         _ text: String, enabled: Bool = isEnabled, context: RichGenerationContext = RichGenerationContext()
     ) -> String {
@@ -26,6 +42,13 @@ enum GenerativeUIIntegration {
     }
 
     static func displayUserText(_ text: String) -> String {
+        var text = text
+        // Older Herm builds appended the simulator preference after the rendering context.
+        if text.hasSuffix("\n</herm-simulator-preference>"),
+            let preference = text.range(of: "\n\n<herm-simulator-preference>\n", options: .backwards)
+        {
+            text = String(text[..<preference.lowerBound])
+        }
         guard text.hasSuffix("\n[/Herm rendering context]"),
             let context = text.range(of: "\n\n[Herm rendering context v1]\n", options: .backwards)
         else { return text }

@@ -5,6 +5,7 @@ struct RichGenerationContext: Equatable, Sendable {
     var sessionID: String?
     var availableRecords: Set<RichRecordTarget.Kind> = []
     var recordReferences: [RichRecordTarget] = []
+    var terminalDirectory: String?
 }
 
 struct RichFeatureDescriptor: Identifiable, Sendable {
@@ -22,6 +23,11 @@ struct RichFeatureDescriptor: Identifiable, Sendable {
 /// Every advertised example is decoded through the production format and rendered by its typed block view.
 enum RichFeatureRegistry {
     static let local: [RichFeatureDescriptor] = [
+        .init(
+            id: "command", version: 2,
+            guidance:
+                "One explicit shell command (up to 512 UTF-8 bytes, no control characters or newlines). Run in Terminal is a user click in the original loaded session, in a fresh local shell at the displayed session directory. Use separate ordered blocks for migrations, installs, tests or dev servers. No automatic execution or success claims; code remains copy-only",
+            example: #"{"id":"migrate","type":"command","payload":{"command":"bun run db:migrate"}}"#),
         .init(
             id: "code", version: 2, guidance: "Copyable code, commands, config or logs; display only, never executed",
             example:
@@ -132,22 +138,48 @@ enum RichFeatureRegistry {
             }).filter { $0.isAvailable(in: context) }.sorted { $0.id < $1.id }
     }
 
+    /// Session rules; the full catalog is served on demand so the rules fit Hermes' prompt-section budget.
+    static let rules = """
+        Generative UI: Herm renders fenced `herm-ui` JSON surfaces in replies. When an interactive or structured view helps, use one; the user does not need to ask for Herm UI or HTML. For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface whose inputs update results immediately. Respect explicit requests for plain text, code listings, or project/file changes, and use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes. Before writing a surface, call herm_reference with surface "herm.generative-ui" for the envelope, block catalog, limits and records loaded in this chat.
+        """
+
+    /// Envelope, composition rules and the local block catalog. Session records come from `sessionReference`.
+    static func reference() -> String {
+        """
+        Example HTML tool: a savings calculator needs editable balance, contribution, rate and years with a recalculating result.
+        Envelope: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Use version 2 for new components, datasets or revisionOf. Native surfaces omit html. HTML uses kind "html", complete inline HTML/CSS/JS in html, and omits blocks. Include a useful fallback. HTML is offline and has no host bridge, credentials, storage, files, tools, downloads, popups or device access. Never request secrets.
+        V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; dataset cells, metric values, comparison values and tree values are strings. Share datasets to link selection. Optional metadata example: \(metadataExample). assumptions accepts a string or an array of strings; source and observedAt are strings, fictional is a boolean. Supply only known metadata. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.
+        Compose task-focused views: planning and runbooks use workflow + checklist; debugging and code review use findings + code; research uses sources + comparison; budgets use metrics + shared table/chart; onboarding uses tree + code; suggested shell actions use command blocks for install, migrate, test and start-server steps; release reviews use workflow + findings. Ask for missing requirements with form. Use only the blocks that help the current task, not every component. Workflows and findings are supplied snapshots, never verified runtime records. Non-proposed workflow states require evidence from the input. Use readable headings, short detail, and one primary working surface; avoid decorative dashboards.
+        Limits: 1 MiB per surface, 100 blocks, 1000 rows/items/points, 20 table columns. Available blocks:
+        \(catalog(descriptors(in: RichGenerationContext())))
+        """
+    }
+
+    /// Record blocks for the records loaded in one chat; nil when none are.
     static func instructions(context: RichGenerationContext = RichGenerationContext()) -> String {
-        let catalog = descriptors(in: context).map {
-            "\($0.id) (v\($0.version)): \($0.guidance). Example: \($0.example)"
-        }.joined(separator: "\n")
-        return """
-            [Herm rendering context v1]
+        let guidance = """
             Generative UI is enabled in Herm. When an interactive or structured view helps, use a fenced `herm-ui` JSON object. Do not require the user to mention Herm UI or HTML.
-            For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface. Wire inputs to update results immediately. A savings calculator needs editable balance, contribution, rate and years with a recalculating result.
+            For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface. Wire inputs to update results immediately.
             Respect explicit requests for plain text, code listings, or project/file changes. Use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes.
-            Envelope: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Use version 2 for new components, datasets or revisionOf. Native surfaces omit html. HTML uses kind "html", complete inline HTML/CSS/JS in html, and omits blocks. Include a useful fallback. HTML is offline and has no host bridge, credentials, storage, files, tools, downloads, popups or device access. Never request secrets.
-            V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; dataset cells, metric values, comparison values and tree values are strings. Share datasets to link selection. Optional metadata example: \(metadataExample). assumptions accepts a string or an array of strings; source and observedAt are strings, fictional is a boolean. Supply only known metadata. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.
-            Compose task-focused views: planning and runbooks use workflow + checklist; debugging and code review use findings + code; research uses sources + comparison; budgets use metrics + shared table/chart; onboarding uses tree + code; release reviews use workflow + findings. Ask for missing requirements with form. Use only the blocks that help the current task, not every component. Workflows and findings are supplied snapshots, never verified runtime records. Non-proposed workflow states require evidence from the input. Use readable headings, short detail, and one primary working surface; avoid decorative dashboards.
-            Limits: 1 MiB per surface, 100 blocks, 1000 rows/items/points, 20 table columns. Available blocks:
-            \(catalog)
-            [/Herm rendering context]
             """
+        return "[Herm rendering context v1]\n" + guidance + "\n" + reference()
+            + (sessionReference(context: context).map { "\n" + $0 } ?? "")
+            + "\n[/Herm rendering context]"
+    }
+
+    static func sessionReference(context: RichGenerationContext) -> String? {
+        let records = descriptors(in: context).filter { $0.recordKind != nil }
+        var parts: [String] = []
+        if let directory = context.terminalDirectory {
+            parts.append("Native command blocks can run on this Mac in the session Terminal at: " + directory)
+        }
+        if !records.isEmpty { parts.append("Record blocks for this chat:\n" + catalog(records)) }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+
+    private static func catalog(_ descriptors: [RichFeatureDescriptor]) -> String {
+        descriptors.map { "\($0.id) (v\($0.version)): \($0.guidance). Example: \($0.example)" }
+            .joined(separator: "\n")
     }
 
     static let datasetExample =

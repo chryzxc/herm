@@ -83,6 +83,34 @@ final class TerminalTabStore: ObservableObject {
         session.start(directory: directory)
     }
 
+    /// A suggested command must never become input to an existing job or a half-written prompt.
+    func runInNewShell(_ command: String, directory: String) throws {
+        guard !command.isEmpty else { throw QuickDraftError.message("The command is empty.") }
+        let unused = selected.state == .idle && selected.workingDirectory == nil
+        guard unused || sessions.count < 16 else {
+            throw QuickDraftError.message("Close a terminal before opening another command (16 shells maximum).")
+        }
+        let session = unused ? selected : LocalTerminalSession()
+        session.start(directory: directory)
+        guard session.state == .ready, session.submitCommand(command) else {
+            let detail: String
+            if case .failed(let message) = session.state {
+                detail = message
+            } else {
+                detail = "Could not open the shell."
+            }
+            session.close()
+            throw QuickDraftError.message(HermesDiagnosticsService.safeSummary(detail))
+        }
+        if !unused {
+            sessions.append(session)
+            observe(session)
+        }
+        splitIDs = []
+        selectedID = session.id
+        persistLayout()
+    }
+
     func closeSelected() {
         guard sessions.count > 1 else {
             selected.close()

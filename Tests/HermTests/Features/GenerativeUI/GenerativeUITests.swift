@@ -87,10 +87,10 @@ struct GenerativeUITests {
         #expect(GenerativeUIIntegration.readableText(ChatMessage(role: .user, text: text)) == text)
         #expect(RichDocument(text, streaming: true).segments == [.pending])
         #expect(RichDocument("````swift\n" + text + "\n````").plainText.contains("```herm-ui"))
-        #expect(RichPromptContext.display(RichPromptContext.prepare("Hello")) == "Hello")
+        #expect(GenerativeUIIntegration.displayUserText(GenerativeUIIntegration.preparePrompt("Hello")) == "Hello")
         #expect(
-            RichPromptContext.prepare(RichPromptContext.prepare("Hello"))
-                == RichPromptContext.prepare("Hello"))
+            GenerativeUIIntegration.preparePrompt(GenerativeUIIntegration.preparePrompt("Hello"))
+                == GenerativeUIIntegration.preparePrompt("Hello"))
     }
     @Test func malformedOversizedAndStaleSchemasFallBack() throws {
         #expect(RichDocument("```herm-ui\n{", streaming: true).segments == [.pending])

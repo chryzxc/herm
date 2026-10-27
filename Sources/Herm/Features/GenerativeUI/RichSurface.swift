@@ -52,7 +52,7 @@ struct RichBlock: Codable, Equatable, Sendable {
     enum Kind: String, Codable, CaseIterable, Sendable {
         case text, table, sources, gallery, chart, form
         case section, metrics, comparison, checklist, timeline, graph, tree, imageComparison, record, code, findings,
-            workflow
+            workflow, command
     }
     let type: Kind
     var text: String?
@@ -85,7 +85,7 @@ struct RichBlock: Codable, Equatable, Sendable {
             else { return false }
             return points.allSatisfy { !$0.label.isEmpty && $0.value.isFinite }
         case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
-            .findings, .workflow:
+            .findings, .workflow, .command:
             return false
         case .form:
             guard let fields, !fields.isEmpty, fields.count <= 64,
@@ -108,7 +108,7 @@ struct RichBlock: Codable, Equatable, Sendable {
         if let payload { return payload.plainText }
         return switch type {
         case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
-            .findings, .workflow:
+            .findings, .workflow, .command:
             ""
         case .text: text ?? ""
         case .table:
@@ -346,14 +346,5 @@ struct RichDocument: Equatable, Sendable {
         return .unavailable(
             String((fallback ?? "This interactive format is unavailable.").prefix(65_536)), source: source
         )
-    }
-}
-
-enum RichPromptContext {
-    static var instructions: String { RichFeatureRegistry.instructions() }
-    static let suffix = "\n\n" + instructions
-    static func prepare(_ text: String) -> String { text.hasSuffix(suffix) ? text : text + suffix }
-    static func display(_ text: String) -> String {
-        text.hasSuffix(suffix) ? String(text.dropLast(suffix.count)) : text
     }
 }

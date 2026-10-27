@@ -24,8 +24,24 @@ extension DockPopover {
             let current = RichReplyContext.destination(for: model)
             return current.sessionID == destination.sessionID && current.profileID == destination.profileID
         }
+        let projectPath = activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath
+        let directory = projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let workspaceKey = WorkspaceIdentity.session(model) + ":" + (projectPath ?? "home")
         return RichHostActionRouter(
             scope: scope, openSource: openRichSource,
+            terminal: scope == nil
+                ? nil
+                : .init(directory: directory) { command in
+                    guard isCurrent(), !model.isRestoringSession,
+                        (activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath) == projectPath
+                    else {
+                        throw QuickDraftError.message(
+                            "The session or working directory changed. Review the command again.")
+                    }
+                    try TerminalWorkspaceStore.shared.workspace(key: workspaceKey)
+                        .runInNewShell(command, directory: directory)
+                    showSessionRailInspector(.terminal)
+                },
             features: [
                 .init(kind: .pullRequest, ids: { [weak prs] in prs?.records.map(\.id) ?? [] }) { id in
                     guard isCurrent(), let record = sessionPullRequestCenter.records.first(where: { $0.id == id })

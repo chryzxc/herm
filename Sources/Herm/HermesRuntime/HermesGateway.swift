@@ -527,6 +527,7 @@ final class HermesGateway: NSObject {
             process.arguments = ["hermes", "serve", "--host", "127.0.0.1", "--port", "0"]
             process.currentDirectoryURL = workingDirectory
             var environment = HermesEnvironment.processEnvironment()
+                .merging(HermAgentSurfaces.startPublishing()) { _, herm in herm }
             environment["HERMES_DASHBOARD_SESSION_TOKEN"] = token
             environment["HERMES_DESKTOP"] = "1"
             process.environment = environment

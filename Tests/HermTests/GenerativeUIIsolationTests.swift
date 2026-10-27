@@ -12,6 +12,17 @@ struct GenerativeUIIsolationTests {
         ```
         """
 
+    @Test func promptRemainsSelfContainedWithoutTheOptionalReferencePlugin() {
+        let context = RichGenerationContext(
+            profileID: "p", sessionID: "s", availableRecords: [.trace],
+            recordReferences: [.init(kind: .trace, id: "s")])
+        let prompt = GenerativeUIIntegration.preparePrompt("Explain this", enabled: true, context: context)
+        #expect(prompt.contains("Envelope:"))
+        #expect(prompt.contains("record.trace (v2)"))
+        #expect(!prompt.contains("call herm_reference"))
+        #expect(GenerativeUIIntegration.displayUserText(prompt) == "Explain this")
+    }
+
     @Test func preferenceDefaultsOnAndChangesImmediately() {
         let key = GenerativeUIIntegration.preferenceKey
         let old = UserDefaults.standard.object(forKey: key)
@@ -34,6 +45,17 @@ struct GenerativeUIIsolationTests {
         #expect(GenerativeUIIntegration.preparePrompt(request) == request)
         UserDefaults.standard.set(true, forKey: key)
         #expect(GenerativeUIIntegration.preparePrompt(request) == prepared)
+    }
+
+    @Test func legacyInstructionBlocksAreHiddenFromDisplayedPrompts() {
+        let rendering = "\n\n[Herm rendering context v1]\nUse herm-ui.\n[/Herm rendering context]"
+        let simulator = "\n\n<herm-simulator-preference>\nHerm setting — ON.\n</herm-simulator-preference>"
+        #expect(GenerativeUIIntegration.displayUserText("Run it" + rendering + simulator) == "Run it")
+        #expect(GenerativeUIIntegration.displayUserText("Run it" + simulator) == "Run it")
+        #expect(GenerativeUIIntegration.displayUserText("Run it" + rendering) == "Run it")
+        #expect(
+            GenerativeUIIntegration.displayUserText("Mentions </herm-simulator-preference>")
+                == "Mentions </herm-simulator-preference>")
     }
 
     @Test func normalBuildIncludesVisualsWithReadableDisabledFallback() {
