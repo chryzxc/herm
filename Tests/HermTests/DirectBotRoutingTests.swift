@@ -7,6 +7,7 @@ import Testing
 private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var onResume: (() -> Void)?
+    var onSubmit: (() -> Void)?
     var resumeResult: [String: Any]?
     var submitError: Error?
     private(set) var requests: [(method: String, params: [String: Any])] = []
@@ -25,6 +26,7 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
                 "info": ["profile_name": params["profile"] ?? "default"], "running": false,
             ]
         case "prompt.submit":
+            onSubmit?()
             if let submitError { throw submitError }
             return ["status": "streaming"]
         default:
@@ -320,6 +322,133 @@ struct DirectBotRoutingTests {
         #expect(model.botActivityBySessionID["cypher-chat"]?.first?.result == "Audit complete.")
     }
 
+    @Test(arguments: [false, true])
+    func mentionedBotReplySurvivesSessionNavigation(completesWhileAway: Bool) async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.sessionProfileID = "cypher"
+        model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "audit")
+        await waitForSubmission(rpc)
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "recipient-chat", "payload": ["delta": "Audit "]])
+
+        rpc.resumeResult = ["session_id": "other-chat", "messages": [], "running": false]
+        #expect(
+            await model.resumeSession(
+                HermesSession(
+                    id: "other-chat", title: "Other", preview: "", startedAt: nil, messageCount: 0, source: "herm"),
+                reportFailure: true))
+        #expect(model.botActivityBySessionID["cypher-chat"]?.first?.state == .working)
+        #expect(model.pendingBotMentions.isEmpty)
+        if completesWhileAway {
+            model.receiveGatewayEvent(
+                "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Audit complete."]])
+        }
+        #expect(model.messages.isEmpty)
+
+        rpc.resumeResult = ["session_id": "cypher-chat", "messages": [], "running": false]
+        #expect(
+            await model.resumeSession(
+                HermesSession(
+                    id: "cypher-chat", title: "Cypher", preview: "", startedAt: nil, messageCount: 0, source: "herm"),
+                reportFailure: true))
+        if !completesWhileAway {
+            #expect(model.pendingBotMentions.map(\.botID) == ["sentry"])
+            model.receiveGatewayEvent(
+                "message.delta", params: ["session_id": "recipient-chat", "payload": ["delta": "complete."]])
+            model.receiveGatewayEvent(
+                "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": ""]])
+        }
+        model.mergePersistedBotActivities(for: ["cypher-chat"])
+        #expect(model.messages.map(\.text) == ["@Sentry audit", "Audit complete."])
+        #expect(model.messages.last?.botProfileID == "sentry")
+        #expect(model.messages.last?.botDisplayName == "Sentry")
+        #expect(model.pendingBotMentions.isEmpty)
+    }
+
+    @Test func mentionedBotReplyRehydratesFromSavedActivity() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "audit")
+        await waitForSubmission(rpc)
+        model.newChat()
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Audit complete."]])
+        await model.botActivityWriter.enqueue(model.botActivityBySessionID)
+        await model.botActivityWriter.flush()
+
+        let restored = DockModel(botActivityFileURL: model.botActivityStore.fileURL, rpcClient: rpc)
+        defer { restored.shutdown() }
+        rpc.resumeResult = ["session_id": "cypher-chat", "messages": [], "running": false]
+        #expect(
+            await restored.resumeSession(
+                HermesSession(
+                    id: "cypher-chat", title: "Cypher", preview: "", startedAt: nil, messageCount: 0, source: "herm"),
+                reportFailure: true))
+        #expect(restored.messages.map(\.text) == ["@Sentry audit", "Audit complete."])
+        #expect(restored.messages.last?.botProfileID == "sentry")
+        #expect(restored.messages.last?.botDisplayName == "Sentry")
+    }
+
+    @Test func botCompletionDuringNavigationStaysOutOfTheLoadingConversation() async {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "audit")
+        await waitForSubmission(rpc)
+        rpc.onResume = {
+            model.receiveGatewayEvent(
+                "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Audit complete."]])
+            #expect(model.messages.isEmpty)
+        }
+        rpc.resumeResult = ["session_id": "other-chat", "messages": [], "running": false]
+        #expect(
+            await model.resumeSession(
+                HermesSession(
+                    id: "other-chat", title: "Other", preview: "", startedAt: nil, messageCount: 0, source: "herm"),
+                reportFailure: true))
+        #expect(model.messages.isEmpty)
+        #expect(model.botActivityBySessionID["cypher-chat"]?.first?.result == "Audit complete.")
+    }
+
+    @Test func rehydratedBotRequestPrecedesItsReplyWhenTimestampsMatch() {
+        let model = model(DirectBotRoutingRPCClient())
+        defer { model.shutdown() }
+        let timestamp = Date(timeIntervalSince1970: 1_000)
+        model.insertBotActivity(
+            BotActivityRecord(
+                originSessionID: "cypher-chat", botID: "sentry", botName: "Sentry", summary: "audit",
+                state: .completed, createdAt: timestamp, updatedAt: timestamp, result: "Audit complete."))
+        model.mergePersistedBotActivities(for: ["cypher-chat"])
+        #expect(model.messages.map(\.text) == ["@Sentry audit", "Audit complete."])
+    }
+
+    @Test func submissionFailureAfterNavigationUpdatesOnlyTheOriginActivity() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        rpc.onSubmit = { model.newChat() }
+        rpc.submitError = NSError(domain: "Hermes", code: 408, userInfo: [NSLocalizedDescriptionKey: "connection lost"])
+        model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "audit")
+        await waitForSubmission(rpc)
+        #expect(model.messages.isEmpty)
+        #expect(model.botActivityBySessionID["cypher-chat"]?.first?.state == .failed)
+        #expect(
+            model.botActivityBySessionID["cypher-chat"]?.first?.result?.contains("submission was not confirmed") == true
+        )
+        rpc.onSubmit = nil
+        rpc.resumeResult = ["session_id": "cypher-chat", "messages": [], "running": false]
+        #expect(
+            await model.resumeSession(
+                HermesSession(
+                    id: "cypher-chat", title: "Cypher", preview: "", startedAt: nil, messageCount: 0, source: "herm"),
+                reportFailure: true))
+        #expect(model.messages.last?.isError == true)
+        #expect(model.messages.last?.botProfileID == "default")
+    }
+
     @Test(arguments: ["wrong-session", "wrong-profile", "busy"])
     func unconfirmedOrBusyDestinationsNeverReceiveTheMessage(reason: String) async throws {
         let rpc = DirectBotRoutingRPCClient()
@@ -365,12 +494,14 @@ struct DirectBotRoutingTests {
         #expect(model.botActivityBySessionID["cypher-chat"]?.first?.state == .failed)
     }
 
-    @Test func switchingChatsDuringResumePreventsSubmission() async throws {
+    @Test(arguments: [nil, "recipient-chat"] as [String?])
+    func switchingChatsDuringResumePreventsSubmission(chatSessionID: String?) async throws {
         let rpc = DirectBotRoutingRPCClient()
         let model = model(rpc)
         defer { model.shutdown() }
         rpc.onResume = { model.newChat() }
-        model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "start task 4")
+        model.sendDirectBotRequest(
+            profileID: "default", displayName: "Nexus", text: "start task 4", chatSessionID: chatSessionID)
         for _ in 0..<50 where !rpc.requests.contains(where: { $0.method == "session.resume" }) {
             try? await Task.sleep(for: .milliseconds(10))
         }

@@ -593,9 +593,7 @@ extension DockModel {
             saveComposerDraft()
             restoreComposerDraft(for: SessionComposerDraft.Key(profileID: owningProfileID, sessionID: session.id))
             invalidateRuntimeModelOptionsRefresh()
-            if profileID == nil {
-                detachInFlightBotActivities(as: .canceled)
-            }
+            detachInFlightBotActivities(as: .canceled, keepingSubmitted: true)
         }
         // A refresh re-reads at least as much history as the reader already
         // paged in, so refreshing never collapses the transcript they scrolled.
@@ -826,7 +824,7 @@ extension DockModel {
     }
 
     func newChat(projectPath: String? = nil) {
-        detachInFlightBotActivities(as: .canceled)
+        detachInFlightBotActivities(as: .canceled, keepingSubmitted: true)
         commitStreamingMessage()
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil

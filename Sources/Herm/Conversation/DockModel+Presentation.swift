@@ -130,7 +130,7 @@ extension DockModel {
         {
             return name
         }
-        return "Hermes"
+        return "Herm"
     }
 
     var workflowSession: HermesSession? {
@@ -169,6 +169,7 @@ extension DockModel {
         var botChatSessionID: String?
         var clarificationRequestID: String?
         var replyText = ""
+        var submissionStarted = false
     }
 
     /// Every id the open chat answers to: runtime alias, stored row, and the

@@ -109,6 +109,7 @@ extension DockModel {
                         )
                     }
                     self.inFlightBotActivities[activity.id]?.botChatSessionID = botSessionID
+                    self.inFlightBotActivities[activity.id]?.submissionStarted = true
                     self.updateBotActivity(id: activity.id, state: .working, botChatSessionID: botSessionID)
                 }
                 guard self.sessionResumeGeneration == sendGeneration,
@@ -119,17 +120,18 @@ extension DockModel {
                     isSending = false
                 }
             } catch {
+                guard self.inFlightBotActivities[activity.id] != nil else { return }
+                let message =
+                    "\(displayName) couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                updateBotActivity(id: activity.id, state: .failed, result: message)
+                inFlightBotActivities.removeValue(forKey: activity.id)
                 guard self.sessionResumeGeneration == sendGeneration,
                     self.sessionID == currentSessionID
                 else { return }
-                let message =
-                    "\(displayName) couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
                 messages.append(
                     ChatMessage(
                         role: .hermes, text: message, isError: true, botProfileID: profileID,
                         botDisplayName: displayName))
-                updateBotActivity(id: activity.id, state: .failed, result: message)
-                inFlightBotActivities.removeValue(forKey: activity.id)
                 if ownsTurn {
                     status = .idle
                     isSending = false
@@ -225,7 +227,7 @@ extension DockModel {
                 let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 // The request bubble belongs to this session even while the bot
                 // is still working, has no inline reply, or failed.
-                if result.isEmpty || record.state != .completed {
+                if result.isEmpty || record.isLive {
                     if record.summary != "Bot response", !record.id.hasPrefix("bot-dispatch:"),
                         !messages.contains(where: {
                             $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary)
@@ -279,14 +281,13 @@ extension DockModel {
                 }
                 messages.append(
                     ChatMessage(
-                        role: .hermes, text: result, timestamp: record.updatedAt, botProfileID: record.botID,
-                        botDisplayName: record.botName))
+                        role: .hermes, text: result, timestamp: record.updatedAt,
+                        isError: record.state == .failed || record.state == .canceled,
+                        botProfileID: record.botID, botDisplayName: record.botName))
             }
         }
-        messages.sort {
-            if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
-            return $0.id.uuidString < $1.id.uuidString
-        }
+        // Saved timestamps can tie; stable sorting keeps requests before their replies.
+        messages.sort { $0.timestamp < $1.timestamp }
     }
 
     /// A Bot this turn hands work to: Hermes' `message_agent` tool, the
@@ -661,11 +662,12 @@ extension DockModel {
         }
     }
 
-    func detachInFlightBotActivities(as state: BotActivityState) {
+    func detachInFlightBotActivities(as state: BotActivityState, keepingSubmitted: Bool = false) {
         let activities = Array(inFlightBotActivities.values)
-        for activity in activities {
+        // Navigation cannot cancel a turn already submitted to another Bot.
+        for activity in activities where !keepingSubmitted || !activity.submissionStarted {
             updateBotActivity(id: activity.activityID, state: state)
+            inFlightBotActivities.removeValue(forKey: activity.activityID)
         }
-        inFlightBotActivities.removeAll()
     }
 }
