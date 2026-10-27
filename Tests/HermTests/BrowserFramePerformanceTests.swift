@@ -30,8 +30,16 @@ struct BrowserFramePerformanceTests {
                 bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 16, bitsPerSample: 8,
                 samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
                 bytesPerRow: 0, bitsPerPixel: 0))
+        // Avoid AppKit color conversion: it can yield transparent pixels without an app color space.
+        let pixels = try #require(bitmap.bitmapData)
         for y in 0..<16 {
-            for x in 0..<32 { bitmap.setColor(.red, atX: x, y: y) }
+            for x in 0..<32 {
+                let offset = y * bitmap.bytesPerRow + x * 4
+                pixels[offset] = 255
+                pixels[offset + 1] = 0
+                pixels[offset + 2] = 0
+                pixels[offset + 3] = 255
+            }
         }
         let base64 = try #require(bitmap.representation(using: .png, properties: [:])).base64EncodedString()
         let decoded = await Task.detached { CDPConnection.decodeFrame(base64) }.value
