@@ -94,6 +94,14 @@ extension ControlCenterModel {
                     ? try await cli.kanbanListAggregate(filter: activeFilter, background: trigger == .background)
                     : try await cli.kanbanList(
                         boardSlug: requestedBoardSlug, filter: activeFilter, background: trigger == .background)
+                // The notch's 5s poll usually returns identical bytes; skip
+                // re-parsing and comparing every card when nothing changed.
+                if quietAggregate, !shouldPublishRefreshState, result.succeeded,
+                    result.stdout == lastAggregateKanbanStdout,
+                    isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug)
+                {
+                    return
+                }
                 let parsed =
                     result.succeeded
                     ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
@@ -169,6 +177,7 @@ extension ControlCenterModel {
                     kanbanTasks = refreshedTasks
                     taskDataChanged = true
                 }
+                if scope.isAggregate { lastAggregateKanbanStdout = result.stdout }
                 if shouldPublishRefreshState || taskDataChanged {
                     recordProjectionSuccess("kanban.board")
                 }

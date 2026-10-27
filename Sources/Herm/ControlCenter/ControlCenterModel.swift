@@ -46,9 +46,12 @@ final class ControlCenterModel: ObservableObject {
     var resolvedProjectIDBySessionID: [String: String] = [:]
     @Published var searchResults: [ControlSearchResult] = []
     @Published var isSearching = false
-    @Published var kanbanTasks: [KanbanTaskSummary] = []
+    @Published var kanbanTasks: [KanbanTaskSummary] = [] { didSet { lastAggregateKanbanStdout = nil } }
     /// Canonical unfiltered aggregate, independent of the board page's visible filters.
-    @Published var globalKanbanTasks: [KanbanTaskSummary] = []
+    @Published var globalKanbanTasks: [KanbanTaskSummary] = [] { didSet { lastAggregateKanbanStdout = nil } }
+    /// Raw output behind the current aggregate projection. Any task write
+    /// clears it, so an identical poll can skip parsing and comparison.
+    var lastAggregateKanbanStdout: String?
     @Published var globalKanbanIsCurrent = false
     @Published var requestedKanbanTask: KanbanTaskSummary?
     @Published var sessionKanbanTasks: [KanbanTaskSummary] = []

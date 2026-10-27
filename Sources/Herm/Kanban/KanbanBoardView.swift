@@ -71,6 +71,7 @@ struct KanbanBoardView: View, Equatable {
     @State private var expansion = KanbanLaneExpansionState()
     @State private var draggingTaskID: String?
     @State private var targetedLane: KanbanLane?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     nonisolated static func == (lhs: KanbanBoardView, rhs: KanbanBoardView) -> Bool {
         lhs.selectedTaskID == rhs.selectedTaskID
@@ -117,6 +118,9 @@ struct KanbanBoardView: View, Equatable {
                 .padding(.bottom, 8)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
+        }
+        .onChange(of: draggingTaskID) { _, id in
+            if id == nil { targetedLane = nil }
         }
     }
 
@@ -201,6 +205,7 @@ struct KanbanBoardView: View, Equatable {
                             .equatable()
                         }
                     }
+                    .animation(reduceMotion ? nil : .dockEase(duration: 0.2), value: laneTasks.map(\.id))
                     .padding(8)
                 }
             }
@@ -265,8 +270,7 @@ private struct KanbanLaneDropDelegate: DropDelegate {
         guard accepts, let draggedTask,
             let provider = info.itemProviders(for: [UTType.text]).first
         else { return false }
-        // The remembered ID can be stale after a cancelled drag, so act only
-        // when the payload itself names the same card.
+        // Validate the transferred payload against this board’s active drag.
         let lane = lane
         let drop = drop
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
@@ -436,15 +440,15 @@ private struct KanbanTaskCard: View, Equatable {
         }
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .dockHoverable().onTapGesture { onSelect(task) }
-        .modifier(
+        .dockHoverable()
+        .overlay {
             KanbanCardDragSource(
-                isEnabled: isDraggable,
                 taskID: task.id,
-                draggingTaskID: $draggingTaskID,
-                preview: dragPreview
+                isEnabled: isDraggable,
+                select: { onSelect(task) },
+                dragging: { draggingTaskID = $0 ? task.id : nil }
             )
-        )
+        }
         // Attached after the tap/drag gestures so they cannot swallow the
         // click, and kept in the tree so losing hover while the menu is open
         // does not tear it down.
@@ -475,6 +479,7 @@ private struct KanbanTaskCard: View, Equatable {
             .help("More Kanban actions")
             .accessibilityLabel("More actions for \(task.title)")
         }
+        .opacity(isDragging ? 0.18 : 1)
         .onHover { isHovered = $0 }
         .modifier(
             KanbanCardDragCursor(
@@ -486,28 +491,11 @@ private struct KanbanTaskCard: View, Equatable {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel("\(task.title), \(lane.rawValue)")
+        .accessibilityAction { onSelect(task) }
     }
 
     private var isMutationPending: Bool { pendingActionIDs.contains { $0.hasSuffix(":\(task.id)") } }
     private var isAssignPending: Bool { pendingActionIDs.contains("kanban.reassign:\(task.id)") }
-
-    private var dragPreview: some View {
-        Text(task.title)
-            .dockFont(.body, weight: .medium)
-            .foregroundStyle(Color.dockPrimaryText)
-            .lineLimit(2)
-            .frame(width: KanbanBoardView.laneWidth - 40, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                    Color.dockSurface2)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
-                    lane.color.opacity(0.6), lineWidth: 1))
-    }
 
     private var background: Color {
         if isSelected { return Color.dockAccent.opacity(0.10) }
@@ -631,28 +619,6 @@ private struct KanbanCardDragCursor: ViewModifier {
         guard hasPushedCursor else { return }
         NSCursor.pop()
         hasPushedCursor = false
-    }
-}
-
-/// Starts a card drag. The dragged ID is kept locally so lanes can validate
-/// the drop synchronously and refuse text dragged in from other apps.
-private struct KanbanCardDragSource<Preview: View>: ViewModifier {
-    let isEnabled: Bool
-    let taskID: String
-    @Binding var draggingTaskID: String?
-    let preview: Preview
-
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content.onDrag {
-                draggingTaskID = taskID
-                return NSItemProvider(object: taskID as NSString)
-            } preview: {
-                preview
-            }
-        } else {
-            content
-        }
     }
 }
 

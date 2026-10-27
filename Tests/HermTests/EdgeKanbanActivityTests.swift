@@ -192,6 +192,30 @@ struct EdgeKanbanProjectionTests {
         #expect(control.refreshState(for: "kanban.global")?.isStale == false)
     }
 
+    @Test func identicalBackgroundPollSkipsOnlyWhileTasksMatchItsOutput() async throws {
+        let client = NotchKanbanClient()
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.cli?.backgroundBoardReadReuse = 0
+        control.refreshGlobalKanban()
+        try await settle(control)
+        control.refreshGlobalKanban(trigger: .background)
+        try await settle(control)
+        #expect(control.lastAggregateKanbanStdout != nil)
+
+        // A local write invalidates the cached output, so the next identical
+        // poll must restore Hermes' projection instead of skipping it.
+        control.globalKanbanTasks = []
+        #expect(control.lastAggregateKanbanStdout == nil)
+        control.refreshGlobalKanban(trigger: .background)
+        try await settle(control)
+        #expect(control.globalKanbanTasks.first?.status == "running")
+
+        client.status = "review"
+        control.refreshGlobalKanban(trigger: .background)
+        try await settle(control)
+        #expect(control.globalKanbanTasks.first?.status == "review")
+    }
+
     @Test func cardNavigationSelectsOwningBoardAndClearsVisibleFilters() async throws {
         let client = NotchKanbanClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
