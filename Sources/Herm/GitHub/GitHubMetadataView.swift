@@ -5,7 +5,6 @@ final class GitHubMetadataModel: ObservableObject {
     let reference: GitHubItemReference
     let service: GitHubMetadataService
     @Published private(set) var basic: GitHubMetadataSnapshot?
-    @Published private(set) var projects: [GitHubProject]?
     @Published private(set) var development: [GitHubDevelopmentLink]?
     @Published private(set) var errors: [String: String] = [:]
     @Published private(set) var loading = Set<String>()
@@ -29,18 +28,7 @@ final class GitHubMetadataModel: ObservableObject {
         } catch { if !Task.isCancelled { errors["Details"] = error.localizedDescription } }
         loading.remove("Details")
         guard !Task.isCancelled, basic?.nodeID != nil else { return }
-        async let p: Void = loadProjects()
-        async let d: Void = loadDevelopment()
-        _ = await (p, d)
-    }
-    func loadProjects() async {
-        guard let id = basic?.nodeID, !loading.contains("Projects") else { return }
-        loading.insert("Projects")
-        defer { loading.remove("Projects") }
-        do {
-            projects = try await service.projects(reference, nodeID: id)
-            errors["Projects"] = nil
-        } catch { if !Task.isCancelled { errors["Projects"] = error.localizedDescription } }
+        await loadDevelopment()
     }
     func loadDevelopment() async {
         guard let id = basic?.nodeID, !loading.contains("Development") else { return }
@@ -56,7 +44,6 @@ final class GitHubMetadataModel: ObservableObject {
 enum GitHubMetadataSection: String, Identifiable, CaseIterable {
     case labels = "Labels"
     case assignees = "Assignees"
-    case projects = "Projects"
     case milestone = "Milestone"
     case development = "Development"
     var id: Self { self }
@@ -109,25 +96,6 @@ struct GitHubMetadataView: View {
                         }
                     } else {
                         none("Unassigned")
-                    }
-                }
-                metadataSection(.projects, editable: model.projects != nil) {
-                    if let projects = model.projects {
-                        if projects.isEmpty { none("No projects") }
-                        DockChipFlow {
-                            ForEach(projects) { project in
-                                let title = "\(project.title) · \(project.statusName ?? "No status")"
-                                if let url = project.url {
-                                    Link(destination: url) {
-                                        DockMetadataPill(text: title, navigationIcon: .arrowSquareOut)
-                                    }.buttonStyle(.dockHover)
-                                } else {
-                                    DockMetadataPill(text: title).textSelection(.enabled)
-                                }
-                            }
-                        }
-                    } else if model.errors["Projects"] == nil {
-                        none(model.loading.contains("Projects") ? "Loading…" : "Unavailable")
                     }
                 }
                 metadataSection(.milestone, editable: model.basic?.canTriage == true) {
@@ -201,20 +169,9 @@ struct GitHubMetadataView: View {
                 content()
                 if let error = model.errors[section.rawValue] {
                     HStack(spacing: 6) {
-                        if section == .projects {
-                            Text(model.projects == nil ? "Unavailable" : "Couldn’t refresh").foregroundStyle(
-                                Color.dockMetadataText)
-                        } else {
-                            Text("Couldn’t load").foregroundStyle(Color.dockMetadataText)
-                        }
+                        Text("Couldn’t load").foregroundStyle(Color.dockMetadataText)
                         Button {
-                            Task {
-                                if section == .projects {
-                                    await model.loadProjects()
-                                } else {
-                                    await model.loadDevelopment()
-                                }
-                            }
+                            Task { await model.loadDevelopment() }
                         } label: {
                             GitHubActionLabel(title: "Retry", isBusy: model.loading.contains(section.rawValue))
                         }
@@ -249,13 +206,10 @@ struct GitHubMetadataEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var names: Set<String>
     @State private var milestone: Int
-    @State private var projectIDs: Set<String>
-    @State private var statuses: [String: String]
     @State private var links: [GitHubDevelopmentLink]
     @State private var labels: [GitHubLabel] = []
     @State private var assignees: [String] = []
     @State private var milestones: [GitHubMilestone] = []
-    @State private var projects: [GitHubProject] = []
     @State private var search = ""
     @State private var lookup = ""
     @State private var lookingUp = false
@@ -265,7 +219,6 @@ struct GitHubMetadataEditor: View {
     @State private var error: String?
     @State private var confirm = false
     private let original: GitHubMetadataSnapshot
-    private let originalProjects: [GitHubProject]
     private let originalLinks: [GitHubDevelopmentLink]
     init(model: GitHubMetadataModel, section: GitHubMetadataSection, onChanged: @escaping () -> Void) {
         self.model = model
@@ -273,13 +226,9 @@ struct GitHubMetadataEditor: View {
         self.onChanged = onChanged
         let snapshot = model.basic ?? GitHubMetadataSnapshot()
         original = snapshot
-        originalProjects = model.projects ?? []
         originalLinks = model.development ?? []
         _names = State(initialValue: section == .labels ? Set(snapshot.labels.map(\.name)) : Set(snapshot.assignees))
         _milestone = State(initialValue: snapshot.milestone?.number ?? 0)
-        _projectIDs = State(initialValue: Set((model.projects ?? []).map(\.id)))
-        _statuses = State(
-            initialValue: Dictionary(uniqueKeysWithValues: (model.projects ?? []).map { ($0.id, $0.statusID ?? "") }))
         _links = State(initialValue: model.development ?? [])
     }
     var body: some View {
@@ -289,10 +238,10 @@ struct GitHubMetadataEditor: View {
                 VStack(alignment: .leading, spacing: 10) { choices }.disabled(busy)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.frame(minHeight: 120, maxHeight: 340)
-            if section == .projects || section == .development {
+            if section == .development {
                 HStack {
                     TextField(
-                        section == .projects ? "GitHub Project URL" : "owner/repo#number or GitHub URL", text: $lookup
+                        "owner/repo#number or GitHub URL", text: $lookup
                     ).textFieldStyle(.dockGlass)
                     Button {
                         Task { await lookUp() }
@@ -354,27 +303,6 @@ struct GitHubMetadataEditor: View {
                     Text(value.title + (value.state == "closed" ? " (closed)" : "")).tag(value.number)
                 }
             }.pickerStyle(.menu)
-        case .projects:
-            ForEach(projects.filter { matches($0.title) }) { project in
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle(
-                        project.title,
-                        isOn: Binding(
-                            get: { projectIDs.contains(project.id) },
-                            set: { if $0 { projectIDs.insert(project.id) } else { projectIDs.remove(project.id) } })
-                    ).toggleStyle(.dockSwitch).disabled(!project.canEdit)
-                    if projectIDs.contains(project.id), project.statusFieldID != nil {
-                        Picker(
-                            "Status",
-                            selection: Binding(get: { statuses[project.id] ?? "" }, set: { statuses[project.id] = $0 })
-                        ) {
-                            Text("No status").tag("")
-                            ForEach(project.statusOptions) { option in Text(option.name).tag(option.id) }
-                        }.pickerStyle(.menu).disabled(!project.canEdit)
-                    }
-                    if !project.canEdit { Text("Read-only project").foregroundStyle(Color.dockSecondaryText) }
-                }
-            }
         case .development:
             ForEach(links.filter { matches($0.title) }) { link in
                 HStack(alignment: .top) {
@@ -403,13 +331,6 @@ struct GitHubMetadataEditor: View {
             return "Selected \(section.rawValue.lowercased()): "
                 + (names.isEmpty ? "None" : names.sorted().joined(separator: ", "))
         case .milestone: return "Milestone: " + (milestones.first { $0.number == milestone }?.title ?? "None")
-        case .projects:
-            return projects.map { project in
-                project.title + ": "
-                    + (projectIDs.contains(project.id)
-                        ? (project.statusOptions.first { $0.id == statuses[project.id] }?.name ?? "No status")
-                        : "Not included")
-            }.joined(separator: "\n")
         case .development:
             return "Linked work: " + links.map { $0.reference?.title ?? $0.title }.joined(separator: ", ")
         }
@@ -424,11 +345,6 @@ struct GitHubMetadataEditor: View {
                 assignees = Array(Set(try await model.service.assignees(model.reference)).union(original.assignees))
                     .sorted()
             case .milestone: milestones = try await model.service.milestones(model.reference)
-            case .projects:
-                var all = Dictionary(
-                    uniqueKeysWithValues: try await model.service.projectChoices(model.reference).map { ($0.id, $0) })
-                for current in originalProjects { all[current.id] = current }
-                projects = all.values.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
             case .development: break
             }
             loaded = true
@@ -444,16 +360,11 @@ struct GitHubMetadataEditor: View {
             lookingUp = false
         }
         do {
-            if section == .projects {
-                let project = try await model.service.project(at: lookup)
-                if !projects.contains(where: { $0.id == project.id }) { projects.append(project) }
-            } else {
-                let kind: GitHubItemKind = model.reference.kind == .issue ? .pullRequest : .issue
-                guard let ref = GitHubReferenceParser.item(lookup, repository: model.reference.repository, kind: kind)
-                else { throw GitHubRequestError.malformed }
-                let link = try await model.service.resolve(ref)
-                if !links.contains(where: { $0.id == link.id }) { links.append(link) }
-            }
+            let kind: GitHubItemKind = model.reference.kind == .issue ? .pullRequest : .issue
+            guard let ref = GitHubReferenceParser.item(lookup, repository: model.reference.repository, kind: kind)
+            else { throw GitHubRequestError.malformed }
+            let link = try await model.service.resolve(ref)
+            if !links.contains(where: { $0.id == link.id }) { links.append(link) }
             lookup = ""
             error = nil
         } catch { self.error = error.localizedDescription }
@@ -481,21 +392,6 @@ struct GitHubMetadataEditor: View {
                 let fresh = try await model.service.basic(reference)
                 guard fresh.milestone == original.milestone else { throw GitHubRequestError.changed }
                 try await model.service.setMilestone(reference, number: milestone == 0 ? nil : milestone)
-            case .projects:
-                guard let id = reference.nodeID else { throw GitHubRequestError.malformed }
-                let current = try await model.service.projects(reference, nodeID: id)
-                for project in projects {
-                    let existing = originalProjects.first { $0.id == project.id }
-                    let included = projectIDs.contains(project.id)
-                    let status = statuses[project.id].flatMap { $0.isEmpty ? nil : $0 }
-                    guard included != (existing != nil) || (included && status != existing?.statusID) else { continue }
-                    guard project.canEdit else { throw GitHubRequestError.forbidden }
-                    guard current.first(where: { $0.id == project.id })?.statusID == existing?.statusID else {
-                        throw GitHubRequestError.changed
-                    }
-                    try await model.service.changeProject(
-                        existing ?? project, subjectID: id, included: included, statusID: status)
-                }
             case .development:
                 for link in originalLinks where link.manuallyLinked && !links.contains(where: { $0.id == link.id }) {
                     if let target = link.reference {

@@ -347,6 +347,22 @@ final class PullRequestCenterModel: ObservableObject {
 
     func repairSelection() { if !visible.contains(where: { $0.id == selectedID }) { selectedID = visible.first?.id } }
 
+    func browse(repository: GitHubRepositoryReference) {
+        cancelLoads()
+        hasLoaded = false
+        browsing = GitHubBrowseOptions(repository: repository.id)
+        filter = .all
+        query = ""
+        records = []
+        selectedID = nil
+        changedIDs.removeAll()
+        errorMessage = nil
+        coverage = nil
+        accessRequirement = nil
+        repositories = [repository]
+        failedRepositories = []
+    }
+
     func cancelLoads() {
         generation = UUID()
         resetSummaryCache()

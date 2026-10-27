@@ -242,6 +242,23 @@ final class IssueCenterModel: ObservableObject {
         }
     }
 
+    func browse(repository: GitHubRepositoryReference) {
+        cancelLoads()
+        hasLoaded = false
+        browsing = GitHubBrowseOptions(repository: repository.id)
+        filter = .all
+        query = ""
+        records = []
+        selectedIssueID = nil
+        changedIDs.removeAll()
+        errorMessage = nil
+        coverage = nil
+        accessRequirement = nil
+        repositories = [repository]
+        repositoryScope = nil
+        detailErrorMessage = nil
+    }
+
     func cancelLoads() {
         generation = UUID()
         if isRefreshing { isRefreshing = false }

@@ -5,7 +5,6 @@ import Testing
 @testable import Herm
 
 private struct WorkspaceVisualTransport: GitHubIssueTransport {
-    var restrictedProjects = false
     var cleanReadiness = false
     var merged = false
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
@@ -34,11 +33,7 @@ private struct WorkspaceVisualTransport: GitHubIssueTransport {
         if path == "/graphql" {
             let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
             let query = body["query"] as! String
-            if query.contains("projectItems") && restrictedProjects {
-                payload = ["errors": [["type": "FORBIDDEN", "message": "Projects permission denied"]]]
-            } else if query.contains("projectItems") {
-                payload = ["data": ["node": ["projectItems": ["nodes": [], "pageInfo": ["hasNextPage": false]]]]]
-            } else if query.contains("closingIssuesReferences") {
+            if query.contains("closingIssuesReferences") {
                 payload = [
                     "data": ["node": ["closingIssuesReferences": ["nodes": [], "pageInfo": ["hasNextPage": false]]]]
                 ]
@@ -289,7 +284,6 @@ struct GitHubWorkspaceVisualTests {
         }
         let panels = ProcessInfo.processInfo.environment["GITHUB_PANEL_SNAPSHOTS"] == "1"
         let transport = WorkspaceVisualTransport(
-            restrictedProjects: panels,
             cleanReadiness: ProcessInfo.processInfo.environment["GITHUB_READINESS_CLEAN"] == "1",
             merged: ProcessInfo.processInfo.environment["GITHUB_MERGED_SNAPSHOT"] == "1")
         let repo = GitHubReferenceParser.repository("owner/repo")!

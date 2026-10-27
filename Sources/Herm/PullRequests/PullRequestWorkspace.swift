@@ -62,6 +62,9 @@ struct PullRequestWorkspace: View {
                 }
             }
         }
+        .onChange(of: center.browsing.repository, initial: true) { _, repository in
+            if !repository.isEmpty { isListCollapsed = false }
+        }
         .onDisappear {
             center.cancelLoads()
         }

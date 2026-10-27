@@ -4,7 +4,7 @@ import Testing
 @testable import Herm
 
 private actor WriteSafetyTransport: GitHubIssueTransport {
-    enum Mode { case denied, staleHead, queue, restrictedProjects, linking, unstable, blocked }
+    enum Mode { case denied, staleHead, queue, metadata, linking, unstable, blocked }
     let mode: Mode
     let methods: [GitHubMergeMethod]
     var reads = 0
@@ -64,10 +64,8 @@ private actor WriteSafetyTransport: GitHubIssueTransport {
                     ]
                 ]
             ]
-        } else if mode == .restrictedProjects {
-            if query.contains("projectItems") {
-                payload = ["errors": [["type": "FORBIDDEN", "message": "restricted"]]]
-            } else if query.contains("closedByPullRequestsReferences") {
+        } else if mode == .metadata {
+            if query.contains("closedByPullRequestsReferences") {
                 payload = [
                     "data": [
                         "node": ["closedByPullRequestsReferences": ["nodes": [], "pageInfo": ["hasNextPage": false]]]
@@ -268,16 +266,15 @@ struct GitHubWriteSafetyTests {
         #expect(model.draft == "Please add coverage.")
         #expect(model.error != nil)
     }
-    @MainActor @Test func restrictedProjectsDoNotEraseOtherMetadata() async {
+    @MainActor @Test func metadataLoadsDetailsAndDevelopment() async {
         let repo = GitHubReferenceParser.repository("owner/repo")!
         let model = GitHubMetadataModel(
             reference: .init(repository: repo, number: 1, kind: .issue),
-            client: GitHubClient(transport: WriteSafetyTransport(.restrictedProjects)))
+            client: GitHubClient(transport: WriteSafetyTransport(.metadata)))
         await model.refresh()
         #expect(model.basic?.title == "Retained")
         #expect(model.basic?.labels.first?.name == "bug")
-        #expect(model.projects == nil)
-        #expect(model.errors["Projects"] != nil)
+        #expect(model.errors.isEmpty)
         #expect(model.development == [])
     }
 }

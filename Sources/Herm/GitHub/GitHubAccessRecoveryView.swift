@@ -11,10 +11,10 @@ enum GitHubAccessRequirement: Equatable, Sendable {
         }
     }
 
-    func command(projects: Bool) -> String {
+    func command() -> String {
         self == .signIn
             ? "gh auth login --hostname github.com --web"
-            : "gh auth refresh -h github.com -s \(projects ? "project" : "repo")"
+            : "gh auth refresh -h github.com -s repo"
     }
 }
 
@@ -22,7 +22,6 @@ enum GitHubAccessRequirement: Equatable, Sendable {
 struct GitHubAccessRecoveryView: View {
     let feature: String
     let requirement: GitHubAccessRequirement
-    var projects = false
     let isRetrying: Bool
     let retry: () -> Void
     @State private var copied = false
@@ -43,7 +42,7 @@ struct GitHubAccessRecoveryView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(requirement.command(projects: projects))
+                    Text(requirement.command())
                         .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -62,7 +61,7 @@ struct GitHubAccessRecoveryView: View {
                 HStack(spacing: 10) {
                     Button(copied ? "Copied" : "Copy command") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(requirement.command(projects: projects), forType: .string)
+                        NSPasteboard.general.setString(requirement.command(), forType: .string)
                         copied = true
                     }.buttonStyle(.dockSecondary)
                     Button(action: retry) {

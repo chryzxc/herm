@@ -17,6 +17,24 @@ struct ArtifactFileIconTests {
         #expect(ArtifactFileIcon.name(for: "notes") == "document")
     }
 
+    @Test func repositoryLanguagesReuseBundledFileIcons() {
+        for (language, file) in [
+            ("TypeScript", "index.ts"), ("Swift", "App.swift"), ("Vue", "App.vue"),
+            ("C++", "main.cpp"), ("C#", "Main.cs"), ("Objective-C++", "main.m"),
+            ("Shell", "script.sh"), ("SQL", "query.sql"), ("Jupyter Notebook", "notebook.ipynb"),
+            (" SCSS ", "style.scss"),
+        ] {
+            #expect(ArtifactFileIcon.name(forLanguage: language) == ArtifactFileIcon.name(for: file))
+            #expect(ArtifactFileIcon.image(forLanguage: language) != nil)
+        }
+        for language in ArtifactFileIcon.languageAliases.keys {
+            #expect(ArtifactFileIcon.image(forLanguage: language) != nil)
+        }
+        #expect(ArtifactFileIcon.name(forLanguage: "An unknown language") == ArtifactFileIcon.fallback)
+        #expect(ArtifactFileIcon.name(forLanguage: "../../secret") == ArtifactFileIcon.fallback)
+        #expect(ArtifactFileIcon.image(forLanguage: "An unknown language") != nil)
+    }
+
     @Test func everyMappedIconIsBundled() {
         let samples =
             ArtifactFileIcon.fileNames.keys.map { $0 } + ArtifactFileIcon.extensions.keys.map { "f.\($0)" } + [

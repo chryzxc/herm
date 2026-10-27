@@ -3,12 +3,27 @@ import SwiftUI
 /// A value chip, without the lifecycle dot used by status pills.
 struct DockMetadataPill: View {
     let text: String
+    var language: String? = nil
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     var navigationIcon: Ph? = nil
     var colorHex: String? = nil
     private var labelColor: DockMetadataPillColor? { colorHex.flatMap(DockMetadataPillColor.init) }
 
     var body: some View {
         HStack(spacing: DockSpacing.micro) {
+            if let language, let image = ArtifactFileIcon.image(forLanguage: language) {
+                Image(nsImage: image)
+                    .renderingMode(
+                        DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk ? .template : .original
+                    )
+                    .resizable().interpolation(.high).scaledToFit()
+                    .frame(
+                        width: DockWorkspaceScale.points(14, scale: workspaceScale),
+                        height: DockWorkspaceScale.points(14, scale: workspaceScale)
+                    )
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .accessibilityHidden(true)
+            }
             Text(text)
                 .underline(navigationIcon != nil)
                 .fixedSize(horizontal: false, vertical: true)

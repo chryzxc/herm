@@ -3,7 +3,6 @@ import SwiftUI
 enum GitHubWorkspaceSection: String, CaseIterable, Identifiable {
     case pullRequests
     case issues
-    case projects
     case repositories
 
     var id: Self { self }
@@ -11,7 +10,6 @@ enum GitHubWorkspaceSection: String, CaseIterable, Identifiable {
         switch self {
         case .pullRequests: "Pull requests"
         case .issues: "Issues"
-        case .projects: "Projects"
         case .repositories: "Repositories"
         }
     }
@@ -19,19 +17,12 @@ enum GitHubWorkspaceSection: String, CaseIterable, Identifiable {
         switch self {
         case .pullRequests: .gitPullRequest
         case .issues: .record
-        case .projects: .kanban
         case .repositories: .folder
         }
     }
 
-    static func visible(showsPullRequests: Bool, showsIssues: Bool) -> [Self] {
-        allCases.filter {
-            switch $0 {
-            case .pullRequests: showsPullRequests
-            case .issues: showsIssues
-            case .projects, .repositories: showsPullRequests || showsIssues
-            }
-        }
+    static func visible(showsGitHub: Bool) -> [Self] {
+        showsGitHub ? allCases : []
     }
 
     func available(in sections: [Self]) -> Self? {
@@ -41,16 +32,13 @@ enum GitHubWorkspaceSection: String, CaseIterable, Identifiable {
 
 /// Shared navigation around the existing PR and issue pages; their models retain browsing state and drafts.
 struct GitHubWorkspace<Content: View>: View {
-    @StateObject private var projects = GitHubProjectsModel()
     @StateObject private var repositories = GitHubRepositoriesModel()
     @Binding var selection: GitHubWorkspaceSection
-    @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequests = true
-    @AppStorage(SidebarVisibilityKey.issues) private var showsIssues = true
     @Environment(\.dockTitleRow) private var titleRow
     @ViewBuilder var content: () -> Content
 
     private var sections: [GitHubWorkspaceSection] {
-        GitHubWorkspaceSection.visible(showsPullRequests: showsPullRequests, showsIssues: showsIssues)
+        GitHubWorkspaceSection.allCases
     }
 
     var body: some View {
@@ -82,15 +70,10 @@ struct GitHubWorkspace<Content: View>: View {
             }
         }
         .background(Color.dockCanvas)
-        .onChange(of: sections) { _, visible in
-            if let available = selection.available(in: visible), available != selection { selection = available }
-        }
     }
 
     @ViewBuilder private var selectedContent: some View {
-        if selection == .projects {
-            GitHubProjectsView(model: projects)
-        } else if selection == .repositories {
+        if selection == .repositories {
             GitHubRepositoriesView(model: repositories)
         } else {
             content()

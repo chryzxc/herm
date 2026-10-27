@@ -22,5 +22,19 @@ struct BotMentionsTests {
             range: NSRange(location: 14, length: 6))
         let pilled = BotMentions.pilled(attributed)
         #expect(pilled.string == "hi \u{FFFC} and @forge")
+        let link = pilled.attribute(.link, at: 3, effectiveRange: nil) as? URL
+        #expect(link.flatMap(BotMentions.previewBotID) == forge.id)
+        #expect(pilled.attribute(.link, at: 10, effectiveRange: nil) == nil)
     }
+    @Test func previewLinksRoundTripExactIdentitiesAndRejectMalformedLinks() {
+        let id = "bot-name /?#&"
+        #expect(BotMentions.previewBotID(BotMentions.previewURL(id)) == id)
+        for value in [
+            "https://bot?id=forge", "herm-bot-preview://other?id=forge", "herm-bot-preview://bot?id=",
+            "herm-bot-preview://bot?id=forge&id=other",
+        ] {
+            #expect(BotMentions.previewBotID(URL(string: value)!) == nil)
+        }
+    }
+
 }

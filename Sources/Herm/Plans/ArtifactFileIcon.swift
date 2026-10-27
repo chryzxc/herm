@@ -51,6 +51,24 @@ enum ArtifactFileIcon {
         "gradle": "gradle", "mat": "matlab",
     ]
 
+    /// Language names reuse the bundled file glyphs; aliases cover names that differ from icon keys.
+    static let languageAliases: [String: String] = [
+        "c++": "cpp", "c#": "csharp", "objective-c++": "objective-c", "shell": "console",
+        "jupyter notebook": "jupyter", "dockerfile": "docker", "makefile": "makefile",
+        "scss": "sass", "powershell": "powershell", "hcl": "terraform", "tex": "tex",
+    ]
+
+    static func name(forLanguage language: String) -> String {
+        let normalized = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let alias = languageAliases[normalized] { return alias }
+        if let icon = extensions[normalized] { return icon }
+        return extensions.values.contains(normalized) ? normalized : fallback
+    }
+
+    static func image(forLanguage language: String) -> NSImage? {
+        image(named: name(forLanguage: language))
+    }
+
     static let fallback = "document"
 
     static func name(for fileName: String) -> String {

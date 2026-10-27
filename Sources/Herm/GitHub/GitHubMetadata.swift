@@ -22,36 +22,6 @@ struct GitHubMilestone: Identifiable, Equatable, Sendable {
             dueAt: (row["due_on"] as? String).flatMap { try? Date($0, strategy: .iso8601) })
     }
 }
-struct GitHubProjectStatus: Identifiable, Equatable, Sendable {
-    let id: String
-    let name: String
-}
-struct GitHubProject: Identifiable, Equatable, Sendable {
-    let id: String
-    let title: String
-    let url: URL?
-    let canEdit: Bool
-    let closed: Bool
-    var itemID: String?
-    let statusFieldID: String?
-    let statusOptions: [GitHubProjectStatus]
-    var statusID: String?
-    var statusName: String? { statusOptions.first { $0.id == statusID }?.name }
-    static func parse(_ row: [String: Any], item: [String: Any]? = nil) -> Self? {
-        guard let id = row["id"] as? String, let title = row["title"] as? String else { return nil }
-        let fields = ((row["fields"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
-        let status = fields.first { ($0["name"] as? String) == "Status" && $0["options"] != nil }
-        let options = (status?["options"] as? [[String: Any]] ?? []).compactMap { option -> GitHubProjectStatus? in
-            guard let id = option["id"] as? String, let name = option["name"] as? String else { return nil }
-            return GitHubProjectStatus(id: id, name: name)
-        }
-        return Self(
-            id: id, title: title, url: (row["url"] as? String).flatMap(URL.init),
-            canEdit: row["viewerCanUpdate"] as? Bool ?? false, closed: row["closed"] as? Bool ?? false,
-            itemID: item?["id"] as? String, statusFieldID: status?["id"] as? String, statusOptions: options,
-            statusID: (item?["fieldValueByName"] as? [String: Any])?["optionId"] as? String)
-    }
-}
 struct GitHubDevelopmentLink: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
@@ -74,9 +44,6 @@ struct GitHubMetadataSnapshot: Equatable, Sendable {
 
 struct GitHubMetadataService: Sendable {
     let client: GitHubClient
-    static let projectFields =
-        "id title url closed viewerCanUpdate fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name}}}}"
-
     func basic(_ reference: GitHubItemReference) async throws -> GitHubMetadataSnapshot {
         guard let row = try await client.request(reference.issuePath) as? [String: Any] else {
             throw GitHubRequestError.malformed
@@ -109,80 +76,6 @@ struct GitHubMetadataService: Sendable {
             }
         }
         return result
-    }
-
-    func projects(_ reference: GitHubItemReference, nodeID: String) async throws -> [GitHubProject] {
-        var projects: [GitHubProject] = []
-        var cursor: String? = nil
-        for _ in 0..<30 {
-            let type = reference.kind == .issue ? "Issue" : "PullRequest"
-            let query =
-                "query($id:ID!,$after:String){node(id:$id){... on \(type){projectItems(first:100,after:$after){nodes{id project{\(Self.projectFields)} fieldValueByName(name:\"Status\"){... on ProjectV2ItemFieldSingleSelectValue{optionId}}} pageInfo{endCursor hasNextPage}}}}}"
-            let data = try await client.graphQL(query, variables: ["id": nodeID, "after": cursor as Any? ?? NSNull()])
-            guard let connection = (data["node"] as? [String: Any])?["projectItems"] as? [String: Any],
-                let nodes = connection["nodes"] as? [[String: Any]]
-            else { throw GitHubRequestError.malformed }
-            projects += nodes.compactMap { item in
-                (item["project"] as? [String: Any]).flatMap { GitHubProject.parse($0, item: item) }
-            }
-            let page = connection["pageInfo"] as? [String: Any]
-            guard page?["hasNextPage"] as? Bool == true else { return projects }
-            guard let next = page?["endCursor"] as? String, next != cursor else { throw GitHubRequestError.malformed }
-            cursor = next
-        }
-        throw GitHubRequestError.unavailable
-    }
-
-    func projectChoices(_ reference: GitHubItemReference) async throws -> [GitHubProject] {
-        var choices: [String: GitHubProject] = [:]
-        for ownerType in ["user", "organization"] {
-            var cursor: String? = nil
-            for _ in 0..<30 {
-                let query =
-                    "query($owner:String!,$after:String){\(ownerType)(login:$owner){projectsV2(first:100,after:$after){nodes{\(Self.projectFields)} pageInfo{endCursor hasNextPage}}}}"
-                do {
-                    let data = try await client.graphQL(
-                        query, variables: ["owner": reference.repository.owner, "after": cursor as Any? ?? NSNull()])
-                    guard let owner = data[ownerType] as? [String: Any] else { break }
-                    guard let connection = owner["projectsV2"] as? [String: Any],
-                        let nodes = connection["nodes"] as? [[String: Any]]
-                    else { throw GitHubRequestError.malformed }
-                    for node in nodes {
-                        if let project = GitHubProject.parse(node), !project.closed { choices[project.id] = project }
-                    }
-                    let page = connection["pageInfo"] as? [String: Any]
-                    guard page?["hasNextPage"] as? Bool == true else { break }
-                    guard let next = page?["endCursor"] as? String, next != cursor else {
-                        throw GitHubRequestError.malformed
-                    }
-                    cursor = next
-                } catch {
-                    if error is CancellationError { throw error }
-                    // A repository owner is either a User or an Organization; the other lookup returns NOT_FOUND.
-                    if ownerType == "organization", choices.isEmpty { throw error }
-                    break
-                }
-            }
-        }
-        return choices.values.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-    }
-
-    func project(at urlString: String) async throws -> GitHubProject {
-        guard let url = URL(string: urlString), url.scheme == "https", url.host == "github.com" else {
-            throw GitHubRequestError.malformed
-        }
-        let parts = url.path.split(separator: "/").map(String.init)
-        guard parts.count >= 4, ["orgs", "users"].contains(parts[0]), parts[2] == "projects",
-            let number = Int(parts[3]), number > 0
-        else { throw GitHubRequestError.malformed }
-        let ownerType = parts[0] == "orgs" ? "organization" : "user"
-        let data = try await client.graphQL(
-            "query($owner:String!,$number:Int!){\(ownerType)(login:$owner){projectV2(number:$number){\(Self.projectFields)}}}",
-            variables: ["owner": parts[1], "number": number])
-        guard let row = (data[ownerType] as? [String: Any])?["projectV2"] as? [String: Any],
-            let project = GitHubProject.parse(row)
-        else { throw GitHubRequestError.notFound }
-        return project
     }
 
     func development(_ reference: GitHubItemReference, nodeID: String) async throws -> [GitHubDevelopmentLink] {
@@ -314,36 +207,6 @@ struct GitHubMetadataService: Sendable {
     func setMilestone(_ reference: GitHubItemReference, number: Int?) async throws {
         _ = try await client.request(
             reference.issuePath, method: "PATCH", body: ["milestone": number as Any? ?? NSNull()])
-    }
-    func changeProject(_ project: GitHubProject, subjectID: String, included: Bool, statusID: String?) async throws {
-        var itemID = project.itemID
-        if included && itemID == nil {
-            let data = try await client.graphQL(
-                "mutation($project:ID!,$subject:ID!){addProjectV2ItemById(input:{projectId:$project,contentId:$subject}){item{id}}}",
-                variables: ["project": project.id, "subject": subjectID])
-            itemID = (data["addProjectV2ItemById"] as? [String: Any])?["item"].flatMap {
-                ($0 as? [String: Any])?["id"] as? String
-            }
-            guard itemID != nil else { throw GitHubRequestError.malformed }
-        }
-        guard let itemID else { return }
-        if !included {
-            _ = try await client.graphQL(
-                "mutation($project:ID!,$item:ID!){deleteProjectV2Item(input:{projectId:$project,itemId:$item}){deletedItemId}}",
-                variables: ["project": project.id, "item": itemID])
-            return
-        }
-        guard let field = project.statusFieldID, statusID != project.statusID else { return }
-        if let statusID {
-            guard project.statusOptions.contains(where: { $0.id == statusID }) else { throw GitHubRequestError.changed }
-            _ = try await client.graphQL(
-                "mutation($project:ID!,$item:ID!,$field:ID!,$status:String!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:{singleSelectOptionId:$status}}){projectV2Item{id}}}",
-                variables: ["project": project.id, "item": itemID, "field": field, "status": statusID])
-        } else {
-            _ = try await client.graphQL(
-                "mutation($project:ID!,$item:ID!,$field:ID!){clearProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field}){projectV2Item{id}}}",
-                variables: ["project": project.id, "item": itemID, "field": field])
-        }
     }
     func link(_ source: GitHubItemReference, to target: GitHubItemReference, adding: Bool) async throws {
         guard source.kind != target.kind, let sourceID = source.nodeID, let targetID = target.nodeID else {

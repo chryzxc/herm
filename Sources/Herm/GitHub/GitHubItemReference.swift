@@ -24,3 +24,14 @@ extension EnvironmentValues {
         set { self[GitHubNavigationKey.self] = newValue }
     }
 }
+
+private struct GitHubRepositoryNavigationKey: EnvironmentKey {
+    static let defaultValue: (@MainActor @Sendable (GitHubRepositoryReference, GitHubItemKind) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var openGitHubRepository: (@MainActor @Sendable (GitHubRepositoryReference, GitHubItemKind) -> Void)? {
+        get { self[GitHubRepositoryNavigationKey.self] }
+        set { self[GitHubRepositoryNavigationKey.self] = newValue }
+    }
+}

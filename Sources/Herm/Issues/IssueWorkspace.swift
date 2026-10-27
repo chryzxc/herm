@@ -254,5 +254,8 @@ struct IssueWorkspacePage: View {
             IssueWorkspace(center: center, projects: projects, onOpenChat: onOpenChat, hidesList: collapsed)
                 .environment(\.dockTitleRow, nil)
         }
+        .onChange(of: center.browsing.repository, initial: true) { _, repository in
+            if !repository.isEmpty { collapsed = false }
+        }
     }
 }

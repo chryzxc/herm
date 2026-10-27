@@ -30,10 +30,8 @@ struct GitHubAccessRecoveryTests {
         for error in [GitHubRequestError.unavailable, .malformed, .notFound, .rateLimited(nil)] {
             #expect(GitHubAccessRequirement(error: error) == nil)
         }
-        #expect(GitHubAccessRequirement.signIn.command(projects: false) == "gh auth login --hostname github.com --web")
-        #expect(GitHubAccessRequirement.permission.command(projects: false) == "gh auth refresh -h github.com -s repo")
-        #expect(
-            GitHubAccessRequirement.permission.command(projects: true) == "gh auth refresh -h github.com -s project")
+        #expect(GitHubAccessRequirement.signIn.command() == "gh auth login --hostname github.com --web")
+        #expect(GitHubAccessRequirement.permission.command() == "gh auth refresh -h github.com -s repo")
     }
 
     @Test func issueAndPullRequestAccessRecoverAfterRetry() async {

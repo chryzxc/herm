@@ -8,17 +8,17 @@ The app routes typed item references between features and prepares chat context.
 ## Behavior
 
 - The primary rail has one GitHub destination. Its inner navigation selects Pull
-  requests, Issues, or Projects beside the existing page; narrow workspaces use a section
-  picker. Returning restores the last section used in the app session. Existing
-  section visibility preferences are preserved, with a visible-section fallback.
+  requests, Issues, or Repositories beside the existing page; narrow workspaces use a section
+  picker. Returning restores the last section used in the app session. Settings → General → Sidebar provides one
+  Show GitHub in sidebar switch; all three inner sections remain available.
 - Global and session PR lists keep their own filters and selections, while sharing
   detail records, discussion data, and per-item drafts. Drafts remain in memory.
 - My work and repository browsing support history, sorting, metadata filters, and
   saved presentation preferences. Pagination reports partial coverage instead of
   presenting a truncated response as complete.
-- Labels, Projects V2 membership and Status, milestones, assignees, and Development
+- Labels, milestones, assignees, and Development
   links use shared Dock controls. Editors stage changes and confirm the item and
-  proposed edits. Restricted Projects do not prevent other sections from loading.
+  proposed edits.
   Label pills retain GitHub’s repository-defined RGB colors in details and editors,
   with contrast-selected text; missing or malformed colors use the neutral theme.
 - Labels and assignments use deltas. Manual closing references target the issue;
@@ -56,8 +56,8 @@ The app routes typed item references between features and prepares chat context.
 
 ## Validation
 
-Focused suites cover pagination, partial responses, label deltas, restricted
-Projects, denied writes and retained drafts, expected-head landing protection,
+Focused suites cover pagination, partial responses, label deltas,
+denied writes and retained drafts, expected-head landing protection,
 issue-targeted links, shared detail state, Markdown output/cache behavior, diff
 line numbers, and isolated conflict fixtures. `GitHubWorkspaceVisualTests` is an
 opt-in fixture renderer for light/dark and narrow/wide layouts:
@@ -85,43 +85,73 @@ Monochrome checked visually.
 Live GitHub write acceptance, keyboard interaction, native text selection, and
 production repository rule combinations still require integration/manual checks.
 Run the full required suite in CI. No system notifications are enabled by this
-feature. Native conflict editing and arbitrary Project custom-field editing are
+feature. Native conflict editing is
 outside its scope.
 
-## Projects browsing
-
-`GitHubProjectsService` reads paginated Projects V2 and board items through the
-shared GitHub client. A blank owner browses the signed-in account; an explicit
-owner resolves either a user or organization. Boards include draft, issue, PR,
-and restricted items; archived items are omitted from the active board.
-Search operates on loaded titles and repositories. Pagination failure reports an
-unavailable state rather than silently presenting incomplete results.
-
-Personal project creation, draft-item creation, and Status updates require explicit
-confirmation. Status updates re-read project permission, item membership, and the
-previous status before writing. Custom fields, saved GitHub views, archive/delete,
-and organization project creation are outside this initial native workspace.
-GitHubProjectsTests covers paging, parsing, stale and denied writes, invalid status
-options, draft/project creation, and navigation memory.
-
-Projects reuses the same `gh` credential as Issues and Pull requests. Missing
-Projects scope shows explicit authorization guidance and Copy command / Retry
-actions. The compact toolbar groups account selection in a popover with themed
-search and state controls; failed same-account refreshes retain loaded projects.
-
-GitHub Issues, Pull requests, and Projects share `GitHubAccessRecoveryView`: a
+GitHub Issues, Pull requests, and Repositories share `GitHubAccessRecoveryView`: a
 compact permission panel with a selectable CLI command, Copy command, and pending
 Retry feedback. Typed sign-in and permission errors show this panel when no cached
 records exist; ordinary outages and rate limits retain their existing error UI.
 
 GitHub includes a Repositories tab listing repositories accessible to the existing
-GitHub credential, ordered by recent updates. Search matches names and descriptions;
-visibility and archived filters operate on the loaded inventory. Compact repository rows open a side inspector on wide windows (a detail page on narrow windows) with description, language, visibility,
-stars, forks, combined open issue/PR count, default branch, last push, and license.
-The overview uses the loaded inventory and supports refresh; missing values remain
-unavailable. Open on GitHub is a separate action, and Copy clone URL copies the
-HTTPS address without cloning. The tab
-uses the shared access-recovery panel, reports partial coverage, and retains data
-on refresh failure. Filters survive switching between GitHub sections.
+GitHub credential, ordered by GitHub’s last-updated timestamp, newest first, with undated entries last.
+List timestamps show that same update time; the detail pane separately shows the last push. Search matches names and descriptions;
+visibility and archived filters operate on the loaded inventory. Repository browsing
+uses the same single page header and resizable list/detail layout as Issues and Pull
+requests. On wide windows, a compact list opens a spacious native detail pane; narrow
+windows use the shared Back navigation. Details include description, language,
+visibility, stars, forks, combined open issue/PR count, default branch, last push, and
+license. The overview uses the loaded inventory and supports refresh; missing values
+remain unavailable. Open on GitHub is a separate action, and Copy clone URL copies the
+HTTPS address without cloning. The tab uses the shared access-recovery panel, reports
+partial coverage, and retains data on refresh failure. Filters survive switching between
+GitHub sections.
 
-Repository browsing explicitly includes owner, collaborator, and organization-member affiliations available to the active GitHub credential. The owner filter includes all returned accounts and organizations; search and archive filters apply across them. Rows use separators and small language accents, and the inspector uses compact metadata rows.
+Repository browsing explicitly includes owner, collaborator, and organization-member
+affiliations available to the active GitHub credential. The owner filter includes all
+returned accounts and organizations; search and archive filters apply across them. Rows
+use shared typography, compact descriptions, and the standard divider-led selection
+treatment. Repository glyphs, visibility, and star metadata use neutral theme ink.
+Language names use neutral pills with the existing bundled file icons; unknown languages
+use a generic file icon, and Monochrome/E-Ink render the glyphs in neutral ink. Search,
+visibility tabs, and a fixed status slot match the GitHub list controls. Details use
+shared section headers and inspector groups; actions share compact sizing, and the
+standard copy control confirms temporarily. The repository detail pane also loads the
+five most recent commits on the default branch and the first release returned by GitHub,
+including its tag, publication date, and draft or pre-release state. Commit links, SHA
+copying, release notes, and an explicit external Actions link support deeper inspection.
+Issues and Pull requests open the existing native browsers scoped to the selected
+repository, with open state and recently updated sorting. Previous list filters and rows
+reset on entry; cached details and comment drafts remain available. Search,
+state/history, conversations, reviews, authoring, and recovery use the existing
+features. The inventory supplies your highest reported repository permission and last-
+updated time; absent permissions remain unavailable. Commit and release reads share the
+existing GitHub credential, load independently, retain prior data with a stale note on
+refresh failure, and cancel when the detail pane closes or changes repository. The
+detail toolbar refreshes these reads and a recent activity feed. The feed shows up to
+ten events returned by GitHub, ordered newest first, with actor, action, target, time,
+and safe links to the relevant repository page. It includes pushes, issue and PR
+updates/comments/reviews, releases, branch/tag changes, and other reported events.
+Counts are labeled Statistics; recent issue, comment, and release events remain in
+Overview. GitHub can delay events and limits the available history; an empty response
+does not imply the repository has never been active. Activity has independent
+unavailable, retry, and stale-data states and cancels with the selected repository.
+Repository language labels are neutral pills with the same bundled Material file icons
+used by file previews and Markdown. Unknown languages keep their name and a generic file
+icon; Monochrome and E-Ink desaturate the glyph. Visibility and counts stay neutral.
+From a repository, Issues and Pull requests open Herm’s existing native browsers with
+that repository as the server-side scope, open state, and recently updated sorting.
+Previous list filters and rows reset on entry so unrelated account data is not shown;
+existing detail caches and comment drafts are retained. The usual search, state/history,
+review, conversation, authoring, and recovery features remain available. Actions remains
+an explicitly external GitHub link. A separate Activity tab follows GitHub’s repository
+code activity view: compact commit-message rows, actor avatars, branch links, revision
+ranges, and semantic merge/force-push badges. Branch, activity type, user, time-period,
+and oldest/newest filters query GitHub’s repository activity endpoint. Branch/user menus
+list values discovered in loaded activity. Up to 30 matching records are shown per
+query, with an explicit coverage note at the limit. Visible rows load commit messages
+and comparison counts using shared, bounded requests; missing counts are never invented,
+and immutable details are retained if a refresh fails. Row menus open changes, copy
+links or SHAs, and retry failed commit details. Switching filters cancels old work and
+clears rows from the previous scope; leaving the pane cancels pending reads.
+Repository browsing uses a compact filter toolbar and one detail tab bar. Overview uses an unboxed identity, compact statistics, and divider-separated repository details, release, commits, and events. Shared theme typography, language pills, native navigation, copy actions, and Activity filters remain consistent across widths.

@@ -14,17 +14,19 @@ struct GitHubMarkdownLinkTests {
             #expect(reference?.number == 42)
             #expect(reference?.repository.id == "owner/repo")
         }
-        defaults.set(false, forKey: SidebarVisibilityKey.pullRequests)
+        defaults.set(false, forKey: SidebarVisibilityKey.github)
         #expect(
             GitHubMarkdownLink.reference(for: URL(string: "https://github.com/owner/repo/pull/42")!, defaults: defaults)
                 == nil)
         #expect(
             GitHubMarkdownLink.reference(
-                for: URL(string: "https://github.com/owner/repo/issues/42")!, defaults: defaults) != nil)
-        defaults.set(false, forKey: SidebarVisibilityKey.issues)
-        #expect(
-            GitHubMarkdownLink.reference(
                 for: URL(string: "https://github.com/owner/repo/issues/42")!, defaults: defaults) == nil)
+        defaults.set(true, forKey: SidebarVisibilityKey.github)
+        for path in ["pull", "issues"] {
+            #expect(
+                GitHubMarkdownLink.reference(
+                    for: URL(string: "https://github.com/owner/repo/\(path)/42")!, defaults: defaults) != nil)
+        }
     }
 
     @Test func preservesUnsupportedDestinationsInBrowser() {

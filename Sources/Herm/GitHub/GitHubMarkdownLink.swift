@@ -10,14 +10,12 @@ enum GitHubMarkdownLink {
         let parts = url.path.split(separator: "/").map(String.init)
         guard parts.count == 4, let number = Int(parts[3]), number > 0 else { return nil }
         let kind: GitHubItemKind
-        let key: String
+        let key = SidebarVisibilityKey.github
         switch parts[2] {
         case "pull":
             kind = .pullRequest
-            key = SidebarVisibilityKey.pullRequests
         case "issues":
             kind = .issue
-            key = SidebarVisibilityKey.issues
         default: return nil
         }
         guard defaults.object(forKey: key) == nil || defaults.bool(forKey: key) else { return nil }

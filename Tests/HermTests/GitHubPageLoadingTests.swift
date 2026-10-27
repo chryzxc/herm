@@ -107,6 +107,61 @@ struct GitHubPageLoadingTests {
         ])
     }
 
+    @MainActor @Test func repositoryNavigationReusesNativeBrowsersWithFreshScope() async throws {
+        let repository = try #require(GitHubReferenceParser.repository("owner/repo"))
+        var row = searchRow
+        row["user"] = ["login": "another-contributor"]
+        row["repository_url"] = "https://api.github.com/repos/owner/repo"
+        row["html_url"] = "https://github.com/owner/repo/issues/19"
+        let transport = try GitHubPageTransport(responses: [
+            "/user": ["login": "ada"],
+            "/search/issues?is:issue is:open repo:owner/repo": ["items": [row]],
+            "/search/issues?is:pr is:open repo:owner/repo": ["items": [row]],
+        ])
+        let issues = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
+        issues.query = "previous search"
+        issues.filter = .assigned
+        issues.repositoryScope = "another/repository"
+        issues.browsing = GitHubBrowseOptions(repository: "another/repository", state: .closed, label: "bug")
+        issues.browse(repository: repository)
+        #expect(!issues.hasLoaded && issues.records.isEmpty && issues.selected == nil)
+        #expect(issues.query.isEmpty && issues.filter == .all && issues.repositoryScope == nil)
+        #expect(issues.browsing == GitHubBrowseOptions(repository: repository.id))
+        await issues.refresh(projects: [])
+        #expect(issues.hasLoaded && issues.errorMessage == nil)
+        #expect(issues.visible.count == 1 && issues.visible.first?.repository.id == repository.id)
+        issues.browse(repository: repository)
+        #expect(!issues.hasLoaded && issues.records.isEmpty && issues.selected == nil)
+
+        let pulls = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
+        pulls.query = "previous search"
+        pulls.filter = .reviewing
+        pulls.browsing = GitHubBrowseOptions(repository: "another/repository", state: .closed, assignee: "someone")
+        pulls.commentDrafts["saved"] = "Keep this draft"
+        pulls.browse(repository: repository)
+        #expect(!pulls.hasLoaded && pulls.records.isEmpty && pulls.selected == nil)
+        #expect(pulls.query.isEmpty && pulls.filter == .all)
+        #expect(pulls.browsing == GitHubBrowseOptions(repository: repository.id))
+        await pulls.refresh(projects: [])
+        #expect(pulls.hasLoaded && pulls.errorMessage == nil)
+        #expect(pulls.visible.count == 1 && pulls.visible.first?.repository.id == repository.id)
+        #expect(pulls.commentDrafts["saved"] == "Keep this draft")
+        pulls.browse(repository: repository)
+        #expect(!pulls.hasLoaded && pulls.records.isEmpty && pulls.selected == nil)
+        #expect(await transport.count("/search/issues") == 2)
+
+        let unavailable = try #require(GitHubReferenceParser.repository("team/unavailable"))
+        issues.browse(repository: unavailable)
+        await issues.refresh(projects: [])
+        #expect(issues.records.isEmpty && issues.selected == nil && issues.errorMessage != nil)
+        #expect(issues.browsing.repository == unavailable.id)
+        pulls.browse(repository: unavailable)
+        await pulls.refresh(projects: [])
+        #expect(pulls.records.isEmpty && pulls.selected == nil && pulls.errorMessage != nil)
+        #expect(pulls.browsing.repository == unavailable.id)
+        #expect(pulls.commentDrafts["saved"] == "Keep this draft")
+    }
+
     // Constructing the API without an actor hop guards against protocol-wide UI isolation.
     @Test func pullRequestReadTransportDoesNotRequireTheUIActor() async throws {
         let api = PullRequestCenterAPI(transport: try pullRequestTransport())
