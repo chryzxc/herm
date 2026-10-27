@@ -93,7 +93,7 @@ struct SessionPullRequestRailTests {
 
     @Test func respectsDisabledPRNavigation() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        defaults.set(false, forKey: SidebarVisibilityKey.pullRequests)
+        defaults.set(false, forKey: SidebarVisibilityKey.github)
         #expect(
             SessionPullRequestReferences.extract(
                 texts: ["https://github.com/owner/repo/pull/1"], defaults: defaults

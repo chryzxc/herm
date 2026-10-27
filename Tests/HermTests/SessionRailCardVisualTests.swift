@@ -6,6 +6,85 @@ import Testing
 
 @Suite @MainActor
 struct SessionRailCardVisualTests {
+    @Test func newSummariesStayInlineAndBoundedUntilExplicitNavigation() async throws {
+        let app = NSApplication.shared
+        let accessibility = app.value(forKey: "accessibilityEnhancedUserInterface")
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer { app.setValue(accessibility, forKey: "accessibilityEnhancedUserInterface") }
+        var summary = SessionRailSummary()
+        summary.attention = [.init(id: "question", title: "Question", detail: "Which target?")]
+        summary.plan = .init(
+            sessionID: "session",
+            items: (0..<40).map {
+                .init(content: "Task \($0)", status: $0 == 0 ? "completed" : $0 == 1 ? "in_progress" : "pending")
+            })
+        summary.isWorking = true
+        summary.outputs = [
+            .init(value: "/tmp/rail-preview.md", sessionID: "session", sessionTitle: "Session", timestamp: .now)
+        ]
+        summary.pins = [.init(rowID: 1, uid: "pin", role: "assistant", preview: "Saved decision")]
+        summary.workspace = .init(
+            path: "/tmp/project", branch: "feature", latestCommit: "abc1234 Refine workspace details")
+        var navigations: [String] = []
+        let root = ScrollView {
+            SessionRailSummarySections(
+                summary: summary, onViewAllOutputs: { navigations.append("outputs") },
+                onRespondInChat: { navigations.append("reply") },
+                onViewPin: { _ in
+                    navigations.append("pin")
+                    return true
+                }
+            )
+            .padding(16)
+        }.frame(width: 330).dockThemedRoot()
+        let host = NSHostingView(rootView: root)
+        host.frame = NSRect(x: 0, y: 0, width: 330, height: 900)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        func settle() async throws {
+            for _ in 0..<4 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(30))
+            }
+        }
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
+        }
+        func press(_ text: String) async throws {
+            let element = elements(host).first {
+                let role = $0.accessibilityRole?()
+                let title = ($0.accessibilityTitle?() ?? "") + ($0.accessibilityLabel?() ?? "")
+                return (role == .button || role == .disclosureTriangle) && title.contains(text)
+            }
+            #expect(try #require(element).accessibilityPerformPress?() == true)
+            try await settle()
+        }
+        try await settle()
+        #expect(elements(host).contains { ($0.accessibilityLabel?() ?? "").contains("In progress: Task 1") })
+        for section in [
+            "Needs attention", "Tasks", "Outputs", "rail-preview.md", "Pinned items", "Saved decision", "Workspace",
+        ] {
+            try await press(section)
+            #expect(navigations.isEmpty)
+        }
+        let taskLabels = elements(host).compactMap { $0.accessibilityLabel?() }
+        let activeIndex = try #require(taskLabels.firstIndex(of: "Task 1, in progress"))
+        let pendingIndex = try #require(taskLabels.firstIndex(of: "Task 2, pending"))
+        let completedIndex = try #require(taskLabels.firstIndex(of: "Task 0, completed"))
+        #expect(activeIndex < pendingIndex && pendingIndex < completedIndex)
+        let scrolls = elements(host).filter { $0.accessibilityRole?() == .scrollArea }
+        #expect(scrolls.count >= 6)
+        let heights = scrolls.dropFirst().compactMap { $0.accessibilityFrame?().height }
+        #expect(heights.allSatisfy { $0 <= 281 })
+        #expect(heights.contains { $0 >= 279 })
+        try await press("View all outputs")
+        try await press("Show in chat")
+        try await press("Respond in chat")
+        #expect(navigations == ["outputs", "pin", "reply"])
+    }
+
     @Test func summariesExpandWithoutOpeningPanelsUntilViewAllIsPressed() async throws {
         let app = NSApplication.shared
         // SwiftUI builds its accessibility tree only when an accessibility client is active.

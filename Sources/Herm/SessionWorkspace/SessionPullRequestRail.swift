@@ -99,14 +99,25 @@ struct SessionPullRequestRail: View {
     let onViewAllChanges: () -> Void
     let onViewPullRequest: (GitHubItemReference) async -> Bool
     let onRefreshChanges: () async -> Void
+    let onViewAllOutputs: () -> Void
+    let onRespondInChat: () -> Void
+    let onViewPin: (PinnedMessage) async -> Bool
     @StateObject private var rail = SessionPullRequestRailModel()
+    @StateObject private var outputs = SessionRailOutputsModel()
     @ObservedObject private var details = PullRequestDetailStore.shared
     @State private var refreshID = UUID()
+    @State private var lastOutputsRefreshID: UUID?
     @State private var lineSummary: RepositoryChangeLineSummary?
     @State private var lineSnapshot: RepositoryChangeSnapshot?
 
     private var changes: SessionRailChangeSummary? {
         .make(path: repositoryPath, repository: workflow.repository, changes: workflow.changes)
+    }
+
+    private var summary: SessionRailSummary {
+        .make(
+            model: model, repositoryPath: repositoryPath, repository: workflow.repository,
+            outputs: outputs.records, outputsError: outputs.error)
     }
 
     var body: some View {
@@ -117,9 +128,11 @@ struct SessionPullRequestRail: View {
                 changes: changes, lines: lineSnapshot == workflow.changes ? lineSummary : nil,
                 changesUnavailable: repositoryPath == workflow.repository.path && workflow.repository.isStale,
                 references: rail.references, records: details.records, failures: rail.failures,
-                isRefreshing: rail.isRefreshing || workflow.isRefreshing,
+                isRefreshing: rail.isRefreshing || workflow.isRefreshing || outputs.isRefreshing,
                 onRefresh: { refreshID = UUID() },
-                onViewAllChanges: onViewAllChanges, onViewPullRequest: onViewPullRequest
+                onViewAllChanges: onViewAllChanges, onViewPullRequest: onViewPullRequest,
+                summary: summary, onViewAllOutputs: onViewAllOutputs,
+                onRespondInChat: onRespondInChat, onViewPin: onViewPin
             )
             .padding(16)
         }
@@ -132,6 +145,30 @@ struct SessionPullRequestRail: View {
         }
         .task(id: rail.references.map(\.id) + [refreshID.uuidString]) { await rail.refresh() }
         .task(id: [repositoryPath ?? "", refreshID.uuidString]) { await onRefreshChanges() }
+        .task(id: [
+            refreshID.uuidString, String(model.isSending), String(model.isRestoringSession),
+            String(model.isHermesConnected),
+        ]) {
+            guard !model.isRestoringSession, !model.isSending, model.isHermesConnected,
+                let id = model.navigationSessionID
+            else { return }
+            let force = lastOutputsRefreshID != nil && lastOutputsRefreshID != refreshID
+            lastOutputsRefreshID = refreshID
+            let session = HermesSession(
+                id: id, profileID: model.sessionProfileID ?? model.profileScopeID,
+                title: model.currentSessionTitle ?? "Session", preview: "", startedAt: nil,
+                updatedAt: model.messages.last?.timestamp, messageCount: model.messages.count,
+                source: HermesFeatureIDs.sessionSource)
+            async let pins: Void = model.refreshMessagePins()
+            await outputs.refresh(session: session) {
+                let results = await ArtifactIndexLoader.load(
+                    sessions: [session], index: .shared, owner: ObjectIdentifier(model), force: force,
+                    messages: { session, offset in try await model.artifactMessages(for: session, offset: offset) })
+                return results.first
+                    ?? .init(sessionID: id, profileID: session.profileID, records: [], error: "Outputs unavailable")
+            }
+            await pins
+        }
         .task(id: workflow.changes) {
             guard changes != nil, let repositoryPath, let snapshot = workflow.changes else { return }
             let lines = await RepositoryService.changeLineSummary(path: repositoryPath, changes: snapshot)
@@ -158,6 +195,10 @@ struct SessionRailCard: View {
     let onRefresh: () -> Void
     let onViewAllChanges: () -> Void
     let onViewPullRequest: (GitHubItemReference) async -> Bool
+    var summary = SessionRailSummary()
+    var onViewAllOutputs: () -> Void = {}
+    var onRespondInChat: () -> Void = {}
+    var onViewPin: (PinnedMessage) async -> Bool = { _ in false }
     @State private var expandedChanges = false
     @State private var expandedPullRequests: Set<String> = []
     @State private var openingPullRequestID: String?
@@ -166,7 +207,7 @@ struct SessionRailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Text(repositoryName ?? "Session context")
+                Text(repositoryName ?? "Session overview")
                     .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)
@@ -182,6 +223,9 @@ struct SessionRailCard: View {
                     .help("Session rail actions").accessibilityLabel("Session rail actions")
                 }
             }
+            SessionRailSummarySections(
+                summary: summary, onViewAllOutputs: onViewAllOutputs,
+                onRespondInChat: onRespondInChat, onViewPin: onViewPin)
             if let changes {
                 DisclosureGroup(isExpanded: $expandedChanges) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -202,7 +246,7 @@ struct SessionRailCard: View {
                 } label: {
                     changesRow(changes)
                 }
-                .disclosureGroupStyle(DockDisclosureGroupStyle())
+                .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
                 .accessibilityIdentifier("session-rail.changes")
             } else if changesUnavailable {
                 Text("Changes unavailable. Refresh to retry.")
@@ -220,9 +264,9 @@ struct SessionRailCard: View {
                 ForEach(references) { reference in
                     entry(reference)
                 }
-            } else if changes == nil && !changesUnavailable {
+            } else if changes == nil && !changesUnavailable && summary.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(isRefreshing ? "Loading session context…" : "Nothing here yet")
+                    Text(isRefreshing ? "Loading session overview…" : "Nothing here yet")
                         .dockFont(.body, weight: .semibold)
                     Text("Session details will appear here.")
                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
@@ -242,7 +286,7 @@ struct SessionRailCard: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 changesLabel
-                changeCounts(changes).padding(.leading, 23)
+                changeCounts(changes).padding(.leading, 22)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -252,7 +296,7 @@ struct SessionRailCard: View {
 
     private var changesLabel: some View {
         HStack(spacing: 8) {
-            DockIcon(.gitDiff, size: 15, color: .dockSecondaryText)
+            DockIcon(.gitDiff, size: 14, color: .dockSecondaryText)
             Text("Changes").dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         }
     }
@@ -329,7 +373,7 @@ struct SessionRailCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .top, spacing: 8) {
                     DockIcon(
-                        record?.presentationIcon ?? .gitPullRequest, size: 15,
+                        record?.presentationIcon ?? .gitPullRequest, size: 14,
                         color: record?.presentationColor ?? .dockSecondaryText)
                     Text(record?.title ?? "Pull request #\(reference.number)")
                         .dockFont(.body).multilineTextAlignment(.leading).lineLimit(2)
@@ -340,10 +384,10 @@ struct SessionRailCard: View {
                         Text(record.readinessLabel).foregroundStyle(record.readinessColor)
                     }
                 }
-                .dockFont(.metadata).padding(.leading, 23)
+                .dockFont(.metadata).padding(.leading, 22)
             }
         }
-        .disclosureGroupStyle(DockDisclosureGroupStyle())
+        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
         .accessibilityIdentifier("session-rail.pr.\(reference.number)")
     }
 }
@@ -422,6 +466,6 @@ private struct SessionRailFileQuickView: View {
                     .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             }
         }
-        .disclosureGroupStyle(DockDisclosureGroupStyle())
+        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
     }
 }

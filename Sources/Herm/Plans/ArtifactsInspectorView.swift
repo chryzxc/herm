@@ -276,7 +276,10 @@ struct ArtifactsInspectorView: View {
             .frame(minWidth: 560)
             VStack(alignment: .leading, spacing: 8) {
                 searchField
-                ScrollView(.horizontal, showsIndicators: false) { filterBar }
+                ViewThatFits(in: .horizontal) {
+                    filterBar
+                    compactFilterMenu
+                }
             }
         }
         .padding(.horizontal, contentHorizontalPadding)
@@ -443,7 +446,6 @@ struct ArtifactsInspectorView: View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         return HStack(spacing: 10) {
             artifactRowIcon(record)
-                .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.label)
                     .dockFont(.rowTitle)
@@ -501,20 +503,23 @@ struct ArtifactsInspectorView: View {
     }
 
     @ViewBuilder
-    private func artifactRowIcon(_ record: ArtifactRecord) -> some View {
+    private func artifactRowIcon(_ record: ArtifactRecord, size: CGFloat = 32) -> some View {
         if record.kind == .image {
             imagePreview(for: record, compact: true)
-                .scaledToFill()
+                .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
         } else if record.kind == .file {
             systemFileIcon(record)
+                .frame(width: size, height: size)
         } else {
             DockIcon(record.kind == .interactive ? .squaresFour : .link)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
-                        Color.dockSurface2))
+                        Color.dockSurface2)
+                )
+                .frame(width: size, height: size)
         }
     }
 
@@ -926,6 +931,25 @@ struct ArtifactsInspectorView: View {
                 Color.dockBorderLight))
     }
 
+    private var compactFilterMenu: some View {
+        DockMenu(outlined: true) {
+            ForEach(ArtifactFilter.allCases) { item in
+                DockMenuCheckRow(title: "\(item.rawValue) · \(count(for: item))", isSelected: filter == item) {
+                    filter = item
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                DockIcon(filter.icon, size: 13)
+                Text("\(filter.rawValue) · \(count(for: filter))")
+                    .lineLimit(1)
+                DockIcon(.caretDown, size: 10)
+            }
+        }
+        .dockFont(.body)
+        .accessibilityLabel("Artifact type: \(filter.rawValue), \(count(for: filter)) artifacts")
+    }
+
     private func filterSegment(_ item: ArtifactFilter) -> some View {
         let selected = filter == item
         return Button {
@@ -1066,8 +1090,7 @@ struct ArtifactsInspectorView: View {
 
     private func fileRow(_ record: ArtifactRecord) -> some View {
         HStack(spacing: 12) {
-            artifactRowIcon(record)
-                .frame(width: 30, height: 30)
+            artifactRowIcon(record, size: 30)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.label)
