@@ -5,6 +5,35 @@ import Testing
 
 @MainActor
 struct SidebarSplitLayoutTests {
+    @Test func changingPaneMinimumsRelayoutsWithoutAnotherWindowResize() {
+        let split = makeSplit(width: 847)
+        split.minimumLeadingWidth = 520
+        split.minimumTrailingWidth = 360
+        split.fraction = DesktopWorkspaceFractions.conversationOfRemainder
+        split.addArrangedSubview(NSView())
+        split.addArrangedSubview(NSView())
+        split.layout()
+        split.minimumLeadingWidth = 486
+        split.layout()
+        #expect(split.arrangedSubviews[1].frame.width >= 360)
+    }
+
+    @Test func minimumWindowCollapsesQueueBeforeInspectorLosesItsWidth() {
+        #expect(DesktopWorkspaceFractions.shouldCollapseQueue(width: 900, isFullscreen: true))
+        #expect(DesktopWorkspaceFractions.shouldCollapseQueue(width: 1200, isFullscreen: true))
+        #expect(!DesktopWorkspaceFractions.shouldCollapseQueue(width: 1235, isFullscreen: true))
+        #expect(!DesktopWorkspaceFractions.shouldCollapseQueue(width: 1110, isFullscreen: false))
+        let split = makeSplit(width: 847)
+        split.minimumLeadingWidth = 486
+        split.minimumTrailingWidth = 360
+        split.fraction = DesktopWorkspaceFractions.conversationOfRemainder
+        split.addArrangedSubview(NSView())
+        split.addArrangedSubview(NSView())
+        split.layout()
+        #expect(split.arrangedSubviews[0].frame.width >= 486)
+        #expect(split.arrangedSubviews[1].frame.width >= 360)
+    }
+
     @Test func narrowWorkspacePreservesReadableSidebar() {
         let split = makeSplit(width: 668)
         #expect(split.minimumLeadingPosition == 300)

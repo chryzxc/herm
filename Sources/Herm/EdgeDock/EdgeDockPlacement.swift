@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 enum EdgeDockLayout {
-    // Clear the 18pt shoulder and 26pt inner corner at the narrow side inset.
-    static let workspaceHorizontalInset: CGFloat = 4
-    static let workspaceVerticalInset: CGFloat = 44
+    // Inset sideways enough to clear the rounded shoulder without wasting full-width bands.
+    static let workspaceHorizontalInset: CGFloat = 12
+    static let workspaceVerticalInset: CGFloat = 24
 
     /// The top drop-down's shoulders only flare at the menu bar, so its sides just
     /// clear the 18pt shoulder and its top clears the menu bar it hangs over.

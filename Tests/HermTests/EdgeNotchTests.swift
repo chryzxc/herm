@@ -213,6 +213,20 @@ struct EdgeNotchTests {
         #expect(right.frame(width: 720, height: 600).maxX == screen.maxX)
     }
 
+    @Test func sideWorkspaceReclaimsHeightWithoutCrossingItsRoundedOutline() {
+        let rect = CGRect(x: 0, y: 0, width: 1224, height: 600)
+        for side in [EdgeDockSide.left, .right] {
+            let insets = EdgeDockLayout.insets(for: side)
+            #expect(insets.top + insets.bottom == 48)
+            let path = EdgeNotchShape(side: side).path(in: rect)
+            for x in [insets.leading, rect.width - insets.trailing] {
+                for y in [insets.top, rect.height - insets.bottom] {
+                    #expect(path.contains(CGPoint(x: x, y: y)))
+                }
+            }
+        }
+    }
+
     @Test func draggingToTopCenterDocksTheIsland() {
         let screen = NSRect(x: 0, y: 0, width: 1600, height: 1000)
         let visible = NSRect(x: 0, y: 0, width: 1600, height: 968)

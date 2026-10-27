@@ -7,6 +7,8 @@ import SwiftUI
 struct AdaptiveSplit<Primary: View, Secondary: View>: View {
     var breakpoint: CGFloat = 900
     var primaryMinWidth: CGFloat = 0
+    var primaryIdealWidth: CGFloat? = nil
+    var primaryMaxWidth: CGFloat? = nil
     var secondaryMinWidth: CGFloat = 0
     var alwaysSplitWhenWide = false
     /// Wide layouts only: the sidebar toggle hid the primary column.
@@ -24,8 +26,11 @@ struct AdaptiveSplit<Primary: View, Secondary: View>: View {
                 // HSplitView hosts each pane in its own AppKit view, which re-adds the
                 // window's titlebar safe area. Herm lays out its own title row, so drop it.
                 HSplitView {
-                    primary.frame(minWidth: primaryMinWidth, maxHeight: .infinity)
-                        .ignoresSafeArea(.container, edges: .top)
+                    primary.frame(
+                        minWidth: primaryMinWidth, idealWidth: primaryIdealWidth, maxWidth: primaryMaxWidth,
+                        maxHeight: .infinity
+                    )
+                    .ignoresSafeArea(.container, edges: .top)
                     if showsSecondary || alwaysSplitWhenWide {
                         secondary.frame(minWidth: secondaryMinWidth, maxHeight: .infinity)
                             .overlay(alignment: .leading) { Color.dockBorder.frame(width: DockLayout.hairline) }

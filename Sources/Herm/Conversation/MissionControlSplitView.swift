@@ -112,6 +112,10 @@ enum DesktopWorkspaceFractions {
     static func minimumConversationWidth(isFullscreen: Bool) -> CGFloat {
         isFullscreen ? 520 : 360
     }
+    static func shouldCollapseQueue(width: CGFloat, isFullscreen: Bool) -> Bool {
+        width < 52 + 300 + minimumConversationWidth(isFullscreen: isFullscreen) + 360 + 3
+    }
+
     /// The inner split only sees the space left after the outer queue split,
     /// so its leading fraction must be re-derived against that remainder.
     static let conversationOfRemainder: CGFloat = conversation / (conversation + inspector)

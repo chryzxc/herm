@@ -18,9 +18,15 @@ final class FractionPreservingSplitView: NSSplitView {
     // this transparent divider still provides the native drag target.
     override var dividerColor: NSColor { .clear }
     var fraction: CGFloat?
-    var minimumLeadingWidth: CGFloat = 220
-    var maximumLeadingWidth: CGFloat?
-    var minimumTrailingWidth: CGFloat = 360
+    var minimumLeadingWidth: CGFloat = 220 {
+        didSet { if oldValue != minimumLeadingWidth { invalidatePositions() } }
+    }
+    var maximumLeadingWidth: CGFloat? {
+        didSet { if oldValue != maximumLeadingWidth { invalidatePositions() } }
+    }
+    var minimumTrailingWidth: CGFloat = 360 {
+        didSet { if oldValue != minimumTrailingWidth { invalidatePositions() } }
+    }
     private var userAdjusted = false
     private var lastAppliedWidth: CGFloat = 0
 
@@ -55,6 +61,11 @@ final class FractionPreservingSplitView: NSSplitView {
             self?.layoutSubtreeIfNeeded()
             self?.arrangedSubviews.last?.needsLayout = true
         }
+    }
+
+    private func invalidatePositions() {
+        lastAppliedWidth = 0
+        needsLayout = true
     }
 
     override func mouseDown(with event: NSEvent) {
