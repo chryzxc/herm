@@ -618,6 +618,7 @@ struct DockPaneBackground: View {
 /// Shared interaction and input treatments derived from DESIGN.md's glass
 /// button and input specifications. Keeping them here prevents native control
 /// styles from leaking into individual Control, chat, or Activity views.
+/// Low-level chrome for icons and content rows; text actions use dockPrimary/dockSecondary.
 struct DockPressButtonStyle: ButtonStyle {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -981,6 +982,8 @@ struct DockPageHeader<Trailing: View>: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 12)
+                .frame(maxHeight: .infinity)
+                .background { TitlebarDoubleClickArea() }
             refreshButton
             trailing().fixedSize()
         }
@@ -988,7 +991,6 @@ struct DockPageHeader<Trailing: View>: View {
         .padding(.leading, 16 + row.leadingClearance)
         .padding(.trailing, 12)
         .frame(height: row.height)
-        .background { TitlebarDoubleClickArea() }
         .background(Color.dockSidebar)
         .overlay(alignment: .bottom) { DockWindowChrome.titleRowSeparator }
         // Same gap under the line as the panel header, so every page's content sits alike.
@@ -1056,16 +1058,33 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
     var onRefresh: (() -> Void)? = nil
     var isRefreshing = false
     var showsClose = true
-    let close: () -> Void
+    var close: (() -> Void)? = nil
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
+
+    // A required closure preserves legacy close/content trailing-closure resolution.
+    init(
+        title: String, subtitle: String, help: String? = nil, onRefresh: (() -> Void)? = nil,
+        isRefreshing: Bool = false, showsClose: Bool = true, close: @escaping () -> Void,
+        @ViewBuilder trailing: @escaping () -> Trailing, @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.help = help
+        self.onRefresh = onRefresh
+        self.isRefreshing = isRefreshing
+        self.showsClose = showsClose
+        self.close = close
+        self.trailing = trailing
+        self.content = content
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DockPageHeader(title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) {
                 HStack(spacing: 8) {
                     trailing()
-                    if showsClose {
+                    if showsClose, let close {
                         Button("Close", action: close).buttonStyle(.dockCompact).keyboardShortcut(.cancelAction)
                     }
                 }
@@ -1089,6 +1108,11 @@ extension DockExpandedPage where Trailing == EmptyView {
         self.init(
             title: title, subtitle: subtitle, help: help, onRefresh: onRefresh, isRefreshing: isRefreshing,
             close: close, trailing: { EmptyView() }, content: content)
+    }
+
+    init(title: String, subtitle: String, @ViewBuilder content: @escaping () -> Content) {
+        self.init(title: title, subtitle: subtitle, close: {}, content: content)
+        self.close = nil
     }
 }
 

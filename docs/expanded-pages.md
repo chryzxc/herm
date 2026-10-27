@@ -10,9 +10,10 @@ for an expanded layer: a plain `VStack` header draws under the traffic lights.
 - The title row. It renders `DockPageHeader`, which moves into the window title
   row beside the traffic lights when `\.dockTitleRow` is set (the router sets it
   for windows with chrome) and clears their width.
-- Close. A `.dockCompact` Close button with `.keyboardShortcut(.cancelAction)`,
+- Close. An optional close action supplies a `.dockCompact` Close button with `.keyboardShortcut(.cancelAction)`,
   so Esc closes every expanded page. Do not add a second close or
-  `onExitCommand`.
+  `onExitCommand`. Persistent navigation pages omit the close action and do not
+  capture Escape. Existing expanded presentations keep their Close action.
 - Content isolation. Content gets `\.dockTitleRow` set to `nil` so nested
   `DockPageHeader`s render as ordinary panel headers.
 - The canvas background.

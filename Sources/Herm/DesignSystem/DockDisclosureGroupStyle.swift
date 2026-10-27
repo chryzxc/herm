@@ -2,6 +2,7 @@ import SwiftUI
 
 /// macOS's default disclosure only toggles from its caret; make the header a button.
 struct DockDisclosureGroupStyle: DisclosureGroupStyle {
+    var alignment: VerticalAlignment = .center
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
@@ -11,8 +12,9 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
                     configuration.isExpanded.toggle()
                 }
             } label: {
-                HStack(spacing: 6) {
+                HStack(alignment: alignment, spacing: 6) {
                     DockIcon(.caretRight, size: 10, color: .dockSecondaryText)
+                        .frame(height: 14)
                         .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
                         .accessibilityHidden(true)
                     configuration.label

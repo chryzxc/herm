@@ -5,6 +5,7 @@ import sys
 
 STYLE = re.compile(r'\.buttonStyle\s*\(\s*(?:\.dock(?:Primary|Secondary|Compact)|Dock(?:Primary|Secondary|Modal)ButtonStyle\s*\([^)]*\))\s*\)')
 GEOMETRY = re.compile(r'\.(?:frame\s*\([^)]*\b(?:height|minHeight|maxHeight)\s*:|padding\s*\(\s*\.(?:vertical|all)\b|dockButtonSize\s*\()')
+PRESS_STYLE = re.compile(r'\.buttonStyle\s*\(\s*(?:\.dockPress|DockPressButtonStyle\s*\(\s*\))\s*\)')
 
 
 def masked(source):
@@ -69,8 +70,34 @@ def violations(source, path='Fixture.swift'):
             cursor = forward[opening] + 1
     for match in re.finditer(r'DockSecondaryButtonStyle\s*\(\s*compact\s*:', code):
         findings.append(match.start())
-    return [f'{path}:{source.count(chr(10), 0, offset) + 1}: error: text-button sizing belongs to the action container; use .dockButtonSize there, not label height/padding or a per-button override.'
-            for offset in sorted(set(findings))]
+    result = [f'{path}:{source.count(chr(10), 0, offset) + 1}: error: text-button sizing belongs to the action container; use .dockButtonSize there, not label height/padding or a per-button override.'
+              for offset in sorted(set(findings))]
+    for style in PRESS_STYLE.finditer(code):
+        cursor = style.start() - 1
+        while cursor >= 0:
+            while cursor >= 0 and code[cursor].isspace():
+                cursor -= 1
+            if cursor < 0 or code[cursor] != ')' or cursor not in mapping:
+                break
+            name = re.search(r'\.\w+\s*$', code[:mapping[cursor]])
+            if not name:
+                break
+            cursor = name.start() - 1
+        if cursor < 0 or code[cursor] != '}' or cursor not in mapping:
+            continue
+        opening = mapping[cursor]
+        prefix, body = code[:opening], code[opening + 1:cursor]
+        label = re.search(r'label\s*:\s*$', prefix)
+        title = re.search(r'\b(?:Button|DockAsyncButton)\s*\(([^{}]*)\)\s*$', prefix)
+        text_label = label and re.match(r'\s*(?:Text|DockActionLabel|DockIconLabel)\s*\(', body)
+        title_action = title and not re.match(r'\s*action\s*:', title.group(1))
+        # Container-inherited styles also caused the gateway's undersized actions.
+        container_titles = not label and not title and re.search(
+            r'\b(?:Button|DockAsyncButton)\s*\(\s*(?!\s|action\s*:)', body)
+        if text_label or title_action or container_titles:
+            line = source.count(chr(10), 0, style.start()) + 1
+            result.append(f'{path}:{line}: error: text actions must use .dockPrimary or .dockSecondary, not .dockPress, which bypasses shared sizing.')
+    return result
 
 
 def main():

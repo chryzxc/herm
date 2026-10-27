@@ -31,8 +31,34 @@ struct DockButtonSizingTests {
 
     @Test func nativeControlSizeCannotChangeOnlyOneActionsHeight() {
         for native in [ControlSize.mini, .small, .regular, .large] {
-            let host = NSHostingView(rootView: action(0).controlSize(native).fixedSize())
-            #expect(abs(host.fittingSize.height - DockControlMetrics.compactHeight) <= 1)
+            for style in 0..<4 {
+                let host = NSHostingView(rootView: action(style).controlSize(native).fixedSize())
+                #expect(abs(host.fittingSize.height - DockControlMetrics.compactHeight) <= 1)
+            }
+        }
+    }
+
+    @Test func gatewayTextAndIconActionsShareCompactHeight() {
+        for scale: CGFloat in [1, 1.25] {
+            for pending in [false, true] {
+                let controls = [
+                    AnyView(gatewayTestAction(pending)),
+                    AnyView(Button("Save for next restart") {}.buttonStyle(.dockSecondary)),
+                    AnyView(Button("Save and restart Herm") {}.buttonStyle(.dockPrimary)),
+                    AnyView(gatewayRestartAction(pending)),
+                    AnyView(
+                        DockIconButton(
+                            icon: .arrowsClockwise, label: "Refresh gateway status", isBusy: pending,
+                            style: DockThemePalette(theme: .clean)
+                        ) {}),
+                ]
+                for control in controls {
+                    let host = NSHostingView(
+                        rootView: control.environment(\.dockWorkspaceScale, scale).fixedSize())
+                    let expected = DockWorkspaceScale.points(DockControlMetrics.compactHeight, scale: scale)
+                    #expect(abs(host.fittingSize.height - expected) <= 1)
+                }
+            }
         }
     }
 
@@ -81,14 +107,29 @@ struct DockButtonSizingTests {
                         }.dockButtonSize(size)
                     }
                 }
+                Divider()
+                Text("Gateway actions").dockFont(.body)
+                HStack(spacing: 8) {
+                    gatewayTestAction(false)
+                    Button("Save for next restart") {}.buttonStyle(.dockSecondary)
+                    Button("Save and restart Herm") {}.buttonStyle(.dockPrimary)
+                }
+                HStack(spacing: 8) {
+                    DockIconButton(
+                        icon: .arrowsClockwise, label: "Refresh gateway status",
+                        style: DockThemePalette(theme: theme)
+                    ) {}
+                    gatewayRestartAction(false)
+                    gatewayRestartAction(true).disabled(true)
+                }
             }
             .padding(20)
-            .frame(width: 660, height: 480, alignment: .topLeading)
+            .frame(width: 660, height: 660, alignment: .topLeading)
             .foregroundStyle(Color.dockPrimaryText)
             .background(Color.dockCanvas)
             .environment(\.colorScheme, dark ? .dark : .light)
             let host = NSHostingView(rootView: root)
-            host.frame = CGRect(x: 0, y: 0, width: 660, height: 480)
+            host.frame = CGRect(x: 0, y: 0, width: 660, height: 660)
             host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             host.layoutSubtreeIfNeeded()
             let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -109,5 +150,20 @@ struct DockButtonSizingTests {
         case 2: button.buttonStyle(.dockCompact)
         default: button.buttonStyle(DockModalButtonStyle(isPrimary: false))
         }
+    }
+
+    private func gatewayTestAction(_ pending: Bool) -> some View {
+        Button {
+        } label: {
+            DockActionLabel(title: "Test connection", pendingTitle: "Connecting…", isPending: pending)
+        }.buttonStyle(.dockSecondary)
+    }
+
+    private func gatewayRestartAction(_ pending: Bool) -> some View {
+        Button {
+        } label: {
+            DockActionLabel(title: "Restart gateway", pendingTitle: "Restarting…", isPending: pending)
+                .frame(width: 140)
+        }.buttonStyle(.dockSecondary)
     }
 }

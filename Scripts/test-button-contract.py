@@ -10,6 +10,30 @@ spec.loader.exec_module(buttons)
 
 
 class ButtonContractTests(unittest.TestCase):
+    def test_rejects_press_style_on_text_actions_and_inherited_groups(self):
+        for source in [
+            'Button("Save") {}.buttonStyle(.dockPress)',
+            'Button(title, role: .destructive) {}.disabled(true).buttonStyle(DockPressButtonStyle())',
+            'DockAsyncButton("Refresh") { await refresh() }.buttonStyle(.dockPress)',
+            'Button {} label: { DockActionLabel(title: "Test", isPending: busy) }.buttonStyle(.dockPress)',
+            'Button {} label: { Text("Restart").frame(width: 140) }.buttonStyle(.dockPress)',
+            'Button {} label: { DockIconLabel("Sync", icon: .arrowsClockwise) }.buttonStyle(.dockPress)',
+            'HStack { Button("New") {}; Button("Remove") {} }.buttonStyle(.dockPress)',
+        ]:
+            with self.subTest(source=source):
+                self.assertTrue(buttons.violations(source))
+
+    def test_press_style_allows_icon_controls_and_content_rows(self):
+        for source in [
+            'Button {} label: { DockIcon(.x).frame(width: 28, height: 28) }.buttonStyle(.dockPress)',
+            'Button(action: close) { DockIcon(.x) }.buttonStyle(DockPressButtonStyle())',
+            'HStack { Button( action: close) { DockIcon(.x) } }.buttonStyle(.dockPress)',
+            'Button {} label: { HStack { Text("Provider"); Spacer(); DockIcon(.caretDown) } }.buttonStyle(.dockPress)',
+            '// Button("Save") {}.buttonStyle(.dockPress)',
+        ]:
+            with self.subTest(source=source):
+                self.assertEqual(buttons.violations(source), [])
+
     def test_rejects_root_label_geometry_and_individual_size(self):
         for source in [
             'Button {} label: { Text("Go").frame(height: 36) }.buttonStyle(.dockPrimary)',

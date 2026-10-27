@@ -11,13 +11,15 @@ import SwiftUI
 struct DockMenu<Label: View, Content: View>: View {
     private let content: Content
     private let label: Label
+    private let outlined: Bool
     @State private var isOpen = false
     @State private var isHovered = false
     @Environment(\.dockMenuDepth) private var depth
     @Environment(\.dockMenuDismiss) private var dismissParent
     @Environment(\.isEnabled) private var isEnabled
 
-    init(@ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label) {
+    init(outlined: Bool = false, @ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label) {
+        self.outlined = outlined
         self.content = content()
         self.label = label()
     }
@@ -50,13 +52,18 @@ struct DockMenu<Label: View, Content: View>: View {
             .onHover { isHovered = $0 }
             .onTapGesture { if isEnabled { isOpen.toggle() } }
             .accessibilityAddTraits(.isButton)
+        } else if outlined {
+            actionButton.buttonStyle(.dockSecondary)
         } else {
-            Button {
-                isOpen.toggle()
-            } label: {
-                label.contentShape(Rectangle())
-            }
-            .buttonStyle(.dockHover)
+            actionButton.buttonStyle(.dockHover)
+        }
+    }
+
+    private var actionButton: some View {
+        Button {
+            isOpen.toggle()
+        } label: {
+            label.contentShape(Rectangle())
         }
     }
 }

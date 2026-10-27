@@ -46,6 +46,9 @@ large content tile inside a standard text-button style merely to obtain a border
 vertical padding, and per-button size overrides on shared text actions, and
 requires concrete primary/secondary/modal styles to use the common metrics.
 There is no exception baseline to expand.
+The gate also rejects `.dockPress` on title-based actions, text labels, and
+inherited text-action groups. That legacy style is reserved for icon controls
+and content rows; it does not participate in text-action sizing.
 
 `DockButtonSizingTests` measures actual SwiftUI/AppKit fitting heights across
 priorities, pending/disabled states, native control sizes, and workspace scales.
@@ -84,3 +87,23 @@ This is an app-wide source audit with rendered design-system checks, not a live
 click-through of every page. The running Herm app is not relaunched by these checks.
 Light, Dark, and Monochrome reference sheets were visually checked. The offscreen
 Glass capture was incomplete; Glass appearance still needs live visual review.
+
+### Follow-up: legacy press styles
+
+The follow-up inventory inspected all 710 `buttonStyle` applications, including
+legacy press constructors, native plain styles, hover styles, and inherited
+styles. Eleven legacy press applications across six feature files still bypassed
+the shared metrics. These included inherited groups containing multiple actions.
+They now use `.dockSecondary`:
+
+- Gateway connection testing, saving, saved-connection management, organization selection, and sign-in actions.
+- Messaging gateway restart and Herm restart in settings.
+- Companion refresh/reload, bot editor Advanced, and quota peak-hours sync.
+
+The Kanban Clear filters action also now uses `.dockSecondary` instead of
+hover-only text. Primary actions keep their existing priority. Quota sync retains
+its larger outer hit target. Remaining press-style uses are icons or content rows.
+Plain and hover uses were reviewed for navigation, tabs, disclosures, icons,
+content tiles, and standalone text actions.
+Rendered regression coverage includes the gateway's mixed primary/secondary
+actions, pending restart, and adjacent refresh icon at both workspace scales.
