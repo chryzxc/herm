@@ -1803,7 +1803,11 @@ extension DockModel {
 
     static func boundedEventValue(_ value: Any, depth: Int) -> Any {
         if let string = value as? String {
-            return string.count > 240 ? String(string.prefix(240)) + "…" : string
+            // `count` walks every grapheme; a large tool payload made this
+            // the main thread's hottest string work during replays.
+            guard string.utf16.count > 240 else { return string }
+            let head = string.prefix(240)
+            return head.endIndex == string.endIndex ? string : String(head) + "…"
         }
         if let array = value as? [Any] {
             guard depth < 3 else { return "\(array.count) items" }

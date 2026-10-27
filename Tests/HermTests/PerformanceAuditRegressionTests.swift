@@ -34,6 +34,15 @@ struct PerformanceAuditRegressionTests {
         #expect(truncated.versions(of: newest).count == 20)
     }
 
+    @Test func boundedEventValueTruncatesOnlyStringsLongerThanTheLimit() {
+        let long = String(repeating: "a", count: 1_000_000)
+        #expect(DockModel.boundedEventValue(long, depth: 0) as? String == String(repeating: "a", count: 240) + "…")
+        // 200 emoji exceed 240 UTF-16 units but stay under 240 characters.
+        let emoji = String(repeating: "😀", count: 200)
+        #expect(DockModel.boundedEventValue(emoji, depth: 0) as? String == emoji)
+        #expect(DockModel.boundedEventValue("short", depth: 0) as? String == "short")
+    }
+
     @Test func artifactProjectionReusesUnchangedInputsAndInvalidatesFilters() {
         let record = ArtifactRecord(value: "/tmp/example.png", sessionID: "s", sessionTitle: "Session", timestamp: .now)
         let index = RichArtifactIndex.Snapshot([record])
