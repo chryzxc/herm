@@ -136,7 +136,7 @@ struct ConversationRepositoryBadgeAssociationProjection {
     }
 }
 
-/// Primary navigation: icon-only destinations, always visible. Chats opens the
+/// Primary navigation: Chats, pinned destinations, and a menu for every destination. Chats opens the
 /// session lists panel; GitHub supplies its own section navigation beside its page.
 struct MissionControlRail: View {
     let model: DockModel
@@ -147,10 +147,11 @@ struct MissionControlRail: View {
     @ObservedObject var navigationState: MissionControlNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
     @AppStorage(SidebarVisibilityKey.kanban) private var showsKanban = true
-    @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequests = true
-    @AppStorage(SidebarVisibilityKey.issues) private var showsIssues = true
+    @AppStorage(SidebarVisibilityKey.github) private var showsGitHub = true
     @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
     @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendar = true
+    @AppStorage(DockRailDestination.pinsKey) private var pinnedDestinations = DockRailDestination.defaultPins
+    @State private var showsDestinations = false
     let isChatsActive: Bool
     let isGitHubActive: Bool
     let onOpenChats: () -> Void
@@ -168,45 +169,33 @@ struct MissionControlRail: View {
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         VStack(spacing: 4) {
-            VStack(spacing: 4) {
-                ChatRailButton(
-                    model: model, control: controlCenter, store: workspaceStore,
-                    isSelected: isChatsActive, isVisible: isWorkspaceVisible, style: style, action: onOpenChats
-                )
-            }
-            VStack(spacing: 4) {
-                if showsKanban { globalDestination(.kanban, style: style) }
-                if let section = navigationState.selectedGitHubSection.available(
-                    in: GitHubWorkspaceSection.visible(showsPullRequests: showsPullRequests, showsIssues: showsIssues))
-                {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 4) {
+                    VStack(spacing: 4) {
+                        ChatRailButton(
+                            model: model, control: controlCenter, store: workspaceStore,
+                            isSelected: isChatsActive, isVisible: isWorkspaceVisible, style: style, action: onOpenChats
+                        )
+                    }
+                    ForEach(availableDestinations.filter { pins.contains($0) }) { item in
+                        destination(
+                            item.title, icon: item.icon, isSelected: isSelected(item),
+                            showsUpdateBadge: hasUpdate(item), style: style
+                        ) { open(item) }
+                        .contextMenu {
+                            Button("Unpin \(item.title) from sidebar", icon: .pushPinSlash) { togglePin(item) }
+                        }
+                    }
                     destination(
-                        "GitHub", icon: .githubLogo, isSelected: isGitHubActive, style: style,
-                        action: { onOpenGitHub(section) })
+                        "More destinations", icon: .dotsThree,
+                        isSelected: availableDestinations.contains { !pins.contains($0) && isSelected($0) },
+                        showsUpdateBadge: !pins.contains(.settings) && hasUpdate(.settings), style: style
+                    ) { showsDestinations.toggle() }
+                    .popover(isPresented: $showsDestinations, arrowEdge: .trailing) {
+                        destinationMenu
+                    }
                 }
             }
-            VStack(spacing: 4) {
-                if showsCalendar { globalDestination(.calendar, style: style) }
-                globalDestination(.automations, style: style)
-                globalDestination(.capabilities, style: style)
-            }
-            VStack(spacing: 4) {
-                destination(
-                    "Artifacts", icon: .files, isSelected: navigationState.selection.selection == .artifacts,
-                    style: style, action: onOpenArtifacts)
-                if showsOffice { globalDestination(.officePreview, style: style) }
-            }
-            VStack(spacing: 4) {
-                destination(
-                    "Bots", icon: .ghost, isSelected: navigationState.selection.selection == .bots, style: style,
-                    action: onOpenBots)
-                globalDestination(.messaging, style: style)
-                globalDestination(.usage, style: style)
-            }
-            VStack(spacing: 4) {
-                globalDestination(.quota, style: style)
-                globalDestination(.core, style: style)
-            }
-            Spacer(minLength: 0)
             // Global window chrome: applies to the whole workspace, not one chat.
             VStack(spacing: 4) {
                 HermesConnectionButton(
@@ -227,7 +216,7 @@ struct MissionControlRail: View {
         .frame(maxHeight: .infinity)
         .background(style.sidebarBackground)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Hermes navigation")
+        .accessibilityLabel("Herm navigation")
     }
 
     private func destination(
@@ -239,18 +228,103 @@ struct MissionControlRail: View {
             action: action)
     }
 
-    private func globalDestination(_ tab: ControlTab, style: DockThemePalette) -> some View {
-        destination(
-            tab.globalRailLabel,
-            icon: tab.icon,
-            isSelected: navigationState.selection.isGlobalSelected(tab),
-            showsUpdateBadge: tab == .core && agentUpdateService.phase == .updateAvailable,
-            style: style
-        ) {
-            navigationState.selectGlobal(tab)
-            onOpenGlobal(tab)
+    private var pins: Set<DockRailDestination> { DockRailDestination.pins(pinnedDestinations) }
+
+    private var availableDestinations: [DockRailDestination] {
+        DockRailDestination.allCases.filter { item in
+            switch item {
+            case .kanban: showsKanban
+            case .github: showsGitHub
+            case .calendar: showsCalendar
+            case .office: showsOffice
+            default: true
+            }
         }
     }
+
+    private func isSelected(_ item: DockRailDestination) -> Bool {
+        switch item {
+        case .github: isGitHubActive
+        case .artifacts: navigationState.selection.selection == .artifacts
+        case .bots: navigationState.selection.selection == .bots
+        default: item.tab.map { navigationState.selection.isGlobalSelected($0) } ?? false
+        }
+    }
+
+    private func hasUpdate(_ item: DockRailDestination) -> Bool {
+        item == .settings && agentUpdateService.phase == .updateAvailable
+    }
+
+    private func togglePin(_ item: DockRailDestination) {
+        pinnedDestinations = DockRailDestination.toggling(item, in: pinnedDestinations)
+    }
+
+    private func open(_ item: DockRailDestination) {
+        showsDestinations = false
+        switch item {
+        case .github:
+            if let section = navigationState.selectedGitHubSection.available(
+                in: GitHubWorkspaceSection.visible(showsGitHub: showsGitHub))
+            {
+                onOpenGitHub(section)
+            }
+        case .artifacts: onOpenArtifacts()
+        case .bots: onOpenBots()
+        default:
+            if let tab = item.tab {
+                navigationState.selectGlobal(tab)
+                onOpenGlobal(tab)
+            }
+        }
+    }
+
+    private var destinationMenu: some View {
+        ScrollView {
+            VStack(spacing: 2) {
+                ForEach(availableDestinations) { item in
+                    HStack(spacing: 4) {
+                        Button {
+                            open(item)
+                        } label: {
+                            HStack(spacing: 10) {
+                                DockIcon(item.icon, size: 16, color: .dockSecondaryText)
+                                Text(item.title).dockFont(.body)
+                                Spacer(minLength: 8)
+                                if hasUpdate(item) {
+                                    DockIcon(.arrowCircleUp, size: 14, color: .dockWarning)
+                                }
+                            }
+                            .padding(8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .accessibilityAddTraits(isSelected(item) ? .isSelected : [])
+                        Button {
+                            togglePin(item)
+                        } label: {
+                            DockIcon(.pushPin, size: 14, color: pins.contains(item) ? .dockAccent : .dockMetadataText)
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .help(pins.contains(item) ? "Unpin from sidebar" : "Pin to sidebar")
+                        .accessibilityLabel("\(pins.contains(item) ? "Unpin" : "Pin") \(item.title)")
+                        .accessibilityValue(pins.contains(item) ? "Pinned" : "Unpinned")
+                    }
+                    .background {
+                        if isSelected(item) {
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(Color.dockSurface2)
+                        }
+                    }
+                }
+            }.padding(8)
+        }
+        .frame(width: 260, height: min(440, CGFloat(availableDestinations.count) * 38 + 16))
+        .foregroundStyle(Color.dockPrimaryText)
+        .background(Color.dockCanvas)
+        .dockThemedRoot()
+    }
+
 }
 
 /// Backend connection status with quick access to the local messaging gateway.

@@ -71,6 +71,12 @@ extension DockPopover {
                     isWorkspaceManuallyExpanded = true
                 }
             }
+            .onReceive(SessionMessageTabs.shared.$openRequest) { workspace in
+                guard workspace == WorkspaceIdentity.session(model) else { return }
+                filePreview.url = nil
+                inspectorScope = .session
+                ensureInspectorPanelVisible()
+            }
             .onReceive(SessionSimulatorLaunchStore.shared.$latest) { request in
                 guard let request, request.session == WorkspaceIdentity.session(model) else { return }
                 showSessionRailInspector(request.receipt.target == .ios ? .iosSimulator : .androidEmulator)
@@ -177,6 +183,13 @@ extension DockPopover {
                 layoutContent
             }
         }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onChange(of: geometry.size.width, initial: true) { _, width in
+                    workspaceLayoutWidth = width
+                }
+            }
+        }
         .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
         .frame(
             width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth),
@@ -187,6 +200,14 @@ extension DockPopover {
                 ? panelPresentation.edgeInsets
                 : EdgeInsets()
         )
+        .background {
+            // Continue the sidebar surface through the corner clearance instead of exposing a decorative frame.
+            if panelPresentation.isEdgeAttached, panelPresentation.edgeSide != .top,
+                !usesWindowChrome, !isFullscreen
+            {
+                Color.dockSidebar
+            }
+        }
         .overlay(alignment: .top) {
             if let status = panelPresentation.islandStatus, panelPresentation.edgeSide == .top,
                 panelPresentation.isEdgeAttached, !usesWindowChrome, !isFullscreen
@@ -375,9 +396,26 @@ extension DockPopover {
         }
     }
 
-    /// Only the windowed chat has a toggle to bring the list back, so only it collapses.
     var hidesChatList: Bool {
-        isChatListCollapsed && usesWindowChrome && fullscreenSurface == .conversation && !isNarrowLayout
+        guard fullscreenSurface == .conversation, !isNarrowLayout else { return false }
+        return isChatListCollapsed
+            || (isInspectorVisibleForDesktopWorkspace
+                && DesktopWorkspaceFractions.shouldCollapseQueue(
+                    width: workspaceLayoutWidth, isFullscreen: isFullscreen))
+    }
+
+    var chatListCollapsed: Binding<Bool> {
+        Binding(
+            get: { hidesChatList },
+            set: { collapsed in
+                isChatListCollapsed = collapsed
+                if !collapsed, isInspectorVisibleForDesktopWorkspace,
+                    DesktopWorkspaceFractions.shouldCollapseQueue(
+                        width: workspaceLayoutWidth, isFullscreen: isFullscreen)
+                {
+                    toggleInspectorPanel()
+                }
+            })
     }
 
     /// The session lists belong to Chats: a conversation or group chat is open.
@@ -400,28 +438,36 @@ extension DockPopover {
             isChatsActive: showsChatsPanel || fullscreenSurface == .chatGrid,
             isGitHubActive: fullscreenSurface == .pullRequests || fullscreenSurface == .issues,
             onOpenChats: {
-                missionControlNavigation.clearSelection()
-                if sessionWorkspaceMode == .voice { selectSessionMode(.chat) }
-                fullscreenSurface = prefersChatGrid ? .chatGrid : .conversation
-                inspectorScope = .session
-                // Narrow layout shows the inspector instead of the chat; Chats brings the chat back.
-                if isNarrowLayout { isNarrowControlVisible = false }
+                leaveIntegrations {
+                    missionControlNavigation.clearSelection()
+                    if sessionWorkspaceMode == .voice { selectSessionMode(.chat) }
+                    fullscreenSurface = prefersChatGrid ? .chatGrid : .conversation
+                    inspectorScope = .session
+                    // Narrow layout shows the inspector instead of the chat; Chats brings the chat back.
+                    if isNarrowLayout { isNarrowControlVisible = false }
+                }
             },
             onOpenGlobal: { tab in
-                missionControlNavigation.selectGlobal(tab)
-                fullscreenGlobalTab = tab
-                fullscreenSurface = .global
+                leaveIntegrations {
+                    missionControlNavigation.selectGlobal(tab)
+                    fullscreenGlobalTab = tab
+                    fullscreenSurface = .global
+                }
             },
             onOpenArtifacts: {
-                missionControlNavigation.selectArtifacts()
-                fullscreenSurface = .artifacts
+                leaveIntegrations {
+                    missionControlNavigation.selectArtifacts()
+                    fullscreenSurface = .artifacts
+                }
             },
             onOpenBots: {
-                missionControlNavigation.selectBots()
-                Task { await botMode.refreshNow(force: true) }
-                fullscreenSurface = .bots
+                leaveIntegrations {
+                    missionControlNavigation.selectBots()
+                    Task { await botMode.refreshNow(force: true) }
+                    fullscreenSurface = .bots
+                }
             },
-            onOpenGitHub: selectGitHubSection,
+            onOpenGitHub: { section in leaveIntegrations { selectGitHubSection(section) } },
             isFullscreen: isFullscreen,
             isHermesConnected: model.isHermesConnected,
             onReconnect: { Task { try? await model.gateway.connect() } },
@@ -454,7 +500,9 @@ extension DockPopover {
 
     // The floating shell must fit the list, conversation, and inspector together.
     var desktopConversationMinimumWidth: CGFloat {
-        DesktopWorkspaceFractions.minimumConversationWidth(isFullscreen: isFullscreen)
+        let preferred = DesktopWorkspaceFractions.minimumConversationWidth(isFullscreen: isFullscreen)
+        guard hidesChatList, isInspectorVisibleForDesktopWorkspace else { return preferred }
+        return min(preferred, max(360, workspaceLayoutWidth - 52 - 2 - 360))
     }
 
     var desktopTrailingWorkspace: AnyView {
@@ -564,7 +612,20 @@ extension DockPopover {
                                     repositoryPath: activeSessionRepositoryScope?.repositoryPath,
                                     onViewAllChanges: { showSessionRailInspector(.changes) },
                                     onViewPullRequest: viewSessionRailPullRequest,
-                                    onRefreshChanges: refreshSessionRailChanges
+                                    onRefreshChanges: refreshSessionRailChanges,
+                                    onViewAllOutputs: { showSessionRailInspector(.artifacts) },
+                                    onRespondInChat: {
+                                        sessionRailReplyRequest &+= 1
+                                        model.requestComposerFocus()
+                                    },
+                                    onViewPin: { pin in
+                                        let identity = WorkspaceIdentity.session(model)
+                                        guard let id = await model.messageID(forPin: pin),
+                                            identity == WorkspaceIdentity.session(model)
+                                        else { return false }
+                                        pinnedMessageJumpID = id
+                                        return true
+                                    }
                                 )
                                 .id(WorkspaceIdentity.session(model))
                                 .frame(width: railWidth - DockSpacing.section)
@@ -612,12 +673,13 @@ extension DockPopover {
     }
 
     func chatConversationContent(railWidth: CGFloat) -> some View {
-        VStack(spacing: 0) {
+        ConversationComposerLayout(
+            showsWelcome: model.messages.isEmpty && model.status != .working && !speechInput.isRecording,
+            hermFaceID: conversationHermFaceID,
+            trailingContentInset: railWidth
+        ) {
             conversation(trailingContentInset: railWidth)
-                .overlay(alignment: .top) {
-                    ChatQuotaBanner(control: controlCenter, metrics: conversationMetrics)
-                        .padding(.trailing, railWidth)
-                }
+        } composer: {
             ChatComposerView(
                 model: model,
                 composer: model.composer,
@@ -642,6 +704,17 @@ extension DockPopover {
                     )
                 }
             )
+            .padding(.trailing, railWidth)
+        }
+        .overlay(alignment: .top) {
+            VStack(spacing: 4) {
+                SessionSimulatorBanner(
+                    sessionKey: WorkspaceIdentity.session(model), metrics: conversationMetrics
+                ) { platform in
+                    showSessionRailInspector(platform == .ios ? .iosSimulator : .androidEmulator)
+                }
+                ChatQuotaBanner(control: controlCenter, metrics: conversationMetrics)
+            }
             .padding(.trailing, railWidth)
         }
     }

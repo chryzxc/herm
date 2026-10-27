@@ -24,8 +24,6 @@ struct MissionControlQueue: View {
     @ObservedObject var dockThemeStore: DockThemeStore
     @StateObject private var sidebar: MissionControlSidebarModel
     @AppStorage(SidebarVisibilityKey.kanban) private var showsKanban = true
-    @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequests = true
-    @AppStorage(SidebarVisibilityKey.issues) private var showsIssues = true
     @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
     @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendar = true
     @Binding var sessionPendingDeletion: HermesSession?
@@ -239,7 +237,7 @@ struct MissionControlQueue: View {
                 }
             }
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Hermes control queue")
+            .accessibilityLabel("Herm control queue")
     }
 
     /// Secondary panel: identity, new conversation, and the session lists.
@@ -250,14 +248,18 @@ struct MissionControlQueue: View {
                 HStack(spacing: 0) {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
                     Spacer(minLength: 0)
+                        .frame(maxHeight: .infinity)
+                        .background { TitlebarDoubleClickArea() }
                 }
                 .padding(.leading, DockWindowChrome.sidebarToggleLeading)
                 .frame(height: DockWindowChrome.titleRowHeight)
-                .background { TitlebarDoubleClickArea() }
                 .background(style.sidebarBackground)
             }
             // Header: identity plus the primary action. Window chrome lives in the footer.
             HStack(spacing: 2) {
+                if !isDockedWindow {
+                    DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
+                }
                 profileHeader(style: style)
                 DockIconButton(
                     icon: .notePencil,

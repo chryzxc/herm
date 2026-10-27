@@ -30,8 +30,7 @@ final class DockPanelPresentation: ObservableObject {
 /// UserDefaults keys for optional sidebar destinations; all default to visible.
 enum SidebarVisibilityKey {
     static let kanban = "hermes.sidebar.shows-kanban"
-    static let pullRequests = "hermes.sidebar.shows-pull-requests"
-    static let issues = "hermes.sidebar.shows-issues"
+    static let github = "hermes.sidebar.shows-github"
     static let office = "hermes.sidebar.shows-office"
     static let calendar = "hermes.sidebar.shows-calendar"
 }
@@ -83,6 +82,15 @@ final class MissionControlNavigationSelectionState: ObservableObject {
 /// sections and local selection while the user moves between pages.
 @MainActor
 final class MissionControlNavigationState: ObservableObject {
+    private(set) var integrationsWorkspace: IntegrationsWorkspaceState?
+
+    func integrations(client: HermesRPCClientProtocol, store: WorkspaceStore) -> IntegrationsWorkspaceState {
+        if let integrationsWorkspace { return integrationsWorkspace }
+        let state = IntegrationsWorkspaceState(client: client, store: store)
+        integrationsWorkspace = state
+        return state
+    }
+
     let selection = MissionControlNavigationSelectionState()
     @Published var showsAllConversations = false
     @Published var selectedTaskID: UUID?
@@ -188,11 +196,6 @@ final class MissionControlNavigationState: ObservableObject {
     func selectGitHubRepositories() {
         selectPullRequests()
         selectedGitHubSection = .repositories
-    }
-
-    func selectGitHubProjects() {
-        selectPullRequests()
-        selectedGitHubSection = .projects
     }
 
     func selectIssues() {

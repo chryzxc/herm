@@ -98,6 +98,7 @@ struct DockPopover: View {
     @State var isShowingMessageSearch = false
     @State var isShowingMessagePins = false
     @State var pinnedMessageJumpID: UUID?
+    @State var sessionRailReplyRequest = 0
     @State var isSessionIdentityHovering = false
     @State var sessionPickerQuery = ""
     @ObservedObject var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
@@ -330,6 +331,7 @@ struct DockPopover: View {
     var narrowPaneWidth: CGFloat { min(500, panelPresentation.compactWidth) - 52 }
 
     @AppStorage("herm.chatListCollapsed") var isChatListCollapsed = false
+    @State var workspaceLayoutWidth: CGFloat = 1200
     var desktopRequiredWidth: CGFloat { 1_110 }
     var conversationMessageMaxWidth: CGFloat { conversationMetrics.readingWidth }
     var navigatorMinimumConversationWidth: CGFloat { 820 }

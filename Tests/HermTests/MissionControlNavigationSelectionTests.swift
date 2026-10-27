@@ -20,19 +20,11 @@ struct MissionControlNavigationSelectionTests {
         #expect(state.selectedGitHubSection == .pullRequests)
     }
 
-    @Test func gitHubNavigationFallsBackToAVisibleSection() {
-        let both = GitHubWorkspaceSection.visible(showsPullRequests: true, showsIssues: true)
-        #expect(both == [.pullRequests, .issues, .projects, .repositories])
-        #expect(GitHubWorkspaceSection.issues.available(in: both) == .issues)
-        let issues = GitHubWorkspaceSection.visible(showsPullRequests: false, showsIssues: true)
-        #expect(issues == [.issues, .projects, .repositories])
-        #expect(GitHubWorkspaceSection.pullRequests.available(in: issues) == .issues)
-        let pullRequests = GitHubWorkspaceSection.visible(showsPullRequests: true, showsIssues: false)
-        #expect(pullRequests == [.pullRequests, .projects, .repositories])
-        #expect(GitHubWorkspaceSection.issues.available(in: pullRequests) == .pullRequests)
-        let neither = GitHubWorkspaceSection.visible(showsPullRequests: false, showsIssues: false)
-        #expect(neither.isEmpty)
-        #expect(GitHubWorkspaceSection.pullRequests.available(in: neither) == nil)
+    @Test func gitHubVisibilityIncludesAllThreeSectionsTogether() {
+        let sections = GitHubWorkspaceSection.visible(showsGitHub: true)
+        #expect(sections == [.pullRequests, .issues, .repositories])
+        #expect(GitHubWorkspaceSection.issues.available(in: sections) == .issues)
+        #expect(GitHubWorkspaceSection.visible(showsGitHub: false).isEmpty)
     }
 
     @Test func selectingASurfaceReplacesThePreviousSidebarIdentity() {
