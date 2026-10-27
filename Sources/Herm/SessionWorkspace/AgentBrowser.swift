@@ -13,6 +13,31 @@ final class AgentBrowser: ObservableObject {
     private static var connectionTask: Task<Void, Never>?
     private static var preferredPortOwner: SessionBrowserKey?
     private static let world = "herm"
+    /// Annotate plus the agent-cursor reporter: pointer moves (one per animation frame),
+    /// presses, and focus not caused by a press, in viewport CSS pixels.
+    private static let worldScript =
+        BrowserAnnotation.script + """
+
+            (() => {
+              if (window.__hermPointer) return;
+              window.__hermPointer = true;
+              const send = (type, x, y) => {
+                if (typeof window.hermPointer === 'function') window.hermPointer(JSON.stringify({ type, x, y }));
+              };
+              let pending = null, pressed = 0;
+              addEventListener('pointermove', (e) => {
+                const idle = !pending;
+                pending = [e.clientX, e.clientY];
+                if (idle) requestAnimationFrame(() => { send('move', ...pending); pending = null; });
+              }, true);
+              addEventListener('pointerdown', (e) => { pressed = performance.now(); send('down', e.clientX, e.clientY); }, true);
+              addEventListener('focusin', (e) => {
+                const r = e.target.getBoundingClientRect?.();
+                if (performance.now() - pressed < 300 || !r || !r.width || !r.height) return;
+                send('focus', r.left + Math.min(r.width / 2, 24), r.top + r.height / 2);
+              }, true);
+            })();
+            """
 
     enum State: Equatable {
         case off, starting, running
@@ -42,7 +67,10 @@ final class AgentBrowser: ObservableObject {
     /// You took the page over from Hermes; the pane offers to hand it back.
     @Published var userHasControl = false
     /// Hermes is mid-step: your input would race its clicks, so the canvas drops it.
-    var inputLocked = false
+    var inputLocked = false { didSet { if !inputLocked { onPointer?(nil) } } }
+    /// Where Hermes' pointer or focus landed, in CSS pixels; nil hides the agent cursor.
+    /// Like frames, this bypasses SwiftUI.
+    var onPointer: ((AgentPointer?) -> Void)?
 
     struct Dialog: Equatable {
         let type: String, message: String, defaultPrompt: String
@@ -89,6 +117,9 @@ final class AgentBrowser: ObservableObject {
     private(set) var panelSize = CGSize(width: 1280, height: 800)
     private var backingScale: CGFloat = 2
     private var viewportTask: Task<Void, Never>?
+    private var viewportDirty = false
+    /// "<session>@<scale>" of the running screencast.
+    private var screencast: String?
     private var themeCancellable: AnyCancellable?
     private var navigationRequestID = UUID()
     private var historyRequestID = UUID()
@@ -202,6 +233,7 @@ final class AgentBrowser: ObservableObject {
         sessionID = nil
         mainFrameID = nil
         annotateContextID = nil
+        screencast = nil
         navigationRequestID = UUID()
         historyRequestID = UUID()
         navigation = BrowserNavigationState()
@@ -371,11 +403,15 @@ final class AgentBrowser: ObservableObject {
         dialog = nil
         annotateContextID = nil
         _ = try await cdp.send("Page.enable", session: sid)
+        for binding in ["hermAnnotate", "hermPointer"] {
+            _ = try await cdp.send(
+                "Runtime.addBinding", ["name": binding, "executionContextName": Self.world], session: sid)
+        }
         _ = try await cdp.send(
-            "Runtime.addBinding", ["name": "hermAnnotate", "executionContextName": Self.world], session: sid)
-        _ = try await cdp.send(
-            "Page.addScriptToEvaluateOnNewDocument", ["source": BrowserAnnotation.script, "worldName": Self.world],
+            "Page.addScriptToEvaluateOnNewDocument", ["source": Self.worldScript, "worldName": Self.world],
             session: sid)
+        // Headless pages never hold OS focus, so focus rings and carets would never paint.
+        cdp.fire("Emulation.setFocusEmulationEnabled", ["enabled": true], session: sid)
         let tree = try await cdp.send("Page.getFrameTree", session: sid)
         mainFrameID = ((tree["frameTree"] as? [String: Any])?["frame"] as? [String: Any])?["id"] as? String
         refreshHistory()
@@ -386,7 +422,7 @@ final class AgentBrowser: ObservableObject {
         {
             annotateContextID = context
             _ = try await cdp.send(
-                "Runtime.evaluate", ["expression": BrowserAnnotation.script, "contextId": context], session: sid)
+                "Runtime.evaluate", ["expression": Self.worldScript, "contextId": context], session: sid)
         }
         _ = try await cdp.send("Runtime.enable", session: sid)
         if let document = try? await cdp.send(
@@ -407,13 +443,17 @@ final class AgentBrowser: ObservableObject {
         scheduleViewport()
     }
 
-    /// Debounced: live panel resizes would otherwise restart the screencast every frame.
+    /// Coalesced, not debounced: one metrics update in flight at a time, and the latest size
+    /// goes next, so the page follows a live resize as fast as Chrome can lay it out.
     private func scheduleViewport() {
-        viewportTask?.cancel()
+        viewportDirty = true
+        guard viewportTask == nil else { return }
         viewportTask = Task {
-            try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
-            try? await applyViewport()
+            while viewportDirty {
+                viewportDirty = false
+                try? await applyViewport()
+            }
+            viewportTask = nil
         }
     }
 
@@ -434,14 +474,18 @@ final class AgentBrowser: ObservableObject {
                 "screenWidth": Int(size.width), "screenHeight": Int(size.height),
                 "mobile": presetWidth > 0 && presetWidth < 800,
             ], session: sid)
-        guard !Task.isCancelled, sessionID == sid else { return }
+        // A running screencast follows metric changes by itself; restart only for a new tab,
+        // a new display scale, or the pane being shown or hidden.
+        let screencast = viewers > 0 ? "\(sid)@\(backingScale)" : nil
+        guard sessionID == sid, screencast != self.screencast else { return }
         cdp.fire("Page.stopScreencast", session: sid)
-        guard viewers > 0 else { return }
+        self.screencast = screencast
+        guard screencast != nil else { return }
         cdp.fire(
             "Page.startScreencast",
             [
                 "format": "png", "everyNthFrame": 2,  // Lossless text at ~30fps while the pane is visible.
-                "maxWidth": Int(size.width * backingScale), "maxHeight": Int(size.height * backingScale),
+                "maxWidth": 8192, "maxHeight": 8192,  // Caps only; frames match the emulated viewport.
             ], session: sid)
     }
 
@@ -474,9 +518,6 @@ final class AgentBrowser: ObservableObject {
         receiveNavigation(method, params: params)
         switch method {
         case "Page.screencastFrame":
-            if let ack = params["sessionId"] {
-                cdp?.fire("Page.screencastFrameAck", ["sessionId": ack], session: session)
-            }
             guard let decoded = params["decodedFrame"] as? CDPConnection.Frame else { return }
             let image = NSImage(cgImage: decoded.image, size: .zero)
             let meta = params["metadata"] as? [String: Any]
@@ -517,11 +558,15 @@ final class AgentBrowser: ObservableObject {
             annotateContextID = nil
         case "Runtime.bindingCalled":
             // Only our isolated world has the binding; the context check drops iframes.
-            guard params["name"] as? String == "hermAnnotate",
-                params["executionContextId"] as? Int == annotateContextID,
+            guard params["executionContextId"] as? Int == annotateContextID,
                 let payload = params["payload"] as? String
             else { return }
-            receive(payload)
+            switch params["name"] as? String {
+            case "hermAnnotate": receive(payload)
+            // The canvas drops your input while Hermes holds the page, so this is Hermes.
+            case "hermPointer": if inputLocked, let pointer = AgentPointer(json: payload) { onPointer?(pointer) }
+            default: break
+            }
         case "Runtime.consoleAPICalled":
             guard params["type"] as? String == "error" else { return }
             let args = (params["args"] as? [[String: Any]] ?? []).map { arg in
@@ -718,6 +763,26 @@ final class AgentBrowser: ObservableObject {
     }
 }
 
+/// Hermes' pointer as the page saw it, in viewport CSS pixels.
+struct AgentPointer: Equatable {
+    enum Kind: String { case move, down, focus }
+    let kind: Kind
+    let point: CGPoint
+
+    init(kind: Kind, point: CGPoint) {
+        self.kind = kind
+        self.point = point
+    }
+
+    init?(json: String) {
+        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+            let kind = (object["type"] as? String).flatMap(Kind.init(rawValue:)),
+            let x = object["x"] as? Double, let y = object["y"] as? Double, x.isFinite, y.isFinite
+        else { return nil }
+        self.init(kind: kind, point: CGPoint(x: x, y: y))
+    }
+}
+
 /// Minimal Chrome DevTools Protocol client: JSON over a websocket, flat sessions.
 @MainActor
 final class CDPConnection {
@@ -783,6 +848,14 @@ final class CDPConnection {
                 }
             case .success(let message):
                 let object = Self.decode(message)
+                // Ack before the main-actor hop: Chrome encodes the next frame while this one is
+                // drawn. Still one frame in flight, since the next receive waits for the dispatch.
+                if object?["method"] as? String == "Page.screencastFrame",
+                    let session = object?["sessionId"] as? String,
+                    let frame = (object?["params"] as? [String: Any])?["sessionId"] as? Int
+                {
+                    Task { @MainActor in self?.fire("Page.screencastFrameAck", ["sessionId": frame], session: session) }
+                }
                 Task { @MainActor in
                     guard let self else { return }
                     if let object { self.dispatch(object) }
@@ -849,24 +922,95 @@ final class CDPConnection {
 final class AgentBrowserCanvas: NSView {
     var browser: AgentBrowser? {
         didSet {
-            if let frame = browser?.lastFrame {
-                image = frame.image
-                cssSize = frame.css
-                needsDisplay = true
-            }
-            browser?.onFrame = { [weak self] image, css in
-                self?.image = image
-                self?.cssSize = css
-                self?.needsDisplay = true
-            }
+            if let frame = browser?.lastFrame { show(frame.image, css: frame.css) }
+            browser?.onFrame = { [weak self] image, css in self?.show(image, css: css) }
+            browser?.onPointer = { [weak self] pointer in self?.showPointer(pointer) }
         }
     }
-    private var image: NSImage?
     private var cssSize = CGSize(width: 1280, height: 800)
     private var isViewing = false
     private var pressedButtons = 0
+    /// Layer-hosting: a frame is a texture swap for the GPU, with no main-thread redraw.
+    private let page: NSView = {
+        let view = NSView()
+        let layer = CALayer()
+        layer.contentsGravity = .resize
+        layer.minificationFilter = .trilinear
+        layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+        view.layer = layer
+        view.wantsLayer = true
+        return view
+    }()
+    private let cursor = AgentCursorView()
+    private var cursorGeneration = 0
 
     override var isFlipped: Bool { true }
+
+    /// Page, cursor and ripples are decoration; every event belongs to the canvas.
+    override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
+
+    private func show(_ image: NSImage, css: CGSize) {
+        page.layer?.contents = image
+        if css != cssSize {
+            cssSize = css
+            page.frame = pageRect
+        }
+    }
+
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// Glides the Herm cursor to where Hermes pointed; nil fades it out.
+    private func showPointer(_ pointer: AgentPointer?) {
+        cursorGeneration += 1
+        let generation = cursorGeneration
+        guard let pointer else {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = reduceMotion ? 0 : 0.3
+                cursor.animator().alphaValue = 0
+            } completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    if self?.cursorGeneration == generation { self?.cursor.isHidden = true }
+                }
+            }
+            return
+        }
+        let rect = pageRect
+        let point = CGPoint(
+            x: rect.minX + pointer.point.x / cssSize.width * rect.width,
+            y: rect.minY + pointer.point.y / cssSize.height * rect.height)
+        let origin = CGPoint(x: point.x - AgentCursorView.tip.x, y: point.y - AgentCursorView.tip.y)
+        if cursor.isHidden {
+            cursor.setFrameOrigin(origin)
+            cursor.alphaValue = 0
+            cursor.isHidden = false
+            cursor.needsDisplay = true  // Picks up a theme change since it was last shown.
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = reduceMotion ? 0 : pointer.kind == .move ? 0.14 : 0.24
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            cursor.animator().setFrameOrigin(origin)
+            cursor.animator().alphaValue = 1
+        }
+        if pointer.kind == .down, !reduceMotion { ripple(at: point) }
+    }
+
+    private func ripple(at point: CGPoint) {
+        let ripple = AgentClickRipple(frame: CGRect(x: point.x - 4, y: point.y - 4, width: 8, height: 8))
+        addSubview(ripple, positioned: .below, relativeTo: cursor)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.45
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ripple.animator().frame = CGRect(x: point.x - 18, y: point.y - 18, width: 36, height: 36)
+            ripple.animator().alphaValue = 0
+        } completionHandler: {
+            MainActor.assumeIsolated { ripple.removeFromSuperview() }
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        page.frame = pageRect
+    }
     override var acceptsFirstResponder: Bool { true }
 
     override func viewDidMoveToWindow() {
@@ -880,6 +1024,10 @@ final class AgentBrowserCanvas: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        wantsLayer = true
+        addSubview(page)
+        cursor.isHidden = true
+        addSubview(cursor)
         addTrackingArea(
             NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
     }
@@ -896,15 +1044,9 @@ final class AgentBrowserCanvas: NSView {
         return CGRect(x: x, y: 0, width: size.width, height: size.height)
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        image?.draw(
-            in: pageRect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true,
-            hints: [.interpolation: NSImageInterpolation.high])
-    }
-
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        needsDisplay = true
+        page.frame = pageRect
         browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
     }
 
@@ -1006,6 +1148,62 @@ final class AgentBrowserCanvas: NSView {
     }
 }
 
+/// Where Hermes is pointing: an accent arrow with a "Herm" tag, like a collaborator's cursor.
+final class AgentCursorView: NSView {
+    /// The arrow tip within the view; the canvas places this on the page point.
+    static let tip = CGPoint(x: 2, y: 2)
+    private static let label = "Herm"
+
+    init() {
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let width = (Self.label as NSString).size(withAttributes: [.font: font]).width
+        super.init(frame: CGRect(x: 0, y: 0, width: 30 + width, height: 40))
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let accent = NSColor(Color.dockAccent)
+        let ink = NSColor(Color.dockOnAccentText)
+        let arrow = NSBezierPath()
+        arrow.move(to: Self.tip)
+        arrow.line(to: CGPoint(x: 2, y: 19))
+        arrow.line(to: CGPoint(x: 6.5, y: 14.5))
+        arrow.line(to: CGPoint(x: 13.5, y: 14))
+        arrow.close()
+        arrow.lineJoinStyle = .round
+        arrow.lineWidth = 1.5
+        accent.setFill()
+        arrow.fill()
+        ink.setStroke()
+        arrow.stroke()
+
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let size = (Self.label as NSString).size(withAttributes: [.font: font])
+        let tag = CGRect(x: 12, y: 18, width: size.width + 12, height: size.height + 4)
+        accent.setFill()
+        NSBezierPath(roundedRect: tag, xRadius: tag.height / 2, yRadius: tag.height / 2).fill()
+        (Self.label as NSString).draw(
+            at: CGPoint(x: tag.minX + 6, y: tag.minY + 2), withAttributes: [.font: font, .foregroundColor: ink])
+    }
+}
+
+/// The ring that spreads from a point Hermes clicked.
+private final class AgentClickRipple: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1))
+        ring.lineWidth = 2
+        NSColor(Color.dockAccent).setStroke()
+        ring.stroke()
+    }
+}
+
 private struct AgentCanvasView: NSViewRepresentable {
     let browser: AgentBrowser
     func makeNSView(context: Context) -> AgentBrowserCanvas {
@@ -1046,6 +1244,15 @@ struct AgentBrowserPane: View {
         }
         .overlay(alignment: .top) {
             if step != nil { DockShimmerTrack(tone: .working).transition(.opacity) }
+        }
+        .overlay {
+            // Frames the page while it belongs to Hermes, so you can tell before you click.
+            if step != nil, !browser.userHasControl {
+                Rectangle()
+                    .strokeBorder(Color.dockAccent.opacity(0.55), lineWidth: 2)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
         .overlay(alignment: .bottom) {
             Group {

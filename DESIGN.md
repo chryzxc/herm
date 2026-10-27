@@ -2828,8 +2828,15 @@ width and scale to fit. WebKit sizing belongs to its native page container;
 Chromium’s canvas reports frame changes directly rather than waiting for a
 subview layout pass. Headless Chromium uses a 2x compositor and lossless PNG
 screencast frames, bounded to the viewing display’s pixel density. Frames decode
-on the socket callback before reaching the main actor; unchanged navigation state
-does not publish workspace updates. Auto rounds
+and are acknowledged on the socket callback before reaching the main actor, and
+are shown as layer contents rather than redrawn; unchanged navigation state
+does not publish workspace updates. Resizes coalesce into one metrics update and
+never restart the screencast. Chromium emulates page focus, so focus rings and
+carets show in form fields. While Hermes drives, the page gets a 2pt accent
+frame and an accent "Herm" cursor that glides to each pointer move, click, and
+focused field Hermes produces in the main frame; clicks spread a ring. The
+cursor never takes input and fades out when Hermes stops or you take over.
+Reduce Motion jumps the cursor and drops the ring. Auto rounds
 CSS viewport dimensions down to whole pixels and aligns the page origin to the
 backing pixel grid, preserving 1:1 text rendering in fractional panel bounds.
 Device previews scale down only when needed to fit. Screencasting stays paused

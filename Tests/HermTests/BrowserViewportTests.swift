@@ -101,4 +101,35 @@ struct BrowserViewportTests {
         #expect(canvas.pageRect.width <= canvas.bounds.width)
         #expect(canvas.pageRect.height <= canvas.bounds.height)
     }
+
+    @Test func agentPointerParsesOnlyWellFormedPageReports() {
+        #expect(
+            AgentPointer(json: #"{"type":"down","x":12.5,"y":40}"#)
+                == AgentPointer(kind: .down, point: CGPoint(x: 12.5, y: 40)))
+        #expect(AgentPointer(json: #"{"type":"focus","x":0,"y":0}"#)?.kind == .focus)
+        #expect(AgentPointer(json: #"{"type":"teleport","x":1,"y":1}"#) == nil)
+        #expect(AgentPointer(json: #"{"type":"move","x":"1","y":1}"#) == nil)
+        #expect(AgentPointer(json: "not json") == nil)
+    }
+
+    @Test func agentCursorFollowsHermesWhileInputStaysWithTheCanvas() async throws {
+        let browser = AgentBrowser(key: .init(profileID: nil, sessionID: "agent-cursor"))
+        let canvas = AgentBrowserCanvas(frame: .zero)
+        canvas.browser = browser
+        canvas.setFrameSize(NSSize(width: 640, height: 400))
+        browser.onFrame?(NSImage(size: NSSize(width: 1280, height: 800)), CGSize(width: 1280, height: 800))
+        let cursor = try #require(canvas.subviews.compactMap { $0 as? AgentCursorView }.first)
+        #expect(cursor.isHidden)
+
+        browser.inputLocked = true
+        browser.onPointer?(AgentPointer(kind: .down, point: CGPoint(x: 640, y: 400)))
+        #expect(!cursor.isHidden)
+        // The page is half size, so CSS (640, 400) lands at the canvas centre.
+        let tip = CGPoint(x: 320, y: 200)
+        #expect(canvas.hitTest(canvas.convert(tip, to: nil)) === canvas)
+
+        browser.inputLocked = false
+        for _ in 0..<40 where !cursor.isHidden { try await Task.sleep(for: .milliseconds(25)) }
+        #expect(cursor.isHidden)
+    }
 }
