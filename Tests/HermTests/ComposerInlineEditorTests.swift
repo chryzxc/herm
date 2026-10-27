@@ -121,7 +121,8 @@ struct ComposerInlineEditorTests {
         #expect(try #require(heights.last) > wideHeight)
     }
 
-    @Test func nativePasteUsesTheOwningComposersHandler() async throws {
+    @Test(arguments: [false, true])
+    func nativePasteUsesTheOwningComposersHandler(imageOnly: Bool) async throws {
         var handled = false
         let editor = ComposerInputEditor(
             text: .constant("Saved draft"), isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
@@ -142,13 +143,20 @@ struct ComposerInlineEditorTests {
         let text = try #require(find(host))
         NSPasteboard.general.clearContents()
         defer { NSPasteboard.general.clearContents() }
-        NSPasteboard.general.setString("Pasted content", forType: .string)
+        if imageOnly {
+            NSPasteboard.general.setData(Data(), forType: .png)
+        } else {
+            NSPasteboard.general.setString("Pasted content", forType: .string)
+        }
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        #expect(text.validateUserInterfaceItem(pasteItem))
         text.paste(nil)
         #expect(handled)
         #expect(text.string == "Saved draft")
     }
 
-    @Test func nativeFilePasteStagesURLsWithoutInsertingAnIcon() async throws {
+    @Test(arguments: [false, true])
+    func nativeFilePasteStagesURLsWithoutInsertingAnIcon(includesIcon: Bool) async throws {
         _ = NSApplication.shared
         var files: [URL] = []
         var handledPaste = false
@@ -175,12 +183,19 @@ struct ComposerInlineEditorTests {
         defer { pasteboard.clearContents() }
         let url = URL(fileURLWithPath: "/tmp/composer-brief.md")
         pasteboard.writeObjects([url as NSURL])
-        pasteboard.setData(Data("file icon".utf8), forType: .tiff)
+        if includesIcon { pasteboard.setData(Data("file icon".utf8), forType: .tiff) }
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        #expect(text.validateUserInterfaceItem(pasteItem))
         text.paste(nil)
         #expect(files == [url])
         #expect(!handledPaste)
         #expect(text.string == "Keep this draft")
         #expect(text.attributedString().attribute(.attachment, at: 0, effectiveRange: nil) == nil)
+        text.isEditable = false
+        #expect(!text.validateUserInterfaceItem(pasteItem))
+        files = []
+        text.paste(nil)
+        #expect(files.isEmpty)
     }
 
     @Test func presentationSizeChangesPreserveDraftAndSelection() {

@@ -1056,7 +1056,7 @@ private struct QueuedPromptList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("QUEUED · SENDS WHEN HERMES FINISHES")
+            Text("QUEUED · SENDS WHEN HERM FINISHES")
                 .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockMetadataText)
@@ -1391,6 +1391,15 @@ private final class ComposerInputTextView: NSTextView {
     /// Dropped files become attachments; NSTextView would otherwise insert their paths as text.
     private func droppedFileURLs(_ sender: NSDraggingInfo) -> [URL] {
         AttachmentPopoverFileSelection.fileURLs(from: sender.draggingPasteboard)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), isEditable {
+            // Plain-text NSTextView rejects file/image clipboards before our paste handler runs.
+            if onDropFiles != nil, !AttachmentPopoverFileSelection.fileURLs(from: .general).isEmpty { return true }
+            if onPaste != nil, DockModel.pasteboardHoldsImageOnly(.general) { return true }
+        }
+        return super.validateUserInterfaceItem(item)
     }
 
     override func paste(_ sender: Any?) {

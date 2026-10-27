@@ -36,25 +36,6 @@ struct EdgeQuickMessageView: View {
                 await chat.load(state.captureRecord().destination, runtime: model)
             }
             .onDisappear { chat.shutdown() }
-            .task(id: state.captureRecord().destination.sessionKey) {
-                let destination = state.captureRecord().destination
-                guard let session = destination.session else { return }
-                do {
-                    let snapshot = try await HermesWorkflowRPC(
-                        client: model.controlRPCClient, profileID: destination.profileID
-                    ).sessionCapacity(session)
-                    guard !Task.isCancelled, state.captureRecord().destination.sessionKey == destination.sessionKey
-                    else { return }
-                    state.capacitySnapshots[destination.sessionKey] = snapshot
-                    if state.capacitySnapshots.count > 8,
-                        let oldest = state.capacitySnapshots.min(by: { $0.value.readAt < $1.value.readAt })?.key
-                    {
-                        state.capacitySnapshots.removeValue(forKey: oldest)
-                    }
-                } catch {
-                    // Submission stays available when session model metadata cannot be read.
-                }
-            }
             .onAppear { focused = true }
             .onChange(of: state.quickDraft) { _, text in
                 if !text.isEmpty { state.quickResult = nil }
@@ -98,6 +79,7 @@ struct EdgeQuickMessageView: View {
                     icon: .x, label: "Close quick message",
                     style: DockThemePalette(theme: DockThemeRuntime.current), action: close)
             }
+            Divider().overlay(Color.dockBorderLight)
             Group {
                 if let conversation = chat.conversation {
                     EdgeQuickConversationTranscript(
@@ -118,6 +100,7 @@ struct EdgeQuickMessageView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay { if startsNewSession && chat.conversation?.messages.isEmpty != false { emptyState } }
             if chat.loadFailed {
                 Button("Reload conversation") {
                     Task { await chat.load(state.captureRecord().destination, runtime: model) }
@@ -179,7 +162,6 @@ struct EdgeQuickMessageView: View {
 
     private var messageFeedback: some View {
         VStack(alignment: .leading, spacing: DockSpacing.tight) {
-            capacityAdvisory
             if let status = state.quickPreparing > 0
                 ? "Preparing captured files…"
                 : state.quickResult ?? state.draftStore.error ?? unavailableReason
@@ -213,40 +195,28 @@ struct EdgeQuickMessageView: View {
         }
     }
 
-    private var destination: some View {
-        let record = state.captureRecord()
-        return VStack(alignment: .leading, spacing: 2) {
-            let profile = record.destination.profileID ?? "Launch profile"
-            Text(
-                state.quickTarget == nil
-                    ? "New session · \(profile)" : "Replying in \(record.destination.title) · \(profile)"
-            )
-            .dockFont(.body).lineLimit(1).truncationMode(.middle).foregroundStyle(Color.dockSecondaryText)
-            if let path = record.destination.projectPath {
-                Text("Project: \(URL(fileURLWithPath: path).lastPathComponent)").dockFont(.metadata).lineLimit(1)
-            }
+    private var startsNewSession: Bool { state.quickTarget == nil && state.quickCreatedSession == nil }
+
+    private var emptyState: some View {
+        VStack(spacing: DockSpacing.tight) {
+            DockIcon(.chatCenteredText, size: 20, color: Color.dockSecondaryText)
+            Text("Start a new session").dockFont(.body, weight: .semibold)
+            Text("Your first message creates it.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
         }
+        .allowsHitTesting(false)
     }
 
-    @ViewBuilder private var capacityAdvisory: some View {
-        let destination = state.captureRecord().destination
-        let provider = state.capacitySnapshots[destination.sessionKey]?.modelID?.components(separatedBy: "|").first
-        if let reading = control.quotaReading(for: provider), reading.remaining <= 20 {
-            HStack(alignment: .top, spacing: DockSpacing.tight) {
-                DockIcon(.warning, size: 14, color: QuotaWorkspaceView.color(for: reading.window.threshold))
-                    .padding(.top, 1)
-                Text("\(reading.snapshot.displayName) · \(Int(reading.remaining.rounded()))% allowance left")
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityElement(children: .combine)
-            .help(
-                "Sending is available · Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))"
-            )
-            .accessibilityHint(
-                "Sending is available. Updated \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))"
-            )
+    private var destination: some View {
+        let record = state.captureRecord()
+        let profile = record.destination.profileID ?? "Launch profile"
+        let project = record.destination.projectPath.map { URL(fileURLWithPath: $0).lastPathComponent }
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(startsNewSession ? "New session" : record.destination.title)
+                .dockFont(.body, weight: .semibold).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(Color.dockPrimaryText)
+            Text([profile, project].compactMap { $0 }.joined(separator: " · "))
+                .dockFont(.metadata).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(Color.dockSecondaryText)
         }
     }
 
