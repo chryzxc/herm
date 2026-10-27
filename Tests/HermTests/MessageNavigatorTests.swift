@@ -392,4 +392,12 @@ final class MessageNavigatorTests: XCTestCase {
         for _ in 0..<10 { await Task.yield() }
         XCTAssertNil(scrolledMessageID)
     }
+
+    func testRailPointerReportsOnlyMovesAndExit() {
+        XCTAssertEqual(RailPointerSample.next(previous: nil, current: 40), .move(40))
+        XCTAssertNil(RailPointerSample.next(previous: 40, current: 40))
+        XCTAssertEqual(RailPointerSample.next(previous: 40, current: 41), .move(41))
+        XCTAssertEqual(RailPointerSample.next(previous: 41, current: nil), .exit)
+        XCTAssertNil(RailPointerSample.next(previous: nil, current: nil))
+    }
 }
