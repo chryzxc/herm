@@ -295,7 +295,9 @@ private struct RichGraphView: View {
                             } else {
                                 path.addLine(to: end)
                             }
-                            context.stroke(path, with: .color(Color.dockBorder), lineWidth: 1)
+                            context.stroke(
+                                path, with: .color(Color.dockBorder),
+                                style: StrokeStyle(lineWidth: 1, dash: edge.style == .dashed ? [5, 4] : []))
                             let angle = atan2(end.y - start.y, end.x - start.x)
                             var arrow = Path()
                             arrow.move(to: end)
@@ -311,13 +313,25 @@ private struct RichGraphView: View {
                             edgeSelection = ""
                         }.buttonStyle(.dockSecondary)
                             .lineLimit(2).frame(width: 140, height: 44)
+                            .overlay {
+                                if let status = node.status {
+                                    RoundedRectangle(cornerRadius: 8).strokeBorder(status.color, lineWidth: 1.5)
+                                        .allowsHitTesting(false)
+                                }
+                            }
                             .position(positions[node.id] ?? .zero)
+                            .accessibilityValue(node.status?.rawValue.capitalized ?? "")
                             .accessibilityAddTraits(selection == node.id ? .isSelected : [])
                     }
                 }.frame(width: 540, height: max(100, CGFloat((graph.nodes.count + 2) / 3) * 100))
             }.frame(height: min(400, max(100, CGFloat((graph.nodes.count + 2) / 3) * 100)))
             if let node = graph.nodes.first(where: { $0.id == selection }) {
-                Text(node.detail ?? node.title).textSelection(.enabled)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let status = node.status {
+                        Text(status.rawValue.capitalized).foregroundStyle(status.color).fixedSize()
+                    }
+                    Text(node.detail ?? node.title)
+                }.textSelection(.enabled)
             }
             if let edge = graph.edges.enumerated().first(where: { edgeSelection == String($0.offset) })?.element {
                 Text("\(title(edge.source)) → \(title(edge.target))\(edge.label.map { " · " + $0 } ?? "")")

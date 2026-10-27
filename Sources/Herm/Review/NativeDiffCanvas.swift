@@ -25,6 +25,7 @@ final class DiffCanvasContainer: NSView {
     private var fingerprint = ""
     private var findRevision = 0
     private var alignmentKey = ""
+    private var sizingKey = ""
     private var revealedID: String?
     private var lastViewportRestore = -1
     private var previousPath: String?
@@ -42,14 +43,20 @@ final class DiffCanvasContainer: NSView {
         super.layout()
         stack.frame = bounds
         stack.layoutSubtreeIfNeeded()
-        for case let scroll as NSScrollView in stack.arrangedSubviews {
-            guard let text = scroll.documentView as? NSTextView else { continue }
-            if !text.isHorizontallyResizable {
-                let width = max(100, scroll.contentSize.width)
-                text.frame.size.width = width
-                text.textContainer?.containerSize.width = width
+        // Whole-document sizing only changes with content or column width; scrolling re-enters layout.
+        let scrolls = stack.arrangedSubviews.compactMap { $0 as? NSScrollView }
+        let key = fingerprint + ":" + scrolls.map { String(Double($0.contentSize.width)) }.joined(separator: ",")
+        if sizingKey != key {
+            sizingKey = key
+            for scroll in scrolls {
+                guard let text = scroll.documentView as? NSTextView else { continue }
+                if !text.isHorizontallyResizable {
+                    let width = max(100, scroll.contentSize.width)
+                    text.frame.size.width = width
+                    text.textContainer?.containerSize.width = width
+                }
+                text.sizeToFit()
             }
-            text.sizeToFit()
         }
         alignWrappedRows()
         if !pendingScroll.isEmpty {
@@ -268,9 +275,7 @@ final class DiffCanvasContainer: NSView {
                 guard let text = scroll.documentView as? DiffSelectableTextView,
                     let index = text.lines.firstIndex(where: { $0?.index == reveal.lineIndex })
                 else { continue }
-                let offset = text.lines.prefix(index).reduce(0) {
-                    $0 + (($1.map(DiffDocument.source) ?? "") as NSString).length + 1
-                }
+                let offset = text.lineOffsets.starts[index]
                 let range = NSRange(location: offset + reveal.range.location, length: reveal.range.length)
                 guard NSMaxRange(range) <= (text.string as NSString).length else { continue }
                 text.setSelectedRange(range)

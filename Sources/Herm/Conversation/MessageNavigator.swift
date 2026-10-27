@@ -695,17 +695,22 @@ private struct RailPointerStrip: NSViewRepresentable {
 
         private var timer: Timer?
         private var clickMonitor: Any?
-        private var isInside = false
+        private var occlusionObserver: NSObjectProtocol?
+        private var lastY: CGFloat?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            timer?.invalidate()
             if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
-            timer = nil
+            if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
             clickMonitor = nil
-            guard window != nil else { return }
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.poll() }
+            occlusionObserver = nil
+            updatePolling()
+            guard let window else { return }
+            // A hidden, minimized or fully covered window can't be hovered: stop the timer there.
+            occlusionObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updatePolling() }
             }
             clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 if let self, let y = self.pointerY(), event.window === self.window { self.onClick(y) }
@@ -713,9 +718,26 @@ private struct RailPointerStrip: NSViewRepresentable {
             }
         }
 
+        private func updatePolling() {
+            guard let window, window.occlusionState.contains(.visible) else {
+                timer?.invalidate()
+                timer = nil
+                if lastY != nil {
+                    lastY = nil
+                    onExit()
+                }
+                return
+            }
+            guard timer == nil else { return }
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.poll() }
+            }
+        }
+
         isolated deinit {
             timer?.invalidate()
             if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
         }
 
         /// The pointer's y in this view, or nil when it is outside the strip.
@@ -732,13 +754,25 @@ private struct RailPointerStrip: NSViewRepresentable {
         }
 
         private func poll() {
-            if let y = pointerY() {
-                isInside = true
-                onMove(y)
-            } else if isInside {
-                isInside = false
-                onExit()
+            let y = pointerY()
+            defer { lastY = y }
+            switch RailPointerSample.next(previous: lastY, current: y) {
+            case .move(let y): onMove(y)
+            case .exit: onExit()
+            case nil: break
             }
         }
+    }
+}
+
+/// What one pointer sample means for the rail: a new position or leaving it.
+/// A stationary pointer reports nothing, so hover state isn't rewritten 30 times a second.
+enum RailPointerSample: Equatable {
+    case move(CGFloat)
+    case exit
+
+    static func next(previous: CGFloat?, current: CGFloat?) -> Self? {
+        if let current { return current == previous ? nil : .move(current) }
+        return previous == nil ? nil : .exit
     }
 }

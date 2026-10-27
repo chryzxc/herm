@@ -189,7 +189,7 @@ Artifacts, and explicit exports.
 | comparison | `criteria: [String]`, `options: [{id,title,values:[String],detail?}]` |
 | checklist | `items: [{id,title,detail?}]`; local choices attached explicitly to chat |
 | timeline | `items: [{id,title,detail?,date?,dependencies?:[id]}]` |
-| graph | `nodes: [{id,title,detail?}]`, `edges: [{source,target,label?}]`; 200 nodes/500 edges |
+| graph | `nodes: [{id,title,detail?,status?}]` (workflow states), `edges: [{source,target,label?,style?}]` (`solid`/`dashed`); 200 nodes/500 edges |
 | tree | `items: [{id,title,value?,parent?}]`; 1,000 items, no cycles |
 | imageComparison | `before` and `after`, each `{title,url}` using inline PNG/JPEG/WebP data |
 | record | `kind`, `id`; resolved by a registered current-workspace adapter |

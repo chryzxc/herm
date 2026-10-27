@@ -103,12 +103,21 @@ struct RichComparison: Codable, Equatable, Sendable {
     let options: [Option]
 }
 struct RichGraph: Codable, Equatable, Sendable {
+    struct Node: Codable, Equatable, Sendable, Identifiable {
+        let id: String
+        let title: String
+        var detail: String?
+        /// Reported state of the node, shared with workflow items; never a live runtime status.
+        var status: RichWorkflow.Item.Status?
+    }
     struct Edge: Codable, Equatable, Sendable {
+        enum Style: String, Codable, Sendable { case solid, dashed }
         let source: String
         let target: String
         var label: String?
+        var style: Style?
     }
-    let nodes: [RichChoiceItem]
+    let nodes: [Node]
     let edges: [Edge]
 }
 struct RichTree: Codable, Equatable, Sendable {
@@ -276,7 +285,10 @@ enum RichBlockPayload: Equatable, Sendable {
             }.joined(separator: "\n")
         case .checklist(let value), .timeline(let value):
             return value.items.map { "\($0.title)\n\($0.detail ?? "")" }.joined(separator: "\n")
-        case .graph(let value): return value.nodes.map(\.title).joined(separator: "\n")
+        case .graph(let value):
+            return value.nodes.map { node in
+                node.status.map { "\($0.rawValue.capitalized): \(node.title)" } ?? node.title
+            }.joined(separator: "\n")
         case .tree(let value): return value.items.map { "\($0.title): \($0.value ?? "")" }.joined(separator: "\n")
         case .imageComparison(let value): return "\(value.before.title) / \(value.after.title)"
         case .table(let value): return "Dataset: \(value.dataset)"

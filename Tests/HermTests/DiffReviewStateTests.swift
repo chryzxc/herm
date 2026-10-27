@@ -82,6 +82,26 @@ struct DiffReviewStateTests {
         #expect(scroll.contentView.bounds.minX == -scroll.contentView.contentInsets.left)
     }
 
+    @Test func wrappedTextResizesWithTheCanvasButNotOnRepeatedLayout() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
+        canvas.update(
+            DiffDocument(path: "wrap.swift", patch: "@@ -1 +1 @@\n-old\n+" + String(repeating: "source ", count: 100)),
+            split: false, wraps: true, wordDiffs: false, findRequest: 0,
+            reveal: nil, viewport: nil, onNote: nil, onComment: nil)
+        canvas.layoutSubtreeIfNeeded()
+        let stack = try #require(canvas.subviews.first as? NSStackView)
+        let scroll = try #require(stack.arrangedSubviews.first as? NSScrollView)
+        let text = try #require(scroll.documentView as? NSTextView)
+        let wide = text.frame.width
+        canvas.needsLayout = true
+        canvas.layoutSubtreeIfNeeded()
+        #expect(text.frame.width == wide)
+        canvas.setFrameSize(NSSize(width: 400, height: 400))
+        canvas.layoutSubtreeIfNeeded()
+        #expect(text.frame.width < wide)
+        #expect(text.frame.width == max(100, scroll.contentSize.width))
+    }
+
     @Test func longDiffStartsAtLeftEdge() throws {
         let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
         let document = DiffDocument(
