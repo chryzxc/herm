@@ -1992,8 +1992,7 @@ place/item switching, rapid reversal, pending/error recovery, keyboard focus,
 and Reduce Motion. Check narrow/wide layouts and Light/Dark, Glass, and
 monochrome themes. Map cards require a supported source for actual places,
 routes, images, and locations; the offline HTML host does not gain network or
-device privileges for them. The map motion study in `docs/previews/` is an
-illustrative design fixture, not a connected map implementation.
+device privileges for them.
 
 ### Kanban
 

@@ -51,12 +51,12 @@ When source data is no longer loaded, the preview labels its retained captured c
 Stock Hermes Agent does not expose message pins, so pinning needs a Hermes
 build that provides them. Herm does not ship a Hermes patch.
 
-Restart the `hermes serve` process used by Herm after installing the patch.
+Restart the `hermes serve` process used by Herm after updating Hermes.
 Restarting while a turn is active interrupts that turn, so finish it first.
 On its next normal writable store open, Hermes creates a `message_pins` table
 without rewriting conversation text. No dependencies or config options change.
 
-The patch is local and can need rebasing after `hermes update`. Herm disables
+Herm disables
 message pin actions if the endpoints are missing or their responses are invalid.
 Hermes Desktop and the CLI are not given new message-pin UI by this patch; the
 canonical storage and authenticated API are available for them to adopt.
