@@ -155,12 +155,9 @@ struct GitHubRepositoryActivityView: View {
                         }.buttonStyle(.dockLink).help(item.branch)
                     }
                     Link(destination: url) {
-                        Text(
-                            item.hasBefore && item.hasAfter
-                                ? "\(item.before.prefix(7))…\(item.after.prefix(7))"
-                                : String((item.hasAfter ? item.after : item.before).prefix(7))
-                        )
-                        .dockFont(.machineMetadata).underline()
+                        DockCommitRange(
+                            before: item.before, after: item.after,
+                            hasBefore: item.hasBefore, hasAfter: item.hasAfter)
                     }.buttonStyle(.dockLink)
                     Text(HumanDateFormatting.relative(item.date)).dockFont(.metadata).foregroundStyle(
                         Color.dockMetadataText

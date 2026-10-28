@@ -68,6 +68,7 @@ struct GitHubBranchCleanupService: Sendable {
 }
 
 struct GitHubBranchCleanupView: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let record: PullRequestRecord
     let client: GitHubClient
     @State private var snapshot: GitHubBranchCleanupSnapshot?
@@ -120,9 +121,9 @@ struct GitHubBranchCleanupView: View {
             }
             Button("Cancel", role: .cancel) { pending = nil }
         } message: { target in
-            Text(
-                "Delete \(target.repository):\(target.name) at \(target.revision.prefix(7)) after merging \(record.reference.title)? Local branches and worktrees are unchanged."
-            )
+            Text("Delete \(target.repository):\(target.name) at ")
+                + DockCommitPresentation.text(target.revision, scale: workspaceScale)
+                + Text(" after merging \(record.reference.title)? Local branches and worktrees are unchanged.")
         }
     }
     private func load() async {

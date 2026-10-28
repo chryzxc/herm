@@ -2488,6 +2488,10 @@ events, and main-agent tool activity.
   Copy hash, and Open on GitHub when a GitHub remote exists. Author uses 12pt
   semibold above secondary email and date metadata. A ten-character monospaced hash
   sits beside Copy hash, which copies the full hash; hover reveals the full value.
+  Commit identifiers throughout repository and pull request views use shared scaled
+  code typography. Inline check status requires current evidence for the exact
+  repository and revision; missing checks have no indicator and incomplete checks
+  never imply a pass. Existing commit and compare links retain their destinations.
   Actions wrap in narrow cards. A divider separates the file summary, with counts
   aligned to the trailing edge; empty commits read “No files changed” without +0/−0.
   Header icon actions
