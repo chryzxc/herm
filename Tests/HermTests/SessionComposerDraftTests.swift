@@ -251,16 +251,23 @@ struct SessionComposerDraftTests {
         model.restoreComposerDraft(for: keys[1])
         workspaceChanges = 0
         textChanges = 0
+        var restorationChanges = 0
         let changedElapsed = clock.measure {
             for index in 0..<1_000 {
+                let beforeSave = workspaceChanges
                 model.saveComposerDraft()
+                restorationChanges += workspaceChanges - beforeSave
                 let next = keys[index % 2]
+                // Changing the published session identity legitimately updates the workspace.
                 model.sessionStorageID = next.sessionID
+                let beforeRestore = workspaceChanges
                 model.restoreComposerDraft(for: next)
+                restorationChanges += workspaceChanges - beforeRestore
             }
         }
 
-        #expect(workspaceChanges == 0)
+        #expect(restorationChanges == 0)
+        #expect(workspaceChanges == 1_000)
         #expect(textChanges == 1_000)
         #expect(model.draft == largeText + "B")
         #expect(model.pendingImages.first?.image === image)
@@ -476,7 +483,8 @@ struct SessionComposerDraftTests {
             "discard-draft-\(UUID()).png")
         try Data([1]).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
-        let image = ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: url)
+        let image = ImageAttachment(
+            image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: url, ownsTemporaryFile: true)
         model.pendingImages = [image]
         model.draft = "Discard with the session"
         model.newChat()
@@ -498,7 +506,8 @@ struct SessionComposerDraftTests {
             "remove-draft-\(UUID()).png")
         try Data([1]).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
-        let image = ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: url)
+        let image = ImageAttachment(
+            image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: url, ownsTemporaryFile: true)
         model.pendingImages = [image]
         model.pendingPDFURL = URL(fileURLWithPath: "/tmp/document.pdf")
         model.attachedContexts = [ChatContext(id: "notes", title: "Notes", body: "Notes")]
