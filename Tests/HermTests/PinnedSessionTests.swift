@@ -93,6 +93,7 @@ final class PinnedSessionTests: XCTestCase {
 
             // A missed complete event is repaired by the next successful poll.
             client.liveRows = []
+            client.rows[0]["is_active"] = false
             await model.loadSessions(quiet: true)?.value
             XCTAssertFalse(model.sessions.contains(where: \.isWorking))
             XCTAssertFalse(model.pinnedSessions.contains(where: \.isWorking))
@@ -114,6 +115,27 @@ final class PinnedSessionTests: XCTestCase {
             XCTAssertFalse(model.sessions.contains(where: \.isWorking))
             XCTAssertFalse(model.pinnedSessions.contains(where: \.isWorking))
         }
+    }
+
+    func testSessionRunningOutsideTheGatewayStaysWorkingWhileHermesReportsItActive() async throws {
+        let client = PinRPCClient()
+        client.rows = [
+            ["id": "lane", "pinned": true, "is_active": true],
+            ["id": "idle", "pinned": true, "is_active": true],
+        ]
+        // Only this gateway's sessions are listed live; its idle status wins.
+        client.liveRows = [["session_key": "idle", "status": "idle"]]
+        var index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
+        XCTAssertEqual(index.working, ["lane"])
+
+        client.rows[0]["is_active"] = false
+        index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
+        XCTAssertEqual(index.working, [])
+
+        client.rows[0]["is_active"] = true
+        client.liveUnavailable = true
+        index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
+        XCTAssertNil(index.working)
     }
 
     func testSessionIndexPreservesSourceForConversationBadges() async throws {
