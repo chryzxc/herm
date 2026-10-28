@@ -279,8 +279,7 @@ extension WorkspaceActivitySidebar {
                     onOpenTask: { task in
                         select(.kanban)
                         control.revealKanbanTask(task)
-                    },
-                    onOpenUsage: { activityTab = .spend }
+                    }
                 )
                 .task {
                     control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)

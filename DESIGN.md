@@ -3113,6 +3113,8 @@ use `dockInfo` blue; automation uses `dockMerged` violet. Failed runs keep
 color. These category accents reuse the shared appearance-aware palette and
 resolve to neutral ink in Monochrome and E-Ink. Refresh errors occupy the existing
 toolbar status slot; initial unavailable content retains a stable content area.
+Work's scrolling content reserves 16pt of trailing space; Spend is opened from
+the top Activity tab rather than a duplicate link inside Work.
 
 A summary card sits below the Activity calendar in the left scrolling column on
 wide windows, and before the detail sections in the narrow scrolling pane.

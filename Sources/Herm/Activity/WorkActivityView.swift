@@ -9,7 +9,6 @@ struct WorkActivityView: View {
     var botsByID: [String: BotSummary] = [:]
     var avatarImages: [String: Data] = [:]
     var onOpenTask: (KanbanTaskSummary) -> Void = { _ in }
-    var onOpenUsage: () -> Void = {}
     @State private var month = Date()
     @State private var selected = Calendar.current.startOfDay(for: Date())
     /// What the detail area summarizes: the selected day, its week, or the whole month.
@@ -68,6 +67,7 @@ struct WorkActivityView: View {
                                     summaryCard
                                 }
                                 .padding(.bottom, 16)
+                                .padding(.trailing, 16)
                             }
                             .scrollIndicators(.hidden)
                             .frame(width: min(560, proxy.size.width * 0.45))
@@ -170,7 +170,6 @@ struct WorkActivityView: View {
                             botsByID: botsByID,
                             avatarImages: avatarImages,
                             onOpenTask: onOpenTask,
-                            onOpenUsage: onOpenUsage,
                             onOpenSession: { [control] in control.openLatestActivitySession($0) }
                         )
                         .equatable()
@@ -186,6 +185,7 @@ struct WorkActivityView: View {
                     }
                 }
                 .padding(.bottom, 16)
+                .padding(.trailing, 16)
             }
             .scrollIndicators(.hidden)
             .id(scope == .day ? selected : (scope == .week ? weekBounds.start : month))
@@ -202,7 +202,6 @@ struct WorkActivityView: View {
     private func rangePane(_ range: WorkRange, title: String) -> some View {
         CalendarRangePane(
             title: title, range: range, jobNames: jobNames, botsByID: botsByID, avatarImages: avatarImages,
-            onOpenUsage: onOpenUsage,
             onOpenDay: {
                 select($0)
                 scopeRaw = CalendarScope.day.rawValue
@@ -523,7 +522,6 @@ private struct CalendarRangePane: View, Equatable {
     let jobNames: [String: String]
     let botsByID: [String: BotSummary]
     let avatarImages: [String: Data]
-    let onOpenUsage: () -> Void
     let onOpenDay: (Date) -> Void
     let onOpenTask: (KanbanTaskSummary) -> Void
     let onOpenSession: (SessionSummary) -> Void
@@ -538,7 +536,6 @@ private struct CalendarRangePane: View, Equatable {
             HStack {
                 DockSectionLabel(title: title).padding(.leading, 2)
                 Spacer(minLength: 8)
-                if range.hasUsage { usageLink(onOpenUsage) }
             }
             if range.isEmpty {
                 HStack(spacing: 8) {
@@ -778,7 +775,6 @@ private struct CalendarDayPane: View, Equatable {
     let botsByID: [String: BotSummary]
     let avatarImages: [String: Data]
     let onOpenTask: (KanbanTaskSummary) -> Void
-    var onOpenUsage: () -> Void = {}
     let onOpenSession: (SessionSummary) -> Void
     @State private var copied = false
 
@@ -916,7 +912,6 @@ private struct CalendarDayPane: View, Equatable {
                 }
                 if let change { calendarStat("\(change > 0 ? "↑" : "↓") \(abs(change))%", "vs your usual day") }
                 if let perItem { calendarStat(UsageWorkspaceView.cost(perItem), "cost per item shipped") }
-                if day.cost > 0 || day.usage != nil { usageLink(onOpenUsage) }
             }
         }
     }
@@ -1363,13 +1358,4 @@ private struct CalendarDayPreview: View {
         .padding(12)
         .frame(width: 210, alignment: .leading)
     }
-}
-
-/// Cost and tokens live on the Spend tab; the Work tab only gives the figure and a way there.
-@MainActor
-private func usageLink(_ action: @escaping () -> Void) -> some View {
-    Button("Spend", action: action)
-        .buttonStyle(.dockLink)
-        .dockFont(.metadata)
-        .help("Open the Spend tab")
 }
