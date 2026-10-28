@@ -985,9 +985,7 @@ private struct CalendarActivityDetails: View {
                     }
                     .padding(.vertical, 4)
                     capped("commits", activity.commits) { commit in
-                        row(
-                            icon: .gitCommit, tint: CalendarInk.shipped, title: commit.subject,
-                            meta: "\(commit.repo) · \(commit.hash) · \(timestamp(commit.date))")
+                        WorkCommitRow(commit: commit, timestamp: timestamp(commit.date), tint: CalendarInk.shipped)
                     }
                 }
             }

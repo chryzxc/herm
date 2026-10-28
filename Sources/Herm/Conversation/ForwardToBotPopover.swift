@@ -16,7 +16,7 @@ struct ForwardToBotPopover: View {
     @State private var height = ComposerLayout.minHeight
     @State private var error: String?
     @State private var isForwarding = false
-    @State private var output: String?
+
     @StateObject private var completions = ComposerCompletionController()
     @FocusState private var isFocused: Bool
 
@@ -64,16 +64,12 @@ struct ForwardToBotPopover: View {
             if let error {
                 Text(error).dockFont(.metadata).foregroundStyle(Color.dockDestructive)
             }
-            if let output {
-                Text(output).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(8).textSelection(.enabled)
-            }
             HStack {
                 Spacer()
-                Button(output == nil ? "Cancel" : "Close", action: dismiss)
+                Button("Cancel", action: dismiss)
                 Button(isForwarding ? "Sending…" : "Forward", action: forward)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isForwarding || output != nil)
+                    .disabled(isForwarding)
             }
         }
         .padding(12)
@@ -102,12 +98,10 @@ struct ForwardToBotPopover: View {
         // A leading slash command runs on the bot's new session with the
         // forwarded message as the tail of its argument.
         let text = typed.isEmpty ? body : "\(typed)\n\n\(body)"
-        model.forwardMessage(text, toProfile: bot.id) { failure, result in
+        model.forwardMessage(text, toProfile: bot.id) { failure, _ in
             isForwarding = false
             if let failure {
                 error = failure
-            } else if let result {
-                output = result
             } else {
                 dismiss()
                 environmentDismiss()

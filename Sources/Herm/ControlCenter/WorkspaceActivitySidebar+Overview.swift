@@ -214,7 +214,7 @@ extension WorkspaceActivitySidebar {
                 .disabled(isRefreshingRepository || workflow.isRefreshing)
             }
             if workflow.repository.isGitRepository, !workflow.repository.latestCommit.isEmpty {
-                Text(workflow.repository.latestCommit)
+                DockCommitSummary(value: workflow.repository.latestCommit)
                     .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)

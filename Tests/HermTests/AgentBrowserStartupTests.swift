@@ -5,6 +5,26 @@ import Testing
 
 @MainActor
 struct AgentBrowserStartupTests {
+    @Test func fixedPortRequiresOwnAnnouncementAndRetries() async throws {
+        var probes = 0
+        var sleeps: [Duration] = []
+        let startup = HermAgentBrowserStartup(
+            sleep: { sleeps.append($0) },
+            load: { request in
+                probes += 1
+                return (
+                    Self.version,
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                )
+            })
+        let endpoint = try await startup.waitForEndpoint(
+            URL(fileURLWithPath: "/missing"), fixedPort: 9333,
+            announced: { _ in probes >= 2 }, isRunning: { true })
+        #expect(endpoint.ws.absoluteString == "ws://127.0.0.1:9333/devtools/browser/test")
+        #expect(probes == 2)
+        #expect(sleeps == [.milliseconds(50)])
+    }
+
     @Test func readyEndpointDoesNotSleep() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: file) }

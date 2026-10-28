@@ -4,7 +4,7 @@ import Testing
 @testable import Herm
 
 private actor GitHubPageTransport: GitHubIssueTransport {
-    private let responses: [String: Data]
+    private var responses: [String: Data]
     private var paths: [String] = []
     private var activeSearches = 0
     private(set) var peakSearches = 0
@@ -14,6 +14,10 @@ private actor GitHubPageTransport: GitHubIssueTransport {
     }
 
     func count(_ path: String) -> Int { paths.filter { $0 == path }.count }
+
+    func setResponse(_ value: Data?, for path: String) {
+        responses[path] = value
+    }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let url = request.url!
@@ -182,6 +186,57 @@ struct GitHubPageLoadingTests {
         #expect(center.visible.map(\.number) == [19])
     }
 
+    @MainActor @Test func commitEvidenceTracksVerifiedRefreshAndRetry() async throws {
+        let sha = String(repeating: "a", count: 40)
+        let next = String(repeating: "b", count: 40)
+        let transport = try pullRequestTransport()
+        func detail(_ revision: String) -> [String: Any] {
+            [
+                "number": 19, "title": "Improve loading", "user": ["login": "ada"],
+                "head": ["ref": "feature", "sha": revision], "base": ["ref": "main", "sha": "base"],
+                "changed_files": 1,
+            ]
+        }
+        let path = "/repos/owner/repo/pulls/19"
+        for revision in [sha, next] {
+            await transport.setResponse(
+                try JSONSerialization.data(withJSONObject: [
+                    "check_runs": [
+                        ["id": 1, "name": "Tests", "status": "completed", "conclusion": "success"]
+                    ]
+                ]), for: "/repos/owner/repo/commits/\(revision)/check-runs")
+            await transport.setResponse(
+                try JSONSerialization.data(withJSONObject: []), for: "/repos/owner/repo/commits/\(revision)/statuses")
+        }
+        await transport.setResponse(try JSONSerialization.data(withJSONObject: detail(sha)), for: path)
+        let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
+        await center.refresh(projects: [])
+        let record = try #require(center.records.first { $0.number == 19 })
+        center.selectedID = record.id
+        await center.loadSelectedDetail()
+        let evidence = try #require(center.commitCheckEvidence(for: record.repository))
+        #expect(
+            DockCommitPresentation.checkStatus(repositoryID: record.repository.id, revision: sha, evidence: evidence)
+                == .passed)
+        let other = try #require(GitHubReferenceParser.repository("other/repo"))
+        #expect(center.commitCheckEvidence(for: other) == nil)
+        #expect(center.beginDetailLoad(for: record.id))
+        #expect(center.commitCheckEvidence(for: record.repository) == nil)
+        center.finishDetailLoad(for: record.id)
+        await transport.setResponse(nil, for: path)
+        await center.refreshSelectedDetail()
+        #expect(center.commitCheckEvidence(for: record.repository) == nil)
+        await transport.setResponse(try JSONSerialization.data(withJSONObject: detail(next)), for: path)
+        await center.refreshSelectedDetail()
+        let updated = try #require(center.commitCheckEvidence(for: record.repository))
+        #expect(updated.revision == next)
+        #expect(
+            DockCommitPresentation.checkStatus(repositoryID: record.repository.id, revision: sha, evidence: updated)
+                == nil)
+        center.selectedID = nil
+        #expect(center.commitCheckEvidence(for: record.repository) == nil)
+    }
+
     @MainActor @Test func visibleRowAndSelectionShareMetadataAndRefreshInvalidatesIt() async throws {
         let transport = try pullRequestTransport()
         let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
@@ -201,6 +256,7 @@ struct GitHubPageLoadingTests {
         #expect(center.selected?.headBranch == "feature")
         #expect(center.selected?.readinessLabel == "Checks failed")
         #expect(center.filesByID[record.id]?.count == 1)
+        #expect(center.commitCheckEvidence(for: record.repository) == nil)  // "abc" is not a full revision.
 
         await center.refreshSelectedDetail()
         #expect(await transport.count("/repos/owner/repo/pulls/19") == 4)
