@@ -143,6 +143,29 @@ struct SessionBrowserTests {
         #expect(workspace.primary.web.url == nil)
     }
 
+    @Test func retryAfterFailedStartupKeepsPendingDestination() async throws {
+        let store = SessionBrowserStore()
+        let agent = store.workspace(for: SessionBrowserKey(profileID: nil, sessionID: "retry")).agent
+        defer { agent.stop() }
+        let destination = try #require(URL(string: "https://main.herm-landing.localhost:8743/"))
+        agent.start()
+        agent.navigate(destination)
+        for _ in 0..<100 {
+            if case .failed = agent.state { break }
+            await Task.yield()
+        }
+        guard case .failed = agent.state else {
+            Issue.record("Expected startup to fail without a model")
+            return
+        }
+        agent.start()
+        #expect(agent.state == .starting)
+        #expect(agent.pendingURL == destination)
+        agent.start()
+        #expect(agent.state == .starting)
+        #expect(agent.pendingURL == destination)
+    }
+
     @Test func markdownClicksRouteTheLinkDestinationWithoutReparsingIt() throws {
         let destination = try #require(
             URL(string: "https://example.com/a_(b)?next=%2Fx%3Fy%3D1&token=a%2Bb#part-2"))
