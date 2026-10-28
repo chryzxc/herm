@@ -376,7 +376,9 @@ final class AgentBrowser: ObservableObject {
         annotating = false
     }
 
+    static let preferredPort = 9333
     typealias Endpoint = HermAgentBrowserStartup.Endpoint
+    private static var preferredPortOwner: String?
 
     nonisolated static var profileRoot: URL {
         let support =
@@ -454,10 +456,14 @@ final class AgentBrowser: ObservableObject {
             throw Self.error("No Chromium-family browser found. Install Google Chrome, Brave, Edge or Chromium.")
         }
 
+        if Self.preferredPortOwner == nil { Self.preferredPortOwner = profileDirectory }
+        let busy =
+            Self.preferredPortOwner != profileDirectory
+            ? true : try await startup.occupied(Self.preferredPort, deadline: startup.preflightDeadline())
         let process = Process()
         process.executableURL = executable
         process.arguments = [
-            "--headless=new", "--remote-debugging-port=0",
+            "--headless=new", "--remote-debugging-port=\(busy ? 0 : Self.preferredPort)",
             "--user-data-dir=\(profile.path)",
             "--no-first-run", "--no-default-browser-check", "--window-size=1280,800",
             // Emulated DPR alone leaves headless screencast frames at 1x; the compositor must render at 2x too.
@@ -468,10 +474,18 @@ final class AgentBrowser: ObservableObject {
             "about:blank",
         ]
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let announcement = AgentBrowserAnnouncement()
+        let errors = Pipe()
+        errors.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil } else { announcement.consume(data) }
+        }
+        process.standardError = errors
         try process.run()
         self.process = process
-        return try await startup.waitForEndpoint(portFile, isRunning: { process.isRunning })
+        return try await startup.waitForEndpoint(
+            portFile, fixedPort: busy ? nil : Self.preferredPort,
+            announced: { announcement.matches($0) }, isRunning: { process.isRunning })
     }
 
     /// The profile's browser ID must match the listener, including when reusing a live browser.
