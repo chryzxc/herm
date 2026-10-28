@@ -361,8 +361,9 @@ extension DockModel {
                 ? .failure : identifier.hasPrefix("approval:") ? .approval : .clarification
         let owner = identifier.split(separator: ":", maxSplits: 1).last.map(String.init)
         if interruptionCoordinator?.admit(interruptionNotice(kind, owner: owner), channel: .system) == false { return }
-        guard HermNotificationAction.showsBanner(kind, popoverVisible: isPopoverVisible, appActive: NSApp.isActive),
-            HermesAppRuntime.supportsUserNotifications
+        guard HermesAppRuntime.supportsUserNotifications,
+            HermNotificationAction.showsBanner(
+                kind, popoverVisible: isPopoverVisible, appActive: NSApp?.isActive ?? false)
         else { return }
         let content = UNMutableNotificationContent()
         content.title = title
