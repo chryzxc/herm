@@ -14,27 +14,53 @@ struct SessionDashboardToolbar: View {
     private var name: String { selectedBot?.name ?? fallbackName }
 
     var body: some View {
-        HStack(spacing: 12) {
-            DockIconButton(
-                icon: .arrowsClockwise, label: "Refresh chats", isBusy: isRefreshing, size: 36,
-                style: DockThemePalette(theme: DockThemeRuntime.current), action: onRefresh)
-            DockSegmentedPicker(
-                selection: Binding(get: { true }, set: { if !$0 { onShowList() } }),
-                options: [(false, "List"), (true, "Tiles")]
-            )
-            .padding(3)
-            .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
-            .accessibilityLabel("Chat layout")
-            Color.dockBorderLight.frame(width: DockLayout.hairline, height: 20)
-            botPicker
-                .disabled(isLoading)
-            Button(action: onNewConversation) {
-                DockIconLabel("New chat", icon: .plus)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                refreshButton
+                layoutPicker
+                Color.dockBorderLight.frame(width: DockLayout.hairline, height: 20)
+                botPicker.disabled(isLoading)
+                newChatButton
             }
-            .buttonStyle(.dockPrimary)
-            .disabled(isLoading)
+            .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    refreshButton
+                    layoutPicker
+                }
+                HStack(spacing: 12) {
+                    botPicker.disabled(isLoading)
+                    newChatButton
+                }
+            }
         }
         .dockButtonSize(.standard)
+    }
+
+    private var refreshButton: some View {
+        DockIconButton(
+            icon: .arrowsClockwise, label: "Refresh chats", isBusy: isRefreshing, size: 36,
+            style: DockThemePalette(theme: DockThemeRuntime.current), action: onRefresh)
+    }
+
+    private var layoutPicker: some View {
+        DockSegmentedPicker(
+            selection: Binding(get: { true }, set: { if !$0 { onShowList() } }),
+            options: [(false, "List"), (true, "Tiles")]
+        )
+        .padding(3)
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel("Chat layout")
+    }
+
+    private var newChatButton: some View {
+        Button(action: onNewConversation) {
+            DockIconLabel("New chat", icon: .plus)
+        }
+        .buttonStyle(.dockPrimary)
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(isLoading)
     }
 
     private var botPicker: some View {
