@@ -76,7 +76,7 @@ struct GatewayCenterView: View {
                 Text(detail).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
             }
             Spacer()
-            Text(state.uppercased()).dockFont(size: 9, design: .monospaced).foregroundStyle(Color.dockMetadataText)
+            Text(state.uppercased()).dockFont(.metadata, design: .monospaced).foregroundStyle(Color.dockMetadataText)
         }
     }
     private func unavailable(_ text: String) -> some View {

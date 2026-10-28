@@ -180,14 +180,14 @@ struct AutomationWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .sheet(isPresented: $isShowingCreationSheet) {
+        .dockSheet(isPresented: $isShowingCreationSheet) {
             AutomationCreationSheet(control: control) { id in
                 pendingCreatedJobID = id
                 selectedJobID = id
                 refreshWorkspace()
             }
         }
-        .sheet(item: $editingJob) { job in
+        .dockSheet(item: $editingJob) { job in
             CronEditEditor(job: job, control: control)
         }
         .confirmationDialog(

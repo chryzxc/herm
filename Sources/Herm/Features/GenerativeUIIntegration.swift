@@ -23,11 +23,12 @@ enum GenerativeUIIntegration {
             reference: RichFeatureRegistry.sessionReference(context: context))
     }
 
-    /// Keep prompts self-contained until the optional Hermes reference plugin is available.
+    /// The `herm` plugin serves the rules and this chat's records; without it the prompt carries them.
     static func preparePrompt(
-        _ text: String, enabled: Bool = isEnabled, context: RichGenerationContext = RichGenerationContext()
+        _ text: String, enabled: Bool = isEnabled, context: RichGenerationContext = RichGenerationContext(),
+        servedByPlugin: Bool = HermPlugin.isLoaded
     ) -> String {
-        guard enabled else { return text }
+        guard enabled, !servedByPlugin else { return text }
         return displayUserText(text) + "\n\n" + RichFeatureRegistry.instructions(context: context)
     }
 
@@ -69,6 +70,11 @@ struct RichDocumentParseRequest: Equatable {
     let streaming: Bool
     let identity: String
 
+    // Only append-only, still-unfinished content may retain its inert presentation.
+    func canPresent(whileParsing next: Self) -> Bool {
+        self == next || (streaming && identity == next.identity && next.source.hasPrefix(source))
+    }
+
     init?(_ source: String, streaming: Bool, identity: String) {
         guard RichDocument.mentionsSurface(source) else { return nil }
         self.source = source
@@ -87,21 +93,15 @@ private struct GenerativeReply<Content: View>: View {
     @State private var parsedRequest: RichDocumentParseRequest?
     @Environment(\.richReplyContext) private var context
     var body: some View {
-        let identity = context.map { "\($0.sourceKey):\($0.revision)" } ?? "standalone"
+        let identity = context?.sourceKey ?? "standalone"
         let request = RichDocumentParseRequest(text, streaming: streaming, identity: identity)
         Group {
-            if let request, let document = parsed, parsedRequest == request {
+            if let request {
+                let document = parsedRequest?.canPresent(whileParsing: request) == true ? parsed : nil
                 if override ?? enabled {
-                    RichDocumentView(document: document)
+                    RichDocumentView(document: document ?? .preparing)
                 } else {
-                    MarkdownMessageView(markdown: document.plainText)
-                }
-            } else if request != nil {
-                if override ?? enabled {
-                    Text("Preparing visual reply…").dockFont(.body).foregroundStyle(Color.dockSecondaryText).frame(
-                        minHeight: 44)
-                } else {
-                    MarkdownMessageView(markdown: GenerativeUIIntegration.plainText(text))
+                    MarkdownMessageView(markdown: document?.plainText ?? GenerativeUIIntegration.plainText(text))
                 }
             } else {
                 fallback

@@ -23,7 +23,7 @@ final class DockWindowController: NSObject, NSWindowDelegate {
     init(model: DockModel, controlCenter: ControlCenterModel) {
         self.model = model
         self.controlCenter = controlCenter
-        presentation.isFullscreen = true  // the window always uses the full Mission Control layout
+        presentation.isFullscreen = true  // the window always uses the full session navigation layout
     }
 
     func open() {
@@ -38,6 +38,11 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         window.orderFrontRegardless()
         model.markPopoverVisible()
         UserDefaults.standard.set(true, forKey: Self.wasOpenKey)
+    }
+
+    func showSettings() {
+        open()
+        presentation.settingsRequest &+= 1
     }
 
     /// Shortcut: hide when frontmost, otherwise bring it on top of other apps.

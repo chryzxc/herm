@@ -18,6 +18,8 @@ struct BotProfileEditorSheet: View {
     @State private var runtime: BotRuntimeConfig?
     /// Edited fallback chain; `nil` until the user touches it.
     @State private var fallbackDraft: [BotRuntimeConfig.ModelRef]?
+    /// Edited reasoning/context/compress values; seeded from `runtime` on load.
+    @State private var limits: BotRuntimeConfig?
     @State private var fallbackProvider = ""
     @State private var fallbackModel = ""
     @State private var isSaving = false
@@ -56,7 +58,7 @@ struct BotProfileEditorSheet: View {
         }
         .frame(minHeight: 480)
         .task { await load() }
-        .sheet(isPresented: $showsIntegrationSetup) {
+        .dockSheet(isPresented: $showsIntegrationSetup) {
             if let client = model.integrationClient {
                 WorkflowIntegrationView(destination: IntegrationDestination(profileID: bot.id), client: client)
             }
@@ -96,7 +98,9 @@ struct BotProfileEditorSheet: View {
                 modalSection("MODELS") { modelCard }
                 modalSection("PERSONA") { soulRow }
                 modalSection("CAPABILITIES") {
-                    Button("Manage integrations…") { showsIntegrationSetup = true }.buttonStyle(.dockSecondary)
+                    Button("Manage integrations…") { showsIntegrationSetup = true }
+                        .buttonStyle(.dockSecondary)
+                        .padding(.top, 8)
                     VStack(alignment: .leading, spacing: 10) {
                         DisclosureGroup(isExpanded: $showsSkills) {
                             toggleSection(items: skillBinding)
@@ -216,10 +220,12 @@ struct BotProfileEditorSheet: View {
                     .buttonStyle(.dockSecondary)
                     .controlSize(.small)
             }
+            .padding(.vertical, 8)
             if isChangingModel {
                 HStack(spacing: 8) {
                     DockMenuPicker(
-                        title: selectedProvider.isEmpty ? "Provider…" : selectedProvider, selection: $selectedProvider
+                        title: selectedProvider.isEmpty ? "Provider…" : selectedProvider,
+                        selection: clearingModel($selectedProvider, $selectedModel)
                     ) {
                         DockMenuOption("Provider…", value: "")
                         ForEach(modelChoices, id: \.provider) { choice in
@@ -238,13 +244,65 @@ struct BotProfileEditorSheet: View {
             fallbackSection
             Divider()
             HStack(spacing: 0) {
-                factRow("Reasoning") { Text(runtime?.reasoningEffort?.capitalized ?? "Default") }
-                factRow("Context") { Text(runtime?.contextLength.map(Self.tokens) ?? "Auto") }
-                factRow("Compress at") { Text(runtime?.compressionThreshold.map(Self.tokens) ?? "Default") }
+                factRow("Reasoning") {
+                    limitPicker(
+                        title: limits?.reasoningEffort?.capitalized ?? "Default",
+                        selection: Binding(
+                            get: { limits?.reasoningEffort ?? "" },
+                            set: { limits?.reasoningEffort = $0.isEmpty ? nil : $0 }),
+                        options: Self.reasoningLevels.map { ($0.isEmpty ? "Default" : $0.capitalized, $0) })
+                }
+                factRow("Context") {
+                    limitPicker(
+                        title: limits?.contextLength.map(Self.tokens) ?? "Auto",
+                        selection: Binding(
+                            get: { limits?.contextLength ?? 0 }, set: { limits?.contextLength = $0 > 0 ? $0 : nil }),
+                        options: Self.tokenChoices(Self.contextPresets, current: limits?.contextLength, zero: "Auto"))
+                }
+                factRow("Compress at") {
+                    limitPicker(
+                        title: limits?.compressionThreshold.map(Self.tokens) ?? "Default",
+                        selection: Binding(
+                            get: { limits?.compressionThreshold ?? 0 },
+                            set: { limits?.compressionThreshold = $0 > 0 ? $0 : nil }),
+                        options: Self.tokenChoices(
+                            Self.compressPresets, current: limits?.compressionThreshold, zero: "Default"))
+                }
             }
         }
         .padding(.horizontal, 12)
         .background(cardBackground)
+    }
+
+    /// A model belongs to its provider, so switching provider drops the old pick.
+    private func clearingModel(_ provider: Binding<String>, _ model: Binding<String>) -> Binding<String> {
+        Binding(
+            get: { provider.wrappedValue },
+            set: {
+                if $0 != provider.wrappedValue { model.wrappedValue = "" }
+                provider.wrappedValue = $0
+            })
+    }
+
+    private static let reasoningLevels = ["", "minimal", "low", "medium", "high", "xhigh"]
+    private static let contextPresets = [32_000, 64_000, 128_000, 200_000, 400_000, 1_000_000]
+    private static let compressPresets = [40_000, 60_000, 80_000, 120_000, 160_000, 200_000]
+
+    /// Presets plus the profile's current value so a custom setting stays selectable.
+    private static func tokenChoices(_ presets: [Int], current: Int?, zero: String) -> [(String, Int)] {
+        let values = Set(presets).union(current.map { [$0] } ?? []).sorted()
+        return [(zero, 0)] + values.map { (tokens($0), $0) }
+    }
+
+    @ViewBuilder
+    private func limitPicker<V: Hashable>(title: String, selection: Binding<V>, options: [(String, V)]) -> some View {
+        if limits == nil {
+            Text("—").foregroundStyle(Color.dockMetadataText)
+        } else {
+            DockMenuPicker(title: title, selection: selection) {
+                ForEach(options, id: \.1) { DockMenuOption($0.0, value: $0.1) }
+            }
+        }
     }
 
     private var fallbacks: [BotRuntimeConfig.ModelRef] { fallbackDraft ?? runtime?.fallbacks ?? [] }
@@ -281,10 +339,12 @@ struct BotProfileEditorSheet: View {
                         .disabled(runtime == nil)
                 }
             }
+            .padding(.vertical, 8)
             if fallbackDraft != nil {
                 HStack(spacing: 8) {
                     DockMenuPicker(
-                        title: fallbackProvider.isEmpty ? "Provider…" : fallbackProvider, selection: $fallbackProvider
+                        title: fallbackProvider.isEmpty ? "Provider…" : fallbackProvider,
+                        selection: clearingModel($fallbackProvider, $fallbackModel)
                     ) {
                         DockMenuOption("Provider…", value: "")
                         ForEach(modelChoices, id: \.provider) { DockMenuOption($0.provider, value: $0.provider) }
@@ -436,6 +496,7 @@ struct BotProfileEditorSheet: View {
         selectedProvider = detail?.provider ?? ""
         selectedModel = detail?.model ?? ""
         runtime = await runtimeConfig
+        limits = runtime
         modelChoices = await model.modelOptions()
         await model.checkImageGeneration()
     }
@@ -500,6 +561,19 @@ struct BotProfileEditorSheet: View {
                 return
             }
             runtime?.fallbacks = draft
+        }
+
+        if let edited = limits, let saved = runtime,
+            (edited.reasoningEffort, edited.contextLength, edited.compressionThreshold)
+                != (saved.reasoningEffort, saved.contextLength, saved.compressionThreshold)
+        {
+            if let message = await model.setRuntimeLimits(edited, for: bot) {
+                editError = message
+                return
+            }
+            runtime?.reasoningEffort = edited.reasoningEffort
+            runtime?.contextLength = edited.contextLength
+            runtime?.compressionThreshold = edited.compressionThreshold
         }
 
         do {

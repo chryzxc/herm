@@ -114,7 +114,7 @@ struct ReviewGuideView: View {
                 }
             }
             .onDisappear { GeneratedHTMLCoordinator.shared.close() }
-            .sheet(item: $selected) { reference in
+            .dockSheet(item: $selected) { reference in
                 if let document = coordinator.documents.first(where: { $0.path == reference.path }) {
                     SharedDiffView(
                         patch: document.patch, path: document.path, projectPath: directory, reveal: reference.match,

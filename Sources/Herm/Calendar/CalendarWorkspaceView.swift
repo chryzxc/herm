@@ -107,7 +107,7 @@ struct CalendarWorkspaceView: View {
             actionStatus = nil
         }
         .onChange(of: selectedItemID) { _, _ in actionStatus = nil }
-        .sheet(item: $prepItem) { item in
+        .dockSheet(item: $prepItem) { item in
             CalendarPrepSheet(item: item, control: control) {
                 actionStatus = "Prep scheduled. It shows here once Hermes lists it."
             }
@@ -147,7 +147,7 @@ struct CalendarWorkspaceView: View {
             .buttonStyle(.dockCompact)
             .fixedSize()
             .help("Jump to a date")
-            .popover(isPresented: $showingDatePicker) {
+            .dockPopover(isPresented: $showingDatePicker) {
                 DatePicker(
                     "Jump to date",
                     selection: Binding(

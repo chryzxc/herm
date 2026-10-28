@@ -310,7 +310,7 @@ private struct KanbanLaneRail: View {
                     }
                 }
                 DockIcon(.sidebarSimple)
-                    .dockFont(size: 9, weight: .bold)
+                    .dockFont(.metadata, weight: .bold)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 0)
             }

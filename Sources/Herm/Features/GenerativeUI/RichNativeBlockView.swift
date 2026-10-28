@@ -48,10 +48,18 @@ struct RichNativeBlockView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), alignment: .leading)], alignment: .leading, spacing: 12) {
             ForEach(metrics.items) { metric in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(metric.label).foregroundStyle(Color.dockSecondaryText)
-                    Text([metric.value, metric.unit].compactMap { $0 }.joined(separator: " ")).fontWeight(.semibold)
+                    HStack(spacing: 6) {
+                        Circle().fill(DockAccentColor.identity(for: metric.id).fill).frame(width: 6, height: 6)
+                        Text(metric.label).foregroundStyle(Color.dockSecondaryText)
+                    }
+                    Text([metric.value, metric.unit].compactMap { $0 }.joined(separator: " "))
+                        .dockFont(.metric, weight: .semibold, design: .rounded).monospacedDigit()
+                        .textSelection(.enabled)
                     if let comparison = metric.comparison { Text(comparison).foregroundStyle(Color.dockSecondaryText) }
-                }.fixedSize(horizontal: false, vertical: true)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .dockCard(padding: 12, isQuiet: true)
             }
         }
     }
@@ -65,7 +73,9 @@ struct RichNativeBlockView: View {
                     } label: {
                         HStack {
                             Text(option.title).multilineTextAlignment(.leading)
-                            if selected == option.id { Image(systemName: "checkmark").accessibilityLabel("Selected") }
+                            Spacer(minLength: 8)
+                            Image(systemName: selected == option.id ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(Color.dockAccent).accessibilityHidden(true)
                         }
                     }.buttonStyle(
                         .dockSecondary)
@@ -78,12 +88,26 @@ struct RichNativeBlockView: View {
                     }
                     if selected == option.id, let detail = option.detail { Text(detail).textSelection(.enabled) }
                 }.padding(12).dockCard(padding: 0)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(selected == option.id ? Color.dockAccent : .clear, lineWidth: 1.5)
+                            .allowsHitTesting(false)
+                    }
+                    .accessibilityAddTraits(selected == option.id ? .isSelected : [])
             }
         }
     }
 
     private func checklistView(_ list: RichChoiceList) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            let checked = list.items.filter { state.snapshot.checked.contains(blockID + ":" + $0.id) }.count
+            HStack {
+                Text("Selected").foregroundStyle(Color.dockSecondaryText)
+                Spacer()
+                Text("\(checked) of \(list.items.count)").monospacedDigit()
+            }
+            ProgressView(value: Double(checked), total: Double(list.items.count)).tint(Color.dockAccent)
+                .accessibilityLabel("Selected items")
             ForEach(list.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(item.title, isOn: state.checked(blockID + ":" + item.id)).toggleStyle(.checkbox)
@@ -100,8 +124,15 @@ struct RichNativeBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(list.items.enumerated()), id: \.element.id) { index, item in
                 HStack(alignment: .top, spacing: 12) {
+                    VStack(spacing: 4) {
+                        Circle().fill(selected == item.id ? Color.dockAccent : DockAccentColor.teal.fill)
+                            .frame(width: 8, height: 8)
+                        if index < list.items.count - 1 {
+                            Rectangle().fill(Color.dockBorderLight).frame(width: 1, height: 20)
+                        }
+                    }.frame(width: 8).accessibilityHidden(true)
                     Text(item.date ?? String(index + 1)).foregroundStyle(Color.dockMetadataText)
-                        .frame(width: 90, alignment: .leading)
+                        .monospacedDigit().frame(width: 76, alignment: .leading)
                     VStack(alignment: .leading, spacing: 4) {
                         Button(item.title) { state.snapshot.selected[selectionID] = item.id }.buttonStyle(.dockLink)
                         if selected == item.id {
@@ -174,98 +205,14 @@ struct RichDatasetTableView: View {
                             }
                         }
                     }
-                }.padding(4)
-            }.frame(height: min(320, CGFloat(rows.count + 1) * 34 + 12))
+                }.padding(4).padding([.bottom, .trailing], 16)
+            }.frame(height: min(320, CGFloat(rows.count + 1) * 34 + 32))
+                .padding(.bottom, 4)
             if state.snapshot.sortColumns[blockID] != nil {
                 Button("Restore source order") {
                     state.snapshot.sortColumns.removeValue(forKey: blockID)
                     state.snapshot.descending.remove(blockID)
                 }.buttonStyle(.dockCompact)
-            }
-        }
-    }
-}
-
-struct RichDatasetChartView: View {
-    let dataset: RichDataset
-    let configuration: RichDatasetChart
-    @ObservedObject var state: RichArtifactPresentationState
-    @State private var selectedLabel: String?
-    private var labelIndex: Int { dataset.columns.firstIndex { $0.id == configuration.label } ?? 0 }
-    private var selectedRow: RichDataset.Row? {
-        dataset.rows.first { $0.id == state.snapshot.selected[RichSelectionIdentity.dataset(dataset.id)] }
-    }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GeometryReader { geometry in
-                ScrollView(.horizontal) {
-                    chart.frame(
-                        width: max(
-                            geometry.size.width, dataset.rows.count > 4 ? CGFloat(dataset.rows.count) * 80 + 40 : 0)
-                    )
-                    .padding(.vertical, 8)
-                }
-            }.frame(height: 220)
-            if let row = selectedRow {
-                Text(
-                    zip(dataset.columns, row.values).map { "\($0.title): \($1)\($0.unit.map { " " + $0 } ?? "")" }
-                        .joined(separator: " · ")
-                )
-                .foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var chart: some View {
-        Chart {
-            ForEach(configuration.series, id: \.self) { series in
-                if let index = dataset.columns.firstIndex(where: { $0.id == series }) {
-                    ForEach(dataset.rows) { row in
-                        if let value = Double(row.values[index]) {
-                            if configuration.style == "line" {
-                                LineMark(
-                                    x: .value(dataset.columns[labelIndex].title, row.values[labelIndex]),
-                                    y: .value(dataset.columns[index].title, value)
-                                )
-                                .foregroundStyle(by: .value("Series", dataset.columns[index].title))
-                            } else {
-                                BarMark(
-                                    x: .value(dataset.columns[labelIndex].title, row.values[labelIndex]),
-                                    y: .value(dataset.columns[index].title, value)
-                                )
-                                .foregroundStyle(by: .value("Series", dataset.columns[index].title))
-                                .position(by: .value("Series", series))
-                            }
-                        }
-                    }
-                }
-            }
-            if let selectedRow {
-                RuleMark(x: .value("Selected", selectedRow.values[labelIndex]))
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
-        }
-        .chartForegroundStyleScale(range: [Color.dockAccent, Color.dockInfo, Color.dockReview, Color.dockMerged])
-        .chartXSelection(value: $selectedLabel)
-        .chartXAxis {
-            AxisMarks { value in
-                AxisValueLabel {
-                    if let label = value.as(String.self) {
-                        Text(label).lineLimit(2).multilineTextAlignment(.center).foregroundStyle(Color.dockMetadataText)
-                    }
-                }
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { _ in
-                AxisGridLine().foregroundStyle(Color.dockBorderLight)
-                AxisValueLabel().foregroundStyle(Color.dockMetadataText)
-            }
-        }
-        .frame(height: 200)
-        .onChange(of: selectedLabel) { _, value in
-            if let row = dataset.rows.first(where: { $0.values[labelIndex] == value }) {
-                state.snapshot.selected[RichSelectionIdentity.dataset(dataset.id)] = row.id
             }
         }
     }
@@ -319,12 +266,17 @@ private struct RichGraphView: View {
                                         .allowsHitTesting(false)
                                 }
                             }
+                            .background {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(selection == node.id ? Color.dockAccent.opacity(0.12) : .clear)
+                            }
                             .position(positions[node.id] ?? .zero)
                             .accessibilityValue(node.status?.rawValue.capitalized ?? "")
                             .accessibilityAddTraits(selection == node.id ? .isSelected : [])
                     }
                 }.frame(width: 540, height: max(100, CGFloat((graph.nodes.count + 2) / 3) * 100))
-            }.frame(height: min(400, max(100, CGFloat((graph.nodes.count + 2) / 3) * 100)))
+                    .padding([.bottom, .trailing], 20)
+            }.frame(height: min(400, max(100, CGFloat((graph.nodes.count + 2) / 3) * 100) + 40))
             if let node = graph.nodes.first(where: { $0.id == selection }) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if let status = node.status {
@@ -361,7 +313,10 @@ private struct RichTreeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(tree.items.filter { $0.parent == parent }) { item in
                     if tree.items.contains(where: { $0.parent == item.id }) {
-                        DisclosureGroup(item.title, isExpanded: state.expanded(blockID + ":" + item.id)) {
+                        DisclosureGroup(
+                            item.title + (item.value.map { ": " + $0 } ?? ""),
+                            isExpanded: state.expanded(blockID + ":" + item.id)
+                        ) {
                             children(item.id).padding(.leading, 12)
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
@@ -387,7 +342,9 @@ private struct RichImageComparisonView: View {
                     image(images.after).mask(alignment: .leading) { Rectangle().frame(width: 480 * fraction) }
                 }.frame(width: 480, height: 300).scaleEffect(zoom, anchor: .topLeading)
                     .frame(width: 480 * zoom, height: 300 * zoom, alignment: .topLeading)
-            }.frame(height: 300)
+                    .padding([.bottom, .trailing], 20)
+            }.frame(height: 340)
+                .padding(.bottom, 4)
             Text("\(images.before.title) / \(images.after.title)").foregroundStyle(Color.dockSecondaryText)
             Slider(value: state.number(blockID + ":fraction", default: 0.5), in: 0...1) { Text("Comparison position") }
             Slider(value: state.number(blockID + ":zoom", default: 1), in: 1...4) { Text("Zoom") }

@@ -1,0 +1,36 @@
+import SwiftUI
+
+/// Shared identity hierarchy for the integration inspector and messaging setup.
+struct IntegrationInspectorHeader<Icon: View, Status: View>: View {
+    let title: String
+    let category: String
+    let scope: String
+    let detail: String
+    @ViewBuilder let icon: Icon
+    @ViewBuilder let status: Status
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 12) {
+                icon
+                VStack(alignment: .leading, spacing: 5) {
+                    DockSectionLabel(title: category.uppercased())
+                    Text(scope).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title).dockFont(.pageTitle).foregroundStyle(Color.dockPrimaryText)
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                status
+            }
+            if !detail.isEmpty, detail != title {
+                Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 4)
+    }
+}

@@ -85,7 +85,6 @@ final class OfficeDesignSceneBuilder {
         mainAgentOffice(root)
         box(root, "expansion-bay-floor", [11.6, 0.025, 7.2], [13.6, 0.014, -6.5], finish(0.78, 0.78, 0.76))
         for z: Float in [-9.9, -3.1] { box(root, "safety-line", [11.4, 0.006, 0.07], [13.6, 0.03, z], caution) }
-        roomLabel(root, number: 2, title: "Assembly Bay", subtitle: "Builds & releases", at: [10.2, -12])
         assemblyCradle(root, at: [13.9, 0, -10.8])
         robotArm(root, at: [16.3, 0, -10.8], yaw: .pi)
         for x: Float in [12.7, 15.1] {
@@ -125,7 +124,7 @@ final class OfficeDesignSceneBuilder {
         glassWall(root, from: [20, -5], to: [20, 2.5])
         glassWall(root, from: [20, 4.5], to: [20, 6])
         wall(root, from: [20, 6], to: [28, 6])
-        missionControl(root)
+        sessionNav(root)
         wall(root, from: [8, -2], to: [20, -2])
         wall(root, from: [8, -2], to: [8, 1])
         wall(root, from: [8, 3], to: [8, 14])
@@ -386,7 +385,6 @@ final class OfficeDesignSceneBuilder {
         box(root, "office-rug", [3.8, 0.01, 2.8], [24.5, 0.032, -8.7], finish(0.98, 0.95, 0.90))
         bookcase(root, at: [21.3, 0, -5.55], yaw: .pi)
         pottedTree(root, at: [21.0, 0, -11.2], height: 2)
-        roomLabel(root, number: 1, title: "Main Agent", subtitle: "Orchestrator's office", at: [21.2, -12])
         let desk = group(root, "main-agent-desk", [24.5, 0, -9.6])
         table(desk, size: [3.2, 0.12, 1.3], at: .zero, height: 0.9, color: paper)
         box(desk, "desk-writing-mat", [2.1, 0.015, 0.9], [0, 0.97, 0], trim)
@@ -488,7 +486,6 @@ final class OfficeDesignSceneBuilder {
         for i in 0..<9 { box(root, "plank-seam", [5.6, 0.004, 0.02], [-25, 0.029, -2.6 + Float(i) * 0.55], wood) }
         easel(root, at: [-27.2, 0, 0.2])
         slatPanel(root, at: [-25.4, 1.45, 2.36], width: 2.6, height: 1.9, yaw: .pi)
-        roomLabel(root, number: 4, title: "Design Studio", subtitle: "UI & visuals", at: [-27.6, -3])
         investigationBoard(root, at: [-25.9, 1.45, -2.84], yaw: 0)
         // Angled drawing surface, edge rail, scale model and drafting tools.
         let desk = group(root, "design-drafting-desk", [-25.8, 0, -0.4])
@@ -533,7 +530,6 @@ final class OfficeDesignSceneBuilder {
     private func verificationLab(_ root: Entity) {
         box(root, "verification-lab-floor", [5.7, 0.025, 5.2], [-25, 0.014, 5.25], finish(0.84, 0.94, 0.90))
         box(root, "esd-mat", [4.4, 0.006, 1.4], [-25, 0.03, 4.4], finish(0.40, 0.62, 0.58))
-        roomLabel(root, number: 5, title: "QA Lab", subtitle: "Tests & verification", at: [-27.6, 2.5])
         table(root, size: [4.4, 0.12, 0.95], at: [-25, 0, 3.4], height: 0.95, color: paper)
         for x: Float in [-26.35, -24.9] {
             let display = group(root, "lab-monitor", [x, 1.02, 3.25])
@@ -572,7 +568,6 @@ final class OfficeDesignSceneBuilder {
         for i in 0..<5 {
             box(root, "perforated-tile", [0.56, 0.005, 0.56], [-26.7 + Float(i) * 0.9, 0.03, 11.7], trim)
         }
-        roomLabel(root, number: 6, title: "Server Room", subtitle: "Deploys & infrastructure", at: [-27.6, 8])
         for x: Float in [-26.8, -25.1, -23.4] {
             serverRack(root, at: [x, 0, 12.8], yaw: .pi)
             // The middle rack's aisle is already a browsing leisure spot.
@@ -608,7 +603,6 @@ final class OfficeDesignSceneBuilder {
     }
 
     private func operationsRoom(_ root: Entity) {
-        roomLabel(root, number: 7, title: "Security Ops", subtitle: "Audits & pentests", at: [-21.8, 10])
         box(root, "operations-floor", [3.8, 0.025, 3.8], [-20, 0.014, 12], finish(0.52, 0.56, 0.72))
         table(root, size: [2.6, 0.12, 0.8], at: [-20, 0, 13.2], height: 0.9, color: steel)
         for x: Float in [-20.65, -19.35] {
@@ -620,9 +614,8 @@ final class OfficeDesignSceneBuilder {
         }
     }
 
-    private func missionControl(_ root: Entity) {
+    private func sessionNav(_ root: Entity) {
         box(root, "mission-control-floor", [7.8, 0.025, 10.8], [24, 0.014, 0.5], finish(0.56, 0.62, 0.80))
-        roomLabel(root, number: 8, title: "Mission Control", subtitle: "Planning & delegation", at: [20.6, -5])
         // A tiled display wall has a different silhouette from desk monitors.
         for row in 0..<2 {
             for column in 0..<3 {
@@ -655,48 +648,6 @@ final class OfficeDesignSceneBuilder {
         couch(sofa, width: 2.4, color: orange)
         box(root, "mission-rug", [3.4, 0.01, 1.9], [24.3, 0.032, 4.3], finish(0.95, 0.92, 0.88))
         slatPanel(root, at: [21.9, 1.45, 5.88], width: 2.6, height: 2.0, yaw: .pi)
-    }
-
-    /// A numbered hanging sign above a wall line, tilted toward the default
-    /// camera. Unlit so it stays legible from the whole-office view.
-    /// A hanging sign: a numbered badge, the room name, and what bots do there.
-    private func roomLabel(_ root: Entity, number: Int, title: String, subtitle: String, at p: SIMD2<Float>) {
-        let accents = DockAccentColor.allCases.map(\.signageColor)
-        func font(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
-            let rounded = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(.rounded)
-            return rounded.flatMap { NSFont(descriptor: $0, size: size) } ?? .systemFont(ofSize: size, weight: weight)
-        }
-        let titleMesh = MeshResource.generateText(title, extrusionDepth: 0.004, font: font(0.34, .bold))
-        let subtitleMesh = MeshResource.generateText(subtitle, extrusionDepth: 0.004, font: font(0.17, .semibold))
-        let numberMesh = MeshResource.generateText("\(number)", extrusionDepth: 0.004, font: font(0.34, .bold))
-        let height: Float = 0.92
-        let badge: Float = 0.64
-        let padding: Float = 0.14
-        let textWidth = max(titleMesh.bounds.extents.x, subtitleMesh.bounds.extents.x)
-        let width = padding + badge + 0.24 + textWidth + 0.32
-        let sign = group(root, "room-sign", [p.x, 3.3, p.y])
-        let face = group(sign, "room-sign-face", .zero)
-        face.orientation = simd_quatf(angle: -0.32, axis: [1, 0, 0])
-        glowBox(face, "sign-panel", [width, height, 0.08], [width / 2, 0, 0], signInk, radius: 0.18)
-        let accent = accents[(number - 1) % accents.count]
-        // An accent edge along the bottom reads like the reference's lit trim.
-        glowBox(face, "sign-trim", [width - 0.3, 0.035, 0.02], [width / 2, -height / 2 + 0.07, 0.045], accent)
-        glowBox(face, "sign-badge", [badge, badge, 0.03], [padding + badge / 2, 0, 0.05], accent, radius: 0.14)
-        let digits = ModelEntity(mesh: numberMesh, materials: [unlit(signInk)])
-        digits.position = [padding + badge / 2 - numberMesh.bounds.center.x, -numberMesh.bounds.center.y, 0.07]
-        face.addChild(digits)
-        let textX = padding + badge + 0.24
-        let label = ModelEntity(mesh: titleMesh, materials: [unlit(paper)])
-        label.name = "room-sign-\(title)"
-        label.position = [textX - titleMesh.bounds.min.x, 0.1 - titleMesh.bounds.center.y, 0.05]
-        face.addChild(label)
-        let caption = ModelEntity(mesh: subtitleMesh, materials: [unlit(accent)])
-        caption.position = [textX - subtitleMesh.bounds.min.x, -0.2 - subtitleMesh.bounds.center.y, 0.05]
-        face.addChild(caption)
-        // Two slim hangers tie the sign to the wall cap below it.
-        for x in [width * 0.18, width * 0.82] {
-            box(sign, "sign-hanger", [0.03, 0.42, 0.03], [x, -0.56, -0.08], trim)
-        }
     }
 
     /// Soft neon lettering on the back wall of the entrance hall.
@@ -869,7 +820,6 @@ final class OfficeDesignSceneBuilder {
                     [-4.95 + Float(i) * 0.9, 0.029, -4.95 + Float(j) * 0.9], tile)
             }
         }
-        roomLabel(root, number: 3, title: "Café", subtitle: "Breaks & chats", at: [-18.4, -3])
         // Coffee bar along the north glass, slatted oak front and a pastry case.
         let bar = group(root, "coffee-counter", [-14.5, 0, -2.25])
         box(bar, "bar-base", [5, 0.95, 0.7], [0, 0.475, 0], wood, radius: 0.03)
@@ -1005,7 +955,6 @@ final class OfficeDesignSceneBuilder {
     /// sticky-note wall, a roadmap strip and a round huddle table.
     private func planningRoom(_ root: Entity) {
         box(root, "planning-floor", [11.8, 0.025, 9.8], [14, 0.014, 3], finish(0.82, 0.78, 0.96))
-        roomLabel(root, number: 9, title: "Planning", subtitle: "Kanban board", at: [9.4, -2])
         box(root, "planning-rug", [7.4, 0.01, 3.4], [14, 0.03, 2.9], finish(0.90, 0.78, 0.66))
         pottedTree(root, at: [8.9, 0, 7.1], height: 1.9)
         planningBoard(root, at: [14, 1.6, -1.83], width: 8)
@@ -1068,7 +1017,6 @@ final class OfficeDesignSceneBuilder {
     private func partsDepot(_ root: Entity) {
         box(root, "parts-depot-floor", [6.8, 0.025, 7.8], [11.5, 0.014, 12], finish(0.78, 0.75, 0.70))
         for z: Float in [11.0, 14.2] { box(root, "aisle-line", [6.6, 0.006, 0.07], [11.5, 0.03, z], caution) }
-        roomLabel(root, number: 10, title: "Parts Depot", subtitle: "Supplies", at: [8.4, 8])
         for x: Float in [9.2, 11.2, 13.2] { storageShelf(root, at: [x, 0, 12.7]) }
         let pallet = group(root, "floor-detail", [9.6, 0, 15.1])
         for x: Float in [-0.5, 0, 0.5] { box(pallet, "pallet-runner", [0.12, 0.1, 1.0], [x, 0.05, 0], wood) }
@@ -1096,7 +1044,6 @@ final class OfficeDesignSceneBuilder {
     /// Room 12: ping-pong, two arcade cabinets, a beanbag and a dartboard.
     private func gameRoom(_ root: Entity) {
         box(root, "game-room-floor", [4.8, 0.025, 7.8], [17.5, 0.014, 12], finish(0.60, 0.84, 0.78))
-        roomLabel(root, number: 12, title: "Game Room", subtitle: "Downtime", at: [15.4, 8])
         let pong = group(root, "floor-detail", [17.5, 0, 12])
         let felt = NSColor(srgbRed: 0.24, green: 0.50, blue: 0.44, alpha: 1)
         box(pong, "pong-top", [1.5, 0.06, 2.7], [0, 0.76, 0], felt, radius: 0.01)
@@ -1665,7 +1612,6 @@ final class OfficeDesignSceneBuilder {
         toolChest(root, at: [20.42, 0, 7.6])
         // Robots recharge rather than wash up: four charging bays and a
         // tool bench take the place of stalls and basins.
-        roomLabel(root, number: 11, title: "Maintenance", subtitle: "Charging & repairs", at: [20.6, 6])
         for index in 0..<4 {
             let x = Float(21 + index * 2)
             box(root, "stall-partition", [0.08, 2.1, 3], [x - 0.9, 1.05, 13.4], plaster)

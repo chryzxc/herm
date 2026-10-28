@@ -127,6 +127,14 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         Self.current = self
     }
 
+    func showSettings() {
+        if let dockWindow, dockWindow.isOpen {
+            dockWindow.showSettings()
+        } else {
+            dockPanel?.showSettings()
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
@@ -727,6 +735,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     func showQuota() {
         showFromNotification()
         panelPresentation.quotaRequest &+= 1
+    }
+
+    func showSettings() {
+        showFromNotification()
+        panelPresentation.settingsRequest &+= 1
     }
 
     /// Only one workspace surface is shown at a time: the floating panel or the window.

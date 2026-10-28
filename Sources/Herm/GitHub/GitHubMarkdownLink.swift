@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Only item overview URLs can be represented faithfully by the native pages.
 enum GitHubMarkdownLink {
-    static func reference(for url: URL, defaults: UserDefaults = .standard) -> GitHubItemReference? {
+    static func reference(for url: URL) -> GitHubItemReference? {
         guard url.scheme == "https", url.host?.lowercased() == "github.com",
             url.user == nil, url.password == nil, url.port == nil,
             url.query == nil, url.fragment == nil
@@ -10,7 +10,6 @@ enum GitHubMarkdownLink {
         let parts = url.path.split(separator: "/").map(String.init)
         guard parts.count == 4, let number = Int(parts[3]), number > 0 else { return nil }
         let kind: GitHubItemKind
-        let key = SidebarVisibilityKey.github
         switch parts[2] {
         case "pull":
             kind = .pullRequest
@@ -18,7 +17,6 @@ enum GitHubMarkdownLink {
             kind = .issue
         default: return nil
         }
-        guard defaults.object(forKey: key) == nil || defaults.bool(forKey: key) else { return nil }
         let repository = GitHubRepositoryReference(
             owner: parts[0], name: parts[1],
             webURL: URL(string: "https://github.com")!.appendingPathComponent(parts[0]).appendingPathComponent(parts[1])

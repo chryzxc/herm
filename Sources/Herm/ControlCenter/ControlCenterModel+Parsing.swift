@@ -498,7 +498,12 @@ extension ControlCenterModel {
             contextUsed: optionalIntValue(result["context_used"]),
             contextMax: optionalIntValue(result["context_max"]),
             contextPercent: doubleValue(result["context_percent"]),
-            model: result["model"] as? String
+            model: result["model"] as? String,
+            reasoningTokens: intValue(result["reasoning"] ?? result["reasoning_tokens"]),
+            cacheHitPercent: optionalIntValue(result["cache_hit_pct"]),
+            compactions: intValue(result["compressions"]),
+            averageLatencySeconds: doubleValue(result["avg_latency_s"]),
+            tokensPerSecond: doubleValue(result["avg_tps"])
         )
     }
 
@@ -646,7 +651,14 @@ extension ControlCenterModel {
                 $0 > 0 ? $0 : nil
             },
             compressionEnabled: result["compression_enabled"] as? Bool,
-            contextEstimated: result["context_estimated"] as? Bool ?? false
+            contextEstimated: result["context_estimated"] as? Bool ?? false,
+            files: (result["context_files"] as? [[String: Any]])?.compactMap { row in
+                guard let label = row["label"] as? String, !label.isEmpty else { return nil }
+                let status = row["status"] as? String ?? ""
+                return SessionContextFile(
+                    label: label, path: row["path"] as? String ?? "", estimatedTokens: intValue(row["est_tokens"]),
+                    status: status, loaded: row["loaded"] as? Bool ?? (status == "loaded"))
+            }
         )
     }
 

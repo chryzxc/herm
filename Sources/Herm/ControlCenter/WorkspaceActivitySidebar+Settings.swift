@@ -34,7 +34,10 @@ extension WorkspaceActivitySidebar {
                 SettingsSection(title: "Theme", subtitle: "Colors and skins", tint: .dockAccent) {
                     appearanceSection
                 }
-                sidebarPreferencesSection
+                SettingsSection(title: "Text", subtitle: "", tint: .dockAccent) {
+                    TextSizeSettings()
+                        .padding(.vertical, -8)
+                }
                 SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
                     NotchDisplaySettings()
                 }
@@ -74,6 +77,10 @@ extension WorkspaceActivitySidebar {
                 SettingsSection(title: "Turn detection", subtitle: "When to reply", tint: .dockAccent) {
                     TurnModelSettingsView(store: .shared)
                 }
+                SettingsSection(title: "Voice stage", subtitle: "", tint: .dockAccent) {
+                    VoiceStageSettings()
+                        .padding(.vertical, -8)
+                }
             }
             if selectedSettingsCategory == .updates {
                 settingsDisclosure(
@@ -101,6 +108,13 @@ extension WorkspaceActivitySidebar {
 
             if selectedSettingsCategory == .providers {
                 ProvidersSettingsView(model: model, control: control)
+            }
+
+            if selectedSettingsCategory == .browser {
+                SettingsSection(title: "Agent browsing", subtitle: "Where pages open", tint: .dockAccent) {
+                    HermBrowserSettings()
+                        .padding(.vertical, -8)
+                }
             }
 
             HermesConfigCategoryView(editor: control.configEditor, category: selectedSettingsCategory)
@@ -1016,38 +1030,6 @@ extension WorkspaceActivitySidebar {
         }
     }
 
-    var sidebarPreferencesSection: some View {
-        SettingsSection(title: "Sidebar", subtitle: "", tint: .dockAccent) {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsPreferenceRow(
-                    title: "Show Kanban in sidebar", detail: "List the Kanban board in the workspace side panel."
-                ) {
-                    settingsSwitch(isOn: $showsKanbanInSidebar)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(
-                    title: "Show GitHub in sidebar",
-                    detail: "List GitHub repositories, issues, and pull requests in the workspace side panel."
-                ) {
-                    settingsSwitch(isOn: $showsGitHubInSidebar)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(
-                    title: "Show Office in sidebar", detail: "List the Office in the workspace side panel."
-                ) {
-                    settingsSwitch(isOn: $showsOfficeInSidebar)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(
-                    title: "Show Calendar in sidebar", detail: "List the work Calendar in the workspace side panel."
-                ) {
-                    settingsSwitch(isOn: $showsCalendarInSidebar)
-                }
-            }
-            .padding(.vertical, -8)
-        }
-    }
-
     var chatQuotaPreferencesSection: some View {
         SettingsSection(title: "Quota in chat", subtitle: "", tint: .dockAccent) {
             VStack(alignment: .leading, spacing: 0) {
@@ -1082,7 +1064,7 @@ extension WorkspaceActivitySidebar {
     func settingsSwitch(isOn: Binding<Bool>) -> some View {
         Toggle("", isOn: isOn)
             .labelsHidden()
-            .toggleStyle(.switch)
+            .toggleStyle(.dockSwitch)
             .controlSize(.small)
             .tint(Color.dockAccent)
     }
@@ -1274,7 +1256,7 @@ extension WorkspaceActivitySidebar {
                 )
             )
             .labelsHidden()
-            .toggleStyle(.switch)
+            .toggleStyle(.dockSwitch)
             .tint(Color.dockAccent)
             Button {
                 control.refresh()
@@ -1293,7 +1275,7 @@ extension WorkspaceActivitySidebar {
     func coreSummaryMetric(title: String, value: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .dockFont(size: 9, weight: .bold, design: .monospaced)
+                .dockFont(.metadata, weight: .bold, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
                 .tracking(0.6)
             Text(value)
@@ -1341,7 +1323,7 @@ extension WorkspaceActivitySidebar {
                         .dockFont(.compactStatus, weight: .medium)
                         .foregroundStyle(readyCount == count ? Color.dockMetadataText : Color.dockWarning)
                     DockIcon(isExpanded.wrappedValue ? .caretUp : .caretDown)
-                        .dockFont(size: 9, weight: .bold)
+                        .dockFont(.metadata, weight: .bold)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 18, height: 26)
                 }

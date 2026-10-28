@@ -39,32 +39,34 @@ struct MessagingWorkspaceView: View {
 
     var body: some View {
         AdaptiveSplit(
-            breakpoint: 800, primaryMinWidth: 280, primaryIdealWidth: 320, primaryMaxWidth: 380, secondaryMinWidth: 400,
-            alwaysSplitWhenWide: true, showsSecondary: workspace.currentBrowsing.showsDetail,
+            breakpoint: 800, primaryMinWidth: 340, secondaryMinWidth: 400,
+            showsSecondary: workspace.currentBrowsing.showsDetail,
             onBack: { if !hasPendingEdits { workspace.currentBrowsing.showsDetail = false } }
         ) {
-            VStack(spacing: 10) {
-                DockTextField("Search messaging", text: Binding(get: { search }, set: { search = $0 }))
-                    .textFieldStyle(.dockGlass).disabled(workspace.navigationLocked)
-                HStack {
-                    Text(
-                        model.hasLoaded
-                            ? "\(filtered.count) platforms"
-                            : model.loading ? "Reading platforms…" : "Inventory unavailable"
-                    ).dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                    Spacer()
+            VStack(alignment: .leading, spacing: 16) {
+                IntegrationLibraryHeader(
+                    title: "Messaging",
+                    summary: model.hasLoaded
+                        ? "\(filtered.count) platforms"
+                        : model.loading ? "Reading platforms…" : "Inventory unavailable")
+                HStack(spacing: 8) {
+                    DockTextField("Search messaging", text: Binding(get: { search }, set: { search = $0 }))
+                        .textFieldStyle(.dockGlass).frame(minWidth: 180, maxWidth: 320)
+                        .disabled(workspace.navigationLocked)
                     if !search.isEmpty {
-                        Button("Clear filter") { search = "" }.buttonStyle(.dockSecondary).disabled(hasPendingEdits)
+                        Button("Clear filter") { search = "" }.buttonStyle(.dockSecondary).fixedSize()
+                            .disabled(hasPendingEdits)
                     }
-                }.frame(minHeight: 28)
+                    Spacer(minLength: 0)
+                }
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
                 if filtered.isEmpty {
                     emptyState
                     Spacer(minLength: 0)
                 } else {
-                    platformList
+                    platformGrid
                 }
-            }.padding(14).frame(maxWidth: .infinity)
+            }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
         } secondary: {
             if let current {
                 detail(current)
@@ -120,42 +122,28 @@ struct MessagingWorkspaceView: View {
         }.padding(20)
     }
 
-    // MARK: List
-
-    private var platformList: some View {
+    private var platformGrid: some View {
         ScrollView {
-            LazyVStack(spacing: 2) {
+            IntegrationCardGrid {
                 ForEach(filtered) { platform in
-                    let selected = platform.id == current?.id
-                    Button {
-                        selection = platform.id
-                        workspace.currentBrowsing.showsDetail = true
-                    } label: {
-                        HStack(spacing: 10) {
-                            MessagingPlatformIcon(platform: platform)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(platform.name).dockFont(.body, weight: selected ? .semibold : .regular)
-                                    .foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-                                if !platform.description.isEmpty {
-                                    Text(platform.description).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                                        .lineLimit(2)
-                                }
-                                Text(platform.statusLabels.map(\.1).joined(separator: " · "))
-                                    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
-                            }
-                            Spacer(minLength: 6)
-                            DockStatusDot(tone: platform.enabled ? platform.statusTone : .inactive, size: 6)
+                    IntegrationCard(
+                        title: platform.name, detail: platform.description,
+                        status: (
+                            platform.enabled ? platform.statusTone : .inactive,
+                            platform.statusLabels.map(\.1).joined(separator: " · ")
+                        ),
+                        selected: workspace.currentBrowsing.showsDetail && platform.id == current?.id,
+                        action: {
+                            selection = platform.id
+                            workspace.currentBrowsing.showsDetail = true
                         }
-                        .padding(.horizontal, 10).padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Color.dockSurface : .clear))
-                        .contentShape(Rectangle())
+                    ) {
+                        MessagingPlatformIcon(platform: platform)
                     }
-                    .buttonStyle(.dockHover)
                     .disabled(model.busy || model.loading || hasPendingEdits)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
-            .padding(10)
+            .padding(.bottom, 14)
         }
     }
 
@@ -167,18 +155,8 @@ struct MessagingWorkspaceView: View {
         let advanced = platform.envVars.filter { !$0.required && $0.advanced }
         return VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    DockChipFlow(spacing: 8) {
-                        MessagingPlatformIcon(platform: platform)
-                        Text(platform.name).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                        ForEach(platform.statusLabels.indices, id: \.self) {
-                            DockStatusPill(tone: platform.statusLabels[$0].0, text: platform.statusLabels[$0].1)
-                        }
-                    }
-                    if !platform.description.isEmpty {
-                        Text(platform.description).dockFont(.navigation).foregroundStyle(Color.dockSecondaryText)
-                    }
-                    Text("Profile: \(workspace.profileName)").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                VStack(alignment: .leading, spacing: 24) {
+                    header(platform)
                     if MessagingPlatformsModel.qrPlatforms.contains(platform.id) {
                         quickSetup(platform.id).disabled(hasPendingEdits || model.isStale || model.loading)
                     }
@@ -187,30 +165,47 @@ struct MessagingWorkspaceView: View {
                     section("Recommended", recommended).disabled(model.busy || model.loading || model.isStale)
                     if !advanced.isEmpty {
                         DisclosureGroup(isExpanded: $showsAdvanced) {
-                            fields(advanced).padding(.top, 10).disabled(model.busy || model.loading || model.isStale)
+                            fields(advanced).frame(maxWidth: .infinity, alignment: .leading)
+                                .dockCard(padding: 12, isQuiet: true).padding(.top, 8)
+                                .disabled(model.busy || model.loading || model.isStale)
                         } label: {
                             sectionLabel("Advanced")
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                     }
                 }
-                .padding(20)
-                .frame(maxWidth: 760, alignment: .leading)
+                .padding(24)
+                .frame(maxWidth: 600, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             footer(platform)
         }
     }
 
+    /// Same identity block as the other Integrations inspectors: glyph tile, name, live state, scope, description.
+    private func header(_ platform: MessagingPlatform) -> some View {
+        IntegrationInspectorHeader(
+            title: platform.name, category: "Messaging", scope: "Profile · \(workspace.profileName)",
+            detail: platform.description
+        ) {
+            MessagingPlatformIcon(platform: platform, size: 48)
+        } status: {
+            DockChipFlow(spacing: 6) {
+                ForEach(platform.statusLabels.indices, id: \.self) {
+                    DockStatusPill(tone: platform.statusLabels[$0].0, text: platform.statusLabels[$0].1)
+                }
+            }
+        }
+    }
+
     private func quickSetup(_ platformID: String) -> some View {
         let telegram = platformID == "telegram"
         return VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Quick setup")
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text("Quick setup").dockFont(.conversation, weight: .semibold)
-                    DockStatusPill(tone: .complete, text: "Recommended")
-                }
+            HStack(spacing: 8) {
+                sectionLabel("Quick setup")
+                DockStatusPill(tone: .complete, text: "Recommended")
+            }
+            VStack(alignment: .leading, spacing: 10) {
                 Text(
                     telegram
                         ? "Scan a QR code and confirm in Telegram. Hermes creates the bot and detects your Telegram user ID automatically."
@@ -262,9 +257,8 @@ struct MessagingWorkspaceView: View {
                     }
                 }
             }
-            .padding(16)
-            .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .dockCard(padding: 12, isQuiet: true)
         }
     }
 
@@ -290,9 +284,9 @@ struct MessagingWorkspaceView: View {
     @ViewBuilder
     private func section(_ title: String, _ vars: [MessagingEnvVar]) -> some View {
         if !vars.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 sectionLabel(title)
-                fields(vars)
+                fields(vars).frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 12, isQuiet: true)
             }
         }
     }
@@ -329,24 +323,37 @@ struct MessagingWorkspaceView: View {
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title.uppercased()).dockFont(.metadata, weight: .semibold).tracking(1.2)
-            .foregroundStyle(Color.dockSecondaryText)
+        Text(title).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockSectionText)
+    }
+
+    /// The latest outcome, toned so a failed test reads differently from a saved notice.
+    private func footerStatus(_ platform: MessagingPlatform) -> (DockStatusTone, String)? {
+        if let error = model.error { return (.attention, error) }
+        if let test = model.testResult {
+            return test.ok ? (.complete, "Test passed: \(test.message)") : (.attention, "Test failed: \(test.message)")
+        }
+        if let notice = model.notice { return (.inactive, notice) }
+        return platform.errorMessage.map { (.attention, $0) }
     }
 
     private func footer(_ platform: MessagingPlatform) -> some View {
         let enabled = Binding(get: { enabledDraft ?? platform.enabled }, set: { enabledDraft = $0 })
         let changed = platform.hasChanges(enabled: enabled.wrappedValue, drafts: drafts)
+        let status = footerStatus(platform)
         return VStack(alignment: .leading, spacing: 10) {
-            Text(
-                model.error ?? model.testResult.map { ($0.ok ? "Test passed: " : "Test failed: ") + $0.message }
-                    ?? model.notice ?? platform.errorMessage ?? ""
-            )
-            .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+            // Fixed-height slot so test results and notices never shift the actions.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let status {
+                    DockStatusDot(tone: status.0, muted: status.0 == .inactive)
+                    Text(status.1).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+                        .textSelection(.enabled)
+                }
+            }
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-            HStack {
+            HStack(spacing: 8) {
                 Toggle(isOn: enabled) { Text(enabled.wrappedValue ? "Enabled" : "Disabled").dockFont(.body) }
-                    .toggleStyle(.dockSwitch).disabled(model.isStale)
-                Spacer()
+                    .toggleStyle(.dockSwitch).disabled(model.isStale).fixedSize()
+                Spacer(minLength: 8)
                 if changed {
                     Button("Discard") {
                         resetDrafts()
@@ -388,6 +395,7 @@ struct MessagingWorkspaceView: View {
 
 private struct MessagingPlatformIcon: View {
     let platform: MessagingPlatform
+    var size: CGFloat = 26
 
     private var symbol: Ph? {
         switch platform.id {
@@ -407,15 +415,15 @@ private struct MessagingPlatformIcon: View {
     var body: some View {
         Group {
             if let symbol {
-                DockIcon(symbol, size: 14, color: .dockAccent)
+                DockIcon(symbol, size: (size * 0.5).rounded(), color: .dockAccent)
             } else {
                 Text(platform.name.prefix(1).uppercased()).dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }
-        .frame(width: 26, height: 26)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.dockSurface))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .frame(width: size, height: size)
+        .background(RoundedRectangle(cornerRadius: size / 4).dockSurfaceFill(Color.dockSurface))
+        .overlay(RoundedRectangle(cornerRadius: size / 4).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 }
 

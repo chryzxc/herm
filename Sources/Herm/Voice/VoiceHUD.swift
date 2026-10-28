@@ -378,7 +378,7 @@ private struct HUDHeader: View {
                     .lineLimit(1)
                 if let detail {
                     Text(detail)
-                        .dockFont(size: 10.5)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }
@@ -492,7 +492,7 @@ private struct SearchCard: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(hit.title)
-                            .dockFont(size: 11.5, weight: .medium)
+                            .dockFont(.rowTitle)
                             .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
                         Text(ToolStep.host(hit.url) ?? hit.url)
@@ -545,7 +545,7 @@ private struct TerminalCard: View {
                 .lineLimit(2)
             if let line = terminal.lastLine {
                 Text(line)
-                    .dockFont(size: 10.5, design: .monospaced)
+                    .dockFont(.code)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
@@ -709,7 +709,7 @@ struct VoiceSubagentOrbs: View {
                             orb.scaleEffect(pulse ? 1.15 : 0.9)
                         }
                     Text(agent.name ?? "Agent")
-                        .dockFont(size: 9.5, weight: .medium)
+                        .dockFont(.metadata, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                         .frame(maxWidth: 70)

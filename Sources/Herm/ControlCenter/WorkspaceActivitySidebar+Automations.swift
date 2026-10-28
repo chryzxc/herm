@@ -369,7 +369,7 @@ extension WorkspaceActivitySidebar {
                             .lineLimit(1)
                         if !job.enabled {
                             Text("PAUSED")
-                                .dockFont(size: 9, weight: .bold)
+                                .dockFont(.metadata, weight: .bold)
                                 .tracking(0.5)
                                 .foregroundStyle(Color.dockWarning)
                         }
@@ -395,7 +395,7 @@ extension WorkspaceActivitySidebar {
             .buttonStyle(.dockHover)
 
             Text(health.state.rawValue.uppercased())
-                .dockFont(size: 9, weight: .bold)
+                .dockFont(.metadata, weight: .bold)
                 .foregroundStyle(
                     health.state == .healthy
                         ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText
@@ -675,7 +675,7 @@ extension WorkspaceActivitySidebar {
                         HStack(spacing: 4) {
                             Text("REPORT")
                             DockIcon(.caretRight)
-                                .dockFont(size: 9, weight: .bold)
+                                .dockFont(.metadata, weight: .bold)
                         }
                         .dockFont(.compactStatus, weight: .semibold)
                         .foregroundStyle(Color.dockAccent)

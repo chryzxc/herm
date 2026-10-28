@@ -74,7 +74,7 @@ struct RepositoryCommitReferencePill: View {
         HStack(spacing: 3) {
             DockIcon(icon, size: 10, color: accent.color)
             Text(reference.name)
-                .dockFont(size: 11, weight: reference.isHead ? .semibold : .medium)
+                .dockFont(.metadata, weight: reference.isHead ? .semibold : .medium)
                 .foregroundStyle(accent.color)
                 .lineLimit(1)
                 .truncationMode(.middle)

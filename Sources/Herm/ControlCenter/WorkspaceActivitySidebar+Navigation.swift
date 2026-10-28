@@ -642,7 +642,10 @@ extension WorkspaceActivitySidebar {
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(minHeight: 32)
-        .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
+        .dockSelectionBackground(
+            DockThemeShape(cornerRadius: DockLayout.controlRadius), active: isSelected,
+            fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
+        )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .contentShape(Rectangle())
     }
@@ -677,13 +680,11 @@ extension WorkspaceActivitySidebar {
     /// Compact mode mirrors the fullscreen rail's daily operator destinations.
     /// Repository and setup surfaces remain available from More.
     var compactRailLeading: [ControlTab] {
-        [.kanban, .calendar, .automations, .integrations].filter { $0 != .kanban || showsKanbanInSidebar }.filter {
-            $0 != .calendar || showsCalendarInSidebar
-        }
+        [.kanban, .calendar, .automations, .integrations]
     }
 
     var compactRailTrailing: [ControlTab] {
-        [.officePreview, .usage, .quota, .core].filter { $0 != .officePreview || showsOfficeInSidebar }
+        [.officePreview, .usage, .quota, .core]
     }
 
     func compactModeButton(_ mode: ControlTab) -> some View {
@@ -740,7 +741,10 @@ extension WorkspaceActivitySidebar {
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-        .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
+        .dockSelectionBackground(
+            DockThemeShape(cornerRadius: DockLayout.controlRadius), active: isSelected,
+            fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
+        )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .contentShape(Rectangle())
     }
@@ -779,7 +783,10 @@ extension WorkspaceActivitySidebar {
             .foregroundStyle(selectedMode == mode ? Color.dockPrimaryText : Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-            .background(selectedMode == mode ? Color.dockAccent.opacity(0.14) : Color.clear)
+            .dockSelectionBackground(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius), active: selectedMode == mode,
+                fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
+            )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }

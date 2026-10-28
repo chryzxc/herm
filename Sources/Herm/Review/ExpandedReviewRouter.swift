@@ -120,7 +120,7 @@ struct ExpandedReviewHost: ViewModifier {
                 guard note.object as? NSWindow === router.window, let deferredReview else { return }
                 Task { @MainActor in presentRequest(deferredReview) }
             }
-            .sheet(item: $pendingReview) { request in
+            .dockSheet(item: $pendingReview) { request in
                 review(request, close: { pendingReview = nil }).modifier(ReviewSheetContext())
             }
     }

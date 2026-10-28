@@ -18,9 +18,11 @@ struct RichDocumentView: View {
                     RichSourceDisclosure(source: source)
                 case .pending:
                     HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
+                        ProgressView().controlSize(.small).frame(width: 16, height: 16)
                         Text("Preparing interactive view…").foregroundStyle(Color.dockSecondaryText)
-                    }.dockFont(.body).frame(minHeight: 44)
+                    }.dockFont(.body)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .transaction { $0.animation = nil }
                 }
             }
         }
@@ -50,13 +52,17 @@ struct RichSurfaceView: View {
     private var presentation: RichArtifactPresentationState { saved.state(for: key) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
                 Text(surface.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if !expanded {
-                    Button("Expand") { expand() }.buttonStyle(.dockCompact)
+                    Button {
+                        expand()
+                    } label: {
+                        DockIconLabel("Expand", icon: .arrowsOut)
+                    }.buttonStyle(.dockSecondary)
                 }
                 DockMenu {
                     Button("View source") { showingSource = true }
@@ -99,35 +105,49 @@ struct RichSurfaceView: View {
                 }
                 .buttonStyle(.dockHover).accessibilityLabel("Visual reply actions")
             }
+            .dockButtonSize(.compact)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(DockThemeStyle.current.chrome == .open ? Color.clear : Color.dockSurface2)
+            Divider().overlay(Color.dockBorderLight)
             if let metadata = surface.metadata {
                 VStack(alignment: .leading, spacing: 4) {
                     if metadata.fictional == true { Text("Fictional data").fontWeight(.semibold) }
                     if let assumptions = metadata.assumptions { Text("Assumptions: " + assumptions) }
                     if let source = metadata.source { Text("Source: " + source) }
                     if let date = metadata.observedAt { Text("Observed: " + date) }
-                }.foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
-            }
-            if surface.kind == .html {
-                Text(surface.fallback).foregroundStyle(Color.dockSecondaryText).fixedSize(
-                    horizontal: false, vertical: true)
-                if htmlCoordinator.activeKey == htmlKey, let html = surface.html {
-                    GeneratedHTMLPreview(html: html, identity: htmlKey, expanded: expanded)
-                } else {
-                    Button("Open interactive view") { htmlCoordinator.open(htmlKey) }.buttonStyle(.dockSecondary)
                 }
-            } else {
-                nativeBlocks
+                .dockFont(.body)
+                .foregroundStyle(Color.dockSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(DockThemeStyle.current.chrome == .open ? Color.clear : Color.dockSurface2)
+                Divider().overlay(Color.dockBorderLight)
             }
-            if let exportError { Text(exportError).foregroundStyle(Color.dockWarning) }
+            VStack(alignment: .leading, spacing: 16) {
+                if surface.kind == .html {
+                    Text(surface.fallback).foregroundStyle(Color.dockSecondaryText).fixedSize(
+                        horizontal: false, vertical: true)
+                    if htmlCoordinator.activeKey == htmlKey, let html = surface.html {
+                        GeneratedHTMLPreview(html: html, identity: htmlKey, expanded: expanded)
+                    } else {
+                        Button("Open interactive view") { htmlCoordinator.open(htmlKey) }.buttonStyle(.dockSecondary)
+                    }
+                } else {
+                    nativeBlocks
+                }
+                if let exportError { Text(exportError).foregroundStyle(Color.dockWarning) }
+            }
+            .padding(16)
         }
-        .padding(16)
         .dockFont(.body)
         .foregroundStyle(Color.dockPrimaryText)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-                .dockSurfaceFill(Color.dockSurface, stroke: Color.dockBorderLight)
-        }
+        .dockCard(padding: 0)
+        .clipShape(DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane))
+
         .onChange(of: presentationIdentity) { old, new in
             if old.canMigrate(to: new) {
                 saved.migrate(from: old.key, to: new.key)
@@ -136,12 +156,12 @@ struct RichSurfaceView: View {
                 htmlCoordinator.close()
             }
         }
-        .sheet(isPresented: $showingSource) {
+        .dockSheet(isPresented: $showingSource) {
             DockExpandedPage(title: "Visual reply source", subtitle: surface.title, close: { showingSource = false }) {
                 ScrollView { RichSourceDisclosure(source: source, initiallyExpanded: true).padding(16) }
             }.frame(minWidth: 400, minHeight: 300).modifier(ReviewSheetContext())
         }
-        .sheet(isPresented: $showingExpanded) {
+        .dockSheet(isPresented: $showingExpanded) {
             expandedPage { showingExpanded = false }
                 .frame(minWidth: 640, minHeight: 500).modifier(ReviewSheetContext())
         }
@@ -167,8 +187,10 @@ struct RichSurfaceView: View {
         return VStack(alignment: .leading, spacing: 16) {
             ForEach(Array((surface.blocks ?? []).enumerated()), id: \.offset) { index, block in
                 if case .section(let section) = block.payload {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(section.title).fontWeight(.semibold)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(section.title).dockFont(.body, weight: .semibold)
+                            .accessibilityAddTraits(.isHeader)
+                        Divider().overlay(Color.dockBorderLight)
                         ViewThatFits(in: .horizontal) {
                             if section.paired == true {
                                 HStack(alignment: .top, spacing: 16) { sectionBlocks(section) }.frame(minWidth: 608)

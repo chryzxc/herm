@@ -272,6 +272,8 @@ struct WorkRange: Equatable {
     var runs: [CronRunSummary] = []
     var pullRequestsByRepository: [WorkCount] = []
     var activeDays = 0, tokens = 0, apiCalls = 0, usageSessions = 0
+    var inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, reasoningTokens = 0
+    var usageDays = 0
     var hasUsage = false
     var activeHours = 0, shippedItems = 0
     var hours = [Int](repeating: 0, count: 24)
@@ -327,6 +329,11 @@ extension WorkCalendarIndex {
                 range.shippedItems += day.shippedItems
                 if let usage = day.usage {
                     range.hasUsage = true
+                    range.usageDays += 1
+                    range.inputTokens += usage.inputTokens
+                    range.outputTokens += usage.outputTokens
+                    range.cacheReadTokens += usage.cacheReadTokens
+                    range.reasoningTokens += usage.reasoningTokens
                     range.tokens += usage.inputTokens + usage.outputTokens
                     range.apiCalls += usage.apiCalls
                     range.usageSessions += usage.sessions

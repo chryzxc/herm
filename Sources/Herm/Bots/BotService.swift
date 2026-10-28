@@ -268,6 +268,16 @@ final class BotService {
             ])
     }
 
+    /// Same profile-scoped deep-merge as `setFallbacks`. The merge can't delete
+    /// keys, so "default"/"auto" are written as empty/0, which the parser reads as unset.
+    func setRuntimeLimits(profileID: String, reasoning: String?, contextLength: Int?, compression: Int?) async throws {
+        var config: [String: Any] = [:]
+        if let reasoning { config["agent"] = ["reasoning_effort": reasoning] }
+        if let contextLength { config["model"] = ["context_length": contextLength] }
+        if let compression { config["compression"] = ["threshold_tokens": compression] }
+        _ = try await client.sendHTTP("PUT", path: "/api/config", body: ["profile": profileID, "config": config])
+    }
+
     static func parseRuntimeConfig(_ config: [String: Any]) -> BotRuntimeConfig {
         func refs(_ value: Any?) -> [BotRuntimeConfig.ModelRef] {
             let rows = (value as? [[String: Any]]) ?? (value as? [String: Any]).map { [$0] } ?? []
@@ -287,10 +297,14 @@ final class BotService {
             $0.isEmpty ? nil : $0
         }
         return BotRuntimeConfig(
-            contextLength: (config["model"] as? [String: Any])?["context_length"] as? Int,
+            contextLength: ((config["model"] as? [String: Any])?["context_length"] as? Int).flatMap {
+                $0 > 0 ? $0 : nil
+            },
             reasoningEffort: effort,
             fallbacks: fallbacks,
-            compressionThreshold: (config["compression"] as? [String: Any])?["threshold_tokens"] as? Int
+            compressionThreshold: ((config["compression"] as? [String: Any])?["threshold_tokens"] as? Int).flatMap {
+                $0 > 0 ? $0 : nil
+            }
         )
     }
 
@@ -1079,6 +1093,19 @@ final class BotModeModel: ObservableObject {
             return nil
         } catch {
             return Self.mutationDiagnostic(for: error, noun: "save the fallback models")
+        }
+    }
+
+    /// `nil` on success, otherwise the user-facing reason.
+    func setRuntimeLimits(_ runtime: BotRuntimeConfig, for bot: BotSummary) async -> String? {
+        guard capabilityAvailable, let service else { return "Bot Mode is unavailable." }
+        do {
+            try await service.setRuntimeLimits(
+                profileID: bot.id, reasoning: runtime.reasoningEffort ?? "",
+                contextLength: runtime.contextLength ?? 0, compression: runtime.compressionThreshold ?? 0)
+            return nil
+        } catch {
+            return Self.mutationDiagnostic(for: error, noun: "save the reasoning and context settings")
         }
     }
 

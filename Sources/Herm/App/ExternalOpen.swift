@@ -17,6 +17,13 @@ enum ExternalOpen {
         }
     }
 
+    nonisolated static func open(_ url: URL, with app: URL) {
+        onMain {
+            yieldToOtherApp()
+            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
     nonisolated static func reveal(_ urls: [URL]) {
         onMain {
             yieldToOtherApp()

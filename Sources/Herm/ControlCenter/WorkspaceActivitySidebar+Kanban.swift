@@ -320,7 +320,7 @@ extension WorkspaceActivitySidebar {
             } label: {
                 kanbanFilterChip(kanbanStatusFilter == "All" ? "Status" : kanbanStatusFilter, icon: .funnelSimple)
             }
-            .popover(isPresented: $isShowingKanbanStatusFilter, arrowEdge: .bottom) {
+            .dockPopover(isPresented: $isShowingKanbanStatusFilter, arrowEdge: .bottom) {
                 kanbanStatusPopover
             }
             Button {
@@ -328,7 +328,7 @@ extension WorkspaceActivitySidebar {
             } label: {
                 kanbanFilterChip(kanbanAssigneeFilter == "All" ? "Assignee" : kanbanAssigneeFilter, icon: .users)
             }
-            .popover(isPresented: $isShowingKanbanAssigneeFilter, arrowEdge: .bottom) {
+            .dockPopover(isPresented: $isShowingKanbanAssigneeFilter, arrowEdge: .bottom) {
                 kanbanAssigneePopover
             }
             Button {
@@ -677,7 +677,7 @@ extension WorkspaceActivitySidebar {
     func kanbanModelMetadataRow(_ metadata: KanbanModelMetadataPresentation) -> some View {
         HStack(spacing: 5) {
             DockIcon(metadata.isOverride ? .arrowsClockwise : .cpu)
-                .dockFont(size: 9, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
             Text(metadata.isOverride ? "OVERRIDE · \(metadata.label)" : metadata.label)
                 .lineLimit(1)
                 .truncationMode(.middle)

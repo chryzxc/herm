@@ -178,7 +178,7 @@ private struct GroupChatSidebarRow: View {
                         BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 20, orbits: isWorking)
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
-                            .dockFont(size: 9, weight: .semibold)
+                            .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 20, height: 20)
                             .background(tile.fill(Color.dockSurface2))
@@ -188,7 +188,7 @@ private struct GroupChatSidebarRow: View {
             }
             if room.members.count > shown.count {
                 Text("+\(room.members.count - shown.count)")
-                    .dockFont(size: 9, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 20, height: 20)
                     .background(tile.fill(Color.dockSurface2))
@@ -464,13 +464,6 @@ struct GroupChatView: View {
             header
             if threads.count > 1 || !newThreads.isEmpty { threadBar }
             transcript
-            if let message = store.errorMessage {
-                Text(message)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockDestructive)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-            }
             ForEach(store.approvals[roomID] ?? [], id: \.requestID) { approval in
                 approvalBanner(approval)
             }
@@ -979,7 +972,7 @@ struct GroupChatView: View {
                     }
                     .buttonStyle(.dockHover)
                     .help("Insert a URL or snippet")
-                    .popover(isPresented: $showingInsertPopover, arrowEdge: .bottom) {
+                    .dockPopover(isPresented: $showingInsertPopover, arrowEdge: .bottom) {
                         AttachmentPopover(
                             pasteImageAvailable: false,
                             onSelect: { _ in },

@@ -432,7 +432,7 @@ struct AgentBoardView: View {
                                 }
                                 Spacer(minLength: 0)
                                 DockIcon(expandedActivityID == activity.id ? .caretUp : .caretDown)
-                                    .dockFont(size: 9, weight: .semibold)
+                                    .dockFont(.metadata, weight: .semibold)
                                     .foregroundStyle(Color.dockMetadataText)
                             }
                             if expandedActivityID == activity.id {
@@ -481,7 +481,7 @@ struct AgentBoardView: View {
                             Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading)
                                 .lineLimit(1)
                             DockIcon(expandedPipelineItemID == item.id ? .caretUp : .caretDown)
-                                .dockFont(size: 9, weight: .semibold)
+                                .dockFont(.metadata, weight: .semibold)
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                     }
@@ -600,7 +600,7 @@ struct AgentBoardView: View {
     private func contentField(_ label: String, _ value: String, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .dockFont(size: 9, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .tracking(0.7)
                 .foregroundStyle(accent)
             Text(value)

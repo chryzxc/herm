@@ -110,14 +110,17 @@ struct VoiceActivityPillsLayer: View {
     /// The HUD deck sits on the left, so cards keep to the right corners.
     var leavesLeftFree = false
     @State private var queue = VoicePillQueue()
+    @AppStorage(VoiceStageSettings.activityPillsKey) private var isEnabled = true
 
     var body: some View {
         GeometryReader { geometry in
             let width = min(cardWidth, max(0, (geometry.size.width - 12) / 2))
-            HStack(spacing: 0) {
-                pillColumn(slots: leavesLeftFree ? [] : [0, 3], width: width, height: geometry.size.height)
-                Spacer(minLength: 12)
-                pillColumn(slots: [1, 2], width: width, height: geometry.size.height)
+            if isEnabled {
+                HStack(spacing: 0) {
+                    pillColumn(slots: leavesLeftFree ? [] : [0, 3], width: width, height: geometry.size.height)
+                    Spacer(minLength: 12)
+                    pillColumn(slots: [1, 2], width: width, height: geometry.size.height)
+                }
             }
         }
         // Replacement cards must not animate on top of their outgoing card.

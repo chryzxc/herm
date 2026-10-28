@@ -154,7 +154,7 @@ struct GitHubMetadataView: View {
         .dockFont(.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
         .modifier(GitHubMetadataSurface(embedded: embedded))
         .task { await model.refresh() }
-        .sheet(item: $editing) { section in
+        .dockSheet(item: $editing) { section in
             GitHubMetadataEditor(model: model, section: section) { onChanged() }
         }
     }
@@ -234,10 +234,15 @@ struct GitHubMetadataEditor: View {
     var body: some View {
         DockModal(title: "Edit \(section.rawValue.lowercased())", subtitle: model.reference.title, width: 520) {
             TextField("Filter choices", text: $search).textFieldStyle(.dockGlass)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) { choices }.disabled(busy)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(minHeight: 120, maxHeight: 340)
+            if busy && !loaded {
+                ProgressView("Loading choices…")
+                    .frame(maxWidth: .infinity, minHeight: 180)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) { choices }.disabled(busy)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(minHeight: 180, maxHeight: 340)
+            }
             if section == .development {
                 HStack {
                     TextField(
@@ -274,11 +279,7 @@ struct GitHubMetadataEditor: View {
     }
     @ViewBuilder private var choices: some View {
         if !loaded {
-            if busy {
-                ProgressView("Loading choices…")
-            } else {
-                Button("Retry loading choices") { Task { await loadChoices() } }.buttonStyle(.dockCompact)
-            }
+            Button("Retry loading choices") { Task { await loadChoices() } }.buttonStyle(.dockCompact)
         }
         switch section {
         case .labels:

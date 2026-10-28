@@ -299,6 +299,7 @@ final class HermesCapabilityService {
         let projectsRPC = results["projects"] ?? nil
         let toolResult = results["tools"] ?? nil
         let pluginResult = results["plugins"] ?? nil
+        HermPlugin.note(pluginResult)
         let configResult = results["config"] ?? nil
         let versionResult = results["version"] ?? nil
         let skillsResult = results["skills"] ?? nil

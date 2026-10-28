@@ -37,10 +37,10 @@ struct CapacityRunwayView: View {
                 .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("CAPACITY · \(presentation.state.rawValue.uppercased())")
-                    .dockFont(size: 9, weight: .bold, design: .monospaced)
+                    .dockFont(.metadata, weight: .bold, design: .monospaced)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text(presentation.usedPercent.map { "\($0)% used" } ?? presentation.detail)
-                    .dockFont(size: 9, design: .monospaced)
+                    .dockFont(.metadata, design: .monospaced)
                     .foregroundStyle(Color.dockSecondaryText)
             }
             Spacer()

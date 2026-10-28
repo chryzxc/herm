@@ -35,7 +35,6 @@ struct PullRequestDetailView: View {
     @State private var checksExpanded = true
     @State private var activityExpanded = true
     @State private var changesExpanded = false
-    @State private var chatHeight: CGFloat = 180
     @State private var chatExpanded = false
     @ObservedObject private var chats: PullRequestChatStore
     private var commentDraft: String { center.commentDrafts[center.selectedID ?? ""] ?? "" }
@@ -43,26 +42,22 @@ struct PullRequestDetailView: View {
     @StateObject private var mutationCoordinator = PullRequestMutationCoordinator()
     @Environment(\.dockTitleRow) private var titleRow
 
-    private var chatBottomPadding: CGFloat {
-        !isInspector && contextRouter?.model != nil && chatExpanded ? chatHeight + 40 : 0
-    }
-
     var body: some View {
         detailPane
-            .sheet(item: $commitDiffTarget) { target in
+            .dockSheet(item: $commitDiffTarget) { target in
                 PullRequestCommitDiffView(target: target, client: center.api.client)
                     .frame(minWidth: 700, minHeight: 560).modifier(ReviewSheetContext())
             }
-            .sheet(item: $reviewerRecord) { record in
+            .dockSheet(item: $reviewerRecord) { record in
                 PullRequestReviewerPicker(record: record, client: center.api.client) {
                     Task { await center.refreshSelectedDetail() }
                 }
             }
-            .sheet(isPresented: $expandedSheet) {
+            .dockSheet(isPresented: $expandedSheet) {
                 expandedReview { expandedSheet = false }
                     .frame(minWidth: 900, minHeight: 640).modifier(ReviewSheetContext())
             }
-            .sheet(isPresented: $readingGuide) {
+            .dockSheet(isPresented: $readingGuide) {
                 if let model = contextRouter?.model, let pr = center.selected {
                     ReviewGuideView(
                         coordinator: guide, model: model,
@@ -145,7 +140,6 @@ struct PullRequestDetailView: View {
                                 .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
                         }.clipped()
                     }
-                    .padding(.bottom, chatBottomPadding)
                 } else if detailTab == 2 {
                     PullRequestReviewView(
                         model: center.review(for: pr), record: pr, viewer: center.viewerLogin,
@@ -165,10 +159,8 @@ struct PullRequestDetailView: View {
                             }
                         }
                     )
-                    .padding(.bottom, chatBottomPadding)
                 } else {
                     code(pr).padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
-                        .padding(.bottom, chatBottomPadding)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -178,11 +170,6 @@ struct PullRequestDetailView: View {
                         chat: chats.chat(for: pr), runtime: model, record: pr, expanded: $chatExpanded
                     )
                     .id(pr.id)
-                    .onGeometryChange(for: CGFloat.self) {
-                        $0.size.height
-                    } action: {
-                        chatHeight = $0
-                    }
                     .padding(20)
                 }
             }
@@ -757,6 +744,7 @@ struct PullRequestDetailView: View {
             switch projection {
             case .loading:
                 ProgressView("Loading changed files…").foregroundStyle(Color.dockMetadataText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             case .unavailable:
                 codeState(
                     title: "Changed files unavailable",
@@ -1003,7 +991,7 @@ struct PullRequestDetailView: View {
                     PullRequestFileIcon(path: file.path, size: 15)
                     Text(file.path).dockFont(.body, weight: .semibold, design: .monospaced).lineLimit(1)
                     Text(file.status.uppercased())
-                        .dockFont(size: 9, weight: .bold, design: .monospaced)
+                        .dockFont(.metadata, weight: .bold, design: .monospaced)
                         .foregroundStyle(Color.dockMetadataText)
                     Spacer()
                     HStack(spacing: 8) {

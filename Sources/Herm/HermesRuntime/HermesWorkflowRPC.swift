@@ -7,6 +7,8 @@ struct WorkflowIntegrationItem: Identifiable, Equatable {
     var enabled = false
     var requiredKeys: [String] = []
     var transport = ""
+    /// Ships with Hermes Agent (bundled skill, catalog MCP preset); false when unknown.
+    var builtin = false
 }
 struct WorkflowPlugin: Identifiable, Equatable {
     /// Canonical registry key; toggles address this, removal addresses `name`.
@@ -23,6 +25,20 @@ struct WorkflowPlugin: Identifiable, Equatable {
     var status = ""
     var catalogVersion = ""
     var pinnedRevision = ""
+    /// Hermes saw a newer git commit for this install.
+    var updateAvailable = false
+}
+enum WorkflowPluginUpdate: Equatable {
+    case updated(restart: Bool)
+    case unchanged
+    case needsConsent(String)
+    case blocked(String)
+}
+extension WorkflowPlugin {
+    /// The catalog lists a different version than the one installed.
+    var hasCatalogUpdate: Bool {
+        updateAvailable || !version.isEmpty && !catalogVersion.isEmpty && version != catalogVersion
+    }
 }
 struct WorkflowPluginSetting: Identifiable, Equatable {
     let id: String
@@ -194,8 +210,13 @@ final class HermesWorkflowRPC {
             let profileID = profileID ?? "default"
             let detail = try await BotService(client: client).profileDetail(profileID: profileID)
             guard detail.id == profileID else { throw HermesGateway.GatewayError.malformedResponse }
+            // Provenance is best-effort: an unreadable dashboard leaves every skill unmarked, never guessed.
+            let rows = (try? await client.fetchHTTP("/api/skills" + self.query([:])))?["items"] as? [[String: Any]]
+            let bundled = Set(
+                (rows ?? []).compactMap { $0["provenance"] as? String == "bundled" ? $0["name"] as? String : nil })
             return detail.skills.map {
-                WorkflowIntegrationItem(id: $0.id, detail: $0.label, installed: true, enabled: $0.enabled)
+                WorkflowIntegrationItem(
+                    id: $0.id, detail: $0.label, installed: true, enabled: $0.enabled, builtin: bundled.contains($0.id))
             }
         }
         let result = try await request(.skillsManage, ["action": "search", "query": query ?? ""])
@@ -244,6 +265,54 @@ final class HermesWorkflowRPC {
         else { throw HermesGateway.GatewayError.malformedResponse }
         return WorkflowSkillRemoval(name: name, pid: pid)
     }
+    /// `hermes skills check`: hub-installed skills only, name → Hermes status (`update_available`, `up_to_date`,
+    /// `unavailable`, …). Bundled and local skills never appear, so a missing name means "not checkable".
+    func skillUpdates() async throws -> [String: String] {
+        let raw = try await shell(["skills", "check"])
+        return Self.parseSkillCheck(raw)
+    }
+    /// `hermes skills update <name>`; Hermes skips locally edited skills rather than overwrite them.
+    func updateSkill(_ name: String) async throws {
+        let output = try await shell(["skills", "update", name])
+        if output.contains("Skipping:") {
+            throw QuickDraftError.message("\(name) has local edits, so Hermes kept your version.")
+        }
+    }
+    private func shell(_ words: [String]) async throws -> String {
+        let command = HermesCLICommand(["hermes"] + (profileID.map { ["--profile", $0] } ?? []) + words)
+        let raw = HermesControlRPC.normalizedShellResult(
+            try await client.request(
+                HermesFeatureIDs.ID.shellExec.rawValue, params: ["command": try command.rendered()]))
+        guard AppleRemindersAdapter.shellResultSucceeded(raw) else {
+            throw QuickDraftError.message(
+                HermesDiagnosticsService.safeSummary(raw["stderr"] as? String ?? "Hermes command failed."))
+        }
+        return raw["stdout"] as? String ?? ""
+    }
+    /// Rich renders the check as a box table; long names wrap onto continuation rows with an empty status.
+    static func parseSkillCheck(_ text: String) -> [String: String] {
+        let statuses: Set = ["up_to_date", "update_available", "unavailable", "orphaned", "invalid_install"]
+        var result: [String: String] = [:]
+        var last: String?
+        for line in text.split(separator: "\n") {
+            let cells = line.split(separator: "│", omittingEmptySubsequences: false).dropFirst().dropLast()
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            guard cells.count == 3 else {
+                last = nil
+                continue
+            }
+            if statuses.contains(cells[2]), !cells[0].isEmpty {
+                result[cells[0]] = cells[2]
+                last = cells[0]
+            } else if cells[2].isEmpty, !cells[0].isEmpty, let previous = last,
+                let status = result.removeValue(forKey: previous)
+            {
+                last = previous + cells[0]
+                result[previous + cells[0]] = status
+            }
+        }
+        return result
+    }
     func skillRemovalOutcome(_ removal: WorkflowSkillRemoval) async throws -> Int? {
         let result = try await client.fetchHTTP("/api/actions/\(removal.name)/status?lines=1")
         guard result["name"] as? String == removal.name, result["pid"] as? Int == removal.pid,
@@ -289,7 +358,7 @@ final class HermesWorkflowRPC {
             return WorkflowIntegrationItem(
                 id: name, detail: String(($0["description"] as? String ?? "").prefix(300)),
                 installed: installed, enabled: enabled, requiredKeys: $0["requires"] as? [String] ?? [],
-                transport: $0["transport"] as? String ?? "")
+                transport: $0["transport"] as? String ?? "", builtin: true)
         }
         if let configured = try? await request(.mcpServersList, [:]),
             let servers = configured["servers"] as? [[String: Any]]
@@ -373,7 +442,8 @@ final class HermesWorkflowRPC {
                 settings: ($0["settings_schema"] as? [[String: Any]] ?? []).compactMap(Self.pluginSetting),
                 version: $0["version"] as? String ?? "", source: $0["source"] as? String ?? "",
                 status: status, catalogVersion: $0["catalog_version"] as? String ?? "",
-                pinnedRevision: $0["pinned_sha"] as? String ?? "")
+                pinnedRevision: $0["pinned_sha"] as? String ?? "",
+                updateAvailable: $0["update_available"] as? Bool == true)
         }
     }
     static func pluginSetting(_ row: [String: Any]) -> WorkflowPluginSetting? {
@@ -526,6 +596,22 @@ final class HermesWorkflowRPC {
         let result = try await request(.pluginsManage, ["action": "toggle", "key": key, "enable": enabled])
         try acknowledged(result)
         return result["restart_required"] as? Bool == true
+    }
+    /// Hermes re-pins a catalog install or pulls a git one. A widening or scan-blocked update changes nothing
+    /// and comes back as a refusal the user must see; `acceptCapabilities` retries a consent refusal.
+    func updatePlugin(_ name: String, acceptCapabilities: Bool = false) async throws -> WorkflowPluginUpdate {
+        let result = try await request(
+            .pluginsManage, ["action": "update", "name": name, "accept_capabilities": acceptCapabilities])
+        if result["consent_required"] as? Bool == true {
+            let lines = (result["delta_lines"] as? [String]) ?? []
+            return .needsConsent(lines.joined(separator: "\n"))
+        }
+        if result["scan_blocked"] as? Bool == true {
+            return .blocked(result["error"] as? String ?? "Hermes' security scan blocked this update.")
+        }
+        try acknowledged(result)
+        return result["unchanged"] as? Bool == true
+            ? .unchanged : .updated(restart: result["restart_required"] as? Bool == true)
     }
     func removePlugin(_ name: String) async throws {
         try acknowledged(try await request(.pluginsManage, ["action": "remove", "name": name]))

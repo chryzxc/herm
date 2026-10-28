@@ -48,10 +48,10 @@ struct BotRosterPage: View {
         } message: {
             Text(avatarResult ?? "")
         }
-        .sheet(isPresented: $isShowingCreateSheet) {
+        .dockSheet(isPresented: $isShowingCreateSheet) {
             BotCreationSheet(model: model, roster: model.bots)
         }
-        .sheet(item: $editingBot) { bot in
+        .dockSheet(item: $editingBot) { bot in
             BotProfileEditorSheet(model: model, bot: bot) {
                 Task {
                     await model.refreshNow(force: true)
@@ -60,10 +60,10 @@ struct BotRosterPage: View {
                 }
             }
         }
-        .sheet(item: $duplicatingBot) { bot in
+        .dockSheet(item: $duplicatingBot) { bot in
             BotDuplicateSheet(model: model, bot: bot)
         }
-        .sheet(item: $activityBot) { bot in
+        .dockSheet(item: $activityBot) { bot in
             BotActivityHistorySheet(
                 bot: bot,
                 records: activityRecords(for: bot),
@@ -73,7 +73,7 @@ struct BotRosterPage: View {
                 }
             )
         }
-        .sheet(isPresented: $isShowingRoutineForm) {
+        .dockSheet(isPresented: $isShowingRoutineForm) {
             BotRoutineFormSheet(model: model, bots: model.visibleBots)
         }
         .confirmationDialog(
@@ -172,7 +172,6 @@ struct BotRosterPage: View {
                             DockIconLabel("New Bot", icon: .plus)
                         }
                         .buttonStyle(.dockPrimary)
-                        .controlSize(.regular)
                         .disabled(!model.canCreateBots)
                         .help(
                             model.canCreateBots
@@ -185,9 +184,8 @@ struct BotRosterPage: View {
                                 title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
                         }
                         .buttonStyle(.dockSecondary)
-                        .controlSize(.regular)
                         .disabled(isPopulatingAvatars)
-                        .popover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
+                        .dockPopover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
                             BotAvatarGeneratorTip(
                                 pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
                                 onFillMissing: { generateAvatars(all: false) },
@@ -208,11 +206,11 @@ struct BotRosterPage: View {
                         } label: {
                             DockIconLabel("New Routine", icon: .plus)
                         }
-                        .controlSize(.regular)
+                        .buttonStyle(.dockPrimary)
                         .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
                         .help("Attach a recurring routine to a Bot")
                     }
-                }
+                }.dockButtonSize(.compact)
             })
     }
 
@@ -285,28 +283,40 @@ struct BotRosterPage: View {
     }
 
     private var botFilters: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DockSpacing.control) {
+                botSearch
+                botFilterActions.fixedSize(horizontal: true, vertical: false)
+            }
+            VStack(alignment: .leading, spacing: DockSpacing.control) {
+                botSearch
+                botFilterActions
+            }
+        }
+    }
+
+    private var botSearch: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                DockIcon(.magnifyingGlass)
-                    .dockFont(.body, weight: .medium)
-                    .foregroundStyle(Color.dockMetadataText)
-                DockTextField("Search Bots", text: $model.searchText)
-                    .textFieldStyle(.plain)
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .frame(minWidth: 140)
-            }
-            .padding(.horizontal, DockLayout.compactInset)
-            .frame(maxWidth: .infinity, minHeight: DockLayout.controlHeight)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                    Color.dockControlSurface)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
-            }
+            DockIcon(.magnifyingGlass)
+                .dockFont(.body, weight: .medium)
+                .foregroundStyle(Color.dockMetadataText)
+            DockTextField("Search Bots", text: $model.searchText)
+                .textFieldStyle(.plain)
+                .dockFont(.body)
+                .foregroundStyle(Color.dockPrimaryText)
+                .frame(minWidth: 140)
+        }
+        .padding(.horizontal, DockLayout.compactInset)
+        .frame(maxWidth: .infinity, minHeight: DockLayout.controlHeight)
+        .background(
+            DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
+                Color.dockControlSurface, stroke: Color.dockBorder)
+        )
+        .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
+    }
+
+    private var botFilterActions: some View {
+        HStack(spacing: DockSpacing.control) {
 
             DockMenu {
                 ForEach(BotRosterActivityFilter.allCases) { filter in
@@ -322,20 +332,8 @@ struct BotRosterPage: View {
                 }
             } label: {
                 Label(activityFilter.title, icon: .funnelSimple)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(minHeight: DockLayout.controlHeight)
-                    .padding(.horizontal, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                            Color.dockControlSurface)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
-                    }
             }
+            .buttonStyle(.dockSecondary)
             .help("Filter Bots by activity")
 
             DockMenu {
@@ -351,20 +349,8 @@ struct BotRosterPage: View {
                 }
             } label: {
                 Label(showsHiddenBots ? "All Bots" : "Visible", icon: .eye)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(minHeight: DockLayout.controlHeight)
-                    .padding(.horizontal, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                            Color.dockControlSurface)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
-                    }
             }
+            .buttonStyle(.dockSecondary)
             .disabled(model.hiddenBots.isEmpty)
             .help("Choose whether hidden Bots are included")
 
@@ -378,6 +364,7 @@ struct BotRosterPage: View {
                 .fixedSize()
             }
         }
+        .dockButtonSize(.compact)
     }
 
     private var botsContent: some View {
@@ -404,7 +391,7 @@ struct BotRosterPage: View {
     }
 
     private func botCard(_ bot: BotSummary) -> some View {
-        MissionControlBotRow(
+        SessionNavBotRow(
             bot: bot,
             avatarData: model.avatarImages[bot.id],
             runtime: model.runtimeConfigs[bot.id],
@@ -850,7 +837,7 @@ private struct BotRoutineRow: View, Equatable {
                         .lineLimit(1)
                     if !routine.enabled {
                         Text("DISABLED")
-                            .dockFont(size: 9, weight: .semibold, design: .monospaced)
+                            .dockFont(.metadata, weight: .semibold, design: .monospaced)
                             .foregroundStyle(Color.dockMetadataText)
                     }
                 }
@@ -893,7 +880,7 @@ private struct BotRoutineRow: View, Equatable {
     }
 }
 
-struct MissionControlBotRow: View, Equatable {
+struct SessionNavBotRow: View, Equatable {
     let bot: BotSummary
     let avatarData: Data?
     var runtime: BotRuntimeConfig?

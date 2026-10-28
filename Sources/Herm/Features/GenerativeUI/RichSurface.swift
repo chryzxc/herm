@@ -212,6 +212,7 @@ enum RichResourcePolicy {
 /// Assistant-only extension of the canonical fence grammar. GitHub/user Markdown stays ordinary Markdown.
 struct RichDocument: Equatable, Sendable {
     static let maximumBytes = 1_048_576
+    static let preparing = RichDocument("```herm-ui\n", streaming: true)
 
     /// `String.contains` takes milliseconds on a long reply, and streaming rows
     /// and the markdown prefetcher ask on every update; search the bytes.

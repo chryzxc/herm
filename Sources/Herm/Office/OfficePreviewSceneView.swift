@@ -2356,17 +2356,6 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             }
         }
 
-        private func addRoomSign(to root: Entity, title: String, position: SIMD3<Float>) {
-            let sign = ModelEntity(
-                mesh: .generateText(title, extrusionDepth: 0.001, font: .systemFont(ofSize: 0.18, weight: .semibold)),
-                materials: [UnlitMaterial(color: OfficePreviewPalette.paper)]
-            )
-            sign.name = "room-sign-\(title)"
-            sign.position = position
-            sign.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0])
-            root.addChild(sign)
-        }
-
         private func addFramedPartition(to root: Entity, width: Float) {
             let trim = OfficePreviewPalette.frame
             // Open upper frames suggest glazed office partitions without

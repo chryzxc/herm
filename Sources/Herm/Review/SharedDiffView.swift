@@ -117,8 +117,8 @@ struct SharedDiffView: View {
             state.contextLines = 3
             state.contextError = nil
         }
-        .sheet(isPresented: $expanded) { expandedContent.modifier(ReviewSheetContext()) }
-        .sheet(
+        .dockSheet(isPresented: $expanded) { expandedContent.modifier(ReviewSheetContext()) }
+        .dockSheet(
             isPresented: Binding(
                 get: {
                     state.pendingNote != nil && (expandedPresentation || (expandedRouter?.content == nil && !expanded))

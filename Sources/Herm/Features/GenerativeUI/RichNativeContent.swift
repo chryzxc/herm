@@ -258,9 +258,12 @@ enum RichBlockPayload: Equatable, Sendable {
         case .table(let value):
             return surface.map { $0.datasets?.contains { $0.id == value.dataset } == true } ?? !value.dataset.isEmpty
         case .chart(let value):
-            guard ["bar", "line"].contains(value.style), RichIdentity.unique(value.series), !value.series.isEmpty else {
+            guard ["bar", "line", "area", "point"].contains(value.style), RichIdentity.unique(value.series),
+                !value.series.isEmpty
+            else {
                 return false
             }
+            guard value.style != "area" || value.series.count == 1 else { return false }
             guard let surface else { return true }
             guard let dataset = surface.datasets?.first(where: { $0.id == value.dataset }),
                 dataset.columns.contains(where: { $0.id == value.label })

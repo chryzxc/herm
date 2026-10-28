@@ -44,13 +44,16 @@ struct RepositoryChangesBrowser: View {
     @State private var isChangesExpanded = true
 
     var body: some View {
-        if let changes = workflow.changes, workflow.repository.isGitRepository {
+        // The workflow is shared; never show another project's snapshot (e.g. a new chat with no folder).
+        let isStale = projectPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path } != workflow.repository.path
+        if let changes = workflow.changes, workflow.repository.isGitRepository, projectPath != nil, !isStale {
             browser(changes)
         } else if let projectPath {
+            let isLoading = workflow.isRefreshing || isStale
             emptyState(
-                icon: workflow.isRefreshing ? .arrowsClockwise : .folder,
-                title: workflow.isRefreshing ? "Inspecting project" : "Project is not a Git repository",
-                detail: workflow.isRefreshing
+                icon: isLoading ? .arrowsClockwise : .folder,
+                title: isLoading ? "Inspecting project" : "Project is not a Git repository",
+                detail: isLoading
                     ? projectPath
                     : "\(projectPath) is available as a local project folder, but it has no Git working tree to inspect."
             )
@@ -80,7 +83,7 @@ struct RepositoryChangesBrowser: View {
                 Spacer()
                 if !showsBranch { refreshButton }
             }.padding(.vertical, 8)
-                .sheet(isPresented: $showingReview) {
+                .dockSheet(isPresented: $showingReview) {
                     if let projectPath {
                         LocalReviewWorkspace(path: projectPath, model: model).modifier(ReviewSheetContext())
                     }
@@ -156,7 +159,7 @@ struct RepositoryChangesBrowser: View {
                         isCommitPopoverPresented = true
                     }
                     .disabled(actionsDisabled || files.isEmpty || workflow.changes?.conflictedCount ?? 0 > 0)
-                    .popover(isPresented: $isCommitPopoverPresented, arrowEdge: .bottom) { commitPopover }
+                    .dockPopover(isPresented: $isCommitPopoverPresented, arrowEdge: .bottom) { commitPopover }
                 }
                 DockIconButton(
                     icon: staged ? .minus : .plus, label: staged ? "Unstage all changes" : "Stage all changes",
@@ -357,11 +360,11 @@ struct RepositoryChangesBrowser: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(commit.author)
-                    .dockFont(size: 12, weight: .semibold)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 if let email = detail?.email, !email.isEmpty {
                     Text(email)
-                        .dockFont(size: 12)
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -710,7 +713,7 @@ struct RepositoryChangesBrowser: View {
                             workflow.signOutGitHub()
                         }
                         .buttonStyle(.dockCompact)
-                        .dockFont(size: 9, weight: .semibold, design: .monospaced)
+                        .dockFont(.metadata, weight: .semibold, design: .monospaced)
                         .foregroundStyle(Color.dockSecondaryText)
                     }
                 }

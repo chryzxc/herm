@@ -186,14 +186,16 @@ extension ControlCenterModel {
         }
     }
 
-    func createProject(name: String, folder: String) async -> Bool {
+    func createProject(name: String, folder: String?) async -> Bool {
         guard let rpc else {
             reportActionError("Could not create project", message: "Hermes is not connected.")
             return false
         }
-        guard !name.isEmpty, !folder.isEmpty else { return false }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return false }
+        let folders = folder.map { $0.isEmpty ? [] : [$0] } ?? []
         do {
-            _ = try await rpc.createProject(name: name, folders: [folder], profileID: projectProfileID)
+            _ = try await rpc.createProject(name: name, folders: folders, profileID: projectProfileID)
             // `refresh()` is a no-op while one is in flight, which would leave the
             // new project out of the list until the next manual refresh.
             for _ in 0..<40 where isRefreshing { try? await Task.sleep(for: .milliseconds(250)) }

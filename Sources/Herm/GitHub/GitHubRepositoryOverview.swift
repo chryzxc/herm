@@ -188,7 +188,7 @@ struct GitHubRepositoryOverview: View {
             Button {
                 openRepository(repository.reference, kind)
             } label: {
-                DockIconLabel(title, icon: .caretRight)
+                DockIconLabel(title, icon: kind == .issue ? .record : .gitPullRequest)
             }
             .buttonStyle(.dockSecondary)
             .help("Browse \(title.lowercased()) in \(repository.id)")

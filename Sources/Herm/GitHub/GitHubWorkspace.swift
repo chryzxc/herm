@@ -20,14 +20,6 @@ enum GitHubWorkspaceSection: String, CaseIterable, Identifiable {
         case .repositories: .folder
         }
     }
-
-    static func visible(showsGitHub: Bool) -> [Self] {
-        showsGitHub ? allCases : []
-    }
-
-    func available(in sections: [Self]) -> Self? {
-        sections.contains(self) ? self : sections.first
-    }
 }
 
 /// Shared navigation around the existing PR and issue pages; their models retain browsing state and drafts.

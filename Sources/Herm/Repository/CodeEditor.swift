@@ -18,6 +18,7 @@ struct CodeEditorBlameHover: Equatable {
 /// annotations, current-line highlight, inline blame for the caret line,
 /// syntax highlighting, auto-indent, and the native find bar.
 struct CodeEditor: NSViewRepresentable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Binding var text: String
     let filePath: String
     let blame: RepositoryBlameDocument?
@@ -43,6 +44,7 @@ struct CodeEditor: NSViewRepresentable {
     }
 
     private func apply(to view: CodeEditorContainerView) {
+        view.setTextScale(workspaceScale)
         view.applyThemeIfNeeded()
         view.onCursorChange = onCursorChange
         view.gutter.onHoverBlame = onHoverBlame
@@ -145,6 +147,16 @@ final class CodeEditorContainerView: NSView {
     private var wrapWidth: CGFloat {
         let insets = scrollView.contentView.contentInsets
         return max(0, scrollView.contentSize.width - insets.left - insets.right)
+    }
+
+    func setTextScale(_ scale: CGFloat) {
+        let font = NSFont.monospacedSystemFont(ofSize: DockTypography.size(.code, scale: scale), weight: .regular)
+        guard textView.font != font else { return }
+        textView.font = font
+        textView.typingAttributes[.font] = font
+        gutter.updateThickness()
+        gutter.needsDisplay = true
+        scheduleHighlight()
     }
 
     func applyThemeIfNeeded() {
@@ -337,7 +349,7 @@ final class CodeTextView: NSTextView {
             ? "You · Uncommitted changes"
             : "\(commit.author), \(commit.authoredAt.map { HumanDateFormatting.relative($0) } ?? "unknown date") · \(commit.summary)"
         // Share the code's baseline and font so the ghost text sits on the line.
-        let font = CodeSyntaxHighlighter.font
+        let font = self.font ?? CodeSyntaxHighlighter.font
         let fragment = layoutManager.lineFragmentRect(forGlyphAt: lastGlyph, effectiveRange: nil)
         let baseline = fragment.minY + layoutManager.location(forGlyphAt: lastGlyph).y + textContainerOrigin.y
         let origin = NSPoint(x: used.maxX + textContainerOrigin.x + 28, y: baseline - font.ascender)
@@ -383,7 +395,12 @@ final class CodeGutterView: NSRulerView {
 
     private var numberColumnWidth: CGFloat {
         let digits = max(3, String(textView?.lineStarts.count ?? 1).count)
-        return CGFloat(digits) * 7.6 + 22
+        let font = NSFont.monospacedDigitSystemFont(
+            ofSize: DockTypography.size(
+                .metadata,
+                scale: (textView?.font?.pointSize ?? CodeSyntaxHighlighter.fontSize) / CodeSyntaxHighlighter.fontSize),
+            weight: .regular)
+        return ceil((String(repeating: "0", count: digits) as NSString).size(withAttributes: [.font: font]).width) + 22
     }
 
     func setBlame(_ blame: RepositoryBlameDocument?, showsBlame: Bool) {
@@ -418,8 +435,10 @@ final class CodeGutterView: NSRulerView {
         guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer
         else { return }
         let text = textView.string as NSString
-        let numberFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        let blameFont = NSFont.systemFont(ofSize: 11, weight: .regular)
+        let scale = (textView.font?.pointSize ?? CodeSyntaxHighlighter.fontSize) / CodeSyntaxHighlighter.fontSize
+        let size = DockTypography.size(.metadata, scale: scale)
+        let numberFont = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+        let blameFont = NSFont.systemFont(ofSize: size, weight: .regular)
         let visible = textView.visibleRect
         let glyphs = layoutManager.glyphRange(forBoundingRect: visible, in: textContainer)
         let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
@@ -439,7 +458,7 @@ final class CodeGutterView: NSRulerView {
             let y = convert(NSPoint(x: 0, y: fragment.minY + textView.textContainerOrigin.y), from: textView).y
             // Empty lines report the newline glyph's baseline at the fragment
             // bottom, so use the font's baseline for every line.
-            let baseline = y + layoutManager.defaultBaselineOffset(for: CodeSyntaxHighlighter.font)
+            let baseline = y + layoutManager.defaultBaselineOffset(for: textView.font ?? CodeSyntaxHighlighter.font)
 
             let isCurrent = line == textView.currentLine
             let number = NSAttributedString(
@@ -610,7 +629,7 @@ final class CodeMenuItem: NSMenuItem {
 // MARK: - Syntax highlighting
 
 @MainActor enum CodeSyntaxHighlighter {
-    static let fontSize: CGFloat = 12
+    static let fontSize = DockTypography.size(.code)
     static let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
 
     static var baseAttributes: [NSAttributedString.Key: Any] {
@@ -622,13 +641,15 @@ final class CodeMenuItem: NSMenuItem {
     static func apply(to textView: NSTextView, tokens: [(NSRange, CodeToken)]) {
         guard let storage = textView.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
+        var attributes = baseAttributes
+        attributes[.font] = textView.font ?? font
         storage.beginEditing()
-        storage.setAttributes(baseAttributes, range: full)
+        storage.setAttributes(attributes, range: full)
         for (range, token) in tokens {
             storage.addAttribute(.foregroundColor, value: token.color, range: range)
         }
         storage.endEditing()
-        textView.typingAttributes = baseAttributes
+        textView.typingAttributes = attributes
     }
 }
 

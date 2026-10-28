@@ -149,12 +149,12 @@ struct GitHubBrowseControls: View {
                     saved = try? JSONDecoder().decode(GitHubBrowseOptions.self, from: data)
                 }
             }
-            .sheet(isPresented: $editing) {
+            .dockSheet(isPresented: $editing) {
                 GitHubItemEditor(
                     kind: kind, client: client, repositories: repositories,
                     initialRepository: GitHubReferenceParser.repository(options.repository), onSaved: onCreated)
             }
-            .sheet(isPresented: $filters) {
+            .dockSheet(isPresented: $filters) {
                 DockModal(title: "GitHub filters", subtitle: "Leave repository blank for My work", width: 440) {
                     TextField("owner/repository", text: $draft.repository).textFieldStyle(.dockGlass)
                     TextField("Label", text: $draft.label).textFieldStyle(.dockGlass)

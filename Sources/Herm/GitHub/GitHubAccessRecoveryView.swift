@@ -32,7 +32,7 @@ struct GitHubAccessRecoveryView: View {
                 Image(systemName: "lock.rectangle")
                     .font(.system(size: 24)).foregroundStyle(Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Allow access to GitHub \(feature)").font(.system(size: 12, weight: .semibold))
+                    Text("Allow access to GitHub \(feature)").dockFont(.body, weight: .semibold)
                     Text(
                         requirement == .signIn
                             ? "Sign in with GitHub CLI to continue."
@@ -43,7 +43,7 @@ struct GitHubAccessRecoveryView: View {
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     Text(requirement.command())
-                        .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                        .dockFont(.metadata, design: .monospaced).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.dockSurface, in: RoundedRectangle(cornerRadius: 8))
@@ -72,7 +72,7 @@ struct GitHubAccessRecoveryView: View {
                     }.buttonStyle(.dockPrimary).disabled(isRetrying)
                 }
             }
-            .font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText)
+            .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
             .frame(maxWidth: 440, alignment: .leading).padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }

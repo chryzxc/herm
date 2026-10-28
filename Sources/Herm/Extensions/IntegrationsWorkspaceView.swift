@@ -10,7 +10,7 @@ struct IntegrationsWorkspaceView: View {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if geometry.size.width >= 1100 {
-                        categoryList.frame(width: 180)
+                        categoryList.frame(width: 208)
                         Color.dockBorderLight.frame(width: DockLayout.hairline)
                     }
                     VStack(spacing: 0) {
@@ -86,27 +86,45 @@ struct IntegrationsWorkspaceView: View {
     }
 
     private var categoryList: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(IntegrationsCategory.allCases) { category in
+        VStack(alignment: .leading, spacing: 20) {
+            categoryGroup("Capabilities", [.skills, .plugins, .tools])
+            categoryGroup("Connections", [.connectors, .mcp, .messaging])
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.top, 24)
+        .background(Color.dockSidebar)
+    }
+
+    private func categoryGroup(_ title: String, _ categories: [IntegrationsCategory]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            DockSectionLabel(title: title.uppercased()).padding(.horizontal, 10).padding(.bottom, 4)
+            ForEach(categories) { category in
                 Button {
                     state.selectCategory(category)
                 } label: {
-                    HStack(spacing: 8) {
-                        DockIcon(category.icon, size: 14, color: .dockSecondaryText)
+                    HStack(spacing: 10) {
+                        DockIcon(
+                            category.icon, size: 16,
+                            color: state.category == category ? .dockPrimaryText : .dockSecondaryText)
                         Text(category.title).dockFont(.body, weight: state.category == category ? .semibold : .regular)
                         Spacer(minLength: 0)
                         if let count = state.count(category) {
-                            Text(count.formatted()).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                            Text(count.formatted()).dockFont(.metadata).monospacedDigit()
+                                .foregroundStyle(Color.dockMetadataText)
                         }
                     }
                     .foregroundStyle(Color.dockPrimaryText)
-                    .dockListRow(isHighlighted: state.category == category)
+                    .padding(.horizontal, 10).padding(.vertical, 12)
+                    .dockSelectionBackground(
+                        DockThemeShape(cornerRadius: DockLayout.controlRadius),
+                        active: state.category == category, fill: Color.dockSurface4, allowsInvert: false
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)
                 .accessibilityAddTraits(state.category == category ? .isSelected : [])
                 .disabled(state.navigationLocked)
             }
-            Spacer(minLength: 0)
-        }.padding(8)
+        }
     }
 }

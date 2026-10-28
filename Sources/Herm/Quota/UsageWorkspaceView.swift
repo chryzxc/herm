@@ -229,7 +229,7 @@ struct UsageReportContent: View, Equatable {
                     } label: {
                         HStack(spacing: 8) {
                             DockIcon(expandedModels.contains(model.id) ? .caretDown : .caretRight)
-                                .dockFont(size: 9, weight: .semibold)
+                                .dockFont(.metadata, weight: .semibold)
                                 .foregroundStyle(Color.dockMetadataText)
                                 .frame(width: 10)
                                 .opacity(model.tasks.isEmpty ? 0 : 1)

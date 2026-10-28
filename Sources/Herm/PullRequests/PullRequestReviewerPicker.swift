@@ -56,29 +56,39 @@ struct PullRequestReviewerPicker: View {
     @State private var error: String?
     @State private var confirm = false
     private var service: PullRequestReviewerService { PullRequestReviewerService(client: client) }
+    private var filteredChoices: [String] {
+        choices.filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }
+    }
 
     var body: some View {
         DockModal(title: "Select reviewers", subtitle: record.reference.title, width: 520) {
             TextField("Filter reviewers", text: $search).textFieldStyle(.dockGlass)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if busy && !loaded { ProgressView("Loading reviewers…") }
-                    if loaded && choices.isEmpty {
-                        Text("No eligible reviewers available.").foregroundStyle(Color.dockSecondaryText)
-                    }
-                    ForEach(
-                        choices.filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self
-                    ) { login in
-                        Toggle(
-                            login,
-                            isOn: Binding(
-                                get: { selected.contains(login) },
-                                set: { if $0 { selected.insert(login) } else { selected.remove(login) } })
-                        ).toggleStyle(.dockSwitch)
-                    }
-                    if !loaded && !busy { Button("Retry") { Task { await load() } }.buttonStyle(.dockCompact) }
-                }.frame(maxWidth: .infinity, alignment: .leading).disabled(busy)
-            }.frame(minHeight: 120, maxHeight: 340)
+            if busy && !loaded {
+                ProgressView("Loading reviewers…")
+                    .frame(maxWidth: .infinity, minHeight: 180)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if loaded && choices.isEmpty {
+                            Text("No eligible reviewers available.").foregroundStyle(Color.dockSecondaryText)
+                        }
+                        if loaded && !choices.isEmpty && filteredChoices.isEmpty {
+                            Text("No reviewers match your search.").foregroundStyle(Color.dockSecondaryText)
+                        }
+                        ForEach(filteredChoices, id: \.self) { login in
+                            Toggle(
+                                login,
+                                isOn: Binding(
+                                    get: { selected.contains(login) },
+                                    set: { if $0 { selected.insert(login) } else { selected.remove(login) } })
+                            ).toggleStyle(.checkbox)
+                                .dockFont(.body)
+                                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                        }
+                        if !loaded && !busy { Button("Retry") { Task { await load() } }.buttonStyle(.dockCompact) }
+                    }.frame(maxWidth: .infinity, alignment: .leading).disabled(busy)
+                }.frame(height: 180)
+            }
             Text(error ?? " ").dockFont(.body).foregroundStyle(Color.dockWarning).frame(minHeight: 34)
         } footer: {
             Button("Cancel") { dismiss() }.buttonStyle(.dockSecondary).disabled(busy)
@@ -86,7 +96,7 @@ struct PullRequestReviewerPicker: View {
             Button {
                 confirm = true
             } label: {
-                GitHubActionLabel(title: busy ? "Saving…" : "Review changes", isBusy: busy)
+                GitHubActionLabel(title: busy && loaded ? "Saving…" : "Review changes", isBusy: busy && loaded)
             }
             .buttonStyle(.dockPrimary).disabled(!loaded || busy || selected == original)
         }

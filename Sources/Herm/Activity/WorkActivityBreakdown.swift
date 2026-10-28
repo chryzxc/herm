@@ -13,12 +13,17 @@ struct WorkActivityBreakdown: View {
             ("Automation runs", activity.runs.count, .dockMergedFill),
         ]
         let peak = max(1, rows.map { $0.1 }.max() ?? 1)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             DockSectionLabel(title: "Recorded work")
             ForEach(rows.indices, id: \.self) { index in
                 let row = rows[index]
-                HStack(spacing: 12) {
-                    Text(row.0).dockFont(.body).frame(width: 110, alignment: .leading)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(row.0).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        Spacer(minLength: 12)
+                        Text(row.1.formatted()).dockFont(.body, weight: .semibold)
+                            .monospacedDigit().foregroundStyle(Color.dockPrimaryText)
+                    }
                     GeometryReader { geometry in
                         Capsule().fill(Color.dockBorderLight)
                             .overlay(alignment: .leading) {
@@ -26,12 +31,9 @@ struct WorkActivityBreakdown: View {
                                     .frame(width: geometry.size.width * Double(row.1) / Double(peak))
                             }
                     }
-                    .frame(height: 5)
+                    .frame(height: 4)
                     .accessibilityHidden(true)
-                    Text(row.1.formatted()).dockFont(.machineMetadata)
-                        .frame(minWidth: 30, alignment: .trailing)
                 }
-                .foregroundStyle(Color.dockSecondaryText)
                 .accessibilityElement(children: .combine)
             }
             Text("Counts overlap; sessions are dated by latest activity. Hours show events, not time worked.")

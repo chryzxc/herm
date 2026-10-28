@@ -251,7 +251,7 @@ struct PullRequestLandingView: View {
         Group {
             if toolbar {
                 toolbarControl
-                    .popover(isPresented: $showsRequirements) {
+                    .dockPopover(isPresented: $showsRequirements) {
                         content.padding(16).frame(width: 360).background(Color.dockCanvas)
                     }
             } else if embedded {

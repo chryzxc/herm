@@ -255,7 +255,7 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.navigation, weight: .medium)
                     .foregroundStyle(project.isActive ? Color.dockAccent : Color.dockSecondaryText)
                 Text(projectDisplayName(project))
-                    .dockFont(size: 15, weight: .semibold)
+                    .dockFont(.rowTitle, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
             }

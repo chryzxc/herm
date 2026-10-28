@@ -58,9 +58,23 @@ enum RichFeatureRegistry {
             id: "dataset.table", version: 2, guidance: "Use type table with a typed shared dataset payload",
             example: #"{"id":"table","type":"table","payload":{"dataset":"sales"}}"#),
         .init(
-            id: "dataset.chart", version: 2, guidance: "Use type chart with a shared dataset and numeric series IDs",
+            id: "dataset.chart", version: 2,
+            guidance:
+                "Shared dataset and numeric series IDs. Styles: bar for comparisons, line for ordered trends, point for discrete observations, area for one cumulative or volume series. Labels follow supplied row order; include units in columns",
             example:
                 #"{"id":"chart","type":"chart","payload":{"dataset":"sales","label":"month","series":["sales"],"style":"bar"}}"#
+        ),
+        .init(
+            id: "dataset.area", version: 2,
+            guidance: "Single-series filled trend; ordered supplied values, never inferred forecasts",
+            example:
+                #"{"id":"trend","type":"chart","payload":{"dataset":"sales","label":"month","series":["sales"],"style":"area"}}"#
+        ),
+        .init(
+            id: "dataset.point", version: 2,
+            guidance: "Discrete observations across labelled categories without implying interpolation",
+            example:
+                #"{"id":"observations","type":"chart","payload":{"dataset":"sales","label":"month","series":["sales"],"style":"point"}}"#
         ),
         .init(
             id: "sources", version: 1, guidance: "Public HTTPS source links",
@@ -151,7 +165,7 @@ enum RichFeatureRegistry {
         Example HTML tool: a savings calculator needs editable balance, contribution, rate and years with a recalculating result.
         Envelope: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Use version 2 for new components, datasets or revisionOf. Native surfaces omit html. HTML uses kind "html", complete inline HTML/CSS/JS in html, and omits blocks. Include a useful fallback. HTML is offline and has no host bridge, credentials, storage, files, tools, downloads, popups or device access. Never request secrets.
         V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; dataset cells, metric values, comparison values and tree values are strings. Share datasets to link selection. Optional metadata example: \(metadataExample). assumptions accepts a string or an array of strings; source and observedAt are strings, fictional is a boolean. Supply only known metadata. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.
-        Compose task-focused views: planning and runbooks use workflow + checklist; debugging and code review use findings + code; research uses sources + comparison; budgets use metrics + shared table/chart; onboarding uses tree + code; suggested shell actions use command blocks for install, migrate, test and start-server steps; release reviews use workflow + findings. Ask for missing requirements with form. Use only the blocks that help the current task, not every component. Workflows and findings are supplied snapshots, never verified runtime records. Non-proposed workflow states require evidence from the input. Use readable headings, short detail, and one primary working surface; avoid decorative dashboards.
+        Compose task-focused views: planning and runbooks use workflow + checklist; debugging and code review use findings + code; research uses sources + comparison; budgets use metrics + shared table/chart; onboarding uses tree + code; suggested shell actions use command blocks for install, migrate, test and start-server steps; release reviews use workflow + findings. Ask for missing requirements with form. Use only the blocks that help the current task, not every component. Workflows and findings are supplied snapshots, never verified runtime records. Non-proposed workflow states require evidence from the input. Use readable headings, short detail, and one primary working surface; avoid decorative dashboards. In HTML use the injected --herm-* theme variables, visible input labels, keyboard-accessible controls, responsive layouts and reduced-motion support. Use color for data identity and meaningful state, pair it with labels or symbols, and keep explanatory text readable.
         Limits: 1 MiB per surface, 100 blocks, 1000 rows/items/points, 20 table columns. Available blocks:
         \(catalog(descriptors(in: RichGenerationContext())))
         """

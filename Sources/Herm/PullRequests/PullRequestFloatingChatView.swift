@@ -102,7 +102,7 @@ private struct PullRequestSessionChatView: View {
         .onChange(of: model.isSending) { _, sending in if sending { expanded = true } }
         .task { control.bind(to: model) }
         .onChange(of: model.sessionID) { _, id in control.focus(sessionID: id) }
-        .sheet(item: $image) { ChatImagePreviewModal(image: $0.image) }
+        .dockSheet(item: $image) { ChatImagePreviewModal(image: $0.image) }
     }
 
     private func openConversation() {

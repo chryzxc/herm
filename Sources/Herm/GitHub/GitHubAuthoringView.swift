@@ -124,7 +124,7 @@ struct GitHubAuthoringMenu<AdditionalActions: View>: View {
             busy ? "Updating issue…" : (loading ? "Loading item actions…" : "GitHub item actions")
         )
         .task(id: reference.id) { await load() }
-        .sheet(isPresented: $editing) {
+        .dockSheet(isPresented: $editing) {
             GitHubItemEditor(kind: reference.kind, client: client, reference: reference) { _ in
                 Task { await load() }
                 onChanged()

@@ -46,6 +46,35 @@ final class GeneratedHTMLCoordinator: ObservableObject {
     }
 }
 
+/// CSS defaults follow the selected skin; authored content can still style its own artwork.
+enum GeneratedHTMLTheme {
+    static func defaults(for theme: DockThemeID, systemDark: Bool) -> String {
+        let style = theme.style
+        let dark: Bool
+        switch theme.appearance {
+        case .dark: dark = true
+        case .light: dark = false
+        case .system: dark = systemDark
+        }
+        let family: String
+        switch style.fontDesign {
+        case .monospaced: family = "ui-monospace,Menlo,monospace"
+        case .serif: family = "ui-serif,Georgia,serif"
+        case .rounded: family = "ui-rounded,-apple-system,BlinkMacSystemFont,sans-serif"
+        default: family = "-apple-system,BlinkMacSystemFont,sans-serif"
+        }
+        let stopMotion =
+            "*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}"
+        return """
+            :root{color-scheme:\(dark ? "dark" : "light");--herm-font:\(family);--herm-control-radius:\(style.controlRadius)px;--herm-pane-radius:\(style.paneRadius)px;}
+            html,body{font:\(DockTypography.size(.body))px var(--herm-font);}
+            button,input,select,textarea{font:inherit;accent-color:var(--herm-accent);}
+            @media(prefers-reduced-motion:reduce){\(stopMotion)}
+            \(style.animates ? "" : stopMotion)
+            """
+    }
+}
+
 enum GeneratedHTMLPolicy {
     static let contentPolicy =
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
@@ -275,8 +304,11 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
                 "--herm-\(family):\(css(family.fill));--herm-\(family)-ink:\(css(family.color));"
             }.joined()
             let theme =
-                ":root{color-scheme:\(NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? "dark" : "light");--herm-background:\(css(.dockCanvas));--herm-text:\(css(.dockPrimaryText));--herm-secondary:\(css(.dockSecondaryText));--herm-accent:\(css(.dockAccent));--herm-surface:\(css(.dockSurface));--herm-border:\(css(.dockBorder));\(accents)}html,body{background:var(--herm-background);color:var(--herm-text);font:12px -apple-system,BlinkMacSystemFont,sans-serif;}button,input,select,textarea{font:inherit;}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}}"
-            let data = Data(GeneratedHTMLPolicy.wrapper(html, theme: theme).utf8)
+                ":root{--herm-background:\(css(.dockCanvas));--herm-text:\(css(.dockPrimaryText));--herm-secondary:\(css(.dockSecondaryText));--herm-accent:\(css(.dockAccent));--herm-surface:\(css(.dockSurface));--herm-border:\(css(.dockBorder));\(accents)}html,body{background:var(--herm-background);color:var(--herm-text);}"
+            let defaults = GeneratedHTMLTheme.defaults(
+                for: DockThemeRuntime.current,
+                systemDark: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+            let data = Data(GeneratedHTMLPolicy.wrapper(html, theme: theme + defaults).utf8)
             urlSchemeTask.didReceive(
                 URLResponse(
                     url: initialURL, mimeType: "text/html", expectedContentLength: data.count,

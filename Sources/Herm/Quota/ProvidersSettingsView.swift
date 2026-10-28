@@ -120,7 +120,8 @@ struct ProvidersSettingsView: View {
             }
         }
         .task { load() }
-        .sheet(item: Binding(get: { addingAccountFor.map(SheetProvider.init) }, set: { addingAccountFor = $0?.id })) {
+        .dockSheet(item: Binding(get: { addingAccountFor.map(SheetProvider.init) }, set: { addingAccountFor = $0?.id }))
+        {
             item in
             AddPoolAccountSheet(control: control, initialProvider: item.id, onAdded: { load() })
         }
@@ -173,7 +174,7 @@ struct ProvidersSettingsView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
                             Text(row.name)
-                                .dockFont(size: 12.5, weight: .semibold)
+                                .dockFont(.rowTitle, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
                             if row.isCurrent { tag("Current", color: .dockAccent) }
                         }
@@ -255,7 +256,7 @@ struct ProvidersSettingsView: View {
                 ModalNote(text: row.warning ?? "Configure this provider with Hermes' setup wizard.", icon: .info)
                 HStack(spacing: 6) {
                     Text("hermes model")
-                        .dockFont(size: 11.5, design: .monospaced)
+                        .dockFont(.code)
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
                     DockCopyButton("hermes model", accessibilityLabel: "Copy command", presentation: .icon)

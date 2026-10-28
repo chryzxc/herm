@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import Security
 
 struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
     enum Mode: String, Codable, CaseIterable { case local, remote, ssh, cloud }
@@ -95,44 +94,28 @@ enum GatewayConnectionError: LocalizedError {
     }
 }
 
+/// Tokens saved by earlier builds were added in-process; reading one asks once, and
+/// Always Allow then grants `security`, which keeps across rebuilds.
 enum GatewayTokenStore {
     static func read(_ account: String) throws -> String? {
-        var query = query(account)
-        query[kSecReturnData] = true
-        query[kSecMatchLimit] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = item as? Data, let token = String(data: data, encoding: .utf8) else {
-            throw GatewayConnectionError.storage(status)
-        }
-        return token
+        let result = try KeychainCLI.run(["find-generic-password", "-w"] + item(account))
+        if result.status == KeychainCLI.notFound { return nil }
+        guard result.status == 0 else { throw GatewayConnectionError.storage(result.status) }
+        return result.output
     }
 
     static func write(_ account: String, _ token: String) throws {
-        let query = query(account)
-        let attributes: [CFString: Any] = [kSecValueData: Data(token.utf8)]
-        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            var addition = query.merging(attributes) { _, new in new }
-            addition[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            status = SecItemAdd(addition as CFDictionary, nil)
-        }
-        guard status == errSecSuccess else { throw GatewayConnectionError.storage(status) }
+        let status = try KeychainCLI.run(["add-generic-password", "-U", "-w", token] + item(account)).status
+        guard status == 0 else { throw GatewayConnectionError.storage(status) }
     }
 
     static func remove(_ account: String) throws {
-        let status = SecItemDelete(query(account) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw GatewayConnectionError.storage(status)
-        }
+        let status = try KeychainCLI.run(["delete-generic-password"] + item(account)).status
+        guard status == 0 || status == KeychainCLI.notFound else { throw GatewayConnectionError.storage(status) }
     }
 
-    private static func query(_ account: String) -> [CFString: Any] {
-        [
-            kSecClass: kSecClassGenericPassword, kSecAttrService: "io.github.chryzxc.Herm.gateway",
-            kSecAttrAccount: account,
-        ]
+    private static func item(_ account: String) -> [String] {
+        ["-s", "io.github.chryzxc.Herm.gateway", "-a", account]
     }
 }
 

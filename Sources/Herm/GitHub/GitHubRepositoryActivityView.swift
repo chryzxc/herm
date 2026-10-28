@@ -145,13 +145,13 @@ struct GitHubRepositoryActivityView: View {
                     Text(item.actor ?? "Unknown user").dockFont(.metadata, weight: .semibold)
                     Text(action(item, summary: summary)).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                     if item.type == "branch_deletion" {
-                        DockMetadataPill(text: short(item.branch)).help(item.branch)
+                        DockMetadataPill(text: short(item.branch), compact: true).help(item.branch)
                     } else {
                         Link(
                             destination: model.repository.webURL.appendingPathComponent("tree").appendingPathComponent(
                                 item.branch)
                         ) {
-                            DockMetadataPill(text: short(item.branch), navigationIcon: .arrowUpRight)
+                            DockMetadataPill(text: short(item.branch), navigationIcon: .arrowUpRight, compact: true)
                         }.buttonStyle(.dockLink).help(item.branch)
                     }
                     Link(destination: url) {

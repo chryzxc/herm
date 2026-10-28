@@ -355,12 +355,15 @@ enum RepositoryService {
             storage
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Herm/Worktrees")
-        let destination = root.appendingPathComponent(id.uuidString)
+        // Short, readable names: the folder shows in the worktree picker.
+        let shortID = id.uuidString.prefix(8).lowercased()
+        let destination = root.appendingPathComponent(
+            "\(URL(fileURLWithPath: snapshot.path).lastPathComponent)-\(shortID)")
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         let result = await runGit(
             path: path,
-            arguments: ["worktree", "add", "-b", "herm/task-\(id.uuidString.lowercased())", destination.path, head])
+            arguments: ["worktree", "add", "-b", "herm/task-\(shortID)", destination.path, head])
         guard result.exitCode == 0 else {
             throw QuickDraftError.message(
                 "Git could not create the worktree. Any partially created directory is preserved at \(destination.path)."

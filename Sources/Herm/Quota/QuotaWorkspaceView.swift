@@ -81,11 +81,11 @@ struct QuotaWorkspaceView: View {
         }
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sheet(item: $connectTarget) { descriptor in
+        .dockSheet(item: $connectTarget) { descriptor in
             ProviderConnectSheet(descriptor: descriptor, control: control)
         }
-        .sheet(isPresented: $addingPoolAccount) { AddPoolAccountSheet(control: control) }
-        .sheet(item: Binding(get: { signInSlug.map(SlugItem.init) }, set: { signInSlug = $0?.id })) { item in
+        .dockSheet(isPresented: $addingPoolAccount) { AddPoolAccountSheet(control: control) }
+        .dockSheet(item: Binding(get: { signInSlug.map(SlugItem.init) }, set: { signInSlug = $0?.id })) { item in
             AddPoolAccountSheet(
                 control: control, initialProvider: item.id,
                 onAdded: {

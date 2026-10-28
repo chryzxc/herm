@@ -141,10 +141,6 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(SessionSpotlightIndex.enabledKey) var showsSessionsInSpotlight = false
     @AppStorage(ApprovalAuthGate.key) var requiresAuthForBroadApprovals = false
     @AppStorage(HermDelegate.keepAwakeKey) var keepsAwakeWhileWorking = false
-    @AppStorage(SidebarVisibilityKey.kanban) var showsKanbanInSidebar = true
-    @AppStorage(SidebarVisibilityKey.github) var showsGitHubInSidebar = true
-    @AppStorage(SidebarVisibilityKey.office) var showsOfficeInSidebar = true
-    @AppStorage(SidebarVisibilityKey.calendar) var showsCalendarInSidebar = true
     @AppStorage("dock.activity.tab") var activityTab = ActivityTab.work
     @AppStorage(ChatQuotaSettingsKey.chip) var showsQuotaChip = true
     @AppStorage(ChatQuotaSettingsKey.dropBanner) var showsQuotaDropBanner = true
@@ -228,14 +224,14 @@ struct WorkspaceActivitySidebar: View {
                     .allowsHitTesting(false)
                 }
             }
-            .sheet(isPresented: $isShowingCommandPalette) {
+            .dockSheet(isPresented: $isShowingCommandPalette) {
                 DockActionPalette(repositoryAvailable: activeRepositoryPath != nil, isWorking: model.status == .working)
                 { command in
                     run(command)
                     isShowingCommandPalette = false
                 }
             }
-            .sheet(item: $kanbanMutationRequest) { request in
+            .dockSheet(item: $kanbanMutationRequest) { request in
                 KanbanMutationEditor(
                     request: request, assignees: control.kanbanAssignees,
                     isPending: control.isActionPending(control.kanbanActionID(request.kind, task: request.task))
@@ -243,13 +239,13 @@ struct WorkspaceActivitySidebar: View {
                     control.mutateKanban(updated)
                 }
             }
-            .sheet(item: $cronEditJob) { job in
+            .dockSheet(item: $cronEditJob) { job in
                 CronEditEditor(job: job, control: control)
             }
-            .sheet(item: $cronReportRequest) { request in
+            .dockSheet(item: $cronReportRequest) { request in
                 CronReportDetailSheet(request: request, control: control)
             }
-            .sheet(isPresented: $isShowingAutomationComposer) {
+            .dockSheet(isPresented: $isShowingAutomationComposer) {
                 automationComposer
             }
             .confirmationDialog("Remove Scheduled Job?", isPresented: $isShowingCronRemovalConfirmation) {

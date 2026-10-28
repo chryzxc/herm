@@ -180,7 +180,7 @@ struct ArtifactsInspectorView: View {
         .onChange(of: filter) { resetPages() }
         .onChange(of: visibleRecords.map(\.id)) { _, _ in reconcileSelection() }
         .onChange(of: selectedArtifactID) { _, _ in selectedVersionID = nil }
-        .sheet(isPresented: $comparingVersions) {
+        .dockSheet(isPresented: $comparingVersions) {
             if let current = selectedRecord, let generated = current.generated,
                 let previous = recordIndex.versions(of: current)
                     .first(where: {
@@ -488,18 +488,8 @@ struct ArtifactsInspectorView: View {
 
     private func originBadge(_ origin: ArtifactOrigin) -> some View {
         Text(origin.rawValue)
-            .dockFont(size: 9, weight: .semibold)
-            .foregroundStyle(originColor(origin))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(originColor(origin).opacity(0.14), in: Capsule())
-    }
-
-    private func originColor(_ origin: ArtifactOrigin) -> Color {
-        switch origin {
-        case .generated: .dockSuccess
-        case .shared: .dockSecondaryText
-        }
+            .dockFont(.metadata, weight: .medium)
+            .foregroundStyle(Color.dockSecondaryText)
     }
 
     @ViewBuilder
@@ -507,7 +497,7 @@ struct ArtifactsInspectorView: View {
         if record.kind == .image {
             imagePreview(for: record, compact: true)
                 .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+                .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius - 2))
         } else if record.kind == .file {
             systemFileIcon(record)
                 .frame(width: size, height: size)
@@ -516,7 +506,7 @@ struct ArtifactsInspectorView: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
+                    DockThemeShape(cornerRadius: DockLayout.controlRadius - 2).dockSurfaceFill(
                         Color.dockSurface2)
                 )
                 .frame(width: size, height: size)
@@ -537,7 +527,7 @@ struct ArtifactsInspectorView: View {
             .padding(4)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius - 2).dockSurfaceFill(
                     Color.dockSurface2)
             )
             .accessibilityHidden(true)
@@ -957,7 +947,9 @@ struct ArtifactsInspectorView: View {
         } label: {
             HStack(spacing: 6) {
                 if item.showsIcon {
-                    DockIcon(item.icon, size: 13, color: selected ? .dockAccent : .dockMetadataText)
+                    DockIcon(
+                        item.icon, size: 13, weight: selected ? .fill : .regular,
+                        color: selected ? .dockPrimaryText : .dockMetadataText)
                 }
                 Text(item.rawValue)
                     .dockFont(.body, weight: selected ? .semibold : .medium)
@@ -969,9 +961,9 @@ struct ArtifactsInspectorView: View {
             .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .frame(height: 26)
-            .background(
-                selected ? Color.dockAccent.opacity(0.16) : Color.clear,
-                in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
+            .dockSelectionBackground(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius - 2), active: selected,
+                fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
             )
             .contentShape(Rectangle())
         }
@@ -1049,7 +1041,7 @@ struct ArtifactsInspectorView: View {
                 .lineLimit(1)
             HStack(spacing: 10) {
                 Text(record.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                    .dockFont(size: 9, design: .monospaced)
+                    .dockFont(.metadata, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 4)
                 artifactCopyAction(record.value)
@@ -1118,7 +1110,7 @@ struct ArtifactsInspectorView: View {
 
             Spacer(minLength: 6)
             Text(record.timestamp, format: .dateTime.month(.abbreviated).day())
-                .dockFont(size: 9, design: .monospaced)
+                .dockFont(.metadata, design: .monospaced)
                 .foregroundStyle(Color.dockMetadataText)
             artifactCopyAction(record.value)
             artifactAction("Open") { open(record.value) }

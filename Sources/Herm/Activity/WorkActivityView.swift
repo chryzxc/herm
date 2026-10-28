@@ -813,7 +813,7 @@ private struct CalendarDayPane: View, Equatable {
                     Text(subtitle)
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Button {
@@ -829,7 +829,6 @@ private struct CalendarDayPane: View, Equatable {
                     Label(copied ? "Copied" : "Copy standup", icon: copied ? .check : .copy)
                 }
                 .buttonStyle(.dockSecondary)
-                .controlSize(.small)
                 .disabled(day.isEmpty)
             }
             if day.isEmpty {
@@ -890,6 +889,8 @@ private struct CalendarDayPane: View, Equatable {
         if !day.doneTasks.isEmpty { parts.append("\(day.doneTasks.count) tasks done") }
         if !day.commits.isEmpty { parts.append("\(day.commits.count) commits") }
         if !day.sessions.isEmpty { parts.append("\(day.sessions.count) sessions") }
+        if !day.cronRuns.isEmpty { parts.append("\(day.cronRuns.count) automation runs") }
+        if parts.isEmpty, day.usage != nil { parts.append("Usage recorded") }
         if let first = day.firstAt, let last = day.lastAt, last > first {
             let span = Duration.seconds(last.timeIntervalSince(first)).formatted(
                 .units(allowed: [.hours, .minutes], width: .narrow))
@@ -905,7 +906,9 @@ private struct CalendarDayPane: View, Equatable {
         let change = Double(day.activityCount).percentChange(from: usualActivity)
         let perItem = day.cost > 0 && day.shippedItems > 0 ? day.cost / Double(day.shippedItems) : nil
         if day.activeHours > 0 || change != nil || perItem != nil || day.usage != nil {
-            HStack(alignment: .top, spacing: 24) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)], alignment: .leading, spacing: 12
+            ) {
                 if day.activeHours > 0 {
                     calendarStat(
                         "\(day.activeHours) hours with events",
@@ -913,7 +916,6 @@ private struct CalendarDayPane: View, Equatable {
                 }
                 if let change { calendarStat("\(change > 0 ? "↑" : "↓") \(abs(change))%", "vs your usual day") }
                 if let perItem { calendarStat(UsageWorkspaceView.cost(perItem), "cost per item shipped") }
-                Spacer(minLength: 0)
                 if day.cost > 0 || day.usage != nil { usageLink(onOpenUsage) }
             }
         }
@@ -1029,17 +1031,7 @@ private struct CalendarActivityDetails: View {
                     }
                 }
             }
-            if activity.hasUsage {
-                section("Usage", count: nil) {
-                    HStack(spacing: 20) {
-                        calendarStat(UsageWorkspaceView.tokens(activity.tokens), "tokens")
-                        if activity.apiCalls > 0 { calendarStat(activity.apiCalls.formatted(), "calls") }
-                        if activity.usageSessions > 0 { calendarStat("\(activity.usageSessions)", "sessions") }
-                        if activity.cost > 0 { calendarStat(UsageWorkspaceView.cost(activity.cost), "cost") }
-                    }
-                    .padding(.top, 4)
-                }
-            }
+            WorkActivityUsageView(activity: activity)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1289,7 +1281,7 @@ private struct CalendarDayCell: View, Equatable {
             try? await Task.sleep(for: .milliseconds(350))
             if !Task.isCancelled { showsPreview = true }
         }
-        .popover(isPresented: $showsPreview, arrowEdge: .bottom) {
+        .dockPopover(isPresented: $showsPreview, arrowEdge: .bottom) {
             if let day { CalendarDayPreview(date: date, day: day) }
         }
         .accessibilityElement(children: .ignore)

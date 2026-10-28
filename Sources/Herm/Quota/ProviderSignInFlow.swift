@@ -248,7 +248,7 @@ struct ProviderSignInFlow: View {
             }
             .padding(.top, 12)
             Text("\(providerName) account added")
-                .dockFont(size: 15, weight: .semibold)
+                .dockFont(.rowTitle, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if let label = prompt.accountLabel ?? (accountLabel.isEmpty ? nil : accountLabel) {
                 Text("“\(label)”")

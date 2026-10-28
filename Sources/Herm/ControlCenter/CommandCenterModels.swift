@@ -15,7 +15,7 @@ struct ReadinessSummary: Equatable {
     let verificationScope: String?
 }
 
-struct MissionControlFocus: Equatable {
+struct SessionNavFocus: Equatable {
     let sessionTitle: String?
     let branch: String?
     let model: String?
@@ -24,7 +24,7 @@ struct MissionControlFocus: Equatable {
     let runningCount: Int
 }
 
-enum MissionControlSection: String, CaseIterable, Identifiable {
+enum SessionNavSection: String, CaseIterable, Identifiable {
     case needsMe = "Needs Me"
     case runningNow = "Running Now"
     case changed = "Changed"
@@ -33,7 +33,7 @@ enum MissionControlSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct MissionControlWorkItem: Identifiable, Equatable {
+struct SessionNavWorkItem: Identifiable, Equatable {
     enum Kind: Equatable {
         case attention(AttentionItem)
         case session(SessionSummary)
@@ -51,11 +51,11 @@ struct MissionControlWorkItem: Identifiable, Equatable {
     let isUrgent: Bool
 }
 
-struct MissionControlSnapshot: Equatable {
-    let focus: MissionControlFocus
-    let needsMe: [MissionControlWorkItem]
-    let runningNow: [MissionControlWorkItem]
-    let changed: [MissionControlWorkItem]
+struct SessionNavSnapshot: Equatable {
+    let focus: SessionNavFocus
+    let needsMe: [SessionNavWorkItem]
+    let runningNow: [SessionNavWorkItem]
+    let changed: [SessionNavWorkItem]
     let readiness: ReadinessSummary
 }
 
@@ -76,7 +76,7 @@ enum WorkspaceOverviewMetrics {
     }
 }
 
-enum MissionControlSnapshotBuilder {
+enum SessionNavSnapshotBuilder {
     static func make(
         sessionTitle: String?,
         repository: RepositorySnapshot?,
@@ -91,51 +91,51 @@ enum MissionControlSnapshotBuilder {
         activities: [AgentActivity],
         cronRuns: [CronRunSummary],
         verification: VerificationSummary?
-    ) -> MissionControlSnapshot {
+    ) -> SessionNavSnapshot {
         let openAttention = attention.filter { $0.state == .open }.sorted { priority($0.kind) < priority($1.kind) }
         let needsMe = openAttention.map {
-            MissionControlWorkItem(
+            SessionNavWorkItem(
                 id: "attention:\($0.id)", kind: .attention($0), title: $0.title, detail: $0.detail,
                 isUrgent: isUrgent($0.kind))
         }
         let otherSessions = sessions.filter { $0.id != activeSessionID }
         let running =
             agents.map {
-                MissionControlWorkItem(
+                SessionNavWorkItem(
                     id: "agent:\($0.id)", kind: .agent($0), title: $0.name, detail: $0.state.uppercased(),
                     isUrgent: false)
             }
             + processes.map {
-                MissionControlWorkItem(
+                SessionNavWorkItem(
                     id: "process:\($0.id)", kind: .process($0), title: $0.name, detail: $0.state.uppercased(),
                     isUrgent: false)
             }
             + backgroundTasks.filter { $0.status == .running }.map {
-                MissionControlWorkItem(
+                SessionNavWorkItem(
                     id: "background:\($0.id)", kind: .background($0), title: $0.prompt, detail: "BACKGROUND TASK",
                     isUrgent: false)
             }
             + otherSessions.map {
-                MissionControlWorkItem(
+                SessionNavWorkItem(
                     id: "session:\($0.id)", kind: .session($0), title: $0.title, detail: $0.state.uppercased(),
                     isUrgent: false)
             }
         let changed =
             activities.suffix(4).reversed().map {
-                MissionControlWorkItem(
+                SessionNavWorkItem(
                     id: "activity:\($0.id.uuidString)", kind: .activity($0),
                     title: $0.kind.replacingOccurrences(of: "subagent.", with: "").uppercased(), detail: $0.text,
                     isUrgent: false)
             }
             + cronRuns.prefix(3).map {
-                MissionControlWorkItem(
+                SessionNavWorkItem(
                     id: "cron:\($0.id)", kind: .cron($0), title: "AUTOMATION · \($0.status.uppercased())",
                     detail: $0.jobID ?? "Scheduled job", isUrgent: $0.status.lowercased().contains("fail"))
             }
         let readiness = readiness(
             repository: repository, attention: openAttention, verification: verification, context: context)
-        return MissionControlSnapshot(
-            focus: MissionControlFocus(
+        return SessionNavSnapshot(
+            focus: SessionNavFocus(
                 sessionTitle: sessionTitle, branch: repository?.isGitRepository == true ? repository?.branch : nil,
                 model: model, contextPercent: context?.contextPercent,
                 changedFiles: repository?.isGitRepository == true ? repository?.changedFiles : nil,

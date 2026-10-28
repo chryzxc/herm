@@ -167,7 +167,7 @@ struct LocalReviewWorkspace: View {
                     .horizontal, 12
                 ).padding(.bottom, 8)
             }
-        }.sheet(isPresented: $readingGuide) {
+        }.dockSheet(isPresented: $readingGuide) {
             ReviewGuideView(
                 coordinator: guide, model: model, currentIdentity: review.comparison?.identity ?? "", directory: path,
                 onOpenConversation: openConversation

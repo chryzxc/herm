@@ -30,7 +30,7 @@ final class CommandCenterPreferencesStore: ObservableObject {
         routinePins = saved["routinePins"] as? [String] ?? []
         pinnedRepositoryIDs = saved["pinnedRepositoryIDs"] as? [String] ?? []
         collapsedSections = Set(saved["collapsedSections"] as? [String] ?? [])
-        sectionOrder = saved["sectionOrder"] as? [String] ?? MissionControlSection.allCases.map(\.rawValue)
+        sectionOrder = saved["sectionOrder"] as? [String] ?? SessionNavSection.allCases.map(\.rawValue)
         recentActionIDs = saved["recentActionIDs"] as? [String] ?? []
         watchedRepositoryIDs = saved["watchedRepositoryIDs"] as? [String] ?? []
         reviewBaselines = (saved["reviewBaselines"] as? [[String: Any]] ?? []).compactMap(
@@ -71,7 +71,7 @@ final class CommandCenterPreferencesStore: ObservableObject {
 
     func isPinnedRepository(_ id: String) -> Bool { pinnedRepositoryIDs.contains(id) }
 
-    func toggleCollapsed(_ section: MissionControlSection) {
+    func toggleCollapsed(_ section: SessionNavSection) {
         if collapsedSections.contains(section.rawValue) {
             collapsedSections.remove(section.rawValue)
         } else {
@@ -80,9 +80,9 @@ final class CommandCenterPreferencesStore: ObservableObject {
         save()
     }
 
-    func isCollapsed(_ section: MissionControlSection) -> Bool { collapsedSections.contains(section.rawValue) }
+    func isCollapsed(_ section: SessionNavSection) -> Bool { collapsedSections.contains(section.rawValue) }
 
-    func setSectionOrder(_ sections: [MissionControlSection]) {
+    func setSectionOrder(_ sections: [SessionNavSection]) {
         sectionOrder = sections.map(\.rawValue)
         save()
     }

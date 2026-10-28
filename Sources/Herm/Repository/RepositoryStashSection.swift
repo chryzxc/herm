@@ -31,7 +31,7 @@ struct RepositoryStashSection: View {
                     actionsDisabled || workflow.changes?.files.isEmpty != false
                         || (workflow.changes?.conflictedCount ?? 0) > 0
                 )
-                .popover(isPresented: $showingCreate, arrowEdge: .bottom) { createPopover }
+                .dockPopover(isPresented: $showingCreate, arrowEdge: .bottom) { createPopover }
             }
             if isExpanded {
                 VStack(alignment: .leading, spacing: 0) {

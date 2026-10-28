@@ -19,7 +19,9 @@ struct MemoryCorrectionView: View {
                 }
                 if let selected {
                     Text(selected.label).dockFont(.body, weight: .semibold)
-                    TextEditor(text: $content).dockFont(.body).frame(height: 120).disabled(pending)
+                    TextEditor(text: $content).dockFont(.body).scrollContentBackground(.hidden)
+                        .padding(8).frame(height: 120).disabled(pending)
+                        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill())
                     HStack {
                         Button {
                             confirmation = "Save"

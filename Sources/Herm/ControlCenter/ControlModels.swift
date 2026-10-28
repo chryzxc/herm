@@ -916,6 +916,12 @@ struct SessionUsageSummary: Equatable {
     let contextMax: Int?
     let contextPercent: Double?
     let model: String?
+    var reasoningTokens = 0
+    /// Omitted by Hermes when there are no cache reads or timings; never shown as zero.
+    var cacheHitPercent: Int? = nil
+    var compactions = 0
+    var averageLatencySeconds: Double? = nil
+    var tokensPerSecond: Double? = nil
 }
 
 /// Hermes' `/api/analytics/usage` report. `totals` and `daily` carry the
@@ -1084,6 +1090,35 @@ struct SessionContextSummary: Equatable {
     var compressionThresholdTokens: Int? = nil
     var compressionEnabled: Bool? = nil
     var contextEstimated: Bool = false
+    /// Nil when Hermes sent no manifest (no live agent or an older runtime); [] means none were found.
+    var files: [SessionContextFile]? = nil
+}
+
+/// One instruction file Hermes considered for the system prompt (`context_files`).
+struct SessionContextFile: Equatable, Identifiable {
+    let label: String
+    let path: String
+    let estimatedTokens: Int
+    let status: String
+    let loaded: Bool
+    var id: String { path + ":" + label }
+
+    /// Hermes' own wording for a file that did not load plainly; nil for an ordinary load.
+    var note: String? {
+        switch status {
+        case "loaded": nil
+        case "truncated": "Truncated: over the context-file size limit"
+        case "flagged": "Loaded, but matched a prompt-injection pattern. Review the file."
+        case "shadowed": "Not loaded: a higher-priority context file wins"
+        case "blocked": "Not loaded: blocked by the prompt-injection scan"
+        case "empty": "Not loaded: empty file"
+        case "unreadable": "Not loaded: could not be read"
+        case "suppressed": "Not loaded: the working directory fell back to the Hermes install"
+        default: loaded ? nil : "Not loaded"
+        }
+    }
+
+    var needsAttention: Bool { ["truncated", "flagged", "blocked", "unreadable"].contains(status) }
 }
 
 enum SessionTextActionStatus: String, Equatable {

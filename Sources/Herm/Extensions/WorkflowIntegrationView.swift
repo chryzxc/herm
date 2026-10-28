@@ -9,6 +9,13 @@ final class WorkflowIntegrationModel: ObservableObject {
     @Published var servers: [WorkflowIntegrationItem] = []
     @Published var plugins: [WorkflowPlugin] = [] { didSet { rebuildCatalogIndex() } }
     @Published private(set) var pluginsLoading = true
+    /// `hermes skills check` result for hub-installed skills; nil until a check finishes.
+    @Published private(set) var skillUpdates: [String: String]?
+    @Published private(set) var checkingSkillUpdates = false
+    /// Skill or plugin id Hermes is updating right now; drives the inline progress.
+    @Published private(set) var updatingItem: String?
+    /// Plugin id whose last update was refused pending the user's approval of a wider capability set.
+    @Published var pluginUpdateConsent: String?
     @Published var connectors: [WorkflowConnector] = []
     @Published var catalog: [WorkflowPluginCatalogEntry] = [] { didSet { rebuildCatalogIndex() } }
     private var catalogLoaded = false
@@ -60,11 +67,25 @@ final class WorkflowIntegrationModel: ObservableObject {
         cancelActiveReads()
         service = HermesWorkflowRPC(client: client, profileID: profileID)
         (skills, servers, plugins, connectors, toolsets, hub, preview) = ([], [], [], [], [], [], nil)
+        skillUpdates = nil
         loadedSections = []
         staleSections = []
         unsupported = []
         status = ""
     }
+    /// Asks Hermes which hub skills have upstream changes. A failed check leaves the last answer, never guesses.
+    func checkSkillUpdates() async {
+        guard !checkingSkillUpdates else { return }
+        checkingSkillUpdates = true
+        defer { checkingSkillUpdates = false }
+        do {
+            skillUpdates = try await service.skillUpdates()
+        } catch {
+            guard !Task.isCancelled else { return }
+            status = "Skill update check failed. \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+        }
+    }
+    func skillHasUpdate(_ name: String) -> Bool { skillUpdates?[name] == "update_available" }
     func searchHub(_ query: String) async {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !busy, !query.isEmpty else { return }
@@ -261,6 +282,17 @@ final class WorkflowIntegrationModel: ObservableObject {
             case "Install skill": try await service.installSkill(item.id)
             case "Enable skill", "Disable skill":
                 try await service.toggleSkill(item.id, enabled: action == "Enable skill")
+            case "Update skill":
+                updatingItem = item.id
+                defer { updatingItem = nil }
+                try await service.updateSkill(item.id)
+                await refresh(section: activeSection == nil ? nil : .skills)
+                await checkSkillUpdates()
+                status =
+                    skillUpdates?[item.id] == "update_available"
+                    ? "Hermes could not confirm the update for \(item.id). Review it before retrying."
+                    : "\(item.id) updated. New sessions use the new version."
+                return
             case "Remove skill":
                 guard !pendingRemovals.contains(item.id) else { return }
                 let removal = try await service.removeSkill(item.id)
@@ -303,6 +335,35 @@ final class WorkflowIntegrationModel: ObservableObject {
                     restart
                     ? "Change saved. Restart the Hermes gateway to apply it."
                     : "Change acknowledged. New sessions use the updated plugin set."
+                return
+            case "Update plugin", "Check for update", "Accept changes and update plugin":
+                updatingItem = item.id
+                defer { updatingItem = nil }
+                let outcome = try await service.updatePlugin(
+                    item.detail, acceptCapabilities: action == "Accept changes and update plugin")
+                status = ""
+                loadedSections = []
+                pluginUpdateConsent = nil
+                switch outcome {
+                case .needsConsent(let delta):
+                    pluginUpdateConsent = item.id
+                    status = "\(item.detail) update needs approval. It adds:\n\(delta)"
+                    return
+                case .blocked(let reason):
+                    status = HermesDiagnosticsService.safeSummary(reason)
+                    return
+                case .unchanged:
+                    status = "\(item.detail) is already up to date."
+                    return
+                case .updated(let restart):
+                    await refreshPlugins()
+                    guard status.isEmpty else { return }
+                    if catalogLoaded { await loadCatalog(force: true) }
+                    status =
+                        restart
+                        ? "\(item.detail) updated. Restart the Hermes gateway to apply it."
+                        : "\(item.detail) updated. New sessions use the new version."
+                }
                 return
             case "Enable toolset", "Disable toolset":
                 try await service.setToolset(item.id, enabled: action == "Enable toolset")
@@ -539,6 +600,10 @@ struct WorkflowIntegrationView: View {
         var group = ""
         var stars: Int?
         var official = false
+        /// Hermes reports the item as shipped with the agent; never inferred.
+        var builtin = false
+        /// Hermes reports a newer version upstream.
+        var update = false
     }
     let destination: IntegrationDestination
     let workspace: IntegrationsWorkspaceState?
@@ -648,7 +713,7 @@ struct WorkflowIntegrationView: View {
             if value { browsing.showsDetail = true }
         }
         .onChange(of: workspace?.discardRevision) { discardEditors() }
-        .sheet(isPresented: $showsCustomServer) {
+        .dockSheet(isPresented: $showsCustomServer) {
             DockModal(
                 title: "Add custom server", subtitle: "Profile: \(profileName(model.service.profileID))", width: 400
             ) {
@@ -851,73 +916,40 @@ struct WorkflowIntegrationView: View {
         let list = visibleEntries(section, discovering: canDiscover && discover)
         let current = list.first { $0.id == selection } ?? list.first
         return AdaptiveSplit(
-            breakpoint: 800, primaryMinWidth: 280, primaryIdealWidth: 320, primaryMaxWidth: 380, secondaryMinWidth: 400,
-            alwaysSplitWhenWide: true, showsSecondary: browsing.showsDetail,
+            breakpoint: 800, primaryMinWidth: 340, secondaryMinWidth: 400,
+            showsSecondary: browsing.showsDetail,
             onBack: { if !hasPendingEdits { browsing.showsDetail = false } }
         ) {
-            VStack(alignment: .leading, spacing: 8) {
-                if canDiscover {
-                    DockTabBar(options: [false, true], selection: binding(\.discover)) { $0 ? "Discover" : "Installed" }
-                        .disabled(hasPendingEdits || model.busy)
+            VStack(alignment: .leading, spacing: 16) {
+                IntegrationLibraryHeader(
+                    title: workspace?.category.title ?? section.rawValue, summary: summary(section, list: list))
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { pageControls(section, canDiscover: canDiscover) }
+                    VStack(alignment: .leading, spacing: 8) { pageControls(section, canDiscover: canDiscover) }
                 }
-                DockTextField(
-                    discover && section == .skills
-                        ? "Search the Skills Hub" : "Search \(section.rawValue.lowercased())",
-                    text: binding(\.search)
-                ).textFieldStyle(.dockGlass)
-                    .disabled(hasPendingEdits || model.busy)
-                    .onSubmit { if discover && section == .skills { Task { await model.searchHub(filter) } } }
-                HStack {
-                    if discover && section == .skills {
-                        DockAsyncButton("Search Skills Hub") { await model.searchHub(filter) }
-                            .buttonStyle(.dockSecondary)
-                            .disabled(model.busy || filter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    if !filter.isEmpty {
-                        Button("Clear filter") { filter = "" }.buttonStyle(.dockSecondary).disabled(hasPendingEdits)
-                    }
-                }
-                if discover && section == .plugins && !model.catalog.isEmpty {
-                    DockMenuPicker(
-                        title: category.isEmpty ? "All categories" : category.capitalized,
-                        selection: binding(\.pluginCategory)
-                    ) {
-                        DockMenuOption("All categories", value: "")
-                        ForEach(catalogCategories, id: \.self) { DockMenuOption($0.capitalized, value: $0) }
-                    }.disabled(hasPendingEdits)
-                    if !model.stars.isEmpty {
-                        DockSegmentedPicker(selection: binding(\.byStars), options: [(true, "Stars"), (false, "A–Z")])
-                    }
-                }
-                Text(summary(section, list: list)).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(2).frame(minHeight: 28, alignment: .leading)
-                if section == .mcp && discover {
-                    Button("Add custom server") { showsCustomServer = true }.buttonStyle(.dockSecondary)
-                        .disabled(hasPendingEdits || model.busy || model.staleSections.contains(section))
-                }
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(grouped(list), id: \.0) { name, rows in
                             if !name.isEmpty {
-                                DockSectionLabel(title: name.uppercased(), count: rows.count).padding(.top, 10)
+                                DockSectionLabel(title: name.uppercased(), count: rows.count).padding(.top, 6)
                             }
-                            ForEach(rows) { entry in listRow(entry, selected: entry.id == current?.id) }
+                            IntegrationCardGrid {
+                                ForEach(rows) { entry in
+                                    card(entry, selected: browsing.showsDetail && entry.id == current?.id)
+                                }
+                            }
                         }
                         if list.isEmpty {
                             emptyList(section, loading: model.busy || (discover && model.catalogLoading))
                         }
-                    }
+                    }.padding(.bottom, 14)
                 }
-            }.padding(14).frame(maxWidth: .infinity)
+            }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
         } secondary: {
             VStack(spacing: 0) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(
-                            section == .connectors
-                                ? "Account connections" : "Profile: \(profileName(model.service.profileID))"
-                        )
-                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    VStack(alignment: .leading, spacing: 24) {
                         if let current {
                             inspector(section, current).disabled(
                                 model.busy || model.staleSections.contains(section)
@@ -925,7 +957,7 @@ struct WorkflowIntegrationView: View {
                         } else {
                             emptyList(section, loading: model.busy)
                         }
-                    }.padding(20).frame(maxWidth: 760, alignment: .leading).frame(
+                    }.padding(24).frame(maxWidth: 600, alignment: .leading).frame(
                         maxWidth: .infinity, alignment: .leading)
                 }
                 if hasPendingEdits {
@@ -963,7 +995,58 @@ struct WorkflowIntegrationView: View {
             }
         }
         .task(id: discover && section == .plugins) { if discover && section == .plugins { await model.loadCatalog() } }
+        .task(id: section == .skills && model.loadedSections.contains(.skills) ? model.service.profileID ?? "" : nil) {
+            if section == .skills, model.loadedSections.contains(.skills), model.skillUpdates == nil {
+                await model.checkSkillUpdates()
+            }
+        }
         .dockButtonSize(.compact)
+    }
+    /// Scope, search and catalog filters; laid out as one toolbar row when the grid has room.
+    @ViewBuilder
+    private func pageControls(_ section: Section, canDiscover: Bool) -> some View {
+        if canDiscover {
+            DockTabBar(options: [false, true], selection: binding(\.discover)) { $0 ? "Discover" : "Installed" }
+                .fixedSize().disabled(hasPendingEdits || model.busy)
+        }
+        DockTextField(
+            discover && section == .skills ? "Search the Skills Hub" : "Search \(section.rawValue.lowercased())",
+            text: binding(\.search)
+        ).textFieldStyle(.dockGlass).frame(minWidth: 180, maxWidth: 320)
+            .disabled(hasPendingEdits || model.busy)
+            .onSubmit { if discover && section == .skills { Task { await model.searchHub(filter) } } }
+        if discover && section == .skills {
+            DockAsyncButton("Search Skills Hub") { await model.searchHub(filter) }
+                .buttonStyle(.dockSecondary).fixedSize()
+                .disabled(model.busy || filter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if !filter.isEmpty {
+            Button("Clear filter") { filter = "" }.buttonStyle(.dockSecondary).fixedSize().disabled(hasPendingEdits)
+        }
+        if discover && section == .plugins && !model.catalog.isEmpty {
+            DockMenuPicker(
+                title: category.isEmpty ? "All categories" : category.capitalized,
+                selection: binding(\.pluginCategory)
+            ) {
+                DockMenuOption("All categories", value: "")
+                ForEach(catalogCategories, id: \.self) { DockMenuOption($0.capitalized, value: $0) }
+            }.fixedSize().disabled(hasPendingEdits)
+            if !model.stars.isEmpty {
+                DockSegmentedPicker(selection: binding(\.byStars), options: [(true, "Stars"), (false, "A–Z")])
+                    .fixedSize()
+            }
+        }
+        if section == .skills && !discover {
+            DockAsyncButton(model.checkingSkillUpdates ? "Checking…" : "Check for updates") {
+                await model.checkSkillUpdates()
+            }
+            .buttonStyle(.dockSecondary).fixedSize()
+            .disabled(model.busy || model.checkingSkillUpdates)
+        }
+        if section == .mcp && discover {
+            Button("Add custom server") { showsCustomServer = true }.buttonStyle(.dockSecondary).fixedSize()
+                .disabled(hasPendingEdits || model.busy || model.staleSections.contains(section))
+        }
     }
     private func binding<Value>(_ key: WritableKeyPath<IntegrationsBrowsingState, Value>) -> Binding<Value> {
         Binding(get: { browsing[keyPath: key] }, set: { browsing[keyPath: key] = $0 })
@@ -984,6 +1067,9 @@ struct WorkflowIntegrationView: View {
         var parts = ["\(list.count) \(list.count == 1 ? "item" : "items")"]
         if !switches.isEmpty { parts.append("\(switches.filter { $0 }.count) on") }
         if attention > 0 { parts.append("\(attention) need attention") }
+        let updates = list.filter(\.update).count
+        if updates > 0 { parts.append("\(updates) \(updates == 1 ? "update" : "updates") available") }
+        if section == .skills && model.checkingSkillUpdates { parts.append("checking for updates…") }
         return parts.joined(separator: " · ")
     }
     @ViewBuilder
@@ -1035,7 +1121,7 @@ struct WorkflowIntegrationView: View {
                 }
             default:
                 rows = model.servers.filter { !$0.installed }.map {
-                    Entry(id: $0.id, title: $0.id, subtitle: $0.detail)
+                    Entry(id: $0.id, title: $0.id, subtitle: $0.detail, builtin: $0.builtin)
                 }
             }
         } else {
@@ -1065,12 +1151,13 @@ struct WorkflowIntegrationView: View {
         case .skills:
             return model.skills.map {
                 Entry(
-                    id: $0.id, title: $0.id, subtitle: $0.detail, on: $0.enabled)
+                    id: $0.id, title: $0.id, subtitle: $0.detail, on: $0.enabled, builtin: $0.builtin,
+                    update: model.skillHasUpdate($0.id))
             }
         case .tools:
             return model.toolsets.map {
                 Entry(
-                    id: $0.id, title: $0.label, subtitle: "\($0.tools.count) tools",
+                    id: $0.id, title: $0.label, subtitle: "\($0.tools.count) \($0.tools.count == 1 ? "tool" : "tools")",
                     badge: $0.configured ? nil : (.attention, "Setup"), on: $0.enabled)
             }
         case .connectors:
@@ -1080,11 +1167,13 @@ struct WorkflowIntegrationView: View {
         case .plugins:
             return model.plugins.map {
                 Entry(
-                    id: $0.id, title: $0.name, subtitle: $0.detail, on: $0.enabled)
+                    id: $0.id, title: $0.name, subtitle: $0.detail, on: $0.enabled, builtin: $0.source == "bundled",
+                    update: $0.hasCatalogUpdate)
             }
         case .mcp:
             return model.servers.filter(\.installed).map {
-                Entry(id: $0.id, title: $0.id, subtitle: $0.detail, badge: (.complete, "Added"))
+                Entry(
+                    id: $0.id, title: $0.id, subtitle: $0.detail, badge: (.complete, "Added"), builtin: $0.builtin)
             }
         }
     }
@@ -1093,78 +1182,104 @@ struct WorkflowIntegrationView: View {
         if ["failed", "expired", "revoked"].contains(connector.status ?? "") { return (.attention, "Reconnect") }
         return connector.connected ? (.complete, "Connected") : (.queued, "Available")
     }
-    private func listRow(_ entry: Entry, selected: Bool) -> some View {
-        Button {
-            selection = entry.id
-            browsing.showsDetail = true
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                DockIcon(
-                    workspace?.category.icon ?? .puzzlePiece, size: 16, color: .dockSecondaryText
-                )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(2)
-                    if !entry.subtitle.isEmpty, entry.subtitle != entry.title {
-                        Text(entry.subtitle).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
-                    }
-                    HStack(spacing: 6) {
-                        Circle().fill(dotColor(entry)).frame(width: 6, height: 6)
-                        if let badge = entry.badge {
-                            Text(badge.1)
-                        } else if let on = entry.on {
-                            Text(on ? "Enabled" : "Disabled")
-                        }
-                        if let stars = entry.stars { starCount(stars) }
-                        if entry.official { Text("Official") }
-                    }.dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                }
-                Spacer(minLength: 0)
-            }.dockListRow(isHighlighted: selected)
-        }
-        .buttonStyle(.dockHover).disabled(hasPendingEdits)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityLabel("Show details for \(entry.title)")
-    }
-    private func starCount(_ stars: Int) -> some View {
-        HStack(spacing: 3) {
-            DockIcon(.star, size: 10, color: .dockMetadataText)
-            Text(stars.formatted(.number.notation(.compactName))).dockFont(.metadata).monospacedDigit()
-                .foregroundStyle(Color.dockMetadataText)
-        }.help("\(stars) GitHub stars")
-    }
-    /// Quiet state cue in the theme's own success/warning/neutral colours.
-    private func dotColor(_ entry: Entry) -> Color {
-        if let badge = entry.badge {
-            switch badge.0 {
-            case .attention: return .dockWarning
-            case .complete: return .dockSuccess
-            default: return .dockBorderStrong
+    private func card(_ entry: Entry, selected: Bool) -> some View {
+        IntegrationCard(
+            title: entry.title, detail: entry.subtitle == entry.title ? "" : entry.subtitle,
+            status: model.updatingItem == entry.id
+                ? (.working, "Updating…")
+                : entry.badge ?? entry.on.map { $0 ? (.complete, "Enabled") : (.inactive, "Disabled") },
+            builtin: entry.builtin, official: entry.official, stars: entry.stars, update: entry.update,
+            selected: selected,
+            action: {
+                selection = entry.id
+                browsing.showsDetail = true
             }
+        ) {
+            IntegrationCardIcon(symbol: workspace?.category.icon ?? .puzzlePiece)
         }
-        guard let on = entry.on else { return DockCategoryTone.integration.fill }
-        return on ? .dockSuccess : .dockBorderStrong
+        .disabled(hasPendingEdits)
     }
+    /// Identity block shared by every tab: glyph, name, live state, scope, then Hermes' own description.
     private func inspectorHeader(_ entry: Entry, pills: [(DockStatusTone, String)], _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(entry.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                    .textSelection(.enabled)
+        IntegrationInspectorHeader(
+            title: entry.title,
+            category: workspace?.category.title ?? pageSection?.wrappedValue.rawValue ?? "Integration",
+            scope: scopeLine, detail: text
+        ) {
+            DockIcon(workspace?.category.icon ?? .puzzlePiece, size: 24, color: .dockPrimaryText)
+                .frame(width: 48, height: 48)
+                .background(DockThemeShape(cornerRadius: DockLayout.paneRadius).dockSurfaceFill(Color.dockSurface4))
+        } status: {
+            DockChipFlow(spacing: 6) {
                 ForEach(pills.indices, id: \.self) { DockStatusPill(tone: pills[$0].0, text: pills[$0].1) }
-            }
-            if !text.isEmpty {
-                Text(text).dockFont(.navigation).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                if entry.builtin { IntegrationBuiltinPill() }
             }
         }
+    }
+    /// Hermes reports no byte or step progress for updates, so this stays indeterminate rather than invent a percentage.
+    private func updateProgress(_ name: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                DockIcon(.arrowCircleUp, size: 14, color: .dockAccent)
+                Text("Updating \(name)…").dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                Spacer(minLength: 0)
+            }
+            ProgressView().progressViewStyle(.linear).tint(Color.dockAccent)
+            Text("Hermes is fetching, security-scanning and installing the new version. This can take a minute.")
+                .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dockCard(padding: 12, isQuiet: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Updating \(name)")
+    }
+    private func skillSource(_ name: String) -> String {
+        guard let updates = model.skillUpdates else { return "" }
+        return updates[name] == nil ? "Local" : "Skills Hub"
+    }
+    private func skillUpdateLabel(_ name: String) -> String {
+        if model.checkingSkillUpdates { return "Checking…" }
+        guard let updates = model.skillUpdates else { return "Not checked" }
+        switch updates[name] {
+        case "update_available": return "New version available"
+        case "up_to_date": return "Up to date"
+        case "unavailable": return "Source unreachable"
+        case "orphaned", "invalid_install": return "Install is damaged"
+        default: return "Not tracked by the Skills Hub"
+        }
+    }
+    private var scopeLine: String {
+        pageSection?.wrappedValue == .connectors
+            ? "Account connection" : "Profile · \(profileName(model.service.profileID))"
+    }
+    /// Primary actions lead; the destructive one sits apart on the trailing edge.
+    private func actionBar<Leading: View, Trailing: View>(
+        @ViewBuilder _ leading: () -> Leading, @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Color.dockBorderLight.frame(height: DockLayout.hairline)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    HStack(spacing: 8) { leading() }.fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    trailing()
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    DockChipFlow(spacing: 8) { leading() }
+                    trailing()
+                }
+            }
+            Color.dockBorderLight.frame(height: DockLayout.hairline)
+        }
+        .dockButtonSize(.standard)
     }
     private func panel<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockSectionText)
-            content()
+        VStack(alignment: .leading, spacing: 12) {
+            DockSectionLabel(title: title.uppercased())
+            VStack(alignment: .leading, spacing: 12, content: content)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
     private func enabledPill(_ on: Bool) -> (DockStatusTone, String) { on ? (.complete, "On") : (.inactive, "Off") }
     private var appliesNote: some View {
@@ -1223,24 +1338,47 @@ struct WorkflowIntegrationView: View {
             switch section {
             case .skills:
                 if let skill = model.skills.first(where: { $0.id == entry.id }) {
-                    inspectorHeader(entry, pills: [enabledPill(skill.enabled)], skill.detail)
-                    quickDetails([("Skill", skill.id), ("Profile", profileName(model.service.profileID))])
-                    DockChipFlow(spacing: 8) {
+                    inspectorHeader(
+                        entry,
+                        pills: [enabledPill(skill.enabled)]
+                            + (model.skillHasUpdate(skill.id) ? [(.review, "Update available")] : []),
+                        skill.detail)
+                    if model.updatingItem == skill.id {
+                        updateProgress(skill.id)
+                    } else if model.skillHasUpdate(skill.id) {
+                        DockCallout(
+                            tone: .info, icon: .arrowCircleUp, title: "New version available",
+                            message: "The Skills Hub has a newer \(skill.id). Hermes keeps your copy if you edited it."
+                        ) {
+                            Button("Update skill") { request = ("Update skill", skill) }
+                                .buttonStyle(.dockPrimary)
+                                .disabled(model.busy || model.unsupported.contains("Update skill"))
+                        }
+                    }
+                    actionBar {
                         action(skill.enabled ? "Disable skill" : "Enable skill", skill, confirm: false)
+                    } trailing: {
                         destructive("Remove…", ("Remove skill", skill))
                             .disabled(model.pendingRemovals.contains(skill.id))
                     }
+                    quickDetails([
+                        ("Skill", skill.id), ("Source", skill.builtin ? "Bundled with Hermes" : skillSource(skill.id)),
+                        ("Updates", skillUpdateLabel(skill.id)),
+                    ])
                     panel("SKILL.md") {
                         if let preview = model.preview {
-                            Text(preview).dockFont(.body, weight: .regular, design: .monospaced).foregroundStyle(
-                                Color.dockPrimaryText
+                            MarkdownMessageView(
+                                markdown: Self.withoutFrontmatter(preview), cacheKey: "skill:\(skill.id)"
                             )
-                            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                DockThemeShape(cornerRadius: DockLayout.paneRadius).fill(Color.dockSurface2))
                         } else if model.inspecting {
-                            ProgressView()
+                            DockLoadingState(title: "Loading skill instructions…", minHeight: 100)
                         } else {
-                            Text("Skill preview unavailable. Refresh to try again.").dockFont(.body)
-                                .foregroundStyle(Color.dockSecondaryText)
+                            Label("Skill preview unavailable. Refresh to try again.", systemImage: "doc.text")
+                                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                                .padding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     appliesNote
@@ -1252,13 +1390,15 @@ struct WorkflowIntegrationView: View {
                         pills: [enabledPill(toolset.enabled)]
                             + (toolset.configured ? [] : [(.attention, "Needs setup")]),
                         toolset.detail)
+                    actionBar {
+                        action(
+                            toolset.enabled ? "Disable toolset" : "Enable toolset",
+                            WorkflowIntegrationItem(id: toolset.id, detail: toolset.label), confirm: false)
+                    }
                     quickDetails([
                         ("Toolset", toolset.id), ("Configuration", toolset.configured ? "Configured" : "Needs setup"),
                         ("Tools", String(toolset.tools.count)),
                     ])
-                    action(
-                        toolset.enabled ? "Disable toolset" : "Enable toolset",
-                        WorkflowIntegrationItem(id: toolset.id, detail: toolset.label), confirm: false)
                     if !toolset.configured {
                         DockCallout(
                             tone: .warning, icon: .warning, title: "Needs setup",
@@ -1267,11 +1407,14 @@ struct WorkflowIntegrationView: View {
                     }
                     if !toolset.tools.isEmpty {
                         panel("\(toolset.tools.count) TOOLS") {
-                            Text(toolset.tools.joined(separator: "  ·  ")).dockFont(
-                                .body, weight: .regular, design: .monospaced
-                            )
-                            .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                            DockChipFlow(spacing: 6) {
+                                ForEach(toolset.tools, id: \.self) { tool in
+                                    Text(tool).dockFont(.metadata, design: .monospaced)
+                                        .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                                        .padding(.horizontal, 7).padding(.vertical, 3)
+                                        .background(Capsule().fill(Color.dockSurface4))
+                                }
+                            }
                         }
                     }
                     appliesNote
@@ -1297,16 +1440,50 @@ struct WorkflowIntegrationView: View {
             case .plugins:
                 if let plugin = model.plugins.first(where: { $0.id == entry.id }) {
                     let item = WorkflowIntegrationItem(id: plugin.id, detail: plugin.name)
-                    inspectorHeader(entry, pills: [enabledPill(plugin.enabled)], plugin.detail)
-                    quickDetails([
-                        ("Package", plugin.id), ("Version", plugin.version), ("Source", plugin.source),
-                        ("Status", plugin.status), ("Catalog version", plugin.catalogVersion),
-                        ("Pinned revision", plugin.pinnedRevision),
-                    ])
-                    DockChipFlow(spacing: 8) {
+                    inspectorHeader(
+                        entry,
+                        pills: [enabledPill(plugin.enabled)]
+                            + (plugin.hasCatalogUpdate ? [(.review, "Update available")] : []),
+                        plugin.detail)
+                    if model.updatingItem == plugin.id {
+                        updateProgress(plugin.name)
+                    } else if plugin.hasCatalogUpdate {
+                        DockCallout(
+                            tone: .info, icon: .arrowCircleUp, title: "New version available",
+                            message: plugin.catalogVersion.isEmpty || plugin.catalogVersion == plugin.version
+                                ? "Upstream has new commits for this plugin."
+                                : "Version \(plugin.catalogVersion) is available; \(plugin.version) is installed."
+                        ) {
+                            Button(
+                                plugin.catalogVersion.isEmpty || plugin.catalogVersion == plugin.version
+                                    ? "Update plugin" : "Update to \(plugin.catalogVersion)"
+                            ) { request = ("Update plugin", item) }
+                            .buttonStyle(.dockPrimary).disabled(
+                                model.busy || model.unsupported.contains("Update plugin"))
+                        }
+                    }
+                    if model.pluginUpdateConsent == plugin.id {
+                        DockCallout(
+                            tone: .warning, icon: .warning, title: "Update needs approval",
+                            message: "It widens what this plugin can do. Review the status message before accepting."
+                        ) {
+                            action("Accept changes and update plugin", item)
+                        }
+                    }
+                    actionBar {
                         action(plugin.enabled ? "Disable plugin" : "Enable plugin", item, confirm: false)
+                        if plugin.removable && !plugin.hasCatalogUpdate {
+                            action("Check for update", item).help("Ask Hermes to pull or re-pin this plugin")
+                        }
+                    } trailing: {
                         if plugin.removable { destructive("Remove…", ("Remove plugin", item)) }
                     }
+                    quickDetails([
+                        ("Version", plugin.version),
+                        ("Catalog version", plugin.catalogVersion == plugin.version ? "" : plugin.catalogVersion),
+                        ("Source", plugin.source), ("Package", plugin.id),
+                        ("Pinned revision", String(plugin.pinnedRevision.prefix(12))),
+                    ])
                     if plugin.desktopHalf {
                         DockCallout(
                             tone: .info, icon: .info, title: "Desktop panel unavailable",
@@ -1318,11 +1495,7 @@ struct WorkflowIntegrationView: View {
             case .mcp:
                 if let server = model.servers.first(where: { $0.id == entry.id }) {
                     inspectorHeader(entry, pills: [(.complete, "Added")], server.detail)
-                    quickDetails([
-                        ("Server", server.id), ("State", server.enabled ? "Enabled" : "Disabled"),
-                        ("Transport", server.transport), ("Required keys", server.requiredKeys.joined(separator: ", ")),
-                    ])
-                    DockChipFlow(spacing: 8) {
+                    actionBar {
                         action("Test", server, confirm: false)
                         action("Authorize", server)
                         if !server.requiredKeys.isEmpty {
@@ -1332,8 +1505,13 @@ struct WorkflowIntegrationView: View {
                                 credential = ""
                             }.buttonStyle(.dockSecondary)
                         }
+                    } trailing: {
                         destructive("Remove…", ("Remove server", server))
                     }
+                    quickDetails([
+                        ("Server", server.id), ("State", server.enabled ? "Enabled" : "Disabled"),
+                        ("Transport", server.transport), ("Required keys", server.requiredKeys.joined(separator: ", ")),
+                    ])
                     if let item = selectedServer, item.id == server.id {
                         panel("CREDENTIAL") {
                             Picker("Required key", selection: $credentialKey) {
@@ -1368,17 +1546,33 @@ struct WorkflowIntegrationView: View {
         ].filter { !$0.1.isEmpty }
         return quickDetails(rows)
     }
+    /// SKILL.md opens with YAML frontmatter, which reads as noise once rendered.
+    private static func withoutFrontmatter(_ text: String) -> String {
+        guard text.hasPrefix("---\n"),
+            let end = text.range(of: "\n---", range: text.index(text.startIndex, offsetBy: 4)..<text.endIndex)
+        else { return text }
+        return String(text[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     private func quickDetails(_ values: [(String, String)]) -> some View {
         let rows = values.filter { !$0.1.isEmpty }
         return panel("DETAILS") {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+            VStack(spacing: 0) {
                 ForEach(rows, id: \.0) { label, value in
-                    GridRow {
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
                         Text(label).foregroundStyle(Color.dockMetadataText)
+                            .frame(width: 96, alignment: .leading)
                         Text(value).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .dockFont(.body).padding(.vertical, 10)
+                    if label != rows.last?.0 {
+                        Color.dockBorderLight.frame(height: DockLayout.hairline)
                     }
                 }
-            }.dockFont(.body)
+            }
+            .padding(.horizontal, 12)
+            .background(DockThemeShape(cornerRadius: DockLayout.paneRadius).fill(Color.dockSurface2))
         }
     }
     private var customServerCard: some View {

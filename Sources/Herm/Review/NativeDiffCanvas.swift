@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct NativeDiffCanvas: NSViewRepresentable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let document: DiffDocument
     let split: Bool
     let wraps: Bool
@@ -16,12 +17,21 @@ struct NativeDiffCanvas: NSViewRepresentable {
         view.update(
             document, split: split, wraps: wraps, wordDiffs: wordDiffs, findRequest: findRequest, reveal: reveal,
             viewport: viewport,
-            onNote: onNote, onComment: onComment)
+            onNote: onNote, onComment: onComment, textScale: workspaceScale)
     }
 }
 
 final class DiffCanvasContainer: NSView {
     private let stack = NSStackView()
+    private var textScale: CGFloat = 1
+    private var codeFont: NSFont {
+        .monospacedSystemFont(ofSize: DockTypography.size(.code, scale: textScale), weight: .regular)
+    }
+    private var codeAttributes: [NSAttributedString.Key: Any] {
+        var attributes = CodeSyntaxHighlighter.baseAttributes
+        attributes[.font] = codeFont
+        return attributes
+    }
     private var fingerprint = ""
     private var findRevision = 0
     private var alignmentKey = ""
@@ -56,6 +66,12 @@ final class DiffCanvasContainer: NSView {
                     text.textContainer?.containerSize.width = width
                 }
                 text.sizeToFit()
+                if !text.isHorizontallyResizable {
+                    // AppKit may shrink the document by the ruler width during sizeToFit.
+                    let width = max(100, scroll.contentSize.width)
+                    text.frame.size.width = width
+                    text.textContainer?.containerSize.width = width
+                }
             }
         }
         alignWrappedRows()
@@ -77,7 +93,7 @@ final class DiffCanvasContainer: NSView {
         let texts = stack.arrangedSubviews.compactMap { ($0 as? NSScrollView)?.documentView as? DiffSelectableTextView }
         guard texts.count == 2, texts.allSatisfy({ !$0.isHorizontallyResizable }) else { return }
         let base = CodeSyntaxHighlighter.baseAttributes[.paragraphStyle] as? NSParagraphStyle ?? .default
-        let font = CodeSyntaxHighlighter.font
+        let font = codeFont
         let heights = texts.map { text in
             text.lines.map { line -> CGFloat in
                 let value = line.map(DiffDocument.source) ?? ""
@@ -111,11 +127,12 @@ final class DiffCanvasContainer: NSView {
     func update(
         _ document: DiffDocument, split: Bool, wraps: Bool, wordDiffs: Bool, findRequest: Int, reveal: DiffSearchMatch?,
         viewport: DiffViewportState?,
-        onNote: ((DiffSelection) -> Void)?, onComment: ((DiffLine) -> Void)?
+        onNote: ((DiffSelection) -> Void)?, onComment: ((DiffLine) -> Void)?, textScale: CGFloat = 1
     ) {
+        self.textScale = textScale
         let split = split && document.supportsSplitView
         let key =
-            "\(document.identity):\(split):\(wraps):\(wordDiffs):\(DockThemeRuntime.revision):\(viewport?.restorationRevision ?? 0)"
+            "\(textScale):\(document.identity):\(split):\(wraps):\(wordDiffs):\(DockThemeRuntime.revision):\(viewport?.restorationRevision ?? 0)"
         if fingerprint == key {
             // A revision can change without changing the patch. Rebind actions while keeping selection and scroll.
             for case let scroll as NSScrollView in stack.arrangedSubviews {
@@ -177,7 +194,7 @@ final class DiffCanvasContainer: NSView {
                 text.isRichText = false
                 text.usesFindBar = true
                 text.isIncrementalSearchingEnabled = true
-                text.font = CodeSyntaxHighlighter.font
+                text.font = codeFont
                 text.backgroundColor = NSColor(Color.dockCanvas)
                 text.textContainerInset = NSSize(width: 8, height: 8)
                 text.isVerticallyResizable = true
@@ -189,7 +206,7 @@ final class DiffCanvasContainer: NSView {
                     height: .greatestFiniteMagnitude)
                 text.string = column.map { $0.map(DiffDocument.source) ?? "" }.joined(separator: "\n")
                 text.textStorage?.addAttributes(
-                    CodeSyntaxHighlighter.baseAttributes,
+                    codeAttributes,
                     range: NSRange(location: 0, length: (text.string as NSString).length))
                 let clip = DiffSyncedClipView()
                 clip.onScroll = { [weak viewport] point in viewport?.record(point, column: columnIndex) }
@@ -217,6 +234,7 @@ final class DiffCanvasContainer: NSView {
                     right.peer = left
                 }
                 let source = text.string
+                let attributes = codeAttributes
                 tasks.append(
                     Task { @MainActor [weak text] in
                         let preparation = Task.detached(priority: .userInitiated) { [counterparts] in
@@ -242,7 +260,7 @@ final class DiffCanvasContainer: NSView {
                             return
                         }
                         storage.addAttributes(
-                            CodeSyntaxHighlighter.baseAttributes.filter { $0.key != .paragraphStyle },
+                            attributes.filter { $0.key != .paragraphStyle },
                             range: NSRange(location: 0, length: storage.length))
                         for (range, token) in tokens {
                             storage.addAttribute(.foregroundColor, value: token.color, range: range)
@@ -361,7 +379,11 @@ private final class DiffLineRuler: NSRulerView {
         NSColor(Color.dockSurface2).setFill()
         bounds.fill()
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+            .font: NSFont.monospacedSystemFont(
+                ofSize: DockTypography.size(
+                    .metadata,
+                    scale: (text.font?.pointSize ?? CodeSyntaxHighlighter.fontSize) / CodeSyntaxHighlighter.fontSize),
+                weight: .regular),
             .foregroundColor: NSColor(Color.dockMetadataText),
         ]
         let visible = text.visibleRect.offsetBy(dx: -text.textContainerInset.width, dy: -text.textContainerInset.height)

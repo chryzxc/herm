@@ -14,13 +14,14 @@ struct RichCodeView: View {
                 DockCopyButton(code.code, label: "Copy code", accessibilityLabel: "Copy generated code")
             }
             ScrollView([.horizontal, .vertical]) {
-                Text(code.code).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                Text(code.code).dockFont(.code, design: .monospaced).textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true).padding(12)
+                    .padding([.bottom, .trailing], 8)
             }
             .frame(
                 height: min(
                     320,
-                    max(64, CGFloat(code.code.split(separator: "\n", omittingEmptySubsequences: false).count) * 17 + 24)
+                    max(64, CGFloat(code.code.split(separator: "\n", omittingEmptySubsequences: false).count) * 17 + 44)
                 )
             )
             .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 8))
@@ -40,7 +41,7 @@ struct RichFindingsView: View {
                         Text(item.title).fontWeight(.semibold)
                     }
                     if let location = item.location {
-                        Text(location).font(.system(size: 12, design: .monospaced))
+                        Text(location).dockFont(.code, design: .monospaced)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                     Text(item.detail)

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A Herm capability the agent must route through instead of an external app or plain text.
 /// Herm owns the list; the `herm` Hermes plugin (integrations/herm) serves it as session rules,
@@ -31,6 +32,23 @@ struct HermAgentManifest: Codable, Equatable, Sendable {
     var sessions: [String: [String: String]] = [:]
 }
 
+/// Whether Hermes reported the `herm` plugin enabled. Until it does, prompts carry the rules inline.
+enum HermPlugin {
+    private static let loaded = OSAllocatedUnfairLock(initialState: false)
+    static var isLoaded: Bool { loaded.withLock { $0 } }
+
+    /// Updates from a `plugins.list` result; a missing result keeps the inline fallback.
+    static func note(_ result: [String: Any]?) {
+        let enabled = isEnabled(in: result)
+        loaded.withLock { $0 = enabled }
+    }
+
+    static func isEnabled(in result: [String: Any]?) -> Bool {
+        let rows = result?["plugins"] as? [[String: Any]] ?? []
+        return rows.contains { $0["name"] as? String == "herm" && $0["enabled"] as? Bool == true }
+    }
+}
+
 @MainActor
 enum HermAgentSurfaces {
     static let environmentKey = "HERM_AGENT_SURFACES"
@@ -44,7 +62,7 @@ enum HermAgentSurfaces {
         [
             GenerativeUIIntegration.agentSurface(defaults: defaults),
             HermesSimulatorPreference.agentSurface(defaults: defaults),
-            AgentBrowser.agentSurface,
+            AgentBrowser.agentSurface(defaults: defaults),
         ].compactMap { $0 }
     }
 
