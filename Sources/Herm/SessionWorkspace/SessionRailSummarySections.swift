@@ -101,7 +101,8 @@ struct SessionRailSummarySections: View {
                             DockIcon(.gitCommit, size: 14, color: .dockMetadataText).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Latest commit").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                                Text(commit).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                                DockCommitSummary(value: commit).foregroundStyle(Color.dockSecondaryText)
+                                    .textSelection(.enabled)
                             }
                         }
                     }
