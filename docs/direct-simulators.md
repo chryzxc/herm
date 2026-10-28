@@ -150,3 +150,18 @@ pixels without the shell, rotation, or action rail.
 The simulator action rail is vertically centered beside the display and fits its visible actions. Empty feedback adds no row. The 3D preview uses a rounded solid body with a live front screen, continuous horizontal orbit, constrained vertical tilt, scroll zoom, double-click/Reset view, and Escape to return.
 
 Both simulator tabs open 3D preview flat and front-facing. Dragging uses viewport-relative orbit with fixed framing, so rotation does not pump the zoom. Reset view returns to flat; the cube icon or Escape exits preview. App logs groups the app filter and severity above an editable excerpt, with a clear empty state and Attach logs action that adds only the reviewed text to the chat draft.
+
+## Agent navigation
+
+The updated `herm-simulator` plugin also exposes `herm_simulator_interact`.
+After launch, the agent captures the exact returned device ID, inspects its
+screenshot or accessibility hierarchy, then sends normalized taps/swipes,
+hardware buttons, or navigation keys. Every successful action returns a fresh
+capture for verification. The connected simulator tab shows that same device
+live. Desktop `computer_use` is a separate capability and is not required.
+
+Run the setup script again to copy the agent bridge resources, update the
+plugin from `integrations/herm-simulator`, and use a new Hermes session to load
+the added tool. Neither setup nor the code change restarts Herm or Hermes.
+Input delivery is not a verified UI outcome; the agent must capture again after
+an ambiguous failure before retrying. Concurrent manual input should be avoided.

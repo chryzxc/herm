@@ -9,8 +9,7 @@ The app routes typed item references between features and prepares chat context.
 
 - The primary rail has one GitHub destination. Its inner navigation selects Pull
   requests, Issues, or Repositories beside the existing page; narrow workspaces use a section
-  picker. Returning restores the last section used in the app session. Settings → General → Sidebar provides one
-  Show GitHub in sidebar switch; all three inner sections remain available.
+  picker. Returning restores the last section used in the app session.
 - Global and session PR lists keep their own filters and selections, while sharing
   detail records, discussion data, and per-item drafts. Drafts remain in memory.
 - My work and repository browsing support history, sorting, metadata filters, and

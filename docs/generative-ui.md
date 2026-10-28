@@ -1,6 +1,6 @@
 # Generative UI in Herm
 
-Generative UI ships in normal builds. Settings → Appearance → Generative UI is on
+Generative UI ships in normal builds. Settings → Chat → Replies → Generative UI is on
 by default and applies immediately. Turning it off preserves canonical messages and
 shows readable fallbacks. HTML always needs an explicit Open action.
 
