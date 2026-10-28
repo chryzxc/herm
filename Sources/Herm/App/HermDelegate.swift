@@ -139,6 +139,13 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
         actionErrorPresenter = DockActionErrorPresenter()
+        Task {
+            for service in ["io.github.chryzxc.Herm.gateway", "io.github.chryzxc.Herm.browser"] {
+                do { try await HermKeychain.restrictAccess(service: service) } catch {
+                    DockActionErrorCenter.shared.report("Could not secure saved credentials", error: error)
+                }
+            }
+        }
         // AppKit's first tooltip waits ~1s; later ones are instant. Make the
         // first match so icon-only buttons explain themselves on hover.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])

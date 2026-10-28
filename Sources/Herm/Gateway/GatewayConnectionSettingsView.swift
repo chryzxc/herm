@@ -110,7 +110,7 @@ struct GatewayConnectionSettingsView: View {
         .onChange(of: model.draft.remoteURL) { _, _ in Task { await model.refreshAuthentication() } }
         .onChange(of: model.draft.mode) { _, _ in Task { await model.refreshAuthentication() } }
         .confirmationDialog("Save connection and restart Herm?", isPresented: $confirmsRestart) {
-            Button("Save and restart Herm", role: .destructive) { if model.save() { onRestart() } }
+            Button("Save and restart Herm", role: .destructive) { Task { if await model.save() { onRestart() } } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
@@ -251,7 +251,7 @@ struct GatewayConnectionSettingsView: View {
             DockActionLabel(title: "Test connection", pendingTitle: "Connecting…", isPending: model.isBusy)
         }.buttonStyle(.dockSecondary)
         if !store.environmentOverride {
-            Button("Save for next restart") { model.save() }.buttonStyle(.dockSecondary)
+            Button("Save for next restart") { Task { await model.save() } }.buttonStyle(.dockSecondary)
             Button("Save and restart Herm") { confirmsRestart = true }.buttonStyle(.dockPrimary)
         }
     }

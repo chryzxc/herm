@@ -52,7 +52,7 @@ final class GatewayConnectionModel: ObservableObject {
         let remote: Bool
         if let url = try? GatewayConnectionSettings.normalizedURL(settings.remoteURL) {
             let browserSession = await GatewayWebAuthentication.shared.hasSession(url)
-            remote = (try? GatewayNativeAuthentication.shared.hasSession(url)) == true || browserSession
+            remote = (try? await GatewayNativeAuthentication.shared.hasSession(url)) == true || browserSession
         } else {
             remote = false
         }
@@ -107,7 +107,7 @@ final class GatewayConnectionModel: ObservableObject {
             let base =
                 portal
                 ? GatewayWebAuthentication.portalURL : try GatewayConnectionSettings.normalizedURL(draft.remoteURL)
-            if !portal { try GatewayNativeAuthentication.shared.signOut(base) }
+            if !portal { try await GatewayNativeAuthentication.shared.signOut(base) }
             await GatewayWebAuthentication.shared.signOut(base)
             if portal {
                 agents = []
@@ -212,7 +212,8 @@ final class GatewayConnectionModel: ObservableObject {
             let settings = try draft.validated()
             let token =
                 settings.mode == .remote && settings.authentication == .token
-                ? (store.environmentOverride ? store.launchToken : try store.token(for: settings, draft: tokenDraft))
+                ? (store.environmentOverride
+                    ? store.launchToken : try await store.token(for: settings, draft: tokenDraft))
                 : nil
             var probeSettings = settings
             // A test owns a separate SSH backend, so it cannot stop the active one.
@@ -225,10 +226,12 @@ final class GatewayConnectionModel: ObservableObject {
     }
 
     @discardableResult
-    func save() -> Bool {
+    func save() async -> Bool {
         guard !isBusy else { return false }
+        isBusy = true
+        defer { isBusy = false }
         do {
-            try store.save(draft, token: tokenDraft)
+            try await store.save(draft, token: tokenDraft)
             draft = store.selected
             tokenDraft = ""
             message = "Saved for the next Herm restart."

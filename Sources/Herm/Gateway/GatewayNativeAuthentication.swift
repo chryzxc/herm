@@ -28,15 +28,15 @@ final class GatewayNativeAuthentication {
     private var loaded = Set<URL>()
     private var refreshing: [URL: Task<String?, Error>] = [:]
     private var generations: [URL: Int] = [:]
-    private let readSecret: (String) throws -> String?
-    private let writeSecret: (String, String) throws -> Void
-    private let removeSecret: (String) throws -> Void
+    private let readSecret: (String) async throws -> String?
+    private let writeSecret: (String, String) async throws -> Void
+    private let removeSecret: (String) async throws -> Void
     private let refreshTokens: (URL, GatewayNativeTokens) async throws -> (Int, [String: Any])
 
     init(
-        readSecret: @escaping (String) throws -> String? = GatewayTokenStore.read,
-        writeSecret: @escaping (String, String) throws -> Void = GatewayTokenStore.write,
-        removeSecret: @escaping (String) throws -> Void = GatewayTokenStore.remove,
+        readSecret: @escaping (String) async throws -> String? = GatewayTokenStore.read,
+        writeSecret: @escaping (String, String) async throws -> Void = GatewayTokenStore.write,
+        removeSecret: @escaping (String) async throws -> Void = GatewayTokenStore.remove,
         refreshTokens: @escaping (URL, GatewayNativeTokens) async throws -> (Int, [String: Any]) = { base, tokens in
             try await GatewayHTTP.request(
                 GatewayConnectionSettings.endpoint(base, "/auth/native/refresh"), method: "POST",
@@ -65,11 +65,15 @@ final class GatewayNativeAuthentication {
         return code
     }
 
-    func hasSession(_ base: URL) throws -> Bool { try load(base) != nil }
+    func hasSession(_ base: URL) async throws -> Bool { try await load(base) != nil }
 
-    private func load(_ base: URL) throws -> GatewayNativeTokens? {
+    private func load(_ base: URL) async throws -> GatewayNativeTokens? {
         if !loaded.contains(base) {
-            if let text = try readSecret("oauth:" + base.absoluteString) {
+            let generation = generations[base, default: 0]
+            let text = try await readSecret("oauth:" + base.absoluteString)
+            guard generations[base, default: 0] == generation else { throw CancellationError() }
+            if loaded.contains(base) { return cached[base] }
+            if let text {
                 cached[base] = try JSONDecoder().decode(GatewayNativeTokens.self, from: Data(text.utf8))
             }
             loaded.insert(base)
@@ -77,23 +81,25 @@ final class GatewayNativeAuthentication {
         return cached[base]
     }
 
-    private func store(_ tokens: GatewayNativeTokens, base: URL) throws {
+    private func store(_ tokens: GatewayNativeTokens, base: URL) async throws {
+        let generation = generations[base, default: 0]
         let data = try JSONEncoder().encode(tokens)
-        try writeSecret("oauth:" + base.absoluteString, String(decoding: data, as: UTF8.self))
+        try await writeSecret("oauth:" + base.absoluteString, String(decoding: data, as: UTF8.self))
+        guard generations[base, default: 0] == generation else { throw CancellationError() }
         loaded.insert(base)
         cached[base] = tokens
     }
 
-    func signOut(_ base: URL) throws {
-        try removeSecret("oauth:" + base.absoluteString)
+    func signOut(_ base: URL) async throws {
         generations[base, default: 0] += 1
         refreshing.removeValue(forKey: base)?.cancel()
         loaded.insert(base)
         cached[base] = nil
+        try await removeSecret("oauth:" + base.absoluteString)
     }
 
     func accessToken(_ base: URL, force: Bool = false) async throws -> String? {
-        guard let tokens = try load(base) else { return nil }
+        guard let tokens = try await load(base) else { return nil }
         if !force && tokens.expiresAt > Date().timeIntervalSince1970 + 60 { return tokens.access }
         if let task = refreshing[base] { return try await task.value }
         guard !tokens.refresh.isEmpty else { return tokens.access }
@@ -102,12 +108,12 @@ final class GatewayNativeAuthentication {
             let (status, json) = try await self.refreshTokens(base, tokens)
             guard self.generations[base, default: 0] == generation else { throw CancellationError() }
             if status == 401 {
-                try self.signOut(base)
+                try await self.signOut(base)
                 return nil as String?
             }
             guard (200..<300).contains(status) else { throw HermesGateway.GatewayError.httpError(status) }
             let refreshed = try GatewayNativeTokens(json)
-            try self.store(refreshed, base: base)
+            try await self.store(refreshed, base: base)
             return refreshed.access
         }
         refreshing[base] = task
@@ -143,7 +149,7 @@ final class GatewayNativeAuthentication {
         guard generations[base, default: 0] == generation else { throw CancellationError() }
         generations[base, default: 0] += 1
         refreshing.removeValue(forKey: base)?.cancel()
-        try store(GatewayNativeTokens(json), base: base)
+        try await store(GatewayNativeTokens(json), base: base)
     }
 }
 

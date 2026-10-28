@@ -94,28 +94,16 @@ enum GatewayConnectionError: LocalizedError {
     }
 }
 
-/// Tokens saved by earlier builds were added in-process; reading one asks once, and
-/// Always Allow then grants `security`, which keeps across rebuilds.
 enum GatewayTokenStore {
-    static func read(_ account: String) throws -> String? {
-        let result = try KeychainCLI.run(["find-generic-password", "-w"] + item(account))
-        if result.status == KeychainCLI.notFound { return nil }
-        guard result.status == 0 else { throw GatewayConnectionError.storage(result.status) }
-        return result.output
+    private static let service = "io.github.chryzxc.Herm.gateway"
+    static func read(_ account: String) async throws -> String? {
+        try await HermKeychain.read(service: service, account: account)
     }
-
-    static func write(_ account: String, _ token: String) throws {
-        let status = try KeychainCLI.run(["add-generic-password", "-U", "-w", token] + item(account)).status
-        guard status == 0 else { throw GatewayConnectionError.storage(status) }
+    static func write(_ account: String, _ token: String) async throws {
+        try await HermKeychain.write(service: service, account: account, value: token)
     }
-
-    static func remove(_ account: String) throws {
-        let status = try KeychainCLI.run(["delete-generic-password"] + item(account)).status
-        guard status == 0 || status == KeychainCLI.notFound else { throw GatewayConnectionError.storage(status) }
-    }
-
-    private static func item(_ account: String) -> [String] {
-        ["-s", "io.github.chryzxc.Herm.gateway", "-a", account]
+    static func remove(_ account: String) async throws {
+        try await HermKeychain.remove(service: service, account: account)
     }
 }
 
@@ -129,16 +117,16 @@ final class GatewayConnectionStore: ObservableObject {
     let environmentOverride: Bool
     let launchToken: String?
     private let defaults: UserDefaults
-    private let readToken: (String) throws -> String?
-    private let writeToken: (String, String) throws -> Void
+    private let readToken: (String) async throws -> String?
+    private let writeToken: (String, String) async throws -> Void
     private static let settingsKey = "gateway.connection"
     private static let connectionsKey = "gateway.savedConnections"
 
     init(
         defaults: UserDefaults = .standard,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        readToken: @escaping (String) throws -> String? = GatewayTokenStore.read,
-        writeToken: @escaping (String, String) throws -> Void = GatewayTokenStore.write
+        readToken: @escaping (String) async throws -> String? = GatewayTokenStore.read,
+        writeToken: @escaping (String, String) async throws -> Void = GatewayTokenStore.write
     ) {
         self.defaults = defaults
         self.readToken = readToken
@@ -170,10 +158,10 @@ final class GatewayConnectionStore: ObservableObject {
         }
     }
 
-    func token(for settings: GatewayConnectionSettings, draft: String = "") throws -> String {
+    func token(for settings: GatewayConnectionSettings, draft: String = "") async throws -> String {
         let token = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let value =
-            try token.isEmpty
+            try await token.isEmpty
             ? readToken(GatewayConnectionSettings.normalizedURL(settings.remoteURL).absoluteString) ?? "" : token
         guard !value.isEmpty, !value.contains("\r"), !value.contains("\n") else {
             throw GatewayConnectionError.missingToken
@@ -181,15 +169,15 @@ final class GatewayConnectionStore: ObservableObject {
         return value
     }
 
-    func save(_ settings: GatewayConnectionSettings, token: String) throws {
+    func save(_ settings: GatewayConnectionSettings, token: String) async throws {
         guard !environmentOverride else {
             throw GatewayConnectionError.unavailable(
                 "The gateway connection is controlled by startup environment settings.")
         }
         let settings = try settings.validated()
         if settings.mode == .remote && settings.authentication == .token {
-            let resolved = try self.token(for: settings, draft: token)
-            try writeToken(settings.remoteURL, resolved)
+            let resolved = try await self.token(for: settings, draft: token)
+            try await writeToken(settings.remoteURL, resolved)
         }
         let data = try JSONEncoder().encode(settings)
         var saved = connections.filter { $0.id != settings.id }

@@ -59,7 +59,7 @@ struct GatewayConnectionTests {
         #expect(ticket.value(forHTTPHeaderField: "Authorization") == nil)
     }
 
-    @Test func savesMetadataSeparatelyFromSecretsAndKeepsLaunchSettingsStable() throws {
+    @Test func savesMetadataSeparatelyFromSecretsAndKeepsLaunchSettingsStable() async throws {
         let defaults = defaults()
         var secrets: [String: String] = [:]
         let store = GatewayConnectionStore(
@@ -69,36 +69,36 @@ struct GatewayConnectionTests {
         remote.mode = .remote
         remote.remoteURL = "https://one.example/hermes/"
         remote.name = "Office"
-        try store.save(remote, token: "secret-token")
+        try await store.save(remote, token: "secret-token")
         #expect(store.selected.remoteURL == "https://one.example/hermes")
         #expect(secrets["https://one.example/hermes"] == "secret-token")
         #expect(store.launchSettings == launch)
         for value in defaults.dictionaryRepresentation().values {
             if let data = value as? Data { #expect(!String(decoding: data, as: UTF8.self).contains("secret-token")) }
         }
-        try store.save(remote, token: "")
+        try await store.save(remote, token: "")
         #expect(store.connections.count == 1)
         remote.remoteURL = "https://two.example"
-        #expect(throws: (any Error).self) { try store.save(remote, token: "") }
+        await #expect(throws: (any Error).self) { try await store.save(remote, token: "") }
         #expect(store.selected.remoteURL == "https://one.example/hermes")
         let restored = GatewayConnectionStore(
             defaults: defaults, environment: [:], readToken: { secrets[$0] }, writeToken: { secrets[$0] = $1 })
         #expect(restored.launchSettings == store.selected)
     }
 
-    @Test func failedSecretWritesDoNotSwitchTheSavedBackend() throws {
+    @Test func failedSecretWritesDoNotSwitchTheSavedBackend() async throws {
         let store = GatewayConnectionStore(
             defaults: defaults(), environment: [:], readToken: { _ in nil },
             writeToken: { _, _ in throw GatewayConnectionError.storage(-1) })
         var remote = GatewayConnectionSettings()
         remote.mode = .remote
         remote.remoteURL = "https://example.com"
-        #expect(throws: (any Error).self) { try store.save(remote, token: "secret") }
+        await #expect(throws: (any Error).self) { try await store.save(remote, token: "secret") }
         #expect(store.selected.mode == .local)
         #expect(store.connections.isEmpty)
     }
 
-    @Test func startupOverridesAreReadOnlyAndCorruptSettingsFailClosed() throws {
+    @Test func startupOverridesAreReadOnlyAndCorruptSettingsFailClosed() async throws {
         let defaults = defaults()
         defaults.set(Data("broken".utf8), forKey: "gateway.connection")
         let broken = GatewayConnectionStore(defaults: defaults, environment: [:])
@@ -112,7 +112,7 @@ struct GatewayConnectionTests {
         #expect(overridden.launchSettings.mode == .remote)
         #expect(overridden.launchToken == "startup-token")
         #expect(overridden.error == nil)
-        #expect(throws: (any Error).self) { try overridden.save(GatewayConnectionSettings(), token: "") }
+        await #expect(throws: (any Error).self) { try await overridden.save(GatewayConnectionSettings(), token: "") }
     }
 
     @Test func validatesSSHSettingsBeforeSpawningAndUsesSeparateOwnership() throws {
@@ -233,7 +233,7 @@ struct GatewayConnectionTests {
         #expect(calls == 1 && writes == 1)
         let refreshing = Task { try await auth.accessToken(base, force: true) }
         while release == nil { await Task.yield() }
-        try auth.signOut(base)
+        try await auth.signOut(base)
         release?.resume()
         release = nil
         do {
@@ -241,7 +241,7 @@ struct GatewayConnectionTests {
             Issue.record("A refresh completed after sign-out")
         } catch {}
         #expect(writes == 1)
-        #expect(try !auth.hasSession(base))
+        #expect(try await !auth.hasSession(base))
     }
 
     @Test func renderConnectionSettings() async throws {
@@ -256,7 +256,7 @@ struct GatewayConnectionTests {
             let tokenStore = GatewayConnectionStore(
                 defaults: defaults(), environment: [:], readToken: { _ in "fake-for-render-only" },
                 writeToken: { _, _ in })
-            try tokenStore.save(settings, token: "")
+            try await tokenStore.save(settings, token: "")
             let content = GatewayConnectionSettingsView(store: mode == .local ? store : tokenStore, onRestart: {})
                 .padding(20).frame(width: 540).background(Color.dockCanvas).dockThemedRoot()
             let host = NSHostingView(rootView: content)
@@ -276,6 +276,22 @@ struct GatewayConnectionTests {
             try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("connection-\(mode.rawValue).png"))
             window.close()
         }
+    }
+
+    @Test func delayedCredentialReadCannotRestoreASignedOutSession() async throws {
+        let base = URL(string: "https://example.com")!
+        var release: CheckedContinuation<Void, Never>?
+        let auth = GatewayNativeAuthentication(
+            readSecret: { _ in
+                await withCheckedContinuation { release = $0 }
+                return "{\"access\":\"fixture\",\"refresh\":\"\",\"expiresAt\":4000000000,\"provider\":\"test\"}"
+            }, writeSecret: { _, _ in }, removeSecret: { _ in })
+        let reading = Task { try await auth.accessToken(base) }
+        while release == nil { await Task.yield() }
+        try await auth.signOut(base)
+        release?.resume()
+        await #expect(throws: CancellationError.self) { try await reading.value }
+        #expect(try await !auth.hasSession(base))
     }
 
     @Test func remoteTransportUsesTheProxyPrefixAndAuthenticatesBothProtocols() async throws {

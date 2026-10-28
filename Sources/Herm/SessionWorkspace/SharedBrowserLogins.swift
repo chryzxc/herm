@@ -132,6 +132,7 @@ final class SharedBrowserLogins: ObservableObject {
         file: AgentBrowser.profileRoot.appendingPathComponent("SharedLogins.sealed"), key: keychainKey)
 
     enum Change {
+        case prepared
         case updated(BrowserCookieJar.Changes)
         case cleared
     }
@@ -139,35 +140,60 @@ final class SharedBrowserLogins: ObservableObject {
     /// Another browser's sign-in changes, for each running browser to apply; `origin` skips the sender.
     let changes = PassthroughSubject<(origin: ObjectIdentifier?, change: Change), Never>()
     private let file: URL
-    private let key: () throws -> SymmetricKey
+    private let key: () async throws -> SymmetricKey
     private var loaded: BrowserCookieJar?
     private var cachedKey: SymmetricKey?
 
-    init(file: URL, key: @escaping () throws -> SymmetricKey) {
+    init(file: URL, key: @escaping () async throws -> SymmetricKey) {
         self.file = file
         self.key = key
     }
 
-    /// Fetched once: each Keychain read launches `security`, and every save needs the key.
-    private func sealingKey() throws -> SymmetricKey {
-        if let cachedKey { return cachedKey }
-        let fetched = try key()
-        cachedKey = fetched
-        return fetched
+    @Published private(set) var isPrepared = false
+    private var preparation: Task<SymmetricKey, Error>?
+    private var loadFailed = false
+
+    @discardableResult
+    func prepare() async -> Bool {
+        if isPrepared { return true }
+        if preparation == nil { preparation = Task { try await key() } }
+        do {
+            let fetched = try await preparation?.value
+            if isPrepared { return true }
+            cachedKey = fetched
+            preparation = nil
+            loadFailed = false
+            _ = jar
+            isPrepared = loaded != nil
+            if isPrepared { changes.send((nil, .prepared)) }
+        } catch {
+            preparation = nil
+            reportFailure("Shared sign-ins are unavailable. Unlock Keychain and retry.")
+        }
+        return isPrepared
     }
 
     var jar: BrowserCookieJar {
         if let loaded { return loaded }
-        var jar = BrowserCookieJar()
-        if let data = try? Data(contentsOf: file) {
-            do { jar = try BrowserCookieJar.open(data, with: sealingKey()) } catch {
-                DebugLog.write(
-                    "agent browser: shared logins unreadable: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
-                )
-            }
+        guard let cachedKey, !loadFailed else { return BrowserCookieJar() }
+        do {
+            let data = try Data(contentsOf: file)
+            let opened = try BrowserCookieJar.open(data, with: cachedKey)
+            loaded = opened
+            return opened
+        } catch CocoaError.fileReadNoSuchFile {
+            let empty = BrowserCookieJar()
+            loaded = empty
+            return empty
+        } catch {
+            loadFailed = true
+            reportFailure("Stored shared sign-ins could not be read. The existing file was preserved.")
+            return BrowserCookieJar()
         }
-        loaded = jar
-        return jar
+    }
+
+    private func reportFailure(_ message: String) {
+        DockActionErrorCenter.shared.report("Shared sign-ins unavailable", message: message)
     }
 
     func record(_ changes: BrowserCookieJar.Changes, from origin: ObjectIdentifier) {
@@ -175,7 +201,7 @@ final class SharedBrowserLogins: ObservableObject {
         guard !changes.isEmpty else { return }
         var next = jar
         next.apply(changes)
-        save(next)
+        guard save(next) else { return }
         self.changes.send((origin, .updated(changes)))
     }
 
@@ -183,8 +209,10 @@ final class SharedBrowserLogins: ObservableObject {
     func share(_ site: String, cookies: [BrowserCookie], from origin: ObjectIdentifier) {
         var next = jar
         next.sites.insert(site)
-        save(next)
-        record(BrowserCookieJar.Changes(updated: cookies), from: origin)
+        let changes = next.shared(BrowserCookieJar.Changes(updated: cookies))
+        next.apply(changes)
+        guard save(next) else { return }
+        if !changes.isEmpty { self.changes.send((origin, .updated(changes))) }
     }
 
     /// New browsers stop receiving `site`; running ones stay signed in until they sign out.
@@ -197,45 +225,47 @@ final class SharedBrowserLogins: ObservableObject {
     /// Signs every Herm browser out of every site: running Chromes now, closed ones when they
     /// reopen, and the WebKit tabs. The shared-site list stays.
     func clear() {
-        save(BrowserCookieJar(sites: jar.sites, signOuts: jar.signOuts + 1))
+        guard save(BrowserCookieJar(sites: jar.sites, signOuts: jar.signOuts + 1)) else { return }
         changes.send((nil, .cleared))
         SessionBrowserWorkspace.dataStore.removeData(
             ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast
         ) {}
     }
 
-    private func save(_ jar: BrowserCookieJar) {
-        objectWillChange.send()
-        loaded = jar
+    @discardableResult
+    private func save(_ jar: BrowserCookieJar) -> Bool {
+        guard isPrepared, let cachedKey else {
+            reportFailure("Shared sign-ins are unavailable. Retry before changing them.")
+            return false
+        }
         do {
             try FileManager.default.createDirectory(
                 at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
-            try jar.sealed(with: sealingKey()).write(to: file, options: .atomic)
+            try jar.sealed(with: cachedKey).write(to: file, options: .atomic)
+            objectWillChange.send()
+            loaded = jar
+            return true
         } catch {
-            DebugLog.write(
-                "agent browser: shared logins not saved: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+            reportFailure(
+                "Shared sign-in changes could not be saved. Sign-out was not completed. Check available disk space and permissions, then retry."
             )
+            return false
         }
     }
 
-    /// A new account name: the earlier `shared-logins` item was added in-process and so trusts
-    /// only the build that made it.
-    nonisolated private static func keychainKey() throws -> SymmetricKey {
-        let item = ["-s", "io.github.chryzxc.Herm.browser", "-a", "shared-logins-key"]
-        var result = try KeychainCLI.run(["find-generic-password", "-w"] + item)
-        if result.status == KeychainCLI.notFound {
-            let key = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }.base64EncodedString()
-            result = try KeychainCLI.run(["add-generic-password", "-w", key] + item)
-            if result.status == 0 { result.output = key }
+    nonisolated private static func keychainKey() async throws -> SymmetricKey {
+        let service = "io.github.chryzxc.Herm.browser"
+        let account = "shared-logins-key"
+        if let value = try await HermKeychain.read(service: service, account: account) {
+            guard let data = Data(base64Encoded: value), data.count == 32 else {
+                throw CocoaError(.coderReadCorrupt)
+            }
+            return SymmetricKey(data: data)
         }
-        guard result.status == 0, let data = Data(base64Encoded: result.output), data.count == 32 else {
-            throw NSError(
-                domain: NSOSStatusErrorDomain, code: Int(result.status),
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Keychain access for shared browser logins failed (\(result.status))."
-                ])
-        }
-        return SymmetricKey(data: data)
+        let key = SymmetricKey(size: .bits256)
+        let value = key.withUnsafeBytes { Data($0) }.base64EncodedString()
+        try await HermKeychain.write(service: service, account: account, value: value)
+        return key
     }
 }

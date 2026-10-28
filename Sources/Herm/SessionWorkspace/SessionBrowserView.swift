@@ -220,6 +220,7 @@ struct SessionBrowserView: View {
 
             pageContent
         }
+        .task { await logins.prepare() }
         .background {
             Button("Focus browser address") { isEditingAddress = true }
                 .keyboardShortcut("l", modifiers: .command).hidden().accessibilityHidden(true)
@@ -416,6 +417,7 @@ struct SessionBrowserView: View {
                     agent.toggleSharing(site)
                 }
                 .help("Let every session's agent browser use this site's sign-in")
+                .disabled(!logins.isPrepared)
             }
             if !logins.jar.sites.isEmpty {
                 DockMenu("Shared Sign-Ins", icon: .users) {
@@ -424,7 +426,11 @@ struct SessionBrowserView: View {
                     }
                 }
             }
+            if !logins.isPrepared {
+                Button("Retry Shared Sign-Ins", icon: .arrowClockwise) { Task { await logins.prepare() } }
+            }
             Button("Sign Out of All Sites", icon: .signOut) { SharedBrowserLogins.shared.clear() }
+                .disabled(!logins.isPrepared)
                 .help("Clear the cookies every session's browser shares")
             if showsAgent {
                 Button("New Agent Tab", icon: .plus) { agent.newTab() }

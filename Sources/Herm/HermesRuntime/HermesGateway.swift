@@ -289,7 +289,7 @@ final class HermesGateway: NSObject {
         case .remote, .cloud:
             let url = try GatewayConnectionSettings.normalizedURL(connectionSettings.remoteURL)
             if !usesBrowserSignIn, token.isEmpty {
-                token = try GatewayConnectionStore.shared.token(for: connectionSettings)
+                token = try await GatewayConnectionStore.shared.token(for: connectionSettings)
             }
             baseURL = url
         case .ssh:

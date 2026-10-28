@@ -760,6 +760,7 @@ final class AgentBrowser: ObservableObject {
     /// their sign-ins and sign-outs since. This session's other sign-ins stay its own.
     /// Pushes are fire-only, so later ones stay ordered after these.
     private func restoreLogins(_ cdp: CDPConnection) async {
+        guard await SharedBrowserLogins.shared.prepare(), self.cdp === cdp, !Task.isCancelled else { return }
         let jar = SharedBrowserLogins.shared.jar
         let applied = (try? String(contentsOf: signOutsFile, encoding: .utf8)).flatMap { Int($0) } ?? 0
         var current = BrowserCookieJar()
@@ -767,6 +768,7 @@ final class AgentBrowser: ObservableObject {
             cdp.fire("Storage.clearCookies")
         } else {
             let result = try? await cdp.send("Storage.getCookies")
+            guard self.cdp === cdp, !Task.isCancelled else { return }
             current = BrowserCookieJar(
                 (result?["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:)))
         }
@@ -800,10 +802,16 @@ final class AgentBrowser: ObservableObject {
     }
 
     private func receiveLogins(_ change: SharedBrowserLogins.Change) {
-        guard let cdp, var baseline = loginBaseline else { return }
+        guard let cdp else { return }
+        if case .prepared = change {
+            guard loginBaseline == nil else { return }
+            Task { [weak self] in await self?.restoreLogins(cdp) }
+            return
+        }
         loginGeneration += 1
         switch change {
         case .updated(let changes):
+            guard var baseline = loginBaseline else { return }
             Self.push(changes, to: cdp)
             baseline.apply(changes)
             loginBaseline = baseline
@@ -811,6 +819,7 @@ final class AgentBrowser: ObservableObject {
             cdp.fire("Storage.clearCookies")
             loginBaseline = BrowserCookieJar()
             recordSignOuts(SharedBrowserLogins.shared.jar.signOuts)
+        case .prepared: break
         }
     }
 

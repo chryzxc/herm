@@ -60,12 +60,13 @@ struct SharedBrowserLoginsTests {
         #expect(throws: (any Error).self) { try BrowserCookieJar.open(sealed, with: SymmetricKey(size: .bits256)) }
     }
 
-    @Test func recordedChangesPersistAndReachOtherBrowsers() throws {
+    @Test func recordedChangesPersistAndReachOtherBrowsers() async throws {
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString).appendingPathComponent("logins.sealed")
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         let key = SymmetricKey(size: .bits256)
         let logins = SharedBrowserLogins(file: file, key: { key })
+        #expect(await logins.prepare())
         var received: [SharedBrowserLogins.Change] = []
         let subscription = logins.changes.sink { received.append($0.change) }
         defer { subscription.cancel() }
@@ -78,9 +79,12 @@ struct SharedBrowserLoginsTests {
         logins.share("github.com", cookies: [cookie("user_session"), cookie("x", domain: "a.com")], from: sender)
         #expect(received.count == 1)
         let reloaded = SharedBrowserLogins(file: file, key: { key })
+        #expect(await reloaded.prepare())
         #expect(reloaded.jar == BrowserCookieJar([cookie("user_session")], sites: ["github.com"]))
         reloaded.stopSharing("github.com")
-        #expect(SharedBrowserLogins(file: file, key: { key }).jar == BrowserCookieJar())
+        let stopped = SharedBrowserLogins(file: file, key: { key })
+        #expect(await stopped.prepare())
+        #expect(stopped.jar == BrowserCookieJar())
         let permissions =
             try FileManager.default.attributesOfItem(atPath: file.deletingLastPathComponent().path)[
                 .posixPermissions] as? Int
@@ -97,5 +101,73 @@ struct SharedBrowserLoginsTests {
         #expect(jar.shares(cookie("x", domain: "eu.accounts.google.com")))
         #expect(!jar.shares(cookie("x", domain: "mail.google.com")))
         #expect(!jar.shares(cookie("x", domain: "notgoogle.com")))
+    }
+
+    @Test func failedSignOutDoesNotPublishSuccessOrReplacePersistedCookies() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let moved = directory.appendingPathExtension("preserved")
+        let file = directory.appendingPathComponent("logins.sealed")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: moved)
+        }
+        let key = SymmetricKey(size: .bits256)
+        let logins = SharedBrowserLogins(file: file, key: { key })
+        #expect(await logins.prepare())
+        logins.share("github.com", cookies: [cookie("session")], from: ObjectIdentifier(logins))
+        let original = logins.jar
+        let saved = try Data(contentsOf: file)
+        try FileManager.default.moveItem(at: directory, to: moved)
+        try Data().write(to: directory)
+        var clearEvents = 0
+        let subscription = logins.changes.sink { if case .cleared = $0.change { clearEvents += 1 } }
+        defer { subscription.cancel() }
+        logins.clear()
+        #expect(clearEvents == 0)
+        #expect(logins.jar == original)
+        #expect(try Data(contentsOf: moved.appendingPathComponent("logins.sealed")) == saved)
+    }
+
+    @Test func corruptStoredLoginsArePreservedAndCannotBeOverwritten() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let data = Data("corrupt jar".utf8)
+        try data.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let logins = SharedBrowserLogins(file: file, key: { SymmetricKey(size: .bits256) })
+        #expect(await logins.prepare() == false)
+        logins.clear()
+        #expect(try Data(contentsOf: file) == data)
+    }
+
+    @Test func retryPublishesReadinessAndSignOutToExistingConsumers() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("logins.sealed")
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        var denied = true
+        let logins = SharedBrowserLogins(
+            file: file,
+            key: {
+                if denied { throw CocoaError(.fileReadNoPermission) }
+                return SymmetricKey(size: .bits256)
+            })
+        var prepared = 0
+        var cleared = 0
+        let consumer = logins.changes.sink {
+            switch $0.change {
+            case .prepared: prepared += 1
+            case .cleared: cleared += 1
+            case .updated: break
+            }
+        }
+        defer { consumer.cancel() }
+        #expect(await logins.prepare() == false)
+        #expect(prepared == 0)
+        denied = false
+        #expect(await logins.prepare())
+        #expect(prepared == 1)
+        logins.clear()
+        #expect(cleared == 1)
+        #expect(await logins.prepare())
+        #expect(prepared == 1)
     }
 }
