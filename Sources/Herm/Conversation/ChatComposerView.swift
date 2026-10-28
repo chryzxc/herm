@@ -1301,7 +1301,7 @@ private struct RunningProcessesStrip: View {
     @ObservedObject var control: ControlCenterModel
     var isTurnActive = false
     @State private var isExpanded = false
-    @State private var pending: ProcessSummary?
+    @State private var pending: ProcessStopConfirmation?
 
     var body: some View {
         content
@@ -1342,7 +1342,7 @@ private struct RunningProcessesStrip: View {
                                 )
                                 .help(process.detail ?? process.name)
                             Spacer(minLength: 0)
-                            Button("Stop") { pending = process }
+                            Button("Stop") { pending = control.processStopConfirmation(process) }
                                 .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
                         }
                         .padding(.leading, 18)
@@ -1354,10 +1354,10 @@ private struct RunningProcessesStrip: View {
             .confirmationDialog(
                 "Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
             ) {
-                if let process = pending {
-                    Button("Stop \(process.name)", role: .destructive) {
+                if let confirmation = pending {
+                    Button("Stop \(confirmation.process.name)", role: .destructive) {
                         Task {
-                            _ = await control.killProcess(process)
+                            _ = await control.killProcess(confirmation)
                             pending = nil
                         }
                     }

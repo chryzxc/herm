@@ -224,6 +224,7 @@ final class ControlCenterModel: ObservableObject {
     var providerQuotaGeneration = UUID()
     var sessionCockpitSessionID: String?
     var sessionProcessesGeneration = UUID()
+    var processSessionID: String?
     var knownAttention: [String: AttentionItem] = [:]
     var eventSubscription: UUID?
     let capabilityService = HermesCapabilityService()

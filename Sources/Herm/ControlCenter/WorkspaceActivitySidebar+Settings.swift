@@ -407,7 +407,7 @@ extension WorkspaceActivitySidebar {
                             DockIcon(.gearSix).foregroundStyle(Color.dockSecondaryText)
                             Text(process.name).foregroundStyle(Color.dockPrimaryText)
                             Spacer()
-                            Button("Stop") { pendingProcess = process }
+                            Button("Stop") { pendingProcess = control.processStopConfirmation(process) }
                                 .buttonStyle(.dockCompact)
                                 .foregroundStyle(Color.dockWarning)
                         }
