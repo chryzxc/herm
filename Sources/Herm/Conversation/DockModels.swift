@@ -891,6 +891,7 @@ struct ImageAttachment: Identifiable {
     let id = UUID()
     let image: NSImage
     let fileURL: URL
+    var ownsTemporaryFile = false
 
     var fileName: String { fileURL.lastPathComponent }
 }

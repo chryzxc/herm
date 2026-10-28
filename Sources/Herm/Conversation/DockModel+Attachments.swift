@@ -145,7 +145,7 @@ extension DockModel {
                 "model: failed to write image temp file: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
-        pendingImages.append(ImageAttachment(image: nsImage, fileURL: tempURL))
+        pendingImages.append(ImageAttachment(image: nsImage, fileURL: tempURL, ownsTemporaryFile: true))
         DebugLog.write("model: staged pasted image at \(tempURL.lastPathComponent)")
         return true
     }
@@ -169,9 +169,7 @@ extension DockModel {
     }
 
     func cleanupImageAttachment(_ attachment: ImageAttachment?) {
-        guard let attachment else { return }
-        if attachment.fileURL.path.hasPrefix(FileManager.default.temporaryDirectory.path) {
-            try? FileManager.default.removeItem(at: attachment.fileURL)
-        }
+        guard let attachment, attachment.ownsTemporaryFile else { return }
+        try? FileManager.default.removeItem(at: attachment.fileURL)
     }
 }
