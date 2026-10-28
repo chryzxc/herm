@@ -4,8 +4,8 @@ import SwiftUI
 /// 3D office materials for the active Dock theme. Plaster, floors and ground
 /// take the theme's base hue; furniture keeps one honey-oak studio set in
 /// every theme. Dark themes dim the studio's materials; light and sky follow
-/// the local clock (`OfficeDaylight`). Robots stay
-/// white in every theme so they remain the visual focus.
+/// the local clock (`OfficeDaylight`). Herm characters use the shared face colors;
+/// custom-avatar robots stay white.
 struct OfficeScenePalette: Equatable {
     /// Interaction markers share the workspace blue, resolved for dark scene signage.
     static var interactionBeacon: NSColor { DockAccentColor.blue.signageColor }

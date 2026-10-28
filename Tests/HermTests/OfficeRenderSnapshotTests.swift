@@ -17,9 +17,14 @@ struct OfficeRenderSnapshotTests {
         let view = OfficePreviewARView(frame: window.contentView!.bounds)
         window.contentView = view
         window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
         let palette = OfficeScenePalette(theme: DockThemeRuntime.current, isDark: dark)
         view.environment.background = .color(palette.background)
-        let coordinator = OfficePreviewSceneView.Coordinator(onSelectAgent: { _ in })
+        let suite = "OfficeRenderSnapshotTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let coordinator = OfficePreviewSceneView.Coordinator(
+            placementStore: OfficePlacementStore(defaults: defaults), onSelectAgent: { _ in })
         coordinator.palette = palette
         coordinator.showsAgents = true
         let hour = ProcessInfo.processInfo.environment["OFFICE_SNAPSHOT_HOUR"].flatMap(Double.init)
@@ -79,8 +84,33 @@ struct OfficeRenderSnapshotTests {
         lounge.azimuth = 0
         lounge.elevation = 0.45
         shots.append(("lounge", lounge))
+        var character = OfficePreviewCameraState()
+        character.orbitTarget = [0, 0.75, 0]
+        character.distance = 3
+        character.azimuth = 0.25
+        character.elevation = 0.3
+        shots.append(("herm-character", character))
         try await Task.sleep(for: .seconds(3))
         for (name, state) in shots {
+            if name == "herm-character", let anchor = view.scene.anchors.first {
+                // A clear portrait of the actual rig, without a workstation hiding its face.
+                coordinator.stop()
+                view.scene.anchors.append(anchor)
+                for child in anchor.children where child.name.hasPrefix("office-agent-") {
+                    child.isEnabled = child.name == "office-agent-bot-0"
+                    if child.isEnabled {
+                        child.transform = .identity
+                        for part in [
+                            "character-visual", "upper-body", "herm-character", "left-leg", "right-leg",
+                            "left-arm", "right-arm",
+                        ] {
+                            let entity = child.findEntity(named: part)
+                            entity?.orientation = simd_quatf(angle: 0, axis: [0, 1, 0])
+                            if part == "character-visual" { entity?.position = .zero }
+                        }
+                    }
+                }
+            }
             coordinator.setCamera(state)
             try await Task.sleep(for: .seconds(1.2))
             let image: NSImage? = await withCheckedContinuation { c in

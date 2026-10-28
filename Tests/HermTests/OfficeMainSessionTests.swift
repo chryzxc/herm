@@ -10,7 +10,8 @@ struct OfficeMainSessionTests {
             .init(id: "old", title: "Old", state: "idle", isCurrent: false, activities: []),
         ])
         #expect(simulation.agents.count == 2)
-        #expect(simulation.agents.map(\.name) == ["Hermes · Code", "Hermes · Review"])
+        #expect(simulation.agents.map(\.name) == ["Herm · Code", "Herm · Review"])
+        #expect(simulation.agents.allSatisfy { $0.faceID == "nexus" })
         #expect(simulation.agents[0].phase == .implementing)
         #expect(simulation.agents[1].phase == .waiting)
         #expect(simulation.agents.allSatisfy { $0.location == .desk && !$0.hasNoPendingTasks && $0.tasks.isEmpty })
@@ -26,9 +27,9 @@ struct OfficeMainSessionTests {
         #expect(!simulation.agents[0].hasNoPendingTasks)
     }
 
-    @MainActor @Test func defaultNexusProfileIsNotDuplicatedAsAWorker() {
+    @MainActor @Test func defaultProfileSuppliesTheFaceAndIsNotDuplicatedAsAWorker() {
         let nexus = BotSummary(
-            id: "nexus", name: "Atlas", title: "Orchestrator", description: nil, model: nil,
+            id: "custom-main", name: "Atlas", title: "Orchestrator", description: nil, model: nil,
             isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false,
             hasAvatar: false, isDefault: true)
         let simulation = OfficePreviewSimulation(
@@ -39,6 +40,7 @@ struct OfficeMainSessionTests {
         #expect(simulation.agents.count == 1)
         #expect(simulation.agents[0].name == "Atlas · Feature")
         #expect(simulation.agents[0].mainSession?.id == "chat")
+        #expect(simulation.agents[0].faceID == nexus.id)
     }
 
     @MainActor @Test func unknownStateDoesNotPretendToWorkOrWander() {

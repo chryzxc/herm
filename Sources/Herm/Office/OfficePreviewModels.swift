@@ -292,6 +292,8 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
     let name: String
     let tasks: [OfficePreviewTaskData]
     var mainSession: OfficeMainSession? = nil
+    var avatarID: String? = nil
+    var faceID: String { avatarID ?? id }
     /// Settled work kind from `OfficePreviewSimulation`; nil means unsmoothed.
     var settledWork: OfficeWorkClassification? = nil
     var activityLane: OfficePreviewLane? { mainSession?.lane ?? taskData?.lane }
@@ -420,13 +422,15 @@ final class OfficePreviewSimulation: ObservableObject {
     {
         var seen = Set<String>()
         // The default bot's current name; users can rename it in Hermes.
-        let orchestrator = bots.first(where: \.isDefault)?.name ?? "Herm"
+        let defaultBot = bots.first(where: \.isDefault)
+        let orchestrator = defaultBot?.name ?? "Herm"
         let main = sessions.filter {
             seen.insert($0.id).inserted && ($0.isCurrent || [.running, .blocked].contains($0.lane))
         }
         .sorted { $0.id < $1.id }.map {
             OfficePreviewAgentPresentation(
-                id: "main-session:\($0.id)", name: "\(orchestrator) · \($0.title)", tasks: [], mainSession: $0)
+                id: "main-session:\($0.id)", name: "\(orchestrator) · \($0.title)", tasks: [], mainSession: $0,
+                avatarID: defaultBot?.id ?? "nexus")
         }
         var next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: main.isEmpty)
         var keys = Set<String>()

@@ -61,7 +61,7 @@ struct OfficePreviewView: View {
             GeometryReader { geometry in
                 ZStack {
                     OfficePreviewSceneView(
-                        agents: simulation.agents, reduceMotion: reduceMotion,
+                        agents: simulation.agents, avatarImages: avatarImages, reduceMotion: reduceMotion,
                         resetToken: cameraResetToken, wholeOffice: wholeOffice,
                         focusAgentID: cameraFocusID,
                         onSelectAgent: { select($0) },

@@ -69,7 +69,7 @@ struct BotSeededRandom {
 
 /// The seeded traits of a Herm face, drawn in a 100-unit box.
 struct HermFaceGenes: Equatable {
-    enum Body: CaseIterable { case pebble, orb, drop, bean, tile }
+    enum Body: CaseIterable, Hashable { case pebble, orb, drop, bean, tile }
     enum Eyes: CaseIterable { case pill, dot, visor, slit }
 
     static let palettes = [
@@ -227,6 +227,15 @@ enum HermFacePath {
 extension BotFaceMark {
     private static let ink = hex("#15121c")
 
+    /// Shared by the face canvas and its office character.
+    static func bodyColor(id: String, theme: DockThemeID) -> Color {
+        let colors = DockThemePalette(theme: theme)
+        let tone = HermFaceTone(theme: theme)
+        return tone == .hue
+            ? colors.fill(DockAccentColor.identity(for: id))
+            : bodyColors(HermFaceGenes(id: id), tone: tone, colors: colors).0
+    }
+
     private static func hex(_ value: String) -> Color {
         let rgb = UInt32(value.dropFirst(), radix: 16) ?? 0
         return Color(
@@ -245,13 +254,13 @@ extension BotFaceMark {
         let colors = DockThemePalette(theme: theme ?? .glass)
         let tone = HermFaceTone(theme: theme)
         // Unskinned exports retain their original colors so previously saved faces remain recognizable.
-        let (lite, deep) =
-            theme != nil && tone == .hue && !originalColors
-            ? (
-                colors.fill(DockAccentColor.identity(for: id)),
-                colors.fill(DockAccentColor.identity(for: id)).opacity(0.78)
-            )
-            : bodyColors(genes, tone: tone, colors: colors)
+        let (lite, deep): (Color, Color)
+        if let theme, tone == .hue, !originalColors {
+            let color = bodyColor(id: id, theme: theme)
+            (lite, deep) = (color, color.opacity(0.78))
+        } else {
+            (lite, deep) = bodyColors(genes, tone: tone, colors: colors)
+        }
         let t = pose.t
         let moves = pose.t != 0
         ctx.scaleBy(x: size / 100, y: size / 100)

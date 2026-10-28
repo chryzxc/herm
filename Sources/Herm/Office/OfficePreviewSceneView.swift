@@ -554,6 +554,7 @@ final class OfficePreviewARView: ARView {
 @MainActor
 struct OfficePreviewSceneView: NSViewRepresentable {
     let agents: [OfficePreviewAgentPresentation]
+    var avatarImages: [String: Data] = [:]
     let reduceMotion: Bool
     let resetToken: Int
     var wholeOffice = false
@@ -593,6 +594,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         view.addGestureRecognizer(magnify)
         context.coordinator.showsAgents = showsAgents
         context.coordinator.isDataCurrent = isDataCurrent
+        context.coordinator.avatarImages = avatarImages
         context.coordinator.install(in: view, agents: agents, reduceMotion: reduceMotion)
         return view
     }
@@ -601,6 +603,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         context.coordinator.onSelectAgent = onSelectAgent
         context.coordinator.showsAgents = showsAgents
         context.coordinator.isDataCurrent = isDataCurrent
+        context.coordinator.avatarImages = avatarImages
         context.coordinator.onSelectBoard = onSelectBoard
         context.coordinator.apply(palette: palette)
         context.coordinator.updateBoard(boardLanes)
@@ -629,6 +632,10 @@ struct OfficePreviewSceneView: NSViewRepresentable {
     final class Coordinator: NSObject {
         var showsAgents = false
         var isDataCurrent = true
+        var avatarImages: [String: Data] = [:]
+        private var lastAvatarImages: [String: Data] = [:]
+        private var characterAppearances: [String: String] = [:]
+        private var lastCharacterTheme: DockThemeID?
         private var lastDataCurrent = true
         var onSelectAgent: (String) -> Void
         var onSelectBoard: () -> Void = {}
@@ -652,7 +659,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         fileprivate var lastReduceMotion = false
         private var zoomTarget: Float?
         private var labels: [String: OfficePreviewTaskBubble] = [:]
-        private var robotFaces: [String: (head: Entity, eyes: [ModelEntity])] = [:]
+        private var characterFaces: [String: (head: Entity, eyes: [ModelEntity])] = [:]
         private var eyeColors: [String: NSColor] = [:]
         private var unlitMaterials: [NSColor: UnlitMaterial] = [:]
         private var lastClockTick = Date.distantPast
@@ -859,8 +866,13 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 if !showsAgents { for label in labels.values { label.setVisible(false) } }
                 layoutLabels()
             }
-            guard agents != lastPresentations || reduceMotion != lastReduceMotion || isDataCurrent != lastDataCurrent
+            let characterThemeChanged = lastCharacterTheme != palette.theme
+            guard
+                agents != lastPresentations || reduceMotion != lastReduceMotion || isDataCurrent != lastDataCurrent
+                    || avatarImages != lastAvatarImages || characterThemeChanged
             else { return }
+            lastAvatarImages = avatarImages
+            lastCharacterTheme = palette.theme
             lastDataCurrent = isDataCurrent
             lastPresentations = agents
             labelOrder = agents.sorted {
@@ -893,7 +905,8 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 chatBubbles.removeValue(forKey: id)
                 limbEntities.removeValue(forKey: id)
                 handProps.removeValue(forKey: id)
-                robotFaces.removeValue(forKey: id)
+                characterFaces.removeValue(forKey: id)
+                characterAppearances.removeValue(forKey: id)
                 eyeColors.removeValue(forKey: id)
                 currentNodes.removeValue(forKey: id)
                 walkedDistances.removeValue(forKey: id)
@@ -915,7 +928,21 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     nextLeisureChange[agent.id] = nil
                 }
                 let isNew = avatarRoots[agent.id] == nil
-                let root = avatarRoots[agent.id] ?? makeAvatar(agent: agent)
+                let herm = BotAvatarView.showsHermFace(avatarImages[agent.faceID], id: agent.faceID)
+                let appearance = herm ? agent.faceID : ""
+                let root = avatarRoots[agent.id] ?? makeAvatar(agent: agent, herm: herm)
+                if !isNew,
+                    characterAppearances[agent.id] != appearance || (herm && characterThemeChanged)
+                {
+                    // Keep the world entity: an in-flight walk still owns it.
+                    let replacement = makeAvatar(agent: agent, herm: herm)
+                    for child in Array(root.children) { child.removeFromParent() }
+                    for child in Array(replacement.children) { root.addChild(child) }
+                    applyPose(
+                        targetPose(for: agent, time: reduceMotion ? 0 : animationTime).pose,
+                        agentID: agent.id, amount: 1)
+                }
+                characterAppearances[agent.id] = appearance
                 if isNew {
                     avatarRoots[agent.id] = root
                     root.isEnabled = showsAgents
@@ -1476,7 +1503,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
         /// Visor eyes report the same lane colors as the task bubble.
         private func tintEyes(agent: OfficePreviewAgentPresentation) {
-            guard let face = robotFaces[agent.id] else { return }
+            guard characterAppearances[agent.id] == "", let face = characterFaces[agent.id] else { return }
             let color = OfficeAgentStatus(agent: agent, isDataCurrent: isDataCurrent).nsColor
             guard eyeColors[agent.id] != color else { return }
             eyeColors[agent.id] = color
@@ -1520,7 +1547,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
         /// A brief, identity-offset blink every few seconds.
         private func blink(agentID: String, seed: UInt64) {
-            guard let face = robotFaces[agentID] else { return }
+            guard let face = characterFaces[agentID] else { return }
             let cycle = (animationTime + Double(seed % 7) * 0.61).truncatingRemainder(dividingBy: 4.3)
             let height: Float = cycle < 0.14 ? 0.15 : 1
             for eye in face.eyes where eye.scale.y != height { eye.scale.y = height }
@@ -1794,7 +1821,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             limbs.leftLeg.position.y = mix(limbs.leftLeg.position.y, Self.hipHeight + pose.leftLift)
             limbs.rightLeg.position.y = mix(limbs.rightLeg.position.y, Self.hipHeight + pose.rightLift)
             if let upper = upperBodies[agentID] { blend(upper, pose.upper) }
-            if let head = robotFaces[agentID]?.head { blend(head, pose.head) }
+            if let head = characterFaces[agentID]?.head { blend(head, pose.head) }
             let height = mix(visual.position.y, pose.height)
             if abs(height - visual.position.y) > 0.004 { layoutLabels() }
             visual.position.y = height
@@ -1851,7 +1878,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 cursor = current.parent
             }
         }
-        private func makeAvatar(agent: OfficePreviewAgentPresentation) -> Entity {
+        private func makeAvatar(agent: OfficePreviewAgentPresentation, herm: Bool) -> Entity {
             let avatar = Entity()
             avatar.name = "office-agent-\(agent.id)"
             let root = Entity()
@@ -1863,10 +1890,12 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 nsColor(0.99, 0.78, 0.52), nsColor(0.78, 0.66, 0.96), nsColor(0.52, 0.84, 0.90),
             ]
             let accent =
-                agent.mainSession != nil
-                ? nsColor(0.98, 0.80, 0.38) : accents[Int(agent.identitySeed % UInt64(accents.count))]
-            let shell = nsColor(0.97, 0.96, 0.98)
-            let joint = nsColor(0.80, 0.80, 0.87)
+                herm
+                ? NSColor(BotFaceMark.bodyColor(id: agent.faceID, theme: palette.theme))
+                : agent.mainSession != nil
+                    ? nsColor(0.98, 0.80, 0.38) : accents[Int(agent.identitySeed % UInt64(accents.count))]
+            let shell = herm ? accent : nsColor(0.97, 0.96, 0.98)
+            let joint = herm ? accent : nsColor(0.80, 0.80, 0.87)
             let visor = nsColor(0.10, 0.12, 0.22)
 
             // A soft contact shadow grounds the bot without real-time shadows.
@@ -1896,9 +1925,11 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 addToonPart(
                     to: hip, name: "robot-foot", size: [0.19, 0.11, 0.26], position: [0, -0.24, 0.04], color: shell,
                     radius: 0.05)
-                addToonPart(
-                    to: hip, name: "robot-sole", size: [0.195, 0.03, 0.265], position: [0, -0.285, 0.04], color: accent,
-                    radius: 0.014)
+                if !herm {
+                    addToonPart(
+                        to: hip, name: "robot-sole", size: [0.195, 0.03, 0.265], position: [0, -0.285, 0.04],
+                        color: accent, radius: 0.014)
+                }
                 legs.append(hip)
             }
             let upper = Entity()
@@ -1906,73 +1937,84 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             upper.position = [0, Self.hipHeight, 0]
             root.addChild(upper)
             upperBodies[agent.id] = upper
-            addToonPart(
-                to: upper, name: "robot-body", size: [0.52, 0.46, 0.40], position: [0, 0.22, 0], color: shell,
-                radius: 0.17)
-            addToonPart(
-                to: upper, name: "robot-belt", size: [0.50, 0.06, 0.39], position: [0, 0.06, 0], color: joint,
-                radius: 0.03)
-            addToonOval(
-                to: upper, name: "robot-chest-light", size: [0.10, 0.10, 0.03], position: [0.12, 0.30, 0.20],
-                color: accent)
-            if agent.mainSession != nil {
+            if !herm {
+                addToonPart(
+                    to: upper, name: "robot-body", size: [0.52, 0.46, 0.40], position: [0, 0.22, 0], color: shell,
+                    radius: 0.17)
+                addToonPart(
+                    to: upper, name: "robot-belt", size: [0.50, 0.06, 0.39], position: [0, 0.06, 0], color: joint,
+                    radius: 0.03)
                 addToonOval(
-                    to: upper, name: "nexus-compass-badge", size: [0.13, 0.13, 0.025], position: [-0.08, 0.28, 0.20],
+                    to: upper, name: "robot-chest-light", size: [0.10, 0.10, 0.03], position: [0.12, 0.30, 0.20],
                     color: accent)
-                let needle = addToonPart(
-                    to: upper, name: "nexus-compass-needle", size: [0.025, 0.09, 0.012],
-                    position: [-0.08, 0.28, 0.217], color: visor, radius: 0.008)
-                needle.orientation = simd_quatf(angle: -.pi / 5, axis: [0, 0, 1])
+                if agent.mainSession != nil {
+                    addToonOval(
+                        to: upper, name: "nexus-compass-badge", size: [0.13, 0.13, 0.025],
+                        position: [-0.08, 0.28, 0.20],
+                        color: accent)
+                    let needle = addToonPart(
+                        to: upper, name: "nexus-compass-needle", size: [0.025, 0.09, 0.012],
+                        position: [-0.08, 0.28, 0.217], color: visor, radius: 0.008)
+                    needle.orientation = simd_quatf(angle: -.pi / 5, axis: [0, 0, 1])
+                }
+                addToonPart(
+                    to: upper, name: "robot-neck", size: [0.18, 0.08, 0.16], position: [0, 0.48, 0], color: joint,
+                    radius: 0.04)
             }
-            addToonPart(
-                to: upper, name: "robot-neck", size: [0.18, 0.08, 0.16], position: [0, 0.48, 0], color: joint,
-                radius: 0.04)
 
-            let head = Entity()
-            head.name = "robot-head"
-            head.position = [0, 0.78, 0]
+            let face = herm ? OfficeHermCharacter.makeFace(id: agent.faceID, theme: palette.theme, ink: visor) : nil
+            let head = face?.head ?? Entity()
+            if !herm {
+                head.name = "robot-head"
+            }
+            head.position = [0, herm ? 0.5 : 0.78, 0]
             upper.addChild(head)
-            addToonPart(
-                to: head, name: "robot-head-shell", size: [0.74, 0.58, 0.60], position: .zero, color: shell,
-                radius: 0.24)
-            addToonPart(
-                to: head, name: "robot-visor", size: [0.58, 0.34, 0.04], position: [0, -0.01, 0.29], color: visor,
-                radius: 0.12)
-            var eyes: [ModelEntity] = []
-            for x: Float in [-0.13, 0.13] {
-                let eye = ModelEntity(
-                    mesh: boxMesh(size: [0.13, 0.11, 0.02], radius: 0.05),
-                    materials: [unlitMaterial(nsColor(0.45, 0.93, 1.0))])
-                eye.name = "robot-eye"
-                eye.position = [x, 0.01, 0.315]
-                head.addChild(eye)
-                eyes.append(eye)
-            }
-            addToonPart(
-                to: head, name: "headphone-band", size: [0.80, 0.07, 0.12], position: [0, 0.29, 0], color: accent,
-                radius: 0.035)
-            for side: Float in [-1, 1] {
+            var eyes: [ModelEntity] = face?.eyes ?? []
+            if !herm {
                 addToonPart(
-                    to: head, name: "headphone-cup", size: [0.09, 0.26, 0.24], position: [side * 0.39, 0.02, 0],
-                    color: accent, radius: 0.045)
+                    to: head, name: "robot-head-shell", size: [0.74, 0.58, 0.60], position: .zero, color: shell,
+                    radius: 0.24)
                 addToonPart(
-                    to: head, name: "headphone-strap", size: [0.05, 0.24, 0.07], position: [side * 0.39, 0.19, 0],
-                    color: accent, radius: 0.02)
+                    to: head, name: "robot-visor", size: [0.58, 0.34, 0.04], position: [0, -0.01, 0.29], color: visor,
+                    radius: 0.12)
+                for x: Float in [-0.13, 0.13] {
+                    let eye = ModelEntity(
+                        mesh: boxMesh(size: [0.13, 0.11, 0.02], radius: 0.05),
+                        materials: [unlitMaterial(nsColor(0.45, 0.93, 1.0))])
+                    eye.name = "robot-eye"
+                    eye.position = [x, 0.01, 0.315]
+                    head.addChild(eye)
+                    eyes.append(eye)
+                }
+                addToonPart(
+                    to: head, name: "headphone-band", size: [0.80, 0.07, 0.12], position: [0, 0.29, 0], color: accent,
+                    radius: 0.035)
+                for side: Float in [-1, 1] {
+                    addToonPart(
+                        to: head, name: "headphone-cup", size: [0.09, 0.26, 0.24], position: [side * 0.39, 0.02, 0],
+                        color: accent, radius: 0.045)
+                    addToonPart(
+                        to: head, name: "headphone-strap", size: [0.05, 0.24, 0.07], position: [side * 0.39, 0.19, 0],
+                        color: accent, radius: 0.02)
+                }
             }
-            robotFaces[agent.id] = (head, eyes)
+            characterFaces[agent.id] = (head, eyes)
+            eyeColors[agent.id] = nil
 
             var arms: [Entity] = []
             for side: Float in [-1, 1] {
                 let shoulder = Entity()
                 shoulder.name = side < 0 ? "left-arm" : "right-arm"
-                shoulder.position = [side * 0.33, 0.40, 0]
+                shoulder.position = [side * (herm ? 0.47 : 0.33), 0.40, 0]
                 upper.addChild(shoulder)
                 addToonPart(
                     to: shoulder, name: "robot-arm", size: [0.12, 0.30, 0.13], position: [0, -0.15, 0], color: shell,
                     radius: 0.06)
-                addToonPart(
-                    to: shoulder, name: "robot-shoulder", size: [0.13, 0.07, 0.14], position: [0, -0.03, 0],
-                    color: accent, radius: 0.03)
+                if !herm {
+                    addToonPart(
+                        to: shoulder, name: "robot-shoulder", size: [0.13, 0.07, 0.14], position: [0, -0.03, 0],
+                        color: accent, radius: 0.03)
+                }
                 addToonOval(
                     to: shoulder, name: "robot-hand", size: [0.13, 0.13, 0.13], position: [0, -0.34, 0.01], color: joint
                 )
@@ -2018,7 +2060,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             // every typing frame update dozens of unnecessary physics shapes.
             avatar.components.set(
                 CollisionComponent(shapes: [
-                    ShapeResource.generateBox(size: [0.84, 1.45, 0.76]).offsetBy(translation: [0, 0.72, 0])
+                    ShapeResource.generateBox(size: [1.1, 1.45, 0.76]).offsetBy(translation: [0, 0.72, 0])
                 ]))
             return avatar
         }
