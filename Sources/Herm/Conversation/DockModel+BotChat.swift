@@ -290,10 +290,12 @@ extension DockModel {
         messages.sort { $0.timestamp < $1.timestamp }
     }
 
-    /// A Bot this turn hands work to: Hermes' `message_agent` tool, the
-    /// `hermes -p <bot> chat` command Bots use to DM each other, or a Kanban
-    /// card created for a Bot.
-    static func botDispatch(toolName: String, args: [String: Any]) -> (profileID: String, summary: String)? {
+    /// A Bot this turn hands work to: Hermes' `message_agent` tool, a
+    /// `hermes chat` command run as another profile (`chatProfile`), or a
+    /// Kanban card created for a Bot.
+    static func botDispatch(
+        toolName: String, args: [String: Any], alias: (String) -> String? = hermesProfileAlias
+    ) -> (profileID: String, summary: String)? {
         if toolName == "kanban_create" {
             let assignee = ((args["assignee"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingPrefix("@").lowercased()
@@ -306,16 +308,62 @@ extension DockModel {
             guard !target.isEmpty else { return nil }
             return (target, String(((args["message"] as? String) ?? "").prefix(400)))
         }
-        guard let command = args["command"] as? String,
-            let match = command.firstMatch(of: /\bhermes\s+(?:-p|--profile)\s+([\w-]+)\s+chat\b/)
-        else { return nil }
+        guard let command = args["command"] as? String, let profile = chatProfile(command, alias: alias) else {
+            return nil
+        }
         let query =
             command.firstMatch(of: /\s-q\s+'([^']*)'/).map { String($0.1) }
             ?? command.firstMatch(of: /\s-q\s+"([^"]*)"/).map { String($0.1) }
         let brief = command.firstMatch(of: /--query-file\s+(\S+)/).map {
             "Brief: " + URL(fileURLWithPath: String($0.1)).lastPathComponent
         }
-        return (String(match.1), String((query ?? brief ?? command).prefix(400)))
+        return (profile, String((query ?? brief ?? command).prefix(400)))
+    }
+
+    /// The profile a shell command starts `hermes chat` as, in every form
+    /// Hermes accepts (`main._apply_profile_override`): `-p`/`--profile`
+    /// anywhere in its arguments, `--profile=<p>`, `HERMES_HOME=…/profiles/<p>`,
+    /// or a profile alias wrapper (`<p> chat`). Nil for the default profile.
+    nonisolated static func chatProfile(_ command: String, alias: (String) -> String? = hermesProfileAlias)
+        -> String?
+    {
+        // Quoted text is a prompt or a path, never a flag.
+        let bare = command.replacing(/'[^']*'|"[^"]*"/, with: "''")
+        for segment in bare.split(whereSeparator: { ";|&\n".contains($0) }) {
+            let words = segment.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard let chat = words.firstIndex(of: "chat") else { continue }
+            if let start = words[..<chat].lastIndex(where: { ($0 as NSString).lastPathComponent == "hermes" }) {
+                let flags = words[(start + 1)...]
+                if let index = flags.firstIndex(where: { $0 == "-p" || $0 == "--profile" }), index + 1 < words.count {
+                    return words[index + 1].lowercased()
+                }
+                if let flag = flags.first(where: { $0.hasPrefix("--profile=") }) {
+                    return String(flag.dropFirst("--profile=".count)).lowercased()
+                }
+                if let home = words[..<start].last(where: { $0.hasPrefix("HERMES_HOME=") }),
+                    let match = home.firstMatch(of: /\/profiles\/([\w-]+)\/?$/)
+                {
+                    return String(match.1).lowercased()
+                }
+            } else if chat > 0, let profile = alias((words[chat - 1] as NSString).lastPathComponent) {
+                return profile
+            }
+        }
+        return nil
+    }
+
+    /// Hermes' alias wrapper `~/.local/bin/<name>` is `exec hermes -p <profile> "$@"`
+    /// (`hermes_cli/profiles.py`, `_is_our_wrapper`).
+    nonisolated static func hermesProfileAlias(_ name: String) -> String? {
+        guard name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }), !name.isEmpty,
+            let handle = FileHandle(
+                forReadingAtPath: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                    ".local/bin/\(name)"
+                ).path),
+            let head = try? handle.read(upToCount: 512), let text = String(data: head, encoding: .utf8)
+        else { return nil }
+        try? handle.close()
+        return text.firstMatch(of: /hermes -p ([\w-]+)/).map { String($0.1).lowercased() }
     }
 
     func recordBotDispatch(toolCallID: String, toolName: String, args: [String: Any], at date: Date = Date()) {
