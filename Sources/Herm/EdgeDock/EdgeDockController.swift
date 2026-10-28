@@ -1917,14 +1917,15 @@ struct EdgeNotchView: View {
                 .background {
                     // Side previews retain a contour even when Glass blends into the desktop.
                     shell(
-                        DockWindowBackground(shape: AnyShape(EdgeNotchShape(side: state.side))).clipShape(
-                            EdgeNotchShape(side: state.side)
-                        )
-                        .overlay {
-                            if state.side != .top {
-                                EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 1)
+                        DockWindowBackground(shape: AnyShape(EdgeNotchShape(side: state.side)))
+                            .overlay {
+                                // Doubled stroke clipped to the shape leaves a uniform inner 1pt line;
+                                // a centered 1pt stroke loses its outer half to the clip on every edge.
+                                if state.side != .top {
+                                    EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 2)
+                                }
                             }
-                        })
+                            .clipShape(EdgeNotchShape(side: state.side)))
                 }
                 // Attach drag gesture to parent so it works in both collapsed and expanded states
                 .simultaneousGesture(

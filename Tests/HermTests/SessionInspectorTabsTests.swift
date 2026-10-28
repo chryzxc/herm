@@ -60,7 +60,7 @@ struct SessionInspectorTabsTests {
                 named: [.clean, .eInk].contains(theme) ? .aqua : .darkAqua)
             for width in [300.0, 760.0] {
                 let host = NSHostingView(
-                    rootView: SessionInspectorEmptyView(onOpen: { _ in })
+                    rootView: SessionInspectorEmptyView(sections: [.browser, .terminal], onOpen: { _ in })
                         .frame(width: width, height: 660).dockThemedRoot())
                 host.frame = NSRect(x: 0, y: 0, width: width, height: 660)
                 host.layoutSubtreeIfNeeded()

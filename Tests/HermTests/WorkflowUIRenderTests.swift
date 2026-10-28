@@ -60,7 +60,7 @@ struct WorkflowUIRenderTests {
                 SavedPromptLibrary(model: model), root: root, name: "saved-prompts-\(raw)", width: 560, height: 440)
             try await capture(
                 AttachmentPopover(
-                    pasteImageAvailable: false, onSelect: { _ in }, onInsertURL: { _ in }, onSelectSnippet: { _ in }),
+                    pasteImageAvailable: false, onSelect: { _ in }, onSelectSnippet: { _ in }),
                 root: root, name: "capture-menu-\(raw)", width: 250, height: nil)
             try await capture(
                 SettingsSection(title: "Window capture", subtitle: "", tint: .dockAccent) {

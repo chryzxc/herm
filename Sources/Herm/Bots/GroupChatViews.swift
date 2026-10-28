@@ -971,22 +971,16 @@ struct GroupChatView: View {
                                     .fill(DockSkinPresentation.current.composerControlFill))
                     }
                     .buttonStyle(.dockHover)
-                    .help("Insert a URL or snippet")
+                    .help("Insert a snippet")
                     .dockPopover(isPresented: $showingInsertPopover, arrowEdge: .bottom) {
                         AttachmentPopover(
                             pasteImageAvailable: false,
                             onSelect: { _ in },
-                            onInsertURL: { raw in
-                                if let updated = AttachmentPopoverPresentation.insertingURL(raw, into: draft) {
-                                    draft = updated
-                                }
-                                showingInsertPopover = false
-                            },
                             onSelectSnippet: {
                                 draft = AttachmentPopoverPresentation.insertingSnippet($0, into: draft)
                                 showingInsertPopover = false
                             },
-                            actions: [.url, .promptSnippets]
+                            actions: [.promptSnippets]
                         )
                     }
                     Button {

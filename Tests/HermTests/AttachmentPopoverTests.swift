@@ -9,7 +9,7 @@ struct AttachmentPopoverTests {
     @Test func exposesAttachmentActionsInStableOrder() {
         #expect(
             AttachmentPopoverAction.allCases.map(\.id) == [
-                "files", "folder", "capture-window", "saved-prompts", "conversation", "images", "paste-image", "url",
+                "files", "folder", "capture-window", "saved-prompts", "conversation", "images", "paste-image",
                 "prompt-snippets",
             ])
     }
@@ -23,16 +23,6 @@ struct AttachmentPopoverTests {
         #expect(!AttachmentPopoverFilePicker.folder.allowsMultipleSelection)
     }
 
-    @Test func acceptsOnlyHTTPAndHTTPSURLsWithAHost() {
-        #expect(
-            AttachmentPopoverPresentation.validatedURL(from: "https://example.com/path")?.absoluteString
-                == "https://example.com/path")
-        #expect(AttachmentPopoverPresentation.validatedURL(from: "http://localhost:8080")?.host == "localhost")
-        #expect(AttachmentPopoverPresentation.validatedURL(from: "file:///private/secret") == nil)
-        #expect(AttachmentPopoverPresentation.validatedURL(from: "javascript:alert(1)") == nil)
-        #expect(AttachmentPopoverPresentation.validatedURL(from: "https://") == nil)
-    }
-
     @Test func treatsPickerCancellationAsNoError() {
         let cancellation = NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
         #expect(AttachmentPopoverPresentation.importerErrorMessage(cancellation) == nil)
@@ -40,17 +30,6 @@ struct AttachmentPopoverTests {
             AttachmentPopoverPresentation.importerErrorMessage(NSError(domain: NSCocoaErrorDomain, code: 257))
                 == "Could not choose attachments: The file couldn’t be opened because you don’t have permission to view it."
         )
-    }
-
-    @Test func insertsAValidatedURLWithoutChangingTheExistingDraft() {
-        #expect(
-            AttachmentPopoverPresentation.insertingURL("https://example.com", into: "Keep this draft")
-                == "Keep this draft\nhttps://example.com")
-        #expect(AttachmentPopoverPresentation.insertingURL(" https://example.com ", into: "") == "https://example.com")
-        #expect(
-            AttachmentPopoverPresentation.insertingURL("https://example.com", into: "  Keep this draft  ")
-                == "  Keep this draft  \nhttps://example.com")
-        #expect(AttachmentPopoverPresentation.insertingURL("file:///tmp/a", into: "draft") == nil)
     }
 
     @Test func insertsPromptSnippetWithoutChangingDraftWhitespace() {

@@ -356,8 +356,11 @@ extension DockPopover {
         HStack(spacing: 0) {
             sessionNavRail
             // Every destination sits in one rounded card below the toolbar row, which stays flat.
-            let cardInsets = EdgeInsets(top: titlebarInset, leading: 0, bottom: 8, trailing: 8)
-            let card = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            let flat = DockThemeStyle.current.flatShell
+            let margin: CGFloat = flat ? 0 : 8
+            let radius: CGFloat = flat ? 0 : 12
+            let cardInsets = EdgeInsets(top: titlebarInset, leading: 0, bottom: margin, trailing: margin)
+            let card = RoundedRectangle(cornerRadius: radius, style: .continuous)
             FullscreenPanelSplitView(
                 leading: sessionNavQueue,
                 trailing: desktopTrailingWorkspace,
@@ -366,7 +369,12 @@ extension DockPopover {
                 minimumTrailingWidth: desktopTrailingMinimumWidth,
                 isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList
             )
-            .mask(ToolbarRowAndCardShape(toolbarHeight: titlebarInset, margin: 8, radius: 12))
+            // The sidebar tint above is opaque, so the card carries its own canvas and skin backdrop
+            // (Hermes Desktop paints its backdrop inside the chat surface the same way).
+            .background {
+                if DockThemeStyle.current.material != .glass { Color.dockCanvas.overlay(DockBackdrop()) }
+            }
+            .mask(ToolbarRowAndCardShape(toolbarHeight: titlebarInset, margin: margin, radius: radius))
             .overlay { card.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline).padding(cardInsets) }
         }
         .dockPaneTint(Color.dockSidebar)

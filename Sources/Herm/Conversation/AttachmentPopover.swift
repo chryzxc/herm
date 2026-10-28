@@ -12,7 +12,6 @@ enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
     case conversation = "conversation"
     case images
     case pasteImage = "paste-image"
-    case url
     case promptSnippets = "prompt-snippets"
 
     var id: String { rawValue }
@@ -26,7 +25,6 @@ enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
         case .folder: "Folder"
         case .images: "Images"
         case .pasteImage: "Paste image"
-        case .url: "URL"
         case .promptSnippets: "Prompt snippets"
         }
     }
@@ -40,7 +38,6 @@ enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
         case .folder: .folder
         case .images: .image
         case .pasteImage: .clipboardText
-        case .url: .link
         case .promptSnippets: .quotes
         }
     }
@@ -76,23 +73,6 @@ enum AttachmentPopoverPresentation {
         AttachmentPromptSnippet(
             label: "Review this", text: "Review this attachment and call out anything that needs attention."),
     ]
-
-    static func validatedURL(from rawValue: String) -> URL? {
-        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: value),
-            let scheme = url.scheme?.lowercased(),
-            ["http", "https"].contains(scheme),
-            let host = url.host,
-            !host.isEmpty
-        else { return nil }
-        return url
-    }
-
-    static func insertingURL(_ rawValue: String, into draft: String) -> String? {
-        guard let url = validatedURL(from: rawValue) else { return nil }
-        let value = url.absoluteString
-        return draft.isEmpty ? value : "\(draft)\n\(value)"
-    }
 
     static func insertingPath(_ url: URL, into draft: String) -> String {
         insertingSnippet(url.path, into: draft)
@@ -148,12 +128,9 @@ enum AttachmentPopoverFileSelection {
 struct AttachmentPopover: View {
     let pasteImageAvailable: Bool
     let onSelect: (AttachmentPopoverAction) -> Void
-    let onInsertURL: (String) -> Void
     let onSelectSnippet: (String) -> Void
     /// Group rooms carry text only, so they offer just the inserting actions.
     var actions = AttachmentPopoverAction.allCases
-
-    @State private var urlText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -163,9 +140,7 @@ struct AttachmentPopover: View {
                 .foregroundStyle(Color.dockAccent)
 
             ForEach(actions) { action in
-                if action == .url {
-                    urlRow
-                } else if action == .promptSnippets {
+                if action == .promptSnippets {
                     snippetsRow
                 } else {
                     actionRow(action)
@@ -209,31 +184,6 @@ struct AttachmentPopover: View {
         .accessibilityLabel(unavailable ? "\(action.title), unavailable" : action.title)
     }
 
-    private var urlRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 9) {
-                DockIcon(AttachmentPopoverAction.url.icon)
-                    .frame(width: 16)
-                Text("URL")
-                    .dockFont(.body, weight: .medium)
-                Spacer()
-            }
-            HStack(spacing: 6) {
-                DockTextField("https://…", text: $urlText)
-                    .textFieldStyle(.dockGlass)
-                    .dockFont(.metadata)
-                    .onSubmit(insertURL)
-                Button("Insert", action: insertURL)
-                    .buttonStyle(.dockCompact)
-                    .dockFont(.metadata, weight: .semibold)
-                    .disabled(AttachmentPopoverPresentation.validatedURL(from: urlText) == nil)
-            }
-            Text("Only http:// and https:// URLs are accepted.")
-                .dockFont(.compactStatus, weight: .regular)
-                .foregroundStyle(Color.dockMetadataText)
-        }
-    }
-
     private var snippetsRow: some View {
         DockMenu {
             ForEach(AttachmentPopoverPresentation.promptSnippets) { snippet in
@@ -255,11 +205,5 @@ struct AttachmentPopover: View {
         }
         .buttonStyle(.dockHover)
         .accessibilityLabel("Prompt snippets")
-    }
-
-    private func insertURL() {
-        guard AttachmentPopoverPresentation.validatedURL(from: urlText) != nil else { return }
-        onInsertURL(urlText)
-        urlText = ""
     }
 }

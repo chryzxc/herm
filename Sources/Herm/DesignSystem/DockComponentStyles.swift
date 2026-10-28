@@ -246,7 +246,8 @@ struct DockBackdrop: View {
                     .clipped()
                     .modifier(DockInvertIf(active: colorScheme == .light))
             }
-            .opacity(0.03)
+            // Hermes Desktop's Backdrop.tsx value (opacity-[0.025]).
+            .opacity(0.025)
             .blendMode(.difference)
             .allowsHitTesting(false)
             .accessibilityHidden(true)

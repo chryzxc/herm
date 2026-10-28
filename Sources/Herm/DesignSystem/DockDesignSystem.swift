@@ -568,6 +568,9 @@ struct DockSectionHeader<Actions: View>: View {
         .onHover { isHovering = $0 }
     }
 
+    /// Hermes Desktop sets sidebar group labels (PINNED, SESSIONS) as tracked caps.
+    private var capsLabel: Bool { DockThemeStyle.current.flatShell && !isContentHeader && icon == nil }
+
     private func label(isExpanded: Bool?) -> some View {
         HStack(spacing: 6) {
             if let icon {
@@ -576,6 +579,8 @@ struct DockSectionHeader<Actions: View>: View {
             // Sentence case, quiet weight: a label, not a banner.
             Text(title)
                 .dockFont(titleRole, weight: isContentHeader || icon != nil ? .semibold : .medium)
+                .textCase(capsLabel ? .uppercase : nil)
+                .tracking(capsLabel ? 1 : 0)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)

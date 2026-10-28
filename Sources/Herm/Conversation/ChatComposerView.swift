@@ -466,7 +466,6 @@ struct ChatComposerView: View {
                                 AttachmentPopover(
                                     pasteImageAvailable: pasteImageAvailable,
                                     onSelect: handleAttachmentAction,
-                                    onInsertURL: insertURL,
                                     onSelectSnippet: insertSnippet
                                 )
                             }
@@ -803,7 +802,7 @@ struct ChatComposerView: View {
         case .folder:
             attachmentPicker = .folder
             showingFilePicker = true
-        case .url, .promptSnippets:
+        case .promptSnippets:
             break
         }
     }
@@ -817,13 +816,6 @@ struct ChatComposerView: View {
             reportError: model.reportAttachmentError,
             clearErrors: model.clearAttachmentErrors
         )
-        isComposerFocused = true
-    }
-
-    private func insertURL(_ rawValue: String) {
-        guard let updated = AttachmentPopoverPresentation.insertingURL(rawValue, into: composer.text) else { return }
-        composer.text = updated
-        showingAttachmentPopover = false
         isComposerFocused = true
     }
 

@@ -108,7 +108,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .hermesClassic:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 3, outlineWidth: 0.5, backdrop: .etching, motion: .snap, pressScale: 1,
-                cardFill: 1, tintedSidebar: true)
+                cardFill: 1, tintedSidebar: true, flatShell: true)
         case .warmLight:
             DockThemeStyle(
                 controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, fontDesign: .serif, selection: .fill,
@@ -265,6 +265,8 @@ struct DockThemeStyle: Equatable {
     var neutralUserBubble: Bool = false
     /// Rail and session list sit on a tinted surface so the chat reads as the page.
     var tintedSidebar: Bool = false
+    /// Hermes Desktop's flat shell: content meets the sidebar edge to edge, and section labels are tracked caps.
+    var flatShell: Bool = false
 
     static var current: DockThemeStyle { DockThemeRuntime.current.style }
 }

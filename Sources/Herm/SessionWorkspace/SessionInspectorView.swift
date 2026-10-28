@@ -183,7 +183,8 @@ struct SessionInspector: View {
                     if openSections.contains(selectedSection) {
                         baseContent
                     } else {
-                        SessionInspectorEmptyView(onOpen: reopen)
+                        SessionInspectorEmptyView(
+                            sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen)
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
@@ -253,7 +254,10 @@ struct SessionInspector: View {
             closedRaw = closedRaw.split(separator: "|").map { InspectorPresentation.migratedTab(String($0)) }.joined(
                 separator: "|")
             simulatorSections = []
-            if let saved = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model)) {
+            // Every unsaved chat shares one "new" identity, so never restore tabs into it.
+            if model.navigationSessionID != nil,
+                let saved = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))
+            {
                 simulatorSections = saved.simulatorSections ?? []
                 closedRaw = saved.closed
                 recentClosed = saved.recentClosed
@@ -497,7 +501,7 @@ struct SessionInspector: View {
     }
 
     private func savePresentation() {
-        guard !restoringPresentation else { return }
+        guard !restoringPresentation, model.navigationSessionID != nil else { return }
         WorkspacePresentationStore.shared.save(
             InspectorPresentation(
                 selected: selectedSection.rawValue, closed: closedRaw,

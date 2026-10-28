@@ -29,7 +29,7 @@ struct ConversationWorkspaceMetrics: Equatable {
                 composerInset: 20,
                 composerMaxWidth: 760,
                 composerTopInset: 16,
-                composerBottomInset: 14,
+                composerBottomInset: 24,
                 usesCompactToolbarLabels: false
             )
         }
@@ -41,7 +41,7 @@ struct ConversationWorkspaceMetrics: Equatable {
             composerInset: 12,
             composerMaxWidth: 760,
             composerTopInset: 12,
-            composerBottomInset: 10,
+            composerBottomInset: 18,
             usesCompactToolbarLabels: true
         )
     }
