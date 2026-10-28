@@ -40,6 +40,7 @@ struct SessionNavQueue: View {
     let onOpenGroupChat: (String) -> Void
     let onOpenPullRequests: () -> Void
     let onOpenIssues: () -> Void
+    let onOpenTiles: (() -> Void)?
     let showsFullscreenToggle: Bool
     let isFullscreen: Bool
     let onFullscreenToggle: () -> Void
@@ -81,6 +82,7 @@ struct SessionNavQueue: View {
         onOpenGroupChat: @escaping (String) -> Void,
         onOpenPullRequests: @escaping () -> Void,
         onOpenIssues: @escaping () -> Void,
+        onOpenTiles: (() -> Void)? = nil,
         showsFullscreenToggle: Bool,
         isFullscreen: Bool,
         onFullscreenToggle: @escaping () -> Void,
@@ -107,6 +109,7 @@ struct SessionNavQueue: View {
         self.isPullRequestsActive = isPullRequestsActive
         self.isIssuesActive = isIssuesActive
         self.onNewConversation = onNewConversation
+        self.onOpenTiles = onOpenTiles
         self.onSelectSession = onSelectSession
         self.onSelectTask = onSelectTask
         self.onOpenGlobal = onOpenGlobal
@@ -495,6 +498,19 @@ struct SessionNavQueue: View {
                 .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
             }
             .buttonStyle(.dockHover)
+            if let onOpenTiles {
+                Button(action: onOpenTiles) {
+                    HStack(spacing: 8) {
+                        DockIcon(.squaresFour, size: 14)
+                        Text("Chat tiles")
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 6)
+                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                }
+                .buttonStyle(.dockHover)
+                .help("See every chat's status and answer requests without switching chats")
+            }
 
             let pinned = pinnedSessionPresentation
             if pinned.status != .empty || !pinned.sessions.isEmpty {

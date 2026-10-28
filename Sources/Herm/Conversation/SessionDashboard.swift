@@ -10,11 +10,13 @@ struct SessionDashboard<Conversation: View>: View {
     @State private var showsConversation = false
     let onNewConversation: () -> Void
     let onOpenWorkspace: () -> Void
+    let onShowList: () -> Void
     @ViewBuilder let conversation: () -> Conversation
 
     init(
         model: DockModel, bots: BotModeModel, control: ControlCenterModel, store: WorkspaceStore,
         onNewConversation: @escaping () -> Void, onOpenWorkspace: @escaping () -> Void,
+        onShowList: @escaping () -> Void,
         @ViewBuilder conversation: @escaping () -> Conversation
     ) {
         self.model = model
@@ -22,6 +24,7 @@ struct SessionDashboard<Conversation: View>: View {
         self.control = control
         self.onNewConversation = onNewConversation
         self.onOpenWorkspace = onOpenWorkspace
+        self.onShowList = onShowList
         self.conversation = conversation
         _sidebar = StateObject(wrappedValue: SessionNavSidebarModel(model: model, control: control, store: store))
     }
@@ -31,6 +34,9 @@ struct SessionDashboard<Conversation: View>: View {
         guard model.isHermesConnected else { return false }
         switch snapshot.inputs.sessionProjectionState {
         case .ready, .empty: return true
+        // A manual refresh marks loaded rows stale; they stay current until it fails,
+        // so tiles do not blank their status and reload on every refresh.
+        case .stale: return model.isLoadingSessions
         default: return false
         }
     }
@@ -39,6 +45,7 @@ struct SessionDashboard<Conversation: View>: View {
         guard model.isHermesConnected else { return "Disconnected · activity is not current" }
         switch snapshot.inputs.sessionProjectionState {
         case .loading: return "Loading sessions…"
+        case .stale where model.isLoadingSessions: return "All projects in the selected bot · updates every 10 seconds"
         case .stale, .unavailable, .failed: return "Activity is not current · refresh to retry"
         case .ready, .empty: return "All projects in the selected bot · updates every 10 seconds"
         }
@@ -49,24 +56,12 @@ struct SessionDashboard<Conversation: View>: View {
     var body: some View {
         DockExpandedPage(
             title: "Chats", subtitle: subtitle,
-            onRefresh: refresh, isRefreshing: model.isLoadingSessions, showsClose: false, close: {}
+            showsClose: false, close: {}
         ) {
-            Button("New chat", action: onNewConversation).buttonStyle(.dockPrimary)
-                .disabled(selection.isLoading)
-            Picker(
-                "Bot",
-                selection: Binding(
-                    get: { bots.selectedProfileID ?? "default" },
-                    set: { bots.selectProfile($0) }
-                )
-            ) {
-                if bots.bots.isEmpty {
-                    Text(model.agentDisplayName).tag(bots.selectedProfileID ?? "default")
-                }
-                ForEach(bots.bots.filter { !$0.isHidden }) { bot in Text(bot.name).tag(bot.id) }
-            }
-            .frame(maxWidth: 180)
-            .disabled(selection.isLoading)
+            SessionDashboardToolbar(
+                bots: bots, fallbackName: model.agentDisplayName,
+                isLoading: selection.isLoading, isRefreshing: model.isLoadingSessions,
+                onRefresh: refresh, onShowList: onShowList, onNewConversation: onNewConversation)
         } content: {
             sessionList
         }
@@ -94,7 +89,7 @@ struct SessionDashboard<Conversation: View>: View {
     private var sessionList: some View {
         SessionDashboardList(
             sidebar: sidebar, selection: selection, isCurrent: isCurrent, onSelect: select,
-            client: model.controlRPCClient
+            client: model.controlRPCClient, model: model
         ).equatable().id(model.profileScopeID)
     }
 
