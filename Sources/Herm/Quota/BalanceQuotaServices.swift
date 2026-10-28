@@ -4,7 +4,7 @@ import Foundation
 /// windows, so their snapshots carry the balance as text, not a percentage.
 enum BalanceQuota {
     /// Herm's own pasted key first, then the process environment, then the
-    /// key Hermes itself reads from `$HERMES_HOME/.env`.
+    /// key Hermes itself reads from `$HERMES_HOME/.env` (Local backend only).
     static func apiKey(storageKey: String, envNames: [String]) -> String? {
         if let stored = ProviderKeyStore().savedKey(storageKey) { return stored }
         let environment = ProcessInfo.processInfo.environment
@@ -13,6 +13,7 @@ enum BalanceQuota {
         {
             return key
         }
+        guard GatewayConnectionStore.isLocalBackend else { return nil }
         let root =
             environment["HERMES_HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hermes", isDirectory: true)

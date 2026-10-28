@@ -474,6 +474,12 @@ final class DockModel: ObservableObject {
         self.kanbanAttributionSessionID = initialSessionID
         self.interruptRPC = HermesControlRPC(client: rpcClient ?? gateway)
         self.sessionRPCClient = rpcClient ?? gateway
+        if !GatewayConnectionStore.isLocalBackend {
+            let client = sessionRPCClient
+            runtimeConfigurationRefresh = HermesRuntimeConfigurationRefresh(reader: { _ in
+                await HermesRuntimeInspector.inspectRemote(fetch: client.fetchHTTP)
+            })
+        }
         self.voicePlayback = voicePlayback ?? HermesVoicePlayback()
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.write("model: initialized")

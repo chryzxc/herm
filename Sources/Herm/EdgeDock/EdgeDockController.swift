@@ -557,7 +557,8 @@ final class EdgeDockController: NSObject {
             deliveryQuestionPoll?.cancel()
             deliveryQuestionPoll = nil
         }
-        guard deliveryQuestionPoll == nil else { return }
+        // Delivery questions are files in this Mac's Hermes home; a remote backend writes its own.
+        guard deliveryQuestionPoll == nil, GatewayConnectionStore.isLocalBackend else { return }
         deliveryQuestionPoll = Task { [weak self] in
             let questions = await EdgeDeliveryQuestion.loadOffMain()
             guard !Task.isCancelled, let self else { return }

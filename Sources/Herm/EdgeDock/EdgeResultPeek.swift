@@ -160,7 +160,7 @@ struct EdgeResultPeek: View {
                     Button("Review changes") { reviewInWorkspace?(localComparison) }.buttonStyle(.dockCompact)
                 }
                 if localComparison == nil, reviewInWorkspace != nil,
-                    GatewayConnectionStore.shared.launchSettings.mode == .local,
+                    GatewayConnectionStore.isLocalBackend,
                     DeveloperWorkflowModel.shared.turnBaselines[
                         QuickDestination(profileID: target.session.profileID, sessionID: target.session.id).sessionKey]
                         != nil

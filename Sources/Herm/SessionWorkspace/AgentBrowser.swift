@@ -176,7 +176,8 @@ final class AgentBrowser: ObservableObject {
 
     /// A restarted Hermes gateway forgets the connection; point it back at this browser.
     func reconnectHermes() {
-        guard state == .running, let cdpURL, let model else { return }
+        // The CDP address is this Mac's loopback; a remote backend would dial its own host.
+        guard state == .running, GatewayConnectionStore.isLocalBackend, let cdpURL, let model else { return }
         let previous = Self.connectionTask
         Self.connectionTask = Task { [weak self] in
             await previous?.value
