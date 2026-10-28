@@ -150,7 +150,7 @@ struct KanbanBoardView: View, Equatable {
                 Button {
                     expansion.collapse(lane, hasTasks: !laneTasks.isEmpty)
                 } label: {
-                    DockIcon(.sidebarSimple, weight: .fill)
+                    DockIcon(.caretLeft)
                         .dockFont(.compactStatus, weight: .bold)
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(width: 28, height: 28)
@@ -309,7 +309,7 @@ private struct KanbanLaneRail: View {
                             .frame(height: 13)
                     }
                 }
-                DockIcon(.sidebarSimple)
+                DockIcon(.caretRight)
                     .dockFont(.metadata, weight: .bold)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 0)
