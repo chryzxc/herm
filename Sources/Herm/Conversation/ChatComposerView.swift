@@ -94,6 +94,9 @@ struct ChatComposerView: View {
             .onChange(of: model.attachedContexts) { previous, _ in
                 model.moveContextsToTray(previous: previous)
             }
+            .onChange(of: model.composerIsEmptyForRecovery) { _, isEmpty in
+                if isEmpty { model.restorePendingSendIfPossible(for: model.composerDraftKey) }
+            }
             .dockSheet(item: $inspectingContext) { context in
                 ComposerContextPreview(context: context) { text in
                     guard contextPreviewOwner == WorkspaceIdentity.session(model),
@@ -1251,307 +1254,6 @@ enum ComposerCompletionKey {
     }
 }
 
-struct ComposerInputEditor: NSViewRepresentable {
-    @AppStorage(ComposerTypingSettings.autocorrectKey) private var autocorrectEnabled = true
-    @Environment(\.dockWorkspaceScale) private var workspaceScale
-    @Environment(\.isEnabled) private var isEnabled
-    @Binding var text: String
-    let isFocused: Bool
-    let onSubmit: () -> Void
-    let onCompletionKey: (ComposerCompletionKey) -> Bool
-    var onDropFiles: (([URL]) -> Void)? = nil
-    var onPaste: (() -> Bool)? = nil
-    let onFocusChanged: (Bool) -> Void
-    let onCaretMoved: (String, Int) -> Void
-    let takePendingCaret: () -> Int?
-    let onTextChanged: (String, Int) -> Void
-    var onTextReplaced: ((NSRange, String) -> Void)? = nil
-    let onContentHeightChanged: (CGFloat) -> Void
-    var inset = NSSize(width: 16, height: 0)
-    var contexts: [ChatContext] = []
-    var onInspectContext: ((ChatContext) -> Void)?
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.verticalScrollElasticity = .automatic
-        scrollView.horizontalScrollElasticity = .none
-
-        let textView = ComposerInputTextView()
-        textView.delegate = context.coordinator
-        textView.onSubmit = onSubmit
-        textView.onCompletionKey = onCompletionKey
-        textView.onDropFiles = onDropFiles
-        textView.onPaste = onPaste
-        textView.isEditable = isEnabled
-        textView.isAutomaticSpellingCorrectionEnabled = autocorrectEnabled
-        textView.isContinuousSpellCheckingEnabled = autocorrectEnabled
-        textView.onWidthChanged = { [weak coordinator = context.coordinator, weak textView] in
-            guard let textView else { return }
-            coordinator?.schedulePresentationUpdate(for: textView)
-        }
-        textView.contexts = contexts
-        textView.onInspectContext = onInspectContext
-        textView.font = DockSkinPresentation.nativeFont(size: DockTypography.size(.conversation))
-        textView.textColor = NSColor(Color.dockPrimaryText)
-        textView.insertionPointColor = NSColor(Color.dockAccent)
-        textView.drawsBackground = false
-        textView.isRichText = false
-        if #available(macOS 15.0, *) {
-            // Plain text only: Writing Tools must not insert formatting into a message.
-            textView.writingToolsBehavior = .complete
-            textView.allowedWritingToolsResultOptions = [.plainText]
-        }
-        textView.allowsUndo = true
-        textView.isHorizontallyResizable = false
-        textView.isVerticallyResizable = true
-        textView.autoresizingMask = [.width]
-        textView.textContainerInset = inset
-        // NSTextContainer adds a 5pt line-fragment inset by default. The
-        // placeholder already uses the shared 16pt gutter, so remove that
-        // hidden extra inset to align the caret with its first character.
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-
-        scrollView.documentView = textView
-        context.coordinator.synchronize(textView)
-        context.coordinator.reportContentHeight(for: textView)
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? ComposerInputTextView else { return }
-        context.coordinator.parent = self
-        textView.onSubmit = onSubmit
-        textView.onCompletionKey = onCompletionKey
-        textView.onDropFiles = onDropFiles
-        textView.onPaste = onPaste
-        textView.isEditable = isEnabled
-        textView.isAutomaticSpellingCorrectionEnabled = autocorrectEnabled
-        textView.isContinuousSpellCheckingEnabled = autocorrectEnabled
-        textView.contexts = contexts
-        textView.onInspectContext = onInspectContext
-        context.coordinator.synchronize(textView)
-        if let caret = takePendingCaret() {
-            textView.setSelectedRange(NSRange(location: min(caret, (textView.string as NSString).length), length: 0))
-        }
-        context.coordinator.reportContentHeight(for: textView)
-
-        guard isFocused, scrollView.window?.firstResponder !== textView else { return }
-        DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView, weak scrollView] in
-            guard let coordinator, let textView, let scrollView,
-                coordinator.parent.isFocused, textView.isEditable,
-                scrollView.documentView === textView
-            else { return }
-            scrollView.window?.makeFirstResponder(textView)
-        }
-    }
-
-    @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: ComposerInputEditor
-        var isSynchronizingText = false
-        private var presentationUpdatePending = false
-        let synchronization = ComposerEditorSynchronization()
-
-        func synchronize(_ textView: NSTextView) {
-            isSynchronizingText = true
-            synchronization.synchronize(
-                textView, markdown: parent.text, contexts: parent.contexts, inset: parent.inset,
-                bodySize: DockTypography.size(.conversation, scale: parent.workspaceScale))
-            isSynchronizingText = false
-        }
-
-        init(_ parent: ComposerInputEditor) {
-            self.parent = parent
-        }
-
-        func textDidBeginEditing(_ notification: Notification) {
-            parent.onFocusChanged(true)
-        }
-
-        func textDidEndEditing(_ notification: Notification) {
-            parent.onFocusChanged(false)
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            guard !isSynchronizingText else { return }
-            // Typing supersedes a completion's queued selection before the next redraw.
-            _ = parent.takePendingCaret()
-            if !textView.hasMarkedText() { bulletizeCurrentLine(textView) }
-            let markdown = synchronization.markdown(in: textView)
-            if !isSynchronizingText, parent.text != markdown {
-                parent.text = markdown
-                parent.onTextChanged(markdown, textView.selectedRange().location)
-            }
-            reportContentHeight(for: textView)
-            synchronization.revealCaret(in: textView) { [weak self] in self?.parent.isFocused == true }
-        }
-
-        func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
-            if !isSynchronizingText, let replacementString {
-                parent.onTextReplaced?(range, replacementString)
-            }
-            return true
-        }
-
-        func textViewDidChangeSelection(_ notification: Notification) {
-            guard !isSynchronizingText, let textView = notification.object as? NSTextView else { return }
-            parent.onCaretMoved(synchronization.markdown(in: textView), textView.selectedRange().location)
-        }
-
-        /// Typing "- " at a line start shows a "•" bullet; the binding keeps markdown "- ".
-        private func bulletizeCurrentLine(_ textView: NSTextView) {
-            let ns = textView.string as NSString
-            let caret = textView.selectedRange().location
-            let line = ns.lineRange(for: NSRange(location: caret, length: 0))
-            guard caret >= line.location + 2, ns.substring(with: line).hasPrefix("- ") else { return }
-            let range = NSRange(location: line.location, length: 2)
-            if textView.shouldChangeText(in: range, replacementString: "• ") {
-                textView.replaceCharacters(in: range, with: "• ")
-                textView.didChangeText()
-            }
-        }
-
-        func reportContentHeight(for textView: NSTextView) {
-            synchronization.updatePresentation(textView, publishHeight: parent.onContentHeightChanged)
-        }
-
-        func schedulePresentationUpdate(for textView: NSTextView) {
-            guard !presentationUpdatePending else { return }
-            presentationUpdatePending = true
-            // Native wrapping settles after SwiftUI assigns the scroll view's width.
-            DispatchQueue.main.async { [weak self, weak textView] in
-                guard let self else { return }
-                self.presentationUpdatePending = false
-                if let textView { self.reportContentHeight(for: textView) }
-            }
-        }
-    }
-}
-
-private final class ComposerInputTextView: NSTextView {
-    var onSubmit: (() -> Void)?
-    var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
-    var onDropFiles: (([URL]) -> Void)?
-    var onPaste: (() -> Bool)?
-    var onWidthChanged: (() -> Void)?
-    var contexts: [ChatContext] = []
-    var onInspectContext: ((ChatContext) -> Void)?
-
-    override func setFrameSize(_ newSize: NSSize) {
-        let widthChanged = frame.width != newSize.width
-        super.setFrameSize(newSize)
-        if widthChanged { onWidthChanged?() }
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
-        if index < (string as NSString).length,
-            let attachment = textStorage?.attribute(.attachment, at: index, effectiveRange: nil)
-                as? InlineContextAttachment,
-            let context = contexts.first(where: { $0.inlineToken == attachment.token })
-        {
-            onInspectContext?(context)
-            return
-        }
-        super.mouseDown(with: event)
-    }
-
-    override func writeSelection(to pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-        guard type == .string, let storage = textStorage, selectedRange().length > 0 else {
-            return super.writeSelection(to: pasteboard, type: type)
-        }
-        let selected = storage.attributedSubstring(from: selectedRange())
-        let serialized = InlineContextCodec.serialize(selected)
-        let readable = contexts.reduce(serialized) { value, context in
-            context.inlineToken.map { value.replacingOccurrences(of: $0, with: "[" + context.title + "]") } ?? value
-        }
-        return pasteboard.setString(readable, forType: .string)
-    }
-
-    /// Dropped files become attachments; NSTextView would otherwise insert their paths as text.
-    private func droppedFileURLs(_ sender: NSDraggingInfo) -> [URL] {
-        AttachmentPopoverFileSelection.fileURLs(from: sender.draggingPasteboard)
-    }
-
-    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(paste(_:)), isEditable {
-            // Plain-text NSTextView rejects file/image clipboards before our paste handler runs.
-            if onDropFiles != nil, !AttachmentPopoverFileSelection.fileURLs(from: .general).isEmpty { return true }
-            if onPaste != nil, DockModel.pasteboardHoldsImageOnly(.general) { return true }
-        }
-        return super.validateUserInterfaceItem(item)
-    }
-
-    override func paste(_ sender: Any?) {
-        let urls = AttachmentPopoverFileSelection.fileURLs(from: .general)
-        guard isEditable else { return }
-        if !urls.isEmpty, let onDropFiles {
-            onDropFiles(urls)
-        } else if onPaste?() != true {
-            super.paste(sender)
-        }
-    }
-
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        droppedFileURLs(sender).isEmpty ? super.draggingEntered(sender) : .copy
-    }
-
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        droppedFileURLs(sender).isEmpty ? super.draggingUpdated(sender) : .copy
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        let urls = droppedFileURLs(sender)
-        guard !urls.isEmpty, let onDropFiles else { return super.performDragOperation(sender) }
-        onDropFiles(urls)
-        return true
-    }
-
-    override func keyDown(with event: NSEvent) {
-        let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
-        if event.modifierFlags.intersection(editingModifiers).isEmpty,
-            let key = ComposerCompletionKey(keyCode: event.keyCode),
-            onCompletionKey?(key) == true
-        {
-            return
-        }
-        if event.keyCode == 36 || event.keyCode == 76,
-            event.modifierFlags.intersection(editingModifiers).isEmpty
-        {
-            onSubmit?()
-            return
-        }
-        if event.keyCode == 36, event.modifierFlags.contains(.shift), continueBullet() { return }
-        super.keyDown(with: event)
-    }
-
-    /// Shift+Return on a "• " line continues the list; on an empty bullet it ends it.
-    private func continueBullet() -> Bool {
-        let ns = string as NSString
-        let line = ns.lineRange(for: NSRange(location: selectedRange().location, length: 0))
-        let content = ns.substring(with: line).trimmingCharacters(in: .newlines)
-        guard content.hasPrefix("• ") else { return false }
-        if content == "• " {
-            let range = NSRange(location: line.location, length: 2)
-            if shouldChangeText(in: range, replacementString: "") {
-                replaceCharacters(in: range, with: "")
-                didChangeText()
-            }
-        } else {
-            insertText("\n• ", replacementRange: selectedRange())
-        }
-        return true
-    }
-}
-
 extension String {
     var markdownBullets: String { replacingOccurrences(of: "(?m)^• ", with: "- ", options: .regularExpression) }
     var displayBullets: String { replacingOccurrences(of: "(?m)^- ", with: "• ", options: .regularExpression) }
@@ -1602,7 +1304,7 @@ private struct RunningProcessesStrip: View {
     @ObservedObject var control: ControlCenterModel
     var isTurnActive = false
     @State private var isExpanded = false
-    @State private var pending: ProcessSummary?
+    @State private var pending: ProcessStopConfirmation?
 
     var body: some View {
         content
@@ -1656,7 +1358,7 @@ private struct RunningProcessesStrip: View {
                             }
                             Spacer(minLength: 0)
                             if process.state == "running" {
-                                Button("Stop") { pending = process }
+                                Button("Stop") { pending = control.processStopConfirmation(process) }
                                     .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
                             } else {
                                 Text(process.state.capitalized).dockFont(.metadata)
@@ -1672,10 +1374,10 @@ private struct RunningProcessesStrip: View {
             .confirmationDialog(
                 "Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
             ) {
-                if let process = pending {
-                    Button("Stop \(process.name)", role: .destructive) {
+                if let confirmation = pending {
+                    Button("Stop \(confirmation.process.name)", role: .destructive) {
                         Task {
-                            _ = await control.killProcess(process)
+                            _ = await control.killProcess(confirmation)
                             pending = nil
                         }
                     }

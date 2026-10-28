@@ -31,6 +31,7 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
             return ["status": redirectStatus]
         }
         if method == "session.steer", let steerStatus { return ["status": steerStatus] }
+        if method == "session.interrupt" { return ["status": "interrupted"] }
         if method == "image.attach_bytes", holdImageAttachment {
             return await withCheckedContinuation { pendingImageAttachment = $0 }
         }

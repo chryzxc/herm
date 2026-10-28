@@ -2143,6 +2143,9 @@ completion removes it. Ordinary handoffs keep their existing partner captions.
 Native typing supersedes queued completion caret moves in the shared composer,
 including Forward to Bot. Redraws must not restore a selection from before the edit.
 
+Forward to Bot closes after a successful send, including commands returning output.
+On failure it remains open with the note and an error so the user can retry.
+
 **Herm Faces.** Bots without uploaded art draw a seeded face (`HermFace.swift`)
 in a 100-unit box: one of five bodies, ten hue palettes, four eye styles and a
 ±7° lean, all from the profile ID. Each `BotMood` maps to something Hermes or
@@ -2493,6 +2496,10 @@ events, and main-agent tool activity.
   Copy hash, and Open on GitHub when a GitHub remote exists. Author uses 12pt
   semibold above secondary email and date metadata. A ten-character monospaced hash
   sits beside Copy hash, which copies the full hash; hover reveals the full value.
+  Commit identifiers throughout repository and pull request views use shared scaled
+  code typography. Inline check status requires current evidence for the exact
+  repository and revision; missing checks have no indicator and incomplete checks
+  never imply a pass. Existing commit and compare links retain their destinations.
   Actions wrap in narrow cards. A divider separates the file summary, with counts
   aligned to the trailing edge; empty commits read “No files changed” without +0/−0.
   Header icon actions

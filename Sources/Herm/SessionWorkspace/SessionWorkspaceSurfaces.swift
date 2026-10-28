@@ -420,6 +420,7 @@ struct SessionSurfacePreviewPlaceholder: View {
 /// Control show; the agent keeps working in its own folder. `newTask` branches
 /// the shown worktree into a fresh one and moves the draft to a new chat there.
 struct WorktreePicker: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     /// Empty when the folder is not a Git repository.
     let worktrees: [RepositoryWorktreeSummary]
     /// The session's bound source folder.
@@ -473,9 +474,10 @@ struct WorktreePicker: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                "Creates a new branch from \(branchLabel(current)) at \(current?.headRevision ?? "HEAD") in its own folder. Your draft moves to a new chat there; this chat keeps its folder."
-            )
+            Text("Creates a new branch from \(branchLabel(current)) at ")
+                + (current?.headRevision.map { DockCommitPresentation.text($0, length: nil, scale: workspaceScale) }
+                    ?? Text("HEAD"))
+                + Text(" in its own folder. Your draft moves to a new chat there; this chat keeps its folder.")
         }
     }
 

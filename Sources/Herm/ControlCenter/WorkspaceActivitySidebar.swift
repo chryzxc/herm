@@ -117,7 +117,7 @@ struct WorkspaceActivitySidebar: View {
     @State var isShowingDelegationConfirmation = false
     @State var handoffFocus = ""
     @State var isShowingHandoffConfirmation = false
-    @State var pendingProcess: ProcessSummary?
+    @State var pendingProcess: ProcessStopConfirmation?
     @State var pendingAgentID: String?
     @State var isShowingAgentUpdateConfirmation = false
     @State var isAgentUpdateOutputExpanded = false
@@ -464,10 +464,10 @@ struct WorkspaceActivitySidebar: View {
                 "Stop Hermes Process?",
                 isPresented: Binding(get: { pendingProcess != nil }, set: { if !$0 { pendingProcess = nil } })
             ) {
-                if let process = pendingProcess {
-                    Button("Stop \(process.name)", role: .destructive) {
+                if let confirmation = pendingProcess {
+                    Button("Stop \(confirmation.process.name)", role: .destructive) {
                         confirmedAction.perform {
-                            _ = await control.killProcess(process)
+                            _ = await control.killProcess(confirmation)
                             pendingProcess = nil
                         }
                     }.disabled(confirmedAction.isPending)

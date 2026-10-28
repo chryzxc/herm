@@ -267,7 +267,7 @@ struct RepositoryCodeWorkspaceView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     DockIcon(.gitCommit).dockFont(.metadata)
-                    Text(commit.shortHash).dockFont(.metadata, weight: .regular, design: .monospaced)
+                    DockCommitIdentifier(revision: commit.hash, length: 8)
                     Spacer(minLength: 0)
                     Text("Right-click for actions").dockFont(.compactStatus, weight: .regular)
                 }

@@ -65,10 +65,27 @@ extension DockModel {
             ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles), context: richContext
         )
         let sessionBeforeSend = sessionID
+        let sendOwner = composerDraftKey
+
         let botActivityID = sessionBeforeSend.flatMap { eventSessionID in
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
         }
         let sendGeneration = sessionResumeGeneration
+        guard pendingSessionSends.count < 256 else {
+            if let queued { queuedPrompts.insert(queued, at: 0) }
+            messages.append(
+                ChatMessage(
+                    role: .hermes,
+                    text: "Too many messages await confirmation. Check your conversations before sending."
+                ))
+            onSubmission?("Too many messages await confirmation. Check your conversations before sending.")
+            return
+        }
+        sessionStopAttempts[sendOwner] = nil
+        let snapshot = SessionComposerDraft(
+            text: originalText, images: attachedImages, pdfURL: attachedPDF, contexts: contexts,
+            replyQuote: queued == nil ? replyQuote : queued?.replyQuote,
+            attachmentError: pendingAttachmentError, pdfError: pendingPDFError, botMentions: botMentions)
         if queued == nil {
             draft = ""
             pendingImages = []
@@ -76,15 +93,21 @@ extension DockModel {
             attachedContexts = []
             replyQuote = nil
             clearAttachmentErrors()
+            restorePendingSendIfPossible(for: sendOwner)
         }
         let visibleText = isAttachmentOnly ? "" : text
         let transcriptText =
             attachedPDF.map { "[PDF: \($0.lastPathComponent)]" + (visibleText.isEmpty ? "" : "\n\(visibleText)") }
             ?? visibleText
-        messages.append(
-            ChatMessage(
-                role: .user, text: transcriptText, images: attachedImages.map(\.image),
-                botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText)))
+        let sentMessage = ChatMessage(
+            role: .user, text: transcriptText, images: attachedImages.map(\.image),
+            botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText))
+        messages.append(sentMessage)
+        let sendID = UUID()
+        pendingSessionSends.append(
+            SessionPendingSend(
+                id: sendID, owner: sendOwner, snapshot: snapshot, message: sentMessage,
+                baselineRowID: transcriptMessageIDsByRowID.keys.max() ?? 0))
         submittedMessageIDForPin = messages.last?.id
         status = .working
         isSending = true
@@ -99,6 +122,10 @@ extension DockModel {
             var submissionReported = false
             defer {
                 if !submissionReported {
+                    if let pending = pendingSessionSends.first(where: { $0.id == sendID }), pending.phase == .preparing
+                    {
+                        recoverPendingSend(sendID)
+                    }
                     onSubmission?("The selected conversation changed. Check Activity before retrying.")
                 }
             }
@@ -117,6 +144,9 @@ extension DockModel {
                 guard self.sessionResumeGeneration == sendGeneration,
                     self.sessionID == promptSessionID
                 else { return }
+                if sessionBeforeSend == nil, let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
+                    pendingSessionSends[index].owner = composerDraftKey
+                }
                 touchSession(sessionID: promptSessionID, at: Date(), preview: text)
 
                 var fileReferences: [String] = []
@@ -179,7 +209,7 @@ extension DockModel {
                         )
                     }
                     DebugLog.write("model: image attached")
-                    cleanupImageAttachment(attachedImage)
+
                 }
 
                 if let attachedPDF {
@@ -229,6 +259,11 @@ extension DockModel {
                         return
                     }
                 }
+                if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
+                    pendingSessionSends[index].phase = .submitting
+                    pendingSessionSends[index].submittedText =
+                        isVoiceTurn ? VoicePrompts.conversationPrompt(outgoingText) : outgoingText
+                }
                 let acknowledgment = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
                     params: scopedSessionParams([
@@ -240,21 +275,42 @@ extension DockModel {
                     DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(
                         origin: baselineOrigin, attemptID: baselineAttempt)
                 }
+                let accepted =
+                    ["streaming", "queued", "redirected", "steered"].contains(acknowledgment["status"] as? String ?? "")
+                    || acknowledgment["voice_stopped"] as? Bool == true
+                if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
+                    pendingSessionSends[index].phase = accepted ? .acknowledged : .uncertain
+                }
+                if accepted { cleanupImageAttachments(attachedImages) }
                 submissionReported = true
-                onSubmission?(nil)
+                onSubmission?(
+                    accepted ? nil : "Herm could not confirm submission. Check the conversation before retrying.")
                 guard self.sessionResumeGeneration == sendGeneration,
                     self.sessionID == promptSessionID
                 else { return }
+                if !accepted {
+                    messages.append(
+                        ChatMessage(
+                            role: .hermes,
+                            text: "Herm could not confirm submission. Check the conversation before retrying."))
+                }
                 if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
                 DebugLog.write("model: prompt submitted")
             } catch {
+                if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }),
+                    pendingSessionSends[index].phase == .submitting
+                {
+                    pendingSessionSends[index].phase = .uncertain
+                } else {
+                    recoverPendingSend(sendID)
+                }
                 // A request from a previous session must not publish its error
                 // into whichever conversation the user opened meanwhile.
                 guard self.sessionResumeGeneration == sendGeneration,
                     sessionBeforeSend == nil || self.sessionID == sessionBeforeSend
                 else { return }
                 DebugLog.write("model: send failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
-                cleanupImageAttachments(attachedImages)
+
                 for context in contexts
                 where context.attachmentURL != nil && !attachedContexts.contains(where: { $0.id == context.id }) {
                     var retained = context
@@ -469,6 +525,7 @@ extension DockModel {
         attachedContexts = []
         replyQuote = nil
         clearAttachmentErrors()
+        restorePendingSendIfPossible(for: composerDraftKey)
         drainQueuedPromptIfIdle()
     }
 

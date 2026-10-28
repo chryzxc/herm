@@ -45,8 +45,11 @@ struct PullRequestDetailView: View {
     var body: some View {
         detailPane
             .dockSheet(item: $commitDiffTarget) { target in
-                PullRequestCommitDiffView(target: target, client: center.api.client)
-                    .frame(minWidth: 700, minHeight: 560).modifier(ReviewSheetContext())
+                PullRequestCommitDiffView(
+                    target: target, client: center.api.client,
+                    commitCheckEvidence: center.commitCheckEvidence(for: target.repository)
+                )
+                .frame(minWidth: 700, minHeight: 560).modifier(ReviewSheetContext())
             }
             .dockSheet(item: $reviewerRecord) { record in
                 PullRequestReviewerPicker(record: record, client: center.api.client) {
@@ -362,7 +365,10 @@ struct PullRequestDetailView: View {
                         Text(center.isLoadingDetail(for: pr.id) ? "Loading activity…" : "No activity loaded.")
                             .dockFont(.body).foregroundStyle(Color.dockMetadataText)
                     } else {
-                        GitHubTimelineView(reference: pr.reference, items: activity) { sha in
+                        GitHubTimelineView(
+                            reference: pr.reference, items: activity,
+                            commitCheckEvidence: center.commitCheckEvidence(for: pr.repository)
+                        ) { sha in
                             if let commit = center.commitsByID[pr.id]?.first(where: { $0.id == sha }) {
                                 commitDiffTarget = PullRequestCommitDiffTarget(
                                     repository: pr.repository, commit: commit)

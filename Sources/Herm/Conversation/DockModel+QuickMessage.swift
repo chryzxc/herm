@@ -19,6 +19,9 @@ extension DockModel {
         gatewayReplayTask?.cancel()
         stopVoiceConversation()
         for key in Array(composerDrafts.keys) { discardComposerDraft(for: key) }
+        for pending in pendingSessionSends { cleanupImageAttachments(pending.snapshot.images) }
+        pendingSessionSends.removeAll()
+        sessionStopAttempts.removeAll()
         gateway.close()
         detachInFlightBotActivities(as: .canceled)
         Task {

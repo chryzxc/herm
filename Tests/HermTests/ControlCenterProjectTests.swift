@@ -1752,7 +1752,7 @@ struct ControlCenterProjectTests {
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
 
         let process = ProcessSummary(id: "p-1", name: "node", state: "running", detail: nil)
-        #expect(await model.killProcess(process) == false)
+        #expect(await model.killProcess(model.processStopConfirmation(process)) == false)
         #expect(client.killCallCount == 0)
         #expect(model.lastError?.contains("unavailable") == true)
     }

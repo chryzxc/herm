@@ -593,6 +593,7 @@ Wide pull request summaries separate the description/activity column from the de
 - Readiness keeps state, check, review, and merge facts in the summary side column. The Merge toolbar dropdown opens requirements and landing controls; narrow panes stack the sections. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
 - Activity and discussion entries show the author’s GitHub avatar when available.
 - Pull request Activity shows a clickable short commit hash. Select it to review that commit’s changed files and diffs in Herm.
+- Commit identifiers use a shared code style. Check status appears only for verified current checks on the exact repository and revision; incomplete or unavailable results are never presented as a pass.
 - Discussion, review bodies, inline threads, replies, thread resolution, approval, and request-changes use the common Markdown renderer. Changed lines have line numbers and a context-menu comment action.
 - GitHub recovery links in readiness and landing use compact themed buttons with an external-link icon.
 - GitHub detail metadata uses compact label/value rows, with wrapping pills and section-specific recovery actions. Merge method and landing actions share a wrapping control row.
@@ -1182,6 +1183,8 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
 
 ## Development
+
+Forward to Bot closes after a successful send; failures keep the note and show an error for retry.
 
 ```sh
 swift build   # build
