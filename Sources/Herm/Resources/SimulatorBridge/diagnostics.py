@@ -1,13 +1,13 @@
 """On-demand, bounded device diagnostics; no desktop capture or persistent logs."""
 import json
 import math
-import os
-from pathlib import Path
 import re
 import subprocess
 import tempfile
 import uuid
 import xml.etree.ElementTree as ET
+
+import devices
 
 LIMIT = 1024 * 1024
 
@@ -26,12 +26,7 @@ def command(words):
 
 
 def adb(device, *words):
-    roots = [os.environ.get('ANDROID_SDK_ROOT', ''), os.environ.get('ANDROID_HOME', ''),
-             str(Path.home() / 'Library/Android/sdk')]
-    executable = next((str(Path(root) / 'platform-tools/adb') for root in roots
-                       if root and os.access(Path(root) / 'platform-tools/adb', os.X_OK)), None)
-    if not executable:
-        raise RuntimeError('Android diagnostics require SDK platform-tools (adb).')
+    executable = devices.android_tool('adb')
     return command([executable, '-s', device, *words])
 
 

@@ -8,6 +8,13 @@ import diagnostics as d
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_diagnostics_use_the_inventory_resolver_for_path_only_sdk(self):
+        with patch.object(d.devices.shutil, 'which', return_value='/custom/sdk/adb'), \
+             patch.object(d.devices.os, 'access', return_value=True), \
+             patch.object(d, 'command', return_value='hierarchy') as command:
+            self.assertEqual(d.adb('emulator-5554', 'devices'), 'hierarchy')
+            command.assert_called_once_with(['/custom/sdk/adb', '-s', 'emulator-5554', 'devices'])
+
     def test_android_bounds_password_and_labels(self):
         xml = '<hierarchy><node bounds="[10,20][50,60]" resource-id="app:id/ok" content-desc="OK" text="secret" password="true"/><node bounds="[0,0][0,0]"/></hierarchy>'
         elements = d.android_elements(xml, 100, 200)

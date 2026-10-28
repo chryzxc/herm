@@ -16,13 +16,17 @@ def run(words, timeout=20):
     return result.stdout.decode().strip()
 
 
-def android_tools():
+def android_tool(name):
     sdk = Path(os.environ.get('ANDROID_SDK_ROOT') or os.environ.get('ANDROID_HOME') or Path.home() / 'Library/Android/sdk')
-    paths = [shutil.which(name) or str(sdk / relative) for name, relative in
-             [('emulator', 'emulator/emulator'), ('adb', 'platform-tools/adb')]]
-    if not all(os.access(p, os.X_OK) for p in paths):
+    relative = 'emulator/emulator' if name == 'emulator' else 'platform-tools/adb'
+    path = shutil.which(name) or str(sdk / relative)
+    if not os.access(path, os.X_OK):
         raise RuntimeError('Android SDK tools are missing. Install Emulator and Platform-Tools in Android Studio’s SDK Manager, then check again.')
-    return paths
+    return path
+
+
+def android_tools():
+    return android_tool('emulator'), android_tool('adb')
 
 
 def android_running(adb):
