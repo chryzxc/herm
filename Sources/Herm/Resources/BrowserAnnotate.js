@@ -42,10 +42,11 @@
     <button type="button" class="cancel">Cancel</button><button type="submit">Send</button></div></form>`;
     ui = { box: root.querySelector('.box'), tag: root.querySelector('.tag'), note: root.querySelector('.note'), el: root.querySelector('.el') };
     ui.text = ui.note.querySelector('textarea');
-    ui.note.addEventListener('submit', (e) => { e.preventDefault(); submit(ui.text.value); });
-    ui.note.querySelector('.cancel').addEventListener('click', reset);
+    ui.note.addEventListener('submit', (e) => { e.preventDefault(); if (e.isTrusted) submit(ui.text.value); });
+    ui.note.querySelector('.cancel').addEventListener('click', (e) => { if (e.isTrusted) reset(); });
     ui.text.addEventListener('input', grow);
     ui.text.addEventListener('keydown', (e) => {
+      if (!e.isTrusted) return;
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(ui.text.value); }
       if (e.key === 'Escape') { e.preventDefault(); reset(); }
       e.stopPropagation();
@@ -69,13 +70,13 @@
   const target = (e) => { const el = e.composedPath()[0]; return el instanceof Element ? el : null; };
 
   function onMove(e) {
-    if (!enabled || picked || inside(e)) return;
+    if (!e.isTrusted || !enabled || picked || inside(e)) return;
     const el = target(e);
     if (el) highlight(el);
   }
 
   function onBlock(e) {
-    if (!enabled || inside(e)) return;
+    if (!e.isTrusted || !enabled || inside(e)) return;
     e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
     if (e.type !== 'click') return;
     if (picked) return reset();
@@ -139,7 +140,7 @@
   }
 
   function onKey(e) {
-    if (enabled && e.key === 'Escape' && !inside(e)) { setEnabled(false); post({ type: 'mode', enabled: false }); }
+    if (e.isTrusted && enabled && e.key === 'Escape' && !inside(e)) { setEnabled(false); post({ type: 'mode', enabled: false }); }
   }
 
   // Herm supplies every theme color as a CSS custom property on the host.
