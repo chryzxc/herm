@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 spec = importlib.util.spec_from_file_location('herm_simulator_plugin', Path(__file__).with_name('__init__.py'))
 p = importlib.util.module_from_spec(spec)
@@ -11,6 +11,46 @@ spec.loader.exec_module(p)
 
 
 class SimulatorTests(unittest.TestCase):
+    def test_registers_launch_and_direct_navigation_tools(self):
+        context = MagicMock()
+        p.register(context)
+        calls = context.register_tool.call_args_list
+        self.assertEqual([call.kwargs['name'] for call in calls], ['herm_simulator', 'herm_simulator_interact'])
+        self.assertEqual(calls[1].kwargs['schema']['parameters']['required'], ['action', 'platform', 'device_id'])
+
+    @patch.object(p.Path, 'is_file', return_value=True)
+    @patch.object(p.subprocess, 'Popen')
+    def test_interaction_uses_stdin_and_private_capture_path(self, popen, is_file):
+        child = popen.return_value
+        child.returncode = 0
+        def start(*args, **kwargs):
+            kwargs['stdout'].write(b'{"status":"captured","device_id":"exact"}')
+            return child
+        popen.side_effect = start
+        request = dict(action='tap', platform='ios', device_id='exact', x=.2, y=.3)
+        self.assertEqual(json.loads(p.interact(request))['status'], 'captured')
+        words = popen.call_args.args[0]
+        self.assertEqual(words[1], '-B')
+        self.assertTrue(words[2].endswith('/resources/agent.py'))
+        self.assertTrue(words[3].startswith(p._CAPTURES.name))
+        self.assertNotIn('shell', popen.call_args.kwargs)
+        child.communicate.assert_called_once_with(json.dumps(request).encode(), timeout=60)
+
+    @patch.object(p.Path, 'is_file', return_value=True)
+    @patch.object(p.subprocess, 'Popen')
+    def test_timeout_terminates_action_and_requires_capture(self, popen, is_file):
+        popen.return_value.communicate.side_effect = p.subprocess.TimeoutExpired('bridge', 60)
+        result = json.loads(p.interact(dict(action='capture', platform='ios', device_id='exact')))
+        self.assertIn('may have been delivered', result['error'])
+        popen.return_value.terminate.assert_called_once()
+        popen.return_value.wait.assert_called_once_with(timeout=8)
+        self.assertFalse(p._LOCK.locked())
+
+    @patch.object(p.Path, 'is_file', return_value=False)
+    def test_missing_bridge_reports_setup(self, is_file):
+        result = json.loads(p.interact(dict(action='capture', platform='ios', device_id='exact')))
+        self.assertIn('setup-simulator-bridge.sh', result['error'])
+
     def test_project_detection_and_ambiguity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

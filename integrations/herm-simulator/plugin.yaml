@@ -1,9 +1,10 @@
 name: herm-simulator
-version: 1.0.0
-description: Launch local iOS and Android devices and present them in the owning Herm chat session.
+version: 1.1.0
+description: Launch, inspect, and navigate local iOS and Android devices presented in Herm.
 author: Herm
 kind: standalone
 platforms:
   - macos
 provides_tools:
   - herm_simulator
+  - herm_simulator_interact

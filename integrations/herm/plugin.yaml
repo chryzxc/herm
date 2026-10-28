@@ -1,0 +1,13 @@
+name: herm
+version: 1.0.0
+description: Herm's agent surfaces (rules, tool guards, references) and opening Herm inspector tabs.
+author: Herm
+kind: standalone
+platforms:
+  - macos
+provides_tools:
+  - herm_reference
+  - herm_inspector
+provides_hooks:
+  - pre_tool_call
+  - pre_llm_call

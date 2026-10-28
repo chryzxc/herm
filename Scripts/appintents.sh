@@ -20,7 +20,12 @@ embed_appintents_metadata() {
     bin_dir=$1
     resources_dir=$2
     work=$(mktemp -d)
-    ls "$bin_dir"/Herm.build/*.swiftconstvalues > "$work/const.list"
+    # Xcode 27's SwiftPM keeps intermediates outside the bin dir.
+    if ! ls "$bin_dir"/Herm.build/*.swiftconstvalues > "$work/const.list" 2>/dev/null; then
+        find "$bin_dir/../../Intermediates.noindex/Herm.build/$(basename "$bin_dir")" \
+            -name '*.swiftconstvalues' > "$work/const.list"
+        test -s "$work/const.list"
+    fi
     find "$APPINTENTS_ROOT/Sources/Herm" -name '*.swift' > "$work/src.list"
     : > "$work/meta.list"
     xcrun appintentsmetadataprocessor \
