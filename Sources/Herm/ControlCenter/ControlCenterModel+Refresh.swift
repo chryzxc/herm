@@ -147,6 +147,7 @@ extension ControlCenterModel {
             kanbanDiagnosticsGeneration = UUID()
             kanbanAttachmentsGeneration = UUID()
             sessionProcessesGeneration = UUID()
+            processSessionID = nil
             projectionRefreshStates.removeAll()
             projectionStates.removeAll()
             if let eventSubscription {
@@ -249,6 +250,8 @@ extension ControlCenterModel {
 
             if let rpc {
                 let sessionID = dockModel?.sessionID ?? ""
+                let processGeneration = sessionProcessesGeneration
+                let processBinding = clientBindingGeneration
                 do {
                     let scope = dockModel?.profileScopeID
                     let result = try await rpc.cron(action: "list", profileID: scope)
@@ -319,16 +322,22 @@ extension ControlCenterModel {
                     do {
                         let result = try await rpc.processes(sessionID: sessionID)
                         guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                        if dockModel?.sessionID == sessionID {
+                        if acceptsProcessResponse(
+                            for: sessionID, generation: processGeneration, binding: processBinding)
+                        {
                             processes = Self.parseProcesses(result)
                             recordProjectionSuccess("processes")
                         }
                     } catch {
                         guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                        let message = HermesDiagnosticsService.safeSummary(
-                            Self.safeUserDiagnostic(error.localizedDescription))
-                        recordProjectionFailure("processes", error: message)
-                        lastError = message
+                        if acceptsProcessResponse(
+                            for: sessionID, generation: processGeneration, binding: processBinding)
+                        {
+                            let message = HermesDiagnosticsService.safeSummary(
+                                Self.safeUserDiagnostic(error.localizedDescription))
+                            recordProjectionFailure("processes", error: message)
+                            lastError = message
+                        }
                     }
                 }
 
