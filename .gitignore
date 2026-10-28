@@ -30,3 +30,10 @@ docs/workflow-execution-progress.md
 docs/architecture-restructure-plan.md
 Scripts/check-workflow-runtime.sh
 .claude/settings.local.json
+
+# Local plans, audits, design previews and bytecode (not pushed)
+docs/*-plan.md
+docs/*-audit-*.md
+docs/ui-review.md
+work/
+__pycache__/
