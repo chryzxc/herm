@@ -106,6 +106,17 @@ extension DockModel {
             }
         }
         handleEvent(type, params: params)
+        if type == "message.start" || type == "message.complete" || type == "error",
+            let eventSessionID
+        {
+            let ownerID = rowSessionID(eventSessionID)
+            let matchingOwners = sessionStopAttempts.keys.filter { $0.sessionID == ownerID }
+            if matchingOwners.count == 1, let owner = matchingOwners.first,
+                sessionStopAttempts[owner]?.outcome == .accepted
+            {
+                sessionStopAttempts[owner]?.tailPending = false
+            }
+        }
     }
 
     /// Hermes frequently clears completed terminal rows before the next

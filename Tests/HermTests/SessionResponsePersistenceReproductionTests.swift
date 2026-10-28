@@ -248,6 +248,37 @@ struct SessionResponsePersistenceReproductionTests {
         expect(model.draft == "older")
     }
 
+    @Test func acceptedStopSurvivesNavigationAndDoesNotAffectOtherSession() async throws {
+        let rpc = ResponsePersistenceRPCClient()
+        let model = DockModel(rpcClient: rpc)
+        defer { model.delegationMonitoringTask?.cancel() }
+        #expect(await model.resumeSession(session("origin"), reportFailure: true))
+        model.receiveGatewayEvent("message.start", params: ["session_id": "origin", "payload": [:]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "origin", "payload": ["delta": "Before stop"]])
+        await model.stop()?.value
+        expect(!model.isSending)
+        #expect(await model.resumeSession(session("other"), reportFailure: true))
+        model.receiveGatewayEvent("message.start", params: ["session_id": "other", "payload": [:]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "other", "payload": ["delta": "Other reply"]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "origin", "payload": ["delta": "Late output"]])
+        expect(model.streamingMessageBuffer == "Other reply")
+        #expect(await model.resumeSession(session("origin"), reportFailure: true))
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "origin", "payload": ["delta": "Late output"]])
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "origin", "payload": ["text": "Late output"]])
+        expect(!model.isSending)
+        expect(!model.messages.contains { $0.text.contains("Late output") })
+        #expect(await model.resumeSession(session("other"), reportFailure: true))
+        model.receiveGatewayEvent("message.start", params: ["session_id": "other", "payload": [:]])
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "other", "payload": ["delta": "Still works"]])
+        expect(model.isSending && model.streamingMessageBuffer == "Still works")
+    }
+
     @Test func refusedStopAfterReturnAppearsOnOrigin() async throws {
         let rpc = ResponsePersistenceRPCClient()
         rpc.holdInterrupt = true

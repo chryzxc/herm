@@ -772,6 +772,9 @@ extension DockModel {
                 for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs)
             messages.append(contentsOf: pendingSends)
             if let stop = sessionStopAttempts[composerDraftKey] {
+                if stop.outcome == .accepted, stop.tailPending {
+                    isDiscardingStoppedTurn = true
+                }
                 if stop.outcome == .failed {
                     interruptState = .failed("Hermes could not be interrupted. Try again.")
                 } else if stop.outcome == .accepted, result["running"] as? Bool == true {

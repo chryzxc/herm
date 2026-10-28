@@ -4,6 +4,7 @@ struct SessionStopAttempt {
     enum Outcome { case requesting, accepted, failed }
     let id: UUID
     var outcome: Outcome
+    var tailPending = true
 }
 
 struct SessionPendingSend {
