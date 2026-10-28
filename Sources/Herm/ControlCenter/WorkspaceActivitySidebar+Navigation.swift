@@ -150,10 +150,6 @@ extension WorkspaceActivitySidebar {
                 }
             }
         }
-        .task {
-            model.refreshRuntimeConfiguration()
-            model.refreshRuntimeModelOptions()
-        }
     }
 
     var settingsCategoryRail: some View {

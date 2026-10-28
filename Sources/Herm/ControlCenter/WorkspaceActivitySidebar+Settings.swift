@@ -499,9 +499,6 @@ extension WorkspaceActivitySidebar {
         }
         .task {
             control.configEditor.onSaved = { model.refreshRuntimeConfiguration(force: true) }
-            model.refreshRuntimeConfiguration()
-            model.refreshRuntimeModelOptions()
-            model.refreshDefaultReasoningVariant()
         }
         .onChange(of: model.runtimeConfiguration) { _, configuration in
             guard let configuration,
@@ -800,6 +797,11 @@ extension WorkspaceActivitySidebar {
                     icon: .warning, title: "Runtime unavailable",
                     detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
             }
+        }
+        .task {
+            model.refreshRuntimeConfiguration()
+            model.refreshRuntimeModelOptions()
+            model.refreshDefaultReasoningVariant()
         }
     }
 
