@@ -21,23 +21,17 @@ struct FileReview: Codable, Equatable, Sendable {
     var baseline: String?
 }
 
-/// The previewed file plus per-file review notes. Shared because chat
-/// attachment cards have no handle on the view that owns the panel.
+/// The open attachment diff plus per-file review notes. Shared because chat
+/// attachment cards have no handle on the view that owns the inspector.
 @MainActor
 final class FilePreviewCenter: ObservableObject {
     static let shared = FilePreviewCenter()
 
-    @Published var url: URL? {
-        didSet { if url != nil { attachmentDiff = nil } }
-    }
     @Published var attachmentDiff: RepositoryAttachmentChanges?
 
     func openDiff(_ changes: RepositoryAttachmentChanges) {
-        url = nil
         attachmentDiff = changes
     }
-    /// Session the preview was opened from; revision requests go back there.
-    @Published var sessionID: String?
     @Published private(set) var reviews: [String: FileReview] {
         didSet { save() }
     }
@@ -57,6 +51,9 @@ final class FilePreviewCenter: ObservableObject {
     }
 
     func review(_ path: String) -> FileReview { reviews[path] ?? FileReview() }
+
+    /// Tabs reopen with Annotate on while unsent notes are waiting.
+    func hasDrafts(_ path: String) -> Bool { reviews[path]?.annotations.contains { $0.sentAt == nil } ?? false }
 
     func add(_ annotation: FileAnnotation, to path: String) {
         reviews[path, default: FileReview()].annotations.append(annotation)
@@ -116,6 +113,43 @@ final class FilePreviewCenter: ObservableObject {
     func flushSaves() { saveQueue.sync {} }
 }
 
+/// What a `TextAnnotator` reviews. Notes are stored in `FilePreviewCenter`
+/// under `key`; file paths and message keys never collide.
+enum AnnotationSource: Equatable {
+    case file(URL)
+    case message(id: UUID, text: String)
+
+    var key: String {
+        switch self {
+        case .file(let url): url.path
+        case .message(let id, _): "message:\(id.uuidString)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .file(let url): url.lastPathComponent
+        case .message(_, let text): FileAnnotationText.excerpt(text, limit: 32)
+        }
+    }
+
+    func prompt(_ annotations: [FileAnnotation]) -> String {
+        switch self {
+        case .file(let url): FileAnnotationText.prompt(path: url.path, annotations: annotations)
+        case .message(_, let text):
+            FileAnnotationText.prompt(messageExcerpt: FileAnnotationText.excerpt(text), annotations: annotations)
+        }
+    }
+
+    /// The plain "Add to chat" reference used when there are no notes yet.
+    var referenceBody: String {
+        switch self {
+        case .file(let url): "Regarding `\(url.path)`:"
+        case .message(_, let text): "Regarding this earlier chat message: “\(FileAnnotationText.excerpt(text))”"
+        }
+    }
+}
+
 enum FileAnnotationText {
     /// Lowercased alphanumerics with single spaces, so rendered selections
     /// (which have lost `**`, backticks, link syntax) match the raw Markdown.
@@ -148,9 +182,27 @@ enum FileAnnotationText {
     }
 
     static func prompt(path: String, annotations: [FileAnnotation]) -> String {
-        var lines = [
-            "Please revise `\(path)` in place based on my review notes. Leave everything I didn't comment on unchanged."
-        ]
+        prompt(
+            intro:
+                "Please revise `\(path)` in place based on my review notes. Leave everything I didn't comment on unchanged.",
+            annotations: annotations)
+    }
+
+    static func prompt(messageExcerpt: String, annotations: [FileAnnotation]) -> String {
+        prompt(
+            intro: "Here are my notes on this earlier chat message: “\(messageExcerpt)”. Please address each one.",
+            annotations: annotations)
+    }
+
+    /// The message's first line, trimmed to a short, single-line quote.
+    static func excerpt(_ text: String, limit: Int = 80) -> String {
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let collapsed = line.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return collapsed.count > limit ? "\(collapsed.prefix(limit))…" : collapsed
+    }
+
+    private static func prompt(intro: String, annotations: [FileAnnotation]) -> String {
+        var lines = [intro]
         for (index, annotation) in annotations.enumerated() {
             let quote = annotation.quote.map { "\"\($0.replacingOccurrences(of: "\n", with: " "))\"" }
             let line = quote.map { "\($0) → \(annotation.note)" } ?? "[General] \(annotation.note)"

@@ -27,7 +27,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
                         select(option)
                     } label: {
                         Text(title(option))
-                            .font(.system(size: 11, weight: selection == option ? .semibold : .regular))
+                            .dockFont(.control, weight: selection == option ? .semibold : .regular)
                             .foregroundStyle(selection == option ? Color.dockPrimaryText : Color.dockMetadataText)
                             .frame(height: 22)
                             .contentShape(Rectangle())
@@ -94,7 +94,7 @@ struct EdgeQuotaToolbar: View {
                     if refreshing {
                         ProgressView().controlSize(.small).scaleEffect(0.7)
                     } else {
-                        DockIcon(.arrowClockwise).font(.system(size: 12, weight: .semibold))
+                        DockIcon(.arrowClockwise).dockFont(.body, weight: .semibold)
                     }
                 }
                 .foregroundStyle(Color.dockSecondaryText)
@@ -135,13 +135,13 @@ struct EdgeQuotaPreview: View {
                 } else if quotas.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(refreshing ? "Loading quota…" : "Quota unavailable")
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(.body, weight: .semibold)
                         Text(
                             refreshing
                                 ? "Reading connected providers"
                                 : "Open Quota to connect a provider or review its status."
                         )
-                        .font(.system(size: 12))
+                        .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                     }
                     .padding(.top, 12)
@@ -158,7 +158,7 @@ struct EdgeQuotaPreview: View {
             Divider().overlay(Color.dockBorderLight)
             footer
         }
-        .font(.system(size: 12))
+        .dockFont(.body)
         .foregroundStyle(Color.dockPrimaryText)
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -203,14 +203,14 @@ struct EdgeQuotaPreview: View {
                         mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName))
                     VStack(alignment: .leading, spacing: 5) {
                         Text(snapshot.displayName)
-                            .font(.system(size: 12, weight: .semibold))
+                            .dockFont(.body, weight: .semibold)
                             .lineLimit(1)
                             .frame(height: 20)
                         PeakNoticeBadge(quotaID: snapshot.provider, compact: true)
                         let windows = Self.compactWindows(snapshot.windows)
                         if windows.isEmpty {
                             Text(snapshot.safeDetail ?? "No quota windows reported")
-                                .font(.system(size: 11))
+                                .dockFont(.metadata)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .lineLimit(1)
                         }
@@ -262,7 +262,7 @@ struct EdgeQuotaPreview: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 48, alignment: .trailing)
         }
-        .font(.system(size: 11))
+        .dockFont(.metadata)
         .lineLimit(1)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.accessibilityLabel(label, window))
@@ -279,7 +279,7 @@ struct EdgeQuotaPreview: View {
                             mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName),
                             size: 18)
                         Text(snapshot.displayName)
-                            .font(.system(size: 11, weight: .semibold))
+                            .dockFont(.metadata, weight: .semibold)
                             .lineLimit(1)
                     }
                     PeakNoticeBadge(quotaID: snapshot.provider, compact: true)
@@ -287,7 +287,7 @@ struct EdgeQuotaPreview: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 60))], spacing: 8) {
                         if windows.isEmpty {
                             Text(snapshot.safeDetail ?? "No quota windows reported")
-                                .font(.system(size: 11))
+                                .dockFont(.metadata)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, minHeight: 50, alignment: .topLeading)
@@ -335,20 +335,17 @@ struct EdgeQuotaPreview: View {
                 }
                 Group {
                     if let remaining {
-                        Text("\(Int(remaining.rounded()))")
-                            .font(.system(size: 11, weight: .semibold))
+                        Text("\(Int(remaining.rounded()))%")
+                            .dockFont(.metadata, weight: .semibold)
                             .monospacedDigit()
-                            + Text("%")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(Color.dockSecondaryText)
                     } else if let value = Self.ringValue(window) {
                         Text(value)
-                            .font(.system(size: 10, weight: .semibold))
+                            .dockFont(.compactStatus, weight: .semibold)
                             .monospacedDigit()
                             .minimumScaleFactor(0.6)
                             .frame(maxWidth: 32)
                     } else {
-                        Text("—").font(.system(size: 11, weight: .semibold))
+                        Text("—").dockFont(.metadata, weight: .semibold)
                     }
                 }
                 .lineLimit(1)
@@ -358,7 +355,7 @@ struct EdgeQuotaPreview: View {
                 Text(label).fontWeight(.semibold).foregroundStyle(Color.dockPrimaryText)
                 resetText(window).foregroundStyle(Color.dockSecondaryText).monospacedDigit()
             }
-            .font(.system(size: 11))
+            .dockFont(.metadata)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
         }
@@ -476,10 +473,10 @@ struct EdgeQuotaChangeCard: View {
                 ProviderMarkBadge(
                     mark: ProviderMark(providerID: change.current.provider, displayName: change.current.displayName))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(change.current.displayName).font(.system(size: compact ? 12 : 13, weight: .semibold))
+                    Text(change.current.displayName).dockFont(.rowTitle, weight: .semibold)
                     if !compact {
                         Text("Quota used since the last check")
-                            .font(.system(size: 11))
+                            .dockFont(.metadata)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
@@ -512,18 +509,18 @@ struct EdgeQuotaChangeCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(label == "5h" ? "5-hour" : label == "7d" ? "Weekly" : label)
-                        .font(.system(size: 11, weight: .semibold))
+                        .dockFont(.metadata, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer(minLength: 0)
                     if before - now >= 0.5 {
                         Text("−\(Int((before - now).rounded()))%")
-                            .font(.system(size: 11, weight: .semibold))
+                            .dockFont(.metadata, weight: .semibold)
                             .monospacedDigit()
                             .foregroundStyle(Color.dockWarning)
                             .opacity(settled ? 1 : 0)
                     }
                     CountingPercent(value: shown)
-                        .font(.system(size: 20, weight: .semibold))
+                        .dockFont(.metric, weight: .semibold)
                         .monospacedDigit()
                 }
                 GeometryReader { geometry in
@@ -589,7 +586,7 @@ struct ChatQuotaChip: View {
                             providerID: lowest.snapshot.provider,
                             displayName: lowest.snapshot.displayName), size: 14)
                     Text("\(Int(lowest.remaining.rounded()))%")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .dockFont(.metadata, weight: .medium, design: .monospaced)
                         .foregroundStyle(QuotaWorkspaceView.color(for: lowest.window.threshold))
                         .contentTransition(.numericText(value: lowest.remaining.rounded()))
                         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: Int(lowest.remaining.rounded()))
@@ -602,7 +599,7 @@ struct ChatQuotaChip: View {
             .accessibilityLabel(
                 "Quota: \(lowest.snapshot.displayName) \(Int(lowest.remaining.rounded())) percent remaining"
             )
-            .popover(isPresented: $showingDetail, arrowEdge: .top) {
+            .dockPopover(isPresented: $showingDetail, arrowEdge: .top) {
                 EdgeQuotaPreview(control: control) {
                     showingDetail = false
                     openQuota()

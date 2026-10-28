@@ -9,7 +9,9 @@ struct SessionDataPreviewView: View {
     var body: some View {
         Group {
             if case .message(let message) = content {
-                SessionMessageTabView(message: message)
+                SessionMessageTabView(message: message, model: model)
+            } else if case .file(let url) = content {
+                FilePreviewPane(url: url, model: model)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -26,7 +28,7 @@ struct SessionDataPreviewView: View {
 
     @ViewBuilder private var previewContent: some View {
         switch content {
-        case .message: EmptyView()
+        case .message, .file: EmptyView()
         case .bot(let captured):
             let bot = botMode.botsByID[captured.id] ?? captured
             header(bot.name, subtitle: bot.title ?? "Bot profile", icon: .robot, bot: bot)
@@ -68,6 +70,8 @@ struct SessionDataPreviewView: View {
             }
         case .tool(let captured):
             toolDetail(currentTool(captured.id) ?? captured, captured: currentTool(captured.id) == nil)
+        case .output(let record):
+            SessionOutputPreview(record: record, model: model)
         case .activity(let message, let captured):
             let current = model.messages.first { $0.id == message.id }
             let calls =

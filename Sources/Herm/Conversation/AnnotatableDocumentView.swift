@@ -192,7 +192,8 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
                 closePopover()
                 return
             }
-            let content = AnyView(parent.editor())
+            let content = AnyView(
+                parent.editor().dockPresentationSurface().environment(\.dockWorkspaceScale, parent.workspaceScale))
             if let hosting, popover?.isShown == true, shownAnchor == anchor {
                 hosting.rootView = content
                 return

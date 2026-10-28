@@ -495,54 +495,75 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     private var messageActions: some View {
-        HStack(spacing: 0) {
-            ForEach(ConversationMessageActionKind.allCases.filter { $0 != .pin || showsPinAction }) { kind in
-                actionButton(
-                    kind,
-                    action: { perform(kind) },
-                    isAvailable: kind == .pin
-                        ? isPinAvailable : kind == .copy || kind == .reply || areSessionActionsAvailable
-                )
+        HStack(spacing: 6) {
+            actionButton(.copy, action: onCopy)
+            actionButton(.refresh, action: onRefresh, isAvailable: areSessionActionsAvailable)
+            moreMessageActions
+            if isSpeaking {
+                actionButton(.readAloud, action: onReadAloud)
             }
-            if let onOpenInTab {
-                Button(action: onOpenInTab) {
-                    DockIcon(.arrowSquareOut, size: 12, color: .dockSecondaryText)
-                }
-                .buttonStyle(DockPressButtonStyle())
-                .frame(width: 28, height: 28)
-                .help("Open message in new tab")
-                .accessibilityLabel("Open message in new tab")
-                .disabled(isStreamingMessage)
-            }
-            sendToBotMenu
             messageMetadata
+        }
+        .dockButtonSize(.compact)
+        .dockPopover(item: $sendTarget, arrowEdge: .bottom) { bot in
+            if let forwardContent { forwardContent(bot) { sendTarget = nil } }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Message actions")
+    }
+
+    private var moreMessageActions: some View {
+        DockMenu {
+            Button(action: onReadAloud) {
+                Label(isSpeaking ? "Stop reading aloud" : "Read aloud", icon: isSpeaking ? .stop : .speakerHigh)
+            }
+            .disabled(pendingAction == .readAloud || !areSessionActionsAvailable)
+            Button(action: onBranch) {
+                Label("Branch from this message", icon: .shuffleAngular)
+            }
+            .disabled(pendingAction != nil || !areSessionActionsAvailable)
+            Button(action: onReply) { Label("Reply to this message", icon: .arrowBendUpLeft) }
+            if showsPinAction {
+                Button(action: onPin) {
+                    HStack(spacing: 8) {
+                        DockIcon(.pushPin, size: 12, weight: isPinned ? .fill : .regular)
+                        Text(isPinned ? "Unpin message" : "Pin message")
+                    }
+                }
+                .disabled(pendingAction == .pin || !isPinAvailable)
+            }
+            if let onOpenInTab {
+                Button(action: onOpenInTab) { Label("Open message in new tab", icon: .arrowSquareOut) }
+                    .disabled(isStreamingMessage)
+            }
+            sendToBotMenu
+        } label: {
+            ZStack {
+                DockIcon(.dotsThree, size: 16, color: .dockSecondaryText)
+                    .opacity(pendingAction != nil && pendingAction != .refresh ? 0 : 1)
+                if pendingAction != nil && pendingAction != .refresh {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .frame(width: 28, height: 28)
+        }
+        .help("More message actions")
+        .accessibilityLabel("More message actions")
     }
 
     @ViewBuilder
     private var sendToBotMenu: some View {
         let targets = botsByID.values
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        if let forwardContent, message.hasBodyText, message.systemEvent == nil, !message.isError {
-            Menu {
+        if forwardContent != nil, message.hasBodyText, message.systemEvent == nil, !message.isError {
+            DockMenu {
                 ForEach(targets) { bot in
                     Button(bot.name) { sendTarget = bot }
                 }
             } label: {
-                DockIcon(.paperPlaneTilt, size: 12, color: .dockSecondaryText)
-            }
-            .menuStyle(.button)
-            .buttonStyle(DockPressButtonStyle())
-            .menuIndicator(.hidden)
-            .frame(width: 28, height: 28)
-            .contentShape(Rectangle())
-            .popover(item: $sendTarget, arrowEdge: .bottom) { bot in
-                forwardContent(bot) { sendTarget = nil }
+                Label("Forward to bot", icon: .paperPlaneTilt)
             }
             .help(targets.isEmpty ? "No bots available" : "Forward to bot")
-            .accessibilityLabel("Forward to bot")
             .disabled(!areSessionActionsAvailable || targets.isEmpty)
         }
     }
@@ -575,17 +596,6 @@ struct ConversationMessageRow: View, Equatable {
         .padding(.leading, 4)
     }
 
-    private func perform(_ kind: ConversationMessageActionKind) {
-        switch kind {
-        case .branch: onBranch()
-        case .copy: onCopy()
-        case .readAloud: onReadAloud()
-        case .refresh: onRefresh()
-        case .reply: onReply()
-        case .pin: onPin()
-        }
-    }
-
     @ViewBuilder
     private func actionButton(
         _ kind: ConversationMessageActionKind,
@@ -604,7 +614,7 @@ struct ConversationMessageRow: View, Equatable {
             .contentShape(Rectangle())
         } else {
             let icon =
-                kind == .pin && isPinned ? Ph.pushPinSlash : kind == .readAloud && isSpeaking ? Ph.stop : kind.icon
+                kind == .readAloud && isSpeaking ? Ph.stop : kind.icon
             let label =
                 kind == .pin && isPinned
                 ? "Unpin message" : kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
@@ -613,19 +623,21 @@ struct ConversationMessageRow: View, Equatable {
                 pendingAction != nil
                 && (kind == .branch || kind == .refresh)
                 && !isPending
+            let isActive = (kind == .readAloud && isSpeaking) || (kind == .pin && isPinned)
             let iconColor =
-                (kind == .readAloud && isSpeaking) || (kind == .pin && isPinned)
-                ? Color.dockAccent
+                isActive
+                ? Color.dockPrimaryText
                 : Color.dockSecondaryText
             Button(action: action) {
                 if isPending {
                     ProgressView().controlSize(.small)
                 } else {
-                    DockIcon(icon, size: 12, color: iconColor)
+                    DockIcon(icon, size: 12, weight: isActive ? .fill : .regular, color: iconColor)
                 }
             }
             .buttonStyle(DockPressButtonStyle())
             .frame(width: 28, height: 28)
+            .accessibilityAddTraits(isActive ? .isSelected : [])
             .contentShape(Rectangle())
             .help(label)
             .accessibilityLabel(label)

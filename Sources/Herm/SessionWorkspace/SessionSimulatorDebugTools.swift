@@ -26,7 +26,7 @@ struct SessionSimulatorDebugTools: View {
             notice = ""
             app = ""
         }
-        .sheet(isPresented: $showsLogs) { logSheet }
+        .dockSheet(isPresented: $showsLogs) { logSheet }
     }
 
     private var rail: some View {
@@ -56,7 +56,7 @@ struct SessionSimulatorDebugTools: View {
                 ) {
                     showsFeedback.toggle()
                 }
-                .popover(isPresented: $showsFeedback, arrowEdge: .leading) {
+                .dockPopover(isPresented: $showsFeedback, arrowEdge: .leading) {
                     Text(statusText).dockFont(.body)
                         .foregroundStyle(Color.dockPrimaryText)
                         .padding(12).frame(width: 260, alignment: .leading)
@@ -187,7 +187,7 @@ struct SessionSimulatorDebugTools: View {
                 Text("Log excerpt").dockFont(.body, weight: .semibold)
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $diagnostics.excerpt)
-                        .font(.system(size: 12, design: .monospaced))
+                        .dockFont(.code, design: .monospaced)
                         .scrollContentBackground(.hidden)
                         .padding(8)
                         .accessibilityLabel("Editable app log excerpt")

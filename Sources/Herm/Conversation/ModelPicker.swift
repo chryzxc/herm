@@ -86,11 +86,15 @@ struct ModelPickerPreferences {
     }
 
     func setEnabled(_ enabled: Bool, for id: String) {
+        setEnabled(enabled, for: [id])
+    }
+
+    func setEnabled(_ enabled: Bool, for ids: [String]) {
         var disabled = Set(defaults.stringArray(forKey: Self.disabledKey) ?? [])
         if enabled {
-            disabled.remove(id)
+            disabled.subtract(ids)
         } else {
-            disabled.insert(id)
+            disabled.formUnion(ids)
         }
         defaults.set(disabled.sorted(), forKey: Self.disabledKey)
     }
@@ -157,7 +161,7 @@ struct ModelPickerView: View {
         .buttonStyle(.dockHover)
         .help([selectedOption?.provider, selectedPeakNotice?.text].compactMap { $0 }.joined(separator: " · "))
         .accessibilityLabel("Select model, currently \(selectedOption?.displayName ?? "none")")
-        .sheet(isPresented: $showingEditor) {
+        .dockSheet(isPresented: $showingEditor) {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
         }
         .onAppear { reconcileActiveModelPreference() }
@@ -260,54 +264,50 @@ private struct ModelPickerEditorView: View {
     let options: [HermesModelOption]
     let activeID: String?
     @Binding var disabledIDs: Set<String>
+    @State private var query = ""
     @Environment(\.dismiss) private var dismiss
+
+    private var groups: [ModelPickerProviderGroup] { ModelPickerCatalog(options: options).groups(matching: query) }
 
     var body: some View {
         DockModal(
             icon: .cpu, title: "Available Models",
-            subtitle:
-                "Disabled models stay hidden from the picker. Hermes remains the source of truth for the catalog.",
-            width: 400, contentPadding: 0
+            subtitle: "Choose which Hermes models appear in the picker.",
+            width: 440, contentPadding: 0
         ) {
-            List {
-                ForEach(ModelPickerCatalog(options: options).groups()) { group in
-                    Section(group.provider) {
-                        ForEach(group.models) { option in
-                            Toggle(
-                                isOn: Binding(
-                                    get: {
-                                        ModelPickerCatalog.isEnabled(
-                                            option.id, disabledIDs: disabledIDs, activeID: activeID)
-                                    },
-                                    set: { enabled in
-                                        guard option.id != activeID else { return }
-                                        if enabled {
-                                            disabledIDs.remove(option.id)
-                                        } else {
-                                            disabledIDs.insert(option.id)
-                                        }
-                                        ModelPickerPreferences().setEnabled(enabled, for: option.id)
-                                    }
-                                )
-                            ) {
-                                Text(option.id == activeID ? "\(option.model) (active)" : option.model)
-                            }
-                            .accessibilityLabel("Enable \(group.provider) \(option.model)")
-                            .disabled(option.id == activeID)
+            VStack(spacing: 0) {
+                searchField
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 12)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        if groups.isEmpty {
+                            Text(options.isEmpty ? "No models available" : "No matching models")
+                                .dockFont(.body)
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 40)
                         }
+                        ForEach(groups) { providerSection($0) }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
                 }
+                .frame(height: 380)
             }
-            .scrollContentBackground(.hidden)
-            .frame(height: 360)
         } footer: {
-            Button("Unselect All") {
+            Text("\(enabledCount) of \(options.count) shown")
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockMetadataText)
+                .monospacedDigit()
+            Spacer()
+            Button("Hide All") {
                 disabledIDs = ModelPickerPreferences().unselectAll(options: options, activeID: activeID)
             }
             .buttonStyle(.dockSecondary)
             .disabled(!options.contains { $0.id != activeID && !disabledIDs.contains($0.id) })
             .help("Hide all models except the active model.")
-            Spacer()
             Button("Done") { dismiss() }
                 .buttonStyle(.dockPrimary)
                 .keyboardShortcut(.defaultAction)
@@ -315,5 +315,117 @@ private struct ModelPickerEditorView: View {
         .onAppear {
             disabledIDs = ModelPickerPreferences().disabledIDs
         }
+    }
+
+    private var enabledCount: Int {
+        options.filter { isEnabled($0.id) }.count
+    }
+
+    private func isEnabled(_ id: String) -> Bool {
+        ModelPickerCatalog.isEnabled(id, disabledIDs: disabledIDs, activeID: activeID)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
+            DockTextField("Search models", text: $query)
+                .textFieldStyle(.plain)
+                .dockFont(.body)
+                .foregroundStyle(Color.dockPrimaryText)
+                .accessibilityLabel("Search models")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    DockIcon(.xCircle, size: 13, color: .dockMetadataText)
+                }
+                .buttonStyle(.dockHover)
+                .help("Clear search")
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: 32)
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
+    }
+
+    private func providerSection(_ group: ModelPickerProviderGroup) -> some View {
+        let toggleable = group.models.map(\.id).filter { $0 != activeID }
+        let allShown = toggleable.allSatisfy(isEnabled)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(group.provider)
+                    .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
+                    .tracking(0.6)
+                    .foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\(group.models.filter { isEnabled($0.id) }.count)/\(group.models.count)")
+                    .dockFont(.compactStatus)
+                    .foregroundStyle(Color.dockMetadataText.opacity(0.7))
+                    .monospacedDigit()
+                Spacer(minLength: 8)
+                if !toggleable.isEmpty {
+                    Button(allShown ? "Hide all" : "Show all") {
+                        setEnabled(!allShown, for: toggleable)
+                    }
+                    .buttonStyle(.dockLink)
+                    .dockFont(.metadata)
+                    .accessibilityLabel("\(allShown ? "Hide" : "Show") all \(group.provider) models")
+                }
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(group.models.enumerated()), id: \.element.id) { index, option in
+                    if index > 0 {
+                        Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.leading, 12)
+                    }
+                    modelRow(option, provider: group.provider)
+                }
+            }
+            .background(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
+                    Color.dockSurface2, stroke: Color.dockBorderLight))
+        }
+    }
+
+    private func modelRow(_ option: HermesModelOption, provider: String) -> some View {
+        let isActive = option.id == activeID
+        return Toggle(
+            isOn: Binding(
+                get: { isEnabled(option.id) },
+                set: { setEnabled($0, for: [option.id]) }
+            )
+        ) {
+            HStack(spacing: 6) {
+                Text(option.model)
+                    .dockFont(.body)
+                    .foregroundStyle(isEnabled(option.id) ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if isActive {
+                    Text("In use")
+                        .dockFont(.compactStatus, weight: .medium)
+                        .foregroundStyle(Color.dockAccent)
+                }
+                Spacer(minLength: 8)
+            }
+        }
+        .toggleStyle(.dockSwitch)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .disabled(isActive)
+        .help(isActive ? "The active model always stays in the picker." : "")
+        .accessibilityLabel("Show \(provider) \(option.model) in the picker")
+    }
+
+    private func setEnabled(_ enabled: Bool, for ids: [String]) {
+        let ids = ids.filter { $0 != activeID }
+        guard !ids.isEmpty else { return }
+        if enabled {
+            disabledIDs.subtract(ids)
+        } else {
+            disabledIDs.formUnion(ids)
+        }
+        ModelPickerPreferences().setEnabled(enabled, for: ids)
     }
 }

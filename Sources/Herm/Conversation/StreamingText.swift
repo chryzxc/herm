@@ -459,7 +459,7 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
         let view = NativeMarkdownDocumentContainerView()
         view.markdownOpenURL = context.environment.markdownOpenURL
         view.setBodyStyle(
-            size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
+            size: DockTypography.size(.conversation, scale: context.environment.dockWorkspaceScale), weight: .regular)
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         context.coordinator.update(view, chunks: chunks, source: source, themeRevision: themeRevision)
         return view
@@ -468,7 +468,7 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
         nsView.markdownOpenURL = context.environment.markdownOpenURL
         nsView.setBodyStyle(
-            size: DockWorkspaceScale.points(14, scale: context.environment.dockWorkspaceScale), weight: .regular)
+            size: DockTypography.size(.conversation, scale: context.environment.dockWorkspaceScale), weight: .regular)
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         context.coordinator.update(nsView, chunks: chunks, source: source, themeRevision: themeRevision)
     }

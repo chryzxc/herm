@@ -117,7 +117,7 @@ extension DockPopover {
     }
 
     private func openRichGlobal(_ tab: ControlTab) {
-        missionControlNavigation.selectGlobal(tab)
+        sessionNavNavigation.selectGlobal(tab)
         fullscreenGlobalTab = tab
         fullscreenSurface = .global
         inspectorScope = .global

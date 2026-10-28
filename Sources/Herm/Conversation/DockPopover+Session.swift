@@ -32,7 +32,7 @@ extension DockPopover {
             "\(model.currentSessionTitle ?? "Untitled chat") — \(model.status.title)\n\(OnDeviceAssist.sessionTitleHelp)"
         )
         .accessibilityLabel("Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
-        .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+        .dockPopover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             sessionPicker
                 .frame(width: 400, height: 440)
                 .padding(.vertical, 4)
@@ -82,7 +82,7 @@ extension DockPopover {
             }
             if includesInspector {
                 if sessionWorkspaceMode == .chat { Divider() }
-                Button(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector", action: toggleInspectorPanel)
+                Button(inspectorPanelIsVisible ? "Hide workspace" : "Show workspace", action: toggleInspectorPanel)
             }
         } label: {
             DockIcon(
@@ -129,13 +129,6 @@ extension DockPopover {
                 preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
     }
 
-    func showFilePreview() {
-        guard filePreview.url != nil else { return }
-        filePreview.sessionID = model.sessionID
-        if isNarrowLayout, sessionWorkspaceMode == .explorer { sessionWorkspaceMode = .chat }
-        ensureInspectorPanelVisible()
-    }
-
     func selectSessionMode(_ mode: SessionWorkspaceMode) {
         guard mode != sessionWorkspaceMode else { return }
         withAnimation(.dockEase(duration: 0.2)) {
@@ -172,7 +165,6 @@ extension DockPopover {
     }
 
     func showSessionRailInspector(_ section: SessionInspector.Section) {
-        filePreview.url = nil
         inspectorScope = .session
         sessionInspectorTabRequest = .init(session: WorkspaceIdentity.session(model), section: section)
         ensureInspectorPanelVisible()
@@ -206,7 +198,7 @@ extension DockPopover {
 
     /// The session inspector's tab strip carries its own collapse toggle.
     var inspectorHasOwnToggle: Bool {
-        inspectorPanelIsVisible && !isNarrowLayout && filePreview.url == nil
+        inspectorPanelIsVisible && !isNarrowLayout
             && !sessionWorkspaceMode.usesContextPreview && inspectorScope == .session
     }
 
@@ -426,8 +418,8 @@ extension DockPopover {
         // Same resolver and seen state as the rail, so both show the same marks.
         let statuses = SidebarSessionStatusResolver.statuses(
             for: sessions,
-            snapshot: MissionControlSidebarSnapshot(
-                inputs: MissionControlSidebarSnapshot.inputs(model: model, control: controlCenter)),
+            snapshot: SessionNavSidebarSnapshot(
+                inputs: SessionNavSidebarSnapshot.inputs(model: model, control: controlCenter)),
             seenStore: sidebarSessionSeenStore,
             fallbackProfileID: model.profileScopeID
         )
@@ -469,7 +461,7 @@ extension DockPopover {
             } else {
                 List {
                     ForEach(sessions) { session in
-                        MissionControlSidebarSessionRow(
+                        SessionNavSidebarSessionRow(
                             session: session,
                             selectedSessionID: model.navigationSessionID,
                             sessionStatus: statuses[session.id] ?? .none,

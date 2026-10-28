@@ -3,7 +3,7 @@ import Foundation
 
 /// Disposable, read-only message tail for a visible dashboard card.
 @MainActor
-final class MissionControlCardContent: ObservableObject {
+final class SessionDashboardCardContent: ObservableObject {
     @Published private(set) var text: String?
     @Published private(set) var error: String?
     @Published private(set) var loading = false

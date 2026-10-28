@@ -1,12 +1,12 @@
 import SwiftUI
 
-struct MissionControlDashboard<Conversation: View>: View {
+struct SessionDashboard<Conversation: View>: View {
     @ObservedObject var model: DockModel
     @ObservedObject var bots: BotModeModel
     let control: ControlCenterModel
-    @StateObject private var sidebar: MissionControlSidebarModel
+    @StateObject private var sidebar: SessionNavSidebarModel
     @ObservedObject private var seen = SidebarSessionSeenStore.shared
-    @State private var selection = MissionControlDashboardSelection()
+    @State private var selection = SessionDashboardSelection()
     @State private var showsConversation = false
     let onNewConversation: () -> Void
     let onOpenWorkspace: () -> Void
@@ -23,10 +23,10 @@ struct MissionControlDashboard<Conversation: View>: View {
         self.onNewConversation = onNewConversation
         self.onOpenWorkspace = onOpenWorkspace
         self.conversation = conversation
-        _sidebar = StateObject(wrappedValue: MissionControlSidebarModel(model: model, control: control, store: store))
+        _sidebar = StateObject(wrappedValue: SessionNavSidebarModel(model: model, control: control, store: store))
     }
 
-    private var snapshot: MissionControlSidebarSnapshot { sidebar.snapshot }
+    private var snapshot: SessionNavSidebarSnapshot { sidebar.snapshot }
     private var isCurrent: Bool {
         guard model.isHermesConnected else { return false }
         switch snapshot.inputs.sessionProjectionState {
@@ -44,7 +44,7 @@ struct MissionControlDashboard<Conversation: View>: View {
         }
     }
 
-    private var sessions: [HermesSession] { MissionControlDashboardProjection.sessions(in: snapshot) }
+    private var sessions: [HermesSession] { SessionDashboardProjection.sessions(in: snapshot) }
 
     var body: some View {
         DockExpandedPage(
@@ -70,7 +70,7 @@ struct MissionControlDashboard<Conversation: View>: View {
         } content: {
             sessionList
         }
-        .sheet(isPresented: $showsConversation) {
+        .dockSheet(isPresented: $showsConversation) {
             DockExpandedPage(
                 title: selection.session?.displayTitle ?? "Conversation",
                 subtitle: "Respond to this session", close: { showsConversation = false }
@@ -86,13 +86,13 @@ struct MissionControlDashboard<Conversation: View>: View {
         }
         .onChange(of: snapshot.inputs.sessionProjectionState) { _, _ in baseline() }
         .onChange(of: model.profileScopeID) { _, _ in
-            selection = MissionControlDashboardSelection()
+            selection = SessionDashboardSelection()
             showsConversation = false
         }
     }
 
     private var sessionList: some View {
-        MissionControlDashboardList(
+        SessionDashboardList(
             sidebar: sidebar, selection: selection, isCurrent: isCurrent, onSelect: select,
             client: model.controlRPCClient
         ).equatable().id(model.profileScopeID)

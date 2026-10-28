@@ -4,7 +4,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct MissionControlQueue: View {
+struct SessionNavQueue: View {
     private struct QueueTaskGroup: Identifiable {
         let key: String
         let task: WorkspaceTask
@@ -20,12 +20,9 @@ struct MissionControlQueue: View {
     let workspaceStore: WorkspaceStore
     let controlCenter: ControlCenterModel
     @ObservedObject var agentUpdateService: HermesUpdateService
-    @ObservedObject var navigationState: MissionControlNavigationState
+    @ObservedObject var navigationState: SessionNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
-    @StateObject private var sidebar: MissionControlSidebarModel
-    @AppStorage(SidebarVisibilityKey.kanban) private var showsKanban = true
-    @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
-    @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendar = true
+    @StateObject private var sidebar: SessionNavSidebarModel
     @Binding var sessionPendingDeletion: HermesSession?
     let activeSessionID: String?
     let activeGlobalTab: ControlTab?
@@ -65,7 +62,7 @@ struct MissionControlQueue: View {
         workspaceStore: WorkspaceStore,
         controlCenter: ControlCenterModel,
         agentUpdateService: HermesUpdateService,
-        navigationState: MissionControlNavigationState,
+        navigationState: SessionNavigationState,
         dockThemeStore: DockThemeStore,
         sessionPendingDeletion: Binding<HermesSession?>,
         activeSessionID: String?,
@@ -101,7 +98,7 @@ struct MissionControlQueue: View {
         self.navigationState = navigationState
         self.dockThemeStore = dockThemeStore
         _sidebar = StateObject(
-            wrappedValue: MissionControlSidebarModel(model: model, control: controlCenter, store: workspaceStore))
+            wrappedValue: SessionNavSidebarModel(model: model, control: controlCenter, store: workspaceStore))
         self._sessionPendingDeletion = sessionPendingDeletion
         self.activeSessionID = activeSessionID
         self.activeGlobalTab = activeGlobalTab
@@ -137,7 +134,7 @@ struct MissionControlQueue: View {
         workspaceStore.tasks.filter { $0.status == .awaitingApproval }
     }
 
-    private var sidebarSnapshot: MissionControlSidebarSnapshot {
+    private var sidebarSnapshot: SessionNavSidebarSnapshot {
         sidebar.snapshot
     }
 
@@ -255,20 +252,12 @@ struct MissionControlQueue: View {
                 .frame(height: DockWindowChrome.titleRowHeight)
                 .background(style.sidebarBackground)
             }
-            // Header: identity plus the primary action. Window chrome lives in the footer.
+            // Header: identity. Window chrome lives in the footer.
             HStack(spacing: 2) {
                 if !isDockedWindow {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
                 }
                 profileHeader(style: style)
-                DockIconButton(
-                    icon: .notePencil,
-                    label: "New conversation",
-                    isProminent: true,
-                    style: style,
-                    action: onNewConversation
-                )
-                .padding(.leading, 2)
             }
             .padding(.horizontal, 6)
             .frame(height: 56)
@@ -285,6 +274,7 @@ struct MissionControlQueue: View {
 
             HoverPausingScrollView {
                 globalRailBar(style: style)
+                    .dockButtonSize(.standard)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 8)
             }
@@ -381,7 +371,7 @@ struct MissionControlQueue: View {
                 }
                 .buttonStyle(.dockHover)
                 .onHover { isProfileHovering = $0 }
-                .popover(isPresented: $isProfileSelectorPresented, arrowEdge: .top) {
+                .dockPopover(isPresented: $isProfileSelectorPresented, arrowEdge: .top) {
                     profileSelectorPopover(selectedBot: bot, style: style)
                 }
                 .help("Switch Bot")
@@ -495,6 +485,17 @@ struct MissionControlQueue: View {
         // children. Nested lazy stacks inside eager VStacks are not lazy, so
         // every conversation and project row was built on each layout pass.
         return LazyVStack(alignment: .leading, spacing: 0) {
+            Button(action: onNewConversation) {
+                HStack(spacing: 8) {
+                    DockIcon(.notePencil, size: 14)
+                    Text("New chat")
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 6)  // aligns with DockSectionHeader's 8pt inset
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+            }
+            .buttonStyle(.dockHover)
+
             let pinned = pinnedSessionPresentation
             if pinned.status != .empty || !pinned.sessions.isEmpty {
                 pinnedOutline(pinned, statuses: statuses, style: style)
@@ -515,7 +516,7 @@ struct MissionControlQueue: View {
             conversationOutline(allConversations, statuses: statuses, style: style)
 
             if showsProjectsForSelectedBot {
-                MissionControlProjectList(
+                SessionNavProjectList(
                     groups: projects,
                     selectedSessionID: navigationState.selectedProjectSessionID,
                     activeSessionID: sidebarSnapshot.inputs.activeSessionID,
@@ -576,24 +577,23 @@ struct MissionControlQueue: View {
                 await botMode.refreshNow()
             }
         }
-        .sheet(isPresented: $isShowingNewGroupChat) {
+        .dockSheet(isPresented: $isShowingNewGroupChat) {
             NewGroupChatSheet(
                 store: botMode.groupChats, bots: botMode.bots.filter { !$0.isHidden }, onCreated: onOpenGroupChat)
         }
-        .sheet(isPresented: $isShowingProjectSheet) {
+        .dockSheet(isPresented: $isShowingProjectSheet) {
             ProjectFolderSheet(
-                // The rail hides sessionless projects, so a new project opens
-                // straight into its first chat instead of vanishing.
+                // Folder-backed projects open directly into their first chat.
                 onCreate: { name, folder in
                     // Hermes rejects a second project for the same folder; open a chat in the existing one instead.
-                    var created = controlCenter.projects.contains { $0.name == folder }
+                    var created = folder.map { path in controlCenter.projects.contains { $0.name == path } } ?? false
                     if !created {
                         created = await controlCenter.createProject(name: name, folder: folder)
                         if !created, controlCenter.lastError?.contains("already belongs to project") == true {
                             created = true
                         }
                     }
-                    if created { startNewChat(inProject: folder) }
+                    if created, let folder { startNewChat(inProject: folder) }
                     return created
                 },
                 failureReason: { controlCenter.lastError }
@@ -651,7 +651,7 @@ struct MissionControlQueue: View {
             HStack(spacing: 6) {
                 Text(navigationState.showsAllConversations ? "Show recent conversations" : "Show more conversations")
                 DockIcon(navigationState.showsAllConversations ? .caretUp : .caretDown)
-                    .dockFont(size: 9, weight: .bold)
+                    .dockFont(.metadata, weight: .bold)
             }
             .dockFont(.control)
             .foregroundStyle(style.secondaryText)
@@ -682,7 +682,7 @@ struct MissionControlQueue: View {
         _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
         if let bot = botForSession(session) {
-            MissionControlBotSessionRow(
+            SessionNavBotSessionRow(
                 session: session,
                 bot: bot,
                 imageData: botMode.avatarImages[bot.id],
@@ -702,7 +702,7 @@ struct MissionControlQueue: View {
     private func plainConversationSessionRow(
         _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        MissionControlSidebarSessionRow(
+        SessionNavSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
             sessionStatus: statuses[session.id] ?? .none,
@@ -782,7 +782,7 @@ struct MissionControlQueue: View {
     private func pinnedSessionRow(
         _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        MissionControlSidebarSessionRow(
+        SessionNavSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
             sessionStatus: statuses[session.id] ?? .none,
@@ -826,6 +826,11 @@ struct MissionControlQueue: View {
             isExpanded: $navigationState.areConversationsExpanded,
             style: style
         ) {
+            if conversations.contains(where: { statuses[$0.id] == .unreadComplete }) {
+                DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
+                    model.markSessionsRead(conversations, seenStore: sidebarSessionSeenStore)
+                }
+            }
             DockIconButton(
                 icon: .arrowsClockwise,
                 label: sidebarSnapshot.inputs.isLoadingSessions ? "Refreshing conversations…" : "Refresh conversations",
@@ -908,7 +913,7 @@ struct MissionControlQueue: View {
     }
 
     private func sessionRow(_ session: HermesSession, style: DockThemePalette) -> some View {
-        let controls = MissionControlConversationSessionRow.controls(
+        let controls = SessionNavConversationSessionRow.controls(
             togglePin: { togglePin(session) },
             onSelect: {
                 PinnedSessionRowInteraction.select(
@@ -920,7 +925,7 @@ struct MissionControlQueue: View {
             }
         )
 
-        return MissionControlConversationSessionRow(
+        return SessionNavConversationSessionRow(
             session: session,
             isSelected: isSessionSelected(session),
             isProjectLinked: sidebarSnapshot.linkedSessionIDs.contains(session.id),

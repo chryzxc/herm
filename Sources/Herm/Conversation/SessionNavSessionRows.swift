@@ -4,7 +4,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct MissionControlConversationSessionRow: View, Equatable {
+struct SessionNavConversationSessionRow: View, Equatable {
     let session: HermesSession
     let isSelected: Bool
     let isProjectLinked: Bool
@@ -41,9 +41,13 @@ struct MissionControlConversationSessionRow: View, Equatable {
             .buttonStyle(.dockHover)
 
             Button(action: onTogglePin) {
-                DockIcon(.pushPin, size: 13, color: isPinned ? style.accent : style.metadataText)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                DockIcon(
+                    .pushPin, size: 13, weight: isPinned ? .fill : .regular,
+                    color: isPinned ? style.primaryText : style.metadataText
+                )
+                .frame(width: 44, height: 44)
+                .accessibilityAddTraits(isPinned ? .isSelected : [])
+                .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
@@ -151,8 +155,8 @@ struct ProjectDisclosureState: Equatable {
     }
 }
 
-struct MissionControlProjectList: View {
-    let groups: [MissionControlConversationGroup]
+struct SessionNavProjectList: View {
+    let groups: [SessionNavConversationGroup]
     let selectedSessionID: String?
     let activeSessionID: String?
     let attentionDots: [String: SessionAttentionDot]
@@ -214,7 +218,7 @@ struct MissionControlProjectList: View {
     }
 
     @ViewBuilder
-    private func projectGroup(_ group: MissionControlConversationGroup) -> some View {
+    private func projectGroup(_ group: SessionNavConversationGroup) -> some View {
         let sessionCount = max(group.declaredSessionCount, group.sessions.count)
         let isCollapsed = disclosureState.isCollapsed(
             projectID: group.id, isEmpty: sessionCount == 0 && group.sessions.isEmpty)
@@ -365,7 +369,7 @@ struct MissionControlProjectList: View {
     }
 
     private func sessionRow(_ session: HermesSession) -> some View {
-        MissionControlSidebarSessionRow(
+        SessionNavSidebarSessionRow(
             session: session,
             selectedSessionID: selectedSessionID,
             sessionStatus: sessionStatuses[session.id] ?? .none,
@@ -387,7 +391,7 @@ struct MissionControlProjectList: View {
     }
 
     @ViewBuilder
-    private func projectActions(_ group: MissionControlConversationGroup, projectPath: String) -> some View {
+    private func projectActions(_ group: SessionNavConversationGroup, projectPath: String) -> some View {
         Button("Reveal in Finder", icon: .folderOpen) {
             ExternalOpen.reveal([URL(fileURLWithPath: projectPath)])
         }
@@ -453,7 +457,7 @@ struct SidebarProjectTarget: Identifiable, Equatable {
 
 /// A conversation that belongs to a Bot: avatar on the left and a tinted card
 /// so it reads differently from the selected Bot's own conversations.
-struct MissionControlBotSessionRow: View, Equatable {
+struct SessionNavBotSessionRow: View, Equatable {
     let session: HermesSession
     let bot: BotSummary
     let imageData: Data?
@@ -478,7 +482,7 @@ struct MissionControlBotSessionRow: View, Equatable {
                         .foregroundStyle(style.primaryText)
                         .lineLimit(1)
                     Text("BOT")
-                        .dockFont(size: 9, weight: .bold)
+                        .dockFont(.metadata, weight: .bold)
                         .foregroundStyle(style.accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -514,7 +518,7 @@ struct MissionControlBotSessionRow: View, Equatable {
     }
 }
 
-struct MissionControlSidebarSessionRow: View, Equatable {
+struct SessionNavSidebarSessionRow: View, Equatable {
     let session: HermesSession
     let selectedSessionID: String?
     let sessionStatus: SidebarSessionStatus
@@ -772,11 +776,15 @@ struct MissionControlSidebarSessionRow: View, Equatable {
             Button {
                 onTogglePin(session)
             } label: {
-                DockIcon(.pushPin, size: 12, color: isPinned ? style.accent : style.metadataText)
-                    .opacity(isPinning ? 0 : 1)
-                    .overlay { if isPinning { ProgressView().controlSize(.mini) } }
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
+                DockIcon(
+                    .pushPin, size: 12, weight: isPinned ? .fill : .regular,
+                    color: isPinned ? style.primaryText : style.metadataText
+                )
+                .opacity(isPinning ? 0 : 1)
+                .overlay { if isPinning { ProgressView().controlSize(.mini) } }
+                .frame(width: 24, height: 24)
+                .accessibilityAddTraits(isPinned ? .isSelected : [])
+                .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
             .disabled(isPinning)

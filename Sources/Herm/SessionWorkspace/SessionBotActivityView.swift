@@ -209,7 +209,7 @@ private struct BotActivityRow: View {
                 BotActivityPulse(color: stateColor)
             }
             Text(record.state.label.uppercased())
-                .dockFont(size: 9, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .contentTransition(.interpolate)
         }
         .foregroundStyle(stateColor)

@@ -21,16 +21,17 @@ struct SessionRailSummary: Equatable {
     var pins: [PinnedMessage] = []
     var pinsError: String?
     var workspace: Workspace?
+    var contextFiles: [SessionContextFile] = []
 
     var isEmpty: Bool {
         attention.isEmpty && plan == nil && outputs.isEmpty && outputsError == nil
-            && pins.isEmpty && pinsError == nil && workspace == nil
+            && pins.isEmpty && pinsError == nil && workspace == nil && contextFiles.isEmpty
     }
 
     @MainActor
     static func make(
         model: DockModel, repositoryPath: String?, repository: RepositorySnapshot,
-        outputs: [ArtifactRecord], outputsError: String?
+        outputs: [ArtifactRecord], outputsError: String?, contextFiles: [SessionContextFile] = []
     ) -> Self {
         guard let sessionID = model.navigationSessionID, !model.isRestoringSession else { return Self() }
         let ids = model.currentSessionIDs
@@ -53,6 +54,7 @@ struct SessionRailSummary: Equatable {
         summary.outputs = RichArtifactIndex.latest(outputs.filter { $0.scopedSessionID == owner })
             .sorted { $0.timestamp > $1.timestamp }
         summary.outputsError = outputsError
+        summary.contextFiles = contextFiles
         summary.pins = model.pinnedMessages
         // Unsupported pins should not advertise a rail section on older runtimes.
         summary.pinsError = model.pinnedMessages.isEmpty ? nil : model.messagePinError

@@ -54,7 +54,7 @@ struct TitlebarDoubleClickArea: NSViewRepresentable {
     func updateNSView(_ view: Strip, context: Context) {}
 }
 
-/// The 3-second "bot is running / finished" pill stack, shared by the rail and the notch.
+/// The 3-second "bot is running / finished" pill stack in the session navigation.
 struct BotActivityBanner: View {
     let events: [BotActivityEvent]
 
@@ -76,5 +76,22 @@ struct BotActivityBanner: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(events.map(\.text).joined(separator: ", "))
+    }
+}
+
+/// Full-width toolbar strip plus a rounded card below it, inset on the trailing and bottom edges.
+/// Used as a mask so the toolbar row stays flat while the content below is a card.
+struct ToolbarRowAndCardShape: Shape {
+    let toolbarHeight: CGFloat
+    let margin: CGFloat
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: toolbarHeight))
+        let card = CGRect(
+            x: rect.minX, y: rect.minY + toolbarHeight,
+            width: rect.width - margin, height: rect.height - toolbarHeight - margin)
+        path.addPath(Path(roundedRect: card, cornerRadius: radius, style: .continuous))
+        return path
     }
 }

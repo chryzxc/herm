@@ -9,9 +9,11 @@ import SwiftUI
 /// and take over with the mouse and keyboard.
 @MainActor
 final class AgentBrowser: ObservableObject {
-    let key: SessionBrowserKey
+    /// Hermes' `browser.manage connect` is per profile, so each profile has one agent Chrome
+    /// that its sessions share; Hermes' browser tools keep a session's work on its own tab.
+    let profileID: String?
     private static var connectionTask: Task<Void, Never>?
-    private static var preferredPortOwner: SessionBrowserKey?
+    private static var preferredPortOwner: String?
     private static let world = "herm"
     /// Annotate plus the agent-cursor reporter: pointer moves (one per animation frame),
     /// presses, and focus not caused by a press, in viewport CSS pixels.
@@ -25,17 +27,68 @@ final class AgentBrowser: ObservableObject {
                 if (typeof window.hermPointer === 'function') window.hermPointer(JSON.stringify({ type, x, y }));
               };
               let pending = null, pressed = 0;
+              // Trusted events only: a page's synthetic ones must not move Hermes' cursor.
               addEventListener('pointermove', (e) => {
+                if (!e.isTrusted) return;
                 const idle = !pending;
                 pending = [e.clientX, e.clientY];
                 if (idle) requestAnimationFrame(() => { send('move', ...pending); pending = null; });
               }, true);
-              addEventListener('pointerdown', (e) => { pressed = performance.now(); send('down', e.clientX, e.clientY); }, true);
+              addEventListener('pointerdown', (e) => { if (!e.isTrusted) return; pressed = performance.now(); send('down', e.clientX, e.clientY); }, true);
               addEventListener('focusin', (e) => {
                 const r = e.target.getBoundingClientRect?.();
-                if (performance.now() - pressed < 300 || !r || !r.width || !r.height) return;
+                if (!e.isTrusted || performance.now() - pressed < 300 || !r || !r.width || !r.height) return;
                 send('focus', r.left + Math.min(r.width / 2, 24), r.top + r.height / 2);
               }, true);
+            })();
+            (() => {
+              // Your input only, in the top frame: Herm draws dropdowns headless Chrome paints
+              // off-screen, mirrors the page's cursor, and anchors IME candidates to the field.
+              if (window.__hermPage || window !== top) return;
+              const post = (message) => {
+                if (typeof window.hermPage === 'function') window.hermPage(JSON.stringify(message));
+              };
+              const rect = (el) => {
+                const r = el.getBoundingClientRect();
+                return { x: r.left, y: r.top, width: r.width, height: r.height };
+              };
+              const editable = (el) => el?.isContentEditable || el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT'
+                && !['button', 'checkbox', 'radio', 'submit', 'reset', 'image', 'file', 'color', 'range', 'hidden'].includes(el.type));
+              let userInput = false, cursor = '', open = null, nextID = 0;
+              window.__hermPage = {
+                setUserInput(on) { userInput = on; if (!on) cursor = ''; },
+                choose(id, index) {
+                  const select = open?.id === id ? open.select.deref() : null;
+                  open = null;
+                  if (!select || select.selectedIndex === index || !select.options[index] || select.options[index].disabled) return;
+                  select.selectedIndex = index;
+                  select.dispatchEvent(new Event('input', { bubbles: true }));
+                  select.dispatchEvent(new Event('change', { bubbles: true }));
+                },
+                copy() {
+                  const el = document.activeElement;
+                  if (editable(el) && typeof el.selectionStart === 'number') return el.value.slice(el.selectionStart, el.selectionEnd);
+                  return String(getSelection());
+                },
+              };
+              addEventListener('mousedown', (e) => {
+                const select = e.target.closest?.('select');
+                if (!userInput || !e.isTrusted || e.button !== 0 || !select || select.multiple || select.size > 1 || select.disabled) return;
+                e.preventDefault();
+                select.focus();
+                open = { id: ++nextID, select: new WeakRef(select) };
+                post({ type: 'select', id: open.id, rect: rect(select), selected: select.selectedIndex,
+                  options: [...select.options].map((o) => ({
+                    label: o.label || o.text, disabled: o.disabled || !!o.closest('optgroup')?.disabled,
+                    group: o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : null })) });
+              }, true);
+              addEventListener('pointermove', (e) => {
+                if (!userInput || !(e.target instanceof Element)) return;
+                let next = getComputedStyle(e.target).cursor.split(',').pop().trim();
+                if (next === 'auto') next = editable(e.target) || [...e.target.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) ? 'text' : 'default';
+                if (next !== cursor) post({ type: 'cursor', cursor: (cursor = next) });
+              }, true);
+              addEventListener('focusin', (e) => { if (editable(e.target)) post({ type: 'field', rect: rect(e.target) }); }, true);
             })();
             """
 
@@ -67,10 +120,36 @@ final class AgentBrowser: ObservableObject {
     /// You took the page over from Hermes; the pane offers to hand it back.
     @Published var userHasControl = false
     /// Hermes is mid-step: your input would race its clicks, so the canvas drops it.
-    var inputLocked = false { didSet { if !inputLocked { onPointer?(nil) } } }
+    var inputLocked = false {
+        didSet {
+            guard inputLocked != oldValue else { return }
+            if inputLocked { onPageEvent?(.cursor("default")) }
+            applyPageInput()
+        }
+    }
     /// Where Hermes' pointer or focus landed, in CSS pixels; nil hides the agent cursor.
     /// Like frames, this bypasses SwiftUI.
     var onPointer: ((AgentPointer?) -> Void)?
+    private(set) var lastPointer: AgentPointer?
+
+    /// Keep the last observed position between tool calls, without replaying a click on remount.
+    func updatePointer(_ pointer: AgentPointer?) {
+        lastPointer = pointer.map { AgentPointer(kind: .move, point: $0.point) }
+        onPointer?(pointer)
+    }
+    /// What the page reports back about your own input: dropdowns to draw, cursor, focused field.
+    var onPageEvent: ((AgentPageEvent) -> Void)?
+    /// Where Hermes' browser downloads land; set explicitly rather than left to Chrome.
+    nonisolated static var downloadsFolder: URL {
+        (FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true))
+            .appendingPathComponent("Herm", isDirectory: true)
+    }
+    /// Prompts a headless page could otherwise leave for Hermes to accept on your behalf.
+    static let deniedPermissions = [
+        "geolocation", "notifications", "camera", "microphone", "midi", "display-capture", "clipboard-read",
+        "window-management", "local-fonts", "idle-detection",
+    ]
 
     struct Dialog: Equatable {
         let type: String, message: String, defaultPrompt: String
@@ -101,9 +180,9 @@ final class AgentBrowser: ObservableObject {
         let previous = Self.connectionTask
         Self.connectionTask = Task { [weak self] in
             await previous?.value
-            guard let self, model.browserSessionKey == key, state == .running, self.cdpURL == cdpURL else { return }
+            guard let self, owns(model), state == .running, self.cdpURL == cdpURL else { return }
             do { try await model.setHermesBrowser(cdpURL: cdpURL) } catch {
-                if model.browserSessionKey == key { fail(error.localizedDescription) }
+                if owns(model) { fail(error.localizedDescription) }
             }
         }
     }
@@ -130,8 +209,18 @@ final class AgentBrowser: ObservableObject {
     private var loginSyncTask: Task<Void, Never>?
     private var loginsCancellable: AnyCancellable?
 
-    init(key: SessionBrowserKey) {
-        self.key = key
+    /// The Hermes session whose tab is on screen; each remembers the tab it last showed.
+    private var shownSession: String?
+    private var tabs: [String: String] = [:]
+
+    private func owns(_ model: DockModel?) -> Bool {
+        model?.browserSessionKey.map { $0.profileID == profileID } ?? false
+    }
+
+    private var profileDirectory: String { SessionBrowserKey.browserDirectory(profileID: profileID) }
+
+    init(profileID: String?) {
+        self.profileID = profileID
         themeCancellable = DockThemeStore.shared.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -166,7 +255,14 @@ final class AgentBrowser: ObservableObject {
                 cdp.onEvent = { [weak self] method, params, session in self?.handle(method, params, session) }
                 cdp.onClose = { [weak self] in self?.relaunch() }
                 self.cdp = cdp
-                restoreLogins(cdp)
+                for name in Self.deniedPermissions {
+                    cdp.fire("Browser.setPermission", ["permission": ["name": name], "setting": "denied"])
+                }
+                try? FileManager.default.createDirectory(
+                    at: Self.downloadsFolder, withIntermediateDirectories: true)
+                cdp.fire(
+                    "Browser.setDownloadBehavior", ["behavior": "allow", "downloadPath": Self.downloadsFolder.path])
+                await restoreLogins(cdp)
                 _ = try await cdp.send("Target.setDiscoverTargets", ["discover": true])
                 let infos = try await cdp.send("Target.getTargets")["targetInfos"] as? [[String: Any]] ?? []
                 try Task.checkCancellation()
@@ -197,9 +293,10 @@ final class AgentBrowser: ObservableObject {
     func stop() {
         let model = model
         let previous = Self.connectionTask
+        let profileID = profileID
         Self.connectionTask = Task {
             await previous?.value
-            guard model?.browserSessionKey == key else { return }
+            guard model?.browserSessionKey.map({ $0.profileID == profileID }) == true else { return }
             try? await model?.setHermesBrowser(cdpURL: nil)
         }
         teardown()
@@ -247,6 +344,7 @@ final class AgentBrowser: ObservableObject {
         sessionID = nil
         mainFrameID = nil
         annotateContextID = nil
+        updatePointer(nil)
         screencast = nil
         navigationRequestID = UUID()
         historyRequestID = UUID()
@@ -304,17 +402,26 @@ final class AgentBrowser: ObservableObject {
         }
     }
 
-    /// Hermes deleted the session: its Chrome profile (history, cache, site storage) goes too.
-    nonisolated static func removeProfile(_ key: SessionBrowserKey) {
-        let profile = profileRoot.appendingPathComponent(key.profileDirectory, isDirectory: true)
-        Task.detached {
-            try? await Task.sleep(for: .seconds(2))  // ponytail: fixed wait for its Chrome to quit
-            try? FileManager.default.removeItem(at: profile)
+    /// Shows `session`'s tab: the one it last showed, else the current one becomes its tab.
+    func show(session: String) {
+        shownSession = session
+        guard state == .running, let target = tabs[session], target != activeTargetID,
+            pages.contains(where: { $0.id == target })
+        else {
+            if let activeTargetID { tabs[session] = activeTargetID }
+            return
         }
+        Task { try? await attach(target) }
+    }
+
+    /// Hermes deleted the session; its tab stays open in the shared browser.
+    func forget(session: String) {
+        tabs.removeValue(forKey: session)
+        if shownSession == session { shownSession = nil }
     }
 
     private func launch() async throws -> Endpoint {
-        let profile = Self.profileRoot.appendingPathComponent(key.profileDirectory, isDirectory: true)
+        let profile = Self.profileRoot.appendingPathComponent(profileDirectory, isDirectory: true)
         // Profiles hold signed-in cookies: owner-only, including a root made by an older Herm.
         try FileManager.default.createDirectory(
             at: profile, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -329,9 +436,9 @@ final class AgentBrowser: ObservableObject {
         // A fixed port lets other CDP clients (e.g. chrome-devtools-mcp --browserUrl) share
         // this browser; fall back to any free port when something else holds it.
         // Reserve before probing: two sessions can launch before either Chrome is listening.
-        if Self.preferredPortOwner == nil { Self.preferredPortOwner = key }
+        if Self.preferredPortOwner == nil { Self.preferredPortOwner = profileDirectory }
         let busy: Bool
-        if Self.preferredPortOwner == key {
+        if Self.preferredPortOwner == profileDirectory {
             busy =
                 (try? await URLSession.shared.data(
                     from: URL(string: "http://127.0.0.1:\(Self.preferredPort)/json/version")!)) != nil
@@ -423,13 +530,15 @@ final class AgentBrowser: ObservableObject {
         }
         sessionID = sid
         activeTargetID = targetID
+        if let shownSession { tabs[shownSession] = targetID }
         navigationRequestID = UUID()
         navigation = BrowserNavigationState()
         consoleErrors = []
         dialog = nil
         annotateContextID = nil
+        updatePointer(nil)
         _ = try await cdp.send("Page.enable", session: sid)
-        for binding in ["hermAnnotate", "hermPointer"] {
+        for binding in ["hermAnnotate", "hermPointer", "hermPage"] {
             _ = try await cdp.send(
                 "Runtime.addBinding", ["name": binding, "executionContextName": Self.world], session: sid)
         }
@@ -458,6 +567,7 @@ final class AgentBrowser: ObservableObject {
             navigation.isLoading = readyState != "complete"
         }
         applyAnnotating()
+        applyPageInput()
         try await applyViewport()
         if state == .running, let url = pendingURL { navigate(url) }
     }
@@ -510,7 +620,9 @@ final class AgentBrowser: ObservableObject {
         cdp.fire(
             "Page.startScreencast",
             [
-                "format": "png", "everyNthFrame": 2,  // Lossless text at ~30fps while the pane is visible.
+                // Every frame: a keystroke or click damages one frame, and skipping alternate ones
+                // held its echo until the next damage (~500ms) and always dropped the same caret blink phase.
+                "format": "png", "everyNthFrame": 1,
                 "maxWidth": 8192, "maxHeight": 8192,  // Caps only; frames match the emulated viewport.
             ], session: sid)
     }
@@ -523,13 +635,14 @@ final class AgentBrowser: ObservableObject {
                 pages[index] = page
             } else {
                 pages.append(page)
-                // Follow the tab Hermes just opened.
-                if state == .running { Task { try? await attach(page.id) } }
+                // Follow a tab Hermes opens for the chat on screen; another chat's stays in the tab strip.
+                if state == .running, model?.activeBrowserCall != nil { Task { try? await attach(page.id) } }
             }
         case "Target.targetDestroyed":
             guard let id = params["targetId"] as? String else { return }
             pages.removeAll { $0.id == id }
             guard id == activeTargetID else { return }
+            updatePointer(nil)
             sessionID = nil
             activeTargetID = nil
             if let next = pages.last {
@@ -581,8 +694,10 @@ final class AgentBrowser: ObservableObject {
             else { return }
             annotateContextID = id
             applyAnnotating()
+            applyPageInput()
         case "Runtime.executionContextsCleared":
             annotateContextID = nil
+            updatePointer(nil)
         case "Runtime.bindingCalled":
             // Only our isolated world has the binding; the context check drops iframes.
             guard params["executionContextId"] as? Int == annotateContextID,
@@ -591,7 +706,8 @@ final class AgentBrowser: ObservableObject {
             switch params["name"] as? String {
             case "hermAnnotate": receive(payload)
             // The canvas drops your input while Hermes holds the page, so this is Hermes.
-            case "hermPointer": if inputLocked, let pointer = AgentPointer(json: payload) { onPointer?(pointer) }
+            case "hermPointer": if inputLocked, let pointer = AgentPointer(json: payload) { updatePointer(pointer) }
+            case "hermPage": if !inputLocked, let event = AgentPageEvent(json: payload) { onPageEvent?(event) }
             default: break
             }
         case "Runtime.consoleAPICalled":
@@ -612,6 +728,13 @@ final class AgentBrowser: ObservableObject {
 
     // Mutating a @Published struct publishes even when the event changes nothing.
     func receiveNavigation(_ method: String, params: [String: Any]) {
+        if method == "Page.frameNavigated", let frame = params["frame"] as? [String: Any], frame["parentId"] == nil {
+            updatePointer(nil)
+        } else if method == "Page.navigatedWithinDocument", let mainFrameID,
+            params["frameId"] as? String == mainFrameID
+        {
+            updatePointer(nil)
+        }
         var next = navigation
         next.receiveCDP(method, params: params, mainFrameID: mainFrameID)
         if next != navigation { navigation = next }
@@ -623,13 +746,50 @@ final class AgentBrowser: ObservableObject {
 
     // MARK: Shared logins
 
-    /// The jar is authoritative: a Chrome reopened on an old profile drops sign-ins made
-    /// or cleared elsewhere since. Fire-only, so later pushes stay ordered after it.
-    private func restoreLogins(_ cdp: CDPConnection) {
+    /// Sign Out of All Sites count this profile has applied; a closed profile catches up on reopen.
+    private var signOutsFile: URL {
+        Self.profileRoot.appendingPathComponent(profileDirectory, isDirectory: true)
+            .appendingPathComponent("HermSignOuts")
+    }
+
+    private func recordSignOuts(_ count: Int) {
+        try? Data("\(count)".utf8).write(to: signOutsFile, options: .atomic)
+    }
+
+    /// The jar is authoritative for shared sites: a Chrome reopened on an old profile picks up
+    /// their sign-ins and sign-outs since. This session's other sign-ins stay its own.
+    /// Pushes are fire-only, so later ones stay ordered after these.
+    private func restoreLogins(_ cdp: CDPConnection) async {
         let jar = SharedBrowserLogins.shared.jar
-        cdp.fire("Storage.clearCookies")
-        Self.push(BrowserCookieJar().changes(to: jar), to: cdp)
-        loginBaseline = jar
+        let applied = (try? String(contentsOf: signOutsFile, encoding: .utf8)).flatMap { Int($0) } ?? 0
+        var current = BrowserCookieJar()
+        if applied < jar.signOuts {
+            cdp.fire("Storage.clearCookies")
+        } else {
+            let result = try? await cdp.send("Storage.getCookies")
+            current = BrowserCookieJar(
+                (result?["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:)))
+        }
+        recordSignOuts(jar.signOuts)
+        // Read again: a change shared during the await was skipped while there was no baseline.
+        let latest = SharedBrowserLogins.shared.jar
+        let changes = BrowserCookieJar(current.cookies.values.filter(latest.shares)).changes(to: latest)
+        Self.push(changes, to: cdp)
+        current.apply(changes)
+        loginBaseline = current
+    }
+
+    /// Shares (or stops sharing) a site's sign-in with every session, from this browser's cookies.
+    func toggleSharing(_ site: String) {
+        let logins = SharedBrowserLogins.shared
+        guard !logins.jar.sites.contains(site) else { return logins.stopSharing(site) }
+        let origin = ObjectIdentifier(self)
+        guard let cdp else { return logins.share(site, cookies: [], from: origin) }
+        Task {
+            let result = try? await cdp.send("Storage.getCookies")
+            let cookies = (result?["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:))
+            SharedBrowserLogins.shared.share(site, cookies: cookies, from: origin)
+        }
     }
 
     /// One cookie per call: Chrome rejects a whole batch over a single bad cookie.
@@ -650,6 +810,7 @@ final class AgentBrowser: ObservableObject {
         case .cleared:
             cdp.fire("Storage.clearCookies")
             loginBaseline = BrowserCookieJar()
+            recordSignOuts(SharedBrowserLogins.shared.jar.signOuts)
         }
     }
 
@@ -685,7 +846,7 @@ final class AgentBrowser: ObservableObject {
             Task {
                 let image = await screenshot(annotation)
                 evaluate("window.__hermAnnotate?.done()")
-                if let model, model.browserSessionKey == key {
+                if let model, owns(model) {
                     BrowserAnnotation.deliver(annotation.context, image: image, to: model)
                 }
             }
@@ -721,6 +882,44 @@ final class AgentBrowser: ObservableObject {
         return (result["result"] as? [String: Any])?["value"] as? String ?? ""
     }
 
+    // MARK: Your input
+
+    private func applyPageInput() {
+        evaluate("window.__hermPage?.setUserInput(\(!inputLocked))")
+    }
+
+    /// Applies an option picked from Herm's menu for a dropdown the page reported.
+    func chooseOption(select id: Int, index: Int) {
+        evaluate("window.__hermPage?.choose(\(id), \(index))")
+    }
+
+    /// The focused field's selected text, or the page selection.
+    func selectedText() async -> String {
+        guard let cdp, let sid = sessionID, let context = annotateContextID,
+            let result = try? await cdp.send(
+                "Runtime.evaluate",
+                ["expression": "window.__hermPage?.copy() ?? ''", "contextId": context, "returnByValue": true],
+                session: sid)
+        else { return "" }
+        return (result["result"] as? [String: Any])?["value"] as? String ?? ""
+    }
+
+    /// An input method's in-progress text (a dead key's accent, unconverted kana), shown in the field.
+    func compose(_ text: String, selection: NSRange) {
+        fire(
+            "Input.imeSetComposition",
+            ["text": text, "selectionStart": selection.location, "selectionEnd": NSMaxRange(selection)])
+    }
+
+    /// A ⌘ shortcut Chrome performs as an editing command (undo, redo, cut).
+    func editCommand(_ command: String, key: String, code: Int, modifiers: Int) {
+        let base: [String: Any] = [
+            "key": key, "code": "Key\(key.uppercased())", "windowsVirtualKeyCode": code, "modifiers": modifiers,
+        ]
+        self.key(base.merging(["type": "rawKeyDown", "commands": [command]]) { $1 })
+        self.key(base.merging(["type": "keyUp"]) { $1 })
+    }
+
     private func evaluate(_ expression: String) {
         guard let cdp, let sid = sessionID, let context = annotateContextID else { return }
         cdp.fire("Runtime.evaluate", ["expression": expression, "contextId": context], session: sid)
@@ -746,6 +945,7 @@ final class AgentBrowser: ObservableObject {
     /// Interrupts Hermes so you can finish a step (a login, a captcha) yourself.
     func takeOver() {
         _ = model?.stop()
+        updatePointer(nil)
         userHasControl = true
         inputLocked = false
     }
@@ -779,6 +979,7 @@ final class AgentBrowser: ObservableObject {
     func clearNavigationError() { navigation.error = nil }
 
     private func performNavigation(_ method: String, _ params: [String: Any] = [:]) {
+        updatePointer(nil)
         guard let cdp, let sessionID else { return }
         let requestID = UUID()
         navigationRequestID = requestID
@@ -833,6 +1034,7 @@ final class AgentBrowser: ObservableObject {
 
     /// Fire-and-forget keeps input events in order (each awaits nothing).
     private func fire(_ method: String, _ params: [String: Any] = [:], browserLevel: Bool = false) {
+        if method.hasPrefix("Input.") { updatePointer(nil) }
         guard let cdp else { return }
         if browserLevel { return cdp.fire(method, params) }
         guard let sid = sessionID else { return }
@@ -857,6 +1059,55 @@ struct AgentPointer: Equatable {
             let x = object["x"] as? Double, let y = object["y"] as? Double, x.isFinite, y.isFinite
         else { return nil }
         self.init(kind: kind, point: CGPoint(x: x, y: y))
+    }
+}
+
+/// What the page's Herm script reports about your own input, in viewport CSS pixels.
+enum AgentPageEvent: Equatable {
+    struct Option: Equatable {
+        let label: String
+        let disabled: Bool
+        let group: String?
+    }
+    /// A dropdown you clicked; headless Chrome would paint its popup where the screencast can't see.
+    case select(id: Int, rect: CGRect, selected: Int, options: [Option])
+    /// The page's CSS cursor under your pointer, `auto` already resolved.
+    case cursor(String)
+    /// The editable field that took focus, for placing input-method candidates.
+    case field(CGRect)
+
+    init?(json: String) {
+        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
+            return nil
+        }
+        func rect(_ value: Any?) -> CGRect? {
+            guard let value = value as? [String: Any], let x = value["x"] as? Double, let y = value["y"] as? Double,
+                let width = value["width"] as? Double, let height = value["height"] as? Double,
+                [x, y, width, height].allSatisfy(\.isFinite)
+            else { return nil }
+            return CGRect(x: x, y: y, width: width, height: height)
+        }
+        switch object["type"] as? String {
+        case "select":
+            guard let id = object["id"] as? Int, let rect = rect(object["rect"]),
+                let options = object["options"] as? [[String: Any]], !options.isEmpty
+            else { return nil }
+            self = .select(
+                id: id, rect: rect, selected: object["selected"] as? Int ?? -1,
+                options: options.map {
+                    Option(
+                        label: String(($0["label"] as? String ?? "").prefix(200)),
+                        disabled: $0["disabled"] as? Bool ?? false, group: $0["group"] as? String)
+                })
+        case "cursor":
+            guard let cursor = object["cursor"] as? String else { return nil }
+            self = .cursor(cursor)
+        case "field":
+            guard let rect = rect(object["rect"]) else { return nil }
+            self = .field(rect)
+        default:
+            return nil
+        }
     }
 }
 
@@ -997,13 +1248,34 @@ final class CDPConnection {
 
 /// Live view of the agent browser: draws screencast frames and forwards input as CDP events.
 final class AgentBrowserCanvas: NSView {
+    /// SwiftUI reuses one canvas across sessions, so rebinding moves the viewer to the new browser;
+    /// otherwise the new one never streams and the old one streams to nobody.
     var browser: AgentBrowser? {
         didSet {
+            guard browser !== oldValue else { return }
+            if isViewing {
+                oldValue?.viewers -= 1
+                browser?.viewers += 1
+            }
+            oldValue?.onFrame = nil
+            oldValue?.onPointer = nil
+            oldValue?.onPageEvent = nil
+            page.layer?.contents = nil
             if let frame = browser?.lastFrame { show(frame.image, css: frame.css) }
             browser?.onFrame = { [weak self] image, css in self?.show(image, css: css) }
             browser?.onPointer = { [weak self] pointer in self?.showPointer(pointer) }
+            showPointer(browser?.lastPointer)
+            browser?.onPageEvent = { [weak self] event in self?.receive(event) }
+            if window != nil { browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2) }
         }
     }
+    private var pageCursor = NSCursor.arrow
+    /// The focused field in CSS pixels, where input-method candidates appear.
+    private var fieldRect: CGRect?
+    private var markedText = ""
+    /// The key being interpreted, so plain typing keeps its key events for the page.
+    private var typingEvent: NSEvent?
+    private var menuSelectID: Int?
     private var cssSize = CGSize(width: 1280, height: 800)
     private var isViewing = false
     private var pressedButtons = 0
@@ -1020,6 +1292,7 @@ final class AgentBrowserCanvas: NSView {
     }()
     private let cursor = AgentCursorView()
     private var cursorGeneration = 0
+    private var pointerPosition: CGPoint?
 
     override var isFlipped: Bool { true }
 
@@ -1031,13 +1304,21 @@ final class AgentBrowserCanvas: NSView {
         if css != cssSize {
             cssSize = css
             page.frame = pageRect
+            positionCursor()
         }
+    }
+
+    private func positionCursor() {
+        guard let pointerPosition else { return }
+        let point = viewRect(css: CGRect(origin: pointerPosition, size: .zero)).origin
+        cursor.setFrameOrigin(CGPoint(x: point.x - AgentCursorView.tip.x, y: point.y - AgentCursorView.tip.y))
     }
 
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     /// Glides the Herm cursor to where Hermes pointed; nil fades it out.
     private func showPointer(_ pointer: AgentPointer?) {
+        pointerPosition = pointer?.point
         cursorGeneration += 1
         let generation = cursorGeneration
         guard let pointer else {
@@ -1051,10 +1332,7 @@ final class AgentBrowserCanvas: NSView {
             }
             return
         }
-        let rect = pageRect
-        let point = CGPoint(
-            x: rect.minX + pointer.point.x / cssSize.width * rect.width,
-            y: rect.minY + pointer.point.y / cssSize.height * rect.height)
+        let point = viewRect(css: CGRect(origin: pointer.point, size: .zero)).origin
         let origin = CGPoint(x: point.x - AgentCursorView.tip.x, y: point.y - AgentCursorView.tip.y)
         if cursor.isHidden {
             cursor.setFrameOrigin(origin)
@@ -1069,6 +1347,87 @@ final class AgentBrowserCanvas: NSView {
             cursor.animator().alphaValue = 1
         }
         if pointer.kind == .down, !reduceMotion { ripple(at: point) }
+    }
+
+    /// A rect in viewport CSS pixels, in canvas coordinates.
+    private func viewRect(css: CGRect) -> CGRect {
+        let rect = pageRect
+        let scale = CGSize(width: rect.width / cssSize.width, height: rect.height / cssSize.height)
+        return CGRect(
+            x: rect.minX + css.minX * scale.width, y: rect.minY + css.minY * scale.height,
+            width: css.width * scale.width, height: css.height * scale.height)
+    }
+
+    private func receive(_ event: AgentPageEvent) {
+        switch event {
+        case .select(let id, let rect, let selected, let options):
+            showMenu(select: id, at: viewRect(css: rect), selected: selected, options: options)
+        case .cursor(let css):
+            pageCursor = Self.cursor(css: css)
+            window?.invalidateCursorRects(for: self)
+            if let window, pageRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
+                pageCursor.set()
+            }
+        case .field(let rect):
+            fieldRect = rect
+        }
+    }
+
+    /// Chrome's own dropdown would open off-screen in headless mode; a native menu stands in.
+    private func showMenu(select id: Int, at rect: CGRect, selected: Int, options: [AgentPageEvent.Option]) {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.minimumWidth = rect.width
+        var group: String?
+        for (index, option) in options.enumerated() {
+            if option.group != group, let header = option.group { menu.addItem(.sectionHeader(title: header)) }
+            group = option.group
+            let item = NSMenuItem(title: option.label, action: #selector(chooseOption(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.isEnabled = !option.disabled
+            item.state = index == selected ? .on : .off
+            item.indentationLevel = option.group == nil ? 0 : 1
+            menu.addItem(item)
+        }
+        menuSelectID = id
+        let current = menu.items.first { $0.action != nil && $0.tag == selected }
+        menu.popUp(positioning: current, at: CGPoint(x: rect.minX, y: rect.minY), in: self)
+        menuSelectID = nil
+        // The menu swallowed the release of the click that opened it.
+        if pressedButtons & 1 != 0 {
+            pressedButtons &= ~1
+            browser?.mouse(
+                "mouseReleased", at: CGPoint(x: rect.midX, y: rect.midY), button: "left", clicks: 1, modifiers: 0)
+        }
+    }
+
+    @objc private func chooseOption(_ item: NSMenuItem) {
+        guard let id = menuSelectID else { return }
+        browser?.chooseOption(select: id, index: item.tag)
+    }
+
+    /// The page's CSS cursor as the nearest system cursor.
+    static func cursor(css: String) -> NSCursor {
+        switch css {
+        case "pointer": .pointingHand
+        case "text": .iBeam
+        case "vertical-text": .iBeamCursorForVerticalLayout
+        case "crosshair": .crosshair
+        case "not-allowed", "no-drop": .operationNotAllowed
+        case "grab": .openHand
+        case "grabbing", "move", "all-scroll": .closedHand
+        case "col-resize", "ew-resize", "e-resize", "w-resize": .resizeLeftRight
+        case "row-resize", "ns-resize", "n-resize", "s-resize": .resizeUpDown
+        case "copy": .dragCopy
+        case "alias": .dragLink
+        case "context-menu": .contextualMenu
+        default: .arrow
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(pageRect, cursor: pageCursor)
     }
 
     private func ripple(at point: CGPoint) {
@@ -1087,6 +1446,7 @@ final class AgentBrowserCanvas: NSView {
     override func layout() {
         super.layout()
         page.frame = pageRect
+        positionCursor()
     }
     override var acceptsFirstResponder: Bool { true }
 
@@ -1124,6 +1484,7 @@ final class AgentBrowserCanvas: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         page.frame = pageRect
+        positionCursor()
         browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
     }
 
@@ -1198,16 +1559,27 @@ final class AgentBrowserCanvas: NSView {
             case "v":
                 if let text = NSPasteboard.general.string(forType: .string) { browser?.insertText(text) }
             case "a":
-                browser?.key([
-                    "type": "rawKeyDown", "key": "a", "code": "KeyA", "windowsVirtualKeyCode": 65,
-                    "modifiers": modifiers, "commands": ["selectAll"],
-                ])
+                browser?.editCommand("selectAll", key: "a", code: 65, modifiers: modifiers)
+            case "c", "x":
+                // Chrome's clipboard is its own in headless mode, so the copy comes back to yours.
+                let cut = event.charactersIgnoringModifiers?.lowercased() == "x"
+                Task { [weak browser] in
+                    guard let browser, case let text = await browser.selectedText(), !text.isEmpty else { return }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    if cut { browser.editCommand("delete", key: "x", code: 88, modifiers: modifiers) }
+                }
+            case "z":
+                let redo = event.modifierFlags.contains(.shift)
+                browser?.editCommand(redo ? "redo" : "undo", key: "z", code: 90, modifiers: modifiers)
             default:
                 super.keyDown(with: event)
             }
             return
         }
-        if let special = Self.specialKeys[event.keyCode] {
+        if !markedText.isEmpty {
+            interpretKeyEvents([event])
+        } else if let special = Self.specialKeys[event.keyCode] {
             var down: [String: Any] = [
                 "type": special.text == nil ? "rawKeyDown" : "keyDown", "key": special.key,
                 "code": special.key, "windowsVirtualKeyCode": special.code, "modifiers": modifiers,
@@ -1218,10 +1590,74 @@ final class AgentBrowserCanvas: NSView {
                 "type": "keyUp", "key": special.key, "code": special.key,
                 "windowsVirtualKeyCode": special.code, "modifiers": modifiers,
             ])
-        } else if let text = event.characters, !text.isEmpty {
-            browser?.key(["type": "keyDown", "text": text, "unmodifiedText": text, "key": text, "modifiers": modifiers])
-            browser?.key(["type": "keyUp", "key": text, "modifiers": modifiers])
+        } else if event.modifierFlags.contains(.control) {
+            if let text = event.characters, !text.isEmpty { type(text, modifiers: modifiers) }
+        } else {
+            // Through the input method, so dead keys (⌥E E → é) and IMEs compose.
+            typingEvent = event
+            interpretKeyEvents([event])
+            typingEvent = nil
         }
+    }
+
+    private func type(_ text: String, modifiers: Int) {
+        browser?.key(["type": "keyDown", "text": text, "unmodifiedText": text, "key": text, "modifiers": modifiers])
+        browser?.key(["type": "keyUp", "key": text, "modifiers": modifiers])
+    }
+
+    /// Keys the input method doesn't turn into text are already handled; don't beep.
+    override func doCommand(by selector: Selector) {}
+}
+
+extension AgentBrowserCanvas: @preconcurrency NSTextInputClient {
+    private static func plain(_ string: Any) -> String {
+        (string as? NSAttributedString)?.string ?? string as? String ?? ""
+    }
+
+    func insertText(_ string: Any, replacementRange: NSRange) {
+        let text = Self.plain(string)
+        if markedText.isEmpty, let event = typingEvent {
+            type(text, modifiers: Self.modifiers(event.modifierFlags))
+        } else {
+            markedText = ""
+            browser?.insertText(text)  // Also commits any composition in the page.
+        }
+    }
+
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        markedText = Self.plain(string)
+        browser?.compose(markedText, selection: selectedRange)
+    }
+
+    func unmarkText() {
+        guard !markedText.isEmpty else { return }
+        let text = markedText
+        markedText = ""
+        browser?.insertText(text)
+    }
+
+    func hasMarkedText() -> Bool { !markedText.isEmpty }
+
+    func markedRange() -> NSRange {
+        markedText.isEmpty
+            ? NSRange(location: NSNotFound, length: 0) : NSRange(location: 0, length: markedText.utf16.count)
+    }
+
+    func selectedRange() -> NSRange { NSRange(location: markedText.utf16.count, length: 0) }
+
+    func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
+
+    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+        nil
+    }
+
+    func characterIndex(for point: NSPoint) -> Int { NSNotFound }
+
+    /// Under the focused field, so candidate windows don't cover what you're typing.
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let rect =
+            fieldRect.map { viewRect(css: $0) } ?? CGRect(x: pageRect.midX, y: pageRect.midY, width: 0, height: 0)
+        return window?.convertToScreen(convert(rect, to: nil)) ?? .zero
     }
 }
 
@@ -1288,7 +1724,7 @@ private struct AgentCanvasView: NSViewRepresentable {
         canvas.browser = browser
         return canvas
     }
-    func updateNSView(_ nsView: AgentBrowserCanvas, context: Context) {}
+    func updateNSView(_ nsView: AgentBrowserCanvas, context: Context) { nsView.browser = browser }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: AgentBrowserCanvas, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }

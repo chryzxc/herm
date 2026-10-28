@@ -3,6 +3,7 @@ import SwiftUI
 struct SessionRailSummarySections: View {
     let summary: SessionRailSummary
     let onViewAllOutputs: () -> Void
+    let onOpenOutput: (ArtifactRecord) -> Void
     let onRespondInChat: () -> Void
     let onViewPin: (PinnedMessage) async -> Bool
 
@@ -35,16 +36,32 @@ struct SessionRailSummarySections: View {
                         Text("Outputs unavailable. Refresh to retry.").foregroundStyle(Color.dockWarning)
                     }
                     ForEach(summary.outputs) { record in
-                        SessionRailSummarySection(
-                            title: record.label, icon: record.kind == .interactive ? .squaresFour : .link,
-                            fileName: record.kind == .file || record.kind == .image ? record.label : nil
-                        ) {
-                            SessionRailOutputPreview(record: record)
+                        Button {
+                            onOpenOutput(record)
+                        } label: {
+                            SessionRailOutputRow(record: record)
                         }
+                        .buttonStyle(.dockHover)
+                        .help("Preview in a new tab")
                     }
                 }
             } footer: {
                 Button("View all outputs", action: onViewAllOutputs).buttonStyle(.dockLink)
+            }
+        }
+        if !summary.contextFiles.isEmpty {
+            let loaded = summary.contextFiles.count(where: \.loaded)
+            SessionRailSummarySection(
+                title: "Context files", icon: .fileText, detail: "\(loaded)/\(summary.contextFiles.count)",
+                subtitle: summary.contextFiles.contains(where: \.needsAttention) ? "Some files need review" : nil
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(summary.contextFiles) { file in
+                        SessionRailContextFileRow(file: file)
+                    }
+                    Text("Instruction files Hermes considered for this session’s system prompt.")
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                }
             }
         }
         if !summary.pins.isEmpty {
@@ -147,7 +164,9 @@ struct SessionRailSummarySection<Content: View, Footer: View>: View {
                         Image(nsImage: image).renderingMode(.original)
                             .resizable().interpolation(.high).scaledToFit()
                     } else {
-                        DockIcon(icon, size: 14, color: iconColor)
+                        DockIcon(
+                            icon, size: 14, weight: expanded ? .fill : .regular,
+                            color: expanded ? .dockPrimaryText : iconColor)
                     }
                 }
                 .frame(width: 14, height: 14).accessibilityHidden(true)
@@ -198,34 +217,89 @@ private struct SessionRailPinnedItem: View {
     }
 }
 
-private struct SessionRailOutputPreview: View {
+private struct SessionRailContextFileRow: View {
+    let file: SessionContextFile
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            DockIcon(
+                file.needsAttention ? .warningCircle : file.loaded ? .checkCircle : .minusCircle, size: 14,
+                color: file.needsAttention ? .dockWarning : file.loaded ? .dockSuccess : .dockMetadataText
+            )
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(file.label).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(file.loaded ? Color.dockPrimaryText : Color.dockSecondaryText)
+                if let note = file.note {
+                    Text(note).dockFont(.metadata)
+                        .foregroundStyle(file.needsAttention ? Color.dockWarning : Color.dockMetadataText)
+                }
+            }
+            Spacer(minLength: 0)
+            if file.loaded {
+                Text(SessionTokenFormatting.formatCompact(file.estimatedTokens))
+                    .foregroundStyle(Color.dockMetadataText).monospacedDigit().fixedSize()
+            }
+        }
+        .help((file.path as NSString).abbreviatingWithTildeInPath)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SessionRailOutputRow: View {
     let record: ArtifactRecord
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Group {
+                if record.kind == .file || record.kind == .image, let image = ArtifactFileIcon.image(for: record.label)
+                {
+                    Image(nsImage: image).renderingMode(.original).resizable().interpolation(.high).scaledToFit()
+                } else {
+                    DockIcon(record.kind == .interactive ? .squaresFour : .link, size: 14, color: .dockSecondaryText)
+                }
+            }
+            .frame(width: 14, height: 14).accessibilityHidden(true)
+            Text(record.label).lineLimit(2).truncationMode(.middle)
+            Spacer(minLength: 0)
+            DockIcon(.arrowSquareIn, size: 12, color: .dockMetadataText).accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The session inspector tab for one rail output; the rail itself only lists them.
+struct SessionOutputPreview: View {
+    let record: ArtifactRecord
+    @ObservedObject var model: DockModel
     @State private var preview: ArtifactTextPreview.Content?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(record.location).foregroundStyle(Color.dockMetadataText).textSelection(.enabled)
-            if record.kind == .image, let url = ArtifactOpener.url(record.value) {
-                ArtifactImagePreview(url: url, maximumPixelSize: 640) {
-                    Text("Image preview unavailable").foregroundStyle(Color.dockMetadataText)
-                }.frame(height: 160).clipped()
-            } else if let preview {
-                switch preview {
-                case .text(let text, let truncated):
-                    Text(text).dockFont(.metadata, design: .monospaced).textSelection(.enabled)
-                    if truncated { Text("Partial preview").foregroundStyle(Color.dockMetadataText) }
-                case .missing:
-                    Text("File no longer available").foregroundStyle(Color.dockWarning)
-                case .binary:
-                    Text("No text preview available").foregroundStyle(Color.dockMetadataText)
-                }
-            } else if record.kind == .file {
-                Text("Loading preview…").foregroundStyle(Color.dockMetadataText)
-            } else if record.kind == .interactive {
-                Text("Interactive output · View all outputs to use it").foregroundStyle(Color.dockMetadataText)
-            } else {
-                Text(record.value).textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(record.label).dockFont(.body, weight: .semibold).textSelection(.enabled)
+                Text(record.location).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
             }
+            if record.generated == nil, record.unavailableBookmark == nil {
+                HStack(spacing: 8) {
+                    Button {
+                        ArtifactOpener.open(record.value)
+                    } label: {
+                        DockIconLabel(record.kind == .link ? "Open link" : "Open", icon: .arrowSquareOut)
+                    }
+                    .buttonStyle(.dockSecondary)
+                    DockCopyButton(
+                        record.value, label: "Copy \(record.kind == .link ? "link" : "path")",
+                        accessibilityLabel: "Copy \(record.kind == .link ? "link" : "path")",
+                        presentation: .iconAndText, iconSize: 12, color: .dockPrimaryText
+                    )
+                    .buttonStyle(.dockSecondary)
+                }
+                .dockButtonSize(.compact)
+            }
+            content
         }
         .task(id: record.id) {
             guard record.kind == .file else { return }
@@ -236,6 +310,38 @@ private struct SessionRailOutputPreview: View {
             let result = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
             guard !Task.isCancelled else { return }
             preview = result
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        if let generated = record.generated {
+            RichArtifactPreview(model: model, generated: generated)
+        } else if record.unavailableBookmark != nil {
+            Text("Source unavailable. Refresh to retry.").foregroundStyle(Color.dockWarning)
+        } else if record.kind == .image, let url = ArtifactOpener.url(record.value) {
+            ArtifactImagePreview(url: url, maximumPixelSize: 1600) {
+                Text("Image preview unavailable").foregroundStyle(Color.dockMetadataText)
+            }.scaledToFit().frame(maxWidth: .infinity)
+        } else if let preview {
+            switch preview {
+            case .text(let text, let truncated):
+                if ["md", "markdown"].contains(URL(fileURLWithPath: record.label).pathExtension.lowercased()) {
+                    MarkdownMessageView(markdown: text, cacheKey: "artifact:\(record.id)")
+                } else {
+                    Text(text).dockFont(.metadata, design: .monospaced).textSelection(.enabled)
+                }
+                if truncated {
+                    Text("Preview truncated — open the file to see the rest.").foregroundStyle(Color.dockMetadataText)
+                }
+            case .missing:
+                Text("File no longer available").foregroundStyle(Color.dockWarning)
+            case .binary:
+                Text("No text preview available").foregroundStyle(Color.dockMetadataText)
+            }
+        } else if record.kind == .file {
+            Text("Loading preview…").foregroundStyle(Color.dockMetadataText)
+        } else {
+            Text(record.value).textSelection(.enabled)
         }
     }
 }

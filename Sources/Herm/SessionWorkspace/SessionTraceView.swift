@@ -35,7 +35,7 @@ struct SessionTraceView: View, Equatable {
             availableSessionIDs: trace.sessionIDs, isVisible: isVisible && panelVisible,
             isLoading: trace.isLoading, listMaxHeight: 360, expand: expand, openSession: open
         )
-        .sheet(isPresented: $expandedSheet) {
+        .dockSheet(isPresented: $expandedSheet) {
             SessionTraceExpanded(trace: trace, open: open) { expandedSheet = false }
                 .frame(minWidth: 900, minHeight: 640)
                 .modifier(ReviewSheetContext())
@@ -139,6 +139,7 @@ struct SessionTraceReplay: Equatable {
 
 /// Value-only surface: fixture rendering exercises the same layout as live sessions.
 struct SessionTraceCanvas: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     #if DEBUG
         @Environment(\.conversationRowEvaluation) private var evaluation
     #endif
@@ -156,11 +157,9 @@ struct SessionTraceCanvas: View {
     @State private var selectedRowID: String?
     @State private var selectionRevision = 0
     @State private var collapsed = Set<String>()
-    @State private var showsSubagents: Bool?
-    @State private var showsBots: Bool?
-    @State private var botDisplay = SessionCrewDisplay.list
-    @State private var subagentDisplay = SessionCrewDisplay.list
-    @State private var agentFilter = SessionSubagentFilter.all
+    @State private var showsActivity = true
+    /// Activity lane whose steps the waterfall is limited to.
+    @State private var laneFilter: String?
     @State private var showsSteps = true
     @State private var search = ""
     @State private var query = ""
@@ -211,13 +210,13 @@ struct SessionTraceCanvas: View {
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(connected ? "No activity yet" : "Timeline unavailable")
-                            .dockFont(size: 12, weight: .semibold)
+                            .dockFont(.body, weight: .semibold)
                         Text(
                             connected
                                 ? "Send a message to see agent and tool activity here."
                                 : "Connect to Hermes to load session activity."
                         )
-                        .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
                     .padding(.vertical, 20)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -250,6 +249,7 @@ struct SessionTraceCanvas: View {
         .onChange(of: turn?.id) { _, _ in
             selectedRowID = nil
             collapsed = []
+            laneFilter = nil
             scroll.x = 0
             fitted = false
             replay = nil
@@ -402,38 +402,58 @@ struct SessionTraceCanvas: View {
     private func trace(_ turn: SessionTraceTurn, size: CGSize, labelWidth: CGFloat, floats: Bool)
         -> some View
     {
-        let visible = SessionTraceProjection.visible(turn.rows, collapsed: collapsed, query: query)
+        let crew = SessionCrewProjection(rows: turn.rows)
+        let lanes = SessionActivityLanes(crew)
+        let filterLane = lanes.lanes.first { $0.id == laneFilter }
+        let steps =
+            filterLane.map { lane in
+                SessionActivityLanes.scoped(turn.rows) { lane.actorIDs.contains(crew.ownerByRow[$0.id] ?? $0.id) }
+            } ?? turn.rows
+        let visible = SessionTraceProjection.visible(steps, collapsed: collapsed, query: query)
         let bounds = SessionTraceTimeBounds(turn)
         let live = connected && turn.rows.contains(where: \.active)
         let plotWidth = max(100, size.width - 16 - labelWidth)
         let selected = turn.rows.first { $0.id == selectedRowID }
-        let crew = SessionCrewProjection(rows: turn.rows)
-        let bots = crew.bots
-        let botsExpanded = Binding(
-            get: { showsBots ?? !bots.isEmpty },
-            set: { showsBots = $0 })
         return VStack(spacing: DockSpacing.group) {
             metrics(turn, bounds: bounds, live: live)
-            VStack(spacing: 4) {
-                sectionHeader("Bots", count: bots.count, isExpanded: botsExpanded) {
-                    if botsExpanded.wrappedValue, !bots.isEmpty { displayToggle($botDisplay) }
-                }
-                if botsExpanded.wrappedValue {
-                    clock(live) { now in
-                        SessionCrewView(
-                            projection: crew, members: bots, display: botDisplay, selectedRowID: selectedRowID,
-                            replayDate: replay.map {
-                                bounds.origin.addingTimeInterval($0.time(at: now, span: bounds.span(at: now)))
-                            },
-                            now: now, connected: connected, animated: isVisible && animates, select: select)
+            if bounds.hasTiming {
+                VStack(spacing: 4) {
+                    sectionHeader("Activity", count: lanes.lanes.count, isExpanded: $showsActivity)
+                    if showsActivity {
+                        clock(live) { now in
+                            let frame = frame(bounds, now: now, plotWidth: plotWidth)
+                            SessionActivityLaneChart(
+                                lanes: lanes, span: frame.span, origin: bounds.origin, now: now,
+                                replayTime: frame.replayTime, connected: connected,
+                                stepsScale: frame.scale, stepsWidth: plotWidth, scroll: scroll,
+                                selectedRowID: selectedRowID, filter: filterLane?.id, select: select,
+                                toggleFilter: { id in
+                                    laneFilter = laneFilter == id ? nil : id
+                                    showsSteps = true
+                                },
+                                navigate: { seconds in
+                                    follow = false
+                                    scroll.show(x: CGFloat(seconds) * frame.scale - plotWidth / 2)
+                                })
+                        }
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
+                .dockCard(padding: 8)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .dockCard(padding: 8)
-            agentList(turn, crew: crew, live: live).dockCard(padding: 8)
             VStack(spacing: 0) {
-                sectionHeader("Steps", count: turn.rows.count, isExpanded: $showsSteps)
+                sectionHeader("Steps", count: steps.count, isExpanded: $showsSteps) {
+                    if let filterLane {
+                        Button {
+                            laneFilter = nil
+                        } label: {
+                            Label(filterLane.name, systemImage: "xmark").dockFont(.metadata)
+                        }
+                        .buttonStyle(.dockCompact)
+                        .help("Show every lane's steps")
+                        .accessibilityLabel("Showing \(filterLane.name)'s steps. Show all steps")
+                    }
+                }
                 if showsSteps {
                     HStack(spacing: 6) {
                         stepControls(matches: query.isEmpty ? nil : visible.count)
@@ -559,12 +579,12 @@ struct SessionTraceCanvas: View {
 
     private func ruler(width: CGFloat, scale: CGFloat, playhead: CGFloat?, offset: CGFloat) -> some View {
         Canvas { context, size in
-            let step = tickStep(scale)
+            let step = Self.tickStep(scale)
             for tick in stride(
                 from: ceil(offset / scale / step) * step, through: Double((offset + width) / scale), by: step)
             {
                 context.draw(
-                    Text(Self.tickLabel(tick)).font(DockTypography.metadata)
+                    Text(Self.tickLabel(tick)).font(DockTypography.font(.metadata, scale: workspaceScale))
                         .foregroundColor(Color.dockSecondaryText),
                     at: CGPoint(x: tick * scale - offset + 6, y: size.height / 2), anchor: .leading)
             }
@@ -611,7 +631,7 @@ struct SessionTraceCanvas: View {
                 Color.clear.frame(height: selectionFloats && selectedRowID != nil ? 270 : 0)
                     .id("trace-vertical-tail")
                 if items.isEmpty {
-                    Text("No matching steps").dockFont(size: 12)
+                    Text("No matching steps").dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText).padding(20)
                 }
             }
@@ -705,157 +725,7 @@ struct SessionTraceCanvas: View {
         }
     }
 
-    /// Below the steps: one card per delegate (who, its task, what it is doing), or why there are none.
-    private func agentList(_ turn: SessionTraceTurn, crew: SessionCrewProjection, live: Bool) -> some View {
-        let agents = turn.rows.filter { $0.kind == .agent && $0.crewProfileID == nil }
-        let agentsExpanded = Binding(
-            get: { showsSubagents ?? !agents.isEmpty },
-            set: { showsSubagents = $0 })
-        let filtered = SessionSubagentFilter.rows(agents, matching: agentFilter)
-        let cards = VStack(spacing: 0) {
-            ForEach(Array(filtered.enumerated()), id: \.element.id) { index, agent in
-                agentCard(
-                    agent, number: (agents.firstIndex { $0.id == agent.id } ?? index) + 1, live: live,
-                    steps: turn.rows.filter { $0.parentID == agent.id }.count)
-            }
-        }
-        return VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Subagents", count: agents.count, isExpanded: agentsExpanded) {
-                if agentsExpanded.wrappedValue, !agents.isEmpty {
-                    Picker("Subagent filter", selection: $agentFilter) {
-                        ForEach(SessionSubagentFilter.allCases, id: \.self) { filter in
-                            Text(filter.rawValue).tag(filter)
-                        }
-                    }.labelsHidden().fixedSize().help("Filter subagents by status")
-                    displayToggle($subagentDisplay)
-                }
-            }
-            if !agentsExpanded.wrappedValue {
-                EmptyView()
-            } else if agents.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("No subagents").dockFont(size: 12, weight: .semibold)
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("Agents this request delegates to appear here with their task.")
-                        .dockFont(size: 12).foregroundStyle(Color.dockSecondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 4).padding(.top, 2).padding(.bottom, 12)
-            } else if filtered.isEmpty {
-                Text("No \(agentFilter.rawValue.lowercased()) subagents")
-                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-            } else if subagentDisplay == .tree {
-                let ids = Set(filtered.map(\.id))
-                clock(live) { now in
-                    SessionCrewView(
-                        projection: crew, members: crew.actors.filter { ids.contains($0.id) }, display: .tree,
-                        selectedRowID: selectedRowID, replayDate: nil, now: now, connected: connected,
-                        animated: false, select: select)
-                }
-            } else {
-                ViewThatFits(in: .vertical) {
-                    cards
-                    ScrollView(.vertical) { cards }
-                }
-                .frame(maxHeight: 180)
-            }
-        }
-    }
-
-    private func turnStepForAgent(_ id: String) -> SessionTraceRow? {
-        let rows = currentTurn?.rows ?? []
-        let owned = rows.filter { $0.parentID == id && $0.kind != .agent }
-        return owned.last(where: \.active) ?? owned.first
-    }
-
-    private func agentCard(_ agent: SessionTraceRow, number: Int, live: Bool, steps: Int)
-        -> some View
-    {
-        let task = agent.input.map(SessionTraceProjection.taskTitle) ?? agent.title
-        let name = agent.title == task ? "Agent \(number)" : agent.title
-        let reported = agent.result.flatMap {
-            $0.split(whereSeparator: \.isNewline).first.map(String.init)
-        }
-        return HStack(alignment: .top, spacing: 0) {
-            Button {
-                select(agent.id)
-            } label: {
-                HStack(alignment: .top, spacing: 10) {
-                    stepIcon(agent)
-                        .frame(width: 24, height: 24)
-                        .background(tile(agent), in: RoundedRectangle(cornerRadius: 6))
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(name).dockFont(.metadata, weight: .semibold)
-                                .foregroundStyle(Color.dockPrimaryText)
-                            Spacer(minLength: 4)
-                            statusPill(agent)
-                        }
-                        .dockFont(.metadata).lineLimit(1)
-                        HStack(spacing: 6) {
-                            if let model = agent.model { Text(model) }
-                            Text(steps == 1 ? "1 step" : "\(steps) steps")
-                            Spacer(minLength: 4)
-                            clock(live && agent.active) { now in
-                                Text(agent.elapsed(at: now).map(time) ?? "—").monospacedDigit()
-                            }
-                        }
-                        .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1)
-                        Text(task).dockFont(.body, weight: .semibold)
-                            .foregroundStyle(Color.dockPrimaryText).lineLimit(2)
-                        if agent.active, let activity = agent.activity {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.mini).accessibilityLabel("Running")
-                                Text(activity).lineLimit(1)
-                            }
-                            .dockFont(.metadata).foregroundStyle(Color.dockPrimaryText)
-                        } else if let reported {
-                            Text((try? AttributedString(markdown: reported)) ?? AttributedString(reported))
-                                .dockFont(.metadata)
-                                .foregroundStyle(Color.dockSecondaryText).lineLimit(2)
-                        }
-                    }
-                }
-                .padding(.horizontal, 10).padding(.vertical, 9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.dockHover)
-            .help("Inspect task, output, and execution details")
-            if let step = turnStepForAgent(agent.id) {
-                Button {
-                    select(step.id)
-                } label: {
-                    DockIcon(.list, size: 12, color: Color.dockSecondaryText)
-                        .frame(width: 24, height: 24)
-                }.buttonStyle(.dockHover).help("Show subagent steps")
-                    .accessibilityLabel("Show \(name)'s steps")
-                    .padding(.top, 9)
-            }
-            if let related = agent.relatedSessionID, availableSessionIDs.contains(related) {
-                Button {
-                    openSession(related, nil)
-                } label: {
-                    DockIcon(.arrowSquareOut, size: 11, color: Color.dockSecondaryText)
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.dockHover)
-                .padding(.top, 9).padding(.trailing, 6)
-                .help("Open \(name)'s conversation")
-                .accessibilityLabel("Open \(name)'s conversation")
-            }
-        }
-        .background(selectedRowID == agent.id ? Color.dockSurface2 : Color.clear)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-    }
-
-    private func displayToggle(_ display: Binding<SessionCrewDisplay>) -> some View {
-        DockSegmentedPicker(selection: display, options: [(.list, "List"), (.tree, "Tree")]).fixedSize()
-    }
-
-    /// Steps and Crew share one collapsible header so the sections read alike.
+    /// Activity and Steps share one collapsible header so the sections read alike.
     private func sectionHeader<Actions: View>(
         _ title: String, count: Int, isExpanded: Binding<Bool>,
         @ViewBuilder actions: @escaping () -> Actions = { EmptyView() }
@@ -1080,7 +950,7 @@ struct SessionTraceCanvas: View {
         -> some View
     {
         Canvas { context, _ in
-            let step = tickStep(scale)
+            let step = Self.tickStep(scale)
             for tick in stride(
                 from: floor(offset / scale / step) * step, through: Double((offset + width) / scale), by: step)
             {
@@ -1382,7 +1252,7 @@ struct SessionTraceCanvas: View {
     }
 
     /// Leave room for readable compact labels.
-    private func tickStep(_ scale: CGFloat) -> Double {
+    nonisolated static func tickStep(_ scale: CGFloat) -> Double {
         let target = 96 / Double(max(scale, 0.0001))
         let steps: [Double] = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]
         return steps.first { $0 >= target } ?? ceil(target / 3600) * 3600
@@ -1491,9 +1361,11 @@ private struct SessionTraceHatching: Shape {
         move(to: x, in: scroll)
     }
 
-    func reset() {
-        guard let scroll = host?.enclosingScrollView else { return }
-        move(to: 0, in: scroll)
+    func reset() { show(x: 0) }
+
+    func show(x: CGFloat) {
+        guard let scroll = host?.enclosingScrollView, let document = scroll.documentView else { return }
+        move(to: max(0, min(x, document.bounds.width - scroll.contentView.bounds.width)), in: scroll)
     }
 
     private func move(to x: CGFloat, in scroll: NSScrollView) {

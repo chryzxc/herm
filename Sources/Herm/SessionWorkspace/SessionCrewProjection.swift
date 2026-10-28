@@ -72,38 +72,6 @@ struct SessionCrewProjection {
         rootByActor = roots
     }
 
-    func root(selectedRowID: String?, replayDate: Date?) -> String? {
-        if let selectedRowID, let owner = ownerByRow[selectedRowID] { return rootByActor[owner] }
-        let roots = actors.filter { $0.parentID == nil }
-        if let replayDate {
-            return roots.last(where: { $0.row.start.map { $0 <= replayDate } == true })?.id ?? roots.first?.id
-        }
-        return roots.last(where: { $0.row.active })?.id ?? roots.last?.id
-    }
-
-    func branch(_ rootID: String) -> [Actor] {
-        actors.filter { rootByActor[$0.id] == rootID }
-    }
-
-    /// One face per configured Bot in the selected scope. Prefer a live dispatch
-    /// over historical appearances, while keeping trace rows as separate instances.
-    var bots: [Actor] {
-        var result: [Actor] = []
-        var indices: [String: Int] = [:]
-        for actor in actors where actor.row.crewProfileID != nil {
-            if let index = indices[actor.identity] {
-                let previous = result[index]
-                if actor.row.active || (!previous.row.active && previous.row.timing == .unavailable) {
-                    result[index] = actor
-                }
-            } else {
-                indices[actor.identity] = result.count
-                result.append(actor)
-            }
-        }
-        return result
-    }
-
     static func state(_ actor: Actor, at date: Date?, connected: Bool) -> State {
         let row = actor.row
         if let date {
@@ -163,12 +131,18 @@ struct SessionCrewProjection {
         return State(visible: true, label: outcome, mood: mood, toolID: nil, toolName: nil, moving: false)
     }
 
+    /// The synthetic request row that carries a direct Bot dispatch; it is not Herm's own work.
+    static func isDispatchRoot(_ row: SessionTraceRow) -> Bool {
+        row.kind == .turn && row.id.hasPrefix("turn:" + dispatchPrefix)
+    }
+    private static let dispatchPrefix = "bot-dispatch:"
+
     /// Direct requests have their own exact dispatch identity. Do not attach them to a
     /// nearby transcript turn by timestamp or mistake a generic delegate for a Bot.
     static func botTurns(_ records: [BotActivityRecord], connected: Bool) -> [SessionTraceTurn] {
         var seen = Set<String>()
         return records.filter { !$0.isKanbanReference && seen.insert($0.id).inserted }.map { record in
-            let id = "bot-dispatch:" + record.id
+            let id = dispatchPrefix + record.id
             let terminal = [.completed, .failed, .canceled].contains(record.state)
             let active = connected && !terminal
             let status = !connected && !terminal ? "Not current" : record.state.label

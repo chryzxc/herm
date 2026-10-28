@@ -246,7 +246,7 @@ struct AttachmentPopover: View {
                 Text(AttachmentPopoverAction.promptSnippets.title)
                 Spacer()
                 DockIcon(.caretRight)
-                    .dockFont(size: 9, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
             }
             .dockFont(.body, weight: .medium)
             .foregroundStyle(Color.dockPrimaryText)

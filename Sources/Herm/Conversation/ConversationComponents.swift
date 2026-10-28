@@ -100,6 +100,7 @@ enum StreamingMarkdownRendererPolicy {
 
 @MainActor
 struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let markdown: String
     let themeRevision: Int
     /// Hug the widest laid-out line instead of filling the proposed width, so a
@@ -125,13 +126,15 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
     func makeNSView(context: Context) -> NativeMarkdownTextSectionView {
         let view = NativeMarkdownTextSectionView()
         view.markdownOpenURL = context.environment.markdownOpenURL
-        view.update(markdown: markdown, kind: .prose)
+        view.update(
+            markdown: markdown, kind: .prose, bodySize: DockTypography.size(.conversation, scale: workspaceScale))
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownTextSectionView, context: Context) {
         nsView.markdownOpenURL = context.environment.markdownOpenURL
-        nsView.update(markdown: markdown, kind: .prose)
+        nsView.update(
+            markdown: markdown, kind: .prose, bodySize: DockTypography.size(.conversation, scale: workspaceScale))
     }
 
     func sizeThatFits(
@@ -659,8 +662,14 @@ struct BotCrewRow: View {
     /// Each Bot's newest step, read from its own session, keyed by Bot id.
     var steps: [String: String] = [:]
 
+    var activitySteps: [(bot: BotSummary, step: String)] {
+        (repliesToUser ? [from] + partners : partners).compactMap { bot in
+            steps[bot.id].map { (bot: bot, step: $0) }
+        }
+    }
+
     var body: some View {
-        let stepped = partners.compactMap { bot in steps[bot.id].map { (bot: bot, step: $0) } }
+        let stepped = activitySteps
         DockLiveActivityDecoration {
             // Activity sits under the huddle so the thought bubbles never cover it.
             VStack(alignment: .leading, spacing: 4) {
@@ -934,7 +943,7 @@ struct TurnActivityView: View, Equatable {
                                         + (crew.isEmpty
                                             ? "" : " · \(crew.count) Bot\(crew.count == 1 ? "" : "s") working")
                                 )
-                                .dockFont(size: bot == nil && phase != .compacting ? 12 : 11)
+                                .dockFont(.metadata)
                                 .foregroundStyle(Color.dockMetadataText)
                             }
                         }

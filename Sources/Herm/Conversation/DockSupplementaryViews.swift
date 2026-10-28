@@ -17,7 +17,7 @@ struct StartupAssistantView: View {
                 .scaleEffect(0.5)
                 .frame(width: 150, height: 150)
             Text("What can I help with?")
-                .dockFont(size: 17, weight: .semibold)
+                .dockFont(.pageTitle)
                 .foregroundStyle(Color.dockPrimaryText)
             Text("Ask a question, give it a task, or attach files and folders.")
                 .dockFont(.body)

@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 final class DockPanelPresentation: ObservableObject {
     @Published var quotaRequest = 0
     @Published var kanbanRequest = 0
+    @Published var settingsRequest = 0
     @Published var isEdgeAttached = false
     /// Drives the notch-style grow/shrink of the edge-attached panel: false is the collapsed notch shape.
     @Published var isRevealed = true
@@ -27,15 +28,7 @@ final class DockPanelPresentation: ObservableObject {
     var openIslandTask: (EdgeNotchTask) -> Void = { _ in }
 }
 
-/// UserDefaults keys for optional sidebar destinations; all default to visible.
-enum SidebarVisibilityKey {
-    static let kanban = "hermes.sidebar.shows-kanban"
-    static let github = "hermes.sidebar.shows-github"
-    static let office = "hermes.sidebar.shows-office"
-    static let calendar = "hermes.sidebar.shows-calendar"
-}
-
-enum MissionControlNavigationSelection: Equatable {
+enum SessionNavigationSelection: Equatable {
     case session(String)
     case task(UUID)
     case global(ControlTab)
@@ -47,8 +40,8 @@ enum MissionControlNavigationSelection: Equatable {
 }
 
 @MainActor
-final class MissionControlNavigationSelectionState: ObservableObject {
-    @Published private(set) var selection: MissionControlNavigationSelection?
+final class SessionNavigationSelectionState: ObservableObject {
+    @Published private(set) var selection: SessionNavigationSelection?
 
     func clear() { selection = nil }
     func selectSession(_ id: String) { selection = .session(id) }
@@ -81,7 +74,7 @@ final class MissionControlNavigationSelectionState: ObservableObject {
 /// content host, so keeping this state here lets the rail retain its expanded
 /// sections and local selection while the user moves between pages.
 @MainActor
-final class MissionControlNavigationState: ObservableObject {
+final class SessionNavigationState: ObservableObject {
     private(set) var integrationsWorkspace: IntegrationsWorkspaceState?
 
     func integrations(client: HermesRPCClientProtocol, store: WorkspaceStore) -> IntegrationsWorkspaceState {
@@ -91,7 +84,7 @@ final class MissionControlNavigationState: ObservableObject {
         return state
     }
 
-    let selection = MissionControlNavigationSelectionState()
+    let selection = SessionNavigationSelectionState()
     @Published var showsAllConversations = false
     @Published var selectedTaskID: UUID?
     @Published var selectedSessionID: String?

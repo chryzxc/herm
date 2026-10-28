@@ -31,6 +31,7 @@ final class SessionTerminalEmulator: NSObject, @preconcurrency TerminalViewDeleg
 }
 
 struct SessionTerminalCanvas: NSViewRepresentable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let session: LocalTerminalSession
     var onAttach: ((String, Int, Int) -> Void)? = nil
 
@@ -51,6 +52,9 @@ struct SessionTerminalCanvas: NSViewRepresentable {
     }
 
     private func applyTheme(_ view: TerminalView) {
+        let font = NSFont.monospacedSystemFont(
+            ofSize: DockTypography.size(.code, scale: workspaceScale), weight: .regular)
+        if view.font != font { view.font = font }
         view.nativeBackgroundColor = NSColor(Color.dockCanvas)
         view.nativeForegroundColor = NSColor(Color.dockPrimaryText)
         guard let themed = view as? ContextTerminalView,

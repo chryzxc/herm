@@ -21,6 +21,7 @@ struct ForwardToBotPopover: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
+        let field = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         VStack(alignment: .leading, spacing: 10) {
             if let trigger = completions.trigger, !completions.result.items.isEmpty {
                 ComposerCompletionPopover(
@@ -40,7 +41,7 @@ struct ForwardToBotPopover: View {
                 .lineLimit(5)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorderLight, lineWidth: 1))
+                .background(field.dockSurfaceFill(.dockControlSurface, stroke: .dockBorderLight))
             ComposerInputEditor(
                 text: $note,
                 isFocused: isFocused,
@@ -57,7 +58,9 @@ struct ForwardToBotPopover: View {
                 inset: NSSize(width: 10, height: 8)
             )
             .frame(height: height)
-            .background(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorderStrong, lineWidth: 1))
+            .background(
+                field.dockSurfaceFill(
+                    .dockControlSurface, stroke: .dockBorderStrong, lineWidth: 1, strokeOnGlass: true))
             if let error {
                 Text(error).dockFont(.metadata).foregroundStyle(Color.dockDestructive)
             }

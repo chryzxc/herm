@@ -161,7 +161,7 @@ struct SessionTerminalView: View {
                 if terminal.hasForegroundJob { confirmingClose = true } else { terminalTabs.closeSelected() }
             } label: {
                 DockIcon(.x)
-                    .dockFont(size: 9, weight: .semibold)
+                    .dockFont(.metadata, weight: .semibold)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }

@@ -21,7 +21,8 @@ extension DockPopover {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         let captions = voiceCaptions
         let orbScale: CGFloat = immersive ? 0.85 : 0.65
-        return VStack(spacing: 0) {
+        let generativeReply = voiceGenerativeReply
+        let stage = VStack(spacing: 0) {
             VoiceStatusStrip(model: model, repositoryPath: activeSessionRepositoryPath)
                 .padding(.top, 12)
                 .padding(.horizontal, 16)
@@ -113,6 +114,28 @@ extension DockPopover {
             Spacer(minLength: 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            // A pending approval or question dims everything else.
+            VoiceActivityPillsLayer(
+                model: model, cardWidth: immersive ? 280 : 200, cronJobs: controlCenter.cronJobs
+            )
+            .padding(immersive ? 24 : 12)
+            .opacity(hasPendingVoicePrompt ? 0.2 : 1)
+        }
+        // A reply with generative UI slides in on the right and pushes the
+        // stage left; the next user message returns the stage to the center.
+        return HStack(spacing: 0) {
+            stage
+            if let generativeReply {
+                voiceGenerativePanel(generativeReply, immersive: immersive)
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity)
+                                .combined(with: .scale(scale: 0.96, anchor: .trailing)),
+                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .trailing))))
+            }
+        }
+        .animation(.spring(response: 0.5, dampingFraction: 0.86), value: generativeReply?.id)
         .animation(.dockEase(duration: 0.3), value: model.voiceState)
         .animation(.dockEase(duration: 0.25), value: captions.user)
         .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
@@ -120,6 +143,36 @@ extension DockPopover {
         .onAppear {
             beginVoiceConversation()
         }
+    }
+
+    /// The current turn's reply when it carries generative UI.
+    var voiceGenerativeReply: ChatMessage? {
+        guard GenerativeUIIntegration.isEnabled else { return nil }
+        let start = model.messages.lastIndex { $0.role == .user }.map { $0 + 1 } ?? model.messages.startIndex
+        return model.messages[start...].last {
+            $0.role == .hermes && !$0.isError && RichDocument.mentionsSurface($0.text)
+        }
+    }
+
+    /// A floating card beside the stage: inset from every edge, centered,
+    /// hugging short replies and scrolling tall ones.
+    func voiceGenerativePanel(_ message: ChatMessage, immersive: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius + 8, style: .continuous)
+        let content = GenerativeUIIntegration.renderReply(message.text) { MarkdownMessageView(markdown: message.text) }
+            .generativeUIMessage(model: model, message: message)
+            .textSelection(.enabled)
+            .padding(18)
+        return ViewThatFits(in: .vertical) {
+            content.fixedSize(horizontal: false, vertical: true)
+            ScrollView { content }.scrollIndicators(.never)
+        }
+        .frame(maxWidth: immersive ? 560 : 440)
+        .clipShape(shape)
+        .dockFloatingSurface(shape, stroke: Color.dockBorderLight)
+        .shadow(color: .black.opacity(0.22), radius: 28, y: 12)
+        .padding(.vertical, immersive ? 56 : 40)
+        .padding(.trailing, immersive ? 40 : 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     var conversationHermFaceID: String? {

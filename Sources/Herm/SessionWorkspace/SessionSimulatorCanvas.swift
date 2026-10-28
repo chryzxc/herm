@@ -203,7 +203,8 @@ struct SessionSimulatorCanvas: NSViewRepresentable {
                         self.closeAnnotation()
                         self.diagnostics?.resume()
                         return true
-                    }))
+                    }
+                ).dockPreferredTextSize())
             annotationPopover = popover
             let anchor = CGRect(
                 x: imageRect.minX + selection.midX * imageRect.width,

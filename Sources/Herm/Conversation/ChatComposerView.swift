@@ -94,7 +94,7 @@ struct ChatComposerView: View {
             .onChange(of: model.attachedContexts) { previous, _ in
                 model.moveContextsToTray(previous: previous)
             }
-            .sheet(item: $inspectingContext) { context in
+            .dockSheet(item: $inspectingContext) { context in
                 ComposerContextPreview(context: context) { text in
                     guard contextPreviewOwner == WorkspaceIdentity.session(model),
                         model.attachedContexts.contains(where: { $0.id == context.id })
@@ -107,8 +107,8 @@ struct ChatComposerView: View {
                     model.attachedContexts.removeAll { $0.id == context.id }
                 }
             }
-            .sheet(isPresented: $showingSavedPrompts) { SavedPromptLibrary(model: model) }
-            .sheet(isPresented: $showingConversationContext) { ConversationContextPicker(model: model) }
+            .dockSheet(isPresented: $showingSavedPrompts) { SavedPromptLibrary(model: model) }
+            .dockSheet(isPresented: $showingConversationContext) { ConversationContextPicker(model: model) }
             .onAppear {
                 DebugLog.write("composer: appeared")
                 model.moveContextsToTray()
@@ -462,7 +462,7 @@ struct ChatComposerView: View {
                             .buttonStyle(.dockHover)
                             .help("Attach or insert content")
                             .accessibilityLabel("Attach")
-                            .popover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
+                            .dockPopover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
                                 AttachmentPopover(
                                     pasteImageAvailable: pasteImageAvailable,
                                     onSelect: handleAttachmentAction,
@@ -900,6 +900,7 @@ private struct SessionContextRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDetails = false
     @State private var details: SessionContextSummary?
+    @State private var usage: SessionUsageSummary?
     @State private var loadingDetails = false
     @State private var dismissTask: Task<Void, Never>?
 
@@ -931,12 +932,14 @@ private struct SessionContextRing: View {
                 .onHover { hovering in updateHover(hovering) }
                 .onTapGesture { showingDetails.toggle() }
                 .accessibilityAction(named: "Show context details") { showingDetails = true }
-                .popover(isPresented: $showingDetails, arrowEdge: .bottom) {
+                .dockPopover(isPresented: $showingDetails, arrowEdge: .bottom) {
                     contextDetails
                         .onHover { hovering in updateHover(hovering) }
                         .task(id: model.compactingSessionID) {
                             loadingDetails = true
+                            async let fetchedUsage = model.fetchSessionUsageDetails()
                             details = await model.fetchSessionContextDetails()
+                            usage = await fetchedUsage
                             loadingDetails = false
                         }
                 }
@@ -946,6 +949,7 @@ private struct SessionContextRing: View {
         .onChange(of: model.sessionID) { _, _ in
             showingDetails = false
             details = nil
+            usage = nil
             dismissTask?.cancel()
         }
         .onDisappear { dismissTask?.cancel() }
@@ -965,55 +969,29 @@ private struct SessionContextRing: View {
     }
 
     private var contextDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Context").dockFont(.body, weight: .semibold)
-                Spacer()
-                if model.compactingSessionID == model.sessionID {
-                    Text("Compacting").foregroundStyle(Color.dockAccent)
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            contextHeader
             if let details {
-                if details.contextMax > 0 {
-                    detailRow(
-                        details.contextEstimated ? "Estimated usage" : "Usage",
-                        "\(SessionTokenFormatting.formatCompact(details.contextUsed)) / \(SessionTokenFormatting.formatCompact(details.contextMax)) tokens"
-                    )
-                }
-                if details.compressionEnabled == false {
-                    detailRow("Automatic compaction", "Disabled")
-                } else if let threshold = details.compressionThresholdTokens {
-                    detailRow("Compaction threshold", SessionTokenFormatting.format(threshold))
-                    if details.contextMax > 0 {
-                        let percent = Int((Double(threshold) / Double(details.contextMax) * 100).rounded())
-                        Text("Compaction can start at \(percent)% of the full window.")
-                            .foregroundStyle(Color.dockSecondaryText)
-                    }
-                    if model.compactingSessionID != model.sessionID, details.contextUsed > 0 {
-                        detailRow(
-                            "Until token threshold",
-                            SessionTokenFormatting.format(max(0, threshold - details.contextUsed)))
+                if details.contextMax > 0 { windowBar(details) }
+                if details.categories.contains(where: { $0.tokens > 0 }) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(details.categories.enumerated()), id: \.element.id) { index, category in
+                            if category.tokens > 0 {
+                                legendRow(category.label, tokens: category.tokens, color: segmentColor(index))
+                            }
+                        }
                     }
                 } else {
-                    Text("Compaction threshold isn’t reported by this runtime.")
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                if details.categories.isEmpty {
                     Text("Context breakdown is unavailable.").foregroundStyle(Color.dockMetadataText)
-                } else {
-                    Text("Estimated breakdown").dockFont(.body, weight: .semibold)
-                    ForEach(details.categories) { category in
-                        detailRow(category.label, SessionTokenFormatting.format(category.tokens))
-                    }
                 }
-                Text(
-                    "The ring measures the full window. Idle time or provider limits can also trigger compaction; this is a token threshold, not a countdown."
-                )
-                .foregroundStyle(Color.dockSecondaryText)
+                compactionRow(details)
             } else {
                 Text(loadingDetails ? "Loading context details…" : "Context details are unavailable.")
                     .foregroundStyle(Color.dockMetadataText)
+            }
+            if let usage, usage.calls > 0 || usage.totalTokens > 0 {
+                Divider().overlay(Color.dockBorderLight)
+                sessionUsage(usage)
             }
         }
         .dockFont(.body)
@@ -1021,6 +999,108 @@ private struct SessionContextRing: View {
         .padding(16)
         .frame(width: 340, alignment: .leading)
         .dockPaneTint(Color.dockSurface)
+    }
+
+    private var contextHeader: some View {
+        let compacting = model.compactingSessionID == model.sessionID
+        let modelName = [usage?.model, details?.model].compactMap { $0 }.first { !$0.isEmpty }
+        return HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Context").dockFont(.body, weight: .semibold)
+                if let modelName {
+                    Text(modelName).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+            Spacer(minLength: 12)
+            if compacting {
+                Text("Compacting").foregroundStyle(Color.dockAccent)
+            } else if let details, details.contextMax > 0 {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(
+                        "\(SessionTokenFormatting.formatCompact(details.contextUsed)) / \(SessionTokenFormatting.formatCompact(details.contextMax))"
+                    )
+                    .monospacedDigit()
+                    Text(details.contextEstimated ? "Estimated" : "Reported by provider")
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                }
+            }
+        }
+    }
+
+    /// Segments are drawn against the full window so the remaining headroom stays visible.
+    private func windowBar(_ details: SessionContextSummary) -> some View {
+        GeometryReader { geometry in
+            let window = Double(details.contextMax)
+            HStack(spacing: 1) {
+                ForEach(Array(details.categories.enumerated()), id: \.element.id) { index, category in
+                    if category.tokens > 0 {
+                        segmentColor(index)
+                            .frame(width: max(2, geometry.size.width * min(1, Double(category.tokens) / window)))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.dockBorderLight)
+            .clipShape(Capsule())
+            .overlay(alignment: .leading) {
+                if let threshold = details.compressionThresholdTokens, details.compressionEnabled != false {
+                    Color.dockSecondaryText.frame(width: 1.5)
+                        .offset(x: geometry.size.width * min(1, Double(threshold) / window))
+                }
+            }
+        }
+        .frame(height: 8)
+        .accessibilityHidden(true)
+    }
+
+    private func segmentColor(_ index: Int) -> Color {
+        DockAccentColor.allCases[index % DockAccentColor.allCases.count].fill
+    }
+
+    private func legendRow(_ label: String, tokens: Int, color: Color) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
+            Text(label).foregroundStyle(Color.dockSecondaryText)
+            Spacer(minLength: 12)
+            Text(SessionTokenFormatting.formatCompact(tokens)).monospacedDigit()
+        }
+    }
+
+    @ViewBuilder private func compactionRow(_ details: SessionContextSummary) -> some View {
+        if details.compressionEnabled == false {
+            detailRow("Auto-compaction", "Off")
+        } else if let threshold = details.compressionThresholdTokens {
+            let percent =
+                details.contextMax > 0 ? Int((Double(threshold) / Double(details.contextMax) * 100).rounded()) : nil
+            detailRow(
+                "Compacts near",
+                SessionTokenFormatting.formatCompact(threshold) + (percent.map { " (\($0)%)" } ?? ""))
+        } else {
+            Text("Compaction threshold isn’t reported by this runtime.")
+                .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+        }
+    }
+
+    private func sessionUsage(_ usage: SessionUsageSummary) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Session usage").dockFont(.body, weight: .semibold).padding(.bottom, 2)
+            detailRow("Input", SessionTokenFormatting.formatCompact(usage.inputTokens))
+            detailRow("Output", SessionTokenFormatting.formatCompact(usage.outputTokens))
+            if usage.reasoningTokens > 0 {
+                detailRow("Reasoning", SessionTokenFormatting.formatCompact(usage.reasoningTokens))
+            }
+            detailRow("API calls", usage.calls.formatted())
+            if let hit = usage.cacheHitPercent { detailRow("Cache hit", "\(hit)%") }
+            if usage.compactions > 0 { detailRow("Compactions", usage.compactions.formatted()) }
+            if let speed = SessionTokenFormatting.speed(
+                tokensPerSecond: usage.tokensPerSecond, latency: usage.averageLatencySeconds)
+            {
+                detailRow("Speed", speed)
+            }
+            Text("Main conversation totals; background tasks like titles and compaction aren’t included.")
+                .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+        }
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {
@@ -1035,6 +1115,15 @@ private struct SessionContextRing: View {
 enum SessionTokenFormatting {
     static func format(_ tokens: Int) -> String {
         tokens < 1_000 ? "\(tokens) tokens" : "\(formatCompact(tokens)) tokens"
+    }
+
+    /// Hermes' rolling average over recent API calls; nil when it reported neither.
+    static func speed(tokensPerSecond: Double?, latency: Double?) -> String? {
+        let parts = [
+            tokensPerSecond.map { String(format: "%.0f tok/s", $0) },
+            latency.map { String(format: "%.1fs avg", $0) },
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     static func formatCompact(_ tokens: Int) -> String {
@@ -1056,66 +1145,73 @@ private struct QueuedPromptList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("QUEUED · SENDS WHEN HERM FINISHES")
-                .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
-                .tracking(0.6)
+            Text("Queued (\(prompts.count)) · Sends when Herm finishes")
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
 
-            ForEach(prompts) { prompt in
-                HStack(spacing: 8) {
-                    ForEach(prompt.images) { image in
-                        Image(nsImage: image.image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 28, height: 28)
-                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                            .help(image.fileName)
-                    }
-                    Text(label(for: prompt))
-                        .dockFont(.body, weight: .medium)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 0)
-                    rowButton(.pencilSimple, label: "Edit in composer") {
-                        model.editQueuedPrompt(prompt.id)
-                    }
-                    if model.canSteerQueuedPrompt(prompt) {
-                        rowButton(.arrowBendDownRight, label: "Steer into the running turn") {
-                            model.steerQueuedPrompt(prompt.id)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(prompts) { prompt in
+                        HStack(spacing: 8) {
+                            ForEach(prompt.images) { image in
+                                Image(nsImage: image.image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 28, height: 28)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                    .help(image.fileName)
+                            }
+                            Text(label(for: prompt))
+                                .dockFont(.body, weight: .medium)
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(2)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 0)
+                            rowButton(.pencilSimple, label: "Edit in composer") {
+                                model.editQueuedPrompt(prompt.id)
+                            }
+                            if model.canSteerQueuedPrompt(prompt) {
+                                rowButton(.arrowBendDownRight, label: "Steer into the running turn") {
+                                    model.steerQueuedPrompt(prompt.id)
+                                }
+                            } else if model.canSendQueuedPromptNow(prompt) {
+                                rowButton(.arrowUp, label: "Stop the running turn and send this now") {
+                                    model.sendQueuedPromptNow(prompt.id)
+                                }
+                            }
+                            rowButton(.x, label: "Remove queued message") {
+                                model.removeQueuedPrompt(prompt.id)
+                            }
                         }
-                    } else if model.canSendQueuedPromptNow(prompt) {
-                        rowButton(.arrowUp, label: "Stop the running turn and send this now") {
-                            model.sendQueuedPromptNow(prompt.id)
+                        .draggable(prompt.id.uuidString)
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let value = items.first, let id = UUID(uuidString: value) else { return false }
+                            model.reorderQueuedPrompt(id, before: prompt.id)
+                            return true
                         }
-                    }
-                    rowButton(.x, label: "Remove queued message") {
-                        model.removeQueuedPrompt(prompt.id)
+                        .contextMenu {
+                            Button("Move up") { model.moveQueuedPrompt(prompt.id, offset: -1) }
+                            Button("Move down") { model.moveQueuedPrompt(prompt.id, offset: 1) }
+                        }
+                        .transition(
+                            .asymmetric(insertion: .opacity, removal: .move(edge: .top).combined(with: .opacity))
+                        )
+                        .padding(.leading, prompt.images.isEmpty ? 10 : 5)
+                        .padding(.trailing, 4)
+                        .padding(.vertical, 5)
+                        .background(
+                            DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                                .fill(Color.dockControlSurface)
+                                .overlay {
+                                    DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                                        .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                                }
+                        )
                     }
                 }
-                .draggable(prompt.id.uuidString)
-                .dropDestination(for: String.self) { items, _ in
-                    guard let value = items.first, let id = UUID(uuidString: value) else { return false }
-                    model.reorderQueuedPrompt(id, before: prompt.id)
-                    return true
-                }
-                .contextMenu {
-                    Button("Move up") { model.moveQueuedPrompt(prompt.id, offset: -1) }
-                    Button("Move down") { model.moveQueuedPrompt(prompt.id, offset: 1) }
-                }
-                .transition(.asymmetric(insertion: .opacity, removal: .move(edge: .top).combined(with: .opacity)))
-                .padding(.leading, prompt.images.isEmpty ? 10 : 5)
-                .padding(.trailing, 4)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .fill(Color.dockAccent.opacity(0.06))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .stroke(Color.dockAccent.opacity(0.24), lineWidth: DockLayout.hairline)
-                        }
-                )
             }
+            .frame(maxHeight: 144)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: prompts.map(\.id))
     }
@@ -1483,17 +1579,25 @@ private struct PinnedWorkStrip: View {
                     ComposerTodoPlanView(plan: plan, isWorking: model.status == .working)
                         .id(plan.sessionID)
                 }
-                ForEach(tasks) { task in
-                    HStack(spacing: 6) {
-                        DockActivityIndicator(state: .running, size: 12)
-                        Text(task.prompt).lineLimit(1).truncationMode(.tail)
-                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                        Text("background").dockFont(.compactStatus, weight: .regular, design: .monospaced)
-                            .foregroundStyle(Color.dockMetadataText)
-                        Spacer(minLength: 0)
+                if !tasks.isEmpty {
+                    ScrollView {
+                        VStack(spacing: 4) {
+                            ForEach(tasks) { task in
+                                HStack(spacing: 6) {
+                                    DockActivityIndicator(state: .running, size: 12)
+                                    Text(task.prompt).lineLimit(1).truncationMode(.tail)
+                                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                                    Text("background").dockFont(.compactStatus, weight: .regular, design: .monospaced)
+                                        .foregroundStyle(Color.dockMetadataText)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 8)
+                                .frame(minHeight: 28)
+                            }
+                        }
                     }
-                    .padding(.horizontal, 8)
-                    .frame(minHeight: 28)
+                    .frame(maxHeight: 96)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(4)

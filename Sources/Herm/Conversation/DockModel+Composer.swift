@@ -341,6 +341,7 @@ extension DockModel {
                 params: ["session_id": sessionID, "text": submittedText]
             )
             var redirectStatus = (result?["status"] as? String)?.lowercased()
+            var hermesHasNoLiveTurn = false
             // Redirect is refused between model requests (or on an agent without it)
             // while the turn is still live; steer lands on the next tool result.
             if redirectStatus != "redirected", redirectStatus != "queued",
@@ -350,7 +351,10 @@ extension DockModel {
                     HermesFeatureIDs.ID.sessionSteer.rawValue,
                     params: ["session_id": sessionID, "text": submittedText]
                 )
-                if (steered?["status"] as? String)?.lowercased() == "queued" { redirectStatus = "redirected" }
+                let steerStatus = (steered?["status"] as? String)?.lowercased()
+                if steerStatus == "queued" { redirectStatus = "redirected" }
+                // Hermes rejects steer only when no turn is running.
+                hermesHasNoLiveTurn = steerStatus == "rejected"
             }
             var redirect = self.redirectingPrompts[queueSessionID] ?? RedirectingPrompt(runtimeSessionID: sessionID)
             if redirectStatus == "queued", redirect.completedTurns < 2, !redirect.wasInterrupted {
@@ -385,6 +389,13 @@ extension DockModel {
                 let index = queuedPrompts.firstIndex { $0.sessionID == queueSessionID } ?? queuedPrompts.endIndex
                 queuedPrompts.insert(
                     QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil), at: index)
+                // Replies share the event stream, so a turn end would already have
+                // landed: still working here means the end was missed. Settle it so
+                // the prompt sends now instead of waiting on a turn that is gone.
+                if hermesHasNoLiveTurn, status == .working {
+                    commitStreamingMessage()
+                    endLocalTurn(eventSessionID: sessionID)
+                }
                 drainQueuedPromptAfterRedirect(redirect)
             }
         }

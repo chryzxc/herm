@@ -1,7 +1,7 @@
 import Foundation
 
 /// Dashboard rows share the sidebar's canonical session and attention projection.
-enum MissionControlDashboardSection: String, CaseIterable, Identifiable {
+enum SessionDashboardSection: String, CaseIterable, Identifiable {
     case attention = "Needs you"
     case review = "Ready to review"
     case working = "In progress"
@@ -19,16 +19,16 @@ enum MissionControlDashboardSection: String, CaseIterable, Identifiable {
     }
 }
 
-struct MissionControlDashboardRow: Identifiable, Equatable {
+struct SessionDashboardRow: Identifiable, Equatable {
     let session: HermesSession
     let status: SidebarSessionStatus
     let project: String?
     var id: String { session.id }
-    var section: MissionControlDashboardSection { .section(for: status) }
+    var section: SessionDashboardSection { .section(for: status) }
 }
 
-enum MissionControlDashboardProjection {
-    static func aliases(in snapshot: MissionControlSidebarSnapshot) -> [String: String] {
+enum SessionDashboardProjection {
+    static func aliases(in snapshot: SessionNavSidebarSnapshot) -> [String: String] {
         Dictionary(
             snapshot.inputs.activeSessions.filter {
                 $0.profileID == nil || ($0.profileID ?? "default") == (snapshot.inputs.profileScopeID ?? "default")
@@ -37,7 +37,7 @@ enum MissionControlDashboardProjection {
             }, uniquingKeysWith: { first, _ in first })
     }
 
-    static func sessions(in snapshot: MissionControlSidebarSnapshot) -> [HermesSession] {
+    static func sessions(in snapshot: SessionNavSidebarSnapshot) -> [HermesSession] {
         let aliases = aliases(in: snapshot)
         // Saved records own identity and visibility; a live runtime alias is not another chat.
         let saved = (snapshot.inputs.sessions + snapshot.inputs.pinnedSessions + snapshot.conversations).filter {
@@ -71,7 +71,7 @@ enum MissionControlDashboardProjection {
     static func rows(
         sessions: [HermesSession], statuses: [String: SidebarSessionStatus],
         projects: [String: String], profileID: String?, query: String = "", project: String? = nil
-    ) -> [MissionControlDashboardRow] {
+    ) -> [SessionDashboardRow] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         var seen = Set<String>()
         return sessions.compactMap { session in
@@ -85,7 +85,7 @@ enum MissionControlDashboardProjection {
                     || [session.displayTitle, session.displayPreview ?? "", name ?? ""]
                         .contains(where: { $0.localizedCaseInsensitiveContains(query) })
             else { return nil }
-            return MissionControlDashboardRow(
+            return SessionDashboardRow(
                 session: session, status: statuses[session.id] ?? .none, project: name)
         }.sorted {
             let left = $0.session.lastUpdatedAt ?? .distantPast
@@ -96,7 +96,7 @@ enum MissionControlDashboardProjection {
 }
 
 /// A completed load must still belong to the selected row before enabling replies.
-struct MissionControlDashboardSelection: Equatable {
+struct SessionDashboardSelection: Equatable {
     private(set) var session: HermesSession?
     private(set) var generation = UUID()
     private(set) var isLoading = false

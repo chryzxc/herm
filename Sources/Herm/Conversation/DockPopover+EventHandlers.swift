@@ -25,7 +25,7 @@ extension DockPopover {
             handleProfileScopeChange(profile)
         }
         controlCenter.refresh()
-        missionControlNavigation.selectGlobal(.automations)
+        sessionNavNavigation.selectGlobal(.automations)
         fullscreenGlobalTab = .automations
         fullscreenSurface = .global
         controlCenter.requestedAutomationDidNavigate = true
@@ -37,7 +37,7 @@ extension DockPopover {
             model.currentSessionIDs.contains(id), model.workflowSession?.profileID == request.profileID
         else { return }
         controlCenter.requestedRepositoryReview = nil
-        missionControlNavigation.openSession(id)
+        sessionNavNavigation.openSession(id)
         fullscreenSurface = .conversation
         inspectorScope = .session
         cachedSessionRepositoryPath = path
@@ -201,7 +201,7 @@ extension DockPopover {
         )
         synchronizeWorkspace()
         controlCenter.focus(sessionID: newValue)
-        missionControlNavigation.synchronizeActiveSession(model.navigationSessionID)
+        sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
         synchronizePanelLayout()
 
         guard oldValue != newValue else { return }
@@ -255,7 +255,7 @@ extension DockPopover {
     func configureWorkspaceOnAppear() {
         synchronizePanelLayout()
         synchronizeWorkspace()
-        missionControlNavigation.synchronizeActiveSession(model.navigationSessionID)
+        sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
         controlCenter.bind(to: model)
         // The session Activity child can mount before this root lifecycle hook.
         // Reissue its durable, read-only projection after binding so an early

@@ -67,7 +67,7 @@ struct SessionPullRequestsSurface: View {
                 pullRequestList
             }
         }
-        .dockPaneTint(Color.dockSurface2.opacity(0.55))
+        .background(Color.dockCanvas)
         .task(id: repositoryPath) {
             guard let repositoryPath, !repositoryPath.isEmpty else { return }
             await center.refreshScoped(repositoryPath: repositoryPath)
@@ -84,7 +84,7 @@ struct SessionPullRequestsSurface: View {
                 Text(error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, DockSpacing.section)
                     .padding(.vertical, DockSpacing.control)
             }
             ScrollView {
@@ -128,7 +128,7 @@ struct SessionPullRequestsSurface: View {
             }
         }
         .dockFont(.body)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DockSpacing.section)
         .padding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -177,7 +177,7 @@ struct SessionIssuesSurface: View {
                         Text(error)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
-                            .padding(.horizontal, 18)
+                            .padding(.horizontal, DockSpacing.section)
                             .padding(.vertical, DockSpacing.control)
                     }
                     ScrollView {
@@ -210,7 +210,7 @@ struct SessionIssuesSurface: View {
                 }
             }
         }
-        .dockPaneTint(Color.dockSurface2.opacity(0.55))
+        .background(Color.dockCanvas)
         .task(id: repositoryPath) {
             guard let repositoryPath, !repositoryPath.isEmpty else { return }
             await center.refreshScoped(repositoryPath: repositoryPath)
@@ -251,7 +251,7 @@ struct SessionIssuesSurface: View {
             }
         }
         .dockFont(.body)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DockSpacing.section)
         .padding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -339,7 +339,7 @@ struct SessionChangeDiffPreview: View {
                 .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.dockWarning)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DockSpacing.section)
         .padding(.vertical, 10)
     }
 
@@ -360,14 +360,14 @@ struct SessionChangeDiffPreview: View {
                 Text("No textual diff is available for this file.")
                     .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, DockSpacing.section)
                     .padding(.top, 8)
             }
             if diff.isTruncated {
                 Text("Diff truncated for safe display.")
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, DockSpacing.section)
                     .padding(.vertical, 8)
             }
         } else {
@@ -415,19 +415,26 @@ struct SessionSurfacePreviewPlaceholder: View {
     }
 }
 
-/// The session's folder and branch, under the chat composer. Choosing another
-/// worktree changes what Explorer and Source Control show; the agent keeps
-/// working in its own folder.
+/// The session's folder and branch, at the trailing end of the strip under the
+/// chat composer. Choosing another worktree changes what Explorer and Source
+/// Control show; the agent keeps working in its own folder. `newTask` branches
+/// the shown worktree into a fresh one and moves the draft to a new chat there.
 struct WorktreePicker: View {
     /// Empty when the folder is not a Git repository.
     let worktrees: [RepositoryWorktreeSummary]
     /// The session's bound source folder.
     let mainPath: String?
     @Binding var selection: String?
-    @State private var isOpen = false
+    /// Nil when a task worktree cannot be created here.
+    var newTask: (() async -> Void)? = nil
     @State private var query = ""
+    @State private var isConfirmingNewTask = false
+    @State private var isCreatingTask = false
 
     private var current: RepositoryWorktreeSummary? { worktrees.first { $0.path == selection } }
+
+    /// A worktree needs a committed HEAD to branch from.
+    private var canStartTask: Bool { newTask != nil && current?.headRevision != nil }
 
     private var filtered: [RepositoryWorktreeSummary] {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -437,63 +444,100 @@ struct WorktreePicker: View {
         }
     }
 
-    @ViewBuilder
     var body: some View {
-        if worktrees.count > 1 {
-            Button {
-                isOpen.toggle()
-            } label: {
-                label
+        HStack(spacing: 8) {
+            folder.help(current?.path ?? selection ?? "")
+            Spacer(minLength: 0)
+            if worktrees.count > 1 || canStartTask {
+                DockMenu {
+                    menu
+                } label: {
+                    branch
+                }
+                .disabled(isCreatingTask)
+                .help("Choose the worktree Explorer and Source Control show")
+            } else if current != nil {
+                branch
             }
-            .buttonStyle(.dockHover)
-            .help("Choose the worktree Explorer and Source Control show")
-            .popover(isPresented: $isOpen, arrowEdge: .top) { list }
-        } else {
-            label.help(current?.path ?? selection ?? "")
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .confirmationDialog("Start a task in a new worktree?", isPresented: $isConfirmingNewTask) {
+            Button("Create Worktree") {
+                guard let newTask else { return }
+                isCreatingTask = true
+                Task {
+                    await newTask()
+                    isCreatingTask = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Creates a new branch from \(branchLabel(current)) at \(current?.headRevision ?? "HEAD") in its own folder. Your draft moves to a new chat there; this chat keeps its folder."
+            )
         }
     }
 
-    private var label: some View {
+    private var folder: some View {
         HStack(spacing: 6) {
             DockIcon(.folder).foregroundStyle(Color.dockMetadataText)
             Text(current?.displayName ?? selection.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Project")
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1).truncationMode(.middle)
+        }
+        .dockFont(.metadata)
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var branch: some View {
+        HStack(spacing: 6) {
             if current != nil {
-                DockIcon(.gitBranch).foregroundStyle(Color.dockMetadataText).padding(.leading, 4)
+                DockIcon(.gitBranch).foregroundStyle(Color.dockMetadataText)
                 Text(branchLabel(current))
                     .dockFont(.metadata, weight: .regular, design: .monospaced)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1).truncationMode(.middle)
             }
-            if worktrees.count > 1 {
+            if isCreatingTask {
+                DockActivityIndicator(state: .running, size: 10)
+            } else if worktrees.count > 1 || canStartTask {
                 DockIcon(.caretUpDown).dockFont(.compactStatus, weight: .regular).foregroundStyle(
                     Color.dockMetadataText)
             }
-            Spacer(minLength: 0)
         }
         .dockFont(.metadata)
-        .padding(.horizontal, 12)
-        .frame(height: 28)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .frame(height: 24)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
-    private var list: some View {
-        VStack(spacing: 0) {
-            if worktrees.count > 6 {
-                DockTextField("Search worktrees", text: $query).textFieldStyle(.dockGlass).padding(8)
-            }
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(filtered) { tree in row(tree) }
-                }
-                .padding(.vertical, 4)
-            }
-            .frame(maxHeight: 320)
+    @ViewBuilder
+    private var menu: some View {
+        if worktrees.count > 6 {
+            DockTextField("Search worktrees", text: $query).textFieldStyle(.dockGlass).padding(.bottom, 4)
         }
-        .frame(width: 320)
+        DockMenuSection("Worktrees") {
+            ForEach(filtered) { tree in
+                Button {
+                    selection = tree.path
+                } label: {
+                    row(tree)
+                }
+                .disabled(tree.isPrunable)
+                .help(tree.path)
+            }
+        }
+        if canStartTask {
+            Divider().padding(.vertical, 4)
+            Button {
+                isConfirmingNewTask = true
+            } label: {
+                SwiftUI.Label("New task in worktree…", icon: .plus)
+            }
+        }
     }
 
     private func branchLabel(_ tree: RepositoryWorktreeSummary?) -> String {
@@ -502,37 +546,34 @@ struct WorktreePicker: View {
     }
 
     private func row(_ tree: RepositoryWorktreeSummary) -> some View {
-        Button {
-            selection = tree.path
-            isOpen = false
-        } label: {
-            HStack(spacing: 8) {
-                Image(
-                    systemName: tree.path == selection
-                        ? "checkmark" : (tree.isLocked ? "lock" : "arrow.triangle.branch")
-                )
-                .frame(width: 14).foregroundStyle(tree.path == selection ? Color.dockAccent : Color.dockMetadataText)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(tree.displayName).dockFont(.body).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-                            .truncationMode(.middle)
-                        if tree.path == mainPath {
-                            Text("source folder").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                        }
+        let isSelected = tree.path == selection
+        let changed = tree.snapshot?.changedFiles ?? 0
+        return HStack(spacing: 8) {
+            DockIcon(
+                isSelected ? .check : (tree.isLocked ? .lock : .gitBranch), size: 12,
+                color: isSelected ? Color.dockPrimaryText : Color.dockMetadataText
+            )
+            .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(tree.displayName).lineLimit(1).truncationMode(.middle)
+                    if tree.path == mainPath {
+                        Text("source").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     }
-                    Text(branchLabel(tree)).dockFont(.machineMetadata).foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1).truncationMode(.middle)
                 }
-                Spacer(minLength: 4)
-                if (tree.snapshot?.changedFiles ?? 0) > 0 { Circle().fill(Color.dockAccent).frame(width: 6, height: 6) }
+                Text(branchLabel(tree)).dockFont(.machineMetadata).foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1).truncationMode(.middle)
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            Spacer(minLength: 16)
+            if changed > 0 {
+                Text("\(changed) changed").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+            }
         }
-        .buttonStyle(.plain)
-        .help(tree.path)
-        .disabled(tree.isPrunable)
-        .opacity(tree.isPrunable ? 0.45 : 1)
+        .padding(.vertical, 4)
+        .frame(minWidth: 260)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(tree.displayName), \(branchLabel(tree))\(isSelected ? ", selected" : "")\(changed > 0 ? ", \(changed) changed" : "")"
+        )
     }
 }

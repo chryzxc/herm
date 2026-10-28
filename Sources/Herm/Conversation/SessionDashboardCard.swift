@@ -1,7 +1,7 @@
 import SwiftUI
 
-struct MissionControlDashboardCard: View {
-    let row: MissionControlDashboardRow
+struct SessionDashboardCard: View {
+    let row: SessionDashboardRow
     let isCurrent: Bool
     let isLoadingSession: Bool
     let request: AttentionItem?
@@ -9,7 +9,7 @@ struct MissionControlDashboardCard: View {
     let profileID: String?
     let client: HermesRPCClientProtocol?
     let onRespond: () -> Void
-    @StateObject private var content = MissionControlCardContent()
+    @StateObject private var content = SessionDashboardCardContent()
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -46,7 +46,7 @@ struct MissionControlDashboardCard: View {
                     } else if row.status == .working, let activity {
                         Text(activity.activityName).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
-                    if let preview = content.text ?? MissionControlCardContent.preview(row.session.preview) {
+                    if let preview = content.text ?? SessionDashboardCardContent.preview(row.session.preview) {
                         MarkdownMessageView(markdown: preview, bodySize: DockTypography.size(.body))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else if request == nil {

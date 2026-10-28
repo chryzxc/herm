@@ -267,7 +267,11 @@ struct ConversationTranscriptView: View, Equatable {
                     BotCrewRow(
                         from: lead, partners: Array(replying.dropFirst()),
                         since: mentions.map(\.createdAt).min() ?? .now,
-                        avatars: botMode.avatarImages, repliesToUser: true
+                        avatars: botMode.avatarImages, repliesToUser: true,
+                        steps: Dictionary(
+                            mentions.compactMap { record in
+                                source.snapshot.context.botSteps[record.id].map { (record.botID, $0) }
+                            }, uniquingKeysWith: { first, _ in first })
                     )
                     .transition(
                         .asymmetric(

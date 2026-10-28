@@ -420,7 +420,7 @@ struct EdgeTaskPreview: View {
             if let detail = task.detail, !detail.isEmpty {
                 // Approvals carry a command or path: show it as code in its own well, like the chat card.
                 Text(detail)
-                    .font(isApproval ? .system(size: 11, design: .monospaced) : .system(size: 11))
+                    .dockFont(isApproval ? .machineMetadata : .metadata)
                     .foregroundStyle(isApproval ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .lineLimit(isApproval ? 5 : 4)
                     .fixedSize(horizontal: false, vertical: true)

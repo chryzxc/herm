@@ -27,18 +27,145 @@ enum FilePreviewKind {
     }
 }
 
-/// Inline file preview for the inspector panel: Markdown rendered, other text
-/// monospaced, images scaled. Selecting text opens a note popover right at
-/// the selection; notes stay highlighted in place and are sent back to the
-/// Hermes session that produced the file as one revision request.
+/// Inline file preview for a session inspector tab: Markdown rendered, other
+/// text monospaced, images scaled. Text files carry the shared `TextAnnotator`
+/// and reload live, so sent notes show as addressed once Hermes edits the file.
 struct FilePreviewPane: View {
     let url: URL
     @ObservedObject var model: DockModel
-    let onClose: () -> Void
 
     @ObservedObject private var center = FilePreviewCenter.shared
     @State private var content: ArtifactTextPreview.Content?
     @State private var modifiedAt: Date?
+    /// Off by default so the tab reads as a plain preview until review starts.
+    @State private var isAnnotating = false
+
+    private var kind: FilePreviewKind? { FilePreviewKind(url: url) }
+    private var path: String { url.path }
+    private var text: String? {
+        if case .text(let text, _) = content { return text }
+        return nil
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            bodyContent
+        }
+        .background(Color.dockCanvas)
+        .onAppear { isAnnotating = center.hasDrafts(path) }
+        .task(id: url) { await watch() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text(url.lastPathComponent)
+                .dockFont(.body, weight: .semibold)
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            if kind != .image, text != nil { AnnotateToggle(isOn: $isAnnotating) }
+            openInMenu
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 48)
+        .dockButtonSize(.compact)
+        .dockPaneTint(Color.dockSurface2)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private var openInMenu: some View {
+        DockMenu(outlined: true) {
+            FileOpenWithItems(url: url)
+        } label: {
+            HStack(spacing: 6) {
+                DockIcon(.arrowSquareOut, size: 13)
+                Text("Open in")
+                DockIcon(.caretDown, size: 10)
+            }
+        }
+        .dockFont(.body)
+        .dockButtonSize(.compact)
+        .accessibilityLabel("Open \(url.lastPathComponent) in another app")
+    }
+
+    @ViewBuilder
+    private var bodyContent: some View {
+        if kind == .image {
+            ScrollView { AttachmentThumbnailView(url: url, maximumPixelSize: 2_400).padding(16) }
+        } else {
+            switch content {
+            case .text(let text, let truncated):
+                TextAnnotator(
+                    source: .file(url), text: text, isMarkdown: kind == .markdown,
+                    notice: truncated ? "Preview truncated — open the file to see the rest." : nil,
+                    isAnnotating: $isAnnotating, model: model
+                )
+                .id(path)
+            case .missing:
+                SessionSurfacePreviewPlaceholder(icon: .warning, title: "File not found", detail: path)
+            case .binary:
+                SessionSurfacePreviewPlaceholder(
+                    icon: .file, title: "No inline preview", detail: "Open it in its default app.")
+            case nil:
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    /// ponytail: 1s mtime poll (Hermes writes atomically, which breaks fd
+    /// watches); switch to FSEvents like RepositoryWatchService if needed.
+    private func watch() async {
+        content = nil
+        modifiedAt = nil
+        guard kind != .image else { return }
+        let url = url
+        while !Task.isCancelled {
+            let date = await Task.detached(priority: .utility) {
+                (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            }.value
+            guard !Task.isCancelled else { return }
+            if content == nil || date != modifiedAt {
+                modifiedAt = date
+                let loaded = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
+                guard !Task.isCancelled else { return }
+                content = loaded
+                if let text { center.reconcile(path, contents: text) }
+            }
+            try? await Task.sleep(for: .seconds(1))
+        }
+    }
+}
+
+/// The header toggle every annotatable tab uses.
+struct AnnotateToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle("Annotate", isOn: $isOn)
+            .toggleStyle(.dockSwitch)
+            .dockFont(.body)
+            .fixedSize(horizontal: true, vertical: false)
+            .help("Annotate text")
+            .accessibilityValue(isOn ? "On" : "Off")
+            .accessibilityHint("Select text to add a note. Saved notes are kept when you finish.")
+    }
+}
+
+/// Shared annotator for any tab showing text (files, chat messages). With
+/// Annotate on, selecting text opens a note popover at the selection; notes
+/// stay highlighted in place and are sent to the tab's session chat as one
+/// revision request.
+struct TextAnnotator: View {
+    let source: AnnotationSource
+    let text: String
+    let isMarkdown: Bool
+    var notice: String?
+    @Binding var isAnnotating: Bool
+    @ObservedObject var model: DockModel
+
+    @ObservedObject private var center = FilePreviewCenter.shared
     /// Rendered document text; highlights are located in this, not the source.
     @State private var rendered = ""
     /// The note being written or viewed: from a selection, a highlight click,
@@ -54,26 +181,27 @@ struct FilePreviewPane: View {
         let current: String
     }
 
-    private var kind: FilePreviewKind? { FilePreviewKind(url: url) }
-    private var path: String { url.path }
-    private var review: FileReview { center.review(path) }
+    private var key: String { source.key }
+    private var review: FileReview { center.review(key) }
     private var drafts: [FileAnnotation] { review.annotations.filter { $0.sentAt == nil } }
     private var sent: [FileAnnotation] { review.annotations.filter { $0.sentAt != nil } }
-    private var text: String? {
-        if case .text(let text, _) = content { return text }
-        return nil
-    }
-    private var canAnnotate: Bool { kind != .image && text != nil }
     private var reviewDiffInput: ReviewDiffInput? {
-        guard showsNotes, let baseline = review.baseline, let text, baseline != text else { return nil }
+        guard showsNotes, let baseline = review.baseline, baseline != text else { return nil }
         return ReviewDiffInput(baseline: baseline, current: text)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            bodyContent
-            if canAnnotate {
+            document
+            if let notice {
+                Text(notice)
+                    .dockFont(.compactStatus, weight: .regular)
+                    .foregroundStyle(Color.dockMetadataText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+            }
+            if isAnnotating {
                 Group {
                     if let composing, composing.quote == nil {
                         AnnotationEditor(
@@ -92,9 +220,14 @@ struct FilePreviewPane: View {
                 .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
             }
         }
-        .background(Color.dockCanvas)
         .animation(.dockEase(duration: 0.15), value: composing?.quote == nil && composing != nil)
-        .task(id: url) { await watch() }
+        // Turning Annotate off keeps saved notes; it only drops the unsaved one.
+        .onChange(of: isAnnotating) { _, on in
+            if !on {
+                cancelNote()
+                showsNotes = false
+            }
+        }
         .task(id: reviewDiffInput) {
             changes = []
             guard let input = reviewDiffInput else { return }
@@ -106,77 +239,29 @@ struct FilePreviewPane: View {
         }
     }
 
-    // MARK: Header
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Text(url.lastPathComponent)
-                .dockFont(.body, weight: .semibold)
-                .foregroundStyle(Color.dockPrimaryText)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 8)
-            DockIconButton(
-                icon: .arrowSquareOut, label: "Open in default app",
-                style: DockThemePalette(theme: DockThemeRuntime.current)
-            ) { ArtifactOpener.open(path) }
-            DockIconButton(
-                icon: .x, label: "Close preview",
-                style: DockThemePalette(theme: DockThemeRuntime.current), action: onClose)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 48)
-        .dockPaneTint(Color.dockSurface2)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-    }
-
     // MARK: Document
 
-    @ViewBuilder
-    private var bodyContent: some View {
-        if kind == .image {
-            ScrollView { AttachmentThumbnailView(url: url, maximumPixelSize: 2_400).padding(16) }
-        } else {
-            switch content {
-            case .text(let text, let truncated):
-                VStack(spacing: 0) {
-                    AnnotatableDocumentView(
-                        text: text,
-                        isMarkdown: kind == .markdown,
-                        highlights: highlights,
-                        anchor: $anchor,
-                        onSelect: select,
-                        onOpenAnnotation: openAnnotation,
-                        onDismiss: popoverDismissed,
-                        onRendered: { rendered = $0 }
-                    ) {
-                        AnnotationEditor(
-                            annotation: composingBinding,
-                            isSaved: composing.map(isSaved) ?? false,
-                            onSave: commitNote,
-                            onCancel: { cancelNote() },
-                            onDelete: deleteComposing
-                        )
-                        .frame(width: 320)
-                    }
-                    if truncated {
-                        Text("Preview truncated — open the file to see the rest.")
-                            .dockFont(.compactStatus, weight: .regular)
-                            .foregroundStyle(Color.dockMetadataText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                    }
-                }
-            case .missing:
-                SessionSurfacePreviewPlaceholder(icon: .warning, title: "File not found", detail: path)
-            case .binary:
-                SessionSurfacePreviewPlaceholder(
-                    icon: .file, title: "No inline preview", detail: "Open it in its default app.")
-            case nil:
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var document: some View {
+        AnnotatableDocumentView(
+            text: text,
+            isMarkdown: isMarkdown,
+            highlights: isAnnotating ? highlights : [],
+            anchor: $anchor,
+            onSelect: { range, quote in if isAnnotating { select(range, quote) } },
+            onOpenAnnotation: openAnnotation,
+            onDismiss: popoverDismissed,
+            onRendered: { rendered = $0 },
+            editor: {
+                AnnotationEditor(
+                    annotation: composingBinding,
+                    isSaved: composing.map(isSaved) ?? false,
+                    onSave: commitNote,
+                    onCancel: { cancelNote() },
+                    onDelete: deleteComposing
+                )
+                .frame(width: 320)
             }
-        }
+        )
     }
 
     /// Drafts are numbered in document order; the same numbers label the
@@ -279,7 +364,7 @@ struct FilePreviewPane: View {
         guard var annotation = composing, annotation.sentAt == nil else { return }
         annotation.note = annotation.note.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !annotation.note.isEmpty else { return }
-        if isSaved(annotation) { center.update(annotation, in: path) } else { center.add(annotation, to: path) }
+        if isSaved(annotation) { center.update(annotation, in: key) } else { center.add(annotation, to: key) }
     }
 
     private func commitNote() {
@@ -293,7 +378,7 @@ struct FilePreviewPane: View {
     }
 
     private func deleteComposing() {
-        if let composing { center.remove(composing.id, from: path) }
+        if let composing { center.remove(composing.id, from: key) }
         cancelNote()
     }
 
@@ -314,27 +399,24 @@ struct FilePreviewPane: View {
                         .lineLimit(1)
                     DockIcon(.caretUp, size: 9, color: Color.dockMetadataText)
                 }
-                .padding(.horizontal, 8)
-                .frame(height: 28)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.dockHover)
-            .help("All notes on this file")
-            .popover(isPresented: $showsNotes, arrowEdge: .top) { notesList }
+            .buttonStyle(.dockSecondary)
+            .help("All notes")
+            .dockPopover(isPresented: $showsNotes, arrowEdge: .top) { notesList }
             Spacer(minLength: 8)
             if drafts.isEmpty {
                 Button(action: addToChat) {
                     Label("Add to chat", systemImage: "arrowshape.turn.up.left")
                 }
                 .buttonStyle(.dockSecondary)
-                .help("Reference this file in the chat composer")
+                .help("Reference this in the chat composer")
             } else {
                 Button("Send \(drafts.count) to chat", action: sendDrafts)
                     .buttonStyle(.dockPrimary)
                     .help("Attach these notes to the chat as one revision request")
             }
         }
-        .controlSize(.small)
+        .dockButtonSize(.compact)
         .padding(.horizontal, 10)
         .frame(height: 44)
     }
@@ -370,7 +452,7 @@ struct FilePreviewPane: View {
                         HStack {
                             sectionLabel("SENT")
                             Spacer()
-                            Button("Clear") { center.clearSent(path) }
+                            Button("Clear") { center.clearSent(key) }
                                 .buttonStyle(.dockCompact)
                                 .dockFont(.compactStatus, weight: .regular)
                                 .foregroundStyle(Color.dockSecondaryText)
@@ -422,7 +504,9 @@ struct FilePreviewPane: View {
                         annotation.resolved ? .checkCircle : .clock, size: 13,
                         color: annotation.resolved ? Color.dockAccent : Color.dockMetadataText
                     )
-                    .help(annotation.resolved ? "Addressed: the quoted text changed" : "Sent, still in the file")
+                    .help(
+                        annotation.resolved
+                            ? "Addressed: the quoted text changed" : "Sent; the quoted text is unchanged")
                 } else {
                     DockIcon(.notePencil, size: 13, color: Color.dockMetadataText)
                 }
@@ -442,7 +526,7 @@ struct FilePreviewPane: View {
             Spacer(minLength: 4)
             if annotation.sentAt == nil {
                 Button {
-                    center.remove(annotation.id, from: path)
+                    center.remove(annotation.id, from: key)
                 } label: {
                     DockIcon(.trash, size: 11, color: Color.dockMetadataText)
                 }
@@ -496,64 +580,26 @@ struct FilePreviewPane: View {
     private func sendDrafts() {
         keepComposingDraft()
         cancelNote()
-        guard let text, !drafts.isEmpty else { return }
+        guard !drafts.isEmpty else { return }
         attach(
             ChatContext(
-                id: "review:\(path):\(UUID().uuidString)",
-                title: "\(drafts.count) note\(drafts.count == 1 ? "" : "s") · \(url.lastPathComponent)",
-                body: FileAnnotationText.prompt(path: path, annotations: drafts)
+                id: "review:\(key):\(UUID().uuidString)",
+                title: "\(drafts.count) note\(drafts.count == 1 ? "" : "s") · \(source.title)",
+                body: source.prompt(drafts)
             ))
-        center.markSent(path, baseline: text)
+        center.markSent(key, baseline: text)
     }
 
     private func addToChat() {
-        attach(
-            ChatContext(
-                id: "file:\(path)",
-                title: url.lastPathComponent,
-                body: "Regarding `\(path)`:"
-            ))
+        attach(ChatContext(id: "ref:\(key)", title: source.title, body: source.referenceBody))
     }
 
-    /// Back to the session the preview came from; the current chat otherwise.
+    /// Preview tabs belong to the session they were opened in, so notes go to its chat.
     private func attach(_ context: ChatContext) {
-        if let origin = center.sessionID, origin != model.sessionID,
-            let session = model.sessions.first(where: { $0.id == origin })
-        {
-            Task { await model.attachContext(context, to: session) }
-            return
-        }
         if !model.attachedContexts.contains(where: { $0.id == context.id }) {
             model.attachedContexts.append(context)
         }
         model.requestComposerFocus()
-    }
-
-    // MARK: Live reload
-
-    /// ponytail: 1s mtime poll (Hermes writes atomically, which breaks fd
-    /// watches); switch to FSEvents like RepositoryWatchService if needed.
-    private func watch() async {
-        content = nil
-        modifiedAt = nil
-        rendered = ""
-        cancelNote()
-        guard kind != .image else { return }
-        let url = url
-        while !Task.isCancelled {
-            let date = await Task.detached(priority: .utility) {
-                (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-            }.value
-            guard !Task.isCancelled else { return }
-            if content == nil || date != modifiedAt {
-                modifiedAt = date
-                let loaded = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
-                guard !Task.isCancelled else { return }
-                content = loaded
-                if let text { center.reconcile(path, contents: text) }
-            }
-            try? await Task.sleep(for: .seconds(1))
-        }
     }
 }
 
@@ -610,7 +656,7 @@ private struct AnnotationEditor: View {
 
     private var sentBody: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(annotation.resolved ? "Addressed" : "Sent · still in the file")
+            Text(annotation.resolved ? "Addressed" : "Sent")
                 .dockFont(.compactStatus, weight: .regular)
                 .foregroundStyle(Color.dockMetadataText)
             if !annotation.note.isEmpty {
@@ -623,7 +669,7 @@ private struct AnnotationEditor: View {
                 Spacer()
                 Button("Done", action: onCancel).buttonStyle(.dockSecondary)
             }
-            .controlSize(.small)
+            .dockButtonSize(.compact)
         }
     }
 
@@ -668,7 +714,7 @@ private struct AnnotationEditor: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSave)
         }
-        .controlSize(.small)
+        .dockButtonSize(.compact)
     }
 
     private var placeholder: String {

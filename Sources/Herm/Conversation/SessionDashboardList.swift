@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Keep transcript publications out of session filtering and grouping.
-struct MissionControlDashboardList: View, Equatable {
-    @ObservedObject var sidebar: MissionControlSidebarModel
-    let selection: MissionControlDashboardSelection
+struct SessionDashboardList: View, Equatable {
+    @ObservedObject var sidebar: SessionNavSidebarModel
+    let selection: SessionDashboardSelection
     let isCurrent: Bool
     let onSelect: (HermesSession) -> Void
     var client: HermesRPCClientProtocol? = nil
@@ -12,18 +12,18 @@ struct MissionControlDashboardList: View, Equatable {
     @Namespace private var cardPositions
     @State private var query = ""
     @State private var project: String?
-    @State private var section: MissionControlDashboardSection?
+    @State private var section: SessionDashboardSection?
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.sidebar === rhs.sidebar && lhs.selection == rhs.selection && lhs.isCurrent == rhs.isCurrent
     }
 
-    private var snapshot: MissionControlSidebarSnapshot { sidebar.snapshot }
-    private var sessions: [HermesSession] { MissionControlDashboardProjection.sessions(in: snapshot) }
+    private var snapshot: SessionNavSidebarSnapshot { sidebar.snapshot }
+    private var sessions: [HermesSession] { SessionDashboardProjection.sessions(in: snapshot) }
 
-    private var rows: [MissionControlDashboardRow] {
+    private var rows: [SessionDashboardRow] {
         let sessions = sessions
-        let aliases = MissionControlDashboardProjection.aliases(in: snapshot)
+        let aliases = SessionDashboardProjection.aliases(in: snapshot)
         let statuses = Dictionary(
             sessions.map { session in
                 let summary = snapshot.inputs.activeSessions.first { (aliases[$0.id] ?? $0.id) == session.id }
@@ -40,14 +40,14 @@ struct MissionControlDashboardList: View, Equatable {
             }, uniquingKeysWith: { first, _ in first })
         var projects = snapshot.projectNameBySessionID
         for (alias, id) in aliases where projects[id] == nil { projects[id] = projects[alias] }
-        return MissionControlDashboardProjection.rows(
+        return SessionDashboardProjection.rows(
             sessions: sessions, statuses: statuses, projects: projects,
             profileID: snapshot.inputs.profileScopeID, query: query, project: project)
     }
 
     var body: some View {
         let projected = self.rows
-        let rows = MissionControlDashboardSection.allCases.flatMap { section in
+        let rows = SessionDashboardSection.allCases.flatMap { section in
             projected.filter { $0.section == section }
         }.filter { section == nil || $0.section == section }
         VStack(spacing: 0) {
@@ -97,9 +97,9 @@ struct MissionControlDashboardList: View, Equatable {
         }
     }
 
-    private func sessionRow(_ row: MissionControlDashboardRow) -> some View {
-        let aliases = MissionControlDashboardProjection.aliases(in: snapshot)
-        return MissionControlDashboardCard(
+    private func sessionRow(_ row: SessionDashboardRow) -> some View {
+        let aliases = SessionDashboardProjection.aliases(in: snapshot)
+        return SessionDashboardCard(
             row: row, isCurrent: isCurrent, isLoadingSession: selection.isLoading,
             request: snapshot.inputs.attention.first {
                 $0.reference.sessionID.map { aliases[$0] ?? $0 } == row.id && $0.state == .open
@@ -124,8 +124,8 @@ struct MissionControlDashboardList: View, Equatable {
 
     private var statusFilter: some View {
         Picker("Status", selection: $section) {
-            Text("All sessions").tag(nil as MissionControlDashboardSection?)
-            ForEach(MissionControlDashboardSection.allCases) { section in
+            Text("All sessions").tag(nil as SessionDashboardSection?)
+            ForEach(SessionDashboardSection.allCases) { section in
                 Text(section.rawValue).tag(Optional(section))
             }
         }

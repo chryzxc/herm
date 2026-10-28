@@ -7,7 +7,7 @@ import SwiftUI
 final class ChatRailActivityModel: ObservableObject {
     @Published private(set) var activity: ChatRailActivity
     private(set) var projectionCount = 1
-    private let sidebar: MissionControlSidebarModel
+    private let sidebar: SessionNavSidebarModel
     private let model: DockModel
     private let seenStore: SidebarSessionSeenStore
     private var cancellable: AnyCancellable?
@@ -18,7 +18,7 @@ final class ChatRailActivityModel: ObservableObject {
     ) {
         self.model = model
         self.seenStore = seenStore
-        let sidebar = MissionControlSidebarModel(model: model, control: control, store: store)
+        let sidebar = SessionNavSidebarModel(model: model, control: control, store: store)
         self.sidebar = sidebar
         activity = Self.project(sidebar.snapshot, seenStore: seenStore, isConnected: model.isHermesConnected)
         cancellable = Publishers.Merge3(
@@ -38,7 +38,7 @@ final class ChatRailActivityModel: ObservableObject {
     }
 
     private static func project(
-        _ snapshot: MissionControlSidebarSnapshot,
+        _ snapshot: SessionNavSidebarSnapshot,
         seenStore: SidebarSessionSeenStore, isConnected: Bool
     ) -> ChatRailActivity {
         let statuses = SidebarSessionStatusResolver.statuses(
@@ -89,7 +89,7 @@ struct ChatRailButton: View {
             }
             if chatActivity.unreadCount > 0 {
                 Text(chatActivity.unreadBadgeLabel)
-                    .font(.system(size: 9, weight: .semibold))
+                    .dockFont(.compactStatus, weight: .semibold)
                     .monospacedDigit()
                     .foregroundStyle(Color.dockSuccess)
             }

@@ -60,12 +60,10 @@ struct SessionInspectorTab: View {
     let moveRight: (() -> Void)?
 
     @State private var hovered = false
-    @State var expandedOnHover = false
     @State private var isDropTarget = false
-    @State private var isDragging = false
     @State private var surface = SessionInspectorTabSurface()
 
-    private var showsTitle: Bool { !compact || expandedOnHover }
+    private var showsTitle: Bool { !compact }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -82,11 +80,15 @@ struct SessionInspectorTab: View {
         }
         .dockFont(.body, weight: .semibold)
         .foregroundStyle(tab.isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-        .background(tab.isSelected ? Color.dockAccentMuted : hovered ? Color.dockSurface2 : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
+        .dockSelectionBackground(
+            DockThemeShape(cornerRadius: DockLayout.controlRadius - 1), active: tab.isSelected,
+            fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
+        )
+        .background(!tab.isSelected && hovered ? Color.dockSurface2 : Color.clear)
+        .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1))
         .overlay {
             if isDropTarget {
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1)
+                DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
                     .stroke(Color.dockAccent, lineWidth: 1)
                     .allowsHitTesting(false)
             }
@@ -95,7 +97,6 @@ struct SessionInspectorTab: View {
         .background {
             SessionInspectorTabHoverArea(surface: { surface.view = $0 }) { inside in
                 hovered = inside
-                if !inside && !isDragging { expandedOnHover = false }
             }
         }
         .transaction { $0.animation = nil }
@@ -114,21 +115,18 @@ struct SessionInspectorTab: View {
     private var selectionButton: some View {
         SessionInspectorTabDragSource(
             payload: drag, title: tab.title, isSelected: tab.isSelected, select: tab.select,
-            dragging: { dragging in
-                isDragging = dragging
-                if !dragging { expandedOnHover = hovered }
-            }, entered: { expandedOnHover = true }, content: selectionLabel, preview: { surface.view })
+            dragging: { _ in }, entered: { hovered = true }, content: selectionLabel, preview: { surface.view }
+        )
+        .help(tab.title)
     }
 
     private var selectionLabel: some View {
         HStack(spacing: 6) {
-            DockIcon(tab.icon, size: 12, color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
+            DockIcon(
+                tab.icon, size: 12, weight: tab.isSelected ? .fill : .regular,
+                color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
             if showsTitle {
-                if expandedOnHover {
-                    Text(tab.title).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                } else {
-                    Text(tab.title).lineLimit(1).frame(maxWidth: compact ? 144 : 240)
-                }
+                Text(tab.title).lineLimit(1).frame(maxWidth: 240)
             }
         }
         .dockFont(.control)

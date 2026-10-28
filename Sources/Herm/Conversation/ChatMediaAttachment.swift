@@ -102,6 +102,7 @@ struct ChatMediaAttachmentCard: View {
     var grouped = false
     @State private var status: String?
     @State private var changes: RepositoryAttachmentChanges?
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
 
     private var url: URL? { ArtifactOpener.url(path) }
     private var name: String { url?.lastPathComponent ?? path }
@@ -181,9 +182,9 @@ struct ChatMediaAttachmentCard: View {
                     }
                     .disabled(!exists)
                 }
-                cardButton(isLocal ? "Open preview" : "Open", icon: nil) {
-                    if let url, FilePreviewKind(url: url) != nil {
-                        FilePreviewCenter.shared.url = url
+                cardButton("Open", icon: nil) {
+                    if let url, let previewWorkspace, FilePreviewKind(url: url) != nil {
+                        SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
                     } else {
                         ArtifactOpener.open(path)
                     }
@@ -229,6 +230,40 @@ struct ChatMediaAttachmentCard: View {
             .foregroundStyle(Color.dockSecondaryText)
         }
         .buttonStyle(.dockCompact)
+    }
+}
+
+/// "Open with" rows for a local file: its default app, the other apps macOS
+/// registers for it in a submenu, then Reveal in Finder. Rows for a `DockMenu`.
+struct FileOpenWithItems: View {
+    let url: URL
+
+    var body: some View {
+        let workspace = NSWorkspace.shared
+        let preferred = workspace.urlForApplication(toOpen: url)
+        let others = workspace.urlsForApplications(toOpen: url).filter { $0 != preferred }
+            .sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
+        if let preferred { appRow(preferred) }
+        if !others.isEmpty {
+            DockMenu("Open With", icon: .arrowSquareOut) {
+                ForEach(others, id: \.self, content: appRow)
+            }
+        }
+        Button("Reveal in Finder") { ExternalOpen.reveal([url]) }
+    }
+
+    private func name(_ app: URL) -> String { app.deletingPathExtension().lastPathComponent }
+
+    private func appRow(_ app: URL) -> some View {
+        Button {
+            ExternalOpen.open(url, with: app)
+        } label: {
+            Label {
+                Text(name(app))
+            } icon: {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: app.path)).resizable().frame(width: 16, height: 16)
+            }
+        }
     }
 }
 

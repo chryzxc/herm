@@ -51,7 +51,6 @@ final class EdgeDockController: NSObject {
     /// spent (by Hermes or any other app), so they are read on every tick.
     private var hotQuotaReaders = Set<String>()
     private var quotaTick = 0
-    private var botBannerTask: Task<Void, Never>?
     private var displayID: NSNumber?
     private var fraction: CGFloat = 0.5
     private let defaults: UserDefaults
@@ -790,23 +789,11 @@ final class EdgeDockController: NSObject {
     /// Both the roster poll here and the workspace's post the same events; the
     /// stamp-based notice id lets `admit` drop the duplicate.
     private func announceBots(_ events: [BotActivityEvent]) {
-        let fresh = events.filter { event in
-            state.interruptions.admit(
+        for event in events {
+            _ = state.interruptions.admit(
                 HermNotice(
                     kind: .information, source: .activity, profileID: event.botID,
                     sourceID: "bot", eventID: event.id + "/" + event.stamp), channel: .notch)
-        }
-        guard !fresh.isEmpty, !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail,
-            state.previewInteraction.mode == .passive
-        else { return }
-        state.botBanner = fresh
-        state.expanded = true
-        position(animated: true)
-        scheduleCollapse(after: 3)
-        botBannerTask?.cancel()
-        botBannerTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled { self?.state.botBanner = [] }
         }
     }
 
@@ -1755,8 +1742,6 @@ final class EdgeNotchState: ObservableObject {
     @Published var announcesTasks = false
     /// The provider reading behind the latest quota announcement.
     @Published var quotaChange: EdgeQuotaChange?
-    /// Bots that just started or finished work; shown for ~3s at the top of the preview.
-    @Published var botBanner: [BotActivityEvent] = []
     var announcedQuotaChange: EdgeQuotaChange? { showingAnnouncement && announcesQuota ? quotaChange : nil }
     /// A task update and a quota drop announced together share one status view.
     var displaysStatus: Bool { showingAnnouncement && announcesTasks && announcedQuotaChange != nil }
@@ -1930,16 +1915,15 @@ struct EdgeNotchView: View {
                 // One persistent shell: the rail bar itself stretches into the preview
                 // panel and back, so the two states read as a single growing notch.
                 .background {
-                    // The top island wears the black Island skin and drops the outline
-                    // so it blends with the camera housing; Glass uses its own rim.
+                    // Side previews retain a contour even when Glass blends into the desktop.
                     shell(
                         DockWindowBackground(shape: AnyShape(EdgeNotchShape(side: state.side))).clipShape(
                             EdgeNotchShape(side: state.side)
                         )
                         .overlay {
-                            EdgeNotchShape(side: state.side).stroke(
-                                Color.dockBorderStrong,
-                                lineWidth: state.side == .top || DockThemeStyle.current.material == .glass ? 0 : 1)
+                            if state.side != .top {
+                                EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 1)
+                            }
                         })
                 }
                 // Attach drag gesture to parent so it works in both collapsed and expanded states
@@ -1969,7 +1953,7 @@ struct EdgeNotchView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state.isQuiet)
-        .dockThemedRoot()
+        .dockThemedRoot().dockPreferredTextSize()
         .id(theme.selectedThemeID)
     }
 
@@ -2059,13 +2043,6 @@ struct EdgeNotchView: View {
                 .frame(height: isIsland ? max(state.notchSize.height, 34) : 40)
                 .padding(.horizontal, isIsland ? 0 : 6)
                 if !isIsland { Divider().overlay(Color.dockBorderLight) }
-                if !state.botBanner.isEmpty {
-                    BotActivityBanner(events: state.botBanner)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 6)
-                        .transition(.opacity)
-                }
             }
             if let target = state.steeringTarget, let model = quickMessageModel {
                 EdgeSubagentSteering(
@@ -2277,7 +2254,7 @@ struct EdgeNotchView: View {
 /// or attention, held = done, hollow = offline. Work keeps its own dot
 /// beneath attention or done so a blocked card never hides a running task.
 private struct EdgePetRail: View {
-    @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .dots
+    @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .defaultStyle
     let activity: EdgeNotchActivity
     let side: EdgeDockSide
     var width: CGFloat = 28

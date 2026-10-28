@@ -154,6 +154,10 @@ extension DockModel {
                     Self.mergingSessionIndex(
                         loaded, with: sessions, keeping: self.navigationSessionID, working: working))
                 if merged != sessions { sessions = merged }
+                // Hermes names a session after its first turn; the header follows the list.
+                if let current = merged.first(where: { currentSessionIDs.contains($0.id) }) {
+                    updateCurrentSessionTitle(current.title)
+                }
                 let projection: HermesProjectionState<[HermesSession]> = merged.isEmpty ? .empty : .ready(merged)
                 if projection != sessionProjectionState { sessionProjectionState = projection }
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
@@ -656,7 +660,9 @@ extension DockModel {
         streamingMessageID = nil
         streamingMessageSessionID = nil
         streamingMessageIsVisionNotice = false
-        currentSessionTitle = session.displayTitle
+        // nil, not the "Untitled chat" placeholder, so later titles and auto-naming still apply.
+        let resumedTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        currentSessionTitle = resumedTitle.isEmpty ? nil : resumedTitle
         restorePendingApproval(for: [session.id])
         do {
             try await sessionRPCClient.connect()

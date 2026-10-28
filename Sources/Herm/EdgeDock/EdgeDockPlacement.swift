@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum EdgeDockLayout {
-    // Inset sideways enough to clear the rounded shoulder without wasting full-width bands.
+    // Trailing content clears the rounded shoulder; the navigation rail owns its leading padding.
     static let workspaceHorizontalInset: CGFloat = 12
     static let workspaceVerticalInset: CGFloat = 24
 
@@ -14,7 +14,7 @@ enum EdgeDockLayout {
         side == .top
             ? EdgeInsets(top: menuBarHeight + 8, leading: islandSideInset, bottom: 6, trailing: islandSideInset)
             : EdgeInsets(
-                top: workspaceVerticalInset, leading: workspaceHorizontalInset,
+                top: workspaceVerticalInset, leading: 0,
                 bottom: workspaceVerticalInset, trailing: workspaceHorizontalInset)
     }
 }

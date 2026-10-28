@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Explicit session links and targeted PR operations, never broad tool-result listings.
 enum SessionPullRequestReferences {
-    static func extract(texts: [String], defaults: UserDefaults = .standard) -> [GitHubItemReference] {
+    static func extract(texts: [String]) -> [GitHubItemReference] {
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
         var seen = Set<String>()
         return texts.flatMap { text in
@@ -11,7 +11,7 @@ enum SessionPullRequestReferences {
             return (detector?.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) ?? [])
                 .compactMap { match -> GitHubItemReference? in
                     guard let url = match.url,
-                        let reference = GitHubMarkdownLink.reference(for: url, defaults: defaults),
+                        let reference = GitHubMarkdownLink.reference(for: url),
                         reference.kind == .pullRequest,
                         seen.insert(reference.id.lowercased()).inserted
                     else { return nil }
@@ -137,6 +137,7 @@ struct SessionPullRequestRail: View {
     @ObservedObject private var details = PullRequestDetailStore.shared
     @State private var refreshID = UUID()
     @State private var lastOutputsRefreshID: UUID?
+    @State private var contextFiles: (sessionID: String, files: [SessionContextFile])?
     @State private var lineSummary: RepositoryChangeLineSummary?
     @State private var lineSnapshot: RepositoryChangeSnapshot?
 
@@ -147,7 +148,8 @@ struct SessionPullRequestRail: View {
     private var summary: SessionRailSummary {
         .make(
             model: model, repositoryPath: repositoryPath, repository: workflow.repository,
-            outputs: outputs.records, outputsError: outputs.error)
+            outputs: outputs.records, outputsError: outputs.error,
+            contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [])
     }
 
     var body: some View {
@@ -162,6 +164,7 @@ struct SessionPullRequestRail: View {
                 onRefresh: { refreshID = UUID() },
                 onViewAllChanges: onViewAllChanges, onViewPullRequest: onViewPullRequest,
                 summary: summary, onViewAllOutputs: onViewAllOutputs,
+                onOpenOutput: { SessionMessageTabs.shared.open(.output($0), in: WorkspaceIdentity.session(model)) },
                 onRespondInChat: onRespondInChat, onViewPin: onViewPin
             )
             .padding(16)
@@ -190,6 +193,7 @@ struct SessionPullRequestRail: View {
                 updatedAt: model.messages.last?.timestamp, messageCount: model.messages.count,
                 source: HermesFeatureIDs.sessionSource)
             async let pins: Void = model.refreshMessagePins()
+            async let context = model.fetchSessionContextDetails()
             await outputs.refresh(session: session) {
                 let results = await ArtifactIndexLoader.load(
                     sessions: [session], index: .shared, owner: ObjectIdentifier(model), force: force,
@@ -198,6 +202,8 @@ struct SessionPullRequestRail: View {
                     ?? .init(sessionID: id, profileID: session.profileID, records: [], error: "Outputs unavailable")
             }
             await pins
+            // A missing manifest keeps the last one for this session rather than blanking the section.
+            if let files = await context?.files, model.navigationSessionID == id { contextFiles = (id, files) }
         }
         .task(id: workflow.changes) {
             guard changes != nil, let repositoryPath, let snapshot = workflow.changes else { return }
@@ -227,6 +233,7 @@ struct SessionRailCard: View {
     let onViewPullRequest: (GitHubItemReference) async -> Bool
     var summary = SessionRailSummary()
     var onViewAllOutputs: () -> Void = {}
+    var onOpenOutput: (ArtifactRecord) -> Void = { _ in }
     var onRespondInChat: () -> Void = {}
     var onViewPin: (PinnedMessage) async -> Bool = { _ in false }
     @State private var expandedChanges = false
@@ -254,7 +261,7 @@ struct SessionRailCard: View {
                 }
             }
             SessionRailSummarySections(
-                summary: summary, onViewAllOutputs: onViewAllOutputs,
+                summary: summary, onViewAllOutputs: onViewAllOutputs, onOpenOutput: onOpenOutput,
                 onRespondInChat: onRespondInChat, onViewPin: onViewPin)
             if let changes {
                 DisclosureGroup(isExpanded: $expandedChanges) {

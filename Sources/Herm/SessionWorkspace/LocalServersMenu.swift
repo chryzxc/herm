@@ -17,7 +17,7 @@ struct LocalServersMenu: View {
         .buttonStyle(.dockCompact)
         .help("Open a local development preview")
         .accessibilityLabel("Local previews")
-        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+        .dockPopover(isPresented: $isOpen, arrowEdge: .bottom) {
             LocalPreviewsPanel(
                 servers: discovery.servers, isRefreshing: discovery.isRefreshing, error: discovery.error,
                 refresh: { Task { await discovery.refresh() } },

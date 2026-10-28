@@ -22,9 +22,8 @@ struct EdgeSubagentSteering: View {
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("\(origin.profileID ?? "Launch profile") · \(origin.displayTitle)").font(
-                        .system(size: 11)
-                    ).foregroundStyle(Color.dockSecondaryText)
+                    Text("\(origin.profileID ?? "Launch profile") · \(origin.displayTitle)").dockFont(.metadata)
+                        .foregroundStyle(Color.dockSecondaryText)
                     ForEach(agents) { agent in
                         Button {
                             selected = agent.id

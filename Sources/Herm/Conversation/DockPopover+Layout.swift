@@ -30,7 +30,7 @@ extension DockPopover {
                 chatContextRouter.model = model
                 chatContextRouter.bots = botMode
                 chatContextRouter.onOpened = { sessionID in
-                    missionControlNavigation.openPullRequestChat(sessionID: sessionID)
+                    sessionNavNavigation.openPullRequestChat(sessionID: sessionID)
                     fullscreenSurface = .conversation
                     inspectorScope = .session
                 }
@@ -38,7 +38,7 @@ extension DockPopover {
             .onChange(of: isWorkspaceVisible) { _, visible in
                 handleWorkspaceVisibilityChange(visible)
             }
-            // Retain each session's browser and connect Hermes to the selected one.
+            // Keep each session's tabs and connect Hermes to its profile's browser.
             .onChange(of: model.isHermesConnected, initial: true) { _, connected in
                 guard connected else { return }
                 SessionBrowserStore.shared.activate(model: model, reconnect: true)
@@ -52,7 +52,9 @@ extension DockPopover {
                 SessionBrowserStore.shared.activate(model: model)
             }
             .onChange(of: model.activeBrowserCall != nil) { _, browsing in
-                if browsing { NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil) }
+                if browsing, AgentBrowser.opensInHerm() {
+                    NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { notification in
                 if let url = notification.object as? URL {
@@ -62,18 +64,17 @@ extension DockPopover {
                 } else {
                     SessionBrowserStore.shared.present(nil, model: model)
                 }
-                inspectorScope = .session
-                if isFullscreen {
-                    isMissionInspectorVisible = true
-                } else if isNarrowLayout {
-                    isNarrowControlVisible = true
-                } else {
-                    isWorkspaceManuallyExpanded = true
+                showSessionRailInspector(.browser)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hermRevealInspector)) { notification in
+                guard let section = notification.object as? SessionInspector.Section else { return }
+                if section == .browser {
+                    SessionBrowserStore.shared.present(nil, model: model)
                 }
+                showSessionRailInspector(section)
             }
             .onReceive(SessionMessageTabs.shared.$openRequest) { workspace in
                 guard workspace == WorkspaceIdentity.session(model) else { return }
-                filePreview.url = nil
                 inspectorScope = .session
                 ensureInspectorPanelVisible()
             }
@@ -94,7 +95,6 @@ extension DockPopover {
 
     func observerLayerTwo<V: View>(_ view: V) -> some View {
         view
-            .onChange(of: filePreview.url) { _, _ in showFilePreview() }
             .onReceive(filePreview.$attachmentDiff) { changes in
                 guard changes != nil else { return }
                 inspectorScope = .session
@@ -229,15 +229,22 @@ extension DockPopover {
         .onChange(of: panelPresentation.kanbanRequest, initial: true) { _, request in
             guard request > 0 else { return }
             panelPresentation.kanbanRequest = 0
-            missionControlNavigation.selectGlobal(.kanban)
+            sessionNavNavigation.selectGlobal(.kanban)
             fullscreenGlobalTab = .kanban
             fullscreenSurface = .global
         }
         .onChange(of: panelPresentation.quotaRequest, initial: true) { _, request in
             guard request > 0 else { return }
             panelPresentation.quotaRequest = 0
-            missionControlNavigation.selectGlobal(.quota)
+            sessionNavNavigation.selectGlobal(.quota)
             fullscreenGlobalTab = .quota
+            fullscreenSurface = .global
+        }
+        .onChange(of: panelPresentation.settingsRequest, initial: true) { _, request in
+            guard request > 0 else { return }
+            panelPresentation.settingsRequest = 0
+            sessionNavNavigation.selectGlobal(.core)
+            fullscreenGlobalTab = .core
             fullscreenSurface = .global
         }
         .background {
@@ -245,27 +252,27 @@ extension DockPopover {
                 shape: AnyShape(
                     DockPanelSurfaceShape(
                         isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
-                        cornerRadius: usesWindowChrome ? 0 : 22,
+                        cornerRadius: usesWindowChrome ? 0 : DockLayout.windowRadius,
                         edgeSide: panelPresentation.edgeSide
                     )))
         }
         .clipShape(
             DockPanelSurfaceShape(
                 isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
-                cornerRadius: usesWindowChrome ? 0 : 22,
+                cornerRadius: usesWindowChrome ? 0 : DockLayout.windowRadius,
                 edgeSide: panelPresentation.edgeSide
             )
         )
         .overlay {
             DockPanelSurfaceShape(
                 isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
-                cornerRadius: usesWindowChrome ? 0 : 22,
+                cornerRadius: usesWindowChrome ? 0 : DockLayout.windowRadius,
                 edgeSide: panelPresentation.edgeSide
             )
             .stroke(
                 Color.dockBorderStrong,
-                lineWidth: DockThemeStyle.current.material == .glass
-                    ? 0 : (panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline))
+                lineWidth: panelPresentation.isEdgeAttached && !usesWindowChrome
+                    ? 1 : (DockThemeStyle.current.material == .glass ? 0 : DockLayout.hairline))
         }
         .modifier(
             EdgeSurfaceReveal(
@@ -283,10 +290,10 @@ extension DockPopover {
                         height: DockWindowChrome.titleRowHeight,
                         leadingClearance: DockWindowChrome.fullWidthTrafficLightClearance) : nil)
         )
-        .sheet(item: $selectedChatImage) { preview in
+        .dockSheet(item: $selectedChatImage) { preview in
             ChatImagePreviewModal(image: preview.image)
         }
-        .sheet(item: $controlCenter.integrationDestination) { destination in
+        .dockSheet(item: $controlCenter.integrationDestination) { destination in
             WorkflowIntegrationView(destination: destination, client: model.controlRPCClient)
         }
         .modifier(
@@ -319,39 +326,9 @@ extension DockPopover {
         }
     }
 
-    /// Fullscreen and the desktop panel must share this single
-    /// `desktopWorkspaceShell` branch. Rendering it from separate if/else
-    /// branches gave each presentation its own identity, so toggling
-    /// fullscreen remounted the whole workspace and reset its state.
-    @ViewBuilder
+    /// Keep the same hosts across narrow, desktop, and fullscreen layouts.
     var layoutContent: some View {
-        if !isNarrowLayout {
-            desktopWorkspaceShell
-        } else {
-            // Same shell as fullscreen, compacted: the rail stays and only the
-            // content pane narrows. Global destinations replace the chat/inspector pair.
-            HStack(spacing: 0) {
-                missionControlRail
-                if isGlobalSurfaceActive {
-                    globalSurfaceInTitleRow
-                } else {
-                    HStack(spacing: 2) {
-                        if !isNarrowControlVisible {
-                            conversationColumn
-                                .frame(width: narrowPaneWidth, height: panelPresentation.compactHeight)
-                        }
-
-                        if isWorkspaceVisibleForLayout {
-                            Rectangle().fill(Color.dockBorder).frame(width: DockLayout.hairline)
-                            contextPanel
-                                .frame(width: narrowPaneWidth, height: panelPresentation.compactHeight)
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
-                        }
-                    }
-                    .underTitlebar(titlebarInset)
-                }
-            }
-        }
+        desktopWorkspaceShell
     }
 
     /// Pages put their DockPageHeader in the title row; group chats keep the plain inset.
@@ -377,23 +354,22 @@ extension DockPopover {
     /// presentations, since both route through this shell.
     var desktopWorkspaceShell: some View {
         HStack(spacing: 0) {
-            missionControlRail
-            // Starts below the title row so it doesn't cut through the traffic lights;
-            // the gap above it is title row, not see-through window.
-            Color.dockBorder.frame(width: DockLayout.hairline).padding(.top, titlebarInset)
-                .background(Color.dockSidebar)
-            if showsChatsPanel, !hidesChatList {
-                FullscreenPanelSplitView(
-                    leading: missionControlQueue,
-                    trailing: desktopTrailingWorkspace,
-                    leadingFraction: DesktopWorkspaceFractions.queue,
-                    minimumLeadingWidth: 300,
-                    minimumTrailingWidth: desktopTrailingMinimumWidth
-                )
-            } else {
-                desktopTrailingWorkspace
-            }
+            sessionNavRail
+            // Every destination sits in one rounded card below the toolbar row, which stays flat.
+            let cardInsets = EdgeInsets(top: titlebarInset, leading: 0, bottom: 8, trailing: 8)
+            let card = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            FullscreenPanelSplitView(
+                leading: sessionNavQueue,
+                trailing: desktopTrailingWorkspace,
+                leadingFraction: DesktopWorkspaceFractions.queue,
+                minimumLeadingWidth: 300,
+                minimumTrailingWidth: desktopTrailingMinimumWidth,
+                isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList
+            )
+            .mask(ToolbarRowAndCardShape(toolbarHeight: titlebarInset, margin: 8, radius: 12))
+            .overlay { card.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline).padding(cardInsets) }
         }
+        .dockPaneTint(Color.dockSidebar)
     }
 
     var hidesChatList: Bool {
@@ -426,20 +402,20 @@ extension DockPopover {
         }
     }
 
-    var missionControlRail: some View {
-        MissionControlRail(
+    var sessionNavRail: some View {
+        SessionNavRail(
             model: model,
             controlCenter: controlCenter,
             workspaceStore: workspaceStore,
             isWorkspaceVisible: isWorkspaceVisible,
             agentUpdateService: agentUpdateService,
-            navigationState: missionControlNavigation,
+            navigationState: sessionNavNavigation,
             dockThemeStore: dockThemeStore,
             isChatsActive: showsChatsPanel || fullscreenSurface == .chatGrid,
             isGitHubActive: fullscreenSurface == .pullRequests || fullscreenSurface == .issues,
             onOpenChats: {
                 leaveIntegrations {
-                    missionControlNavigation.clearSelection()
+                    sessionNavNavigation.clearSelection()
                     if sessionWorkspaceMode == .voice { selectSessionMode(.chat) }
                     fullscreenSurface = prefersChatGrid ? .chatGrid : .conversation
                     inspectorScope = .session
@@ -449,20 +425,20 @@ extension DockPopover {
             },
             onOpenGlobal: { tab in
                 leaveIntegrations {
-                    missionControlNavigation.selectGlobal(tab)
+                    sessionNavNavigation.selectGlobal(tab)
                     fullscreenGlobalTab = tab
                     fullscreenSurface = .global
                 }
             },
             onOpenArtifacts: {
                 leaveIntegrations {
-                    missionControlNavigation.selectArtifacts()
+                    sessionNavNavigation.selectArtifacts()
                     fullscreenSurface = .artifacts
                 }
             },
             onOpenBots: {
                 leaveIntegrations {
-                    missionControlNavigation.selectBots()
+                    sessionNavNavigation.selectBots()
                     Task { await botMode.refreshNow(force: true) }
                     fullscreenSurface = .bots
                 }
@@ -532,7 +508,8 @@ extension DockPopover {
                     minimumTrailingWidth: sessionWorkspaceMode == .explorer
                         ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
                     leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
-                    isTrailingCollapsed: !isVisible
+                    isTrailingCollapsed: !isVisible,
+                    isLeadingCollapsed: isNarrowLayout && isVisible
                 )
             )
         }
@@ -568,7 +545,7 @@ extension DockPopover {
     /// inspector shell. Keep the inspector chrome identical in those two
     /// presentations; only the genuinely narrow two-pane dock needs its own
     /// visible inspector scope picker.
-    var usesMissionControlLayout: Bool {
+    var usesSessionNavLayout: Bool {
         isFullscreen || (!isNarrowLayout && isWorkspaceVisibleForLayout)
     }
 
@@ -700,7 +677,8 @@ extension DockPopover {
                             }
                             : [],
                         mainPath: activeSessionRepositoryPath,
-                        selection: Binding(get: { scope.repositoryPath }, set: { $0.map(selectWorktree) })
+                        selection: Binding(get: { scope.repositoryPath }, set: { $0.map(selectWorktree) }),
+                        newTask: { await startWorktreeTask(from: scope.repositoryPath) }
                     )
                 }
             )

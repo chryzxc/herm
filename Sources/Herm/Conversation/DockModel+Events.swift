@@ -179,6 +179,14 @@ extension DockModel {
         let payload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
         guard let eventSessionID, !eventSessionID.isEmpty else { return }
+        let mentions = inFlightBotActivities.values.filter {
+            $0.submissionStarted && $0.botChatSessionID == eventSessionID
+        }
+        if !mentions.isEmpty, let step = Self.botMentionActivityTitle(type: type, payload: payload) {
+            for activity in mentions {
+                if botLiveSteps[activity.activityID] != step { botLiveSteps[activity.activityID] = step }
+            }
+        }
         switch type {
         case "approval.request":
             setInFlightBotActivityWaiting(for: eventSessionID)
@@ -640,6 +648,18 @@ extension DockModel {
             }
         case "notice":
             appendSystemEvent(SystemEvent(label: "Notice"), text: payload["message"] as? String ?? "")
+        case "preview.open":
+            // Hermes' desktop_preview tool: show the page in the Browser tab, or externally if that's off.
+            guard params["herm_trace_replayed"] as? Bool != true, let raw = payload["url"] as? String,
+                let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+            else { break }
+            if AgentBrowser.opensInHerm() { InAppBrowser.open(url) } else { ExternalOpen.open(url) }
+        case "pane.reveal":
+            // Hermes' focus_pane tool. Chat and sessions are already in view.
+            guard params["herm_trace_replayed"] as? Bool != true,
+                let section = SessionInspector.Section(agentTab: payload["pane"] as? String ?? "")
+            else { break }
+            NotificationCenter.default.post(name: .hermRevealInspector, object: section)
         case "notification.show":
             let level = payload["level"] as? String
             let event = SystemEvent(
@@ -1103,6 +1123,12 @@ extension DockModel {
                 {
                     SessionSimulatorLaunchStore.shared.present(
                         receipt, session: WorkspaceIdentity.session(self), callID: id)
+                }
+                if activeToolCalls[index].name == "herm_inspector", !activeToolCalls[index].isComplete,
+                    params["herm_trace_replayed"] as? Bool != true, eventSessionID == currentSessionID,
+                    payload["is_error"] as? Bool != true, let section = SessionInspector.Section.receipt(result)
+                {
+                    NotificationCenter.default.post(name: .hermRevealInspector, object: section)
                 }
                 let wasDelegation = Self.isDelegationTool(activeToolCalls[index].name)
                 if wasDelegation, let args = payload["args"] as? [String: Any] {

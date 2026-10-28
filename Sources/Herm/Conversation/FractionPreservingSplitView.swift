@@ -28,20 +28,22 @@ final class FractionPreservingSplitView: NSSplitView {
         didSet { if oldValue != minimumTrailingWidth { invalidatePositions() } }
     }
     private var userAdjusted = false
+    private var expandedLeadingWidth: CGFloat?
     private var lastAppliedWidth: CGFloat = 0
 
-    /// The trailing pane stays in the hierarchy (so its SwiftUI state lives on)
-    /// but is squeezed to zero width instead of being hidden, which AppKit
-    /// does not reliably hand back to the leading pane.
+    /// Collapsed panes stay mounted at zero width so their SwiftUI state survives.
     private(set) var isTrailingCollapsed = false
+    private(set) var isLeadingCollapsed = false
 
     var minimumLeadingPosition: CGFloat {
+        if isLeadingCollapsed { return 0 }
         if isTrailingCollapsed { return collapsedLeadingPosition }
         // Preserve readable navigation when the workspace cannot fit both minimums.
         return min(minimumLeadingWidth, max(0, bounds.width - dividerThickness))
     }
 
     var maximumLeadingPosition: CGFloat {
+        if isLeadingCollapsed { return 0 }
         if isTrailingCollapsed { return collapsedLeadingPosition }
         let availableMaximum = max(minimumLeadingPosition, bounds.width - dividerThickness - minimumTrailingWidth)
         return min(maximumLeadingWidth ?? availableMaximum, availableMaximum)
@@ -50,16 +52,25 @@ final class FractionPreservingSplitView: NSSplitView {
     private var collapsedLeadingPosition: CGFloat { max(0, bounds.width - dividerThickness) }
 
     func setTrailingCollapsed(_ collapsed: Bool) {
-        guard collapsed != isTrailingCollapsed, let trailing = arrangedSubviews.last else { return }
-        isTrailingCollapsed = collapsed
-        trailing.wantsLayer = true
-        trailing.layer?.masksToBounds = true
-        // Re-derive the divider from the stored fraction when the pane returns.
-        lastAppliedWidth = 0
-        needsLayout = true
+        setCollapsed(leading: false, trailing: collapsed)
+    }
+
+    func setCollapsed(leading: Bool, trailing: Bool) {
+        guard leading != isLeadingCollapsed || trailing != isTrailingCollapsed else { return }
+        if !isLeadingCollapsed, !isTrailingCollapsed {
+            expandedLeadingWidth = arrangedSubviews.first?.frame.width
+        }
+        isLeadingCollapsed = leading
+        isTrailingCollapsed = trailing && !leading
+        for pane in arrangedSubviews {
+            pane.wantsLayer = true
+            pane.layer?.masksToBounds = true
+        }
+        invalidatePositions()
         DispatchQueue.main.async { [weak self] in
-            self?.layoutSubtreeIfNeeded()
-            self?.arrangedSubviews.last?.needsLayout = true
+            guard let self else { return }
+            layoutSubtreeIfNeeded()
+            for pane in arrangedSubviews { pane.needsLayout = true }
         }
     }
 
@@ -68,7 +79,20 @@ final class FractionPreservingSplitView: NSSplitView {
         needsLayout = true
     }
 
+    /// A collapsed trailing host is zero-width, but its SwiftUI content still
+    /// claims clicks past that frame, swallowing the leading pane's edge controls.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if isLeadingCollapsed, let trailing = arrangedSubviews.last {
+            return trailing.hitTest(convert(point, from: superview))
+        }
+        if isTrailingCollapsed, let leading = arrangedSubviews.first {
+            return leading.hitTest(convert(point, from: superview))
+        }
+        return super.hitTest(point)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        guard !isLeadingCollapsed, !isTrailingCollapsed else { return }
         userAdjusted = true
         super.mouseDown(with: event)
     }
@@ -87,9 +111,10 @@ final class FractionPreservingSplitView: NSSplitView {
         // when the inspector closes and the window narrows to 720pt.
         let proposed =
             userAdjusted || fraction == nil
-            ? arrangedSubviews[0].frame.width
+            ? (expandedLeadingWidth ?? arrangedSubviews[0].frame.width)
             : bounds.width * (fraction ?? 0.30)
         let position = min(max(proposed, minimumLeadingPosition), maximumLeadingPosition)
         setPosition(position, ofDividerAt: 0)
+        if !isLeadingCollapsed, !isTrailingCollapsed { expandedLeadingWidth = nil }
     }
 }

@@ -138,18 +138,14 @@ struct ConversationRepositoryBadgeAssociationProjection {
 
 /// Primary navigation: Chats, pinned destinations, and a menu for every destination. Chats opens the
 /// session lists panel; GitHub supplies its own section navigation beside its page.
-struct MissionControlRail: View {
+struct SessionNavRail: View {
     let model: DockModel
     let controlCenter: ControlCenterModel
     let workspaceStore: WorkspaceStore
     let isWorkspaceVisible: Bool
     @ObservedObject var agentUpdateService: HermesUpdateService
-    @ObservedObject var navigationState: MissionControlNavigationState
+    @ObservedObject var navigationState: SessionNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
-    @AppStorage(SidebarVisibilityKey.kanban) private var showsKanban = true
-    @AppStorage(SidebarVisibilityKey.github) private var showsGitHub = true
-    @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
-    @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendar = true
     @AppStorage(DockRailDestination.pinsKey) private var pinnedDestinations = DockRailDestination.defaultPins
     @State private var showsDestinations = false
     let isChatsActive: Bool
@@ -177,7 +173,7 @@ struct MissionControlRail: View {
                             isSelected: isChatsActive, isVisible: isWorkspaceVisible, style: style, action: onOpenChats
                         )
                     }
-                    ForEach(availableDestinations.filter { pins.contains($0) }) { item in
+                    ForEach(DockRailDestination.allCases.filter { pins.contains($0) }) { item in
                         destination(
                             item.title, icon: item.icon, isSelected: isSelected(item),
                             showsUpdateBadge: hasUpdate(item), style: style
@@ -188,10 +184,10 @@ struct MissionControlRail: View {
                     }
                     destination(
                         "More destinations", icon: .dotsThree,
-                        isSelected: availableDestinations.contains { !pins.contains($0) && isSelected($0) },
+                        isSelected: DockRailDestination.allCases.contains { !pins.contains($0) && isSelected($0) },
                         showsUpdateBadge: !pins.contains(.settings) && hasUpdate(.settings), style: style
                     ) { showsDestinations.toggle() }
-                    .popover(isPresented: $showsDestinations, arrowEdge: .trailing) {
+                    .dockPopover(isPresented: $showsDestinations, arrowEdge: .trailing) {
                         destinationMenu
                     }
                 }
@@ -230,18 +226,6 @@ struct MissionControlRail: View {
 
     private var pins: Set<DockRailDestination> { DockRailDestination.pins(pinnedDestinations) }
 
-    private var availableDestinations: [DockRailDestination] {
-        DockRailDestination.allCases.filter { item in
-            switch item {
-            case .kanban: showsKanban
-            case .github: showsGitHub
-            case .calendar: showsCalendar
-            case .office: showsOffice
-            default: true
-            }
-        }
-    }
-
     private func isSelected(_ item: DockRailDestination) -> Bool {
         switch item {
         case .github: isGitHubActive
@@ -263,11 +247,7 @@ struct MissionControlRail: View {
         showsDestinations = false
         switch item {
         case .github:
-            if let section = navigationState.selectedGitHubSection.available(
-                in: GitHubWorkspaceSection.visible(showsGitHub: showsGitHub))
-            {
-                onOpenGitHub(section)
-            }
+            onOpenGitHub(navigationState.selectedGitHubSection)
         case .artifacts: onOpenArtifacts()
         case .bots: onOpenBots()
         default:
@@ -280,13 +260,15 @@ struct MissionControlRail: View {
     private var destinationMenu: some View {
         ScrollView {
             VStack(spacing: 2) {
-                ForEach(availableDestinations) { item in
+                ForEach(DockRailDestination.allCases) { item in
                     HStack(spacing: 4) {
                         Button {
                             open(item)
                         } label: {
                             HStack(spacing: 10) {
-                                DockIcon(item.icon, size: 16, color: .dockSecondaryText)
+                                DockIcon(
+                                    item.icon, size: 16, weight: isSelected(item) ? .fill : .regular,
+                                    color: isSelected(item) ? .dockPrimaryText : .dockSecondaryText)
                                 Text(item.title).dockFont(.body)
                                 Spacer(minLength: 8)
                                 if hasUpdate(item) {
@@ -301,24 +283,26 @@ struct MissionControlRail: View {
                         Button {
                             togglePin(item)
                         } label: {
-                            DockIcon(.pushPin, size: 14, color: pins.contains(item) ? .dockAccent : .dockMetadataText)
-                                .frame(width: 32, height: 32)
-                                .contentShape(Rectangle())
+                            DockIcon(
+                                .pushPin, size: 14, weight: pins.contains(item) ? .fill : .regular,
+                                color: pins.contains(item) ? .dockPrimaryText : .dockMetadataText
+                            )
+                            .frame(width: 32, height: 32)
+                            .accessibilityAddTraits(pins.contains(item) ? .isSelected : [])
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)
                         .help(pins.contains(item) ? "Unpin from sidebar" : "Pin to sidebar")
                         .accessibilityLabel("\(pins.contains(item) ? "Unpin" : "Pin") \(item.title)")
                         .accessibilityValue(pins.contains(item) ? "Pinned" : "Unpinned")
                     }
-                    .background {
-                        if isSelected(item) {
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(Color.dockSurface2)
-                        }
-                    }
+                    .dockSelectionBackground(
+                        DockThemeShape(cornerRadius: DockLayout.controlRadius), active: isSelected(item),
+                        fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false)
                 }
             }.padding(8)
         }
-        .frame(width: 260, height: min(440, CGFloat(availableDestinations.count) * 38 + 16))
+        .frame(width: 260, height: min(440, CGFloat(DockRailDestination.allCases.count) * 38 + 16))
         .foregroundStyle(Color.dockPrimaryText)
         .background(Color.dockCanvas)
         .dockThemedRoot()
@@ -352,7 +336,7 @@ private struct HermesConnectionButton: View {
         .help("\(title) · Gateway actions")
         .accessibilityLabel("\(title). Gateway actions")
         .accessibilityIdentifier("hermes-gateway-actions")
-        .popover(isPresented: $showsActions, arrowEdge: .trailing) {
+        .dockPopover(isPresented: $showsActions, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text(title)

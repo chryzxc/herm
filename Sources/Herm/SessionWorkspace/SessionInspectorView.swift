@@ -93,6 +93,33 @@ struct SessionInspector: View {
             }
         }
 
+        /// A tab Hermes asked to show: the `herm_inspector` receipt's tab, or a `pane.reveal` pane.
+        init?(agentTab: String) {
+            switch agentTab {
+            case "timeline": self = .timeline
+            case "artifacts": self = .artifacts
+            case "files": self = .files
+            case "changes", "review": self = .changes
+            case "diff": self = .diff
+            case "terminal": self = .terminal
+            case "browser": self = .browser
+            case "github": self = .github
+            default: return nil
+            }
+        }
+
+        static func receipt(_ result: String) -> Self? {
+            struct Receipt: Decodable {
+                let schema: String
+                let tab: String
+            }
+            guard result.utf8.count < 4_096,
+                let value = try? JSONDecoder().decode(Receipt.self, from: Data(result.utf8)),
+                value.schema == "herm.inspector.v1"
+            else { return nil }
+            return Self(agentTab: value.tab)
+        }
+
         var id: Self { self }
         var navigationTitle: String {
             switch self {
@@ -254,6 +281,9 @@ struct SessionInspector: View {
                     selectedExtraID = workspace.extras[index].id
                 }
                 if let section = Section(rawValue: saved.selected) { selectedSection = section }
+            } else {
+                // New chats start with every tab closed; the + menu reopens them.
+                closedRaw = Section.allCases.map(\.rawValue).joined(separator: "|")
             }
             if gitHub.item(for: WorkspaceIdentity.session(model))?.reference != nil {
                 reopen(.github)
@@ -562,7 +592,7 @@ struct SessionInspector: View {
         .buttonStyle(.plain)
         .help("New tab")
         .accessibilityLabel("New tab")
-        .popover(isPresented: $isShowingNewTab, arrowEdge: .bottom) {
+        .dockPopover(isPresented: $isShowingNewTab, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 if !recentClosed.isEmpty {
                     newTabRow("Reopen closed tab", icon: .arrowCounterClockwise) { reopenLastClosed() }
@@ -795,7 +825,7 @@ struct SessionInspector: View {
     }
 
     /// Renders repository telemetry without duplicating the model selector from the composer.
-    private func sessionTelemetryStrip(focus: MissionControlFocus) -> some View {
+    private func sessionTelemetryStrip(focus: SessionNavFocus) -> some View {
         struct TelemetryItem: Identifiable {
             let id: String
             let icon: Ph
@@ -867,7 +897,7 @@ struct SessionInspector: View {
                                 .foregroundStyle(Color.dockAccent)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.label)
-                                    .dockFont(size: 9, weight: .semibold, design: .monospaced)
+                                    .dockFont(.metadata, weight: .semibold, design: .monospaced)
                                     .foregroundStyle(Color.dockSecondaryText)
                                 Text(item.value)
                                     .dockFont(.metadata, weight: .medium)

@@ -90,8 +90,8 @@ struct EdgeResultPeek: View {
                 .accessibilityLabel(showingComparison ? "Back to current result" : "Back to tasks")
                 VStack(alignment: .leading, spacing: 2) {
                     Text(target.session.displayTitle).dockFont(.body, weight: .semibold).lineLimit(1)
-                    Text(showingComparison ? "Compared with previous read" : "Latest completed reply").font(
-                        .system(size: 11)
+                    Text(showingComparison ? "Compared with previous read" : "Latest completed reply").dockFont(
+                        .metadata
                     ).foregroundStyle(
                         Color.dockSecondaryText)
                 }

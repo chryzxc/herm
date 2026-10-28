@@ -490,6 +490,7 @@ extension DockModel {
     /// session is matched by profile and start time; an ambiguous match
     /// shows nothing rather than another conversation's step.
     func refreshBotLiveSteps() async {
+        let generation = sessionResumeGeneration
         var steps: [String: String] = [:]
         for records in Dictionary(grouping: workingBotDispatches, by: \.botID).values {
             // Two DMs to one Bot at once cannot be told apart.
@@ -511,6 +512,9 @@ extension DockModel {
             else { continue }
             steps[record.id] = step
         }
+        guard generation == sessionResumeGeneration, !Task.isCancelled else { return }
+        // A mention may advance or finish while a DM's history read is awaiting Hermes.
+        steps.merge(botLiveSteps.filter { inFlightBotActivities[$0.key] != nil }) { _, live in live }
         if steps != botLiveSteps { botLiveSteps = steps }
     }
 
@@ -600,9 +604,36 @@ extension DockModel {
             if result != nil { record.result = result }
             if botChatSessionID != nil { record.botChatSessionID = botChatSessionID }
             botActivityBySessionID[originSessionID]![index] = record
+            if !record.isLive { botLiveSteps.removeValue(forKey: id) }
             botActivityRevision &+= 1
             enqueueBotActivityPersistence()
             return
+        }
+    }
+
+    static func botMentionActivityTitle(type: String, payload: [String: Any]) -> String? {
+        switch type {
+        case "tool.call", "tool.start", "tool.use", "tool_use":
+            guard
+                let name = (payload["name"] as? String) ?? (payload["tool"] as? String)
+                    ?? (payload["tool_name"] as? String),
+                !name.isEmpty
+            else { return nil }
+            let args =
+                parseArgsDict(payload["arguments"]) ?? parseArgsDict(payload["input"])
+                ?? parseArgsDict(payload["args"]) ?? parseArgsDict(payload["args_text"]) ?? [:]
+            let context =
+                payload["context"] as? String
+                ?? ["command", "path", "file_path", "pattern", "query", "url", "goal"]
+                .lazy.compactMap { args[$0] as? String }.first ?? ""
+            return safeUserDiagnostic(AgentActivityPresentation.toolActivityTitle(name: name, context: context))
+        case "reasoning.start", "reasoning.delta", "reasoning.available", "thinking", "thinking.delta":
+            return "Thinking"
+        case "message.start": return "Starting response"
+        case "message.delta", "message.interim": return "Responding"
+        case "approval.request": return "Waiting for approval"
+        case "clarification.request", "clarify.request": return "Waiting for your answer"
+        default: return nil
         }
     }
 

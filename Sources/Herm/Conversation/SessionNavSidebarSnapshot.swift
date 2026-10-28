@@ -4,7 +4,7 @@ import SwiftUI
 
 /// One group of conversations in the left navigation rail: a project-backed
 /// bucket or the shared unlinked bucket.
-struct MissionControlConversationGroup: Identifiable, Equatable {
+struct SessionNavConversationGroup: Identifiable, Equatable {
     let id: String
     let title: String
     let sessions: [HermesSession]
@@ -41,7 +41,7 @@ struct SidebarSessionRowDescriptor: Identifiable, Equatable, Sendable {
 /// snapshot splits the work: cheap-to-compare `Inputs` are diffed against the
 /// live models first, and the derived collections are rebuilt only when an
 /// input the rail renders actually changed.
-struct MissionControlSidebarSnapshot: Equatable {
+struct SessionNavSidebarSnapshot: Equatable {
     struct Inputs: Equatable {
         var activeSessionID: String?
         var activeStatus: HermesStatus?
@@ -73,7 +73,7 @@ struct MissionControlSidebarSnapshot: Equatable {
     }
 
     let inputs: Inputs
-    let linkedProjectGroups: [MissionControlConversationGroup]
+    let linkedProjectGroups: [SessionNavConversationGroup]
     let conversations: [HermesSession]
     let attentionDots: [String: SessionAttentionDot]
     let linkedSessionIDs: Set<String>
@@ -154,9 +154,9 @@ struct MissionControlSidebarSnapshot: Equatable {
         session.map(sessionDate) ?? .distantPast
     }
 
-    private static func conversationGroups(inputs: Inputs) -> [MissionControlConversationGroup] {
+    private static func conversationGroups(inputs: Inputs) -> [SessionNavConversationGroup] {
         let recentSessions = inputs.sessions.sorted { sessionDate($0) > sessionDate($1) }
-        var groups: [MissionControlConversationGroup] = []
+        var groups: [SessionNavConversationGroup] = []
         var assigned = Set<String>()
 
         for project in inputs.projects where project.isRenderableProject {
@@ -191,7 +191,7 @@ struct MissionControlSidebarSnapshot: Equatable {
             }
             let sessions = sessionsByID.values.sorted { sessionDate($0) > sessionDate($1) }
             groups.append(
-                MissionControlConversationGroup(
+                SessionNavConversationGroup(
                     id: "project:\(project.id)",
                     title: projectDisplayName(project.name),
                     sessions: sessions,
@@ -240,7 +240,7 @@ struct MissionControlSidebarSnapshot: Equatable {
             }
         if !unlinked.isEmpty {
             groups.append(
-                MissionControlConversationGroup(
+                SessionNavConversationGroup(
                     id: "unlinked",
                     title: "Unlinked conversations",
                     sessions: Array(unlinked),
@@ -261,7 +261,7 @@ struct MissionControlSidebarSnapshot: Equatable {
         }.map(\.element)
     }
 
-    private static func deduplicatedConversations(groups: [MissionControlConversationGroup]) -> [HermesSession] {
+    private static func deduplicatedConversations(groups: [SessionNavConversationGroup]) -> [HermesSession] {
         Dictionary(
             groups.flatMap(\.sessions).map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -308,8 +308,8 @@ struct MissionControlSidebarSnapshot: Equatable {
 /// diffed against the cheap `Inputs` first; the snapshot is republished only
 /// when an input the rail renders actually changed.
 @MainActor
-final class MissionControlSidebarModel: ObservableObject {
-    @Published private(set) var snapshot: MissionControlSidebarSnapshot
+final class SessionNavSidebarModel: ObservableObject {
+    @Published private(set) var snapshot: SessionNavSidebarSnapshot
     let instanceID = UUID().uuidString.prefix(8).description
 
     private let model: DockModel
@@ -321,8 +321,8 @@ final class MissionControlSidebarModel: ObservableObject {
         self.model = model
         self.control = control
         self.store = store
-        self.snapshot = MissionControlSidebarSnapshot(
-            inputs: MissionControlSidebarSnapshot.inputs(
+        self.snapshot = SessionNavSidebarSnapshot(
+            inputs: SessionNavSidebarSnapshot.inputs(
                 model: model, control: control, localProjectPaths: store.projectPathsBySessionID))
 
         Publishers.Merge3(
@@ -338,10 +338,10 @@ final class MissionControlSidebarModel: ObservableObject {
 
     func refresh() {
         let startedAt = Date()
-        let inputs = MissionControlSidebarSnapshot.inputs(
+        let inputs = SessionNavSidebarSnapshot.inputs(
             model: model, control: control, localProjectPaths: store.projectPathsBySessionID)
         guard inputs != snapshot.inputs else { return }
-        snapshot = MissionControlSidebarSnapshot(inputs: inputs)
+        snapshot = SessionNavSidebarSnapshot(inputs: inputs)
         DebugLog.writePerformance(
             "sidebar instance=\(instanceID) snapshot_refresh_ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
         )

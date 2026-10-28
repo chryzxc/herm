@@ -1,10 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Modal for the Projects header: create a project from a source folder,
+/// Modal for the Projects header: create a project with an optional source folder,
 /// picked with NSOpenPanel or dropped onto the folder card.
 struct ProjectFolderSheet: View {
-    let onCreate: (String, String) async -> Bool
+    let onCreate: (String, String?) async -> Bool
     var failureReason: () -> String? = { nil }
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -14,16 +14,17 @@ struct ProjectFolderSheet: View {
     @State private var failure: String?
 
     private var canSubmit: Bool {
-        folder != nil && !isWorking && !name.trimmingCharacters(in: .whitespaces).isEmpty
+        !isWorking && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
         DockModal(
-            icon: .folderPlus, title: "New Project", subtitle: "Choose a source folder and name your project.",
+            icon: .folderPlus, title: "New Project",
+            subtitle: "Name your project and optionally choose a source folder.",
             width: 440
         ) {
             labeledField("Name") { DockTextField("Project name", text: $name).textFieldStyle(.dockGlass) }
-            labeledField("Source folder") { folderCard }
+            labeledField("Source folder (optional)") { folderCard }
             if let failure { ModalNote(text: failure, icon: .warning, tone: .dockDestructive) }
         } footer: {
             modalActions(
@@ -97,11 +98,11 @@ struct ProjectFolderSheet: View {
     }
 
     private func submit() {
-        guard let folder else { return }
+        guard canSubmit else { return }
         isWorking = true
         failure = nil
         Task { @MainActor in
-            let ok = await onCreate(name.trimmingCharacters(in: .whitespaces), folder.path)
+            let ok = await onCreate(name.trimmingCharacters(in: .whitespacesAndNewlines), folder?.path)
             isWorking = false
             if ok { dismiss() } else { failure = failureReason() ?? "Hermes could not save the change. Try again." }
         }

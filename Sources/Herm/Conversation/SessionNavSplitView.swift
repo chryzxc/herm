@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// A three-region fullscreen shell: queue, focused workspace, and contextual
 /// inspector. The queue and inspector keep sensible minimums while the center
 /// owns all remaining space.
-struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: View>: NSViewRepresentable {
+struct SessionNavSplitView<Queue: View, Workspace: View, Inspector: View>: NSViewRepresentable {
     let queue: Queue
     let workspace: Workspace
     let inspector: Inspector
@@ -43,7 +43,7 @@ struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: View>: N
             guard !context.coordinator.hasSetInitialPositions,
                 splitView.bounds.width > 0
             else { return }
-            // Mission Control deliberately gives the queue, work surface, and
+            // The session navigation shell deliberately gives the queue, work surface, and
             // inspector equal outer weight at launch. Users may still resize
             // either divider for a chat- or operations-heavy session.
             splitView.setPosition(splitView.bounds.width * 0.30, ofDividerAt: 0)
@@ -135,6 +135,7 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
     let leadingWidth: Binding<CGFloat>?
     /// Hides the trailing pane without tearing it down, so its state survives.
     let isTrailingCollapsed: Bool
+    let isLeadingCollapsed: Bool
 
     init(
         leading: Leading,
@@ -145,9 +146,11 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         maximumLeadingWidth: CGFloat? = nil,
         minimumTrailingWidth: CGFloat = 360,
         leadingWidth: Binding<CGFloat>? = nil,
-        isTrailingCollapsed: Bool = false
+        isTrailingCollapsed: Bool = false,
+        isLeadingCollapsed: Bool = false
     ) {
         self.isTrailingCollapsed = isTrailingCollapsed
+        self.isLeadingCollapsed = isLeadingCollapsed
         self.leading = leading
         self.trailing = trailing
         self.leadingFraction = leadingFraction
@@ -190,27 +193,32 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
 
     func updateNSView(_ splitView: NSSplitView, context: Context) {
         context.coordinator.leadingHost.rootView = AnyView(
-            leading.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale)
+            leading.dockThemedRoot().environment(\.self, context.environment)
+                .disabled(isLeadingCollapsed).accessibilityHidden(isLeadingCollapsed)
         )
         context.coordinator.trailingHost.rootView = AnyView(
-            trailing.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale)
+            trailing.dockThemedRoot().environment(\.self, context.environment)
+                .disabled(isTrailingCollapsed).accessibilityHidden(isTrailingCollapsed)
                 .overlay(alignment: .leading) {
-                    Color.dockBorder.frame(width: DockLayout.hairline)
+                    // The collapsed leading pane leaves the rail's rule adjacent; don't double it.
+                    if !isLeadingCollapsed { Color.dockBorder.frame(width: DockLayout.hairline) }
                 }
         )
         context.coordinator.leadingWidth = leadingWidth
         if let splitView = splitView as? FractionPreservingSplitView {
-            splitView.setTrailingCollapsed(isTrailingCollapsed)
+            splitView.setCollapsed(leading: isLeadingCollapsed, trailing: isTrailingCollapsed)
             splitView.fraction = leadingFraction
             splitView.minimumLeadingWidth = minimumLeadingWidth
             splitView.maximumLeadingWidth = maximumLeadingWidth
             splitView.minimumTrailingWidth = minimumTrailingWidth
         }
 
-        guard !context.coordinator.hasSetInitialPosition else { return }
+        guard !isLeadingCollapsed, !isTrailingCollapsed, !context.coordinator.hasSetInitialPosition else { return }
         DispatchQueue.main.async {
             guard !context.coordinator.hasSetInitialPosition,
-                splitView.bounds.width > 0
+                splitView.bounds.width > 0,
+                (splitView as? FractionPreservingSplitView)?.isLeadingCollapsed != true,
+                (splitView as? FractionPreservingSplitView)?.isTrailingCollapsed != true
             else { return }
             let proposed = initialLeadingWidth ?? (splitView.bounds.width * (leadingFraction ?? 0.30))
             let minimum = context.coordinator.minimumLeadingPosition(in: splitView)
@@ -285,7 +293,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         func splitViewDidResizeSubviews(_ notification: Notification) {
             guard let leadingWidth else { return }
             guard let splitView = notification.object as? NSSplitView,
-                (splitView as? FractionPreservingSplitView)?.isTrailingCollapsed != true
+                (splitView as? FractionPreservingSplitView)?.isTrailingCollapsed != true,
+                (splitView as? FractionPreservingSplitView)?.isLeadingCollapsed != true
             else { return }
             leadingWidth.wrappedValue = splitView.subviews.first?.frame.width ?? leadingWidth.wrappedValue
         }

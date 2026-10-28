@@ -159,6 +159,14 @@ extension DockModel {
         }
     }
 
+    func fetchSessionUsageDetails() async -> SessionUsageSummary? {
+        guard let id = sessionID, !id.isEmpty,
+            let result = try? await interruptRPC.sessionUsage(sessionID: id),
+            sessionID == id
+        else { return nil }
+        return ControlCenterModel.parseSessionUsage(result)
+    }
+
     func fetchSessionContextDetails() async -> SessionContextSummary? {
         guard let id = sessionID, !id.isEmpty,
             let result = try? await interruptRPC.sessionContextBreakdown(sessionID: id),
@@ -223,7 +231,7 @@ extension DockModel {
     }
 
     /// Points Hermes' browser tools at a CDP endpoint (same as `/browser connect`); nil disconnects.
-    /// Hermes keeps it process-wide until the gateway restarts.
+    /// Hermes keeps it per profile until the gateway restarts.
     func setHermesBrowser(cdpURL: String?) async throws {
         var params: [String: Any] = ["action": cdpURL == nil ? "disconnect" : "connect"]
         if let cdpURL { params["url"] = cdpURL }
@@ -353,7 +361,9 @@ extension DockModel {
                 ? .failure : identifier.hasPrefix("approval:") ? .approval : .clarification
         let owner = identifier.split(separator: ":", maxSplits: 1).last.map(String.init)
         if interruptionCoordinator?.admit(interruptionNotice(kind, owner: owner), channel: .system) == false { return }
-        guard !isPopoverVisible, HermesAppRuntime.supportsUserNotifications else { return }
+        guard HermNotificationAction.showsBanner(kind, popoverVisible: isPopoverVisible, appActive: NSApp.isActive),
+            HermesAppRuntime.supportsUserNotifications
+        else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = String(body.prefix(240))
@@ -387,6 +397,10 @@ extension DockModel {
 
 /// Banner buttons for approvals. The request ID rides in `userInfo` so a stale banner can only answer the exact request it announced.
 enum HermNotificationAction {
+    /// An open window hides the notch, so a request that waits on the user still gets a banner unless Herm is in front.
+    static func showsBanner(_ kind: HermNotice.Kind, popoverVisible: Bool, appActive: Bool) -> Bool {
+        !popoverVisible || ([.approval, .clarification].contains(kind) && !appActive)
+    }
     static let approvalCategory = "herm.approval"
     static let approve = "herm.approval.approve"
     static let deny = "herm.approval.deny"

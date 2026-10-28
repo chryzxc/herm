@@ -11,41 +11,7 @@ struct DockPanelSurfaceShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         if isEdgeAttached { return EdgeNotchShape(side: edgeSide).path(in: rect) }
-        let radius = min(cornerRadius, min(rect.width, rect.height) / 2)
-        var path = Path()
-
-        if isEdgeAttached {
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        } else {
-            path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.maxX, y: rect.minY + radius),
-                control: CGPoint(x: rect.maxX, y: rect.minY)
-            )
-        }
-
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
-            control: CGPoint(x: rect.maxX, y: rect.maxY)
-        )
-        path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX, y: rect.maxY - radius),
-            control: CGPoint(x: rect.minX, y: rect.maxY)
-        )
-
-        if !isEdgeAttached {
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.minX + radius, y: rect.minY),
-                control: CGPoint(x: rect.minX, y: rect.minY)
-            )
-        }
-        path.closeSubpath()
-        return path
+        return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).path(in: rect)
     }
 }
 
@@ -88,6 +54,7 @@ struct ConversationScrollAnchor: Equatable {
 }
 
 struct DockPopover: View {
+    @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
     @StateObject var expandedReviewRouter = ExpandedReviewRouter()
     @ObservedObject var model: DockModel
     @ObservedObject var panelPresentation: DockPanelPresentation
@@ -135,7 +102,7 @@ struct DockPopover: View {
     @StateObject var repositoryPreferences = CommandCenterPreferencesStore.shared
     @ObservedObject var dockThemeStore = DockThemeStore.shared
     @StateObject var botMode = BotModeModel()
-    @StateObject var missionControlNavigation = MissionControlNavigationState()
+    @StateObject var sessionNavNavigation = SessionNavigationState()
     @State var sessionWorkspaceMode: SessionWorkspaceMode = .chat
     @State var suppressNextVoiceResponse = false
     /// Full voice mode: the voice stage covers the navigation and inspector.
@@ -293,6 +260,7 @@ struct DockPopover: View {
     var body: some View {
         // Bound the root's generic layout before observer modifiers copy its sheet state.
         observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
+            .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.supportedTextSize(textSize)))
             .environment(\.chatContextRouter, chatContextRouter)
             .environment(\.richHostActionRouter, richHostRouter)
             .generativeUISession(model: model)

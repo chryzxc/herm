@@ -273,6 +273,14 @@ extension ConversationTranscriptSource {
             actions.run(message.id, action: kind) { [weak self] in
                 guard let self, self.message(for: target) != nil else { return }
                 await self.model.refreshCurrentSession()
+                // Refreshing only re-reads the transcript; a retry sends the prompt again.
+                guard let current = self.message(for: target),
+                    let sessionID = self.model.sessionID,
+                    let index = self.model.messages.firstIndex(where: { $0.id == current.id }),
+                    let prompt = self.model.messages[..<index].last(where: { $0.role == .user })
+                else { return }
+                self.model.send(
+                    QueuedPrompt(sessionID: sessionID, text: prompt.text, images: [], pdfURL: nil))
             }
         case .pin:
             actions.run(message.id, action: kind) { [model] in

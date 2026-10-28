@@ -19,7 +19,7 @@ struct EdgeQuickConversationTranscript: View {
             isShowingMessageSearch: $searching, pinnedMessageJumpID: $jumpID, selectedChatImage: $image
         )
         .equatable()
-        .sheet(item: $image) { ChatImagePreviewModal(image: $0.image) }
+        .dockSheet(item: $image) { ChatImagePreviewModal(image: $0.image) }
         .onChange(of: model.replyQuote) { _, quote in
             guard let quote else { return }
             onReply(quote)

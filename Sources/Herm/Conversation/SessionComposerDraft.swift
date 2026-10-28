@@ -60,6 +60,15 @@ extension DockModel {
         if pendingPDFError != snapshot?.pdfError { pendingPDFError = snapshot?.pdfError }
     }
 
+    /// Starts a new chat in `projectPath` and moves the current draft,
+    /// attachments included, into it instead of leaving it behind.
+    func newChatMovingDraft(projectPath: String) {
+        let previous = composerDraftKey
+        newChat(projectPath: projectPath)
+        composerDrafts[composerDraftKey] = composerDrafts.removeValue(forKey: previous)
+        restoreComposerDraft(for: composerDraftKey)
+    }
+
     func discardComposerDraft(for key: SessionComposerDraft.Key) {
         guard let snapshot = composerDrafts.removeValue(forKey: key) else { return }
         cleanupImageAttachments(snapshot.images)

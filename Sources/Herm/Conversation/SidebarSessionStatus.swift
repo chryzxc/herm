@@ -80,7 +80,7 @@ enum SidebarSessionStatusResolver {
     @MainActor
     static func statuses(
         for sessions: [HermesSession],
-        snapshot: MissionControlSidebarSnapshot,
+        snapshot: SessionNavSidebarSnapshot,
         seenStore: SidebarSessionSeenStore,
         fallbackProfileID: String?
     ) -> [String: SidebarSessionStatus] {

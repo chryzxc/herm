@@ -70,9 +70,8 @@ struct EdgeRoutinePreview: View {
                             Button("I reviewed the run; allow another…") { confirming = "Record reviewed run" }
                                 .buttonStyle(.dockCompact)
                         }
-                        Text("Run now starts a new execution. It does not retry delivery.").font(
-                            .system(size: 11)
-                        ).foregroundStyle(Color.dockSecondaryText)
+                        Text("Run now starts a new execution. It does not retry delivery.").dockFont(.metadata)
+                            .foregroundStyle(Color.dockSecondaryText)
                         Button(preferences.routinePins.contains(reference.id) ? "Unpin routine" : "Pin routine") {
                             preferences.toggleRoutinePin(reference.id)
                         }.buttonStyle(.dockCompact)

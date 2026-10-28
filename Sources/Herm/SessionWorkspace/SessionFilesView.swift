@@ -149,7 +149,7 @@ struct SessionFilesView: View {
                 Group {
                     if entry.isDirectory {
                         DockIcon(isExpanded ? .caretDown : .caretRight)
-                            .dockFont(size: 9, weight: .bold)
+                            .dockFont(.metadata, weight: .bold)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
@@ -163,7 +163,7 @@ struct SessionFilesView: View {
                     ExplorerFileIcon(path: entry.path, size: 13).frame(width: 16)
                 }
                 highlightedName(entry)
-                    .dockFont(size: 12.5)
+                    .dockFont(.body)
                     .foregroundStyle(status.map(Self.color(for:)) ?? Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)

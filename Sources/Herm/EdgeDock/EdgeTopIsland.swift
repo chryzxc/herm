@@ -22,7 +22,7 @@ enum EdgeIslandTheme {
 /// The collapsed top island: two ears flank the camera housing, which stays
 /// dark and empty. The shell fill lives in EdgeNotchView so it can grow into the preview.
 struct EdgeIslandRail: View {
-    @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .dots
+    @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .defaultStyle
     let activity: EdgeNotchActivity
     let notchWidth: CGFloat
     let ear: CGFloat
@@ -49,7 +49,7 @@ struct EdgeIslandRail: View {
 /// camera, what needs you right of it. Reads the notch's own state so the
 /// band and the collapsed island never disagree.
 struct EdgeIslandStatusStrip: View {
-    @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .dots
+    @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .defaultStyle
     @ObservedObject var state: EdgeNotchState
     @ObservedObject var control: ControlCenterModel
     let height: CGFloat

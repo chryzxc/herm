@@ -4,6 +4,8 @@ import WebKit
 
 extension Notification.Name {
     static let hermOpenInBrowser = Notification.Name("hermOpenInBrowser")
+    /// Object: the `SessionInspector.Section` Hermes asked to show in the current chat.
+    static let hermRevealInspector = Notification.Name("hermRevealInspector")
 }
 
 /// Routes chat link clicks to the session inspector's Browser tab. Falls back
@@ -147,6 +149,7 @@ struct SessionBrowserView: View {
     @AppStorage("sessionInspector.browserViewport") private var viewportRaw = 0
     @ObservedObject private var browser: BrowserController
     @ObservedObject private var agent: AgentBrowser
+    @ObservedObject private var logins = SharedBrowserLogins.shared
     @State private var field = ""
     @State private var sendingPage = false
     @FocusState private var isEditingAddress: Bool
@@ -209,14 +212,13 @@ struct SessionBrowserView: View {
                     if navigation.isLoading { DockShimmerTrack(tone: .working, muted: true) }
                 }
 
+            if let error = navigation.error {
+                navigationFailure(error)
+            } else if isPrimary, case .failed(let message) = agent.state {
+                offlineNotice(message)
+            }
+
             pageContent
-                .overlay(alignment: .top) {
-                    if let error = navigation.error {
-                        navigationFailure(error)
-                    } else if isPrimary, case .failed(let message) = agent.state {
-                        offlineNotice(message)
-                    }
-                }
         }
         .background {
             Button("Focus browser address") { isEditingAddress = true }
@@ -409,6 +411,19 @@ struct SessionBrowserView: View {
                 sendConsole()
             }
             .disabled(consoleErrors.isEmpty)
+            if showsAgent, let site = BrowserCookieJar.site(of: pageURL) {
+                DockMenuCheckRow(title: "Share Sign-In for \(site)", isSelected: logins.jar.sites.contains(site)) {
+                    agent.toggleSharing(site)
+                }
+                .help("Let every session's agent browser use this site's sign-in")
+            }
+            if !logins.jar.sites.isEmpty {
+                DockMenu("Shared Sign-Ins", icon: .users) {
+                    ForEach(logins.jar.sites.sorted(), id: \.self) { site in
+                        Button("Stop Sharing \(site)", icon: .x) { logins.stopSharing(site) }
+                    }
+                }
+            }
             Button("Sign Out of All Sites", icon: .signOut) { SharedBrowserLogins.shared.clear() }
                 .help("Clear the cookies every session's browser shares")
             if showsAgent {

@@ -83,8 +83,7 @@ struct EdgeSessionCapacity: View {
                             }.menuStyle(.borderlessButton).buttonStyle(.dockCompact).disabled(pending)
                         }
                         if let id = snapshot.modelID {
-                            Text("Current: \(id.replacingOccurrences(of: "|", with: " / "))").font(
-                                .system(size: 11))
+                            Text("Current: \(id.replacingOccurrences(of: "|", with: " / "))").dockFont(.metadata)
                         }
                     } else if pending {
                         ProgressView().controlSize(.small)
