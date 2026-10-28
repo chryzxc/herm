@@ -45,17 +45,17 @@ struct DockOnboardingView: View {
             }
         }
         .background(DockWindowBackground())
-        .dockThemedRoot()
+        .dockThemedRoot().dockPreferredTextSize()
         .dockFont(.body)
         .animation(
             reduceMotion || !DockThemeStyle.current.animates ? nil : .easeInOut(duration: 0.18), value: setup.step
         )
         .onExitCommand(perform: close)
         .task { await setup.refresh() }
-        .sheet(isPresented: $createsBot, onDismiss: { Task { await setup.refresh() } }) {
+        .dockSheet(isPresented: $createsBot, onDismiss: { Task { await setup.refresh() } }) {
             BotCreationSheet(model: bots, roster: bots.bots)
         }
-        .sheet(isPresented: $showsConnection) {
+        .dockSheet(isPresented: $showsConnection) {
             DockExpandedPage(
                 title: "Gateway connection", subtitle: "Use your existing Hermes installation",
                 close: {
@@ -91,7 +91,7 @@ struct DockOnboardingView: View {
                 Image(nsImage: DockAppBrand.icon).resizable().frame(width: 72, height: 72)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Your Hermes, within reach").dockFont(size: 12, weight: .semibold)
+                    Text("Your Hermes, within reach").dockFont(.body, weight: .semibold)
                     Text("Your existing agent, with a native home on your Mac.")
                         .foregroundStyle(Color.dockSecondaryText)
                 }
@@ -114,7 +114,7 @@ struct DockOnboardingView: View {
         HStack(alignment: .top, spacing: 12) {
             DockIcon(icon).foregroundStyle(Color.dockSecondaryText).frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).dockFont(size: 12, weight: .semibold)
+                Text(title).dockFont(.body, weight: .semibold)
                 Text(detail).foregroundStyle(Color.dockSecondaryText)
             }
         }
@@ -127,7 +127,7 @@ struct DockOnboardingView: View {
                     .foregroundStyle(setup.connected ? Color.dockSuccess : Color.dockSecondaryText)
                     .frame(width: 18, height: 18)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Hermes connection").dockFont(size: 12, weight: .semibold)
+                    Text("Hermes connection").dockFont(.body, weight: .semibold)
                     Text(setup.busy ? setup.progress : setup.message)
                         .foregroundStyle(setup.connected || setup.busy ? Color.dockSecondaryText : Color.dockWarning)
                         .textSelection(.enabled)
@@ -160,7 +160,7 @@ struct DockOnboardingView: View {
             botPluginSection
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Text("Choose a bot").dockFont(size: 12, weight: .semibold)
+                    Text("Choose a bot").dockFont(.body, weight: .semibold)
                     Spacer(minLength: 12)
                     Button("Create bot…") { createsBot = true }
                         .buttonStyle(.dockSecondary).disabled(!setup.canUseBots)
@@ -218,7 +218,7 @@ struct DockOnboardingView: View {
                 .accessibilityLabel("Herm face preview")
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 12) {
-                    Text("Herm faces").dockFont(size: 12, weight: .semibold)
+                    Text("Herm faces").dockFont(.body, weight: .semibold)
                     Spacer(minLength: 0)
                     Button("Generate missing faces…") { confirmsFaces = true }.buttonStyle(.dockCompact)
                 }
@@ -238,7 +238,7 @@ struct DockOnboardingView: View {
             HStack(spacing: 12) {
                 BotAvatarView(bot: bot, imageData: bots.avatarImages[bot.id], size: 36)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(bot.name).dockFont(size: 12, weight: .semibold).lineLimit(1)
+                    Text(bot.name).dockFont(.body, weight: .semibold).lineLimit(1)
                     if bot.isDefault {
                         DockMetadataPill(text: "Default profile")
                             .fixedSize()

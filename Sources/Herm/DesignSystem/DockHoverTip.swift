@@ -160,7 +160,11 @@ final class DockHoverTipPresenter {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? window.screen
         else { return }
         hidePanel()
-        let font = DockSkinPresentation.nativeFont(size: 12, weight: .medium)
+        let scale = CGFloat(
+            DockWorkspaceScale.supportedTextSize(
+                UserDefaults.standard.object(forKey: DockWorkspaceScale.preferenceKey) as? Double
+                    ?? DockWorkspaceScale.defaultTextSize))
+        let font = DockSkinPresentation.nativeFont(size: DockTypography.size(.control, scale: scale), weight: .medium)
         let textWidth = min(
             320, screen.visibleFrame.width - 30,
             ceil((anchor.text as NSString).size(withAttributes: [.font: font]).width))
@@ -175,7 +179,7 @@ final class DockHoverTipPresenter {
             .background(RoundedRectangle(cornerRadius: 5).fill(Color.dockOpaqueCanvas))
             .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.dockBorderStrong, lineWidth: 1))
             .accessibilityHidden(true)
-            .dockThemedRoot()
+            .dockThemedRoot().environment(\.dockWorkspaceScale, scale)
         let host = NSHostingController(rootView: tip)
         host.sizingOptions = []
         let size = host.sizeThatFits(

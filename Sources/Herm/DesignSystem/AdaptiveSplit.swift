@@ -20,42 +20,62 @@ struct AdaptiveSplit<Primary: View, Secondary: View>: View {
 
     var body: some View {
         GeometryReader { geo in
-            if geo.size.width >= breakpoint, hidesPrimary {
-                secondary.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if geo.size.width >= breakpoint {
-                // HSplitView hosts each pane in its own AppKit view, which re-adds the
-                // window's titlebar safe area. Herm lays out its own title row, so drop it.
-                HSplitView {
-                    primary.frame(
-                        minWidth: primaryMinWidth, idealWidth: primaryIdealWidth, maxWidth: primaryMaxWidth,
-                        maxHeight: .infinity
-                    )
-                    .ignoresSafeArea(.container, edges: .top)
-                    if showsSecondary || alwaysSplitWhenWide {
-                        secondary.frame(minWidth: secondaryMinWidth, maxHeight: .infinity)
-                            .overlay(alignment: .leading) { Color.dockBorder.frame(width: DockLayout.hairline) }
-                            .ignoresSafeArea(.container, edges: .top)
-                    }
-                }
-            } else if showsSecondary {
-                VStack(spacing: 0) {
+            let wide = geo.size.width >= breakpoint
+            let primaryHidden = wide ? hidesPrimary : showsSecondary
+            let secondaryHidden = wide ? !(showsSecondary || alwaysSplitWhenWide || hidesPrimary) : !showsSecondary
+            FullscreenPanelSplitView(
+                leading: primary,
+                trailing: VStack(spacing: 0) {
                     if let onBack {
-                        HStack {
-                            Button(action: onBack) { DockIconLabel("BACK", icon: .caretLeft) }
-                                .buttonStyle(.dockCompact)
-                                .dockFont(.metadata, weight: .semibold)
-                                .foregroundStyle(Color.dockAccent)
-                            Spacer()
+                        if wide, !alwaysSplitWhenWide, !hidesPrimary {
+                            closeBar(action: onBack)
+                        } else if !wide {
+                            navigationBar("BACK", icon: .caretLeft, action: onBack)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        Divider().overlay(Color.dockBorderLight)
                     }
                     secondary.frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                primary.frame(maxWidth: .infinity, maxHeight: .infinity)
+                },
+                leadingFraction: nil,
+                initialLeadingWidth: primaryIdealWidth ?? max(primaryMinWidth, 390),
+                minimumLeadingWidth: primaryMinWidth,
+                maximumLeadingWidth: primaryMaxWidth,
+                minimumTrailingWidth: secondaryMinWidth,
+                isTrailingCollapsed: secondaryHidden,
+                isLeadingCollapsed: primaryHidden
+            )
+        }
+    }
+
+    /// Trailing icon-only close, aligned with the title-row controls rather than a labelled button.
+    private func closeBar(action: @escaping () -> Void) -> some View {
+        HStack {
+            Spacer()
+            Button(action: action) {
+                DockIcon(.x, size: DockLayout.toolbarIconSize, color: .dockSecondaryText)
+                    .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.dockHover)
+            .help("Close details")
+            .accessibilityLabel("Close details")
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, DockWindowChrome.titleRowHeight - DockLayout.iconControlSize - 8)
+        .padding(.bottom, 2)
+    }
+
+    private func navigationBar(_ title: String, icon: Ph, action: @escaping () -> Void) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: action) { DockIconLabel(title, icon: icon) }
+                    .buttonStyle(.dockCompact)
+                    .dockFont(.metadata, weight: .semibold)
+                    .foregroundStyle(Color.dockAccent)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            Divider().overlay(Color.dockBorderLight)
         }
     }
 }

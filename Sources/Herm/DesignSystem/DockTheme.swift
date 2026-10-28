@@ -89,7 +89,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .pixel: "Indigo panels, magenta accents, stepped corners, and pixel-grid shadows. No motion."
         case .notebook: "Ruled cream paper, blue accents, pencil outlines, and highlighter selection."
         case .hud: "Cyan instruments, crosshair grid, chamfered panels, and fine corner brackets."
-        case .storm: "Storm-night indigo, neon blue glow, falling rain streaks, and luminous selection bars."
+        case .storm: "Storm-night indigo, matte blue controls, falling rain streaks, and crisp selection bars."
         case .island: "Pure black surfaces and white type that blend with the camera notch. Used by the top island."
         }
     }
@@ -123,8 +123,8 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 motion: .mechanical, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .clay:
             DockThemeStyle(
-                controlRadius: 16, paneRadius: 22, outlineWidth: 0, fontDesign: .rounded, cardShadow: 8,
-                accentGradient: true, emboss: 7, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+                controlRadius: 16, paneRadius: 22, outlineWidth: 0, fontDesign: .rounded, cardShadow: 5,
+                accentGradient: true, emboss: 4, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
         case .pixel:
             DockThemeStyle(
                 controlRadius: 0, paneRadius: 0, outlineWidth: 3, stickerShadow: 4, geometry: .pixel,
@@ -142,8 +142,8 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 tintedSidebar: true)
         case .storm:
             DockThemeStyle(
-                controlRadius: 8, paneRadius: 12, outlineWidth: 1, selection: .neon, glow: 4, cardShadow: 8,
-                accentGradient: true, backdrop: .rain, motion: .float, pressScale: 0.97, cardFill: 1,
+                controlRadius: 8, paneRadius: 12, outlineWidth: 1, selection: .bar, cardShadow: 5,
+                backdrop: .rain, motion: .float, pressScale: 0.97, cardFill: 1,
                 tintedSidebar: true)
         case .cartoon:
             DockThemeStyle(
@@ -163,7 +163,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 motion: .mechanical, pressScale: 1, cardFill: 1, tintedSidebar: true)
         case .dusk:
             DockThemeStyle(
-                controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 5, cardShadow: 10, accentGradient: true,
+                controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 2, cardShadow: 6, accentGradient: true,
                 motion: .float, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
         case .origami:
             DockThemeStyle(
@@ -171,7 +171,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .glass:
             DockThemeStyle(
-                controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, motion: .float,
+                controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 0, motion: .float,
                 pressScale: 0.97, neutralUserBubble: true)
         case .eInk:
             DockThemeStyle(
@@ -359,7 +359,7 @@ struct DockThemePalette {
         case .hermesClassic:
             return isDark
                 ? (
-                    "#0D1117", "#161B22", "#010409", "#21262D", "#D1D9E0", "#B1BAC4", "#7D8590", "#4A84FE", "#17243A",
+                    "#0D1117", "#161B22", "#010409", "#21262D", "#D3D9E0", "#B8C2CE", "#939EAB", "#4A84FE", "#17243A",
                     "#30363D", "#3FB950", "#D29922", "#F85149"
                 )
                 : (
@@ -369,7 +369,7 @@ struct DockThemePalette {
         case .ares:
             return isDark
                 ? (
-                    "#1D1115", "#2B191E", "#160E12", "#48252B", "#CCC2AF", "#C7B4A5", "#AC7C78", "#DD4A3A", "#692620",
+                    "#1A1115", "#291B20", "#21151A", "#38252B", "#E3D7C7", "#CCBDAE", "#BA9690", "#DD4A3A", "#692620",
                     "#6E584B", "#7BC96F", "#C7A96B", "#EF5350"
                 )
                 : (
@@ -379,17 +379,17 @@ struct DockThemePalette {
         case .mono:
             return isDark
                 ? (
-                    "#1F1F1F", "#282828", "#181818", "#464646", "#C8C8C8", "#C8C8C8", "#909090", "#AAAAAA", "#505050",
+                    "#1B1B1B", "#262626", "#202020", "#383838", "#D8D8D8", "#BFBFBF", "#A2A2A2", "#BFBFBF", "#424242",
                     "#5E5E5E", "#B5B5B5", "#AAAAAA", "#D0D0D0"
                 )
                 : (
-                    "#F5F5F5", "#EDEDED", "#FAFAFA", "#E2E2E2", "#202020", "#565656", "#696969", "#555555", "#E0E0E0",
+                    "#F5F5F5", "#EDEDED", "#FAFAFA", "#D8D8D8", "#202020", "#565656", "#696969", "#555555", "#E0E0E0",
                     "#C7C7C7", "#5F5F5F", "#777777", "#8A8A8A"
                 )
         case .slate:
             return isDark
                 ? (
-                    "#151C2F", "#1C2740", "#111827", "#324867", "#BEC6CE", "#BEC6CE", "#8891A0", "#7EB8F6", "#3A5375",
+                    "#141C2A", "#1D293C", "#182234", "#2A3B53", "#D2D9E3", "#BCCADA", "#9AAAC0", "#7EB8F6", "#3A5375",
                     "#545E6B", "#63D0A6", "#E6A855", "#F7A072"
                 )
                 : (
@@ -398,104 +398,104 @@ struct DockThemePalette {
                 )
         case .warmLight:
             return (
-                "#F5F0E8", "#EEE5D5", "#FBF7EF", "#E8DCC8", "#2C1810", "#664F3D", "#745D45", "#8B4513", "#E8DAD0",
+                "#F5F0E8", "#FFFAF2", "#EEE6D8", "#E9DDCA", "#2C1810", "#664F3D", "#745D45", "#8B4513", "#E8DAD0",
                 "#D2BE9D", "#2E7D32", "#E65100", "#C62828"
             )
         case .cartoon:
             return (
-                "#FFF6DC", "#FFFFFF", "#FFEFC4", "#FFE7A3", "#1E1A16", "#4A4038", "#786859", "#F0481F", "#FFD3C2",
+                "#FFF6E2", "#FFFDF7", "#FFF0CF", "#FFE4A8", "#1E1A16", "#4A4038", "#786859", "#F0481F", "#FFD3C2",
                 "#1E1A16", "#168F55", "#B86E00", "#E5383B"
             )
         case .retro:
             return (
-                "#C0C0C0", "#D4D0C8", "#CBC7BF", "#DEDBD3", "#000000", "#2B2B2B", "#454545", "#000080", "#B4B8D8",
+                "#C4C4C4", "#DCDAD4", "#CCCAC4", "#E8E6E0", "#000000", "#2B2B2B", "#454545", "#000080", "#B4B8D8",
                 "#7F7F7F", "#005A00", "#7A4A00", "#A00000"
             )
         case .terminal:
             return (
-                "#0F1511", "#18211B", "#131A15", "#253329", "#C9DBCD", "#B4CCBB", "#8AA894", "#4ADE80", "#1F4A2B",
+                "#0B120E", "#131E17", "#0F1913", "#213126", "#CDDCCF", "#B6D0BD", "#94B59F", "#4ADE80", "#1F4A2B",
                 "#3D5C46", "#4ADE80", "#F2C94C", "#FF6B6B"
             )
         case .brutalist:
             return (
-                "#FFFFFF", "#FFFFFF", "#F2F2F2", "#FFE500", "#000000", "#222222", "#555555", "#0047FF", "#FFE500",
+                "#F7F7F2", "#FFFFFF", "#ECEDE7", "#FFE500", "#000000", "#222222", "#555555", "#0047FF", "#FFE500",
                 "#000000", "#00A152", "#B86A00", "#FF1F1F"
             )
         case .origami:
             return (
-                "#F2EEE6", "#FFFDF8", "#E9E2D7", "#DED4C5", "#29251F", "#554E45", "#6B6156", "#6252B5", "#DED8F5",
+                "#F1EDE5", "#FFFCF5", "#EAE3D8", "#E1D7C7", "#29251F", "#554E45", "#6B6156", "#6252B5", "#DED8F5",
                 "#A89D8E", "#2F7D62", "#A95F1E", "#B63E42"
             )
         case .clay:
             return (
-                "#F6EFE9", "#FFF8F2", "#FBF1E8", "#EBDDD3", "#3B2F2F", "#635251", "#7B6865", "#E4584A", "#FFD9D0",
+                "#F3EBE5", "#FFF8F2", "#EEE0D6", "#E8D7CB", "#382B29", "#5E4945", "#715C56", "#B94F40", "#FFD9D0",
                 "#D6C0B2", "#2F8A66", "#A86A10", "#D9443D"
             )
         case .pixel:
             return (
-                "#1A1033", "#261A4A", "#20143F", "#3A2A6B", "#D6D0EE", "#C2BBE2", "#8F85B9", "#FF4FA3", "#4B2F8A",
+                "#17102E", "#251A43", "#1E1539", "#35245D", "#DCD5EE", "#CBBFE9", "#AB9BCD", "#FF4FA3", "#4B2F8A",
                 "#5A46A0", "#3DDC97", "#FFD23F", "#FF5C6C"
             )
         case .notebook:
             return (
-                "#FBF6E9", "#FFFDF5", "#F5EFDC", "#E9E0C6", "#2B2A33", "#55525E", "#6C6879", "#2F4FA8", "#FFF0A8",
+                "#F8F3E5", "#FFFCF2", "#F0E8D3", "#E8DDC1", "#2B2A33", "#55525E", "#686473", "#2F4FA8", "#FFF0A8",
                 "#77747F", "#3F8F5B", "#A86F00", "#C8362E"
             )
         case .hud:
             return (
-                "#060B14", "#0C1626", "#09111E", "#12263D", "#A9DCEB", "#83B8CA", "#5C8796", "#19D3F3", "#0F3A52",
+                "#080F18", "#101D2B", "#0C1622", "#193047", "#C2DEE4", "#A6CDD8", "#84AABA", "#19D3F3", "#0F3A52",
                 "#1F5C75", "#3DEB9A", "#FFB020", "#FF4D5E"
             )
         // Tokyo Night Storm, with metadata lifted from the comment gray for legible text.
         case .storm:
             return (
-                "#24283B", "#292E42", "#1F2335", "#3B4261", "#C0CAF5", "#B8C0E2", "#8E97C6", "#7AA2F7", "#394B70",
+                "#1C2132", "#272D43", "#22273B", "#343C57", "#D1D8F0", "#BAC7E8", "#9CAACF", "#7AA2F7", "#394B70",
                 "#414868", "#9ECE6A", "#E0AF68", "#F7768E"
             )
         case .island:
             return (
-                "#000000", "#141414", "#0A0A0A", "#262626", "#D9D9DC", "#B3B3B8", "#8A8A90", "#F5F5F7", "#2C2C2E",
+                "#000000", "#141414", "#0A0A0A", "#262626", "#D8D8DB", "#BEBEC4", "#9C9CA5", "#F5F5F7", "#2C2C2E",
                 "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A"
             )
         case .dusk:
             return (
-                "#111019", "#1D1928", "#15121E", "#2A2436", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740",
+                "#17131F", "#241D30", "#1D1828", "#332A42", "#DDD5E6", "#C3B6D2", "#A99ABB", "#9B8CF0", "#2A2740",
                 "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B"
             )
         // Apple system grays and a graphite accent: neutral, like macOS 26 Liquid Glass.
         case .glass:
             return isDark
                 ? (
-                    "#1C1C1E", "#2C2C2E", "#232325", "#323234", "#D8D8DC", "#AEAEB2", "#99999E", "#AEAEB2", "#3A3A3C",
+                    "#1C1D20", "#303236", "#26282C", "#3B3D42", "#D7D8DA", "#C3C5CA", "#A9ACB3", "#BDBFC1", "#3A3A3C",
                     "#48484A", "#30D158", "#FF9F0A", "#FF453A"
                 )
                 : (
-                    "#F5F5F7", "#FFFFFF", "#FAFAFA", "#E8E8ED", "#1D1D1F", "#515154", "#6E6E73", "#6E6E73", "#E3E3E8",
-                    "#D2D2D7", "#248A3D", "#C93400", "#D70015"
+                    "#F4F5F7", "#FFFFFF", "#E9EBEF", "#DEE1E6", "#171A1F", "#3E454F", "#515965", "#535557", "#DADCE0",
+                    "#969DA7", "#248A3D", "#C93400", "#D70015"
                 )
         case .clean:
             return isDark
                 ? (
-                    "#171716", "#20201F", "#1B1B1A", "#2B2B2A", "#E4E4E4", "#B0B0AE", "#999997", "#B0B0AE", "#2B2B2A",
+                    "#181918", "#252625", "#202120", "#323330", "#E4E4E4", "#C1C3BC", "#A4A79E", "#B0B0AE", "#2B2B2A",
                     "#303030", "#4CC27A", "#E5A640", "#FF6B6B"
                 )
                 : (
-                    "#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#666664", "#EFEFEE",
-                    "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A"
+                    "#F7F7F5", "#FFFFFF", "#EFEFEB", "#E6E7E2", "#111111", "#5C5C5C", "#6B6B6B", "#666664", "#EFEFEE",
+                    "#D6D6D3", "#2F8F4E", "#B26A00", "#D93A3A"
                 )
         case .eInk:
             return (
-                "#FFFFFF", "#FFFFFF", "#FFFFFF", "#EDEDED", "#000000", "#2B2B2B", "#555555", "#000000", "#D9D9D9",
+                "#FFFFFF", "#FFFFFF", "#F5F5F5", "#E8E8E8", "#000000", "#2B2B2B", "#555555", "#000000", "#D9D9D9",
                 "#000000", "#1A1A1A", "#333333", "#000000"
             )
         case .swiss:
             return isDark
                 ? (
-                    "#0A0A0A", "#0A0A0A", "#0A0A0A", "#1C1C1C", "#D4D4D4", "#B0B0B0", "#7A7A7A", "#FF3B30", "#2A1412",
+                    "#111111", "#111111", "#171717", "#252525", "#D8D8D7", "#BCBCB8", "#999995", "#FF3B30", "#2A1412",
                     "#2E2E2E", "#9A9A9A", "#B0B0B0", "#FF3B30"
                 )
                 : (
-                    "#FFFFFF", "#FFFFFF", "#FFFFFF", "#F0F0F0", "#0A0A0A", "#4A4A4A", "#747474", "#E30613", "#FBE4E5",
+                    "#FAFAF7", "#FAFAF7", "#F1F1EC", "#E8E8E2", "#0A0A0A", "#4A4A4A", "#6C6C68", "#E30613", "#FBE4E5",
                     "#D9D9D9", "#555555", "#777777", "#E30613"
                 )
         }
@@ -508,6 +508,7 @@ struct DockThemePalette {
         uniqueKeysWithValues: DockThemeID.allCases.map { ($0, Tokens(theme: $0)) })
     private var resolvedTokens: Tokens { Self.tokens[theme]! }
     var windowBackground: Color { resolvedTokens.windowBackground }
+    var opaqueBackground: Color { resolvedTokens.opaqueBackground }
     var background: Color { resolvedTokens.background }
     var surface: Color { resolvedTokens.surface }
     var surface2: Color { resolvedTokens.surface2 }
@@ -541,31 +542,31 @@ struct DockThemePalette {
     }
     /// Neon skins light card rims, primary fills, and selection with a gradient
     /// from the accent through these hues; empty on every other skin.
-    var neonHues: [Color] { theme == .storm ? [accent, Self.stormMagenta, Self.stormCyan] : [] }
-    // Tokyo Night magenta and cyan; Storm's brand hues beside its blue accent.
-    private static let stormMagenta = Color(nsColor: NSColor(hex: "#BB9AF7"))
-    private static let stormCyan = Color(nsColor: NSColor(hex: "#7DCFFF"))
+    var neonHues: [Color] { [] }
 }
 
 private struct Tokens {
     let accents: [Color]
-    let windowBackground, background, surface, surface2, surface4, primaryText, secondaryText, metadataText, accent,
+    let windowBackground, opaqueBackground, background, surface, surface2, surface4, primaryText, secondaryText,
+        metadataText, accent,
         onAccent, selectedFill, divider, success, warning, destructive, info, merged, review: Color
 
     init(theme: DockThemeID) {
         let light = DockThemePalette.roles(theme, dark: false)
         let dark = DockThemePalette.roles(theme, dark: true)
-        func color(_ pick: (DockThemePalette.Roles) -> String, nativeAlpha: CGFloat = 1) -> Color {
-            func resolved(_ roles: DockThemePalette.Roles) -> NSColor {
+        func color(
+            _ pick: (DockThemePalette.Roles) -> String, nativeAlpha: CGFloat = 1, nativeLightAlpha: CGFloat? = nil
+        ) -> Color {
+            func resolved(_ roles: DockThemePalette.Roles, alpha: CGFloat) -> NSColor {
                 let value = NSColor(hex: pick(roles))
-                return theme.usesNativeMaterial ? value.withAlphaComponent(nativeAlpha) : value
+                return theme.usesNativeMaterial ? value.withAlphaComponent(alpha) : value
             }
+            let lightColor = resolved(light, alpha: nativeLightAlpha ?? nativeAlpha)
+            let darkColor = resolved(dark, alpha: nativeAlpha)
             switch theme.appearance {
-            case .light: return Color(nsColor: resolved(light))
-            case .dark: return Color(nsColor: resolved(dark))
+            case .light: return Color(nsColor: lightColor)
+            case .dark: return Color(nsColor: darkColor)
             case .system:
-                let lightColor = resolved(light)
-                let darkColor = resolved(dark)
                 return Color(
                     nsColor: NSColor(name: nil) { appearance in
                         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
@@ -580,17 +581,15 @@ private struct Tokens {
         info = accents[DockAccentColor.blue.rawValue]
         merged = accents[DockAccentColor.violet.rawValue]
         review = accents[DockAccentColor.teal.rawValue]
-        // Glass is composited over the system material. Its neutral tint is a
-        // whisper so the wallpaper reads through like native Liquid Glass; the
-        // blur underneath keeps text from windows behind Herm unreadable.
-        // Branded themes stay opaque so their authored colors render exactly as specified.
-        windowBackground = color({ $0.bg }, nativeAlpha: theme == .glass ? 0.12 : 0.40)
+        // Light glass needs a stable reading surface even over a dark desktop.
+        windowBackground = color({ $0.bg }, nativeAlpha: 0.12, nativeLightAlpha: 0.88)
+        opaqueBackground = color { $0.bg }
         // Clear so nested page canvases never stack into darker panes; the
         // window tint above is the only layer over the glass.
         background = color({ $0.bg }, nativeAlpha: 0)
-        surface = color({ $0.surface }, nativeAlpha: 0.40)
-        surface2 = color({ $0.surface2 }, nativeAlpha: 0.32)
-        surface4 = color({ $0.surface4 }, nativeAlpha: 0.60)
+        surface = color({ $0.surface }, nativeAlpha: 0.40, nativeLightAlpha: 1)
+        surface2 = color({ $0.surface2 }, nativeAlpha: 0.32, nativeLightAlpha: 1)
+        surface4 = color({ $0.surface4 }, nativeAlpha: 0.60, nativeLightAlpha: 1)
         primaryText = color { $0.primary }
         secondaryText = color { $0.secondary }
         metadataText = color { $0.metadata }
@@ -604,6 +603,23 @@ private struct Tokens {
         warning = color { $0.warning }
         destructive = color { $0.destructive }
     }
+}
+
+extension Color {
+    /// A white frost above the material separates light controls from the canvas.
+    static let dockLightGlassLift = Color(
+        nsColor: NSColor(name: nil) {
+            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white : .clear
+        })
+    static let dockLightGlassEdge = Color(
+        nsColor: NSColor(name: nil) {
+            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua
+                ? NSColor.black.withAlphaComponent(0.30) : NSColor.white.withAlphaComponent(0.08)
+        })
+    static let dockGlassHighlight = Color(
+        nsColor: NSColor(name: nil) {
+            NSColor.white.withAlphaComponent($0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? 0.20 : 0.24)
+        })
 }
 
 extension NSColor {

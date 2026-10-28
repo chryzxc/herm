@@ -13,6 +13,24 @@ enum DockMotion {
     static func pressScale(isPressed: Bool, isEnabled: Bool, reduceMotion: Bool) -> CGFloat {
         isPressed && isEnabled && Self.isEnabled(reduceMotion: reduceMotion) ? DockThemeStyle.current.pressScale : 1
     }
+
+    static func hoverOffset(isHovered: Bool, isPressed: Bool, isEnabled: Bool, reduceMotion: Bool) -> CGFloat {
+        guard isHovered, !isPressed, isEnabled, Self.isEnabled(reduceMotion: reduceMotion) else { return 0 }
+        switch DockThemeStyle.current.motion {
+        case .float: return -1
+        case .bouncy: return -1.5
+        case .glide, .snap, .mechanical: return 0
+        }
+    }
+
+    static var revealDistance: CGFloat {
+        switch DockThemeStyle.current.motion {
+        case .float: 5
+        case .bouncy: 7
+        case .glide: 3
+        case .snap, .mechanical: 0
+        }
+    }
 }
 
 /// Suppress inherited explicit animations as well as local implicit animations.
@@ -38,7 +56,7 @@ private struct DockSurfaceReveal: ViewModifier {
         content
             // Animate only this compositing effect, never the child's layout or live data.
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22)) { view in
-                view.opacity(settled ? 1 : 0.85).offset(y: settled ? 0 : 6)
+                view.opacity(settled ? 1 : 0.85).offset(y: settled ? 0 : DockMotion.revealDistance)
             }
             .onAppear { hasAppeared = true }
     }

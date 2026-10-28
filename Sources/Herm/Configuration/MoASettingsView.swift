@@ -74,7 +74,7 @@ struct MoASettingsView: View {
                     set: { enabled in save { $0.update(preset, enabled: enabled) } }
                 )
             )
-            .toggleStyle(.switch)
+            .toggleStyle(.dockSwitch)
             .controlSize(.small)
             .dockFont(.body)
             .help("Show this preset under Mixture of Agents in model pickers")
@@ -99,7 +99,7 @@ struct MoASettingsView: View {
                     )
                 )
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(.dockSwitch)
                 .controlSize(.mini)
                 .accessibilityLabel("\(slot.enabled ? "Disable" : "Enable") reference \(index + 1)")
                 Button {

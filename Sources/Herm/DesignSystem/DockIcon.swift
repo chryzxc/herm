@@ -75,13 +75,13 @@ struct DockDrawOnIcon: View {
     }
 }
 
-/// Icon-and-text control content with a fixed 16pt icon.
+/// Icon-and-text control content with a fixed 16pt icon that inherits the label's ink.
 struct DockIconLabel: View {
     let title: String
     let icon: Ph
-    var iconColor: Color = .dockMetadataText
+    var iconColor: Color?
 
-    init(_ title: String, icon: Ph, iconColor: Color = .dockMetadataText) {
+    init(_ title: String, icon: Ph, iconColor: Color? = nil) {
         self.title = title
         self.icon = icon
         self.iconColor = iconColor

@@ -196,7 +196,7 @@ struct HermesPetSettingsView: View {
                             dirty = true
                         })
                 )
-                .toggleStyle(.switch).controlSize(.small).fixedSize()
+                .toggleStyle(.dockSwitch).controlSize(.small).fixedSize()
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Select a pet").dockFont(.body, weight: .semibold)

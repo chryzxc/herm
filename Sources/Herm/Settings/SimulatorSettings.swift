@@ -10,7 +10,7 @@ struct SimulatorSettings: View {
                 "Ask the agent to launch iOS and Android devices through Herm and open their tabs automatically. Requires the Herm simulator tool. Changes apply to your next message; running devices stay open. This guides the agent and does not block terminal commands."
         ) {
             Toggle("Open simulators in Herm", isOn: $enabled)
-                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Color.dockAccent)
+                .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
         }
     }
 }

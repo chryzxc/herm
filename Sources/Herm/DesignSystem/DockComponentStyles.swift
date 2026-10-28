@@ -30,9 +30,9 @@ extension Color {
     static var dockUserMessageBubble: Color {
         DockThemeStyle.current.neutralUserBubble ? dockSurface4 : dockAccent.opacity(0.12)
     }
-    /// Opaque panel fill for popovers/overlays: system window colour for the translucent native skins, the skin canvas otherwise.
+    /// Opaque themed canvas for presentations; never inherit AppKit's warm window fill.
     static var dockOpaqueCanvas: Color {
-        DockThemeRuntime.current.usesNativeMaterial ? Color(nsColor: .windowBackgroundColor) : dockCanvas
+        DockThemePalette(theme: DockThemeRuntime.current).opaqueBackground
     }
     static var dockControlSurface: Color { dockSurface4 }
     static var dockBorderStrong: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.95) }
@@ -90,6 +90,12 @@ enum DockLayout {
     static var controlRadius: CGFloat { DockThemeStyle.current.controlRadius }
     static var paneRadius: CGFloat { DockThemeStyle.current.paneRadius }
     static var outline: CGFloat { DockThemeStyle.current.outlineWidth }
+    /// Matches AppKit's corner radius for a window with a unified toolbar, so
+    /// the borderless floating panel reads like Herm's titled window.
+    static let windowRadius: CGFloat = {
+        if #available(macOS 26, *) { return 26 }
+        return 10
+    }()
 }
 
 enum DockThemeShapeRole {
@@ -432,7 +438,11 @@ extension View {
             if mode == .underline && active { palette.accent.frame(height: 2) }
         }
         .overlay(alignment: .leading) {
-            if mode == .bar && active { palette.accent.frame(width: 2).padding(.vertical, 6) }
+            if theme != .glass && active
+                && (mode == .bar || mode == .fill || mode == .highlight || (mode == .invert && !allowsInvert))
+            {
+                palette.primaryText.frame(width: 2).padding(.vertical, 6)
+            }
             if mode == .neon && active && !palette.neonHues.isEmpty {
                 LinearGradient(colors: Array(palette.neonHues.prefix(2)), startPoint: .top, endPoint: .bottom)
                     .frame(width: 2)
@@ -607,11 +617,10 @@ struct DockWindowBackground: View {
     }
 }
 
-/// Backing for sheets and panes layered over other content: the window's own
-/// glass on the glass skin (so nothing beneath shows through), else the canvas.
+/// Layered sheets and panes need a stable canvas independent of the material beneath them.
 struct DockPaneBackground: View {
     var body: some View {
-        if DockThemeRuntime.current.usesNativeMaterial { DockWindowBackground() } else { Color.dockCanvas }
+        Color.dockOpaqueCanvas
     }
 }
 
@@ -716,7 +725,6 @@ extension View {
 /// The single accent-tinted action treatment from DESIGN.md. Use it only for the
 /// primary action in a section; secondary actions keep a neutral outline.
 struct DockPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.colorScheme) private var colorScheme
     /// Split actions keep the shared fill readable while their selector is enabled.
     var dimsWhenDisabled = true
     static var foregroundColor: Color {
@@ -731,17 +739,18 @@ struct DockPrimaryButtonStyle: ButtonStyle {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         let tint = configuration.role == .destructive ? Color.dockDestructive : Color.dockAccent
         let highlighted = isHovering && isEnabled
-        // Light glass uses the frosted treatment to avoid broad native button shadows.
+        // Dense actions share shadowless glass in both appearances.
         let isGlass = DockThemeStyle.current.material == .glass
         let neon = DockThemePalette(theme: DockThemeRuntime.current).neonHues
         configuration.label
-            .foregroundStyle(isGlass && colorScheme == .light ? Color.dockPrimaryText : Self.foregroundColor)
+            .foregroundStyle(Self.foregroundColor)
             .dockButtonMetrics()
             .background {
                 if isGlass {
                     Color.clear.dockLiquidGlass(
-                        shape, tint: tint.opacity(highlighted ? 1 : 0.88), interactive: true,
-                        elevated: colorScheme == .dark)
+                        shape, tint: tint.opacity(configuration.isPressed ? 0.86 : highlighted ? 0.94 : 1),
+                        interactive: true,
+                        elevated: false)
                 } else if !neon.isEmpty {
                     // Neon skins: a solid accent-to-magenta fill that glows brighter on hover.
                     shape.fill(
@@ -776,6 +785,11 @@ struct DockPrimaryButtonStyle: ButtonStyle {
                 DockMotion.pressScale(
                     isPressed: configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
             )
+            .offset(
+                y: DockMotion.hoverOffset(
+                    isHovered: isHovering, isPressed: configuration.isPressed,
+                    isEnabled: isEnabled, reduceMotion: reduceMotion)
+            )
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: highlighted)
             .onHover { isHovering = $0 }
@@ -785,7 +799,6 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 /// The outlined companion to the primary action (Cancel, Remove, Copy). A
 /// destructive role tints the label instead of filling the control.
 struct DockSecondaryButtonStyle: ButtonStyle {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -796,13 +809,13 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .dockButtonMetrics()
             .background {
-                // Keep light-mode controls frosted without native drop shadows.
+                // Keep actions distinct without stacking native drop shadows.
                 if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, interactive: true, elevated: colorScheme == .dark)
+                    Color.clear.dockLiquidGlass(shape, interactive: true)
                         .overlay(
                             shape.fill(
                                 Color.dockPrimaryText.opacity(
-                                    colorScheme == .light && isHovering && isEnabled ? 0.07 : 0))
+                                    !isEnabled ? 0 : configuration.isPressed ? 0.12 : isHovering ? 0.07 : 0))
                         )
                 } else {
                     shape.fill(
@@ -821,6 +834,11 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .scaleEffect(
                 DockMotion.pressScale(
                     isPressed: configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
+            )
+            .offset(
+                y: DockMotion.hoverOffset(
+                    isHovered: isHovering, isPressed: configuration.isPressed,
+                    isEnabled: isEnabled, reduceMotion: reduceMotion)
             )
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
@@ -1132,7 +1150,7 @@ struct DockSidebarToggle: View {
         self.action = { isCollapsed.wrappedValue.toggle() }
     }
 
-    /// Panel toggles on either side share one look: outline glyph, no selected fill.
+    /// Open panels retain a selected glyph and marker even when the pointer leaves.
     init(isCollapsed: Bool, edge: Edge, panel: String? = nil, action: @escaping () -> Void) {
         self.isCollapsed = isCollapsed
         self.edge = edge
@@ -1140,21 +1158,25 @@ struct DockSidebarToggle: View {
         self.action = action
     }
 
-    private var noun: String { panel ?? (edge == .leading ? "sidebar" : "inspector") }
+    private var noun: String { panel ?? (edge == .leading ? "sidebar" : "workspace") }
 
     var body: some View {
         let button = Button {
             withAnimation(DockMotion.animation(reduceMotion: reduceMotion)) { action() }
         } label: {
             // The collapsed glyph shows the hidden panel's rows; trailing panels mirror it.
-            DockIcon(isCollapsed ? .sidebar : .sidebarSimple, size: DockLayout.toolbarIconSize)
-                .scaleEffect(x: edge == .trailing ? -1 : 1)
-                .foregroundStyle(Color.dockSecondaryText)
-                .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
-                .contentShape(Rectangle())
+            DockIcon(
+                isCollapsed ? .sidebar : .sidebarSimple, size: DockLayout.toolbarIconSize,
+                weight: isCollapsed ? .regular : .fill
+            )
+            .scaleEffect(x: edge == .trailing ? -1 : 1)
+            .foregroundStyle(isCollapsed ? Color.dockSecondaryText : Color.dockPrimaryText)
+            .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
         .accessibilityLabel(isCollapsed ? "Show \(noun)" : "Hide \(noun)")
+        .accessibilityAddTraits(isCollapsed ? [] : .isSelected)
         if edge == .leading, panel == nil {
             button
                 .keyboardShortcut("s", modifiers: [.command, .shift])
@@ -1492,8 +1514,10 @@ extension Shape {
     func dockSelectionFill(_ isSelected: Bool, fallback: Color) -> some View {
         if isSelected && DockThemeStyle.current.material == .glass {
             Color.clear.dockLiquidGlass(self, interactive: true)
+                .overlay(stroke(Color.dockPrimaryText.opacity(0.75), lineWidth: 1))
         } else {
             fill(fallback)
+                .overlay(stroke(isSelected ? Color.dockPrimaryText.opacity(0.75) : .clear, lineWidth: 1))
         }
     }
 
@@ -1521,31 +1545,29 @@ extension View {
         -> some View
     {
         if elevated, #available(macOS 26.0, *) {
-            self.glassEffect(
+            self.background(shape.fill(Color.dockLightGlassLift)).glassEffect(
                 {
                     var g = Glass.regular
                     if let tint { g = g.tint(tint) }
                     return interactive ? g.interactive() : g
                 }(), in: shape)
         } else {
-            // Translucent surface body: materials alone vanish over the clear glass window.
+            // A single material body with an appearance-aware edge keeps dense surfaces quiet.
             self
-                .background(shape.fill(.thinMaterial))
-                .background(shape.fill((tint ?? .clear).opacity(0.55)))
-                .background(shape.fill(Color.dockSurface))
-                .background(
-                    shape.fill(
-                        LinearGradient(colors: [.white.opacity(0.14), .clear], startPoint: .top, endPoint: .center))
-                )
+                .background(shape.fill(tint ?? .clear))
                 .background(shape.fill(Color.dockLightGlassLift))
+                .background(shape.fill(.thinMaterial))
+                .background(shape.fill(Color.dockSurface))
                 .overlay(shape.stroke(Color.dockLightGlassEdge, lineWidth: DockLayout.hairline))
                 .overlay(
                     shape.stroke(
                         LinearGradient(
-                            colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)],
+                            colors: [.dockGlassHighlight, .clear, .dockGlassHighlight.opacity(0.3)],
                             startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 1
-                    ))
+                        lineWidth: DockLayout.hairline
+                    )
+                )
+                .clipShape(shape)
         }
     }
 
@@ -1643,6 +1665,7 @@ extension View {
 
 /// The standard tab control for mutually exclusive scopes on every page.
 struct DockTabButton: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let isSelected: Bool
@@ -1666,7 +1689,8 @@ struct DockTabButton: View {
                 )
                 .background {
                     if isSelected && DockThemeStyle.current.material == .glass {
-                        Color.clear.dockLiquidGlass(shape, interactive: true)
+                        Color.clear.dockLiquidGlass(
+                            shape, tint: colorScheme == .light ? Color.dockAccentMuted : nil, interactive: true)
                     }
                 }
                 .overlay(
@@ -1778,17 +1802,4 @@ struct DockTextField: View {
     var body: some View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Color.dockMetadataText), axis: axis)
     }
-}
-
-extension Color {
-    /// Light appearance only: the white rim and sheen vanish on a pale window,
-    /// so inline glass gets a whiter body and a faint dark edge. Dark is untouched.
-    fileprivate static let dockLightGlassLift = Color(
-        nsColor: NSColor(name: nil) {
-            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white.withAlphaComponent(0.5) : .clear
-        })
-    fileprivate static let dockLightGlassEdge = Color(
-        nsColor: NSColor(name: nil) {
-            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.black.withAlphaComponent(0.12) : .clear
-        })
 }

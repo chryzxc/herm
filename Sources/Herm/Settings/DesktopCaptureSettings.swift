@@ -15,7 +15,7 @@ struct DesktopCaptureSettings: View {
             detail: "Include accessible text with window captures. Requires Accessibility access."
         ) {
             Toggle("Include app text with window captures", isOn: $includeText)
-                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Color.dockAccent)
+                .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
         }
         .onChange(of: includeText) { _, enabled in
             if enabled { _ = DesktopCaptureService.requestAppTextPermission() }

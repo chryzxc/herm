@@ -626,7 +626,7 @@ private struct HermesConfigFieldRow: View {
                 )
             )
             .labelsHidden()
-            .toggleStyle(.switch)
+            .toggleStyle(.dockSwitch)
             .controlSize(.small)
             .tint(Color.dockAccent)
         } else if let options = editor.options(for: key) {

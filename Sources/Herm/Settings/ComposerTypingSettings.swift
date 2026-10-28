@@ -11,7 +11,7 @@ struct ComposerTypingSettings: View {
                 "Use macOS spelling correction while typing in chat composers. Supports the languages available on this Mac."
         ) {
             Toggle("Autocorrect in chat", isOn: $autocorrectEnabled)
-                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Color.dockAccent)
+                .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
         }
     }
 }

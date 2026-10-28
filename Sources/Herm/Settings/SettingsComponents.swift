@@ -147,23 +147,15 @@ struct SettingsSection<Content: View>: View {
                     Text(subtitle)
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.horizontal, 2)
             VStack(alignment: .leading, spacing: 12) {
                 content()
             }
-            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .dockSurfaceFill(Color.dockSurface.opacity(0.34))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .stroke(Color.dockBorderLight, lineWidth: 0.5)
-            )
+            .dockCard(padding: DockSpacing.section)
         }
     }
 }
@@ -174,22 +166,58 @@ struct SettingsPreferenceRow<Control: View>: View {
     @ViewBuilder let control: () -> Control
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .dockFont(.navigation, weight: .medium)
-                    .foregroundStyle(Color.dockPrimaryText)
-                if !detail.isEmpty {
-                    Text(detail)
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(2)
-                }
-            }
-            Spacer(minLength: 12)
-            control()
+        SettingsPreferenceLayout {
+            summary
+            // A builder may emit zero or several views; the layout owns exactly two slots.
+            HStack(spacing: DockSpacing.control) { control() }
         }
-        .frame(minHeight: 52)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .dockFont(.navigation, weight: .medium)
+                .foregroundStyle(Color.dockPrimaryText)
+            if !detail.isEmpty {
+                Text(detail)
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Keep small controls trailing; only wide controls move below the readable label column.
+private struct SettingsPreferenceLayout: Layout {
+    private func measurements(_ subviews: Subviews, width: CGFloat?) -> (CGSize, CGSize, Bool, CGFloat) {
+        let control = subviews[1].sizeThatFits(.unspecified)
+        let available = width ?? subviews[0].sizeThatFits(.unspecified).width + control.width + DockSpacing.section
+        let horizontal = available >= 160 + control.width + DockSpacing.section
+        let textWidth = horizontal ? available - control.width - DockSpacing.section : available
+        let text = subviews[0].sizeThatFits(ProposedViewSize(width: textWidth, height: nil))
+        return (text, control, horizontal, available)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let (text, control, horizontal, width) = measurements(subviews, width: proposal.width)
+        return CGSize(
+            width: width,
+            height: horizontal ? max(text.height, control.height) : text.height + DockSpacing.group + control.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let (text, control, horizontal, _) = measurements(subviews, width: bounds.width)
+        let textWidth = horizontal ? bounds.width - control.width - DockSpacing.section : bounds.width
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX, y: horizontal ? bounds.midY - text.height / 2 : bounds.minY),
+            proposal: ProposedViewSize(width: textWidth, height: text.height))
+        subviews[1].place(
+            at: CGPoint(
+                x: horizontal ? bounds.maxX - control.width : bounds.minX,
+                y: horizontal ? bounds.midY - control.height / 2 : bounds.minY + text.height + DockSpacing.group),
+            proposal: ProposedViewSize(control))
     }
 }
 

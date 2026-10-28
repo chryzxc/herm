@@ -96,7 +96,7 @@ final class DockActionErrorPresenter {
         let host = DockActionErrorHostingView(
             rootView: DockActionErrorPopup(error: error) { [weak center] in center?.dismiss(error.id) }
                 .frame(width: width)
-                .dockThemedRoot())
+                .dockThemedRoot().dockPreferredTextSize())
         let height = host.fittingSize.height
         let panel = DockActionErrorPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),

@@ -78,7 +78,7 @@ struct DockModal<Content: View, Footer: View>: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .dockFont(size: 15, weight: .semibold)
+                    .dockFont(.pageTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                 if let subtitle, !subtitle.isEmpty {
@@ -197,12 +197,11 @@ func modalActions(
 /// fill for the primary action and a quiet outline for Cancel, all from theme tokens.
 struct DockModalButtonStyle: ButtonStyle {
     let isPrimary: Bool
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
-        let usesOnAccentInk = isPrimary && (DockThemeStyle.current.material != .glass || colorScheme == .dark)
+        let usesOnAccentInk = isPrimary
         configuration.label
             .foregroundStyle(usesOnAccentInk ? Color.dockOnAccentText : Color.dockPrimaryText)
             .dockButtonMetrics()
@@ -210,8 +209,7 @@ struct DockModalButtonStyle: ButtonStyle {
             .background {
                 if DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(
-                        shape, tint: isPrimary ? Color.dockAccent.opacity(0.88) : nil, interactive: true,
-                        elevated: colorScheme == .dark
+                        shape, tint: isPrimary ? Color.dockAccent : nil, interactive: true
                     )
                 } else {
                     shape.fill(isPrimary ? Color.dockAccent : Color.dockControlSurface)

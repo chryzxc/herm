@@ -4,6 +4,7 @@ enum NotchDisplayStyle: String, CaseIterable, Identifiable {
     case dots, line, ring, icons, count
 
     static let defaultsKey = "hermes.notch.display-style"
+    static let defaultStyle = NotchDisplayStyle.count
     var id: String { rawValue }
     /// Icons and Count would look identical to a bare working state, so preview what sets them apart.
     var previewActivity: EdgeNotchActivity {
@@ -26,7 +27,7 @@ enum NotchDisplayStyle: String, CaseIterable, Identifiable {
 }
 
 struct NotchDisplaySettings: View {
-    @AppStorage(NotchDisplayStyle.defaultsKey) private var style: NotchDisplayStyle = .dots
+    @AppStorage(NotchDisplayStyle.defaultsKey) private var style: NotchDisplayStyle = .defaultStyle
     @AppStorage("hermes.notch.side") private var side: EdgeDockSide = .right
 
     var body: some View {
@@ -85,7 +86,7 @@ struct NotchDisplaySettings: View {
 /// blocked ride along as extra marks; otherwise blocked trails a finished primary.
 struct EdgeNotchStatusIndicator: View {
     let activity: EdgeNotchActivity
-    var style: NotchDisplayStyle = .dots
+    var style: NotchDisplayStyle = .defaultStyle
     /// Marks stack down an edge rail and across the top island.
     var axis: Axis = .vertical
     /// The top island splits the marks: primary in one ear, extras in the other.

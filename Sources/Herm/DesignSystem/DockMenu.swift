@@ -27,7 +27,7 @@ struct DockMenu<Label: View, Content: View>: View {
     var body: some View {
         trigger
             .opacity(isEnabled ? 1 : 0.4)
-            .popover(isPresented: $isOpen, arrowEdge: depth > 0 ? .trailing : .bottom) {
+            .dockPopover(isPresented: $isOpen, arrowEdge: depth > 0 ? .trailing : .bottom) {
                 DockMenuPanel(content: content)
                     .environment(\.dockMenuDepth, depth + 1)
                     .environment(
@@ -353,7 +353,7 @@ private struct DockContextMenuModifier<Menu: View>: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(SecondaryClickCatcher { isOpen = true })
-            .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            .dockPopover(isPresented: $isOpen, arrowEdge: .bottom) {
                 DockMenuPanel(content: menu())
                     // Depth 1 makes nested DockMenus render as submenu rows.
                     .environment(\.dockMenuDepth, 1)

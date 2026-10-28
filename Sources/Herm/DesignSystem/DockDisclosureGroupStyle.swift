@@ -26,14 +26,35 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
             .buttonStyle(.dockHover)
             .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
 
-            if configuration.isExpanded {
+            DockRetainedDisclosureContent(isExpanded: configuration.isExpanded) {
                 configuration.content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 16)
-                    .transition(
-                        DockMotion.isEnabled(reduceMotion: reduceMotion)
-                            ? .opacity.combined(with: .offset(y: -4)) : .identity)
             }
+        }
+    }
+}
+
+/// Mount on first use, then keep nested inputs and disclosures alive while closed.
+struct DockRetainedDisclosureContent<Content: View>: View {
+    var isExpanded: Bool
+    @ViewBuilder var content: () -> Content
+    @State private var hasExpanded = false
+
+    var body: some View {
+        Group {
+            if isExpanded || hasExpanded {
+                content()
+                    .frame(height: isExpanded ? nil : 0, alignment: .top)
+                    .clipped()
+                    .opacity(isExpanded ? 1 : 0)
+                    .disabled(!isExpanded)
+                    .allowsHitTesting(isExpanded)
+                    .accessibilityHidden(!isExpanded)
+            }
+        }
+        .onChange(of: isExpanded, initial: true) { _, expanded in
+            if expanded { hasExpanded = true }
         }
     }
 }

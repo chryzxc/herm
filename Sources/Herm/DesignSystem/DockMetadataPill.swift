@@ -7,6 +7,7 @@ struct DockMetadataPill: View {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     var navigationIcon: Ph? = nil
     var colorHex: String? = nil
+    var compact = false
     private var labelColor: DockMetadataPillColor? { colorHex.flatMap(DockMetadataPillColor.init) }
 
     var body: some View {
@@ -24,6 +25,9 @@ struct DockMetadataPill: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .accessibilityHidden(true)
             }
+            if let labelColor {
+                Circle().fill(labelColor.background).frame(width: 8, height: 8).accessibilityHidden(true)
+            }
             Text(text)
                 .underline(navigationIcon != nil)
                 .fixedSize(horizontal: false, vertical: true)
@@ -31,19 +35,18 @@ struct DockMetadataPill: View {
                 DockIcon(navigationIcon, size: 12, color: .dockAccent)
             }
         }
-        .dockFont(.body)
+        .dockFont(compact ? .metadata : .body)
         .fontWeight(.regular)
-        .foregroundStyle(navigationIcon == nil ? (labelColor?.foreground ?? Color.dockPrimaryText) : Color.dockAccent)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(labelColor?.background ?? Color.dockSurface4))
+        .foregroundStyle(navigationIcon == nil ? Color.dockPrimaryText : Color.dockAccent)
+        .padding(.horizontal, compact ? 6 : 10)
+        .padding(.vertical, compact ? 2 : 4)
+        .background(Capsule().fill(Color.dockSurface4))
         .overlay(
-            Capsule().stroke(
-                labelColor?.foreground.opacity(0.18) ?? Color.dockBorderLight, lineWidth: DockLayout.hairline))
+            Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
     }
 }
 
-/// Provider label colors use an opaque fill with the higher-contrast black/white ink.
+/// Provider label colors render as a dot on a neutral chip so they never fight the skin.
 struct DockMetadataPillColor {
     let red: Double
     let green: Double

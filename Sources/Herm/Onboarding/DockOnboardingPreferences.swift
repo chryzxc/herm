@@ -18,7 +18,7 @@ struct DockOnboardingAppearance: View {
 
     var skinPicker: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Choose a skin").dockFont(size: 12, weight: .semibold)
+            Text("Choose a skin").dockFont(.body, weight: .semibold)
             Text(
                 side == .top
                     ? "Top island uses the Island skin. Switch to Side above to choose another skin."
@@ -43,7 +43,7 @@ struct DockOnboardingAppearance: View {
                 DockSkinSpecimen(theme: skin)
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(skin.title).dockFont(size: 12, weight: .semibold)
+                        Text(skin.title).dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockPrimaryText)
                         Text(skin.signature).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
@@ -127,7 +127,7 @@ struct DockOnboardingIntelligence: View {
 
     private func assistance(_ title: String, detail: String, value: Binding<Bool>) -> some View {
         SettingsPreferenceRow(title: title, detail: detail) {
-            Toggle(title, isOn: value).toggleStyle(.switch).labelsHidden().controlSize(.small)
+            Toggle(title, isOn: value).toggleStyle(.dockSwitch).labelsHidden().controlSize(.small)
         }
         .padding(.vertical, 12)
     }

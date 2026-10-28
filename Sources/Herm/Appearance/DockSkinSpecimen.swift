@@ -90,8 +90,8 @@ struct DockSkinSpecimen: View {
                     if style.material == .glass {
                         panel.stroke(
                             LinearGradient(
-                                colors: [palette.primaryText.opacity(0.5), palette.divider.opacity(0.2)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                                colors: [palette.primaryText.opacity(0.18), palette.divider.opacity(0.08)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: DockLayout.hairline)
                     } else if style.outlineWidth > 0 {
                         panel.stroke(
                             palette.divider.opacity(style.outlineWidth > 1 ? 1 : 0.6), lineWidth: style.outlineWidth)

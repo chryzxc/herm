@@ -69,7 +69,7 @@ enum DockSpacing {
     static let micro: CGFloat = 4
     static let tight: CGFloat = 6
     static let control: CGFloat = 8
-    static let inspectorInset: CGFloat = 12
+    static let inspectorInset: CGFloat = 16
     static let group: CGFloat = 12
     static let section: CGFloat = 16
     static let page: CGFloat = 20
@@ -166,7 +166,7 @@ struct DockStatusPill: View {
                 DockStatusDot(tone: tone, size: 6)
             }
             Text(text)
-                .dockFont(size: 11, weight: .semibold)
+                .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
         }
@@ -185,7 +185,7 @@ struct DockSectionLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(title)
-                .dockFont(size: 12, weight: .semibold)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockSectionText)
             if let count {
                 Text("\(count)")
@@ -275,10 +275,10 @@ struct DockNavRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 DockIcon(
-                    icon, size: 15,
+                    icon, size: 15, weight: isSelected ? .fill : .regular,
                     color: inverted
                         ? style.background
-                        : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText
+                        : isSelected || isHovering ? style.primaryText : style.secondaryText
                 )
                 .frame(width: 18)
                 Text(title)
@@ -292,7 +292,7 @@ struct DockNavRow: View {
                 Spacer(minLength: 0)
                 if showsUpdateBadge {
                     Text("Update")
-                        .dockFont(size: 10, weight: .semibold)
+                        .dockFont(.compactStatus, weight: .semibold)
                         .foregroundStyle(inverted ? style.background : style.warning)
                         .padding(.horizontal, 6)
                         .frame(height: 18)
@@ -317,6 +317,7 @@ struct DockNavRow: View {
 /// Icon-only destination for the narrow primary rail. The label lives in the
 /// tooltip and accessibility name; selection uses the same fill as DockNavRow.
 struct DockRailButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let icon: Ph
     let isSelected: Bool
@@ -327,16 +328,12 @@ struct DockRailButton: View {
 
     var body: some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius)
-        let inverted = isSelected && style.theme.style.selection == .invert
         Button(action: action) {
             DockIcon(
-                icon, size: 17,
-                color: inverted
-                    ? style.background
-                    : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText
+                icon, size: 17, weight: isSelected ? .fill : .regular,
+                color: isSelected || isHovering ? style.primaryText : style.secondaryText
             )
             .frame(width: 38, height: 38)
-            .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)
             .background(shape.fill(!isSelected && isHovering ? style.accent.opacity(0.14) : .clear))
             .overlay(alignment: .topTrailing) {
                 if showsUpdateBadge {
@@ -347,6 +344,8 @@ struct DockRailButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isSelected)
         .help(title)
         .accessibilityLabel(showsUpdateBadge ? "\(title), update available" : title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -586,14 +585,14 @@ struct DockSectionHeader<Actions: View>: View {
                         : (isHovering && isExpanded != nil ? style.secondaryText : style.metadataText))
             if let count, icon != nil {
                 Text(count > 99 ? "99+" : "\(count)")
-                    .dockFont(size: 11, weight: .semibold).monospacedDigit()
+                    .dockFont(.metadata, weight: .semibold).monospacedDigit()
                     .foregroundStyle(style.secondaryText)
                     .padding(.horizontal, 6)
                     .frame(minHeight: 16)
                     .background(Capsule().fill(tint.opacity(0.14)))
             } else if let count {
                 Text(count > 99 ? "99+" : "\(count)")
-                    .dockFont(size: 12).monospacedDigit()
+                    .dockFont(.body).monospacedDigit()
                     .foregroundStyle(style.metadataText)
             }
             if let isExpanded {
