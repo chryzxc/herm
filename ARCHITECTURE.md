@@ -43,7 +43,7 @@ label and bar windows; it owns presentation geometry only. Clock bounds and visi
 grid/ruler drawing keep time ticks independent of history length.
 
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
-- `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), Mission Control rail/queue/session rows, transcript views, composer, session lifecycle guards.
+- `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), session navigation rail/queue/session rows, transcript views, composer, session lifecycle guards.
 - `ControlCenter/` — `ControlCenterModel` (same extension split), `WorkspaceActivitySidebar` (+ extensions per panel), command-center models, control-tower presentation.
 - `Settings/` — shared settings components (`SettingsCategory`, `SettingsSection`, rows).
 - `Kanban/`, `Calendar/`, `Office/` — kanban board, work calendar, and the 3D office scene.
