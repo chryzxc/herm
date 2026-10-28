@@ -115,6 +115,9 @@ struct ChatMediaAttachmentCard: View {
         VStack(alignment: .leading, spacing: 8) {
             if isImage, exists, let url {
                 imagePreview(url)
+            } else if let url, ChatVideoPreview.supports(url), exists {
+                ChatVideoPreview(url: url)
+                    .id(url)
             }
             card
         }
