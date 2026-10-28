@@ -65,7 +65,7 @@ struct SessionRailCardVisualTests {
         try await settle()
         #expect(elements(host).contains { ($0.accessibilityLabel?() ?? "").contains("In progress: Task 1") })
         for section in [
-            "Needs attention", "Tasks", "Outputs", "rail-preview.md", "Pinned items", "Saved decision", "Workspace",
+            "Needs attention", "Tasks", "Outputs", "Pinned items", "Saved decision", "Workspace",
         ] {
             try await press(section)
             #expect(navigations.isEmpty)
@@ -80,10 +80,12 @@ struct SessionRailCardVisualTests {
         let heights = scrolls.dropFirst().compactMap { $0.accessibilityFrame?().height }
         #expect(heights.allSatisfy { $0 <= 281 })
         #expect(heights.contains { $0 >= 279 })
+        try await press("rail-preview.md")
+        #expect(navigations == ["output"])
         try await press("View all outputs")
         try await press("Show in chat")
         try await press("Respond in chat")
-        #expect(navigations == ["outputs", "pin", "reply"])
+        #expect(navigations == ["output", "outputs", "pin", "reply"])
     }
 
     @Test func summariesExpandWithoutOpeningPanelsUntilViewAllIsPressed() async throws {
