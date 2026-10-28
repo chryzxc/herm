@@ -356,10 +356,7 @@ final class AgentBrowser: ObservableObject {
         annotating = false
     }
 
-    private struct Endpoint {
-        let port: Int
-        let ws: URL
-    }
+    private typealias Endpoint = HermAgentBrowserStartup.Endpoint
     static let preferredPort = 9333
 
     nonisolated static var profileRoot: URL {
@@ -427,8 +424,10 @@ final class AgentBrowser: ObservableObject {
             at: profile, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: Self.profileRoot.path)
         let portFile = profile.appendingPathComponent("DevToolsActivePort")
+        let startup = HermAgentBrowserStartup()
+        defer { startup.close() }
         // A browser left running by an earlier Herm keeps the profile locked; reuse it.
-        if let live = await Self.endpoint(portFile) { return live }
+        if let live = try await startup.endpoint(portFile, deadline: startup.preflightDeadline()) { return live }
         try? FileManager.default.removeItem(at: portFile)
         guard let executable = Self.chromiumExecutable() else {
             throw Self.error("No Chromium-family browser found. Install Google Chrome, Brave, Edge or Chromium.")
@@ -439,9 +438,7 @@ final class AgentBrowser: ObservableObject {
         if Self.preferredPortOwner == nil { Self.preferredPortOwner = profileDirectory }
         let busy: Bool
         if Self.preferredPortOwner == profileDirectory {
-            busy =
-                (try? await URLSession.shared.data(
-                    from: URL(string: "http://127.0.0.1:\(Self.preferredPort)/json/version")!)) != nil
+            busy = try await startup.occupied(Self.preferredPort, deadline: startup.preflightDeadline())
         } else {
             busy = true
         }
@@ -462,23 +459,7 @@ final class AgentBrowser: ObservableObject {
         process.standardError = FileHandle.nullDevice
         try process.run()
         self.process = process
-        for _ in 0..<60 {
-            try await Task.sleep(for: .milliseconds(250))
-            if let live = await Self.endpoint(portFile) { return live }
-            if !process.isRunning { break }
-        }
-        throw Self.error("The browser didn't start remote debugging.")
-    }
-
-    /// Chrome writes "<port>\n/devtools/browser/<id>" once it listens; a stale file fails the probe.
-    private static func endpoint(_ file: URL) async -> Endpoint? {
-        guard let lines = try? String(contentsOf: file, encoding: .utf8).split(separator: "\n"), lines.count >= 2,
-            let port = Int(lines[0]), let ws = URL(string: "ws://127.0.0.1:\(port)\(lines[1])"),
-            let probe = URL(string: "http://127.0.0.1:\(port)/json/version"),
-            let (_, response) = try? await URLSession.shared.data(from: probe),
-            (response as? HTTPURLResponse)?.statusCode == 200
-        else { return nil }
-        return Endpoint(port: port, ws: ws)
+        return try await startup.waitForEndpoint(portFile, isRunning: { process.isRunning })
     }
 
     /// Same browsers Hermes' `/browser connect` looks for, then Playwright's Chrome for Testing.
