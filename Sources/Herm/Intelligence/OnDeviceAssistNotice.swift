@@ -6,17 +6,16 @@ struct OnDeviceAssistNotice: View {
     var help = OnDeviceAssist.generatedTextHelp
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            DockIcon(.info, size: 14, color: DockAccentColor.orange.color)
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            DockIcon(.info, size: 12, color: DockAccentColor.orange.color)
                 .accessibilityHidden(true)
             Text(text)
                 .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
         .background(
             DockThemeShape(cornerRadius: DockLayout.controlRadius, role: .control)
                 .fill(Color.dockSurface2)
