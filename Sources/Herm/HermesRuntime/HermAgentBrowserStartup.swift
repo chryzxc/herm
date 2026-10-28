@@ -41,10 +41,24 @@ final class HermAgentBrowserStartup {
 
     func endpoint(_ file: URL, deadline: Duration) async throws -> Endpoint? {
         try Task.checkCancellation()
-        guard let lines = try? String(contentsOf: file, encoding: .utf8).split(separator: "\n"), lines.count >= 2,
-            let port = Int(lines[0]), let ws = URL(string: "ws://127.0.0.1:\(port)\(lines[1])"),
-            let probe = URL(string: "http://127.0.0.1:\(port)/json/version"),
-            let response = try await request(probe, deadline: deadline), response.statusCode == 200
+        let result = await Self.validatedEndpoint(file) { port in
+            guard let probe = URL(string: "http://127.0.0.1:\(port)/json/version"),
+                let result = try? await self.request(probe, deadline: deadline), result.1.statusCode == 200
+            else { return nil }
+            return result.0
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
+    static func validatedEndpoint(_ file: URL, fetchVersion: (Int) async -> Data?) async -> Endpoint? {
+        guard let lines = try? String(contentsOf: file, encoding: .utf8).split(separator: "\n"), lines.count == 2,
+            let port = Int(lines[0]), (1...65535).contains(port), lines[1].hasPrefix("/devtools/browser/"),
+            let ws = URL(string: "ws://127.0.0.1:\(port)\(lines[1])"),
+            ws.path == String(lines[1]), ws.query == nil, ws.fragment == nil,
+            let data = await fetchVersion(port),
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let value = json["webSocketDebuggerUrl"] as? String, value == ws.absoluteString
         else { return nil }
         return Endpoint(port: port, ws: ws)
     }
@@ -53,7 +67,7 @@ final class HermAgentBrowserStartup {
         try await request(URL(string: "http://127.0.0.1:\(port)/json/version")!, deadline: deadline) != nil
     }
 
-    private func request(_ url: URL, deadline: Duration) async throws -> HTTPURLResponse? {
+    private func request(_ url: URL, deadline: Duration) async throws -> (Data, HTTPURLResponse)? {
         try Task.checkCancellation()
         let remaining = deadline - now()
         guard remaining > .zero else { return nil }
@@ -62,9 +76,10 @@ final class HermAgentBrowserStartup {
         var request = URLRequest(url: url)
         request.timeoutInterval = min(0.5, seconds)
         do {
-            let (_, response) = try await load(request)
+            let (data, response) = try await load(request)
             try Task.checkCancellation()
-            return response as? HTTPURLResponse
+            guard let response = response as? HTTPURLResponse else { return nil }
+            return (data, response)
         } catch {
             try Task.checkCancellation()
             if error is CancellationError { throw error }

@@ -7,6 +7,28 @@ import WebKit
 
 @MainActor
 struct SessionBrowserTests {
+    @Test func startupNeverAttachesToUnrelatedFixedPort() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("DevToolsActivePort")
+        let version = Data(#"{"webSocketDebuggerUrl":"ws://127.0.0.1:9333/devtools/browser/test-id"}"#.utf8)
+        let endpoint = await AgentBrowser.startupEndpoint(file) { _ in version }
+        #expect(endpoint == nil)
+        try "9333\n/devtools/browser/owned-id\n".write(to: file, atomically: true, encoding: .utf8)
+        let rejected = await AgentBrowser.startupEndpoint(file) { _ in version }
+        #expect(rejected == nil)
+        let owned = Data(#"{"webSocketDebuggerUrl":"ws://127.0.0.1:9333/devtools/browser/owned-id"}"#.utf8)
+        let reused = await AgentBrowser.startupEndpoint(file) { _ in owned }
+        #expect(reused?.ws.absoluteString == "ws://127.0.0.1:9333/devtools/browser/owned-id")
+        var response = version
+        let startup = HermAgentBrowserStartup(load: { request in
+            (response, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        #expect(try await startup.endpoint(file, deadline: startup.preflightDeadline()) == nil)
+        response = owned
+        #expect(try await startup.endpoint(file, deadline: startup.preflightDeadline())?.ws == reused?.ws)
+    }
     @Test func sessionSwitchesRetainBrowsersAndShareSignIns() {
         let store = SessionBrowserStore()
         let a = SessionBrowserKey(profileID: nil, sessionID: "a")
@@ -99,6 +121,163 @@ struct SessionBrowserTests {
         #expect(model.browserSessionKey == key)
     }
 
+    @Test(arguments: ["browser-bot-a", "browser-bot-b"])
+    func browserHandoffAndDisconnectStayInTheSelectedProfile(profile: String) async throws {
+        let client = BrowserHandoffRPCClient()
+        let suite = "BrowserHandoffTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults, initialSessionID: "browser-chat", rpcClient: client)
+        model.profileScopeID = profile
+        defer { model.delegationMonitoringTask?.cancel() }
+
+        try await model.setHermesBrowser(cdpURL: client.endpoint)
+        try await model.setHermesBrowser(cdpURL: nil)
+
+        #expect(!client.requests.isEmpty)
+        for request in client.requests {
+            #expect(request["profile"] as? String == profile)
+        }
+    }
+
+    @Test func browserHandoffLifecyclePreservesRunningBrowserAndIgnoresStaleCompletion() async throws {
+        let client = BrowserHandoffRPCClient()
+        let suite = "BrowserHandoffTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults, initialSessionID: "browser-chat", rpcClient: client)
+        model.profileScopeID = "lifecycle-test"
+        defer { model.delegationMonitoringTask?.cancel() }
+        let browser = AgentBrowser(profileID: "lifecycle-test")
+        browser.model = model
+        client.statusFails = true
+        let failed = browser.browserDidStart(endpoint: client.endpoint)
+        await failed?.value
+        #expect(browser.state == .running)
+        #expect(browser.handoffFailed)
+        client.statusFails = false
+        let retry = browser.reconnectHermes()
+        await retry?.value
+        #expect(browser.state == .running)
+        #expect(!browser.handoffFailed)
+        client.holdStatus = true
+        client.statusFails = true
+        let switched = browser.reconnectHermes()
+        await client.waitForStatus()
+        model.profileScopeID = "other-profile"
+        client.releaseStatus()
+        await switched?.value
+        #expect(!browser.handoffFailed)
+        model.profileScopeID = "lifecycle-test"
+        client.holdStatus = true
+        client.statusFails = true
+        let stale = browser.reconnectHermes()
+        await client.waitForStatus()
+        browser.stop()
+        let restarted = browser.browserDidStart(endpoint: client.endpoint)
+        client.statusFails = false
+        client.releaseStatus(keepHolding: true)
+        await stale?.value
+        await client.waitForStatus()
+        #expect(browser.state == .running)
+        #expect(!browser.handoffFailed)
+        client.releaseStatus()
+        await restarted?.value
+        #expect(!browser.handoffFailed)
+        browser.stop()
+    }
+
+    @Test func browserHandoffDoesNotReconnectAnAlreadySharedBrowser() async throws {
+        let client = BrowserHandoffRPCClient()
+        client.connected = true
+        let suite = "BrowserHandoffTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults, initialSessionID: "browser-chat", rpcClient: client)
+        model.profileScopeID = "browser-bot"
+        defer { model.delegationMonitoringTask?.cancel() }
+
+        // Gateway reconnect and repeated presentation must not reissue a destructive connect.
+        try await model.setHermesBrowser(cdpURL: client.endpoint)
+        try await model.setHermesBrowser(cdpURL: client.endpoint)
+
+        let actions = client.requests.compactMap { $0["action"] as? String }
+        #expect(actions == ["status", "status"])
+        #expect(!actions.contains("connect"))
+        #expect(!actions.contains("disconnect"))
+    }
+
+    @Test(arguments: ["disconnected", "missing-connected", "missing-url", "other", "matching"])
+    func browserHandoffStatusControlsConnect(caseName: String) async throws {
+        let client = BrowserHandoffRPCClient()
+        switch caseName {
+        case "disconnected": client.status = ["connected": false, "url": client.endpoint]
+        case "missing-connected": client.status = ["url": client.endpoint]
+        case "missing-url": client.status = ["connected": true]
+        case "other": client.status = ["connected": true, "url": "http://127.0.0.1:19334"]
+        default: client.status = ["connected": true, "url": client.endpoint]
+        }
+        let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
+        defer { model.delegationMonitoringTask?.cancel() }
+        try await model.setHermesBrowser(cdpURL: client.endpoint)
+        let actions = client.requests.compactMap { $0["action"] as? String }
+        #expect(actions == (caseName == "matching" ? ["status"] : ["status", "connect"]))
+        if caseName != "matching" { #expect(client.requests.last?["url"] as? String == client.endpoint) }
+    }
+
+    @Test func browserHandoffStatusFailureDoesNotConnect() async throws {
+        let client = BrowserHandoffRPCClient()
+        client.statusFails = true
+        let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
+        defer { model.delegationMonitoringTask?.cancel() }
+        await #expect(throws: HermesGateway.GatewayError.self) {
+            try await model.setHermesBrowser(cdpURL: client.endpoint)
+        }
+        #expect(client.requests.compactMap { $0["action"] as? String } == ["status"])
+    }
+
+    @Test func browserHandoffCapturesProfileDuringStatus() async throws {
+        let client = BrowserHandoffRPCClient()
+        let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
+        model.profileScopeID = "original-profile"
+        model.sessionProfileID = "stale-profile"
+        client.holdStatus = true
+        defer { model.delegationMonitoringTask?.cancel() }
+        let handoff = Task { try await model.setHermesBrowser(cdpURL: client.endpoint) }
+        await client.waitForStatus()
+        model.profileScopeID = "new-profile"
+        client.releaseStatus()
+        try await handoff.value
+        #expect(client.requests.compactMap { $0["profile"] as? String } == ["original-profile", "original-profile"])
+    }
+
+    @Test(arguments: [nil, ""] as [String?])
+    func browserHandoffDefaultScopeAndDisconnect(profile: String?) async throws {
+        let client = BrowserHandoffRPCClient()
+        let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
+        model.profileScopeID = profile
+        defer { model.delegationMonitoringTask?.cancel() }
+        try await model.setHermesBrowser(cdpURL: client.endpoint)
+        try await model.setHermesBrowser(cdpURL: nil)
+        #expect(client.requests.compactMap { $0["action"] as? String } == ["status", "connect", "disconnect"])
+        #expect(client.requests.allSatisfy { $0["profile"] == nil })
+    }
+
+    @Test(arguments: [true, false])
+    func browserHandoffRejectedConnectReportsError(withMessage: Bool) async throws {
+        let client = BrowserHandoffRPCClient()
+        client.connectResult = withMessage ? ["connected": false, "messages": ["rejected"]] : ["connected": false]
+        let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
+        defer { model.delegationMonitoringTask?.cancel() }
+        do {
+            try await model.setHermesBrowser(cdpURL: client.endpoint)
+            Issue.record("Expected rejected connection")
+        } catch {
+            let expected = withMessage ? "rejected" : "Hermes could not connect to the browser."
+            #expect(error.localizedDescription == expected)
+        }
+    }
+
     @Test func liveDocumentAndFormSurviveSessionSwitchAndViewRecreation() async throws {
         let store = SessionBrowserStore()
         let a = SessionBrowserKey(profileID: nil, sessionID: "a")
@@ -168,5 +347,57 @@ struct SessionBrowserTests {
         received = nil
         NativeMarkdownTextSectionView().clicked(onLink: link, at: range.location)
         #expect(received == destination)
+    }
+}
+
+@MainActor
+private final class BrowserHandoffRPCClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    let endpoint = "http://127.0.0.1:19333"
+    var connected = false
+    var status: [String: Any]?
+    var statusFails = false
+    var connectResult: [String: Any]?
+    var holdStatus = false
+    private var statusStarted: CheckedContinuation<Void, Never>?
+    private var statusRelease: CheckedContinuation<Void, Never>?
+    private(set) var requests: [[String: Any]] = []
+
+    func connect() async throws {}
+    func close() {}
+
+    func waitForStatus() async {
+        if statusRelease != nil { return }
+        await withCheckedContinuation { statusStarted = $0 }
+    }
+
+    func releaseStatus(keepHolding: Bool = false) {
+        holdStatus = keepHolding
+        statusRelease?.resume()
+        statusRelease = nil
+    }
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        guard method == "browser.manage" else { throw HermesGateway.GatewayError.malformedResponse }
+        requests.append(params)
+        switch params["action"] as? String {
+        case "connect":
+            if let connectResult { return connectResult }
+            connected = true
+        case "disconnect": connected = false
+        case "status":
+            let fails = statusFails
+            if holdStatus {
+                await withCheckedContinuation { continuation in
+                    statusRelease = continuation
+                    statusStarted?.resume()
+                    statusStarted = nil
+                }
+            }
+            if fails { throw HermesGateway.GatewayError.malformedResponse }
+            if let status { return status }
+        default: throw HermesGateway.GatewayError.malformedResponse
+        }
+        return ["connected": connected, "url": endpoint]
     }
 }

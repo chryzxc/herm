@@ -13,7 +13,6 @@ final class AgentBrowser: ObservableObject {
     /// that its sessions share; Hermes' browser tools keep a session's work on its own tab.
     let profileID: String?
     private static var connectionTask: Task<Void, Never>?
-    private static var preferredPortOwner: String?
     private static let world = "herm"
     /// Annotate plus the agent-cursor reporter: pointer moves (one per animation frame),
     /// presses, and focus not caused by a press, in viewport CSS pixels.
@@ -173,18 +172,39 @@ final class AgentBrowser: ObservableObject {
     /// Navigation requested before the browser finished starting.
     private(set) var pendingURL: URL?
     private var cdpURL: String?
+    private var lifecycleGeneration = UUID()
+    @Published private(set) var handoffFailed = false
 
     /// A restarted Hermes gateway forgets the connection; point it back at this browser.
-    func reconnectHermes() {
-        guard state == .running, let cdpURL, let model else { return }
+    @discardableResult
+    func reconnectHermes() -> Task<Void, Never>? {
+        guard state == .running, let cdpURL, let model else { return nil }
+        let generation = lifecycleGeneration
         let previous = Self.connectionTask
         Self.connectionTask = Task { [weak self] in
             await previous?.value
-            guard let self, owns(model), state == .running, self.cdpURL == cdpURL else { return }
-            do { try await model.setHermesBrowser(cdpURL: cdpURL) } catch {
-                if owns(model) { fail(error.localizedDescription) }
+            guard let self, lifecycleGeneration == generation, owns(model), state == .running,
+                self.cdpURL == cdpURL
+            else { return }
+            do {
+                try await model.setHermesBrowser(cdpURL: cdpURL)
+                if lifecycleGeneration == generation, owns(model), state == .running, self.cdpURL == cdpURL {
+                    handoffFailed = false
+                }
+            } catch {
+                if lifecycleGeneration == generation, owns(model), state == .running, self.cdpURL == cdpURL {
+                    handoffFailed = true
+                }
             }
         }
+        return Self.connectionTask
+    }
+
+    @discardableResult
+    func browserDidStart(endpoint: String) -> Task<Void, Never>? {
+        cdpURL = endpoint
+        state = .running
+        return reconnectHermes()
     }
 
     private var startupTask: Task<Void, Never>?
@@ -277,9 +297,7 @@ final class AgentBrowser: ObservableObject {
                     try await attach(id)
                 }
                 try Task.checkCancellation()
-                cdpURL = "http://127.0.0.1:\(endpoint.port)"
-                state = .running
-                reconnectHermes()
+                browserDidStart(endpoint: "http://127.0.0.1:\(endpoint.port)")
                 if let url = pendingURL {
                     pendingURL = nil
                     navigate(url)
@@ -325,6 +343,8 @@ final class AgentBrowser: ObservableObject {
     }
 
     private func teardown() {
+        lifecycleGeneration = UUID()
+        handoffFailed = false
         startupTask?.cancel()
         startupTask = nil
         if let cdp {
@@ -356,8 +376,7 @@ final class AgentBrowser: ObservableObject {
         annotating = false
     }
 
-    private typealias Endpoint = HermAgentBrowserStartup.Endpoint
-    static let preferredPort = 9333
+    typealias Endpoint = HermAgentBrowserStartup.Endpoint
 
     nonisolated static var profileRoot: URL {
         let support =
@@ -428,24 +447,17 @@ final class AgentBrowser: ObservableObject {
         defer { startup.close() }
         // A browser left running by an earlier Herm keeps the profile locked; reuse it.
         if let live = try await startup.endpoint(portFile, deadline: startup.preflightDeadline()) { return live }
-        try? FileManager.default.removeItem(at: portFile)
+        if FileManager.default.fileExists(atPath: portFile.path) {
+            try FileManager.default.removeItem(at: portFile)
+        }
         guard let executable = Self.chromiumExecutable() else {
             throw Self.error("No Chromium-family browser found. Install Google Chrome, Brave, Edge or Chromium.")
         }
-        // A fixed port lets other CDP clients (e.g. chrome-devtools-mcp --browserUrl) share
-        // this browser; fall back to any free port when something else holds it.
-        // Reserve before probing: two sessions can launch before either Chrome is listening.
-        if Self.preferredPortOwner == nil { Self.preferredPortOwner = profileDirectory }
-        let busy: Bool
-        if Self.preferredPortOwner == profileDirectory {
-            busy = try await startup.occupied(Self.preferredPort, deadline: startup.preflightDeadline())
-        } else {
-            busy = true
-        }
+
         let process = Process()
         process.executableURL = executable
         process.arguments = [
-            "--headless=new", "--remote-debugging-port=\(busy ? 0 : Self.preferredPort)",
+            "--headless=new", "--remote-debugging-port=0",
             "--user-data-dir=\(profile.path)",
             "--no-first-run", "--no-default-browser-check", "--window-size=1280,800",
             // Emulated DPR alone leaves headless screencast frames at 1x; the compositor must render at 2x too.
@@ -460,6 +472,13 @@ final class AgentBrowser: ObservableObject {
         try process.run()
         self.process = process
         return try await startup.waitForEndpoint(portFile, isRunning: { process.isRunning })
+    }
+
+    /// The profile's browser ID must match the listener, including when reusing a live browser.
+    static func startupEndpoint(
+        _ file: URL, fetchVersion: (Int) async -> Data?
+    ) async -> Endpoint? {
+        await HermAgentBrowserStartup.validatedEndpoint(file, fetchVersion: fetchVersion)
     }
 
     /// Same browsers Hermes' `/browser connect` looks for, then Playwright's Chrome for Testing.

@@ -230,18 +230,6 @@ extension DockModel {
         requestComposerFocus()
     }
 
-    /// Points Hermes' browser tools at a CDP endpoint (same as `/browser connect`); nil disconnects.
-    /// Hermes keeps it per profile until the gateway restarts.
-    func setHermesBrowser(cdpURL: String?) async throws {
-        var params: [String: Any] = ["action": cdpURL == nil ? "disconnect" : "connect"]
-        if let cdpURL { params["url"] = cdpURL }
-        let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.browserManage.rawValue, params: params)
-        if cdpURL != nil, result["connected"] as? Bool != true {
-            let detail = (result["messages"] as? [String])?.last ?? "Hermes could not connect to the browser."
-            throw NSError(domain: "Herm.AgentBrowser", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
-        }
-    }
-
     func removeAttachedContext(_ context: ChatContext) {
         attachedContexts.removeAll { $0.id == context.id }
     }

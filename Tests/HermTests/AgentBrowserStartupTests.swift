@@ -13,7 +13,10 @@ struct AgentBrowserStartupTests {
         let startup = HermAgentBrowserStartup(
             sleep: { sleeps.append($0) },
             load: { request in
-                (Data(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                (
+                    Self.version,
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                )
             })
         let endpoint = try await startup.waitForEndpoint(file, isRunning: { true })
         #expect(endpoint.port == 9333)
@@ -31,7 +34,7 @@ struct AgentBrowserStartupTests {
             load: { request in
                 probes += 1
                 return (
-                    Data(),
+                    Self.version,
                     HTTPURLResponse(
                         url: request.url!, statusCode: probes == 3 ? 200 : 503,
                         httpVersion: nil, headerFields: nil)!
@@ -67,7 +70,8 @@ struct AgentBrowserStartupTests {
             let startup = HermAgentBrowserStartup(load: { request in
                 withUnsafeCurrentTask { $0?.cancel() }
                 return (
-                    Data(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                    Self.version,
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 )
             })
             return try await startup.waitForEndpoint(file, isRunning: { true })
@@ -87,7 +91,8 @@ struct AgentBrowserStartupTests {
                 probes += 1
                 time = .seconds(15)
                 return (
-                    Data(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                    Self.version,
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 )
             })
         await #expect(throws: NSError.self) { try await startup.waitForEndpoint(file, isRunning: { true }) }
@@ -116,7 +121,8 @@ struct AgentBrowserStartupTests {
             load: { request in
                 #expect(request.timeoutInterval == 0.5)
                 return (
-                    Data(), HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+                    Self.version,
+                    HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
                 )
             })
         let endpoint = try await startup.endpoint(file, deadline: .seconds(1))
@@ -126,4 +132,6 @@ struct AgentBrowserStartupTests {
         #expect(try await startup.occupied(9333, deadline: .seconds(1)))
         #expect(!(try await startup.occupied(9333, deadline: .zero)))
     }
+
+    private static let version = Data(#"{"webSocketDebuggerUrl":"ws://127.0.0.1:9333/devtools/browser/test"}"#.utf8)
 }
