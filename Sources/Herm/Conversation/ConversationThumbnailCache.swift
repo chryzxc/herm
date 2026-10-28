@@ -28,25 +28,16 @@ enum ConversationThumbnailCache {
         let cacheKey = key as NSString
         if let cached = cache.object(forKey: cacheKey) { return cached.image }
 
-        let target = NSSize(width: size, height: size)
+        let sourceSize = source.size
+        let scale = min(size / max(1, sourceSize.width), size / max(1, sourceSize.height))
+        // Keep the bitmap fitted too, or the view scales square padding a second time.
+        let target = NSSize(width: max(1, sourceSize.width * scale), height: max(1, sourceSize.height * scale))
         let result = NSImage(size: target)
         result.lockFocus()
         NSGraphicsContext.current?.imageInterpolation = .high
-        let sourceSize = source.size
-        let scale = min(
-            target.width / max(1, sourceSize.width),
-            target.height / max(1, sourceSize.height)
-        )
-        let drawnSize = NSSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
-        let drawnRect = NSRect(
-            x: (target.width - drawnSize.width) / 2,
-            y: (target.height - drawnSize.height) / 2,
-            width: drawnSize.width,
-            height: drawnSize.height
-        )
-        source.draw(in: drawnRect, from: .zero, operation: .copy, fraction: 1)
+        source.draw(in: NSRect(origin: .zero, size: target), from: .zero, operation: .copy, fraction: 1)
         result.unlockFocus()
-        cache.setObject(Entry(result), forKey: cacheKey, cost: Int(size * size * 4))
+        cache.setObject(Entry(result), forKey: cacheKey, cost: Int(target.width * target.height * 4))
         return result
     }
 }

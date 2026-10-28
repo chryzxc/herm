@@ -133,6 +133,30 @@ struct ConversationRenderOptimizationTests {
         #expect(base == ConversationThumbnailCache.key(messageID: id, index: 0, imageCount: 1, contentRevision: 10))
     }
 
+    @Test func thumbnailsPreserveAspectRatioWithoutPadding() throws {
+        for sourceSize in [
+            NSSize(width: 880, height: 220), NSSize(width: 220, height: 880), NSSize(width: 440, height: 440),
+        ] {
+            let source = NSImage(size: sourceSize, flipped: false) { rect in
+                NSColor.white.setFill()
+                rect.fill()
+                return true
+            }
+            let key = UUID().uuidString
+            let thumbnail = ConversationThumbnailCache.image(source, key: key)
+            #expect(max(thumbnail.size.width, thumbnail.size.height) == 220)
+            #expect(abs(thumbnail.size.width / thumbnail.size.height - sourceSize.width / sourceSize.height) < 0.001)
+            #expect(ConversationThumbnailCache.image(source, key: key) === thumbnail)
+
+            let data = try #require(thumbnail.tiffRepresentation)
+            let bitmap = try #require(NSBitmapImageRep(data: data))
+            for (x, y) in [(0, 0), (bitmap.pixelsWide - 1, bitmap.pixelsHigh - 1)] {
+                let color = try #require(bitmap.colorAt(x: x, y: y))
+                #expect(color.alphaComponent > 0.99)
+            }
+        }
+    }
+
     @Test func mentionRosterRefreshOnlyRunsWhenPickerOpens() {
         #expect(ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: false, isPickerVisible: true))
         #expect(!ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: true, isPickerVisible: true))
