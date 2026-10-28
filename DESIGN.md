@@ -1332,7 +1332,11 @@ lights; each one lays an unlit, transparent glow pool on the floor, which the
 static mesh batcher leaves unmerged (merged meshes carry no UVs) and which
 never registers as an obstacle. A screen-space finish (`OfficePostProcess`)
 applies a light warm grade, bloom on near-white lamps, signs and screens, a
-soft vignette, and a tilt-shift blur at the top and bottom of wide views. The
+soft vignette, and a tilt-shift blur at the top and bottom of wide views. Cached
+Metal pipelines reuse two quarter-resolution working textures for a separable
+blur and a full-resolution composite. Working textures change only with viewport
+size or GPU; frame rendering builds no Core Image filter graph. If the effect is
+unavailable, the original frame still renders. The
 tilt-shift fades out as the camera moves in, so close views of a bot stay
 sharp. Apart from cloud drift and the clock-driven sky, none of it animates.
 
@@ -1345,10 +1349,15 @@ dim the same materials; light and sky follow the clock in every theme. The theme
 in both appearances. The Glass skin follows the system appearance. Changing the theme
 rebuilds the room materials, lights and background in place. Rooms are
 identified by numbered hanging signs with a title and a short subtitle that
-names the room's work (for example, QA Lab: Tests & verification). Bots stay small white robots in every theme, with a dark
-visor, glowing eyes and accent-colored headphones. The main session wears gold
-with a compass badge. A single status vocabulary (`OfficeAgentStatus`, mapped onto `DockStatusTone`: Blocked,
-Working, Review, Queued, Idle, Not current) drives eye color, bubble tint, HUD
+names the room's work (for example, QA Lab: Tests & verification). Bots using Herm Faces are small 3D Herm characters:
+their shared seeded face outline becomes a rounded body with matching eyes, lean,
+and skin-aware identity color, plus short arms and feet. Missing avatars and recognized
+saved Herm Faces use this model. Custom artwork retains the white robot with a dark
+visor, glowing eyes and accent-colored headphones; a main-session robot wears gold
+with a compass badge. Main sessions share the default bot's face identity. Avatar and
+skin changes replace the visual in place, preserving travel, placement, and selection.
+A single status vocabulary (`OfficeAgentStatus`, mapped onto `DockStatusTone`: Blocked,
+Working, Review, Queued, Idle, Not current) drives robot eye color, bubble tint, HUD
 dots and roster order. Selecting a bot shows a floor selection ring. Head motion
 and blinking follow the reported phase and stop under Reduce Motion.
 
@@ -1749,6 +1758,13 @@ run and are released when closed. They are independent of backend message pins
 and are not restored after quitting. Streaming messages finish before opening.
 
 
+Video attachments in chat and message reading tabs reserve a bounded 16:9 preview
+above the existing file row. Native AVKit controls provide playback, seeking,
+volume, and fullscreen without autoplay. Video content fits without cropping.
+Unmounting releases playback; ordinary transcript updates preserve the playhead.
+Playback failures stay inside the same preview footprint with an unavailable
+message and the existing **Open** and **Download** actions remain below it.
+
 Chat attachment **Open diff** opens a dedicated, closable Diff tab in the session
 inspector with read-only staged and working-tree changes from the attachment's own
 worktree. Source Control keeps its inline file previews. Both reuse `SharedDiffView`;
@@ -2010,7 +2026,7 @@ each expanded lane scrolls its own cards vertically. Non-empty lanes use a
 compact working width; empty lanes collapse to a narrow full-height rail with
 icon, count, and the lane name stacked one letter per line, and expand locally
 on selection or automatically when work arrives. Any expanded lane can be
-collapsed from its header chevron. Cards prioritize
+collapsed from its header's left caret; the collapsed rail uses a right caret to expand. Cards prioritize
 title, priority/assignee, model metadata, summary/current step, and relative
 activity. Selecting a card opens the existing detail inspector. Details, Done,
 Block, Unblock, and Archive are progressive actions in More and the native
@@ -2233,6 +2249,9 @@ Assistant responses are open document content; user prompts use
 restrained right-aligned navy bubbles with a tighter sender-side corner, and a
 steering prompt's status sits in sentence case beside its timestamp. Fenced
 code blocks carry a quiet header with the lowercase language and a Copy action.
+User image attachments sit above the text bubble. Single images fit within 220pt
+in each dimension and retain their aspect ratio without transparent square padding;
+multiple images fill square grid tiles. Clicking a thumbnail opens the full preview.
 Completed assistant
 responses keep a compact action rail permanently visible beneath the content.
 The rail uses compact labelled Copy and Retry actions plus an ellipsis More menu.
@@ -3723,6 +3742,13 @@ are planned work, not claims that every surface has already been migrated.
 
 ### Shared workspace refinement — 2026-10-27
 
+Settings opens inside the existing workspace from navigation or the macOS Settings
+command (⌘,). The app scene remains windowless, with no separate native Settings
+window for macOS to open or restore.
+
+Runtime configuration, model catalog, and thinking defaults load once when the
+Models & tools section mounts, rather than on every Settings opening.
+
 Settings groups use shared skin-aware cards and wrapping detail text. Integration
 icons use the skin's control geometry. PR and Issues inspectors share the canvas
 and 16pt toolbar/error gutters. Dense content retains its own row insets.
@@ -3752,3 +3778,23 @@ Shared disclosure groups mount content on first expansion and retain it when
 collapsed, preserving nested inputs and disclosure choices within the mounted
 workspace. This is presentation lifetime retention, not durable session storage;
 leaving a workspace or restarting Herm may recreate local view state.
+
+### File, sign-in, and update failure behavior
+
+Repository read failures occupy the existing unavailable state and never display a
+clean working tree or enable mutations. Editor saves preserve newer draft text and
+reject a file changed since it was loaded; the inline save error retains the draft.
+Attachment cleanup is based on explicit ownership, not a temporary-directory prefix.
+
+Shared sign-in changes become visible after durable storage succeeds. Failed sign-out
+leaves the previous state intact and uses the shared action-error presenter. Keychain
+consent runs without blocking Herm's main actor. Annotation selection, submission, and
+cancellation require trusted user input.
+
+Automatic updates require a full asset checksum and matching Developer ID publisher
+signatures before and after staging. Ad-hoc builds use manual updates. A failed trust
+check stays in the existing Updates error state and does not replace the installed app.
+
+User-message bubbles follow the selected text size, including when it changes while a chat is open. Short prompts hug their text from the first layout, without briefly stretching across the chat.
+
+Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.

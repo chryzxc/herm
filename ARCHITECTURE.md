@@ -81,7 +81,7 @@ independent user documents. Existing provider models and action handlers own wri
 
 ## Data flow
 
-WebSocket `/api/ws` (authenticated, loopback-only) → `HermesControlRPC` → `DockModel`/`ControlCenterModel` projection → SwiftUI views. Mutations flow back only through typed RPCs or capability-gated CLI calls; Hermes responses remain authoritative — Herm never optimistically invents final state.
+WebSocket `/api/ws` (authenticated; loopback in local mode, HTTPS/WSS for remote/cloud, or SSH-forwarded loopback) → `HermesControlRPC` → `DockModel`/`ControlCenterModel` projection → SwiftUI views. Mutations flow back only through typed RPCs or capability-gated CLI calls; Hermes responses remain authoritative — Herm never optimistically invents final state.
 
 ## Contracts
 
@@ -101,7 +101,7 @@ No databases. `WorkspaceStore` persists preferences/display state; transcripts a
 
 - Hermes is authoritative for sessions, agents, prompts, models, skills, profiles, MCP, cron; Herm stores references and display state only.
 - Capability-gated, fail-closed: unavailable RPC/CLI contracts render explicit unavailable/stale states — never inferred from version strings.
-- Credentials, memory, profile paths, and tool payloads never enter Herm state; suspected credential values are never repeated in UI.
+- Credentials remain in dedicated authentication services and transient request buffers, outside conversation and presentation projections. Native Keychain access runs on a serial background queue and restricts legacy item access to Herm. Opt-in shared browser cookies are cached in memory and AES-GCM sealed on disk. Credential values never enter diagnostics or ordinary UI.
 - Session isolation: streamed events must prove ownership of the open session; identity mismatch fails closed.
 - Documentation rule: every user-facing behavior change updates README in the same change set.
 
@@ -143,3 +143,15 @@ to the existing `TerminalTabStore` and session inspector navigation. The router 
 the loaded reply revision and profile/session; app composition rechecks the captured
 local project/worktree directory. Each command starts in a fresh terminal shell.
 No generated executor, output store, Hermes RPC or HTML host bridge is added.
+
+## File and update safety
+
+Repository status read failures remain unavailable, including review baselines and
+clean-tree labels. Git commands share a bounded process-group runner with deadlines
+and cancellation. Editor saves compare the loaded contents inside file coordination;
+draft edits made during saving remain unsaved. Only images explicitly created by
+Herm are eligible for attachment cleanup.
+
+Automatic app updates require a complete GitHub asset SHA-256 digest and a Developer
+ID signature matching the installed Herm bundle's Apple-validated team. Both the
+mounted and staged bundles are verified; ad-hoc builds require manual updates.

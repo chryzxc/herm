@@ -296,7 +296,8 @@ Storm and Glass controls. PR toolbar actions use compact sizing for a tighter ro
 Merge uses a shared split button in the toolbar and merge panel: choose an available
 merge commit, squash, or rebase method, then confirm the selected action. The dropdown
 also opens merge requirements; repository rules and expected-head checks still apply.
-Workspace pages, including Settings, use a flat theme canvas without a corner glow. Open Settings from the workspace or with the macOS Settings command (⌘,).
+Workspace pages, including Settings, use a flat theme canvas without a corner glow. Open Settings from the workspace or with the macOS Settings command (⌘,). Settings opens inside the workspace; Herm does not create a separate native Settings window.
+Settings loads the runtime model catalog only when Models & tools opens, keeping General free of those backend requests.
 
 Herm uses one shared workspace design across every custom skin: consistent navigation,
 content hierarchy, spacing, and actions. Skins apply their colors, typography,
@@ -455,6 +456,7 @@ its own GitHub selection; opening a link leaves the conversation visible. Disabl
 unavailable items, and links to anchors or subpages retain the browser fallback.
 
 - **Streaming chat** with Markdown (including tables with optional outer pipes and table text sized to match reply prose), images, tool output, and inline clarification requests. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
+- **Image previews** preserve their original proportions without square padding, so wide and tall screenshots fill their intended thumbnail size. Click an image to open the full preview.
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
 - **Working bot**: a larger, borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
 - **Running activity** keeps duration text free of shimmer while elapsed time continues updating, with a separate live-work sweep that pauses when Herm loses focus and stays still under Reduce Motion or motion-free themes. Running and completed tool durations align at the right end of each chat activity row.
@@ -515,6 +517,7 @@ The composer’s **@** picker shows each bot’s actual name, with its descripti
 - **Steering during a turn**: guidance you type while Herm is working is added to the running turn at the next tool boundary.
 - **Queued messages**: when the current conversation has queued messages, every subsequent send joins the end of that queue, including plain text during a running turn. New submissions also wait behind a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
 - **Attachments**: files, pasted images, prompt snippets, several images at once, or a single PDF up to 25 MB. Drop Markdown, text, source, and other files into the composer as removable attachments (up to 8 MB each); uploads require Hermes protected file attachment support. **Files** and **Images** open a native attachment picker; **Folder** opens a directory picker and inserts its path into the draft.
+- **Video replies** play inline with native playback, seeking, volume, and fullscreen controls. Playback starts when you press Play and stops when the attachment leaves the view. Open and Download remain available; formats or codecs macOS cannot play show an unavailable message.
 - **Model picker** grouped by provider, with search. **Edit available models… → Unselect All** hides every model except the active one; selections are saved locally.
 - **Mixture of Agents**: Settings → Models & tools edits Hermes' MoA presets (reference models, aggregator, enabled). Enabled presets appear in model pickers as `MoA · <preset>`; while a MoA turn runs, advisor output, fan-out progress and the aggregating phase stream into the thinking block. Settings → Models & tools also sets the default thinking level for new sessions.
 - **Context guardrails**: the composer shows context progress without a session token total. Its percentage measures the full context window; Hermes can compact earlier based on its configured token limit or other runtime triggers. During compaction, the composer shows **Compacting**, including during streaming turns, and refreshes usage afterward. Context usage is labelled normal, warning (80%), or critical (90%), with actions to branch, compress, or hand off.
@@ -850,6 +853,7 @@ Bot availability follows the Hermes roster API and honors an explicit `hermes-bo
 - Reads and edits the **real Hermes board**: create, complete, block or unblock, archive, comment on, schedule, assign, promote, and reclaim tasks.
 - Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
 - Dragging lifts the full card under your pointer and leaves a faint placeholder; cancel returns it to its original position. Confirmed lane updates ease into place.
+- Use the lane carets to collapse columns and expand them again.
 - Filters for status, assignee, "mine", and session are passed to Hermes.
 - While open, the board refreshes every five seconds with live work and every fifteen seconds otherwise. Board and filter changes made during a refresh load the latest selection automatically.
 - Large boards format card descriptions as cards become visible; refreshes update changed cards without rebuilding unchanged card content.
@@ -896,10 +900,11 @@ also finishes.
 
 ### Office Preview
 
-- A 3D office where each bot has its own character. Bots with running work sit at computers, bots in review go to Mission Control, and bots that are planning use the Kanban room. Idle bots take coffee breaks and walk around the garden.
+- A 3D office where each bot has its own character. Bots using Herm Faces appear as matching 3D Herm characters with their seeded shape, eyes, and skin-aware color; bots with custom artwork keep the robot. Avatar changes update the character in place. Bots with running work sit at computers, bots in review go to Mission Control, and bots that are planning use the Kanban room. Idle bots take coffee breaks and walk around the garden.
 - Idle bots start at randomly chosen, unoccupied activities around the office. Positions are saved locally every ten seconds and when leaving Office, and restored after app relaunch. Active work still determines working bots’ destinations.
 - Task ownership and status come live from Hermes. The movement and gestures are only visual.
 - Includes camera presets, keyboard camera navigation, and Reduce Motion support.
+- Office's warm lighting finish uses reusable GPU buffers to reduce the rendering cost during longer visits.
 - Hover the lounge record player to see what's playing in the Spotify app, play or pause, and skip tracks. macOS asks once for permission to control Spotify; no Spotify login is needed.
 
 ### Control center
@@ -1055,7 +1060,7 @@ Herm uses Apple's on-device language model (the Foundation Models framework) for
 - **Automations**: view, create, edit, pause, resume, run, and remove Hermes cron jobs. A searchable schedule sidebar, compact summary band, and outcome-labelled history keep recurring work easy to scan. Violet schedule accents complement green successes, amber warnings, and red failures, with theme-aware neutral colors in Monochrome and E-Ink. Creation and editing include delivery, working directory, and model/provider overrides. Run history uses Hermes-recorded session identities; agent reports and script-only output previews stay attached to their owning job and profile. Failed reads and rejected changes remain visible.
 - The Quota page, chat composer, and notch Quota tab share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. Session model responses do not supply a separate quota reading.
 - **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity. Its toolbar highlights Add account, groups automatic refresh and peak-hour sync, and keeps the last update time above the controls. Controls stack in narrow windows. The Add account dialog keeps provider names readable, shows readable sign-in instructions in a stable layout, and offers Done after Hermes confirms success.
-- **Herm updates**: the installed app checks [GitHub Releases](https://github.com/chryzxc/herm/releases) every few hours, downloads and verifies the new DMG, and installs it once no turn is running, rolling back if the swap or relaunch fails. **Settings → Updates** shows the status with **Check for updates** and **Restart now**. Builds run with `swift run`, and copies Herm can't write to, don't self-update.
+- **Herm updates**: the installed app checks [GitHub Releases](https://github.com/chryzxc/herm/releases) every few hours, downloads and verifies the new DMG, and installs it once no turn is running, rolling back if the swap or relaunch fails. **Settings → Updates** shows the status with **Check for updates** and **Restart now**. Automatic installation requires a Developer ID signed build and an update signed by the same team, plus a valid SHA-256 checksum. Ad-hoc/development builds and copies Herm cannot write to require manual updates.
 - **Hermes updates**: runs `hermes update` only after you confirm. Settings shows the current activity and elapsed time; expand Output to inspect the streamed log. It never updates automatically.
 
 Automation uses consistent compact actions, quieter two-line schedule titles,
@@ -1301,3 +1306,26 @@ Expand/collapse keeps the current workspace mounted: chat-list and inspector
 switches, shared list/detail layouts, and shared disclosure sections preserve
 local view state when reopened. This retention lasts for the mounted workspace;
 it does not add restoration of live UI state across an app restart.
+
+### File and credential safety
+
+Removing or sending a selected image preserves its original file, including images
+in the system temporary folder. Herm cleans up only its own pasted/captured copies.
+Repository staging works from project subfolders. Editor saves reject changed disk
+contents and keep text typed while a save is pending. Failed Git reads show an
+unavailable state, and unreadable `.gitignore` files are preserved.
+
+Git commands have a two-minute deadline, cancellation, and bounded output. Explorer
+reads are bounded before loading file data. Browser annotations require real input;
+page-generated clicks cannot attach content. Android diagnostics use the same SDK
+resolver as device discovery, including tools found on PATH.
+
+Gateway credentials and the shared browser encryption key use native Keychain access
+off the UI thread. The first access may request macOS consent to replace legacy
+helper authorization; ad-hoc rebuilds can require renewed consent. Shared-browser
+sign-out succeeds only after its cleared state is saved, and failures offer an
+explicit error instead of restoring old sign-ins silently.
+
+User-message bubbles follow the selected text size, including when it changes while a chat is open. Short prompts hug their text from the first layout, without briefly stretching across the chat.
+
+Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.
