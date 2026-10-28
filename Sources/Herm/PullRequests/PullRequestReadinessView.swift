@@ -79,9 +79,12 @@ struct PullRequestReadinessView: View {
                     Text("Conflict analysis is outdated. Analyze the current revisions again.").foregroundStyle(
                         Color.dockWarning)
                 } else {
-                    Text(
-                        "Local analysis · \(String(analysis.headRevision.prefix(7))) into \(String(analysis.baseRevision.prefix(7)))"
-                    )
+                    HStack(spacing: 4) {
+                        Text("Local analysis ·")
+                        DockCommitIdentifier(revision: analysis.headRevision)
+                        Text("into")
+                        DockCommitIdentifier(revision: analysis.baseRevision)
+                    }
                     .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     if analysis.hasConflicts {
                         ForEach(analysis.files, id: \.self) { path in

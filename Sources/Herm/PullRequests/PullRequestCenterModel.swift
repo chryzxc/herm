@@ -411,6 +411,13 @@ final class PullRequestCenterModel: ObservableObject {
             filesByID[selected.id] == nil || !filesAreCurrent(for: selected) || detailNeedsRefresh.contains(selected.id)
         else { return }
         guard beginDetailLoad(for: selected.id) else { return }
+        if errorMessage?.hasPrefix("Diff revisions could not be verified.") == true
+            || errorMessage?.hasPrefix("Some pull request sections could not be refreshed.") == true
+            || errorMessage?.hasPrefix("Showing ") == true
+                && errorMessage?.contains("changed files. GitHub limits") == true
+        {
+            errorMessage = nil
+        }
         let token = generation
         defer { if token == generation { finishDetailLoad(for: selected.id) } }
         let snapshot = await loadSummary(for: selected)

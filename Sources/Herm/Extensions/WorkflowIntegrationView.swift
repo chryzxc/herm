@@ -586,6 +586,7 @@ final class WorkflowIntegrationModel: ObservableObject {
 }
 
 struct WorkflowIntegrationView: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     /// Mirrors Hermes Desktop's Capabilities tabs, plus MCP servers which Desktop keeps elsewhere.
     typealias Section = WorkflowIntegrationSection
     /// One master-list row on the Capabilities page.
@@ -1561,7 +1562,9 @@ struct WorkflowIntegrationView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 16) {
                         Text(label).foregroundStyle(Color.dockMetadataText)
                             .frame(width: 96, alignment: .leading)
-                        Text(value).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
+                        (label == "Pinned revision" && value.utf8.allSatisfy(DockCommitPresentation.isHex)
+                            ? DockCommitPresentation.text(value, length: nil, scale: workspaceScale) : Text(value))
+                            .foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }

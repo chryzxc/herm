@@ -142,6 +142,7 @@ struct GitHubTimelineView: View {
     let reference: GitHubItemReference
     let items: [GitHubConversationItem]
     var grouped = false
+    var commitCheckEvidence: DockCommitCheckEvidence? = nil
     var onOpenCommit: ((String) -> Void)? = nil
     var body: some View {
         LazyVStack(alignment: .leading, spacing: grouped ? 0 : 12) {
@@ -167,11 +168,19 @@ struct GitHubTimelineView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.summary).foregroundStyle(Color.dockSecondaryText)
                             if let sha = item.commitSHA, let onOpenCommit {
-                                Button(String(sha.prefix(7))) { onOpenCommit(sha) }
-                                    .buttonStyle(.dockLink)
-                                    .dockFont(.metadata, design: .monospaced)
-                                    .help("Show commit diff")
-                                    .accessibilityLabel("Show diff for commit \(sha.prefix(7))")
+                                Button {
+                                    onOpenCommit(sha)
+                                } label: {
+                                    DockCommitIdentifier(
+                                        revision: sha, repositoryID: reference.repository.id,
+                                        evidence: commitCheckEvidence)
+                                }
+                                .buttonStyle(.dockLink)
+                                .help("Show commit diff")
+                                .accessibilityLabel(
+                                    DockCommitPresentation.diffActionLabel(
+                                        revision: sha, repositoryID: reference.repository.id,
+                                        evidence: commitCheckEvidence))
                             }
                         }
                         Spacer(minLength: 8)
