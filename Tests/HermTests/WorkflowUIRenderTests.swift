@@ -49,15 +49,6 @@ struct WorkflowUIRenderTests {
                     SettingsSection(title: "Replies", subtitle: "Visual content", tint: .dockAccent) {
                         GenerativeUISettings().padding(.vertical, -8)
                     }
-                    SettingsSection(title: "Sidebar", subtitle: "", tint: .dockAccent) {
-                        SettingsPreferenceRow(
-                            title: "Show Kanban in sidebar",
-                            detail: "List the Kanban board in the workspace side panel."
-                        ) {
-                            Toggle("Show Kanban in sidebar", isOn: .constant(true))
-                                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Color.dockAccent)
-                        }.padding(.vertical, -8)
-                    }
                     SettingsSection(title: "Window capture", subtitle: "", tint: .dockAccent) {
                         DesktopCaptureSettings().padding(.vertical, -8)
                     }

@@ -5,32 +5,16 @@ import Testing
 
 @Suite @MainActor
 struct GitHubMarkdownLinkTests {
-    @Test func routesEnabledOverviewLinks() {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+    @Test func routesOverviewLinks() {
         for (path, kind) in [("pull", GitHubItemKind.pullRequest), ("issues", .issue)] {
-            let reference = GitHubMarkdownLink.reference(
-                for: URL(string: "https://github.com/owner/repo/\(path)/42")!, defaults: defaults)
+            let reference = GitHubMarkdownLink.reference(for: URL(string: "https://github.com/owner/repo/\(path)/42")!)
             #expect(reference?.kind == kind)
             #expect(reference?.number == 42)
             #expect(reference?.repository.id == "owner/repo")
         }
-        defaults.set(false, forKey: SidebarVisibilityKey.github)
-        #expect(
-            GitHubMarkdownLink.reference(for: URL(string: "https://github.com/owner/repo/pull/42")!, defaults: defaults)
-                == nil)
-        #expect(
-            GitHubMarkdownLink.reference(
-                for: URL(string: "https://github.com/owner/repo/issues/42")!, defaults: defaults) == nil)
-        defaults.set(true, forKey: SidebarVisibilityKey.github)
-        for path in ["pull", "issues"] {
-            #expect(
-                GitHubMarkdownLink.reference(
-                    for: URL(string: "https://github.com/owner/repo/\(path)/42")!, defaults: defaults) != nil)
-        }
     }
 
     @Test func preservesUnsupportedDestinationsInBrowser() {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
         for value in [
             "https://github.com/owner/repo/pull/42/files",
             "https://github.com/owner/repo/issues/42#issuecomment-123",
@@ -40,7 +24,7 @@ struct GitHubMarkdownLinkTests {
             "https://github.com/owner/repo/issues/0",
             "https://github.com/owner/repo/issues/new",
         ] {
-            #expect(GitHubMarkdownLink.reference(for: URL(string: value)!, defaults: defaults) == nil)
+            #expect(GitHubMarkdownLink.reference(for: URL(string: value)!) == nil)
         }
     }
 }

@@ -86,12 +86,37 @@ struct DockButtonSizingTests {
         defer { DockThemeRuntime.current = previous }
         let directory = URL(fileURLWithPath: "/tmp/herm-button-sizing")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        for (theme, dark): (DockThemeID, Bool) in [
-            (.clean, false), (.clean, true), (.glass, false), (.glass, true), (.mono, true),
-        ] {
+        let appearances = DockThemeID.allCases.flatMap { theme -> [(DockThemeID, Bool)] in
+            switch theme.appearance {
+            case .light: [(theme, false)]
+            case .dark: [(theme, true)]
+            case .system: [(theme, false), (theme, true)]
+            }
+        }
+        for (theme, dark) in appearances {
             DockThemeRuntime.current = theme
             let root = VStack(alignment: .leading, spacing: 20) {
                 Text("Shared action sizes").dockFont(.pageTitle)
+                ForEach([false, true], id: \.self) { disabled in
+                    HStack(spacing: 8) {
+                        Button {
+                        } label: {
+                            DockIconLabel("Open on GitHub", icon: .arrowUpRight)
+                        }.buttonStyle(.dockPrimary)
+                        Button {
+                        } label: {
+                            DockIconLabel("Copy", icon: .copy)
+                        }.buttonStyle(.dockSecondary)
+                        Button(role: .destructive) {
+                        } label: {
+                            DockIconLabel("Remove", icon: .trash)
+                        }.buttonStyle(.dockSecondary)
+                        Button {
+                        } label: {
+                            DockIconLabel("Details", icon: .arrowUpRight)
+                        }.buttonStyle(.dockLink)
+                    }.disabled(disabled)
+                }
                 ForEach(Array(DockButtonSize.allCases.enumerated()), id: \.offset) { _, size in
                     VStack(alignment: .leading, spacing: 8) {
                         Text("\(Int(size.height)) pt").dockFont(.body)

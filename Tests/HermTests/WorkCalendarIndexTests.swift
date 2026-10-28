@@ -111,7 +111,7 @@ struct WorkCalendarIndexTests {
             },
             usage: recordedDays.map {
                 TokenUsageReport.Day(
-                    day: date($0), inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, reasoningTokens: 0,
+                    day: date($0), inputTokens: 100, outputTokens: 50, cacheReadTokens: 200, reasoningTokens: 10,
                     estimatedCost: 1.25, sessions: 4, apiCalls: 2)
             },
             now: date(10), calendar: calendar
@@ -131,6 +131,11 @@ struct WorkCalendarIndexTests {
             #expect(range.repos == [WorkCount(id: "owner/repo", count: expectedDays.count)])
             #expect(range.assignees == [WorkCount(id: "forge", count: expectedDays.count)])
             #expect(range.tokens == expectedDays.count * 150)
+            #expect(range.inputTokens == expectedDays.count * 100)
+            #expect(range.outputTokens == expectedDays.count * 50)
+            #expect(range.cacheReadTokens == expectedDays.count * 200)
+            #expect(range.reasoningTokens == expectedDays.count * 10)
+            #expect(range.usageDays == expectedDays.count)
             #expect(range.apiCalls == expectedDays.count * 2)
             #expect(range.usageSessions == expectedDays.count * 4)
             #expect(range.cost == Double(expectedDays.count) * 1.25)
@@ -152,6 +157,11 @@ struct WorkCalendarIndexTests {
         #expect(boundaryWeek.points.first?.date == calendar.startOfDay(for: date(1)))
         #expect(boundaryWeek.points.last?.date == calendar.startOfDay(for: date(4)))
         #expect(boundaryWeek.commits.map(\.hash) == ["c4", "c3"])
+        #expect(boundaryWeek.usageDays == 2)
+        let missing = index.range(from: date(20), to: date(22), calendar: calendar)
+        #expect(!missing.hasUsage)
+        #expect(missing.usageDays == 0)
+        #expect(missing.inputTokens == 0)
     }
 
     @Test func usageOnlyPeriodsStayVisibleEvenWithNoEventsOrCost() {

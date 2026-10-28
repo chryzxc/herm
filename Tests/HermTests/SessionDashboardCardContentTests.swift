@@ -22,14 +22,14 @@ private final class DashboardCardRPC: HermesRPCClientProtocol {
 }
 
 @MainActor
-struct MissionControlCardContentTests {
+struct SessionDashboardCardContentTests {
     @Test func latestReplyIsPreferredOverFollowingUserOrToolActivity() {
         #expect(
-            MissionControlCardContent.latestUpdate([
+            SessionDashboardCardContent.latestUpdate([
                 "assistant: First", "hermes: Latest reply", "user: Next question",
             ]) == "Latest reply")
-        #expect(MissionControlCardContent.latestUpdate(["user: Question"]) == "Question")
-        #expect(MissionControlCardContent.latestUpdate([]) == nil)
+        #expect(SessionDashboardCardContent.latestUpdate(["user: Question"]) == "Question")
+        #expect(SessionDashboardCardContent.latestUpdate([]) == nil)
     }
 
     @Test func visualReplyUsesReadableFallbackInsteadOfJSON() {
@@ -38,10 +38,10 @@ struct MissionControlCardContentTests {
             {"version":2,"id":"budget","title":"Budget","fallback":"Monthly budget overview","blocks":[]}
             ```
             """
-        let preview = MissionControlCardContent.preview(source)
+        let preview = SessionDashboardCardContent.preview(source)
         #expect(preview?.contains("Monthly budget overview") == true)
         #expect(preview?.contains("\"version\"") == false)
-        #expect(MissionControlCardContent.latestUpdate(["assistant: " + source]) == preview)
+        #expect(SessionDashboardCardContent.latestUpdate(["assistant: " + source]) == preview)
     }
 
     @Test func loadsBoundedTailWithExplicitProfileWithoutActivatingSession() async {
@@ -54,7 +54,7 @@ struct MissionControlCardContentTests {
                 ["role": "tool", "content": "Tool payload"],
             ],
         ]
-        let content = MissionControlCardContent()
+        let content = SessionDashboardCardContent()
         let session = HermesSession(
             id: "session", title: "Work", preview: "", startedAt: nil, messageCount: 3, source: "conversation")
         await content.load(session: session, profileID: "bot", client: client)

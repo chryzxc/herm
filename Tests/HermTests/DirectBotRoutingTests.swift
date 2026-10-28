@@ -10,6 +10,7 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
     var onSubmit: (() -> Void)?
     var resumeResult: [String: Any]?
     var submitError: Error?
+    var onFetchHTTP: ((String) async throws -> [String: Any])?
     private(set) var requests: [(method: String, params: [String: Any])] = []
 
     func connect() async throws {}
@@ -35,6 +36,10 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
     }
 
     func close() {}
+
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        try await onFetchHTTP?(path) ?? [:]
+    }
 }
 
 @MainActor
@@ -320,6 +325,103 @@ struct DirectBotRoutingTests {
         }
         #expect(model.messages.map(\.text) == ["@Sentry audit", "Audit complete."])
         #expect(model.botActivityBySessionID["cypher-chat"]?.first?.result == "Audit complete.")
+    }
+
+    @Test func mentionedBotActivityReachesTheLoadingAreaAndSurvivesNavigation() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "audit")
+        await waitForSubmission(rpc)
+        let id = try #require(model.pendingBotMentions.first?.id)
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(), voice: VoiceOutput(),
+            coordinator: ConversationTranscriptCoordinator())
+        model.receiveGatewayEvent(
+            "tool.call",
+            params: [
+                "session_id": "recipient-chat",
+                "payload": ["name": "read_file", "arguments": ["path": "README.md"]],
+            ])
+        source.refresh()
+        #expect(source.snapshot.context.botSteps == [id: "Read README.md"])
+        #expect(model.activeToolCalls.isEmpty)
+        model.receiveGatewayEvent(
+            "tool.call", params: ["session_id": "unrelated", "payload": ["name": "terminal"]])
+        await model.refreshBotLiveSteps()
+        #expect(model.botLiveSteps == [id: "Read README.md"])
+
+        model.newChat()
+        model.receiveGatewayEvent(
+            "tool.start",
+            params: [
+                "session_id": "recipient-chat",
+                "payload": ["tool_name": "terminal", "args_text": #"{"command":"swift build"}"#],
+            ])
+        source.refresh()
+        #expect(source.snapshot.context.botSteps.isEmpty)
+        #expect(model.messages.isEmpty)
+        rpc.resumeResult = ["session_id": "cypher-chat", "messages": [], "running": false]
+        #expect(
+            await model.resumeSession(
+                HermesSession(
+                    id: "cypher-chat", title: "Cypher", preview: "", startedAt: nil, messageCount: 0, source: "herm"),
+                reportFailure: true))
+        source.refresh()
+        #expect(source.snapshot.context.botSteps == [id: "Run swift build"])
+
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Done"]])
+        source.refresh()
+        #expect(source.snapshot.context.botSteps.isEmpty)
+        #expect(model.botLiveSteps[id] == nil)
+    }
+
+    @Test func mentionActivityUsesReportedPhasesWithoutReasoningOrToolOutput() {
+        for type in ["reasoning.start", "reasoning.delta", "thinking.delta"] {
+            #expect(DockModel.botMentionActivityTitle(type: type, payload: ["text": "Private thought"]) == "Thinking")
+        }
+        #expect(DockModel.botMentionActivityTitle(type: "message.delta", payload: [:]) == "Responding")
+        #expect(DockModel.botMentionActivityTitle(type: "approval.request", payload: [:]) == "Waiting for approval")
+        #expect(DockModel.botMentionActivityTitle(type: "clarify.request", payload: [:]) == "Waiting for your answer")
+        #expect(DockModel.botMentionActivityTitle(type: "tool.result", payload: ["output": "Raw output"]) == nil)
+        for type in ["tool.call", "tool.start", "tool.use", "tool_use"] {
+            #expect(
+                DockModel.botMentionActivityTitle(
+                    type: type, payload: ["name": "read_file", "args": ["path": "README.md"]]) == "Read README.md")
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func handoffPollingCannotOverwriteNewerMentionActivity(completesDuringRead: Bool) async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "audit")
+        await waitForSubmission(rpc)
+        let id = try #require(model.pendingBotMentions.first?.id)
+        model.botLiveSteps[id] = "Earlier step"
+        model.insertBotActivity(
+            BotActivityRecord(
+                id: "bot-dispatch:other", originSessionID: "cypher-chat", botID: "sentry", botName: "Sentry",
+                summary: "Other work", state: .working, botChatSessionID: "other-recipient"))
+        rpc.onFetchHTTP = { _ in
+            model.receiveGatewayEvent(
+                completesDuringRead ? "message.complete" : "thinking.delta",
+                params: ["session_id": "recipient-chat", "payload": ["text": "Done"]])
+            return ["messages": []]
+        }
+        await model.refreshBotLiveSteps()
+        #expect(model.botLiveSteps[id] == (completesDuringRead ? nil : "Thinking"))
+    }
+
+    @Test func mentionLoadingAreaIncludesTheReplyingBotsOwnActivity() {
+        let row = BotCrewRow(
+            from: nexus, partners: [], since: .now, repliesToUser: true, steps: ["default": "Read README.md"])
+        #expect(row.activitySteps.map(\.bot.id) == ["default"])
+        #expect(row.activitySteps.map(\.step) == ["Read README.md"])
+        let handoff = BotCrewRow(from: nexus, partners: [], since: .now, steps: ["default": "Old lead step"])
+        #expect(handoff.activitySteps.isEmpty)
     }
 
     @Test(arguments: [false, true])

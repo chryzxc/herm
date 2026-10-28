@@ -5,7 +5,7 @@ import Testing
 @testable import Herm
 
 @Suite @MainActor
-struct MissionControlDashboardVisualTests {
+struct SessionDashboardVisualTests {
     @Test func renderSessionListAcrossThemesAndStates() async throws {
         guard let directory = ProcessInfo.processInfo.environment["DASHBOARD_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
@@ -45,7 +45,7 @@ struct MissionControlDashboardVisualTests {
                 createdAt: Date(),
                 state: .open, actions: [.respond]),
         ]
-        let source = MissionControlSidebarModel(
+        let source = SessionNavSidebarModel(
             model: model, control: control,
             store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/dashboard-\(UUID()).json")))
         for (theme, dark) in [(DockThemeID.clean, false), (.storm, true), (.glass, false), (.mono, true)] {
@@ -53,10 +53,10 @@ struct MissionControlDashboardVisualTests {
             DockThemeRuntime.revision &+= 1
             NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             for current in [true, false] {
-                var selection = MissionControlDashboardSelection()
+                var selection = SessionDashboardSelection()
                 let request = selection.begin(model.sessions[0])
                 if current { selection.finish(request, loaded: true) }
-                let root = MissionControlDashboardList(
+                let root = SessionDashboardList(
                     sidebar: source, selection: selection, isCurrent: current, onSelect: { _ in }
                 ).frame(width: current ? 1180 : 380, height: 1000).background(DockWindowBackground()).dockThemedRoot()
                     .environment(\.colorScheme, dark ? .dark : .light)

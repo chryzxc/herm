@@ -213,14 +213,17 @@ struct EdgeNotchTests {
         #expect(right.frame(width: 720, height: 600).maxX == screen.maxX)
     }
 
-    @Test func sideWorkspaceReclaimsHeightWithoutCrossingItsRoundedOutline() {
+    @Test func sideWorkspaceKeepsNavigationControlsInsideItsRoundedOutline() {
         let rect = CGRect(x: 0, y: 0, width: 1224, height: 600)
         for side in [EdgeDockSide.left, .right] {
             let insets = EdgeDockLayout.insets(for: side)
+            #expect(insets.leading == 0)
+            #expect(insets.trailing == 12)
             #expect(insets.top + insets.bottom == 48)
             let path = EdgeNotchShape(side: side).path(in: rect)
-            for x in [insets.leading, rect.width - insets.trailing] {
-                for y in [insets.top, rect.height - insets.bottom] {
+            // Navigation controls retain the rail's 7pt horizontal and 12pt/8pt vertical padding.
+            for x in [insets.leading + 7, rect.width - insets.trailing] {
+                for y in [insets.top + 12, rect.height - insets.bottom - 8] {
                     #expect(path.contains(CGPoint(x: x, y: y)))
                 }
             }

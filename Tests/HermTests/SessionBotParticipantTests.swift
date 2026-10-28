@@ -39,15 +39,14 @@ struct SessionBotParticipantTests {
         let trace = SessionTraceModel()
         trace.update(model)
         let rows = trace.turns.flatMap(\.rows)
-        let crew = SessionCrewProjection(rows: rows)
-        #expect(Set(crew.bots.map(\.identity)) == ["archon", "sentry"])
-        #expect(crew.bots.count == 2)
-        #expect(crew.bots.allSatisfy { $0.row.timing == .unavailable })
-        #expect(SessionSubagentFilter.rows(rows, matching: .all).isEmpty)
+        let bots = SessionActivityLanes(SessionCrewProjection(rows: rows)).lanes.filter { $0.kind != .main }
+        #expect(bots.map(\.kind) == [.bot, .bot])
+        #expect(Set(bots.map(\.identity)) == ["archon", "sentry"])
+        #expect(bots.flatMap(\.actors).allSatisfy { $0.row.timing == .unavailable })
         #expect(trace.turns.last?.rows.contains { $0.crewProfileID == "sentry" } == true)
     }
 
-    @Test func subagentFiltersExcludeConfiguredBots() {
+    @Test func subagentLanesExcludeConfiguredBots() {
         let rows = [
             SessionTraceRow(id: "worker", kind: .agent, title: "Worker", timing: .unavailable, active: true),
             SessionTraceRow(
@@ -55,8 +54,8 @@ struct SessionBotParticipantTests {
             SessionTraceRow(
                 id: "bot", kind: .agent, title: "Bot", timing: .unavailable, active: true, crewProfileID: "archon"),
         ]
-        #expect(SessionSubagentFilter.rows(rows, matching: .all).map(\.id) == ["worker", "failure"])
-        #expect(SessionSubagentFilter.rows(rows, matching: .running).map(\.id) == ["worker"])
-        #expect(SessionSubagentFilter.rows(rows, matching: .failed).map(\.id) == ["failure"])
+        let lanes = SessionActivityLanes(SessionCrewProjection(rows: rows)).lanes
+        #expect(lanes.filter { $0.kind == .subagent }.map(\.id) == ["worker", "failure"])
+        #expect(lanes.filter { $0.kind == .bot }.map(\.identity) == ["archon"])
     }
 }

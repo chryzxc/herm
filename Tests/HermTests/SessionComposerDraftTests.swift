@@ -384,6 +384,19 @@ struct SessionComposerDraftTests {
         #expect(model.draft == "Belongs to bot A")
     }
 
+    @Test func worktreeTaskMovesTheDraftInsteadOfCopyingIt() async {
+        let rpc = ComposerDraftRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.setProfileScope("bot-a")
+        #expect(await model.resumeSession(session("existing", profile: "bot-a"), reportFailure: true))
+        model.draft = "Build the parity flow"
+        model.newChatMovingDraft(projectPath: "/tmp/worktree-a")
+        #expect(model.draft == "Build the parity flow")
+        #expect(await model.resumeSession(session("existing", profile: "bot-a"), reportFailure: true))
+        #expect(model.draft.isEmpty)
+    }
+
     @Test func newChatDraftsFollowTheirProfileAndProjectUntilSessionCreation() async throws {
         let rpc = ComposerDraftRPCClient()
         let model = model(rpc)

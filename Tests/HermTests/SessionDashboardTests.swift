@@ -3,7 +3,7 @@ import Testing
 
 @testable import Herm
 
-struct MissionControlDashboardTests {
+struct SessionDashboardTests {
     private func session(
         _ id: String, profile: String? = nil, date: Double = 0, hidden: Bool = false
     ) -> HermesSession {
@@ -24,10 +24,10 @@ struct MissionControlDashboardTests {
             SessionSummary(id: "active", title: "Live work", state: "active", preview: nil, updatedAt: nil),
             SessionSummary(id: "hidden", title: "Hidden", state: "active", preview: nil, updatedAt: nil),
         ]
-        let snapshot = MissionControlSidebarSnapshot(
-            inputs: MissionControlSidebarSnapshot.inputs(model: model, control: control))
-        let sessions = MissionControlDashboardProjection.sessions(in: snapshot)
-        let rows = MissionControlDashboardProjection.rows(
+        let snapshot = SessionNavSidebarSnapshot(
+            inputs: SessionNavSidebarSnapshot.inputs(model: model, control: control))
+        let sessions = SessionDashboardProjection.sessions(in: snapshot)
+        let rows = SessionDashboardProjection.rows(
             sessions: sessions, statuses: [:], projects: [:], profileID: model.profileScopeID)
         #expect(Set(rows.map(\.id)) == ["active", "known"])
         #expect(rows.first { $0.id == "active" }?.session.isWorking == true)
@@ -52,10 +52,10 @@ struct MissionControlDashboardTests {
             ]))
         #expect(control.activeSessions.first?.id == "runtime")
         #expect(control.activeSessions.first?.storedSessionID == "saved")
-        let snapshot = MissionControlSidebarSnapshot(
-            inputs: MissionControlSidebarSnapshot.inputs(model: model, control: control))
-        let rows = MissionControlDashboardProjection.rows(
-            sessions: MissionControlDashboardProjection.sessions(in: snapshot),
+        let snapshot = SessionNavSidebarSnapshot(
+            inputs: SessionNavSidebarSnapshot.inputs(model: model, control: control))
+        let rows = SessionDashboardProjection.rows(
+            sessions: SessionDashboardProjection.sessions(in: snapshot),
             statuses: [:], projects: [:], profileID: model.profileScopeID)
         #expect(Set(rows.map(\.id)) == ["saved", "new-saved"])
         #expect(rows.count == 2)
@@ -67,22 +67,22 @@ struct MissionControlDashboardTests {
                 id: $0, title: "Same title", preview: "Same reply", startedAt: nil,
                 messageCount: 1, source: "conversation")
         }
-        let rows = MissionControlDashboardProjection.rows(
+        let rows = SessionDashboardProjection.rows(
             sessions: sessions, statuses: [:], projects: [:], profileID: nil)
         #expect(rows.count == 2)
     }
 
     @Test func groupsOnlyActionableStatesAndKeepsSettledSessionsRecent() {
-        #expect(MissionControlDashboardSection.section(for: .needsApproval) == .attention)
-        #expect(MissionControlDashboardSection.section(for: .needsClarification) == .attention)
-        #expect(MissionControlDashboardSection.section(for: .failed) == .attention)
-        #expect(MissionControlDashboardSection.section(for: .unreadComplete) == .review)
-        #expect(MissionControlDashboardSection.section(for: .working) == .working)
-        #expect(MissionControlDashboardSection.section(for: .none) == .recent)
+        #expect(SessionDashboardSection.section(for: .needsApproval) == .attention)
+        #expect(SessionDashboardSection.section(for: .needsClarification) == .attention)
+        #expect(SessionDashboardSection.section(for: .failed) == .attention)
+        #expect(SessionDashboardSection.section(for: .unreadComplete) == .review)
+        #expect(SessionDashboardSection.section(for: .working) == .working)
+        #expect(SessionDashboardSection.section(for: .none) == .recent)
     }
 
     @Test func filtersProfileHiddenAndDuplicatesWithStableOrdering() {
-        let rows = MissionControlDashboardProjection.rows(
+        let rows = SessionDashboardProjection.rows(
             sessions: [
                 session("b", date: 20), session("a", date: 20), session("old"),
                 session("a", date: 100), session("hidden", hidden: true), session("hidden"),
@@ -96,18 +96,18 @@ struct MissionControlDashboardTests {
     @Test func searchAndProjectFiltersIntersect() {
         let sessions = [session("one"), session("two"), session("three")]
         let projects = ["one": "Herm", "two": "Website"]
-        let rows = MissionControlDashboardProjection.rows(
+        let rows = SessionDashboardProjection.rows(
             sessions: sessions, statuses: [:], projects: projects, profileID: nil,
             query: " REVIEW ", project: "Herm")
         #expect(rows.map(\.id) == ["one"])
         #expect(
-            MissionControlDashboardProjection.rows(
+            SessionDashboardProjection.rows(
                 sessions: sessions, statuses: [:], projects: projects, profileID: nil, query: "website"
             ).map(\.id) == ["two"])
     }
 
     @Test func lateLoadsCannotEnableRepliesForAnotherSessionOrProfile() {
-        var selection = MissionControlDashboardSelection()
+        var selection = SessionDashboardSelection()
         let first = selection.begin(session("first", profile: "bot"))
         #expect(!selection.canRespond(activeSessionID: "first", activeProfileID: "bot", profileID: "bot"))
         let second = selection.begin(session("second", profile: "bot"))

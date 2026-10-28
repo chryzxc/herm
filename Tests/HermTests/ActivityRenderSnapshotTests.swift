@@ -118,15 +118,23 @@ struct ActivityRenderSnapshotTests {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
             for width: CGFloat in [640, 1380] {
-                for page in ["day", "week", "month", "spend"] {
+                for page in ["day", "week", "month", "spend", "details"] {
                     if let selectedPages, !selectedPages.contains(page) { continue }
                     let work = page != "spend"
                     let height: CGFloat = work ? 1000 : (width < 900 ? 1700 : 1250)
                     defaults.set(work ? page : "day", forKey: "dock.calendar.scope")
+                    let details = control.workCalendar!.range(
+                        from: calendar.startOfDay(for: now), to: now)
                     let content =
-                        work
-                        ? AnyView(WorkActivityView(control: control, repoPaths: []))
-                        : AnyView(ScrollView { UsageWorkspaceView(control: control, availableWidth: width - 40) })
+                        page == "details"
+                        ? AnyView(
+                            VStack(spacing: 16) {
+                                WorkActivityBreakdown(activity: details)
+                                WorkActivityUsageView(activity: details).dockCard(padding: 14)
+                            }.frame(maxHeight: .infinity, alignment: .top))
+                        : work
+                            ? AnyView(WorkActivityView(control: control, repoPaths: []))
+                            : AnyView(ScrollView { UsageWorkspaceView(control: control, availableWidth: width - 40) })
                     let view = content.defaultAppStorage(defaults).padding(20)
                         .frame(width: width, height: height)
                         .background(Color.dockCanvas).background(dark ? Color.black : Color.white)

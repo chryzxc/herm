@@ -505,6 +505,29 @@ struct WorkflowRoadmapTests {
         #expect(servers.first?.enabled == false)
     }
 
+    @Test func builtinMarksComeOnlyFromHermesProvenance() async throws {
+        let client = WorkflowFixture()
+        client.replies["profiles.describe"] = [
+            "name": "research", "skills": [["name": "plan", "enabled": true], ["name": "mine", "enabled": true]],
+        ]
+        client.replies["GET"] = [
+            "items": [["name": "plan", "provenance": "bundled"], ["name": "mine", "provenance": "agent"]]
+        ]
+        client.replies["mcp.catalog"] = [
+            "servers": [["name": "docs", "installed": true, "enabled": true]]
+        ]
+        client.replies["mcp.servers.list"] = ["servers": [["name": "custom", "transport": "http"]]]
+        let service = HermesWorkflowRPC(client: client, profileID: "research")
+        let skills = try await service.skills()
+        #expect(skills.map(\.builtin) == [true, false])
+        let servers = try await service.mcpCatalog()
+        #expect(servers.map(\.id) == ["docs", "custom"])
+        #expect(servers.map(\.builtin) == [true, false])
+
+        client.replies["GET"] = nil
+        #expect(try await service.skills().allSatisfy { !$0.builtin })
+    }
+
     @Test func pluginCatalogKeepsCategoryTierAndGitHubSlug() async throws {
         let client = WorkflowFixture()
         client.replies["GET"] = [

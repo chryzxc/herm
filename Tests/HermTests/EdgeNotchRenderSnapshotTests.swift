@@ -232,6 +232,14 @@ struct EdgeNotchRenderSnapshotTests {
 
     @Test func renderTaskSources() async throws {
         guard let dir = ProcessInfo.processInfo.environment["NOTCH_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let savedTheme = DockThemeRuntime.current
+        let savedAppearance = NSApplication.shared.appearance
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision &+= 1
+            NSApplication.shared.appearance = savedAppearance
+        }
         let state = EdgeNotchState()
         state.expanded = true
         state.tasks = [
@@ -272,10 +280,15 @@ struct EdgeNotchRenderSnapshotTests {
         ]
         let tasks = state.tasks
         for name in [
+            "tasks-light", "tasks-left-light", "tasks-dark", "tasks-left-dark",
             "tasks", "tasks-top", "tasks-top-empty", "tasks-many", "tasks-empty", "kanban-unavailable",
             "quick-message", "quick-reply",
         ] {
-            state.side = name.contains("top") ? .top : .right
+            let dark = !name.hasSuffix("light")
+            DockThemeRuntime.current = name.contains("top") ? .island : .glass
+            DockThemeRuntime.revision &+= 1
+            NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            state.side = name.contains("top") ? .top : name.contains("left") ? .left : .right
             state.tasks = tasks
             if name == "tasks-many" {
                 state.tasks = EdgeNotchTask.merged(
@@ -299,10 +312,11 @@ struct EdgeNotchRenderSnapshotTests {
             let size = state.panelSize
             let content = EdgeNotchView(state: state, controlCenter: control, quickMessageModel: model, openDock: {})
                 .frame(width: size.width, height: size.height)
+                .environment(\.colorScheme, dark ? .dark : .light)
             let host = NSHostingView(rootView: content)
             host.frame = NSRect(origin: .zero, size: size)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            window.appearance = NSAppearance(named: .darkAqua)
+            window.appearance = NSApplication.shared.appearance
             window.contentView = host
             window.orderFrontRegardless()
             defer { window.orderOut(nil) }

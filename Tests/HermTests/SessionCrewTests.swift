@@ -26,20 +26,36 @@ struct SessionCrewTests {
         ]
         let crew = SessionCrewProjection(rows: rows)
         #expect(crew.ownerByRow["tool"] == "b")
-        #expect(crew.root(selectedRowID: "tool", replayDate: nil) == "one")
-        #expect(crew.root(selectedRowID: nil, replayDate: origin.addingTimeInterval(35)) == "two")
-        #expect(crew.branch("one").map(\.id) == ["one", "a", "b"])
+        #expect(crew.actors.first { $0.id == "b" }?.parentID == "a")
     }
 
-    @Test func outlineKeepsDelegatorsOfMembersOnly() {
-        let crew = SessionCrewProjection(rows: [
-            row("one", .turn), row("a", .agent, parent: "one"), row("b", .agent, parent: "a"),
-            row("idle", .agent, parent: "one"), row("two", .turn), row("c", .agent, parent: "two"),
-        ])
-        let lines = SessionCrewOutline.lines(crew.actors, members: ["b", "c"])
-        #expect(lines.map(\.id) == ["one", "a", "b", "two", "c"])
-        #expect(lines.map(\.depth) == [0, 1, 2, 0, 1])
-        #expect(lines.filter(\.member).map(\.id) == ["b", "c"])
+    @Test func lanesGroupHermBotProfilesAndSubagents() {
+        var bot = row("bot-1", .agent, parent: "two", start: 40, end: 50)
+        bot.crewProfileID = "sentry"
+        var again = row("bot-2", .agent, parent: "three", start: 70, end: 80)
+        again.crewProfileID = "sentry"
+        let dispatch = row("turn:bot-dispatch:job", .turn, start: 5, end: 9)
+        var direct = row("bot-dispatch:job", .agent, parent: dispatch.id, start: 5, end: 9)
+        direct.crewProfileID = "archon"
+        let rows = [
+            row("one", .turn), row("tool", .tool, parent: "one"), row("sub", .agent, parent: "one", start: 2, end: 8),
+            row("two", .turn, start: 40, end: 60), bot, row("three", .turn, start: 70, end: 90), again,
+            dispatch, direct,
+        ]
+        let lanes = SessionActivityLanes(SessionCrewProjection(rows: rows))
+        #expect(lanes.lanes.map(\.kind) == [.main, .subagent, .bot, .bot])
+        #expect(lanes.lanes[0].actorIDs == ["one", "two", "three"])
+        #expect(lanes.lanes.map(\.identity).suffix(2) == ["archon", "sentry"])
+        #expect(lanes.lanes[3].actorIDs == ["bot-1", "bot-2"])
+        #expect(lanes.lane(owning: "tool")?.kind == .main)
+    }
+
+    @Test func scopedStepsKeepAncestorsOnly() {
+        let rows = [
+            row("one", .turn), row("a", .agent, parent: "one"), row("tool", .tool, parent: "a"),
+            row("other", .tool, parent: "one"),
+        ]
+        #expect(SessionActivityLanes.scoped(rows) { $0.id == "tool" }.map(\.id) == ["one", "a", "tool"])
     }
 
     @Test func replayDoesNotLeakCurrentActivityOrFinalOutcome() throws {
@@ -75,7 +91,6 @@ struct SessionCrewTests {
         ])
         #expect(crew.actors.count == 2)
         #expect(crew.actors.allSatisfy { $0.parentID == nil })
-        #expect(SessionCrewOutline.lines(crew.actors, members: ["a", "b"]).count == 2)
     }
 
     @Test func directBotJobsKeepInstanceIdentityAndUnknownHistory() throws {

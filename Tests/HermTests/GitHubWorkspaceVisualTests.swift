@@ -130,7 +130,9 @@ struct GitHubWorkspaceVisualTests {
         let issues = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
         await pr.open(.init(repository: repo, number: 1, kind: .pullRequest))
         await issues.open(.init(repository: repo, number: 1, kind: .issue))
-        for (theme, dark): (DockThemeID, Bool) in [(.clean, false), (.clean, true), (.glass, true), (.mono, true)] {
+        for (theme, dark): (DockThemeID, Bool) in [
+            (.clean, false), (.clean, true), (.glass, false), (.glass, true), (.mono, true),
+        ] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
             for width: CGFloat in [440, 960, 1200] {
@@ -144,9 +146,12 @@ struct GitHubWorkspaceVisualTests {
                     }
                     .defaultAppStorage(defaults)
                     .environment(\.dockTitleRow, DockTitleRow(height: 52, leadingClearance: 28))
-                    .environment(\.colorScheme, dark ? .dark : .light)
                     .frame(width: width, height: 800)
+                    // Native backdrop capture depends on the host desktop; keep the tint reproducible.
+                    .background(DockThemePalette(theme: theme).windowBackground)
+                    .background(dark ? Color.black : Color.white)
                     .dockThemedRoot()
+                    .environment(\.colorScheme, dark ? .dark : .light)
                     let host = NSHostingView(rootView: root)
                     host.frame = CGRect(x: 0, y: 0, width: width, height: 800)
                     let window = NSWindow(

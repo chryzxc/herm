@@ -9,6 +9,8 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var requests: [(method: String, params: [String: Any])] = []
     var holdRedirect = false
+    var redirectStatus = "redirected"
+    var steerStatus: String?
     var pendingRedirect: CheckedContinuation<[String: Any], Never>?
     var holdImageAttachment = false
     var pendingImageAttachment: CheckedContinuation<[String: Any], Never>?
@@ -26,8 +28,9 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
             if holdRedirect {
                 return await withCheckedContinuation { pendingRedirect = $0 }
             }
-            return ["status": "redirected"]
+            return ["status": redirectStatus]
         }
+        if method == "session.steer", let steerStatus { return ["status": steerStatus] }
         if method == "image.attach_bytes", holdImageAttachment {
             return await withCheckedContinuation { pendingImageAttachment = $0 }
         }
@@ -151,6 +154,39 @@ struct ComposerQueueOrderingTests {
         #expect(client.submitted == ["Earlier message", "Later message", "Newest message"])
         #expect(model.currentSessionQueuedPrompts.isEmpty)
         #expect(!client.requests.contains { $0.method == "session.redirect" || $0.method == "session.steer" })
+    }
+
+    @Test func steeringAQueuedPromptRedirectsTheLiveTurn() async throws {
+        let client = ComposerQueueRPCClient()
+        let model = model(client)
+        parkFirstMessage(model)
+        let queued = try #require(model.currentSessionQueuedPrompts.first)
+        #expect(model.canSteerQueuedPrompt(queued))
+
+        model.steerQueuedPrompt(queued.id)
+
+        #expect(model.currentSessionQueuedPrompts.isEmpty)
+        let deadline = Date().addingTimeInterval(2)
+        while !client.requests.contains(where: { $0.method == "session.redirect" }), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(client.requests.contains { $0.method == "session.redirect" })
+    }
+
+    // Herm missed the turn end, so it still shows working; Hermes rejects the
+    // steer because nothing runs. The prompt must send, not re-queue forever.
+    @Test func steerRejectedForAMissedTurnEndSendsThePromptAsTheNextTurn() async throws {
+        let client = ComposerQueueRPCClient()
+        client.redirectStatus = "rejected"
+        client.steerStatus = "rejected"
+        let model = model(client)
+        parkFirstMessage(model)
+        let queued = try #require(model.currentSessionQueuedPrompts.first)
+
+        model.steerQueuedPrompt(queued.id)
+
+        try await waitForSubmissions(1, client: client)
+        #expect(model.currentSessionQueuedPrompts.isEmpty)
     }
 
     @Test func sendNowStopsTheTurnAndSendsTheUnsteerablePromptFirst() async throws {

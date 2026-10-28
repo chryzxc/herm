@@ -29,6 +29,7 @@ struct SessionRailCardVisualTests {
         let root = ScrollView {
             SessionRailSummarySections(
                 summary: summary, onViewAllOutputs: { navigations.append("outputs") },
+                onOpenOutput: { _ in navigations.append("output") },
                 onRespondInChat: { navigations.append("reply") },
                 onViewPin: { _ in
                     navigations.append("pin")

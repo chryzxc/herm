@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Herm
@@ -43,5 +44,30 @@ struct BrowserPageContextTests {
             BrowserPageContext.make(url: "https://example.com", title: "Page", targetID: nil, selection: ""),
             owner: .init(profileID: nil, sessionID: "previous"))
         #expect(model.attachedContexts.isEmpty)
+    }
+
+    @Test func hermBrowserPreferenceGuardsExternalOpensOnlyWhileOn() throws {
+        let name = "BrowserPreference-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        #expect(AgentBrowser.opensInHerm(defaults: defaults))
+        let guards = AgentBrowser.agentSurface(defaults: defaults).guards
+        func blocked(_ command: String) -> Bool {
+            guards.contains { rule in
+                let regex = try? NSRegularExpression(pattern: rule.pattern, options: .caseInsensitive)
+                return regex?.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)) != nil
+            }
+        }
+        #expect(blocked(#"open -a "Google Chrome" "https://example.com/dashboard""#))
+        #expect(blocked("open https://example.com"))
+        #expect(blocked("cd app && open -a Safari"))
+        #expect(!blocked("curl https://example.com"))
+        #expect(!blocked("git log --grep open"))
+        #expect(!blocked("open ."))
+        #expect(guards.contains { $0.tool == "computer_use" && $0.argument == "app" && $0.pattern.contains("chrome") })
+
+        defaults.set(false, forKey: AgentBrowser.openInHermKey)
+        #expect(!AgentBrowser.opensInHerm(defaults: defaults))
+        #expect(AgentBrowser.agentSurface(defaults: defaults).guards.isEmpty)
     }
 }

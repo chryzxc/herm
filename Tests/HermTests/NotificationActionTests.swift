@@ -10,6 +10,14 @@ struct NotificationActionTests {
         #expect(HermNotificationAction.choice(for: "com.apple.UNNotificationDefaultActionIdentifier") == nil)
         #expect(HermNotificationAction.categories.count == 2)
     }
+
+    @Test func waitingRequestsBannerWhileTheWindowIsBehindOtherApps() {
+        #expect(HermNotificationAction.showsBanner(.approval, popoverVisible: true, appActive: false))
+        #expect(HermNotificationAction.showsBanner(.clarification, popoverVisible: true, appActive: false))
+        #expect(!HermNotificationAction.showsBanner(.approval, popoverVisible: true, appActive: true))
+        #expect(!HermNotificationAction.showsBanner(.completion, popoverVisible: true, appActive: false))
+        #expect(HermNotificationAction.showsBanner(.completion, popoverVisible: false, appActive: true))
+    }
 }
 
 struct ApprovalAuthGateTests {

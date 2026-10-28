@@ -20,7 +20,8 @@ struct SessionBrowserTests {
         #expect(returned.primary.web === first.primary.web)
         #expect(returned.agent === first.agent)
         #expect(returned.extras.first === extra)
-        #expect(first.agent !== second.agent)
+        // Hermes connects one browser per profile; its sessions share that Chrome.
+        #expect(first.agent === second.agent)
         #expect(
             first.primary.web.configuration.websiteDataStore
                 === second.primary.web.configuration.websiteDataStore)
@@ -51,6 +52,17 @@ struct SessionBrowserTests {
         #expect(store.workspace(for: presented) === shown)
     }
 
+    @Test func profileBrowserOutlivesItsSessionsUntilTheLastGoes() {
+        let store = SessionBrowserStore()
+        let a = SessionBrowserKey(profileID: nil, sessionID: "a")
+        let agent = store.workspace(for: a).agent
+        _ = store.workspace(for: SessionBrowserKey(profileID: nil, sessionID: "b"))
+        store.delete(a)
+        #expect(store.workspace(for: SessionBrowserKey(profileID: nil, sessionID: "b")).agent === agent)
+        store.delete(SessionBrowserKey(profileID: nil, sessionID: "b"))
+        #expect(store.workspace(for: a).agent !== agent)
+    }
+
     @Test func reapsOnlyOrphanedAgentBrowserChromes() {
         let root = "/Users/me/Library/Application Support/Herm/AgentBrowser"
         let chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new"
@@ -69,6 +81,11 @@ struct SessionBrowserTests {
         let b = SessionBrowserKey(profileID: "two", sessionID: "chat")
         let store = SessionBrowserStore()
         #expect(store.workspace(for: a) !== store.workspace(for: b))
+        #expect(store.workspace(for: a).agent !== store.workspace(for: b).agent)
+        #expect(
+            SessionBrowserKey.browserDirectory(profileID: "one") != SessionBrowserKey.browserDirectory(profileID: "two")
+        )
+        #expect(SessionBrowserKey.browserDirectory(profileID: "one") != a.profileDirectory)
         #expect(a.profileDirectory != b.profileDirectory)
         #expect(
             a.profileDirectory == SessionBrowserKey(profileID: "one", sessionID: "chat").profileDirectory)

@@ -4,20 +4,27 @@ import Testing
 @testable import Herm
 
 struct ChatMediaSegmentTests {
-    @Test @MainActor func openingAttachmentDiffReplacesFilePreviewAndKeepsItsOwnWorktree() {
+    @Test @MainActor func openingAttachmentDiffKeepsItsOwnWorktree() {
         let center = FilePreviewCenter(
             fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
-        center.url = URL(fileURLWithPath: "/tmp/report.md")
         let files = [
             RepositoryFileChange(path: "src/main.swift", status: .modified, isStaged: true, renameSource: nil),
             RepositoryFileChange(path: "src/main.swift", status: .deleted, isStaged: false, renameSource: nil),
         ]
         center.openDiff(RepositoryAttachmentChanges(repositoryPath: "/tmp/other-worktree", files: files))
-        #expect(center.url == nil)
         #expect(center.attachmentDiff?.repositoryPath == "/tmp/other-worktree")
         #expect(center.attachmentDiff?.files == files)
-        center.url = URL(fileURLWithPath: "/tmp/report.md")
-        #expect(center.attachmentDiff == nil)
+    }
+
+    @Test @MainActor func filePreviewOpensOneTabPerPathInItsSession() {
+        let tabs = SessionMessageTabs()
+        let report = URL(fileURLWithPath: "/tmp/report.md")
+        tabs.open(.file(report), in: "a")
+        tabs.open(.file(report), in: "a")
+        tabs.open(.file(URL(fileURLWithPath: "/tmp/notes.md")), in: "a")
+        #expect(tabs.tabs["a"]?.map(\.content.title) == ["report.md", "notes.md"])
+        #expect(tabs.tabs["b"] == nil)
+        #expect(tabs.openRequest == "a")
     }
 
     @Test func attachmentDiffUsesExactGitFileAndBothChangeScopes() async throws {

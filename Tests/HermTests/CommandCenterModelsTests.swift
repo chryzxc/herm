@@ -66,7 +66,7 @@ struct CommandCenterModelsTests {
     @Test func missionPrioritizesAttentionAndDoesNotUpgradeTargetedEvidence() {
         let approval = attention("approval", .approval)
         let reminder = attention("reminder", .reminder)
-        let snapshot = MissionControlSnapshotBuilder.make(
+        let snapshot = SessionNavSnapshotBuilder.make(
             sessionTitle: "Work", repository: repository(changed: 0), model: "model", context: nil,
             attention: [reminder, approval], sessions: [], activeSessionID: nil, agents: [], processes: [],
             backgroundTasks: [], activities: [], cronRuns: [],
@@ -81,12 +81,12 @@ struct CommandCenterModelsTests {
     }
 
     @Test func missionBlocksFailuresAndRequiresCleanRepositoryForReady() {
-        let failed = MissionControlSnapshotBuilder.make(
+        let failed = SessionNavSnapshotBuilder.make(
             sessionTitle: nil, repository: repository(changed: 0), model: nil, context: nil, attention: [],
             sessions: [], activeSessionID: nil, agents: [], processes: [], backgroundTasks: [], activities: [],
             cronRuns: [], verification: VerificationSummary(state: .failed, evidence: nil))
         #expect(failed.readiness.state == .blocked)
-        let ready = MissionControlSnapshotBuilder.make(
+        let ready = SessionNavSnapshotBuilder.make(
             sessionTitle: nil, repository: repository(changed: 0), model: nil, context: nil, attention: [],
             sessions: [], activeSessionID: nil, agents: [], processes: [], backgroundTasks: [], activities: [],
             cronRuns: [],

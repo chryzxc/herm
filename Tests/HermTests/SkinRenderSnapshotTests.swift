@@ -31,6 +31,22 @@ struct SkinRenderSnapshotTests {
                         DockTabButton(title: "Selected", isSelected: true, action: {})
                         DockTabButton(title: "Other", isSelected: false, action: {})
                     }
+                    HStack(spacing: 12) {
+                        DockRailButton(title: "Active", icon: .files, isSelected: true, style: palette, action: {})
+                        DockRailButton(title: "Inactive", icon: .files, isSelected: false, style: palette, action: {})
+                        DockSidebarToggle(isCollapsed: false, edge: .leading, action: {})
+                        DockSidebarToggle(isCollapsed: true, edge: .leading, action: {})
+                        DockRailButton(title: "Disabled", icon: .files, isSelected: false, style: palette, action: {})
+                            .disabled(true)
+                    }
+                    HStack(spacing: 12) {
+                        ForEach([false, true], id: \.self) { active in
+                            DockIcon(.pushPin, size: 14, weight: active ? .fill : .regular)
+                                .frame(width: 32, height: 32).accessibilityAddTraits(active ? .isSelected : [])
+                            DockIcon(.cardsThree, size: 16, weight: active ? .fill : .regular)
+                                .frame(width: 32, height: 32).accessibilityAddTraits(active ? .isSelected : [])
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Surface & typography").font(DockTypography.rowTitle)
                         Text("The quick brown fox jumps over the lazy dog.").font(DockTypography.body).fixedSize(
@@ -45,7 +61,7 @@ struct SkinRenderSnapshotTests {
                     DockTextField("Message", text: .constant("")).textFieldStyle(.dockGlass)
                 }
                 .padding(20)
-                .frame(width: 320, height: 540, alignment: .topLeading)
+                .frame(width: 320, height: 650, alignment: .topLeading)
                 .background(palette.background.overlay(DockBackdrop()))
                 .background(dark ? Color.black : Color.white)
                 .dockThemedRoot()

@@ -87,6 +87,45 @@ struct SidebarSplitLayoutTests {
         }
     }
 
+    @Test func sidebarCollapseRetainsBothPanesAndRestoresTheDivider() {
+        let split = makeSplit(width: 1200)
+        split.fraction = 0.30
+        let leading = NSView()
+        let trailing = NSView()
+        split.addArrangedSubview(leading)
+        split.addArrangedSubview(trailing)
+        split.layout()
+        let originalWidth = leading.frame.width
+
+        for _ in 0..<3 {
+            split.setCollapsed(leading: true, trailing: false)
+            split.layout()
+            #expect(leading.frame.width < 1)
+            #expect(trailing.frame.width >= 1198)
+            #expect(split.arrangedSubviews[0] === leading)
+            #expect(split.arrangedSubviews[1] === trailing)
+            split.setCollapsed(leading: false, trailing: false)
+            split.layout()
+            #expect(abs(leading.frame.width - originalWidth) < 1)
+        }
+    }
+
+    @Test func fixedWidthDividerSurvivesCollapsingEitherPane() {
+        let split = makeSplit(width: 1200)
+        split.addArrangedSubview(NSView())
+        split.addArrangedSubview(NSView())
+        split.setPosition(410, ofDividerAt: 0)
+        split.layout()
+        let originalWidth = split.arrangedSubviews[0].frame.width
+        for leading in [true, false] {
+            split.setCollapsed(leading: leading, trailing: !leading)
+            split.layout()
+            split.setCollapsed(leading: false, trailing: false)
+            split.layout()
+            #expect(abs(split.arrangedSubviews[0].frame.width - originalWidth) < 1)
+        }
+    }
+
     @Test func desktopPanesStayNearTwentyFiveFortyThirtyFiveAcrossWindowSizes() {
         for (width, fullscreen): (CGFloat, Bool) in [(1134, false), (1534, true), (1934, true)] {
             let minimumConversation = DesktopWorkspaceFractions.minimumConversationWidth(isFullscreen: fullscreen)

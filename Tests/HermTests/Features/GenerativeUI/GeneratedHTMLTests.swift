@@ -6,6 +6,21 @@ import WebKit
 
 @MainActor
 struct GeneratedHTMLTests {
+    @Test func htmlDefaultsFollowEverySkin() {
+        for theme in DockThemeID.allCases {
+            for systemDark in [false, true] {
+                let css = GeneratedHTMLTheme.defaults(for: theme, systemDark: systemDark)
+                let dark = theme.appearance == .dark || (theme.appearance == .system && systemDark)
+                #expect(css.contains("color-scheme:" + (dark ? "dark" : "light")))
+                #expect(css.contains("--herm-control-radius:\(theme.style.controlRadius)px"))
+                #expect(css.contains("@media(prefers-reduced-motion:reduce)"))
+                if theme.style.fontDesign == .monospaced { #expect(css.contains("ui-monospace")) }
+                if theme.style.fontDesign == .serif { #expect(css.contains("ui-serif")) }
+                if !theme.style.animates { #expect(css.hasSuffix("scroll-behavior:auto!important;}")) }
+            }
+        }
+    }
+
     @Test func policiesDenyNavigationAndEscapeAuthoredMarkup() throws {
         let initial = try #require(URL(string: "herm-generated://preview/test"))
         for value in [

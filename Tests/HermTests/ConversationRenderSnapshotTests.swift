@@ -8,6 +8,52 @@ import Testing
 /// `CHAT_SNAPSHOT_DIR` to a writable directory.
 @MainActor
 struct ConversationRenderSnapshotTests {
+    @Test func renderMentionActivity() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["HERM_BOT_ACTIVITY_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        _ = DockThemeStore.shared
+        let oldTheme = DockThemeRuntime.current
+        defer {
+            DockThemeRuntime.current = oldTheme
+            DockThemeRuntime.revision &+= 1
+        }
+        let bot = BotSummary(
+            id: "default", name: "Nexus", title: nil, description: nil, model: nil, isActive: true, chat: nil,
+            avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: true)
+        for theme: DockThemeID in [.warmLight, .island, .glass, .mono] {
+            DockThemeRuntime.current = theme
+            DockThemeRuntime.revision &+= 1
+            let view = VStack(alignment: .leading, spacing: 12) {
+                BotCrewRow(
+                    from: bot, partners: [], since: Date().addingTimeInterval(-45), repliesToUser: true,
+                    steps: [bot.id: "Read Sources/Herm/Conversation/ConversationTranscriptView.swift"])
+                BotCrewRow(
+                    from: bot, partners: [], since: Date().addingTimeInterval(-80), repliesToUser: true,
+                    steps: [bot.id: "Waiting for approval"])
+            }
+            .padding(16)
+            .frame(width: 352, height: 360, alignment: .topLeading)
+            .background(Color.dockCanvas)
+            .dockThemedRoot()
+            .environment(\.colorScheme, theme == .warmLight ? .light : .dark)
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(x: 0, y: 0, width: 352, height: 360)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: theme == .warmLight ? .aqua : .darkAqua)
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            for _ in 0..<3 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let png = try #require(rep.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("mention-\(theme.rawValue).png"))
+        }
+    }
+
     @Test func renderConversation() async throws {
         guard let dir = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] else { return }
         let savedTheme = DockThemeRuntime.current
@@ -64,7 +110,7 @@ struct ConversationRenderSnapshotTests {
         let composer = ChatComposerView(
             model: model, composer: model.composer, speechInput: speech,
             botMode: botMode, onStop: {}, isFullscreen: isFullscreen, metrics: metrics)
-        let navigation = MissionControlNavigationState()
+        let navigation = SessionNavigationState()
         navigation.hasRequestedSessionIndex = true
         let suiteName = "SkinSnapshot.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -73,7 +119,7 @@ struct ConversationRenderSnapshotTests {
         themeStore.selectedThemeID = DockThemeRuntime.current
         let content = HStack(spacing: 0) {
             if showsSidebar {
-                MissionControlQueue(
+                SessionNavQueue(
                     model: model, botMode: botMode,
                     workspaceStore: WorkspaceStore(
                         fileURL: URL(fileURLWithPath: dir).appendingPathComponent("empty-workspace.json")),

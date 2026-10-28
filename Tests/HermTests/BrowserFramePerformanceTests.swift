@@ -7,7 +7,7 @@ import Testing
 @MainActor
 struct BrowserFramePerformanceTests {
     @Test func frameAndRuntimeEventsDoNotPublishNavigationChanges() {
-        let browser = AgentBrowser(key: .init(profileID: nil, sessionID: "frame-publications"))
+        let browser = AgentBrowser(profileID: "frame-publications")
         var publications = 0
         let subscription = browser.objectWillChange.sink { publications += 1 }
         defer { subscription.cancel() }

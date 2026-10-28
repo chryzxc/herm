@@ -68,7 +68,6 @@ struct SessionPullRequestRailTests {
     }
 
     @Test func extractsAndDeduplicatesPRsWithoutGuessingBareNumbers() {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let references = SessionPullRequestReferences.extract(
             texts: [
                 "See [change](https://github.com/owner/repo/pull/42). Also #99.",
@@ -77,7 +76,7 @@ struct SessionPullRequestRailTests {
                 "https://github.com/owner/repo/issues/5",
                 "https://github.com.evil.test/owner/repo/pull/7",
                 "https://github.com/owner/repo/pull/0",
-            ], defaults: defaults)
+            ])
         #expect(references.map(\.title) == ["owner/repo#42", "owner/other#42"])
     }
 
@@ -87,8 +86,7 @@ struct SessionPullRequestRailTests {
             result: "https://github.com/owner/repo/pull/8", isComplete: true)
         let texts = SessionPullRequestReferences.texts(
             messages: [ChatMessage(role: .hermes, text: "Fetched the PR.", activity: [call])], activity: [call])
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        #expect(SessionPullRequestReferences.extract(texts: texts, defaults: defaults).map(\.number) == [8])
+        #expect(SessionPullRequestReferences.extract(texts: texts).map(\.number) == [8])
     }
 
     @Test func broadToolResultsDoNotLinkOtherSessionsPullRequests() {
@@ -120,15 +118,6 @@ struct SessionPullRequestRailTests {
         let rail = SessionPullRequestRailModel(details: PullRequestDetailStore())
         rail.discover(messages: [], activity: [targeted, created])
         #expect(rail.references.map(\.number) == [8, 10])
-    }
-
-    @Test func respectsDisabledPRNavigation() {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        defaults.set(false, forKey: SidebarVisibilityKey.github)
-        #expect(
-            SessionPullRequestReferences.extract(
-                texts: ["https://github.com/owner/repo/pull/1"], defaults: defaults
-            ).isEmpty)
     }
 
     @Test func replacesReferencesWhenHistoryChanges() {

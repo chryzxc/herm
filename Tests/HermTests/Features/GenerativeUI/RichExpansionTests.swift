@@ -49,6 +49,41 @@ struct RichExpansionTests {
                 == RichFeatureRegistry.descriptors(in: connected).map(\.id).sorted())
     }
 
+    @Test func newChartStylesValidateAndPreserveSharedData() throws {
+        for id in ["dataset.area", "dataset.point"] {
+            let descriptor = try #require(RichFeatureRegistry.local.first { $0.id == id })
+            let source = RichFeatureRegistry.exampleSurface(descriptor)
+            let parsed = try surface(source)
+            #expect(parsed.validate())
+            #expect(try JSONDecoder().decode(RichSurface.self, from: JSONEncoder().encode(parsed)) == parsed)
+            #expect(parsed.datasets?.first?.rows.map(\.values) == [["January", "12"], ["February", "18"]])
+            #expect(
+                !((try surface(
+                    source.replacingOccurrences(
+                        of: id == "dataset.area" ? "\"area\"" : "\"point\"",
+                        with: "\"unsupported\""))).validate()))
+        }
+        #expect(
+            !RichBlockPayload.chart(
+                .init(
+                    dataset: "sales", label: "month",
+                    series: ["sales", "cost"], style: "area")
+            ).validate())
+        #expect(
+            !RichBlockPayload.chart(
+                .init(
+                    dataset: "sales", label: "month",
+                    series: [], style: "point")
+            ).validate())
+        let descriptor = try #require(RichFeatureRegistry.local.first { $0.id == "dataset.point" })
+        let source = RichFeatureRegistry.exampleSurface(descriptor)
+        #expect(
+            !(try surface(
+                source.replacingOccurrences(
+                    of: "\"series\":[\"sales\"]",
+                    with: "\"series\":[\"month\"]"))).validate())
+    }
+
     @Test func typedDatasetsSortNumericallyAndRetainSourceOrder() {
         let data = RichDataset(
             id: "sales", columns: [.init(id: "value", title: "Value", type: .number)],

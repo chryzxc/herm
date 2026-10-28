@@ -5,6 +5,30 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func projectCreationAllowsNoSourceFolder() async {
+        let client = ProjectSessionActionRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        #expect(await model.createProject(name: " Notes ", folder: nil))
+        let request = client.requests.first { $0.method == "projects.create" }
+        #expect(request?.params["name"] as? String == "Notes")
+        #expect(request?.params["folders"] as? [String] == [])
+    }
+
+    @Test func projectCreationPreservesSourceFolder() async {
+        let client = ProjectSessionActionRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        #expect(await model.createProject(name: "Repo", folder: "/tmp/repo"))
+        let request = client.requests.first { $0.method == "projects.create" }
+        #expect(request?.params["folders"] as? [String] == ["/tmp/repo"])
+    }
+
+    @Test func projectCreationRejectsBlankName() async {
+        let client = ProjectSessionActionRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        #expect(await !model.createProject(name: " \n ", folder: nil))
+        #expect(client.requests.isEmpty)
+    }
+
     @Test func automationWorkspaceRowPresentationUsesTruthfulStates() {
         let enabled = CronSummary(id: "job", name: "Job", schedule: "0 * * * *", enabled: true, nextRun: nil)
         let paused = CronSummary(id: "paused", name: "Paused", schedule: "0 * * * *", enabled: false, nextRun: nil)
@@ -555,6 +579,45 @@ struct ControlCenterProjectTests {
         #expect(SessionContextPressure.make(percent: context.contextPercent) == .unavailable)
         #expect(context.compressionThresholdTokens == nil)
         #expect(context.compressionEnabled == nil)
+    }
+
+    @Test func sessionUsageKeepsOptionalRuntimeMetricsAbsentInsteadOfZero() {
+        let full = ControlCenterModel.parseSessionUsage([
+            "model": "claude-opus", "input": 1_200, "output": 300, "reasoning": 80, "total": 1_580, "calls": 4,
+            "cache_hit_pct": 62, "compressions": 1, "avg_latency_s": 2.4, "avg_tps": 51.3,
+        ])
+        #expect(full.reasoningTokens == 80)
+        #expect(full.cacheHitPercent == 62)
+        #expect(full.compactions == 1)
+        #expect(SessionTokenFormatting.speed(tokensPerSecond: 51.3, latency: 2.4) == "51 tok/s · 2.4s avg")
+
+        let bare = ControlCenterModel.parseSessionUsage(["calls": 0, "input": 0, "output": 0, "total": 0])
+        #expect(bare.cacheHitPercent == nil)
+        #expect(bare.averageLatencySeconds == nil)
+        #expect(SessionTokenFormatting.speed(tokensPerSecond: nil, latency: nil) == nil)
+    }
+
+    @Test func sessionContextFilesKeepHermesStatusAndDistinguishMissingManifest() {
+        let context = ControlCenterModel.parseSessionContext([
+            "context_files": [
+                [
+                    "label": "AGENTS.md", "path": "/repo/AGENTS.md", "est_tokens": 1_200, "loaded": true,
+                    "status": "loaded",
+                ],
+                [
+                    "label": "CLAUDE.md", "path": "/repo/CLAUDE.md", "est_tokens": 900, "loaded": false,
+                    "status": "shadowed",
+                ],
+                ["label": "SOUL.md", "path": "/h/SOUL.md", "est_tokens": 40, "loaded": true, "status": "flagged"],
+                ["path": "/no-label"],
+            ]
+        ])
+        let files = context.files ?? []
+        #expect(files.map(\.label) == ["AGENTS.md", "CLAUDE.md", "SOUL.md"])
+        #expect(files[0].note == nil && !files[0].needsAttention)
+        #expect(files[1].note == "Not loaded: a higher-priority context file wins" && !files[1].needsAttention)
+        #expect(files[2].loaded && files[2].needsAttention)
+        #expect(ControlCenterModel.parseSessionContext([:]).files == nil)
     }
 
     @Test func sessionContextUsesRuntimeCompactionThresholdInsteadOfFullWindow() {

@@ -116,7 +116,7 @@ struct GitHubRepositoriesTests {
         #expect(throws: GitHubRequestError.self) {
             try GitHubRepositorySummary.parse(["full_name": "../repo", "private": false, "archived": false])
         }
-        let navigation = MissionControlNavigationState()
+        let navigation = SessionNavigationState()
         navigation.selectGitHubRepositories()
         #expect(navigation.selectedGitHubSection == .repositories)
         navigation.openSession("session")

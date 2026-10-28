@@ -6,7 +6,7 @@ import Testing
 
 @MainActor
 struct SessionInspectorTabOrderTests {
-    @Test func nativeHoverExpandsTheIconAndLeavingTheTabCollapsesIt() async throws {
+    @Test func nativeHoverPreservesCompactTabGeometry() async throws {
         let tab = SessionInspectorTabItem(
             id: "preview", title: "The complete tab name", icon: .chatText, isSelected: false, select: {}, close: {})
         let host = NSHostingView(
@@ -27,15 +27,15 @@ struct SessionInspectorTabOrderTests {
         hover.mouseEntered(with: event)
         source.mouseEntered(with: event)
         try await settle(host)
-        #expect(source.bounds.width > 100)
+        #expect(source.bounds.width <= 32)
         let preview = try #require(source.draggingItem())
         #expect(abs(preview.draggingFrame.width - hover.bounds.width) < 1)
-        #expect(preview.draggingFrame.width >= source.bounds.width + 27)
+        #expect(abs(preview.draggingFrame.width - source.bounds.width) < 1)
         #expect(!window.dockHasInteractiveChildWindow)
-        // Leaving the name for the adjacent close button keeps the tab expanded.
+        // Entering and leaving the native target never changes its footprint.
         source.mouseExited(with: event)
         try await settle(host)
-        #expect(source.bounds.width > 100)
+        #expect(source.bounds.width <= 32)
         hover.mouseExited(with: event)
         try await settle(host)
         #expect(source.bounds.width <= 32)
@@ -118,7 +118,7 @@ struct SessionInspectorTabOrderTests {
         let origin = compact.convert(NSPoint.zero, to: host)
         compact.mouseEntered(with: try mouse(.mouseMoved, at: compact.convert(NSPoint.zero, to: nil), in: window))
         try await settle(host)
-        #expect(compact.bounds.width > 32)
+        #expect(compact.bounds.width <= 32)
         #expect(abs(compact.convert(NSPoint.zero, to: host).x - origin.x) < 1)
         state.width = 150
         state.selected = 11
@@ -178,10 +178,9 @@ struct SessionInspectorTabOrderTests {
     }
 
     @Test(arguments: [
-        (false, false, false), (false, true, false),
-        (false, false, true), (true, false, true), (true, true, true),
+        (false, false), (false, true),
     ])
-    func closeTargetWorksAtItsEdgesWithoutSelectingTheTab(configuration: (Bool, Bool, Bool)) async throws {
+    func closeTargetWorksAtItsEdgesWithoutSelectingTheTab(configuration: (Bool, Bool)) async throws {
         var closes = 0
         var selections = 0
         let tab = SessionInspectorTabItem(
@@ -191,7 +190,7 @@ struct SessionInspectorTabOrderTests {
             rootView: SessionInspectorTab(
                 tab: tab, compact: configuration.0,
                 drag: SessionInspectorTabDrag(workspace: "workspace", id: tab.id),
-                reorder: { _ in false }, moveLeft: nil, moveRight: nil, expandedOnHover: configuration.2
+                reorder: { _ in false }, moveLeft: nil, moveRight: nil
             ).dockThemedRoot())
         host.frame = CGRect(origin: .zero, size: host.fittingSize)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -221,25 +220,17 @@ struct SessionInspectorTabOrderTests {
         }
     }
 
-    @Test func compactHoverExpandsTheTabToItsWholeTitle() {
-        let title = "PR #5564 is mergeable and targets the correct release branch with all required checks passing"
+    @Test func compactLongTitlesStayBounded() {
         let tab = SessionInspectorTabItem(
-            id: "preview", title: title, icon: .chatText, isSelected: false, select: {}, close: {})
-        func size(expanded: Bool) -> CGSize {
-            NSHostingView(
-                rootView: SessionInspectorTab(
-                    tab: tab, compact: true,
-                    drag: SessionInspectorTabDrag(workspace: "workspace", id: tab.id),
-                    reorder: { _ in false }, moveLeft: nil, moveRight: nil, expandedOnHover: expanded
-                ).dockThemedRoot()
-            ).fittingSize
-        }
-        let collapsed = size(expanded: false)
-        let expanded = size(expanded: true)
-        let titleWidth = (title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
-        #expect(collapsed.width <= 32)
-        #expect(expanded.width >= titleWidth + 28)
-        #expect(collapsed.height == expanded.height)
+            id: "preview", title: String(repeating: "Long title ", count: 20), icon: .chatText,
+            isSelected: false, select: {}, close: {})
+        let host = NSHostingView(
+            rootView: SessionInspectorTab(
+                tab: tab, compact: true, drag: SessionInspectorTabDrag(workspace: "workspace", id: tab.id),
+                reorder: { _ in false }, moveLeft: nil, moveRight: nil
+            ).dockThemedRoot())
+        #expect(host.fittingSize.width <= 32)
+        #expect(host.fittingSize.height == 32)
     }
 
     @Test func movesAcrossTabKindsInBothDirections() {
@@ -290,7 +281,7 @@ struct SessionInspectorTabOrderTests {
         #expect(order.ordered(ids, in: "two") == ids)
     }
 
-    @Test func renderCollapsedAndExpandedTabs() async throws {
+    @Test func renderCompactAndLabeledTabs() async throws {
         guard let directory = ProcessInfo.processInfo.environment["HERM_INSPECTOR_UI_DIR"] else { return }
         let root = URL(fileURLWithPath: directory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -315,15 +306,14 @@ struct SessionInspectorTabOrderTests {
             NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             for width in [300.0, 760.0] {
                 let view = VStack(alignment: .leading, spacing: 16) {
-                    ForEach([false, true], id: \.self) { expanded in
+                    ForEach([false, true], id: \.self) { compact in
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 2) {
                                 ForEach([background, selected]) { tab in
                                     SessionInspectorTab(
-                                        tab: tab, compact: width < 420,
+                                        tab: tab, compact: compact,
                                         drag: SessionInspectorTabDrag(workspace: "workspace", id: tab.id),
-                                        reorder: { _ in true }, moveLeft: nil, moveRight: nil,
-                                        expandedOnHover: expanded && tab.id == background.id)
+                                        reorder: { _ in true }, moveLeft: nil, moveRight: nil)
                                 }
                             }
                         }

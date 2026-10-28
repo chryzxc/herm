@@ -4,7 +4,7 @@ import Testing
 @testable import Herm
 
 @MainActor
-struct MissionControlSidebarSnapshotTests {
+struct SessionNavSidebarSnapshotTests {
     private func session(
         _ id: String,
         title: String = "Session",
@@ -56,7 +56,7 @@ struct MissionControlSidebarSnapshotTests {
         latestActivities: [LatestActivityItem] = [],
         profileScopeID: String? = "profile-main",
         projectProfileID: String? = "profile-main"
-    ) -> MissionControlSidebarSnapshot.Inputs {
+    ) -> SessionNavSidebarSnapshot.Inputs {
         .init(
             activeSessionID: nil,
             activeStatus: nil,
@@ -83,7 +83,7 @@ struct MissionControlSidebarSnapshotTests {
 
     @Test func renderableProjectsOwnGroupsAndSyntheticBucketsFallThroughToUnlinked() {
         let date = Date(timeIntervalSince1970: 100)
-        let snapshot = MissionControlSidebarSnapshot(
+        let snapshot = SessionNavSidebarSnapshot(
             inputs: inputs(
                 sessions: [session("s1", updatedAt: date), session("s2", updatedAt: date)],
                 projects: [
@@ -104,7 +104,7 @@ struct MissionControlSidebarSnapshotTests {
     @Test func gatewaySummariesFillProjectsAndNewerSavedSessionsKeepTheirTitle() {
         let newer = Date(timeIntervalSince1970: 500)
         let older = Date(timeIntervalSince1970: 100)
-        let snapshot = MissionControlSidebarSnapshot(
+        let snapshot = SessionNavSidebarSnapshot(
             inputs: inputs(
                 sessions: [session("s1", title: "Saved newer", updatedAt: newer)],
                 projects: [project("p1", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 2)],
@@ -126,7 +126,7 @@ struct MissionControlSidebarSnapshotTests {
     }
 
     @Test func projectMembershipAlsoComesFromTheSessionIndex() {
-        let snapshot = MissionControlSidebarSnapshot(
+        let snapshot = SessionNavSidebarSnapshot(
             inputs: inputs(
                 sessions: [session("s1", updatedAt: Date(timeIntervalSince1970: 10))],
                 projects: [project("p1", name: "/repos/Alpha")],
@@ -141,7 +141,7 @@ struct MissionControlSidebarSnapshotTests {
     @Test func conversationsDeduplicateByIDAndSortNewestFirstWithStableTiebreak() {
         let early = Date(timeIntervalSince1970: 10)
         let late = Date(timeIntervalSince1970: 20)
-        let snapshot = MissionControlSidebarSnapshot(
+        let snapshot = SessionNavSidebarSnapshot(
             inputs: inputs(
                 sessions: [
                     session("b", updatedAt: early),
@@ -175,7 +175,7 @@ struct MissionControlSidebarSnapshotTests {
                 id: "l2", sessionID: "s3", sessionTitle: "T", state: "running", activityName: "permission request",
                 timestamp: Date(timeIntervalSince1970: 6)),
         ]
-        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(attention: attention, latestActivities: activities))
+        let snapshot = SessionNavSidebarSnapshot(inputs: inputs(attention: attention, latestActivities: activities))
 
         #expect(snapshot.attentionDots["s1"] == .warning)
         #expect(snapshot.attentionDots["s2"] == .failure)
@@ -183,20 +183,20 @@ struct MissionControlSidebarSnapshotTests {
     }
 
     @Test func identicalInputsProduceIdenticalSnapshots() {
-        func build() -> MissionControlSidebarSnapshot.Inputs {
+        func build() -> SessionNavSidebarSnapshot.Inputs {
             inputs(
                 sessions: [session("s1", updatedAt: Date(timeIntervalSince1970: 1))],
                 projects: [project("p1", name: "/repos/Alpha", sessionIDs: ["s1"])]
             )
         }
 
-        #expect(MissionControlSidebarSnapshot(inputs: build()) == MissionControlSidebarSnapshot(inputs: build()))
+        #expect(SessionNavSidebarSnapshot(inputs: build()) == SessionNavSidebarSnapshot(inputs: build()))
         #expect(build() == build())
     }
 
     @Test func emptyProjectsStayVisibleAndProjectsFollowLatestActivity() {
         let now = Date()
-        let snapshot = MissionControlSidebarSnapshot(
+        let snapshot = SessionNavSidebarSnapshot(
             inputs: inputs(
                 sessions: [
                     session("old", updatedAt: now.addingTimeInterval(-600)),

@@ -8,12 +8,12 @@ import Testing
 /// surfaces they sit on. Ratios are WCAG contrast.
 @MainActor
 struct DockThemeContrastTests {
-    private func resolve(_ color: Color, dark: Bool) -> NSColor {
+    private func resolve(_ color: Color, dark: Bool, opaque: Bool = true) -> NSColor {
         var out = NSColor.black
         NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
-            out = (NSColor(color).usingColorSpace(.sRGB) ?? .black).withAlphaComponent(1)
+            out = NSColor(color).usingColorSpace(.sRGB) ?? .black
         }
-        return out
+        return opaque ? out.withAlphaComponent(1) : out
     }
     private func lum(_ c: NSColor) -> Double {
         func lin(_ v: CGFloat) -> Double {
@@ -94,6 +94,60 @@ struct DockThemeContrastTests {
             }
         }
         return out
+    }
+
+    @Test func lightGlassKeepsContrastOverBrightAndDarkBackdrops() {
+        let saved = DockThemeRuntime.current
+        DockThemeRuntime.current = .glass
+        defer { DockThemeRuntime.current = saved }
+        let palette = DockThemePalette(theme: .glass)
+        func composite(_ foreground: Color, over background: NSColor) -> NSColor {
+            let ink = resolve(foreground, dark: false, opaque: false)
+            let alpha = ink.alphaComponent
+            return NSColor(
+                srgbRed: ink.redComponent * alpha + background.redComponent * (1 - alpha),
+                green: ink.greenComponent * alpha + background.greenComponent * (1 - alpha),
+                blue: ink.blueComponent * alpha + background.blueComponent * (1 - alpha), alpha: 1)
+        }
+        for backdrop in [NSColor.black, .white, NSColor(hex: "#214FC0"), NSColor(hex: "#ECA954")] {
+            let canvas = composite(palette.windowBackground, over: backdrop.usingColorSpace(.sRGB)!)
+            let control = composite(Color.dockLightGlassLift, over: canvas)
+            for surface in [canvas, control] {
+                for ink in [palette.primaryText, palette.secondaryText, palette.metadataText] {
+                    #expect(ratio(composite(ink, over: surface), surface) >= 4.5)
+                }
+                #expect(ratio(composite(Color.dockMarkdownText, over: surface), surface) >= 7)
+            }
+            #expect(ratio(composite(Color.dockBorderLight, over: canvas), canvas) >= 1.25)
+        }
+    }
+
+    @Test func presentationCanvasAndLightGlassSurfacesDoNotInheritBackdropColors() {
+        for theme in DockThemeID.allCases {
+            let palette = DockThemePalette(theme: theme)
+            for dark in [false, true] {
+                let canvas = resolve(palette.opaqueBackground, dark: dark, opaque: false)
+                let reference = resolve(palette.background, dark: dark)
+                #expect(canvas.alphaComponent == 1)
+                #expect(abs(canvas.redComponent - reference.redComponent) < 0.001)
+                #expect(abs(canvas.greenComponent - reference.greenComponent) < 0.001)
+                #expect(abs(canvas.blueComponent - reference.blueComponent) < 0.001)
+            }
+        }
+        let glass = DockThemePalette(theme: .glass)
+        for surface in [glass.surface, glass.surface2, glass.surface4, Color.dockLightGlassLift] {
+            #expect(resolve(surface, dark: false, opaque: false).alphaComponent == 1)
+        }
+    }
+
+    @Test func activeIconsHaveDistinctFilledArtwork() throws {
+        for icon in Ph.allCases {
+            let filled = try #require(icon.fillPath, "Missing active artwork: \(icon)")
+            #expect(!filled.isEmpty)
+        }
+        for icon in [Ph.pushPin, .cardsThree, .sidebarSimple, .files, .checkSquare] {
+            #expect(icon.fillPath != icon.regularPath)
+        }
     }
 
     @Test func neutralSkinsKeepNeutralInteractionAndSelection() {

@@ -44,6 +44,17 @@ struct FileAnnotationTests {
         #expect(prompt.contains("3. [General] Shorter overall"))
     }
 
+    @Test func messageSourceQuotesItsExcerptAndKeepsAPathFreeKey() {
+        let id = UUID()
+        let source = AnnotationSource.message(id: id, text: "  First   line here\nsecond line")
+        #expect(source.key == "message:\(id.uuidString)")
+        #expect(AnnotationSource.file(URL(fileURLWithPath: "/tmp/plan.md")).key == "/tmp/plan.md")
+        let prompt = source.prompt([FileAnnotation(quote: "line here", note: "Explain")])
+        #expect(prompt.hasPrefix("Here are my notes on this earlier chat message: “First line here”."))
+        #expect(prompt.contains("1. \"line here\" → Explain"))
+        #expect(FileAnnotationText.excerpt(String(repeating: "a", count: 90), limit: 80).count == 81)
+    }
+
     @Test func lineDiffListsRemovedThenInserted() {
         let diff = FileAnnotationText.lineDiff(old: "a\nb\nc", new: "a\nB\nc\nd")
         #expect(diff == [.init(sign: "-", text: "b"), .init(sign: "+", text: "B"), .init(sign: "+", text: "d")])

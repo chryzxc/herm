@@ -320,10 +320,56 @@ struct IntegrationsWorkspaceTests {
         }
     }
 
-    private func capture(_ state: IntegrationsWorkspaceState, width: CGFloat, directory: URL, name: String) throws {
-        let host = NSHostingView(rootView: IntegrationsWorkspaceView(state: state).environment(\.colorScheme, .light))
+    @Test func renderPopulatedLibraryAcrossThemes() async throws {
+        let previous = DockThemeRuntime.current
+        defer { DockThemeRuntime.current = previous }
+        let directory = URL(fileURLWithPath: "/tmp/herm-integrations-renders")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let names = [
+            "apple-notes", "apple-reminders", "macos-computer-use", "coding-engine-router",
+            "hermes-bot-roster-management", "architecture-diagram", "scheduled-watchers", "swift-review",
+        ]
+        for (theme, dark): (DockThemeID, Bool) in [(.clean, false), (.clean, true), (.glass, true), (.mono, true)] {
+            DockThemeRuntime.current = theme
+            for category: IntegrationsCategory in [.skills, .plugins] {
+                let client = IntegrationsFixture()
+                client.richInventory = true
+                let state = IntegrationsWorkspaceState(client: client, store: store())
+                state.selectCategory(category)
+                await state.load()
+                state.workflow.skills = names.enumerated().map { index, name in
+                    WorkflowIntegrationItem(
+                        id: name, detail: "", installed: true, enabled: index.isMultiple(of: 2),
+                        builtin: index.isMultiple(of: 3))
+                }
+                state.workflow.plugins = names.enumerated().map { index, name in
+                    WorkflowPlugin(
+                        id: name, name: name,
+                        detail: "Fixture integration with a longer description to check wrapping and readable spacing.",
+                        enabled: index.isMultiple(of: 2), removable: true, desktopHalf: false,
+                        source: index.isMultiple(of: 3) ? "bundled" : "user", updateAvailable: index == 1)
+                }
+                for width: CGFloat in [352, 900, 1500] {
+                    for detail in [false, true] {
+                        state.currentBrowsing.showsDetail = detail
+                        state.currentBrowsing.selection = names.first
+                        try capture(
+                            state, width: width, directory: directory,
+                            name: "library-\(category.rawValue)-\(theme.rawValue)-\(dark)-\(Int(width))-\(detail)",
+                            dark: dark)
+                    }
+                }
+            }
+        }
+    }
+
+    private func capture(
+        _ state: IntegrationsWorkspaceState, width: CGFloat, directory: URL, name: String, dark: Bool = false
+    ) throws {
+        let host = NSHostingView(
+            rootView: IntegrationsWorkspaceView(state: state).environment(\.colorScheme, dark ? .dark : .light))
         host.frame = CGRect(x: 0, y: 0, width: width, height: 720)
-        host.appearance = NSAppearance(named: .aqua)
+        host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         host.layoutSubtreeIfNeeded()
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
@@ -369,5 +415,26 @@ struct IntegrationsWorkspaceTests {
                 }
             }
         }
+    }
+
+    @Test func parsesSkillsCheckTableIncludingWrappedNames() {
+        let output = """
+                       Skill Updates
+            ┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+            ┃ Name         ┃ Source     ┃ Status           ┃
+            ┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+            │ pdf-tools    │ github     │ update_available │
+            │ web-research │ skills.sh  │ up_to_date       │
+            │ very-long-sk │ github     │ unavailable      │
+            │ ill-name     │            │                  │
+            │ broken       │ github     │ invalid_install  │
+            └──────────────┴────────────┴──────────────────┘
+            """
+        #expect(
+            HermesWorkflowRPC.parseSkillCheck(output) == [
+                "pdf-tools": "update_available", "web-research": "up_to_date",
+                "very-long-skill-name": "unavailable", "broken": "invalid_install",
+            ])
+        #expect(HermesWorkflowRPC.parseSkillCheck("No hub-installed skills to check.").isEmpty)
     }
 }

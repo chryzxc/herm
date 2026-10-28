@@ -116,6 +116,56 @@ struct GenerativeUIIsolationTests {
         #expect(RichDocument(completed.source, streaming: completed.streaming).plainText.contains("Readable result"))
     }
 
+    @Test func streamingPresentationSurvivesAppendOnlyParsingWithoutReusingOtherReplies() throws {
+        let source = "Intro\n\n```herm-ui\n{"
+        let pending = try #require(RichDocumentParseRequest(source, streaming: true, identity: "session/message"))
+        for suffix in ["\"version\":1", "\"version\":1,\"title\":\"Longer content"] {
+            let next = try #require(
+                RichDocumentParseRequest(source + suffix, streaming: true, identity: pending.identity))
+            #expect(pending.canPresent(whileParsing: next))
+            #expect(
+                RichDocument(source, streaming: true).segments == RichDocument(next.source, streaming: true).segments)
+        }
+        let finished = try #require(RichDocumentParseRequest(source, streaming: false, identity: pending.identity))
+        #expect(pending.canPresent(whileParsing: finished))
+        #expect(!finished.canPresent(whileParsing: pending))
+        let replacement = try #require(
+            RichDocumentParseRequest("```herm-ui\n{}", streaming: true, identity: pending.identity))
+        #expect(!pending.canPresent(whileParsing: replacement))
+        let other = try #require(RichDocumentParseRequest(source, streaming: true, identity: "other/message"))
+        #expect(!pending.canPresent(whileParsing: other))
+        #expect(RichDocument.preparing.segments == [.pending])
+    }
+
+    @Test func pendingReplyKeepsItsHeightBetweenStreamingChunks() async throws {
+        func reply(_ text: String) -> some View {
+            GenerativeUIIntegration.renderReply(text, streaming: true, enabled: true) {
+                Text("Ordinary reply")
+            }.frame(width: 320, alignment: .leading)
+        }
+        var source = "Explanation before the interactive view.\n\n```herm-ui\n{"
+        let host = NSHostingView(rootView: reply(source))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        try await Task.sleep(for: .milliseconds(100))
+        host.layoutSubtreeIfNeeded()
+        let height = host.fittingSize.height
+        #expect(height > 44)
+        for chunk in ["\"version\":1,", "\"title\":\"Interactive", " view\",", "\"html\":\"<main>"] {
+            source += chunk
+            host.rootView = reply(source)
+            host.layoutSubtreeIfNeeded()
+            #expect(abs(host.fittingSize.height - height) < 1)
+            try await Task.sleep(for: .milliseconds(30))
+            host.layoutSubtreeIfNeeded()
+            #expect(abs(host.fittingSize.height - height) < 1)
+        }
+    }
+
     @Test func rendererReturnsToTheOrdinaryFallbackAfterRichContent() async throws {
         var appearances = 0
         var disappearances = 0

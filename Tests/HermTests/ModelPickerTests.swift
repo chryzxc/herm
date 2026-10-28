@@ -85,6 +85,18 @@ struct ModelPickerTests {
     }
 
     @Test
+    func bulkPreferencesToggleOnlyListedIDs() {
+        let suiteName = "ModelPickerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = ModelPickerPreferences(defaults: defaults)
+        preferences.setEnabled(false, for: ["vllm|a", "vllm|b", "openai|gpt-5"])
+        preferences.setEnabled(true, for: ["vllm|a", "vllm|b"])
+
+        #expect(preferences.disabledIDs == ["openai|gpt-5"])
+    }
+
+    @Test
     func unselectAllPersistsAcrossProvidersAndPreservesActiveModel() {
         let suiteName = "ModelPickerTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

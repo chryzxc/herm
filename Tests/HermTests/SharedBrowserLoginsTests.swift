@@ -45,11 +45,18 @@ struct SharedBrowserLoginsTests {
 
     @Test func jarIsSealedAtRestAndDropsExpiredCookies() throws {
         let key = SymmetricKey(size: .bits256)
-        let jar = BrowserCookieJar([cookie("session"), cookie("stale", expires: 100), cookie("live", expires: 4e9)])
+        let jar = BrowserCookieJar(
+            [
+                cookie("session"), cookie("stale", expires: 100), cookie("live", expires: 4e9),
+                cookie("x", domain: "a.com"),
+            ],
+            sites: ["github.com"], signOuts: 2)
         let sealed = try jar.sealed(with: key)
         #expect(!String(decoding: sealed, as: UTF8.self).contains("session"))
         let opened = try BrowserCookieJar.open(sealed, with: key)
         #expect(Set(opened.cookies.values.map(\.name)) == ["session", "live"])
+        #expect(opened.sites == ["github.com"])
+        #expect(opened.signOuts == 2)
         #expect(throws: (any Error).self) { try BrowserCookieJar.open(sealed, with: SymmetricKey(size: .bits256)) }
     }
 
@@ -67,12 +74,28 @@ struct SharedBrowserLoginsTests {
         logins.record(BrowserCookieJar.Changes(), from: sender)
         #expect(received.isEmpty)
         logins.record(BrowserCookieJar.Changes(updated: [cookie("user_session")]), from: sender)
+        #expect(received.isEmpty)  // Not shared yet: this session's sign-in stays its own.
+        logins.share("github.com", cookies: [cookie("user_session"), cookie("x", domain: "a.com")], from: sender)
         #expect(received.count == 1)
         let reloaded = SharedBrowserLogins(file: file, key: { key })
-        #expect(reloaded.jar == BrowserCookieJar([cookie("user_session")]))
+        #expect(reloaded.jar == BrowserCookieJar([cookie("user_session")], sites: ["github.com"]))
+        reloaded.stopSharing("github.com")
+        #expect(SharedBrowserLogins(file: file, key: { key }).jar == BrowserCookieJar())
         let permissions =
             try FileManager.default.attributesOfItem(atPath: file.deletingLastPathComponent().path)[
                 .posixPermissions] as? Int
         #expect(permissions == 0o700)
+    }
+
+    @Test func sharingFollowsTheSiteAcrossItsSubdomainsAndParentDomain() {
+        #expect(BrowserCookieJar.site(of: "https://www.GitHub.com/login") == "github.com")
+        #expect(BrowserCookieJar.site(of: "file:///etc/hosts") == nil)
+        #expect(BrowserCookieJar.site(of: "about:blank") == nil)
+        let jar = BrowserCookieJar(sites: ["accounts.google.com"])
+        #expect(jar.shares(cookie("SID", domain: ".google.com")))
+        #expect(jar.shares(cookie("x", domain: "accounts.google.com")))
+        #expect(jar.shares(cookie("x", domain: "eu.accounts.google.com")))
+        #expect(!jar.shares(cookie("x", domain: "mail.google.com")))
+        #expect(!jar.shares(cookie("x", domain: "notgoogle.com")))
     }
 }

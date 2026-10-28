@@ -54,7 +54,7 @@ struct BotRosterVisualTests {
     }
 
     private func card(selected: Bool) -> some View {
-        MissionControlBotRow(
+        SessionNavBotRow(
             bot: BotSummary(
                 id: selected ? "nexus" : "cypher", name: selected ? "Nexus" : "Cypher",
                 title: selected ? "Coordinator" : "Security Reviewer", description: nil,

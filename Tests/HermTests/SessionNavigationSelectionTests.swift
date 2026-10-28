@@ -4,9 +4,9 @@ import Testing
 @testable import Herm
 
 @MainActor
-struct MissionControlNavigationSelectionTests {
+struct SessionNavigationSelectionTests {
     @Test func gitHubNavigationRemembersTheLastSectionAcrossOtherDestinations() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         #expect(state.selectedGitHubSection == .pullRequests)
 
         state.selectIssues()
@@ -20,15 +20,8 @@ struct MissionControlNavigationSelectionTests {
         #expect(state.selectedGitHubSection == .pullRequests)
     }
 
-    @Test func gitHubVisibilityIncludesAllThreeSectionsTogether() {
-        let sections = GitHubWorkspaceSection.visible(showsGitHub: true)
-        #expect(sections == [.pullRequests, .issues, .repositories])
-        #expect(GitHubWorkspaceSection.issues.available(in: sections) == .issues)
-        #expect(GitHubWorkspaceSection.visible(showsGitHub: false).isEmpty)
-    }
-
     @Test func selectingASurfaceReplacesThePreviousSidebarIdentity() {
-        let state = MissionControlNavigationSelectionState()
+        let state = SessionNavigationSelectionState()
 
         state.selectTask(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
         state.selectGlobal(.kanban)
@@ -39,7 +32,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func activeSessionDoesNotHighlightASecondTaskRow() {
-        let state = MissionControlNavigationSelectionState()
+        let state = SessionNavigationSelectionState()
         let taskID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
 
         state.selectSession("session-a")
@@ -49,7 +42,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func clearingSelectionRemovesStaleTaskAndSessionIdentities() {
-        let state = MissionControlNavigationSelectionState()
+        let state = SessionNavigationSelectionState()
         let taskID = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
 
         state.selectTask(taskID)
@@ -61,7 +54,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func openingASessionFromAnotherSurfaceReplacesThePreviousDestination() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         let taskID = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
 
         state.selectTask(taskID)
@@ -73,7 +66,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func beginningANewConversationClearsThePreviousDestination() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
 
         state.openSession("session-a")
         state.beginNewConversation()
@@ -84,7 +77,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func botChatHandoffSelectsTheBotSession() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.selectGlobal(.kanban)
 
         state.openBotChat(sessionID: "bot-session")
@@ -95,7 +88,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func pullRequestHandoffSelectsTheResolvedSession() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.selectPullRequests()
 
         state.openPullRequestChat(sessionID: "review-session")
@@ -106,7 +99,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func issueChatHandoffReplacesThePreviousDestination() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.selectPullRequests()
 
         state.openIssueChat(sessionID: "issue-session")
@@ -117,7 +110,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func restoredActiveSessionSynchronizesTheSelectionOwner() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.selectPullRequests()
 
         state.synchronizeActiveSession("restored-session")
@@ -128,7 +121,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func transientActiveSessionClearingPreservesNavigationSelection() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.synchronizeActiveSession("restored-session")
 
         state.synchronizeActiveSession(nil)
@@ -139,7 +132,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func explicitNewConversationStillClearsSelection() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.synchronizeActiveSession("restored-session")
 
         state.beginNewConversation()
@@ -149,7 +142,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func issueChatHandoffWithoutASessionClearsThePreviousDestination() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.openSession("stale-session")
 
         state.openIssueChat(sessionID: nil)
@@ -160,7 +153,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func projectSessionHandoffReplacesTheGlobalDestination() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.selectGlobal(.kanban)
 
         state.openProjectSession(sessionID: "project-session")
@@ -171,7 +164,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func projectChatHandoffReplacesTheProjectDestination() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
         state.selectGlobal(.kanban)
 
         state.beginProjectChat(sessionID: "project-session")
@@ -182,7 +175,7 @@ struct MissionControlNavigationSelectionTests {
     }
 
     @Test func globalSelectionDoesNotProjectTheActiveSessionIntoProjects() {
-        let state = MissionControlNavigationState()
+        let state = SessionNavigationState()
 
         state.openSession("active-session")
         state.selectGlobal(.kanban)

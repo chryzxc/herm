@@ -6,6 +6,13 @@ import Testing
 
 @MainActor
 struct DockWorkspaceScaleTests {
+    @Test func supportedTextSizesIncludeSmall() {
+        #expect(DockWorkspaceScale.supportedTextSize(0.9) == 1.1)
+        for value in [1.0, 1.1, 1.2, 1.3] {
+            #expect(DockWorkspaceScale.supportedTextSize(value) == value)
+        }
+    }
+
     @Test func typographyRolesShareCompactAndWindowSizes() {
         let sizes: [(DockTypography.Role, CGFloat, CGFloat)] = [
             (.body, 12, 12), (.navigation, 13, 13), (.conversation, 14, 14),
@@ -29,6 +36,10 @@ struct DockWorkspaceScaleTests {
 
     @Test func visibleSwiftUIButtonsReceiveClicksAcrossDisplaysAndResizes() async throws {
         let recorder = ClickRecorder()
+        let suite = "TypographyScale.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(1.2, forKey: DockWorkspaceScale.preferenceKey)
         let workspace = NSHostingView(
             rootView: DockWindowWorkspace {
                 FullscreenPanelSplitView(
@@ -44,7 +55,7 @@ struct DockWorkspaceScaleTests {
                     }.padding(24),
                     minimumLeadingWidth: 220, minimumTrailingWidth: 220
                 )
-            })
+            }.defaultAppStorage(defaults))
         workspace.sizingOptions = []
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
@@ -81,7 +92,7 @@ struct DockWorkspaceScaleTests {
                 for label in ["Top left", "Top right", "Bottom left", "Bottom right"] {
                     let marker = try #require(
                         descendants(workspace).compactMap { $0 as? MarkerView }.first { $0.label == label })
-                    #expect(marker.workspaceScale == DockWorkspaceScale.window)
+                    #expect(marker.workspaceScale == 1.2)
                     let rect = marker.convert(marker.bounds, to: nil)
                     let point = NSPoint(x: rect.midX, y: rect.midY)
                     let before = recorder.labels.count
