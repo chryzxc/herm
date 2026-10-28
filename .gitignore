@@ -37,3 +37,6 @@ docs/*-audit-*.md
 docs/ui-review.md
 work/
 __pycache__/
+docs/benchmarks/
+docs/previews/
+patches/

@@ -48,14 +48,8 @@ When source data is no longer loaded, the preview labels its retained captured c
 
 ## Backend installation
 
-Stock Hermes Agent does not expose message pins. The companion patch is
-[`patches/hermes-message-pins.patch`](../patches/hermes-message-pins.patch), based
-on Hermes commit `1744a19e0df`. From the Hermes Agent checkout:
-
-```sh
-git apply --check /path/to/hermes-agent-dock/patches/hermes-message-pins.patch
-git apply /path/to/hermes-agent-dock/patches/hermes-message-pins.patch
-```
+Stock Hermes Agent does not expose message pins, so pinning needs a Hermes
+build that provides them. Herm does not ship a Hermes patch.
 
 Restart the `hermes serve` process used by Herm after installing the patch.
 Restarting while a turn is active interrupts that turn, so finish it first.
