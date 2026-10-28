@@ -201,6 +201,13 @@ extension DockModel {
                 for: SessionComposerDraft.Key(
                     profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id
                 ))
+            let owner = SessionComposerDraft.Key(
+                profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id)
+            for pending in pendingSessionSends where pending.owner == owner {
+                cleanupImageAttachments(pending.snapshot.images)
+            }
+            pendingSessionSends.removeAll { $0.owner == owner }
+            sessionStopAttempts[owner] = nil
             SessionBrowserStore.shared.delete(
                 SessionBrowserKey(profileID: session.profileID ?? profileScopeID, sessionID: session.id))
             sessions.removeAll { $0.id == session.id }
@@ -600,6 +607,7 @@ extension DockModel {
             stopVoiceConversation()
             saveComposerDraft()
             restoreComposerDraft(for: SessionComposerDraft.Key(profileID: owningProfileID, sessionID: session.id))
+
             invalidateRuntimeModelOptionsRefresh()
             detachInFlightBotActivities(as: .canceled, keepingSubmitted: true)
         }
@@ -646,6 +654,7 @@ extension DockModel {
         sessionModelValue = nil
         sessionReasoningVariant = nil
         sessionStorageID = session.id
+        if !isRefreshingActiveSession { restorePendingSendIfPossible(for: composerDraftKey) }
         _ = restoreAgentState(for: session.id)
         isShowingSessions = false
         isSending = false
@@ -759,6 +768,16 @@ extension DockModel {
                 .flatMap { unconfirmedUserMessagesBySessionID.removeValue(forKey: $0) }
                 .map { Self.missingUserMessages($0, from: restored.messages) } ?? []
             messages = restored.messages + [liveRow].compactMap { $0 }
+            let pendingSends = reconcilePendingSends(
+                for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs)
+            messages.append(contentsOf: pendingSends)
+            if let stop = sessionStopAttempts[composerDraftKey] {
+                if stop.outcome == .failed {
+                    interruptState = .failed("Hermes could not be interrupted. Try again.")
+                } else if stop.outcome == .accepted, result["running"] as? Bool == true {
+                    interruptState = .failed("Hermes still reports work in progress after Stop. Try Stop again.")
+                }
+            }
             let stashedTurnActivity = sessionStorageID.flatMap {
                 inFlightTurnActivityBySessionID.removeValue(forKey: $0)
             }

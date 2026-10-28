@@ -94,6 +94,9 @@ struct ChatComposerView: View {
             .onChange(of: model.attachedContexts) { previous, _ in
                 model.moveContextsToTray(previous: previous)
             }
+            .onChange(of: model.composerIsEmptyForRecovery) { _, isEmpty in
+                if isEmpty { model.restorePendingSendIfPossible(for: model.composerDraftKey) }
+            }
             .dockSheet(item: $inspectingContext) { context in
                 ComposerContextPreview(context: context) { text in
                     guard contextPreviewOwner == WorkspaceIdentity.session(model),
