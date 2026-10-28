@@ -219,6 +219,22 @@ struct SessionBrowserView: View {
             }
 
             pageContent
+                .overlay(alignment: .top) {
+                    if isPrimary, agent.handoffFailed {
+                        HStack(spacing: 8) {
+                            DockStatusDot(tone: .attention, size: 7)
+                            Text("Hermes couldn't connect to this browser. Check the Hermes connection, then retry.")
+                                .dockFont(.metadata)
+                                .foregroundStyle(Color.dockSecondaryText)
+                            Spacer(minLength: 4)
+                            Button("Retry") { agent.reconnectHermes() }
+                                .buttonStyle(DockSecondaryButtonStyle())
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.dockOpaqueCanvas)
+                    }
+                }
         }
         .task { await logins.prepare() }
         .background {

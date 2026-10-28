@@ -61,7 +61,13 @@ struct AgentBrowserEndpoint {
     private static func fixedPortEndpoint(_ port: Int, session: URLSession) async -> Self? {
         guard let probe = URL(string: "http://127.0.0.1:\(port)/json/version"),
             let (data, response) = try? await session.data(from: probe),
-            (response as? HTTPURLResponse)?.statusCode == 200,
+            (response as? HTTPURLResponse)?.statusCode == 200
+        else { return nil }
+        return validatedFixedPort(port, data: data)
+    }
+
+    static func validatedFixedPort(_ port: Int, data: Data) -> Self? {
+        guard
             let version = try? JSONDecoder().decode(Version.self, from: data),
             let components = URLComponents(string: version.webSocketDebuggerUrl),
             components.scheme == "ws", let host = components.host,
