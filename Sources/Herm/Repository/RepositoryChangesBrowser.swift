@@ -38,7 +38,8 @@ struct RepositoryChangesBrowser: View {
     private var revisionNotes: RevisionNoteStore { ReviewDraftStore.shared.notes(key: reviewScope) }
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     private var actionsDisabled: Bool {
-        workflow.isRefreshing || workflow.isMutatingSourceControl || projectPath != workflow.repository.path
+        workflow.isRefreshing || workflow.isMutatingSourceControl || workflow.changes?.error != nil
+            || projectPath != workflow.repository.path
     }
     @State private var isStagedExpanded = true
     @State private var isChangesExpanded = true
@@ -46,7 +47,9 @@ struct RepositoryChangesBrowser: View {
     var body: some View {
         // The workflow is shared; never show another project's snapshot (e.g. a new chat with no folder).
         let isStale = projectPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path } != workflow.repository.path
-        if let changes = workflow.changes, workflow.repository.isGitRepository, projectPath != nil, !isStale {
+        if let changes = workflow.changes, let error = changes.error, !isStale {
+            emptyState(icon: .warningCircle, title: "Git status unavailable", detail: error)
+        } else if let changes = workflow.changes, workflow.repository.isGitRepository, projectPath != nil, !isStale {
             browser(changes)
         } else if let projectPath {
             let isLoading = workflow.isRefreshing || isStale

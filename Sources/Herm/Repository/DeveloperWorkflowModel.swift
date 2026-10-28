@@ -219,6 +219,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         repositoryFingerprint = resolvedFingerprint
         githubRepository = resolvedGitHubRemote
         self.changes = resolvedChanges
+        sourceControlError = resolvedChanges.error
         self.worktrees = resolvedWorktrees
         self.branches = resolvedBranches
         if githubRepositoryChanged {
@@ -507,7 +508,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         -> Bool
     {
         guard !isMutatingSourceControl, !isRefreshing, activePath == path, repository.path == path,
-            repository.isGitRepository
+            repository.isGitRepository, changes?.error == nil
         else { return false }
         isMutatingSourceControl = true
         sourceControlError = nil

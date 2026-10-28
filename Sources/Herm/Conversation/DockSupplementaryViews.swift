@@ -694,7 +694,9 @@ struct RepositoryFleetRow: View {
             }
             if let snapshot, snapshot.isGitRepository {
                 Text(
-                    "\(snapshot.changedFiles) changed · \(snapshot.aheadCount.map(String.init) ?? "—") ahead · \(snapshot.behindCount.map(String.init) ?? "—") behind"
+                    snapshot.isStale
+                        ? "Git status unavailable"
+                        : "\(snapshot.changedFiles) changed · \(snapshot.aheadCount.map(String.init) ?? "—") ahead · \(snapshot.behindCount.map(String.init) ?? "—") behind"
                 )
                 .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 if let operation = snapshot.operation {

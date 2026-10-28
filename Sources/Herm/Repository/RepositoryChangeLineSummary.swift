@@ -38,7 +38,9 @@ struct RepositoryChangeLineSummary: Equatable {
 extension RepositoryService {
     static func changeLineSummary(path: String, changes: RepositoryChangeSnapshot) async -> RepositoryChangeLineSummary?
     {
-        guard changes.repositoryID == RepositorySnapshot.stableID(path: path), let head = changes.headRevision else {
+        guard changes.error == nil, changes.repositoryID == RepositorySnapshot.stableID(path: path),
+            let head = changes.headRevision
+        else {
             return nil
         }
         let result = await runGit(

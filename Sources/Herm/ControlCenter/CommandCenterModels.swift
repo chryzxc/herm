@@ -174,7 +174,7 @@ enum SessionNavSnapshotBuilder {
                 verificationScope: verification?.evidence?.scope)
         }
         let scope = verification?.evidence?.scope?.lowercased()
-        if repository.changedFiles > 0 || verification?.state != .passed || scope == "targeted"
+        if repository.isStale || repository.changedFiles > 0 || verification?.state != .passed || scope == "targeted"
             || (context?.contextPercent ?? 0) >= 80
         {
             let detail =

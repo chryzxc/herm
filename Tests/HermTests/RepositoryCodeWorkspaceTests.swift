@@ -327,7 +327,7 @@ struct RepositoryCodeWorkspaceTests {
 
         let loaded = await RepositoryService.loadDocument(path: root.path, filePath: "linked/secret.txt")
         let saved = await RepositoryService.saveDocument(
-            path: root.path, filePath: "linked/secret.txt", contents: "overwritten")
+            path: root.path, filePath: "linked/secret.txt", contents: "overwritten", expectedContents: "secret")
 
         #expect(loaded == nil)
         #expect(saved == false)

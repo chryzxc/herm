@@ -1,6 +1,26 @@
 import AppKit
 import SwiftUI
 
+struct RepositoryEditorDraft: Equatable {
+    var text: String
+    private(set) var savedContents: String
+
+    init(_ contents: String) {
+        text = contents
+        savedContents = contents
+    }
+
+    var isDirty: Bool { text != savedContents }
+
+    mutating func receive(_ contents: String) {
+        guard !isDirty else { return }
+        text = contents
+        savedContents = contents
+    }
+
+    mutating func didSave(_ snapshot: String) { savedContents = snapshot }
+}
+
 /// Single-file code viewer/editor used by the Explorer and Changes surfaces:
 /// breadcrumb header with editor actions, a gutter with line numbers and
 /// toggleable git blame, inline blame for the caret line, and a status bar.
@@ -8,14 +28,13 @@ struct RepositoryCodeWorkspaceView: View {
     let repositoryPath: String
     let document: RepositoryFileDocument
     let onClose: () -> Void
-    let onSave: (String) async -> Bool
+    let onSave: (String, String) async -> Bool
     /// Standalone panes fill their container and omit the card chrome and back button.
     var isStandalonePane = false
 
     @AppStorage("codeWorkspace.showsBlame") private var showsBlame = true
     @AppStorage("codeWorkspace.wrapsLines") private var wrapsLines = true
-    @State private var draft: String
-    @State private var savedDraft: String
+    @State private var draft: RepositoryEditorDraft
     @State private var blameState: BlameState = .loading
     @State private var hover: CodeEditorBlameHover?
     @State private var cursor = CodeEditorCursor()
@@ -33,18 +52,17 @@ struct RepositoryCodeWorkspaceView: View {
 
     init(
         repositoryPath: String, document: RepositoryFileDocument, onClose: @escaping () -> Void,
-        onSave: @escaping (String) async -> Bool, isStandalonePane: Bool = false
+        onSave: @escaping (String, String) async -> Bool, isStandalonePane: Bool = false
     ) {
         self.repositoryPath = repositoryPath
         self.document = document
         self.onClose = onClose
         self.onSave = onSave
         self.isStandalonePane = isStandalonePane
-        _draft = State(initialValue: document.contents)
-        _savedDraft = State(initialValue: document.contents)
+        _draft = State(initialValue: RepositoryEditorDraft(document.contents))
     }
 
-    private var hasUnsavedChanges: Bool { draft != savedDraft }
+    private var hasUnsavedChanges: Bool { draft.isDirty }
     private var language: CodeLanguage { CodeLanguage(path: document.path) }
 
     /// Blame maps saved line numbers, so it pauses while the draft diverges.
@@ -90,8 +108,7 @@ struct RepositoryCodeWorkspaceView: View {
             githubRemote = await RepositoryService.githubRemote(path: repositoryPath)
         }
         .onChange(of: document.contents) { _, contents in
-            draft = contents
-            savedDraft = contents
+            draft.receive(contents)
         }
     }
 
@@ -172,7 +189,7 @@ struct RepositoryCodeWorkspaceView: View {
             Divider()
             Button("Reload Blame") { Task { await loadBlame() } }
             if hasUnsavedChanges {
-                Button("Revert Unsaved Changes", role: .destructive) { draft = savedDraft }
+                Button("Revert Unsaved Changes", role: .destructive) { draft.text = draft.savedContents }
             }
         } label: {
             ExplorerToolbarIcon(icon: .dotsThree)
@@ -196,7 +213,7 @@ struct RepositoryCodeWorkspaceView: View {
     private var editor: some View {
         GeometryReader { proxy in
             CodeEditor(
-                text: $draft,
+                text: $draft.text,
                 filePath: document.path,
                 blame: activeBlame,
                 showsBlameGutter: showsBlame,
@@ -275,7 +292,7 @@ struct RepositoryCodeWorkspaceView: View {
                 cursor.selectedCharacters > 0
                     ? "Ln \(cursor.line), Col \(cursor.column) (\(cursor.selectedCharacters) selected)"
                     : "Ln \(cursor.line), Col \(cursor.column)")
-            Text("\(draft.reduce(into: 1) { if $1 == "\n" { $0 += 1 } }) lines")
+            Text("\(draft.text.reduce(into: 1) { if $1 == "\n" { $0 += 1 } }) lines")
             Text(ByteCountFormatter.string(fromByteCount: Int64(document.byteCount), countStyle: .file))
             Text("UTF-8")
             Text(language.name)
@@ -338,15 +355,16 @@ struct RepositoryCodeWorkspaceView: View {
         guard hasUnsavedChanges, !isSaving else { return }
         isSaving = true
         saveError = nil
-        let snapshot = draft
+        let snapshot = draft.text
+        let expected = draft.savedContents
         Task {
-            let succeeded = await onSave(snapshot)
+            let succeeded = await onSave(snapshot, expected)
             isSaving = false
             if succeeded {
-                savedDraft = snapshot
+                draft.didSave(snapshot)
                 await loadBlame()
             } else {
-                saveError = "Could not save this file. It may no longer be a regular UTF-8 file."
+                saveError = "Could not save: the file changed on disk or is unavailable. Your edits are preserved."
             }
         }
     }

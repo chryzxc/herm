@@ -165,13 +165,14 @@ extension WorkspaceActivitySidebar {
                     .lineLimit(1)
                     if workflow.repository.isGitRepository {
                         Text(
-                            workflow.repository.changedFiles == 0
-                                ? "CLEAN WORKING TREE"
-                                : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S")"
+                            workflow.repository.workingTreeSummary.uppercased()
                         )
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(
-                            workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
+                            workflow.repository.isStale
+                                ? Color.dockWarning
+                                : workflow.repository.changedFiles == 0
+                                    ? Color.dockSuccess : DockCategoryTone.modified.color)
                     } else if let path = activeRepositoryPath {
                         Text(path).dockFont(.body).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                     }

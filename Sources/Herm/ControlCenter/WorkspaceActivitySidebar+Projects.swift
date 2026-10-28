@@ -346,23 +346,27 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("LOCAL CHANGES")
             if workflow.repository.isGitRepository {
-                HStack(spacing: 8) {
-                    todayMetric("STAGED", value: workflow.changes?.stagedCount ?? 0, color: .dockAccent)
-                    todayMetric(
-                        "UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: DockCategoryTone.modified.color)
-                    todayMetric("UNTRACKED", value: workflow.changes?.untrackedCount ?? 0, color: .dockSecondaryText)
-                    todayMetric(
-                        "CONFLICTS", value: workflow.changes?.conflictedCount ?? 0,
-                        color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .dockDestructive : .dockSuccess)
+                if !workflow.repository.isStale {
+                    HStack(spacing: 8) {
+                        todayMetric("STAGED", value: workflow.changes?.stagedCount ?? 0, color: .dockAccent)
+                        todayMetric(
+                            "UNSTAGED", value: workflow.changes?.unstagedCount ?? 0,
+                            color: DockCategoryTone.modified.color)
+                        todayMetric(
+                            "UNTRACKED", value: workflow.changes?.untrackedCount ?? 0, color: .dockSecondaryText)
+                        todayMetric(
+                            "CONFLICTS", value: workflow.changes?.conflictedCount ?? 0,
+                            color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .dockDestructive : .dockSuccess)
+                    }
                 }
                 Text(
-                    workflow.repository.changedFiles == 0
-                        ? "CLEAN WORKING TREE"
-                        : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S") · \(workflow.repository.branch)"
+                    workflow.repository.workingTreeSummary.uppercased()
                 )
                 .dockFont(.metadata, weight: .semibold)
                 .foregroundStyle(
-                    workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
+                    workflow.repository.isStale
+                        ? Color.dockWarning
+                        : workflow.repository.changedFiles == 0 ? Color.dockSuccess : DockCategoryTone.modified.color)
                 HStack(spacing: 10) {
                     Button("OPEN SOURCE CONTROL") { select(.changes) }
                     Button(

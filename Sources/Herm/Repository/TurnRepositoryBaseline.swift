@@ -58,7 +58,7 @@ extension DeveloperWorkflowModel {
     func captureTurnBaseline(origin: QuickDestination, path: String, attemptID: UUID = UUID()) async {
         ObservedRequestChanges.shared.invalidate(origin)
         let snapshot = await RepositoryService.inspect(path: path)
-        guard snapshot.isGitRepository else { return }
+        guard snapshot.isGitRepository, !snapshot.isStale else { return }
         turnBaselines[origin.sessionKey] = TurnRepositoryBaseline(
             origin: origin, path: snapshot.path,
             head: snapshot.headRevision, clean: snapshot.changedFiles == 0, capturedAt: .now,

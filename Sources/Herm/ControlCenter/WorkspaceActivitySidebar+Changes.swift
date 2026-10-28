@@ -79,6 +79,8 @@ extension WorkspaceActivitySidebar {
                     onRefresh: { await refreshRepository() },
                     onSelectProjectFolder: { showingRepositoryPicker = true }
                 )
+            } else if let error = workflow.changes?.error {
+                emptyState(icon: .warningCircle, title: "Git status unavailable", detail: error)
             } else if let changes = workflow.changes, workflow.repository.isGitRepository {
                 HStack(spacing: 8) {
                     todayMetric("STAGED", value: changes.stagedCount, color: .dockAccent)

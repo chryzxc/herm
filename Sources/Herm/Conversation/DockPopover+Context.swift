@@ -502,14 +502,15 @@ extension DockPopover {
                     repositoryPath: explorerSelection.scope.repositoryPath,
                     document: explorerSelection.document,
                     onClose: { self.explorerSelection = nil },
-                    onSave: { draft in
+                    onSave: { draft, expected in
                         guard self.activeSessionRepositoryScope == explorerSelection.scope else { return false }
                         guard
                             await RepositoryService.saveDocument(
                                 path: explorerSelection.scope.repositoryPath, filePath: explorerSelection.document.path,
-                                contents: draft)
+                                contents: draft, expectedContents: expected)
                         else { return false }
                         await refreshSessionWorkflow()
+                        guard self.activeSessionRepositoryScope == explorerSelection.scope else { return true }
                         self.explorerSelection = ScopedRepositoryDocument(
                             scope: explorerSelection.scope,
                             document: RepositoryFileDocument(

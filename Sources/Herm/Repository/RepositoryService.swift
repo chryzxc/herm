@@ -38,6 +38,7 @@ struct RepositoryChangeSnapshot: Equatable {
     let branch: String
     let files: [RepositoryFileChange]
     let refreshedAt: Date
+    var error: String? = nil
 
     var changedFiles: Int { files.count }
     var stagedCount: Int { files.filter(\.isStaged).count }
@@ -309,13 +310,19 @@ struct RepositorySnapshot: Equatable {
     var operation: String?
     var refreshedAt: Date
     var isStale: Bool
+    var statusError: String?
+
+    var workingTreeSummary: String {
+        if isStale || statusError != nil { return "Git status unavailable" }
+        return changedFiles == 0 ? "Clean working tree" : "\(changedFiles) changed file\(changedFiles == 1 ? "" : "s")"
+    }
 
     init(
         path: String, branch: String, changedFiles: Int, latestCommit: String, isGitRepository: Bool,
         repositoryID: String? = nil, headRevision: String? = nil, stagedFiles: Int = 0, unstagedFiles: Int = 0,
         untrackedFiles: Int = 0, conflictedFiles: Int = 0, aheadCount: Int? = nil, behindCount: Int? = nil,
         worktreeCount: Int = 0, stashCount: Int = 0, operation: String? = nil, refreshedAt: Date = .now,
-        isStale: Bool = false
+        isStale: Bool = false, statusError: String? = nil
     ) {
         self.path = path
         self.branch = branch
@@ -335,6 +342,7 @@ struct RepositorySnapshot: Equatable {
         self.operation = operation
         self.refreshedAt = refreshedAt
         self.isStale = isStale
+        self.statusError = statusError
     }
 
     static let empty = RepositorySnapshot(
@@ -445,7 +453,7 @@ enum RepositoryService {
             behindCount: counts?.behind,
             worktreeCount: worktreeResult.output.split(separator: "\n").filter { $0.hasPrefix("worktree ") }.count,
             stashCount: stashResult.output.split(separator: "\n", omittingEmptySubsequences: true).count,
-            operation: currentOperation
+            operation: currentOperation, isStale: result.error != nil, statusError: result.error
         )
     }
 
@@ -515,7 +523,8 @@ enum RepositoryService {
         return RepositoryChangeSnapshot(
             repositoryID: RepositorySnapshot.stableID(path: normalizedPath),
             headRevision: head.exitCode == 0 ? head.output : nil,
-            branch: branch.output.isEmpty ? "detached HEAD" : branch.output, files: files, refreshedAt: .now)
+            branch: branch.output.isEmpty ? "detached HEAD" : branch.output, files: files, refreshedAt: .now,
+            error: status.exitCode == 0 ? nil : "Git status is unavailable. Check the repository and refresh.")
     }
 
     static func applySourceControl(_ action: RepositorySourceControlAction, path: String) async -> String? {
@@ -526,7 +535,7 @@ enum RepositoryService {
             let paths = Array(Set(files.flatMap { [$0.path] + ($0.renameSource.map { [$0] } ?? []) })).sorted()
             guard !paths.isEmpty, paths.allSatisfy(isSafeRelativePath) else { return "No valid files selected." }
             // Literal pathspecs prevent filenames containing glob syntax from selecting other files.
-            let literals = paths.map { ":(literal)" + $0 }
+            let literals = paths.map { ":(top,literal)" + $0 }
             if case .stage = action {
                 arguments = ["add", "--"] + literals
             } else {
@@ -584,8 +593,17 @@ enum RepositoryService {
                 return "Only untracked files can be added to .gitignore."
             }
             guard let root = await topLevel(path: path) else { return "Git could not locate the repository root." }
-            let url = root.appendingPathComponent(".gitignore")
-            let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            guard let url = documentURL(repositoryPath: root.path, filePath: ".gitignore") else {
+                return "Could not update .gitignore safely. Its existing contents were preserved."
+            }
+            let existing: String
+            do {
+                existing = try String(contentsOf: url, encoding: .utf8)
+            } catch CocoaError.fileReadNoSuchFile {
+                existing = ""
+            } catch {
+                return "Could not read .gitignore. Its existing contents were preserved."
+            }
             let known = Set(existing.split(separator: "\n").map(String.init))
             let additions = paths.map(gitignorePattern).filter { !known.contains($0) }
             guard !additions.isEmpty else { return nil }
@@ -782,9 +800,9 @@ enum RepositoryService {
     }
 
     static func diff(path: String, file: RepositoryFileChange) async -> RepositoryDiff? {
-        guard isSafeRelativePath(file.path) else { return nil }
+        guard isSafeRelativePath(file.path), let root = await topLevel(path: path) else { return nil }
         let command = diffCommand(for: file)
-        let result = await runGit(path: path, arguments: command.arguments)
+        let result = await runGit(path: root.path, arguments: command.arguments)
         guard command.successCodes.contains(result.exitCode) else { return nil }
         let bounded = boundDiff(result.output)
         return RepositoryDiff(
@@ -813,7 +831,10 @@ enum RepositoryService {
         return await Task.detached(priority: .utility) {
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                 attributes[.type] as? FileAttributeType == .typeRegular,
-                let data = try? Data(contentsOf: url),
+                let handle = try? FileHandle(forReadingFrom: url)
+            else { return nil }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: maxDocumentBytes + 1),
                 data.count <= maxDocumentBytes,
                 let contents = String(data: data, encoding: .utf8)
             else { return nil }
@@ -847,20 +868,32 @@ enum RepositoryService {
 
     /// Writes only a regular UTF-8 file inside the active repository. The
     /// caller refreshes Git projections afterwards; no editor state is stored.
-    static func saveDocument(path repositoryPath: String, filePath: String, contents: String) async -> Bool {
+    static func saveDocument(
+        path repositoryPath: String, filePath: String, contents: String, expectedContents: String
+    ) async -> Bool {
         guard let url = documentURL(repositoryPath: repositoryPath, filePath: filePath),
             contents.lengthOfBytes(using: .utf8) <= maxDocumentBytes
         else { return false }
         return await Task.detached(priority: .utility) {
-            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                attributes[.type] as? FileAttributeType == .typeRegular
-            else { return false }
-            do {
-                try Data(contents.utf8).write(to: url, options: .atomic)
-                return true
-            } catch {
-                return false
+            var succeeded = false
+            var coordinationError: NSError?
+            NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) {
+                target in
+                guard documentURL(repositoryPath: repositoryPath, filePath: filePath) == target,
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: target.path),
+                    attributes[.type] as? FileAttributeType == .typeRegular,
+                    let handle = try? FileHandle(forReadingFrom: target)
+                else { return }
+                defer { try? handle.close() }
+                guard let current = try? handle.read(upToCount: maxDocumentBytes + 1),
+                    current == Data(expectedContents.utf8)
+                else { return }
+                do {
+                    try Data(contents.utf8).write(to: target, options: .atomic)
+                    succeeded = true
+                } catch {}
             }
+            return succeeded && coordinationError == nil
         }.value
     }
 
@@ -878,6 +911,7 @@ enum RepositoryService {
 
     static func review(path: String) async -> RepositoryReviewSnapshot? {
         let changes = await changeSnapshot(path: path)
+        guard changes.error == nil else { return nil }
         let inspected = Array(changes.files.prefix(maxReviewFiles))
         let omitted = max(0, changes.files.count - inspected.count)
         var results: [RepositoryReviewFile] = []
@@ -902,6 +936,7 @@ enum RepositoryService {
     /// Stable, content-free identity for baseline invalidation and watch events.
     static func fingerprint(path: String) async -> String? {
         let changes = await changeSnapshot(path: path)
+        guard changes.error == nil else { return nil }
         return await canonicalFingerprint(path: path, changes: changes)
     }
 
@@ -990,13 +1025,13 @@ enum RepositoryService {
     }
 
     private static func fileIdentity(path: String, file: RepositoryFileChange) async -> String? {
-        guard isSafeRelativePath(file.path) else { return nil }
+        guard isSafeRelativePath(file.path), let root = await topLevel(path: path) else { return nil }
         if file.isStaged {
-            let result = await runGit(path: path, arguments: ["rev-parse", ":\(file.path)"])
+            let result = await runGit(path: root.path, arguments: ["rev-parse", ":\(file.path)"])
             return result.exitCode == 0 ? result.output : nil
         }
         if file.status == .deleted { return "deleted" }
-        let result = await runGit(path: path, arguments: ["hash-object", "--no-filters", "--", file.path])
+        let result = await runGit(path: root.path, arguments: ["hash-object", "--no-filters", "--", file.path])
         return result.exitCode == 0 ? result.output : nil
     }
 
@@ -1246,31 +1281,32 @@ enum RepositoryService {
         return nil
     }
 
-    static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (
-        output: String, exitCode: Int32
-    ) {
+    static func runGit(
+        path: String, arguments: [String], trimOutput: Bool = true,
+        timeout: TimeInterval = 120, maxOutputBytes: Int = 2 * 1_024 * 1_024
+    ) async -> (output: String, exitCode: Int32) {
         guard !Task.isCancelled else { return ("", 1) }
-        return await Task.detached(priority: .utility) {
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["git", "-C", path] + arguments
-            var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
-            // No terminal exists to answer credential prompts; fail instead of hanging.
-            environment["GIT_TERMINAL_PROMPT"] = "0"
-            process.environment = environment
-            process.standardOutput = pipe
-            process.standardError = pipe
-            do {
-                try process.run()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                let rawOutput = String(data: data, encoding: .utf8) ?? ""
-                let output = trimOutput ? rawOutput.trimmingCharacters(in: .whitespacesAndNewlines) : rawOutput
-                return (output, process.terminationStatus)
-            } catch {
-                return ("", 1)
-            }
-        }.value
+        let cancellation = HermesGitProcessCancellation()
+        return await withTaskCancellationHandler {
+            await Task.detached(priority: .utility) {
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+                    "herm-git-" + UUID().uuidString)
+                do {
+                    try FileManager.default.createDirectory(
+                        at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+                    defer { try? FileManager.default.removeItem(at: root) }
+                    var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
+                    environment["GIT_TERMINAL_PROMPT"] = "0"
+                    let result = try HermesGitProcess.run(
+                        ["-C", path] + arguments, environment: environment, root: root,
+                        deadline: .now.addingTimeInterval(timeout), maxBytes: maxOutputBytes * 2,
+                        cancellation: cancellation, maxOutputBytes: maxOutputBytes)
+                    let raw = String(decoding: result.data, as: UTF8.self)
+                    return (trimOutput ? raw.trimmingCharacters(in: .whitespacesAndNewlines) : raw, result.code)
+                } catch { return ("", Int32(1)) }
+            }.value
+        } onCancel: {
+            cancellation.cancel()
+        }
     }
 }

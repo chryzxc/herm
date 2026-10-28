@@ -34,7 +34,7 @@ struct GitHubConflictService: Sendable {
             Self.validRevision(head), Self.validRevision(base), record.number > 0
         else { throw GitHubConflictError.unavailable }
         let token = sourceURL == nil ? await GitHubCodeHostService.localGitHubToken() : nil
-        let cancellation = GitHubProcessCancellation()
+        let cancellation = HermesGitProcessCancellation()
         return try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) {
                 let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -60,10 +60,19 @@ struct GitHubConflictService: Sendable {
                     environment["GIT_CONFIG_VALUE_2"] =
                         "Authorization: Basic " + Data(("x-access-token:" + token).utf8).base64EncodedString()
                 }
-                func run(_ arguments: [String], allowConflicts: Bool = false) throws -> GitHubGitOutput {
-                    let result = try GitHubGitProcess.run(
-                        arguments, environment: environment, root: root, deadline: deadline, maxBytes: maxBytes,
-                        cancellation: cancellation)
+                func run(_ arguments: [String], allowConflicts: Bool = false) throws -> HermesGitOutput {
+                    let result: HermesGitOutput
+                    do {
+                        result = try HermesGitProcess.run(
+                            arguments, environment: environment, root: root, deadline: deadline, maxBytes: maxBytes,
+                            cancellation: cancellation)
+                    } catch HermesGitProcessError.limit {
+                        throw GitHubConflictError.limit
+                    } catch HermesGitProcessError.unsupported {
+                        throw GitHubConflictError.unsupported
+                    } catch is HermesGitProcessError {
+                        throw GitHubConflictError.unavailable
+                    }
                     guard result.code == 0 || (allowConflicts && result.code == 1) else {
                         throw GitHubConflictError.unavailable
                     }
@@ -116,105 +125,5 @@ struct GitHubConflictService: Sendable {
         return GitHubConflictAnalysis(
             headRevision: head, baseRevision: base, files: files, hasConflicts: exitCode == 1,
             complete: exitCode == 0 || !files.isEmpty, analyzedAt: .now)
-    }
-}
-
-private final class GitHubProcessCancellation: @unchecked Sendable {
-    private let lock = NSLock()
-    private var cancelled = false
-    func cancel() {
-        lock.lock()
-        cancelled = true
-        lock.unlock()
-    }
-    var isCancelled: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return cancelled
-    }
-}
-private struct GitHubGitOutput {
-    let data: Data
-    let code: Int32
-}
-
-private enum GitHubGitProcess {
-    /// A process group lets cancellation terminate Git's network/pack children as well as its parent.
-    static func run(
-        _ arguments: [String], environment: [String: String], root: URL, deadline: Date, maxBytes: Int,
-        cancellation: GitHubProcessCancellation
-    ) throws -> GitHubGitOutput {
-        if cancellation.isCancelled { throw CancellationError() }
-        guard Date.now < deadline else { throw GitHubConflictError.limit }
-        let output = root.appendingPathComponent("process-output")
-        var actions: posix_spawn_file_actions_t?
-        var attributes: posix_spawnattr_t?
-        posix_spawn_file_actions_init(&actions)
-        posix_spawnattr_init(&attributes)
-        defer {
-            posix_spawn_file_actions_destroy(&actions)
-            posix_spawnattr_destroy(&attributes)
-        }
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
-        posix_spawnattr_setpgroup(&attributes, 0)
-        posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, output.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-        // stderr is separate so progress or diagnostics cannot be mistaken for machine-readable output.
-        let stderr = root.appendingPathComponent("process-error")
-        posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, stderr.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-        let argv = (["/usr/bin/git"] + arguments).map { strdup($0) } + [nil]
-        let env = environment.sorted { $0.key < $1.key }.map { strdup($0.key + "=" + $0.value) } + [nil]
-        defer {
-            for pointer in argv { if let pointer { free(pointer) } }
-            for pointer in env { if let pointer { free(pointer) } }
-        }
-        var pid: pid_t = 0
-        let spawned = argv.withUnsafeBufferPointer { args in
-            env.withUnsafeBufferPointer { vars in
-                posix_spawn(&pid, "/usr/bin/git", &actions, &attributes, args.baseAddress!, vars.baseAddress!)
-            }
-        }
-        guard spawned == 0 else { throw GitHubConflictError.unsupported }
-        var status: Int32 = 0
-        var failure: Error?
-        while waitpid(pid, &status, WNOHANG) == 0 {
-            if cancellation.isCancelled {
-                failure = CancellationError()
-            } else if Date.now >= deadline || allocatedBytes(root) > maxBytes || fileBytes(output) > 2 * 1_024 * 1_024
-                || fileBytes(stderr) > 2 * 1_024 * 1_024
-            {
-                failure = GitHubConflictError.limit
-            }
-            if failure != nil {
-                kill(-pid, SIGTERM)
-                usleep(50_000)
-                kill(-pid, SIGKILL)
-                while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
-                break
-            }
-            usleep(100_000)
-        }
-        if let failure { throw failure }
-        if cancellation.isCancelled { throw CancellationError() }
-        guard status & 0x7f == 0 else { throw GitHubConflictError.unavailable }
-        let code = (status >> 8) & 0xff
-        guard Date.now < deadline, allocatedBytes(root) <= maxBytes, fileBytes(output) <= 2 * 1_024 * 1_024 else {
-            throw GitHubConflictError.limit
-        }
-        return GitHubGitOutput(data: try Data(contentsOf: output), code: code)
-    }
-    private static func fileBytes(_ url: URL) -> Int {
-        (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-    }
-    private static func allocatedBytes(_ root: URL) -> Int {
-        guard
-            let files = FileManager.default.enumerator(
-                at: root, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
-        else { return 0 }
-        var total = 0
-        for case let url as URL in files {
-            if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true { total += fileBytes(url) }
-        }
-        return total
     }
 }

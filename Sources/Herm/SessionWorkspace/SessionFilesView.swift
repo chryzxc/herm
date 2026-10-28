@@ -44,10 +44,10 @@ struct SessionFilesView: View {
                     repositoryPath: projectPath,
                     document: document,
                     onClose: { self.document = nil },
-                    onSave: { draft in
+                    onSave: { draft, expected in
                         guard
                             await RepositoryService.saveDocument(
-                                path: projectPath, filePath: document.path, contents: draft)
+                                path: projectPath, filePath: document.path, contents: draft, expectedContents: expected)
                         else { return false }
                         await onRefresh()
                         await reloadGitStatus()
