@@ -376,10 +376,7 @@ final class AgentBrowser: ObservableObject {
         annotating = false
     }
 
-    struct Endpoint {
-        let port: Int
-        let ws: URL
-    }
+    typealias Endpoint = HermAgentBrowserStartup.Endpoint
 
     nonisolated static var profileRoot: URL {
         let support =
@@ -446,14 +443,17 @@ final class AgentBrowser: ObservableObject {
             at: profile, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: Self.profileRoot.path)
         let portFile = profile.appendingPathComponent("DevToolsActivePort")
+        let startup = HermAgentBrowserStartup()
+        defer { startup.close() }
         // A browser left running by an earlier Herm keeps the profile locked; reuse it.
-        if let live = await Self.startupEndpoint(portFile, fetchVersion: Self.fetchVersion) { return live }
+        if let live = try await startup.endpoint(portFile, deadline: startup.preflightDeadline()) { return live }
         if FileManager.default.fileExists(atPath: portFile.path) {
             try FileManager.default.removeItem(at: portFile)
         }
         guard let executable = Self.chromiumExecutable() else {
             throw Self.error("No Chromium-family browser found. Install Google Chrome, Brave, Edge or Chromium.")
         }
+
         let process = Process()
         process.executableURL = executable
         process.arguments = [
@@ -471,37 +471,14 @@ final class AgentBrowser: ObservableObject {
         process.standardError = FileHandle.nullDevice
         try process.run()
         self.process = process
-        for _ in 0..<60 {
-            try await Task.sleep(for: .milliseconds(250))
-            if !process.isRunning { break }
-            if let live = await Self.startupEndpoint(portFile, fetchVersion: Self.fetchVersion) { return live }
-        }
-        throw Self.error("The browser didn't start remote debugging.")
+        return try await startup.waitForEndpoint(portFile, isRunning: { process.isRunning })
     }
 
     /// The profile's browser ID must match the listener, including when reusing a live browser.
     static func startupEndpoint(
         _ file: URL, fetchVersion: (Int) async -> Data?
     ) async -> Endpoint? {
-        guard let lines = try? String(contentsOf: file, encoding: .utf8).split(separator: "\n"), lines.count == 2,
-            let port = Int(lines[0]), (1...65535).contains(port),
-            lines[1].hasPrefix("/devtools/browser/"),
-            let ws = URL(string: "ws://127.0.0.1:\(port)\(lines[1])"),
-            ws.path == String(lines[1]), ws.query == nil, ws.fragment == nil,
-            let data = await fetchVersion(port),
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-            let value = json["webSocketDebuggerUrl"] as? String,
-            value == ws.absoluteString
-        else { return nil }
-        return Endpoint(port: port, ws: ws)
-    }
-
-    private static func fetchVersion(_ port: Int) async -> Data? {
-        guard let probe = URL(string: "http://127.0.0.1:\(port)/json/version"),
-            let (data, response) = try? await URLSession.shared.data(for: URLRequest(url: probe, timeoutInterval: 1)),
-            (response as? HTTPURLResponse)?.statusCode == 200
-        else { return nil }
-        return data
+        await HermAgentBrowserStartup.validatedEndpoint(file, fetchVersion: fetchVersion)
     }
 
     /// Same browsers Hermes' `/browser connect` looks for, then Playwright's Chrome for Testing.

@@ -21,6 +21,13 @@ struct SessionBrowserTests {
         let owned = Data(#"{"webSocketDebuggerUrl":"ws://127.0.0.1:9333/devtools/browser/owned-id"}"#.utf8)
         let reused = await AgentBrowser.startupEndpoint(file) { _ in owned }
         #expect(reused?.ws.absoluteString == "ws://127.0.0.1:9333/devtools/browser/owned-id")
+        var response = version
+        let startup = HermAgentBrowserStartup(load: { request in
+            (response, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        #expect(try await startup.endpoint(file, deadline: startup.preflightDeadline()) == nil)
+        response = owned
+        #expect(try await startup.endpoint(file, deadline: startup.preflightDeadline())?.ws == reused?.ws)
     }
     @Test func sessionSwitchesRetainBrowsersAndShareSignIns() {
         let store = SessionBrowserStore()
