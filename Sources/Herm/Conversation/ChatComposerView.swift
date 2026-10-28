@@ -1616,6 +1616,13 @@ private struct RunningProcessesStrip: View {
             }
     }
 
+    /// Hermes keeps a finished process listed for a while, so the count says which kind it is.
+    private var summary: String {
+        let running = control.processes.filter { $0.state == "running" }.count
+        let count = running > 0 ? running : control.processes.count
+        return "\(count) background process\(count == 1 ? "" : "es") \(running > 0 ? "running" : "finished")"
+    }
+
     @ViewBuilder private var content: some View {
         if !control.processes.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
@@ -1624,10 +1631,8 @@ private struct RunningProcessesStrip: View {
                 } label: {
                     HStack(spacing: 6) {
                         DockIcon(.terminal, size: 12, color: Color.dockSecondaryText)
-                        Text(
-                            "\(control.processes.count) background process\(control.processes.count == 1 ? "" : "es") running"
-                        )
-                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        Text(summary)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
@@ -1637,14 +1642,26 @@ private struct RunningProcessesStrip: View {
                 if isExpanded {
                     ForEach(control.processes) { process in
                         HStack(spacing: 8) {
-                            Text(process.name).lineLimit(1).truncationMode(.middle)
-                                .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
-                                    Color.dockPrimaryText
-                                )
-                                .help(process.detail ?? process.name)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(process.name).lineLimit(1).truncationMode(.middle)
+                                    .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
+                                        Color.dockPrimaryText
+                                    )
+                                    .help(process.detail ?? process.name)
+                                if let latest = process.latestOutput {
+                                    Text(latest).lineLimit(1).truncationMode(.tail)
+                                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                                        .help(latest)
+                                }
+                            }
                             Spacer(minLength: 0)
-                            Button("Stop") { pending = process }
-                                .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
+                            if process.state == "running" {
+                                Button("Stop") { pending = process }
+                                    .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
+                            } else {
+                                Text(process.state.capitalized).dockFont(.metadata)
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
                         }
                         .padding(.leading, 18)
                     }

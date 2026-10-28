@@ -404,14 +404,26 @@ extension ControlCenterModel {
     static func parseProcesses(_ result: [String: Any]) -> [ProcessSummary] {
         let rows = (result["processes"] as? [[String: Any]]) ?? (result["items"] as? [[String: Any]]) ?? []
         return rows.compactMap { row in
-            guard let id = (row["id"] as? String) ?? (row["pid"] as? String) else { return nil }
+            // `process.list` keys a row by its registry id (`session_id`, what `process.kill` takes); `pid` is a number.
+            guard let id = (row["session_id"] as? String) ?? (row["id"] as? String) ?? (row["pid"] as? String)
+            else { return nil }
+            let output = (row["output_tail"] as? String) ?? (row["output_preview"] as? String) ?? ""
             return ProcessSummary(
                 id: id,
                 name: (row["name"] as? String) ?? (row["command"] as? String) ?? "Hermes process",
                 state: (row["state"] as? String) ?? (row["status"] as? String) ?? "running",
-                detail: row["detail"] as? String ?? row["command"] as? String
+                detail: row["detail"] as? String ?? row["command"] as? String,
+                latestOutput: lastOutputLine(output)
             )
         }
+    }
+
+    /// The last non-blank line a background process printed, without terminal escapes.
+    static func lastOutputLine(_ output: String) -> String? {
+        HermesRuntimeInspector.stripANSI(output)
+            .split(whereSeparator: \.isNewline)
+            .last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { String($0.trimmingCharacters(in: .whitespaces).prefix(300)) }
     }
 
     static func parseAgents(_ result: [String: Any]) -> [AgentSummary] {

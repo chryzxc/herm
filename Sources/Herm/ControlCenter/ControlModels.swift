@@ -569,6 +569,8 @@ struct ProcessSummary: Identifiable, Codable, Equatable {
     let name: String
     let state: String
     let detail: String?
+    /// The last line it printed (`process.list` output tail), so a long job shows what it is doing.
+    var latestOutput: String? = nil
 }
 
 struct ProjectSummary: Identifiable, Codable, Equatable {

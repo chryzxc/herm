@@ -593,7 +593,7 @@ extension DockPopover {
                         .overlay(alignment: .trailing) {
                             if railWidth > 0 {
                                 SessionPullRequestRail(
-                                    model: model, workflow: developerWorkflow,
+                                    model: model, workflow: developerWorkflow, control: controlCenter,
                                     repositoryPath: activeSessionRepositoryScope?.repositoryPath,
                                     onViewAllChanges: { showSessionRailInspector(.changes) },
                                     onViewPullRequest: viewSessionRailPullRequest,
