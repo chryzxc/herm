@@ -94,6 +94,64 @@ struct GeneratedHTMLTests {
         coordinator.webViewWebContentProcessDidTerminate(web)
         #expect(state.error?.contains("stopped") == true)
     }
+    @Test func textSizeUpdatesWithoutReloadingInteractiveContent() async throws {
+        let html = """
+            <body><input id="draft" value="initial"><span>Text</span><script>
+              addEventListener('message', event => {
+                if (event.data?.inspect) parent.postMessage({inspection: {
+                  size: getComputedStyle(document.body).fontSize,
+                  draft: document.querySelector('#draft').value
+                }}, '*');
+                if (event.data?.edit) document.querySelector('#draft').value = 'kept';
+              });
+            </script></body>
+            """
+        let state = GeneratedHTMLLoadState()
+        let coordinator = GeneratedHTMLWebView.Coordinator(html: html, state: state)
+        coordinator.setTextScale(1.2)
+        let web = coordinator.makeWebView()
+        web.configuration.userContentController.addUserScript(
+            WKUserScript(
+                source:
+                    "window.inspection=null;addEventListener('message',e=>{if(e.data.inspection)window.inspection=e.data.inspection});",
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 420), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.contentView = web
+        window.orderFrontRegardless()
+        defer {
+            GeneratedHTMLWebView.dismantleNSView(web, coordinator: coordinator)
+            window.orderOut(nil)
+        }
+        coordinator.load()
+        for _ in 0..<100 where state.loading && state.error == nil {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        #expect(state.error == nil)
+        #expect(!state.loading)
+        func inspect() async throws -> [String: String] {
+            _ = try await web.evaluateJavaScript(
+                "window.inspection=null;document.querySelector('iframe').contentWindow.postMessage({inspect:true},'*')")
+            for _ in 0..<50 {
+                try await Task.sleep(for: .milliseconds(20))
+                if let result = try await web.evaluateJavaScript("window.inspection") as? [String: String] {
+                    return result
+                }
+            }
+            throw CocoaError(.coderReadCorrupt)
+        }
+        #expect(try await inspect()["size"] == "14px")
+        _ = try await web.evaluateJavaScript(
+            "document.querySelector('iframe').contentWindow.postMessage({edit:true},'*')")
+        coordinator.setTextScale(1.3)
+        let updated = try await inspect()
+        #expect(updated["size"] == "16px")
+        #expect(updated["draft"] == "kept")
+        coordinator.setTextScale(1)
+        #expect(try await inspect()["size"] == "12px")
+    }
+
     @Test func coordinatorKeepsOnlyOneActivePreview() {
         let coordinator = GeneratedHTMLCoordinator()
         coordinator.open("a")

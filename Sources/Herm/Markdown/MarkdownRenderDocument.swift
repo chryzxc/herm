@@ -983,7 +983,7 @@ enum NativeMarkdownAttributedTextBuilder {
                     ], range: NSRange(location: start + range.location, length: range.length))
             }
         }
-        return palette.rendersBotMentions ? BotMentions.pilled(result) : result
+        return palette.rendersBotMentions ? BotMentions.pilled(result, textScale: palette.bodySize / bodySize) : result
     }
 
     private static func codeBlock(

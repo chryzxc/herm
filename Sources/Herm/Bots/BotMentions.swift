@@ -57,17 +57,18 @@ enum BotMentions {
         return id
     }
 
-    static func pill(for bot: BotSummary, colorScheme: ColorScheme? = nil) -> NSImage? {
+    static func pill(for bot: BotSummary, colorScheme: ColorScheme? = nil, textScale: CGFloat = 1) -> NSImage? {
         let dark =
             colorScheme.map { $0 == .dark }
             ?? (NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
-        let key = "\(bot.id)|\(bot.name)|\(dark)|\(DockThemeRuntime.revision)"
+        let key = "\(bot.id)|\(bot.name)|\(dark)|\(DockThemeRuntime.revision)|\(textScale)"
         if let cached = pills[key] { return cached }
         let renderer = ImageRenderer(
             content: BotChip(
                 id: bot.id, botsByID: botsByID, avatarImages: avatars, displayName: bot.name, showsPreview: true
             )
-            .environment(\.colorScheme, dark ? .dark : .light))
+            .environment(\.colorScheme, dark ? .dark : .light)
+            .environment(\.dockWorkspaceScale, textScale))
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
         let image = renderer.nsImage
         pills[key] = image
@@ -76,7 +77,7 @@ enum BotMentions {
 
     /// Replaces mentions with pill attachments, skipping code and link runs.
     static func pilled(
-        _ text: NSAttributedString, bots: [BotSummary]? = nil, colorScheme: ColorScheme? = nil
+        _ text: NSAttributedString, bots: [BotSummary]? = nil, colorScheme: ColorScheme? = nil, textScale: CGFloat = 1
     ) -> NSAttributedString {
         let found = matches(in: text.string, bots: bots)
         guard !found.isEmpty else { return text }
@@ -89,7 +90,7 @@ enum BotMentions {
             }
             guard attributes[.link] == nil, intent?.contains(.code) != true,
                 font?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true,
-                let image = pill(for: bot, colorScheme: colorScheme)
+                let image = pill(for: bot, colorScheme: colorScheme, textScale: textScale)
             else { continue }
             let attachment = NSTextAttachment()
             attachment.image = image

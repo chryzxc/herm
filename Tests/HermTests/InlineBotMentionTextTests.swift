@@ -66,6 +66,73 @@ struct InlineBotMentionTextTests {
         #expect(rendered.string == "\u{FFFC} and \u{FFFC}")
     }
 
+    @Test func userBubbleTracksTextSizeChanges() async throws {
+        let text = "@cypher Please check this message and its **bold text**."
+        let message = ChatMessage(
+            role: .user, text: text, botMentions: [.init(bot: cypher, range: NSRange(location: 0, length: 7))])
+        let row = ConversationMessageRow(
+            message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+            botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in })
+        func content(_ scale: CGFloat) -> some View {
+            row.equatable().environment(\.dockWorkspaceScale, scale).frame(width: 300)
+        }
+        let host = NSHostingView(rootView: content(1))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        func textView(in view: NSView) -> NativeMarkdownTextView? {
+            (view as? NativeMarkdownTextView) ?? view.subviews.lazy.compactMap { textView(in: $0) }.first
+        }
+        var smallPillWidth: CGFloat?
+        for scale: CGFloat in [1, 1.3, 1.1, 1] {
+            host.rootView = content(scale)
+            for _ in 0..<3 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let view = try #require(textView(in: host))
+            let storage = try #require(view.textStorage)
+            let body = (view.string as NSString).range(of: "Please")
+            let bold = (view.string as NSString).range(of: "bold")
+            #expect(body.location != NSNotFound && bold.location != NSNotFound)
+            for range in [body, bold] where range.location != NSNotFound {
+                let font = try #require(storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont)
+                #expect(font.pointSize == DockTypography.size(.conversation, scale: scale))
+            }
+            let pill = try #require(storage.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)
+            if scale == 1, smallPillWidth == nil { smallPillWidth = pill.bounds.width }
+            if scale == 1.3 { #expect(pill.bounds.width > (smallPillWidth ?? 0)) }
+            let container = try #require(view.textContainer)
+            let layout = try #require(view.layoutManager)
+            layout.ensureLayout(for: container)
+            #expect(ceil(layout.usedRect(for: container).height) <= view.frame.height + 1)
+        }
+    }
+
+    @Test func firstLayoutHugsShortUserMessage() throws {
+        let text = "Generate a cat image"
+        let row = ConversationMessageRow(
+            message: ChatMessage(role: .user, text: text),
+            isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+            botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in })
+        let host = NSHostingView(rootView: row.fixedSize(horizontal: false, vertical: true))
+        host.frame = NSRect(x: 0, y: 0, width: 900, height: 400)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        host.layoutSubtreeIfNeeded()
+
+        func textView(in view: NSView) -> NativeMarkdownTextView? {
+            (view as? NativeMarkdownTextView) ?? view.subviews.lazy.compactMap { textView(in: $0) }.first
+        }
+        let view = try #require(textView(in: host))
+        let naturalWidth = ceil(InlineBotMentionText.attributedString(text: text, botMentions: []).size().width)
+        #expect(view.frame.width >= naturalWidth)
+        #expect(view.frame.width <= naturalWidth + 2)
+    }
+
     @Test func firstLayoutDisplaysMentionAndBodyWithoutAnotherUpdate() throws {
         for width: CGFloat in [240, 700] {
             let body = "Please check the project and report what you find. "

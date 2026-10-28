@@ -48,7 +48,7 @@ final class GeneratedHTMLCoordinator: ObservableObject {
 
 /// CSS defaults follow the selected skin; authored content can still style its own artwork.
 enum GeneratedHTMLTheme {
-    static func defaults(for theme: DockThemeID, systemDark: Bool) -> String {
+    static func defaults(for theme: DockThemeID, systemDark: Bool, textScale: CGFloat = 1) -> String {
         let style = theme.style
         let dark: Bool
         switch theme.appearance {
@@ -66,8 +66,8 @@ enum GeneratedHTMLTheme {
         let stopMotion =
             "*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}"
         return """
-            :root{color-scheme:\(dark ? "dark" : "light");--herm-font:\(family);--herm-control-radius:\(style.controlRadius)px;--herm-pane-radius:\(style.paneRadius)px;}
-            html,body{font:\(DockTypography.size(.body))px var(--herm-font);}
+            :root{color-scheme:\(dark ? "dark" : "light");--herm-font:\(family);--herm-control-radius:\(style.controlRadius)px;--herm-pane-radius:\(style.paneRadius)px;--herm-base-font-size:\(DockTypography.size(.body, scale: textScale))px;}
+            html,body{font:var(--herm-base-font-size) var(--herm-font);}
             button,input,select,textarea{font:inherit;accent-color:var(--herm-accent);}
             @media(prefers-reduced-motion:reduce){\(stopMotion)}
             \(style.animates ? "" : stopMotion)
@@ -100,6 +100,18 @@ enum GeneratedHTMLPolicy {
             <!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; frame-src 'self' about:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><meta http-equiv="x-dns-prefetch-control" content="off"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{border:0;width:100%;height:100%}</style></head><body><iframe sandbox="allow-scripts" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; display-capture 'none'; usb 'none'" referrerpolicy="no-referrer" title="Generated interactive view" srcdoc="\(attribute(document))"></iframe></body></html>
             """
     }
+
+    /// The sandboxed document accepts only a numeric font-size update from its parent.
+    static let textSizeListener = """
+        if (window !== window.top) {
+          addEventListener('message', event => {
+            const size = event.data?.hermTextSize;
+            if (event.source === parent && typeof size === 'number' && Number.isFinite(size) && size >= 12 && size <= 16) {
+              document.documentElement.style.setProperty('--herm-base-font-size', size + 'px');
+            }
+          });
+        }
+        """
 
     /// CSP does not cover WebRTC data channels. Disable realm-creating/network APIs before any authored script.
     static let restrictedAPIs = """
@@ -164,6 +176,7 @@ final class GeneratedHTMLLoadState: ObservableObject {
 }
 
 struct GeneratedHTMLWebView: NSViewRepresentable {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let html: String
     let state: GeneratedHTMLLoadState
     var identity: String? = nil
@@ -177,6 +190,7 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> GeneratedHTMLContainer {
         let coordinator = context.coordinator
+        coordinator.setTextScale(workspaceScale)
         if coordinator.web == nil {
             coordinator.retainedWeb = coordinator.makeWebView()
             coordinator.retainsHost = identity != nil
@@ -188,6 +202,7 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         return container
     }
     func updateNSView(_ view: GeneratedHTMLContainer, context: Context) {
+        context.coordinator.setTextScale(workspaceScale)
         if view.presentationPriority != presentationPriority {
             view.presentationPriority = presentationPriority
             context.coordinator.mount(view)
@@ -244,6 +259,20 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
             web.frame = container.bounds
             web.autoresizingMask = [.width, .height]
         }
+        private var textScale: CGFloat = 1
+        func setTextScale(_ scale: CGFloat) {
+            guard textScale != scale else { return }
+            textScale = scale
+            applyTextSize()
+        }
+
+        private func applyTextSize() {
+            let size = DockTypography.size(.body, scale: textScale)
+            web?.evaluateJavaScript(
+                "document.querySelector('iframe')?.contentWindow?.postMessage({hermTextSize: \(size)}, '*')",
+                completionHandler: nil)
+        }
+
         var cancelled = false
         var timeout: Task<Void, Never>?
         init(html: String, state: GeneratedHTMLLoadState) {
@@ -258,6 +287,10 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
             configuration.userContentController.addUserScript(
                 WKUserScript(
                     source: GeneratedHTMLPolicy.restrictedAPIs,
+                    injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            configuration.userContentController.addUserScript(
+                WKUserScript(
+                    source: GeneratedHTMLPolicy.textSizeListener,
                     injectionTime: .atDocumentStart, forMainFrameOnly: false))
             let view = WKWebView(frame: .zero, configuration: configuration)
             view.navigationDelegate = self
@@ -307,7 +340,8 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
                 ":root{--herm-background:\(css(.dockCanvas));--herm-text:\(css(.dockPrimaryText));--herm-secondary:\(css(.dockSecondaryText));--herm-accent:\(css(.dockAccent));--herm-surface:\(css(.dockSurface));--herm-border:\(css(.dockBorder));\(accents)}html,body{background:var(--herm-background);color:var(--herm-text);}"
             let defaults = GeneratedHTMLTheme.defaults(
                 for: DockThemeRuntime.current,
-                systemDark: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+                systemDark: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua,
+                textScale: textScale)
             let data = Data(GeneratedHTMLPolicy.wrapper(html, theme: theme + defaults).utf8)
             urlSchemeTask.didReceive(
                 URLResponse(
@@ -328,6 +362,7 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             timeout?.cancel()
             state.loading = false
+            applyTextSize()
         }
         func webView(
             _ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error
