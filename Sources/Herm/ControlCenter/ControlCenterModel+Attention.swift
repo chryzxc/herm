@@ -31,10 +31,13 @@ extension ControlCenterModel {
                     _ = try await rpc.respondToClarification(requestID: requestID, answer: response)
                 case .stop:
                     guard let rpc else { return }
-                    _ = try await rpc.interrupt(
+                    let result = try await rpc.interrupt(
                         sessionID: reference.sessionID ?? reference.sourceID,
                         profileID: projectProfileID
                     )
+                    guard DockModel.interruptWasAccepted(result) else {
+                        throw QuickDraftError.message("Hermes did not confirm stopping this turn. Refresh its state.")
+                    }
                 case .resume:
                     guard let rpc else { return }
                     _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
