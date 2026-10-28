@@ -2138,6 +2138,9 @@ completion removes it. Ordinary handoffs keep their existing partner captions.
 Native typing supersedes queued completion caret moves in the shared composer,
 including Forward to Bot. Redraws must not restore a selection from before the edit.
 
+Forward to Bot closes after a successful send, including commands returning output.
+On failure it remains open with the note and an error so the user can retry.
+
 **Herm Faces.** Bots without uploaded art draw a seeded face (`HermFace.swift`)
 in a 100-unit box: one of five bodies, ten hue palettes, four eye styles and a
 ±7° lean, all from the profile ID. Each `BotMood` maps to something Hermes or

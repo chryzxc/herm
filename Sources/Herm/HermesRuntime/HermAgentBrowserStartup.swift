@@ -89,12 +89,27 @@ final class HermAgentBrowserStartup {
 
     func preflightDeadline() -> Duration { now() + .milliseconds(500) }
 
-    func waitForEndpoint(_ file: URL, isRunning: () -> Bool) async throws -> Endpoint {
+    func waitForEndpoint(
+        _ file: URL, fixedPort: Int? = nil, announced: (URL) -> Bool = { _ in false },
+        isRunning: () -> Bool
+    ) async throws -> Endpoint {
         let deadline = now() + .seconds(15)
         while now() < deadline {
             try Task.checkCancellation()
             guard isRunning() else { throw startupError() }
-            let candidate = try await endpoint(file, deadline: deadline)
+            let candidate: Endpoint?
+            if let fixedPort {
+                let probe = URL(string: "http://127.0.0.1:\(fixedPort)/json/version")!
+                if let (data, response) = try await request(probe, deadline: deadline), response.statusCode == 200,
+                    let fixed = AgentBrowserEndpoint.validatedFixedPort(fixedPort, data: data), announced(fixed.ws)
+                {
+                    candidate = Endpoint(port: fixed.port, ws: fixed.ws)
+                } else {
+                    candidate = nil
+                }
+            } else {
+                candidate = try await endpoint(file, deadline: deadline)
+            }
             try Task.checkCancellation()
             guard isRunning(), now() < deadline else { throw startupError() }
             if let candidate { return candidate }

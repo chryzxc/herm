@@ -1156,6 +1156,8 @@ Project management and bot **@mention autocomplete** are already implemented; ru
 
 ## Development
 
+Forward to Bot closes after a successful send; failures keep the note and show an error for retry.
+
 ```sh
 swift build   # build
 swift test    # run the test suite
