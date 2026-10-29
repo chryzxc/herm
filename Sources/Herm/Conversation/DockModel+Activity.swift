@@ -248,22 +248,42 @@ extension DockModel {
         guard let sessionID, interruptState != .requesting else { return nil }
         interruptGeneration &+= 1
         let requestGeneration = interruptGeneration
+        let originProfileID = sessionProfileID ?? profileScopeID
+        let owner = composerDraftKey
+        let attemptID = UUID()
+        sessionStopAttempts[owner] = SessionStopAttempt(id: attemptID, outcome: .requesting)
         interruptState = .requesting
         return Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                _ = try await interruptRPC.interrupt(
+                let response = try await interruptRPC.interrupt(
                     sessionID: sessionID,
-                    profileID: sessionProfileID ?? profileScopeID
+                    profileID: originProfileID
                 )
-                // `session.interrupt` stops synchronously (queue purged, no agent
-                // wait), so settle now like Hermes Desktop instead of waiting on
-                // the unwinding turn's terminal frame, which can lag or never come.
+                guard sessionStopAttempts[owner]?.id == attemptID else { return }
+                let accepted = Self.interruptWasAccepted(response)
+                sessionStopAttempts[owner]?.outcome = accepted ? .accepted : .failed
+                if !accepted, self.interruptGeneration != requestGeneration, self.composerDraftKey == owner,
+                    self.isSending
+                {
+                    interruptState = .failed("Hermes could not be interrupted. Try again.")
+                    return
+                }
                 guard self.interruptGeneration == requestGeneration, self.sessionID == sessionID,
                     self.interruptState == .requesting
                 else { return }
+                guard accepted else {
+                    interruptState = .failed("Hermes could not be interrupted. Try again.")
+                    return
+                }
                 settleStoppedTurn()
             } catch {
+                guard sessionStopAttempts[owner]?.id == attemptID else { return }
+                sessionStopAttempts[owner]?.outcome = .failed
+                if self.interruptGeneration != requestGeneration, self.composerDraftKey == owner, self.isSending {
+                    interruptState = .failed("Hermes could not be interrupted. Try again.")
+                    return
+                }
                 guard self.interruptGeneration == requestGeneration, self.sessionID == sessionID,
                     self.interruptState == .requesting
                 else { return }

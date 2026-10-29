@@ -31,10 +31,13 @@ extension ControlCenterModel {
                     _ = try await rpc.respondToClarification(requestID: requestID, answer: response)
                 case .stop:
                     guard let rpc else { return }
-                    _ = try await rpc.interrupt(
+                    let result = try await rpc.interrupt(
                         sessionID: reference.sessionID ?? reference.sourceID,
                         profileID: projectProfileID
                     )
+                    guard DockModel.interruptWasAccepted(result) else {
+                        throw QuickDraftError.message("Hermes did not confirm stopping this turn. Refresh its state.")
+                    }
                 case .resume:
                     guard let rpc else { return }
                     _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
@@ -316,6 +319,7 @@ extension ControlCenterModel {
 
     func focus(sessionID: String?) {
         guard let sessionID, !sessionID.isEmpty else {
+            clearProcessFocus()
             sessionKanbanTask?.cancel()
             sessionKanbanTask = nil
             sessionKanbanRequest = nil
@@ -343,29 +347,13 @@ extension ControlCenterModel {
     func refreshSessionScopedProjections(for sessionID: String) {
         let generation = UUID()
         sessionProcessesGeneration = generation
+        processSessionID = sessionID
         processes = []
         refreshSessionKanban(for: sessionID)
         refreshSessionCockpit(for: sessionID)
         refreshVerification(for: sessionID)
 
-        guard capabilityAvailable("rpc-sessions"), let rpc else { return }
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await rpc.processes(sessionID: sessionID)
-                guard generation == self.sessionProcessesGeneration,
-                    self.currentFocus?.sessionID == sessionID
-                else { return }
-                self.processes = Self.parseProcesses(result)
-                self.recordProjectionSuccess("processes")
-            } catch {
-                guard generation == self.sessionProcessesGeneration,
-                    self.currentFocus?.sessionID == sessionID
-                else { return }
-                self.processes = []
-                self.recordProjectionFailure("processes", error: Self.safeUserDiagnostic(error.localizedDescription))
-            }
-        }
+        refreshFocusedProcesses(for: sessionID, generation: generation)
     }
 
     func project(forSessionID sessionID: String) -> ProjectSummary? {
@@ -467,7 +455,7 @@ extension ControlCenterModel {
     }
 
     func establishFocusIfNeeded() {
-        guard currentFocus == nil, let session = activeSessions.first else { return }
+        guard dockModel == nil, currentFocus == nil, let session = activeSessions.first else { return }
         focus(sessionID: session.id)
     }
 }

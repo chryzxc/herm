@@ -45,6 +45,8 @@ final class DockModel: ObservableObject {
 
     let composer = ComposerText()
     var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
+    var pendingSessionSends: [SessionPendingSend] = []
+    var sessionStopAttempts: [SessionComposerDraft.Key: SessionStopAttempt] = [:]
     let streamingText = StreamingText()
     /// Unflushed-to-step reasoning, observed only by an open live thought row.
     let liveReasoning = LiveReasoningText()
