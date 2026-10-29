@@ -1,4 +1,25 @@
+import AppKit
 import SwiftUI
+
+struct AutomationStatusAnnouncementTracker {
+    private var previousID: String?
+    private var previousStatus: String?
+
+    mutating func update(id: String?, name: String, status: String?) -> String? {
+        defer {
+            previousID = id
+            previousStatus = status
+        }
+        guard let id, id == previousID, let status, status != previousStatus else { return nil }
+        return "\(name): \(status)"
+    }
+}
+
+private struct AutomationAnnouncementState: Equatable {
+    let id: String?
+    let name: String
+    let status: String?
+}
 
 enum AutomationWorkspaceTab: String, CaseIterable, Identifiable {
     case history
@@ -43,21 +64,28 @@ struct AutomationWorkspaceRowPresentation: Equatable {
     let detail: String?
 
     @MainActor static func make(job: CronSummary, latestRun: CronRunSummary?) -> Self {
-        guard job.enabled else { return Self(result: .paused, detail: job.lastRunAt) }
+        let jobResult = job.lastStatus.map { result(status: $0, error: job.lastError) }
         if let latestRun {
             let outcome = result(for: latestRun)
-            if outcome == .unknown, let status = job.lastStatus,
+            if let jobResult,
                 let jobDate = job.lastRunAt.flatMap(HumanDateFormatting.date),
-                let runDate = latestRun.claimedAt.flatMap(HumanDateFormatting.date),
-                jobDate >= runDate
+                let runDate = latestRun.claimedAt.flatMap(HumanDateFormatting.date)
             {
-                return Self(
-                    result: result(status: status, error: job.lastError), detail: job.lastRunAt)
+                let selected = jobDate >= runDate ? jobResult : outcome
+                let detail = jobDate >= runDate ? job.lastRunAt : latestRun.claimedAt
+                if selected == .running { return Self(result: .running, detail: detail) }
+                guard job.enabled else { return Self(result: .paused, detail: job.lastRunAt) }
+                return Self(result: selected, detail: detail)
             }
+            if jobResult == .running { return Self(result: .running, detail: job.lastRunAt) }
+            if outcome == .running { return Self(result: .running, detail: latestRun.claimedAt) }
+            guard job.enabled else { return Self(result: .paused, detail: job.lastRunAt) }
             return Self(result: outcome, detail: latestRun.claimedAt)
         }
-        if let status = job.lastStatus, job.lastRunAt != nil {
-            return Self(result: result(status: status, error: job.lastError), detail: job.lastRunAt)
+        if jobResult == .running { return Self(result: .running, detail: job.lastRunAt) }
+        guard job.enabled else { return Self(result: .paused, detail: job.lastRunAt) }
+        if let jobResult, job.lastRunAt != nil {
+            return Self(result: jobResult, detail: job.lastRunAt)
         }
         return Self(result: .noRun, detail: nil)
     }
@@ -67,9 +95,9 @@ struct AutomationWorkspaceRowPresentation: Equatable {
     }
 
     private static func result(status: String, error: String?) -> Result {
-        if failed(status, error: error) { return .failed }
         let status = status.lowercased()
         if ["running", "claimed", "pending"].contains(status) { return .running }
+        if failed(status, error: error) { return .failed }
         return ["completed", "success", "succeeded", "ok"].contains(status) ? .succeeded : .unknown
     }
 
@@ -103,9 +131,24 @@ struct AutomationWorkspaceView: View {
     @State private var isShowingRemoveConfirmation = false
     @State private var isShowingRunConfirmation = false
     @State private var pendingCreatedJobID: String?
+    @State private var announcementTracker = AutomationStatusAnnouncementTracker()
 
     private var selectedJob: CronSummary? {
         control.cronJobs.first { $0.id == selectedJobID }
+    }
+
+    private var announcementState: AutomationAnnouncementState {
+        guard let job = selectedJob else { return .init(id: nil, name: "", status: nil) }
+        let reference = control.routineReference(for: job)
+        return .init(
+            id: reference.id, name: job.name,
+            status: control.routineFeedback(reference) ?? control.routinePresentation(reference).result.title)
+    }
+
+    private var routineProgressTaskID: String {
+        let reference = selectedJob.map { control.routineReference(for: $0) }
+        let active = reference.map { control.routineRunRequestIDs.contains($0.id) || $0.running } ?? false
+        return "\(control.clientBindingGeneration)/\(control.routineProfileID ?? "")/\(selectedJobID ?? "")/\(active)"
     }
 
     private var filteredJobs: [CronSummary] {
@@ -123,7 +166,7 @@ struct AutomationWorkspaceView: View {
     }
 
     private func presentation(for job: CronSummary) -> AutomationWorkspaceRowPresentation {
-        AutomationWorkspaceRowPresentation.make(job: job, latestRun: runs(for: job).first)
+        control.routinePresentation(control.routineReference(for: job))
     }
 
     @AppStorage("herm.automationListCollapsed") private var isJobListCollapsed = false
@@ -233,11 +276,25 @@ struct AutomationWorkspaceView: View {
             applyRequestedRoutineSelection()
             reconcileSelection()
         }
-        .task(id: "\(control.routineProfileID ?? "")/\(selectedJobID ?? "")") {
+        .onChange(of: announcementState, initial: true) { _, state in
+            if let announcement = announcementTracker.update(id: state.id, name: state.name, status: state.status) {
+                NSAccessibility.post(
+                    element: NSApp.mainWindow ?? NSApp, notification: .announcementRequested,
+                    userInfo: [
+                        .announcement: announcement,
+                        .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                    ])
+            }
+        }
+        .task(id: routineProgressTaskID) {
             guard let selectedJobID else { return }
+            let profile = control.routineProfileID
             while !Task.isCancelled {
-                control.refreshCronRuns(jobID: selectedJobID)
-                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                guard await control.refreshRoutineProgress(jobID: selectedJobID, profileID: profile) else { return }
+                let reference = control.cronJobs.first { $0.id == selectedJobID }
+                    .map { control.routineReference(for: $0) }
+                let active = reference.map { control.routineRunRequestIDs.contains($0.id) || $0.running } ?? false
+                do { try await Task.sleep(for: .seconds(active ? 3 : 15)) } catch { return }
             }
         }
         .onChange(of: control.cronJobs) { _, _ in applyRequestedRoutineSelection() }
@@ -609,7 +666,7 @@ struct AutomationWorkspaceView: View {
             }
             .controlSize(.small)
             Text(
-                control.routineActionErrors[reference.id]
+                control.routineFeedback(reference)
                     ?? (control.routineActions.contains(reference.id)
                         ? "Waiting for Hermes to confirm the operation…" : " ")
             )
@@ -620,7 +677,8 @@ struct AutomationWorkspaceView: View {
             )
             .lineLimit(1)
             .frame(height: 18, alignment: .topLeading)
-            .help(control.routineActionErrors[reference.id] ?? "")
+            .help(control.routineFeedback(reference) ?? "")
+            .accessibilityLabel("\(job.name): \(control.routineFeedback(reference) ?? "")")
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)

@@ -1065,6 +1065,8 @@ Herm uses Apple's on-device language model (the Foundation Models framework) for
 
 ### Automations and quota
 
+Confirmed automation runs show Starting immediately, then Running only when Hermes reports an active execution. The selected automation refreshes its status and history automatically; uncertain submissions require review before another run.
+
 - **Automations**: view, create, edit, pause, resume, run, and remove Hermes cron jobs. A searchable schedule sidebar, compact summary band, and outcome-labelled history keep recurring work easy to scan. Violet schedule accents complement green successes, amber warnings, and red failures, with theme-aware neutral colors in Monochrome and E-Ink. Creation and editing include delivery, working directory, and model/provider overrides. Run history uses Hermes-recorded session identities; agent reports and script-only output previews stay attached to their owning job and profile. Failed reads and rejected changes remain visible.
 - The Quota page, chat composer, and notch Quota tab share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. Session model responses do not supply a separate quota reading.
 - **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity. Its toolbar highlights Add account, groups automatic refresh and peak-hour sync, and keeps the last update time above the controls. Controls stack in narrow windows. The Add account dialog keeps provider names readable, shows readable sign-in instructions in a stable layout, and offers Done after Hermes confirms success.
