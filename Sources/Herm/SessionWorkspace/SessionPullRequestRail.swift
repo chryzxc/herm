@@ -238,9 +238,6 @@ struct SessionRailCard: View {
     var onRespondInChat: () -> Void = {}
     var onViewPin: (PinnedMessage) async -> Bool = { _ in false }
     @State private var expandedChanges = false
-    @State private var expandedPullRequests: Set<String> = []
-    @State private var openingPullRequestID: String?
-    @State private var failedPullRequestID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -296,7 +293,9 @@ struct SessionRailCard: View {
                 SessionRailSummarySection(title: "Pull requests", icon: .gitPullRequest, count: references.count) {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(references) { reference in
-                            entry(reference)
+                            SessionRailPullRequestItem(
+                                reference: reference, record: records[reference.id], failure: failures[reference.id],
+                                onViewPullRequest: onViewPullRequest)
                         }
                     }
                 }
@@ -351,80 +350,6 @@ struct SessionRailCard: View {
         }
         .dockFont(.body).monospacedDigit().fixedSize()
         .help("Tracked text changes against HEAD; \(changes.untrackedCount) new files. Binary lines are not counted.")
-    }
-
-    private func entry(_ reference: GitHubItemReference) -> some View {
-        let record = records[reference.id]
-        return DisclosureGroup(
-            isExpanded: Binding(
-                get: { expandedPullRequests.contains(reference.id) },
-                set: { expanded in
-                    if expanded {
-                        expandedPullRequests.insert(reference.id)
-                    } else {
-                        expandedPullRequests.remove(reference.id)
-                    }
-                })
-        ) {
-            SessionRailExpandedContent {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let record {
-                        Text(record.repository.id).foregroundStyle(Color.dockMetadataText)
-                        Text("\(record.headBranch) → \(record.baseBranch)")
-                            .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                        Text("By \(record.author)").foregroundStyle(Color.dockSecondaryText)
-                        if let additions = record.additions, let deletions = record.deletions {
-                            HStack(spacing: 6) {
-                                Text("+\(additions.formatted())").foregroundStyle(Color.dockSuccess)
-                                Text("−\(deletions.formatted())").foregroundStyle(Color.dockDestructive)
-                            }.monospacedDigit()
-                        }
-                        if let warning = record.detailWarning {
-                            Text(warning).foregroundStyle(Color.dockWarning)
-                        }
-                    }
-                    if let failure = failures[reference.id] {
-                        Text(record == nil ? "Details unavailable. \(failure)" : "Last fetched details. \(failure)")
-                            .foregroundStyle(Color.dockWarning)
-                    } else if record == nil {
-                        Text("Loading details…").foregroundStyle(Color.dockSecondaryText)
-                    }
-                    Button(openingPullRequestID == reference.id ? "Opening…" : "View in GitHub panel") {
-                        openingPullRequestID = reference.id
-                        failedPullRequestID = nil
-                        Task {
-                            let opened = await onViewPullRequest(reference)
-                            openingPullRequestID = nil
-                            if !opened { failedPullRequestID = reference.id }
-                        }
-                    }
-                    .buttonStyle(.dockLink).disabled(openingPullRequestID != nil)
-                    if failedPullRequestID == reference.id {
-                        Text("Could not open pull request. Refresh and try again.").foregroundStyle(Color.dockWarning)
-                    }
-                }
-            }
-            .dockFont(.body).padding(.top, 8)
-        } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .top, spacing: 8) {
-                    DockIcon(
-                        record?.presentationIcon ?? .gitPullRequest, size: 14,
-                        color: record?.presentationColor ?? .dockSecondaryText)
-                    Text(record?.title ?? "Pull request #\(reference.number)")
-                        .dockFont(.body).multilineTextAlignment(.leading).lineLimit(2)
-                }
-                HStack(spacing: 6) {
-                    Text("#\(String(reference.number))").foregroundStyle(Color.dockMetadataText)
-                    if let record {
-                        Text(record.readinessLabel).foregroundStyle(record.readinessColor)
-                    }
-                }
-                .dockFont(.metadata).padding(.leading, 22)
-            }
-        }
-        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
-        .accessibilityIdentifier("session-rail.pr.\(reference.number)")
     }
 }
 
