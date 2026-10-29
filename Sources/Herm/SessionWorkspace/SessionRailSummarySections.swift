@@ -191,33 +191,6 @@ struct SessionRailSummarySection<Content: View, Footer: View>: View {
     }
 }
 
-private struct SessionRailPinnedItem: View {
-    let pin: PinnedMessage
-    let onView: (PinnedMessage) async -> Bool
-    @State private var opening = false
-    @State private var failed = false
-
-    var body: some View {
-        SessionRailSummarySection(
-            title: pin.preview.isEmpty ? "Message with an attachment" : pin.preview, icon: .chatCircle
-        ) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(pin.role == "user" ? "You" : "Herm").foregroundStyle(Color.dockMetadataText)
-                Text(pin.preview).textSelection(.enabled)
-                Button(opening ? "Opening…" : "Show in chat") {
-                    opening = true
-                    failed = false
-                    Task {
-                        failed = !(await onView(pin))
-                        opening = false
-                    }
-                }.buttonStyle(.dockLink).disabled(opening)
-                if failed { Text("Message unavailable. Refresh and retry.").foregroundStyle(Color.dockWarning) }
-            }
-        }
-    }
-}
-
 private struct SessionRailContextFileRow: View {
     let file: SessionContextFile
 

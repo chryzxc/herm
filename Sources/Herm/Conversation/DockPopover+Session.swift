@@ -170,14 +170,6 @@ extension DockPopover {
         ensureInspectorPanelVisible()
     }
 
-    func viewSessionRailPullRequest(_ reference: GitHubItemReference) async -> Bool {
-        let session = WorkspaceIdentity.session(model)
-        let opened = await gitHubInspector.open(reference, session: session)
-        guard opened, session == WorkspaceIdentity.session(model) else { return false }
-        showSessionRailInspector(.github)
-        return true
-    }
-
     func selectChangeFile(_ file: RepositoryFileChange) {
         guard let scope = activeSessionRepositoryScope else { return }
         let requestID = UUID()

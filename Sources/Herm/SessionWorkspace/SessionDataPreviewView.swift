@@ -5,6 +5,7 @@ struct SessionDataPreviewView: View {
     let content: SessionPreviewContent
     @ObservedObject var model: DockModel
     @ObservedObject var botMode: BotModeModel
+    let onOpenPullRequestChat: (PullRequestRecord) -> Void
 
     var body: some View {
         Group {
@@ -12,6 +13,8 @@ struct SessionDataPreviewView: View {
                 SessionMessageTabView(message: message, model: model)
             } else if case .file(let url) = content {
                 FilePreviewPane(url: url, model: model)
+            } else if case .pullRequest(let reference) = content {
+                SessionPullRequestPreview(reference: reference, onOpenChat: onOpenPullRequestChat)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -28,7 +31,7 @@ struct SessionDataPreviewView: View {
 
     @ViewBuilder private var previewContent: some View {
         switch content {
-        case .message, .file: EmptyView()
+        case .message, .file, .pullRequest: EmptyView()
         case .bot(let captured):
             let bot = botMode.botsByID[captured.id] ?? captured
             header(bot.name, subtitle: bot.title ?? "Bot profile", icon: .robot, bot: bot)

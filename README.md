@@ -398,8 +398,8 @@ outputs, pinned messages, and the current workspace alongside Changes and PRs.
 Tasks share the composer's status indicators and ordering: in-progress tasks first,
 pending next, and completed or cancelled tasks last. The active task remains visible
 in the Tasks summary and uses a highlighted row and progress indicator when expanded.
-Empty sections stay hidden. Expand a row for details; **Respond in chat** reveals
-the existing request at the end of chat and focuses the composer, **Show in chat** jumps to a pinned message, and
+Empty sections stay hidden. Expand a section for details; **Respond in chat** reveals
+the existing request at the end of chat and focuses the composer, a pinned item jumps to its message, and
 **View all outputs** opens Artifacts in the third panel. Output rows use the shared
 file-type icons for images, documents, archives, and code. Outputs reuse the shared
 artifact index and refresh after a turn or from the rail's refresh action.
@@ -419,17 +419,16 @@ The icon has no background and highlights when the rail is open. Its floating
 cards sit over the same continuous conversation background, with the conversation's
 scrollbar at the far-right edge beyond the rail. The rail discovers PR
 links in loaded conversation messages and targeted PR tool activity, fetches their GitHub details,
-and expands PR details in place. Refresh updates details; missing access shows
+and shows PR details inline. Refresh updates details; missing access shows
 an unavailable state. The rail uses a quiet repository card with compact PR rows
 and a **Changes** row when that session's repository has local edits. The wider card
 hides the PR section when no PRs are linked, and shows one empty state when no section
 has data. Click Changes to expand the file list, then a file to
-preview its diff in the rail. PR rows expand quick details in the card too. Every
+preview its diff in the rail. PR rows show quick details in the card. Every
 expanded detail area has a 280pt maximum height and scrolls longer content inside
 the card; short content keeps its natural height. **View all changes** remains below the file list.
-Use
-**View all changes** or **View in GitHub panel** inside the expanded section to
-select the existing tab in the third panel; the center stays on Chat. Counts show
+Use **View all changes** to select Source Control, or activate a PR row to open a
+separate, closable PR tab in the third panel; the center stays on Chat. Counts show
 tracked text additions/deletions against HEAD; new and binary files remain included in the file count. The card's actions menu
 refreshes both GitHub and repository data. Hide the rail to give the conversation
 its full width.
