@@ -615,6 +615,7 @@ extension DockModel {
         // paged in, so refreshing never collapses the transcript they scrolled.
         let refreshedTranscriptRowCount = isRefreshingActiveSession ? (transcriptHistoryCursor?.nextOffset ?? 0) : 0
         sessionResumeGeneration &+= 1
+        resetEffortTransition()
         interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
         transcriptHistoryCursor = nil
@@ -654,6 +655,7 @@ extension DockModel {
         sessionModelValue = nil
         sessionReasoningVariant = nil
         sessionStorageID = session.id
+        sessionReasoningWire = nil
         if !isRefreshingActiveSession { restorePendingSendIfPossible(for: composerDraftKey) }
         _ = restoreAgentState(for: session.id)
         isShowingSessions = false
@@ -869,6 +871,7 @@ extension DockModel {
         saveComposerDraft()
         invalidateRuntimeModelOptionsRefresh()
         sessionResumeGeneration &+= 1
+        resetEffortTransition()
         restoreGeneration &+= 1
         interruptGeneration &+= 1
         delegationMonitoringTask?.cancel()
@@ -900,6 +903,7 @@ extension DockModel {
         sessionModelValue = nil
         sessionReasoningVariant = nil
         messages = []
+        sessionReasoningWire = nil
         activeToolCalls = []
         reasoningState = nil
         reasoningFlushTask?.cancel()

@@ -323,6 +323,7 @@ final class PullRequestCenterModel: ObservableObject {
         guard reference.kind == .pullRequest else { return false }
         cancelLoads()
         hasLoaded = true
+        errorMessage = nil
         let token = generation
         do {
             let record = try await api.resolve(
@@ -336,6 +337,7 @@ final class PullRequestCenterModel: ObservableObject {
             selectedID = record.id
             return true
         } catch {
+            guard token == generation, !Task.isCancelled else { return false }
             errorMessage = error.localizedDescription
             return false
         }

@@ -190,8 +190,11 @@ struct SessionInspector: View {
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
                 .allowsHitTesting(selectedExtraID == nil && selectedPreview == nil)
                 if let selectedPreview {
-                    SessionDataPreviewView(content: selectedPreview.content, model: model, botMode: botMode)
-                        .id(selectedPreview.id)
+                    SessionDataPreviewView(
+                        content: selectedPreview.content, model: model, botMode: botMode,
+                        onOpenPullRequestChat: onOpenPullRequestChat
+                    )
+                    .id(selectedPreview.id)
                 }
                 ForEach(extras) { extra in
                     extraContent(extra)

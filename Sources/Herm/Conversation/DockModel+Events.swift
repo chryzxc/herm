@@ -260,6 +260,7 @@ extension DockModel {
             gatewayReplayEpoch = epoch
             processedGatewaySequencesBySessionID.removeAll()
             highestGatewaySequenceBySessionID.removeAll()
+            sessionInfoSequencesBySessionID.removeAll()
             if sessionID != nil { refreshDelegationStatus() }
             return true
         }
@@ -322,6 +323,7 @@ extension DockModel {
                     self.gatewayReplayEpoch = epoch
                     self.processedGatewaySequencesBySessionID.removeAll()
                     self.highestGatewaySequenceBySessionID.removeAll()
+                    self.sessionInfoSequencesBySessionID.removeAll()
                 }
                 let frames = result["events"] as? [[String: Any]] ?? []
                 for frame in frames.sorted(by: { lhs, rhs in
@@ -618,6 +620,8 @@ extension DockModel {
             if status == .idle { status = .working }
         }
         switch type {
+        case "session.info":
+            applyEffortSessionInfo(params, payload: payload, owner: eventSessionID)
         case "session.usage":
             guard let id = sessionID, let usage = payload["usage"] as? [String: Any] else { break }
             applyContextUsage(usage, sessionID: id)

@@ -54,6 +54,7 @@ extension DockModel {
 
     func invalidateRuntimeModelOptionsRefresh() {
         runtimeModelOptionsRefreshGeneration &+= 1
+        effortCatalog = nil
         isLoadingRuntimeModelOptions = false
         runtimeModelOptionsError = nil
     }
@@ -61,20 +62,32 @@ extension DockModel {
     func refreshRuntimeModelOptions(sessionID: String? = nil) {
         runtimeModelOptionsRefreshGeneration += 1
         let generation = runtimeModelOptionsRefreshGeneration
+        let resumeGeneration = sessionResumeGeneration
+        let profile = sessionID == nil ? profileScopeID : (sessionProfileID ?? profileScopeID)
+        effortCatalog = nil
         isLoadingRuntimeModelOptions = true
         runtimeModelOptionsError = nil
         Task { [weak self] in
             guard let self else { return }
+            defer {
+                if generation == runtimeModelOptionsRefreshGeneration {
+                    isLoadingRuntimeModelOptions = false
+                }
+            }
             do {
-                let params = Self.runtimeModelOptionsRequest(sessionID: sessionID)
+                var params = Self.runtimeModelOptionsRequest(sessionID: sessionID)
+                if let profile, !profile.isEmpty { params["profile"] = profile }
                 let result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.modelOptions.rawValue, params: params)
                 guard generation == runtimeModelOptionsRefreshGeneration,
+                    resumeGeneration == sessionResumeGeneration,
+                    profile == (sessionID == nil ? profileScopeID : (sessionProfileID ?? profileScopeID)),
                     sessionID == nil || sessionID == self.sessionID
                 else {
                     return
                 }
                 runtimeModelOptions = try Self.runtimeModelOptions(from: result)
+                effortCatalog = HermesEffortCatalog(result: result)
                 if sessionID == nil,
                     let provider = result["provider"] as? String,
                     let model = result["model"] as? String
@@ -85,27 +98,27 @@ extension DockModel {
                     let provider = result["provider"] as? String,
                     let model = result["model"] as? String
                 {
-                    sessionModelOptionID = HermesModelOption(provider: provider, model: model).id
+                    let optionID = HermesModelOption(provider: provider, model: model).id
+                    if sessionModelOptionID != optionID { sessionReasoningWire = nil }
+                    sessionModelOptionID = optionID
                     sessionModelValue = HermesModelOption(provider: provider, model: model).displayName
                 } else if let sessionID, sessionID == self.sessionID,
                     let model = result["model"] as? String
                 {
+                    // A provider-less response cannot establish the mapping's route identity.
+                    sessionReasoningWire = nil
                     sessionModelValue = model
                 }
             } catch {
                 guard generation == runtimeModelOptionsRefreshGeneration,
+                    resumeGeneration == sessionResumeGeneration,
+                    profile == (sessionID == nil ? profileScopeID : (sessionProfileID ?? profileScopeID)),
                     sessionID == nil || sessionID == self.sessionID
                 else {
                     return
                 }
                 runtimeModelOptionsError = "Hermes could not load its model catalog."
             }
-            guard generation == runtimeModelOptionsRefreshGeneration,
-                sessionID == nil || sessionID == self.sessionID
-            else {
-                return
-            }
-            isLoadingRuntimeModelOptions = false
         }
     }
 
@@ -138,20 +151,34 @@ extension DockModel {
 
     func refreshSessionReasoningVariant() {
         guard let sessionID, !sessionID.isEmpty else { return }
+        let generation = sessionResumeGeneration
+        let profile = sessionProfileID ?? profileScopeID
+        sessionReasoningRevision &+= 1
+        let revision = sessionReasoningRevision
+        let params = scopedSessionParams(["key": "reasoning", "session_id": sessionID])
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await gateway.request(
-                    HermesFeatureIDs.ID.configGet.rawValue,
-                    params: [
-                        "key": "reasoning",
-                        "session_id": sessionID,
-                    ])
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.configGet.rawValue, params: params)
                 guard self.sessionID == sessionID,
-                    let value = result["value"] as? String
+                    self.sessionResumeGeneration == generation,
+                    (self.sessionProfileID ?? self.profileScopeID) == profile,
+                    self.sessionReasoningRevision == revision
                 else { return }
-                self.sessionReasoningVariant = HermesReasoningVariant(rawValue: value.lowercased())
+                guard let value = result["value"] as? String else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                let variant = HermesReasoningVariant(rawValue: value.lowercased())
+                if self.sessionReasoningVariant != variant { self.sessionReasoningWire = nil }
+                self.sessionReasoningVariant = variant
+                self.sessionReasoningStale = false
             } catch {
+                guard self.sessionID == sessionID, self.sessionResumeGeneration == generation,
+                    (self.sessionProfileID ?? self.profileScopeID) == profile,
+                    self.sessionReasoningRevision == revision
+                else { return }
+                self.sessionReasoningStale = true
+                self.runtimeConfigurationError = "Effort availability could not be refreshed."
                 DebugLog.write(
                     "model: session reasoning lookup failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
@@ -231,21 +258,35 @@ extension DockModel {
             sessionModelValue = option.displayName
             return
         }
-        guard !isUpdatingSessionModel else { return }
+        guard !isUpdatingSessionModel, !isUpdatingSessionReasoning else { return }
         let generation = sessionResumeGeneration
+        let profile = sessionProfileID ?? profileScopeID
+        let token = UUID()
+        sessionModelMutationToken = token
+        let reasoning = sessionReasoningVariant.flatMap {
+            effortCatalog?.choices(for: option.id)?.contains($0) == true ? $0 : nil
+        }
         let params = scopedSessionParams(
             Self.sessionRuntimeModelSwitchRequest(
-                option: option, sessionID: sessionID, reasoning: sessionReasoningVariant
+                option: option, sessionID: sessionID, reasoning: reasoning
             ).parameters)
+        effortCatalog = nil
         isUpdatingSessionModel = true
         runtimeConfigurationError = nil
 
         Task { [weak self] in
             guard let self else { return }
-            defer { self.isUpdatingSessionModel = false }
+            defer {
+                if self.sessionModelMutationToken == token {
+                    self.sessionModelMutationToken = nil
+                    self.isUpdatingSessionModel = false
+                }
+            }
             do {
                 let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.configSet.rawValue, params: params)
-                guard self.sessionResumeGeneration == generation, self.sessionID == sessionID else { return }
+                guard self.sessionResumeGeneration == generation, self.sessionID == sessionID,
+                    (self.sessionProfileID ?? self.profileScopeID) == profile, self.sessionModelMutationToken == token
+                else { return }
                 guard result["key"] as? String == "model", result["scope"] as? String == "session",
                     let value = result["value"] as? String, !value.isEmpty,
                     result["confirm_required"] as? Bool != true, result["deferred"] as? Bool != true
@@ -254,40 +295,17 @@ extension DockModel {
                         "Hermes has not acknowledged the model change. Refresh before retrying.")
                 }
                 refreshSessionModelOptions()
+                refreshSessionReasoningVariant()
             } catch {
-                guard self.sessionResumeGeneration == generation, self.sessionID == sessionID else { return }
+                guard self.sessionResumeGeneration == generation, self.sessionID == sessionID,
+                    (self.sessionProfileID ?? self.profileScopeID) == profile, self.sessionModelMutationToken == token
+                else { return }
                 runtimeConfigurationError =
                     "Hermes could not apply the session provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
                 actionErrors.report("Could not change session model", error: error)
+                refreshSessionModelOptions()
             }
-            isUpdatingSessionModel = false
-        }
-    }
 
-    func updateSessionReasoning(_ variant: HermesReasoningVariant) {
-        guard let sessionID, !sessionID.isEmpty, !isUpdatingSessionReasoning else { return }
-        isUpdatingSessionReasoning = true
-        runtimeConfigurationError = nil
-
-        Task { [weak self] in
-            guard let self else { return }
-            defer { self.isUpdatingSessionReasoning = false }
-            do {
-                _ = try await gateway.request(
-                    HermesFeatureIDs.ID.configSet.rawValue,
-                    params: [
-                        "key": "reasoning",
-                        "value": variant.rawValue,
-                        "session_id": sessionID,
-                    ])
-                guard self.sessionID == sessionID else { return }
-                self.sessionReasoningVariant = variant
-                DebugLog.write("model: session reasoning set to \(variant.rawValue)")
-            } catch {
-                self.runtimeConfigurationError =
-                    "Hermes could not apply the session reasoning change: \(Self.safeUserDiagnostic(error.localizedDescription))"
-                actionErrors.report("Could not change session thinking level", error: error)
-            }
         }
     }
 
@@ -295,7 +313,7 @@ extension DockModel {
     /// it as a per-session override (a sessionless config.set would rewrite the
     /// launch profile's global default instead).
     func updateDefaultReasoning(_ variant: HermesReasoningVariant) {
-        defaultReasoningVariant = variant
+        draftReasoningVariant = variant
     }
 
     /// Settings writes Hermes' global thinking default (`agent.reasoning_effort`).
