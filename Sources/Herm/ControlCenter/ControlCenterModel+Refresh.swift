@@ -7,6 +7,7 @@ extension ControlCenterModel {
         if dockModel !== model {
             refreshGeneration &+= 1
             clientBindingGeneration &+= 1
+            resetRoutineRunState()
             latestActivityRefreshTask?.cancel()
             latestActivityRefreshTask = nil
             latestActivityCache = [:]
@@ -25,6 +26,7 @@ extension ControlCenterModel {
             cronJobs = []
             routineProfileID = nil
             routineActions = []
+            routineRunRequestIDs = []
             unavailableRoutineActions = []
             routineActionErrors = [:]
             triggeredRoutineIDs = []
@@ -252,40 +254,8 @@ extension ControlCenterModel {
                 let sessionID = dockModel?.sessionID ?? ""
                 let processGeneration = sessionProcessesGeneration
                 let processBinding = clientBindingGeneration
-                do {
-                    let scope = dockModel?.profileScopeID
-                    let result = try await rpc.cron(action: "list", profileID: scope)
-                    var jobs = Self.parseCronJobs(result)
-                    if let sessions = try? await rpc.sessions(limit: 200, profileID: scope) {
-                        jobs = Self.attachLatestCronSessions(to: jobs, from: sessions)
-                    }
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    guard dockModel?.profileScopeID == scope else { return }
-                    if routineProfileID != scope {
-                        cronRunsByJob = [:]
-                        cronRuns = []
-                    }
-                    routineProfileID = scope
-                    cronJobs = jobs.map { job in
-                        var job = job
-                        job.owner = CronOwner(profileID: scope)
-                        return job
-                    }
-                    triggeredRoutineIDs = triggeredRoutineIDs.filter { id in
-                        guard let prior = jobs.first(where: { "routine/\(scope ?? "")/\($0.id)" == id }) else {
-                            return false
-                        }
-                        return (prior.lastRunAt ?? "") == triggeredRoutineRevisions[id]
-                            || ["running", "pending", "claimed"].contains(prior.lastStatus ?? "")
-                    }
-                    recordProjectionSuccess("cron.jobs")
-                } catch {
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(
-                        Self.safeUserDiagnostic(error.localizedDescription))
-                    recordProjectionFailure("cron.jobs", error: message)
-                    lastError = message
-                }
+                await refreshRoutineInventory(profileID: dockModel?.profileScopeID, includeSessions: true)
+                guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
 
                 do {
                     let result = try await rpc.activeSessions()

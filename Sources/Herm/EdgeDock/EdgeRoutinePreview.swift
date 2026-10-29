@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct EdgeRoutinePreview: View {
+    @MainActor static func executionLabel(for reference: RoutineReference) -> String {
+        AutomationWorkspaceRowPresentation.make(job: reference.job, latestRun: reference.run).result.title
+    }
     let reference: RoutineReference
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var preferences: CommandCenterPreferencesStore
@@ -11,6 +14,12 @@ struct EdgeRoutinePreview: View {
     @State private var error: String?
     @State private var reportTask: Task<Void, Never>?
     @State private var loading = false
+    private var currentReference: RoutineReference {
+        guard control.routineProfileID == reference.profileID,
+            let job = control.cronJobs.first(where: { $0.id == reference.job.id })
+        else { return reference }
+        return control.routineReference(for: job)
+    }
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
@@ -25,7 +34,7 @@ struct EdgeRoutinePreview: View {
                         Text("Profile: \(reference.profileID ?? "Launch profile")").dockFont(.metadata)
                             .foregroundStyle(Color.dockSecondaryText)
                         Text(
-                            "Execution: \(reference.run?.status ?? reference.job.lastStatus ?? "No recorded run")"
+                            "Execution: \(control.routineStatusUnavailable(currentReference) ? "Status unavailable" : Self.executionLabel(for: currentReference))"
                         )
                         if let execution = reference.run?.error ?? reference.job.lastError {
                             Text(HermesDiagnosticsService.safeSummary(execution))
@@ -54,6 +63,8 @@ struct EdgeRoutinePreview: View {
                         }
                         if let error = error ?? control.routineActionErrors[reference.id] {
                             Text(error).foregroundStyle(Color.dockWarning)
+                        } else if let feedback = control.routineFeedback(currentReference) {
+                            Text(feedback).foregroundStyle(Color.dockSecondaryText)
                         }
                         HStack {
                             Button(reference.job.enabled ? "Pause…" : "Resume…") {
@@ -64,7 +75,7 @@ struct EdgeRoutinePreview: View {
                                         reference.job.enabled ? "pause" : "resume")
                             )
                             Button("Run now…") { confirming = "Start a new run" }.disabled(
-                                !control.canTriggerRoutine(reference))
+                                !control.canTriggerRoutine(currentReference))
                         }.buttonStyle(.dockCompact).disabled(control.routineActions.contains(reference.id))
                         if control.routineNeedsReview(reference) {
                             Button("I reviewed the run; allow another…") { confirming = "Record reviewed run" }
@@ -93,6 +104,14 @@ struct EdgeRoutinePreview: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .foregroundStyle(Color.dockPrimaryText)
             .onDisappear { reportTask?.cancel() }
+            .task(id: "\(control.clientBindingGeneration)/\(reference.id)") {
+                while !Task.isCancelled {
+                    guard await control.refreshRoutineProgress(jobID: reference.job.id, profileID: reference.profileID)
+                    else { return }
+                    let active = control.routineRunRequestIDs.contains(reference.id) || currentReference.running
+                    do { try await Task.sleep(for: .seconds(active ? 3 : 15)) } catch { return }
+                }
+            }
             .confirmationDialog(
                 "\(confirming ?? "Change") \(reference.job.name)?",
                 isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })
@@ -100,12 +119,15 @@ struct EdgeRoutinePreview: View {
                 Button(confirming ?? "Confirm") {
                     let action = confirming
                     confirming = nil
-                    Task {
-                        if action == "Record reviewed run" {
-                            await control.confirmRoutineReview(reference)
-                        } else {
-                            await control.recoverRoutine(
-                                reference, run: action == "Start a new run", paused: action == "Pause")
+                    if action == "Start a new run" {
+                        control.runCronNow(currentReference.job)
+                    } else {
+                        Task {
+                            if action == "Record reviewed run" {
+                                await control.confirmRoutineReview(currentReference)
+                            } else {
+                                await control.recoverRoutine(currentReference, run: false, paused: action == "Pause")
+                            }
                         }
                     }
                 }

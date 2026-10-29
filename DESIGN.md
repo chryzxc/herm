@@ -1684,6 +1684,8 @@ is never rendered as a fabricated meter or percentage.
 
 ### Automation
 
+Confirmed runs use the existing status slot for Starting, Running, and unavailable or uncertain feedback. Refresh inventory and history while the selected automation is visible without treating a pending request as a confirmed execution.
+
 The Automation destination uses a full-height schedule list, a selected schedule
 workspace, and a resizable run inspector at wide widths. The list collapses to a
 picker when the workspace beside the inspector is narrow or through the sidebar toggle. Inset rows show the name,
