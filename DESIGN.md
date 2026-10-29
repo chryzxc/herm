@@ -1393,6 +1393,14 @@ hides the roster when both panels would crowd the scene.
 
 ### Navigation sidebar
 
+A fixed Search sessions field below the Bot header filters loaded session titles,
+previews, and project names case-insensitively in the selected Bot scope. Nonempty
+search replaces the normal sections with deduplicated results in newest-first order,
+including pins and project sessions, independent of section disclosure and the recent
+row limit. A count and no-match state describe loaded sessions; projection failures
+remain visible. Clearing search or pressing Escape restores existing disclosures.
+Search is transient presentation state and does not fetch transcript history.
+
 The bottom connection indicator opens a quick-action popover in every connection
 state. Show Herm's backend connection separately from the local default-profile
 messaging gateway. Reuse General's gateway status, refresh, confirmed restart,
@@ -1584,8 +1592,11 @@ opens at the top when the category changes.
   comes from backend REST, and features that read this Mac's Hermes home or
   loopback (agent updates, messaging gateway status, Hermes-home quota
   credentials, Kanban attribution, delivery questions, agent-browser handoff)
-  show an honest remote-host message or stay off. Repository and terminal
-  tools continue to target this Mac.
+  show an honest remote-host message or stay off. Repository tools continue
+  to target this Mac. In SSH mode terminals open a login shell on the host,
+  and Browser tab `localhost` loads forward the same port with `ssh -L`
+  (`SSHPortForwards`); a port already used on this Mac fails in the tab's
+  error slot rather than showing the wrong server.
 - **Skins gallery.** Compact tiles show a miniature material/type/selection
   specimen, the Herm skin name, a short material signature, and one line for
   the mode plus "Active in Hermes" when it applies. Specimens use the target
@@ -3388,19 +3399,22 @@ owning context closes. Existing profile-scoped bot/routine repair dialogs are re
 
 ### Chats tiles view
 
-Chats offers List and Tiles layouts. Settings → Chat → Layout stores the default layout locally; the Tiles header's List/Tiles segmented control and the sidebar's Chat tiles row switch for the moment without changing that default; returning
+Chats offers List and Tiles layouts. Settings → Chat → Layout stores the default layout locally; the header's Tiles layout menu and the sidebar's Chat tiles row switch for the moment without changing that default; returning
 to Chats or reopening Herm restores it. There is one Chats rail destination, selected
-for either layout. Explicit session links and New chat open the conversation workspace
+for either layout. Explicit session links and sidebar New chat open the conversation workspace
 without overwriting the preferred layout. The grid's page title is Chats, with New chat
 and Bot controls and no modal Close action. Use `DockExpandedPage`
-for the title row and a full-width adaptive grid (320pt minimum, 460pt maximum
-card width, 16pt gaps) under collapsible `DockSectionHeader` groups with counts;
+for the title row and a full-width adaptive grid (320pt minimum card width, no maximum so
+columns always fill the row; 16pt gaps) under collapsible `DockSectionHeader` groups with counts;
 Recent starts collapsed. A quiet two-row toolbar puts a skin-shaped search field
 and project `DockMenuPicker` above the `DockSegmentedPicker` status filters and
 counts. Status filters scroll horizontally when the full set cannot fit. Header
-controls group List/Tiles on a shared control surface, followed by the bot picker
-and a New chat action with a plus icon. Refresh and actions use aligned 36pt
-controls; narrow panels split these into navigation and conversation-action rows.
+controls use a single outlined layout menu with a grid icon and Tiles label,
+with List and Tiles choices and a checkmark for the current layout. There is no
+tab strip or selection bar. The bot picker follows, then New chat with a plus icon.
+Refresh, layout, bot, and New chat share the compact 28pt toolbar size and 8pt gaps;
+the selected avatar is 18pt so it fits within that height. Narrow panels split
+controls into navigation and conversation-action rows when needed.
 The outlined bot menu shows the selected avatar beside its name and
 avatars with a selection check in the choices. It reuses sidebar avatar images
 and deterministic fallback faces, with skin-owned shapes and semantic colors.
@@ -3422,13 +3436,20 @@ or unavailable. Working gateway-owned turns offer Stop via
 outline. Errors pass through `safeSummary` and appear in the footer.
 Visible cards read a bounded tail of saved messages without resuming sessions.
 Respond opens a separate conversation sheet; no empty chat pane occupies the grid.
+New chat starts a fresh conversation with the selected bot in that same sheet,
+keeping the tiles visible behind it. It renders the regular composer and transcript;
+Open workspace switches to the full conversation workspace. Closing the sheet does
+not send a message or discard its unsent draft. Profile changes dismiss the sheet.
 Cards use shared surface and border tokens, skin-owned pane geometry, and 16pt insets. Hover
 gently changes the surface and border over 160ms; cards do not lift. Status
 changes appear immediately without a fade. Card positions use stable profile/session
-identities and a damped 800ms spring (0.9 damping) when refreshes reorder them. All
-sections share one grid so a card changing section glides to its new slot; insertions
-and removals appear immediately without fading or scaling. Reduce Motion and skins
-without animation disable movement. Runtime aliases reconcile to saved session keys,
+identities and a damped 800ms spring (0.9 damping) when refreshes reorder them. Running
+cards sort by start time, not last update, so polling never reshuffles them. All
+sections share one grid; a card changing section is re-created in its new slot rather
+than gliding, so no outgoing copy keeps a stale status. Insertions and removals appear
+immediately without fading or scaling. Reduce Motion and skins without animation
+disable movement. Clicking anywhere on a card opens its chat; there is no separate open
+button, and the reply field, Stop and approval buttons keep their own clicks. Runtime aliases reconcile to saved session keys,
 so one conversation has one card without merging unrelated chats with matching titles.
 Filters retain their two-row hierarchy across widths. Reply actions stay in the
 footer; generated replies use their readable text projection.
@@ -3838,3 +3859,12 @@ User-message bubbles follow the selected text size, including when it changes wh
 Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.
 
 Pull request details keep navigation tabs in a separate row above a labeled actions row. Actions wrap in narrow panes; review-guide access stays in the actions menu.
+
+Markdown website links reuse an open tab with the exact destination URL. Otherwise,
+an empty primary Browser opens the link; an occupied primary Browser keeps its page
+and the link opens in a selected additional browser tab. Pending agent navigation
+is preserved. GitHub overview links retain their native inspector routing.
+
+Primary and additional Browser tabs show the live webpage title, updating when
+the page name changes. Empty, untitled, and URL-only titles retain the generic
+Browser label (with the existing number for additional tabs).

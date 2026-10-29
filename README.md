@@ -475,8 +475,13 @@ unavailable items, and links to anchors or subpages retain the browser fallback.
 
 ### Chat views
 
+The chat sidebar has a **Search sessions** field for loaded session titles, previews,
+and project names in the selected bot scope. Results include pinned and project
+conversations beyond the ten recent rows. Clear the field or press Escape to restore
+the normal sections. Search does not scan unloaded transcript history.
+
 Chats has two layouts: **List** (one conversation beside your sessions) and **Tiles**
-(every session at once). Switch with the **List / Tiles** control in the Tiles header or
+(every session at once). Switch with the **Tiles** layout menu in the header or
 **Chat tiles** under **New chat** in the sidebar. **Settings → Chat → Layout → Default chat
 view** chooses which layout the Chats rail button opens. Tiles cover the selected bot
 profile's loaded recent, pinned, project, and active sessions; it is not a complete
@@ -489,12 +494,13 @@ by project or search titles and previews.
 
 Tiles have a compact status and age row, a two-line linked title, project context,
 and a readable preview of the most recent saved reply (read from the latest eight
-messages without activating the session). Working tiles show the current tool.
+messages without activating the session). Click anywhere on a tile to open its chat.
+Working tiles show the current tool and keep a steady order while they run.
 Search and project controls sit above the status filters, which scroll at narrow
 widths. Reply fields and tile outlines highlight keyboard focus and follow the
-selected skin. Cards appear and change status without fading. The header groups
-List/Tiles, shows bot avatars in the picker and its choices, and keeps New chat
-at the trailing edge. From a tile you can:
+selected skin. Cards appear and change status without fading. The header uses consistently
+sized compact controls, a layout menu, bot avatars in the picker and its choices,
+and New chat at the trailing edge. From a tile you can:
 
 - **Answer requests**: approvals and single-choice questions show their buttons
   (for example *Allow once* / *Deny*) and send through the same path as the notch.
@@ -503,6 +509,8 @@ at the trailing edge. From a tile you can:
   are disabled until its turn finishes.
 - **Stop** a working turn that Herm's gateway owns. Runs started in another process,
   such as `hermes chat` in a terminal, show progress but cannot be stopped from Herm.
+- **New chat** opens the regular composer in a modal above the tiles, using the
+  selected bot. **Open workspace** moves it into the full conversation workspace.
 - **Open** the full conversation by clicking the title. It opens in a sheet with the
   regular composer, attachments, and steering; **Open workspace** opens its full tools.
 
@@ -802,12 +810,13 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Share a sign-in.** Sessions of one Hermes profile share its browser and sign-ins. Other profiles (including bots) stay signed out until you share a site: on that site, More → **Share Sign-In for github.com** signs every profile's browser in, including ones already open, so Hermes can work there. More → **Shared Sign-Ins** lists the sites you share and stops sharing one; running browsers stay signed in until you sign out there. Shared cookies are encrypted at rest with a key kept in your Keychain, and browser profiles are readable only by you; deleting a session forgets its tab. More → **Sign Out of All Sites** signs every profile's browser out, including ones that were closed at the time. Regular web view tabs (when the agent browser is offline) always share one sign-in store.
 - **Typing and forms.** Dropdowns open as a native menu, the pointer changes over links and text, ⌘C, ⌘X, ⌘V, ⌘A, ⌘Z and ⌘⇧Z work in fields, and accents and input methods (⌥E E → é, Japanese, Chinese) compose in place.
 - **Downloads and permissions.** Files the agent browser downloads go to `~/Downloads/Herm`. Pages are refused location, notifications, camera, microphone, clipboard reading and similar permissions without a prompt.
-- **Links in chat** open their exact destination in that session's Browser tab, including while the browser is starting.
+- **Links in chat** open their exact destination in that session's Browser, including while the browser is starting. A different URL opens an additional tab without replacing the current page; clicking an already-open exact URL selects its tab. Loaded browser tabs show the webpage name; untitled pages keep the Browser label rather than displaying the URL.
 - **Sharp page rendering.** The shared browser renders at Retina density and streams lossless frames so small text stays clear. Frames decode off the UI thread and do not refresh the toolbar or surrounding workspace. Auto keeps one CSS pixel per point; fixed device previews scale down when the pane is narrower.
 - **Navigation feedback.** A spinner and slim loading track appear while pages load; Reload becomes Stop. Failed navigation offers Retry without shifting the page. Back and Forward reflect the active page’s history.
 - **Responsive browser controls.** The toolbar keeps navigation and the address on one row when space permits; phone-width panels give the address its own full-width row. **Auto** follows the panel’s live width without reloading the page. Phone, Tablet, and Desktop keep a fixed preview width. Annotate and Attach Page stay in the toolbar at every width, without duplicate entries in More; Local Previews is removed from Browser. Use ⌘L for the address and ⌘R to reload. Local addresses such as `localhost:5173` open directly; the actions menu includes Copy Address and Open in Default Browser.
 - **Offline notice.** If the agent browser can't start or keeps closing, a notice says Herm can't browse, and the tab falls back to a regular web view. Browser notices overlay the page below the toolbar so failures do not shift the page layout. Use **Retry**, reopen the tab, or reconnect Hermes to try again.
 - **Remote backends.** Hermes is pointed at the agent browser only in Local mode; with a remote backend its loopback address would reach the remote host instead.
+- **Dev servers over SSH.** In SSH mode, opening `http://localhost:<port>` (or `127.0.0.1`, `[::1]`, `*.localhost`) forwards that port from the SSH host with `ssh -L`, then loads the page. Ports 1024 and up are forwarded; tunnels last until Herm quits. If this Mac already uses the port, the tab says so instead of showing the Mac's server.
 - **Sharing the browser with other tools.** Each session's agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. Hermes follows the selected session's endpoint. A Chrome DevTools MCP configured with `--browserUrl=http://127.0.0.1:9333` stays attached to the session that acquired that port.
 
 ### iOS Simulator and Android Emulator
@@ -956,8 +965,11 @@ Herm adapts to the saved Gateway mode at launch, so choosing Remote, SSH, or Clo
 | Quota from Hermes-managed Codex logins and `.env` keys | Read from this Mac's Hermes home | Not read; keys pasted into Herm still work |
 | Kanban session attribution, delivery questions | Available | Off |
 | Agent browser handed to Hermes | Available | Off (the address would point at the remote host); you can still browse |
+| `localhost` pages in the Browser tab | This Mac's servers | SSH: forwarded from the remote host on the same port, so the agent's dev server URLs open as printed. Remote URL and Cloud: this Mac's servers |
 | iOS Simulator and Android Emulator for the agent | Available | Off; devices run on this Mac, out of the agent's reach |
-| Projects, Source Control, terminals, local previews | This Mac | This Mac only; remote project paths show as unavailable |
+| Terminals | This Mac | SSH: a shell on the remote host over `ssh`, opened in the project folder (or the remote home). Remote URL and Cloud: this Mac |
+| `@` file mentions | Backend (`complete.path`) | Backend (`complete.path`), so they list the remote host's files |
+| Projects, Source Control, local previews | This Mac | This Mac only; remote project paths show as unavailable |
 
 The SSH helper is bundled from Hermes Desktop's MIT-licensed, Electron-free lifecycle. To update it from an installed Hermes checkout, run `node Scripts/build-hermes-ssh-bridge.mjs /path/to/hermes-agent` with that checkout's existing build dependencies installed. Herm ships the generated helper and its license in its SwiftPM resource bundle.
 
