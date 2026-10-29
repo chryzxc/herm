@@ -1,14 +1,17 @@
 # Message pins
 
 Herm's message pin action is backed by Hermes Agent. User and assistant messages
-with a verified stored identity can be pinned. The conversation header's pin
-button opens the list; select a preview to jump to that message, including older
+with a verified stored identity can be pinned. The conversation actions menu's
+Pinned messages item opens the list; select a preview to jump to that message, including older
 history that has not been loaded yet.
 
 Bubble actions refresh their session target when a conversation resumes under a
 new runtime session ID, so retained messages can still be pinned after that change.
 An accepted pin completes even if the transcript view is replaced; leaving the
 conversation before the queued action starts cancels it.
+Completed updates open the list after verification. Mutation errors remain visible
+across refreshes until another attempt or conversation reset; a failed or mismatched
+reread cannot confirm whether Hermes saved the update.
 
 Pins are bookmarks for navigation. They do not keep a message in model context
 or protect it from deleting/rewinding its conversation. Context compression

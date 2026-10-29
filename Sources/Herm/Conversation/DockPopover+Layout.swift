@@ -138,9 +138,7 @@ extension DockPopover {
                 pinnedMessageJumpID = nil
                 handleSessionMetadataChange()
             }
-            .onChange(of: model.messagePinError) { _, error in
-                if error != nil && model.messagePinsSupported { isShowingMessagePins = true }
-            }
+            .modifier(MessagePinFeedbackPresentation(model: model, isPresented: $isShowingMessagePins))
             .onChange(of: model.currentSessionTitle) { _, _ in handleWorkspaceChange() }
             .onChange(of: controlCenter.projectSessions) { _, _ in
                 handleSessionMetadataChange()

@@ -23,6 +23,7 @@ extension DockModel {
         isLoadingMessagePins = false
         updatingMessagePinRowID = nil
         messagePinError = nil
+        messagePinMutationFeedback = nil
         storedMessageReferences = [:]
         submittedMessageIDForPin = nil
     }
@@ -58,7 +59,7 @@ extension DockModel {
             else { return }
             pinnedMessages = pins
             messagePinsSupported = true
-            messagePinError = nil
+            messagePinError = messagePinMutationFeedback?.error
         } catch {
             guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
             else { return }
@@ -70,6 +71,7 @@ extension DockModel {
             default:
                 messagePinError = "Pinned messages unavailable. \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
+            if let mutationError = messagePinMutationFeedback?.error { messagePinError = mutationError }
         }
     }
 
@@ -85,6 +87,8 @@ extension DockModel {
         else { return }
         let generation = sessionResumeGeneration
         let profile = sessionProfileID
+        messagePinMutationFeedback = nil
+        messagePinError = nil
         updatingMessagePinRowID = rowID
         defer { if generation == sessionResumeGeneration { updatingMessagePinRowID = nil } }
         do {
@@ -103,12 +107,29 @@ extension DockModel {
                 guard generation == sessionResumeGeneration else { return }
             }
             await refreshMessagePins()
+            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
+            else { return }
+            if !messagePinsSupported {
+                recordMessagePinFeedback(error: messagePinError ?? "Pinned messages unavailable.")
+            } else if pinnedMessageUIDs.contains(uid) != pinned {
+                recordMessagePinFeedback(
+                    error: "Hermes accepted the update, but the saved pin state could not be verified. "
+                        + "Refresh pinned messages to check.")
+            } else {
+                recordMessagePinFeedback(error: nil)
+            }
         } catch {
             guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
             else { return }
-            messagePinError =
-                "Could not \(pinned ? "pin" : "unpin") message. \(Self.safeUserDiagnostic(error.localizedDescription))"
+            recordMessagePinFeedback(
+                error: "Could not \(pinned ? "pin" : "unpin") message. "
+                    + Self.safeUserDiagnostic(error.localizedDescription))
         }
+    }
+
+    private func recordMessagePinFeedback(error: String?) {
+        messagePinError = error
+        messagePinMutationFeedback = MessagePinMutationFeedback(error: error)
     }
 
     func messageID(forPin pin: PinnedMessage) async -> UUID? {

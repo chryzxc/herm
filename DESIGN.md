@@ -1517,13 +1517,15 @@ Accepted pin operations belong to the conversation model and survive replacement
 of the disposable transcript projection. Revalidate the selected session and
 message before a queued pin starts.
 
-The conversation header's pin action opens a fixed-size popover with 12pt
+The conversation actions menu opens a fixed-size Pinned messages popover with 12pt
 titles and previews. Selecting a pin pages in older history if necessary and
 jumps to the exact original message; it never falls back to a nearby message.
 Refresh, loading, empty, unavailable, stale, and mutation errors stay inside
 this popover. A failed refresh retains existing pins with an error and disables
 mutations until a successful refresh. Mutations display pending state and
-change the pin projection only after Hermes confirms and is reread.
+change the pin projection only after Hermes confirms and is reread. A completed
+mutation opens the popover; failures remain visible across refreshes until a new
+attempt or conversation reset. An unmatched or unavailable reread is unverified.
 
 Pins follow the compression lineage's stable message identities. Explicit
 branches have independent pin sets. Profile or conversation changes discard
