@@ -905,7 +905,7 @@ month requests, and clears its cache on runtime changes. Selected-period project
 reused, long lists load lazily, and Spend's refresh stays pending until provider accounting
 also finishes.
 
-- **Work** shows what shipped each day: sessions, finished tasks, commits, automation runs, and cost. A month summary sits above the calendar; teal marks shipped work, blue sessions, violet automation, and amber failed runs.
+- **Work** shows what shipped each day: sessions, finished tasks, commits, automation runs, and cost. Its scroll content has 16pt trailing space; open Spend from the top Activity tab. A month summary sits above the calendar; teal marks shipped work, blue sessions, violet automation, and amber failed runs.
 - Today stays visible in every skin with a filled date badge, a stronger cell outline, and a light skin-accent tint, including when another date or range is selected.
 - The daily **Pull requests merged** section shows merged PR counts per repository, busiest first, above the individual PR links.
 - Day, Week, and Month share the same PR, task, commit, session, automation, and usage details. Week and Month show records and repository counts for their selected range, with dates on each row and Show more for longer lists; usage-only periods remain visible.
