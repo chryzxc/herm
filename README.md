@@ -509,6 +509,14 @@ while Herm is open. Switch sessions, pages, or bots and return to continue your
 draft. Drafts are separate for each bot/profile and are cleared when Herm quits.
 Drafts are saved during navigation; typing continues to update only the composer.
 
+The **Effort** control uses Hermes' model catalog to offer inputs for the selected
+provider and model. Unsupported or unverified availability is shown in place;
+open an unverified control to refresh. Session changes are confirmed by a Hermes
+readback, while a new-chat choice is a draft override and does not change the
+global default. Offered inputs are not a promise of the final provider wire level:
+Hermes or the provider may adjust them. When Hermes reports a different route
+entry mapping, the control shows both values (for example, Ultra → Max).
+
 The composer’s **@** picker shows each bot’s actual name, with its description when available. Hover or click the context gauge to see usage, the estimated category breakdown, and the runtime’s compaction threshold with remaining tokens in a popover, without a separate hover tooltip. Older runtimes show when the threshold is unavailable.
 
 - **Autocorrect in chat** is on by default. Change it in **Settings → Chat → Typing**. Native macOS spelling correction and continuous spell checking follow the languages available on your Mac; the setting applies immediately without replacing your draft or selection. It works without Apple Intelligence.

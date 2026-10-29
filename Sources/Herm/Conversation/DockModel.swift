@@ -238,8 +238,15 @@ final class DockModel: ObservableObject {
     @Published var sessionModelValue: String?
     @Published var isUpdatingSessionModel = false
     @Published var sessionReasoningVariant: HermesReasoningVariant?
+    @Published var sessionReasoningWire: String?
+    var sessionInfoSequencesBySessionID: [String: Int] = [:]
     @Published var isUpdatingSessionReasoning = false
     @Published var defaultReasoningVariant: HermesReasoningVariant?
+    @Published var draftReasoningVariant: HermesReasoningVariant?
+    @Published var sessionReasoningStale = false
+    @Published var effortCatalog: HermesEffortCatalog?
+    var sessionReasoningRevision = 0
+    var sessionReasoningMutationToken, sessionModelMutationToken: UUID?
     @Published var voiceState: HermesVoiceState = .inactive
     @Published var voiceTelemetry = VoiceTurnTelemetry()
     @Published var voiceSpokenCaption: String?

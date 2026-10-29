@@ -689,25 +689,19 @@ struct ChatComposerView: View {
                 .fill(DockSkinPresentation.current.composerControlFill)
         )
         .frame(height: 32)
-        .disabled(model.isUpdatingSessionModel)
+        .disabled(model.isUpdatingSessionModel || model.isUpdatingSessionReasoning)
         .help("Select model")
     }
 
     private var composerReasoningPicker: some View {
-        // Thinking depth variant selector menu
-        DockMenu {
-            DockMenuChoices(selection: reasoningVariantSelection) {
-                ForEach(HermesReasoningVariant.allCases) { variant in
-                    DockMenuOption(variant.displayName, value: Optional(variant))
-                }
-            }
-        } label: {
+        ComposerEffortPicker(model: model, modelID: selectedModelOptionID, selection: reasoningVariantSelection) {
+            status in
             // A plain button-style menu renders this SwiftUI
             // label as drawn; a borderless menu keeps only native
             // text and images and drops custom icon views.
             HStack(spacing: 6) {
                 DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
-                Text(sessionReasoningDisplayName)
+                Text(status)
                     .dockFont(.control)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
@@ -722,11 +716,7 @@ struct ChatComposerView: View {
             .frame(height: 32)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.dockHover)
         .fixedSize()
-        .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
-        .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
-        .help("Select thinking depth")
     }
 
     private func beginDictation() {
@@ -850,7 +840,7 @@ struct ChatComposerView: View {
     private var sessionReasoningDisplayName: String {
         let reasoning =
             model.sessionID == nil
-            ? model.defaultReasoningVariant
+            ? (model.draftReasoningVariant ?? model.defaultReasoningVariant)
             : model.sessionReasoningVariant
         return reasoning?.displayName ?? "Loading…"
     }
@@ -866,7 +856,8 @@ struct ChatComposerView: View {
     }
 
     private var selectedReasoningVariant: HermesReasoningVariant? {
-        model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
+        model.sessionID == nil
+            ? (model.draftReasoningVariant ?? model.defaultReasoningVariant) : model.sessionReasoningVariant
     }
 
     private var reasoningVariantSelection: Binding<HermesReasoningVariant?> {
