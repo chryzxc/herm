@@ -303,7 +303,7 @@ struct GitHubRepositoryOverview: View {
                                     .appendingPathComponent(commit.sha)
                             ) {
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                    Text(String(commit.sha.prefix(7))).dockFont(.machineMetadata)
+                                    DockCommitIdentifier(revision: commit.sha)
                                         .foregroundStyle(Color.dockAccent)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(commit.title).dockFont(.body, weight: .medium)

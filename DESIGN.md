@@ -463,7 +463,7 @@ These are disclosures with the same bounded inline scroll area as Changes and PR
 Rail disclosures align their caret and 14pt icon to the first title row, keeping
 wrapped titles, task summaries, and secondary metadata below that shared line.
 Pull requests uses the same section disclosure, icon, count, and 280pt list cap;
-individual PR rows retain their own inline details inside it.
+individual PR rows show inline details without a second disclosure and open dedicated inspector tabs.
 PR membership requires an explicit URL in the selected chat/tool input or a single-PR
 result from a targeted `gh pr` operation. Broad list, search, and history results do
 not establish membership. Live tool activity must have a mounted response owned by
@@ -474,9 +474,9 @@ session ID. Pins retain their existing session/profile/generation guards, and ou
 are filtered by their scoped session identity. Restoring or unselected chats omit summaries.
 Output file rows use the shared `ArtifactFileIcon` renderer at the compact row size;
 links and interactive outputs retain their semantic icons. Output rows preview images
-or local text on expansion; interactive outputs remain in
-Artifacts. View all outputs selects the third panel's Artifacts tab. Pin rows expand
-their preview before an explicit Show in chat jump. Respond in chat reveals the pending
+or local text in a dedicated preview tab. View all outputs selects the third panel's
+Artifacts tab. Pin rows show their preview and author inline and jump directly to the message.
+Respond in chat reveals the pending
 request at the transcript tail and focuses the composer; the rail never duplicates approval or credential submission controls.
 Outputs refresh on mount, after a turn, and on manual refresh using ArtifactIndexStore;
 failures retain prior outputs with an unavailable state. Session/profile identity and
@@ -504,15 +504,13 @@ Git status describes the worktree, so sessions sharing it share local edits; the
 does not infer which session authored each change.
 New files contribute to the file count; the count tooltip explains that untracked
 and binary lines are excluded. Without readable line counts, show the file count.
-Changes and PR rows are disclosures: ordinary rail clicks only expand or collapse
-inline quick views. Changes discloses changed files; each file discloses the shared
-native diff canvas without review/navigation controls. PRs disclose branch, author,
-readiness, and line counts. Every expanded detail area (Changes, PRs, and individual
-files) uses the same 280pt maximum scroll height, shrinking to fit shorter content.
+Changes and the PR group are disclosures. Changes discloses changed files; selecting a file
+opens its session preview tab. PR rows show branch, author, readiness, and line counts
+inline and open closable session-scoped tabs. Expanded Changes and PR details use the
+same 280pt maximum scroll height, shrinking to fit shorter content.
 Keep View all changes below the bounded file list so it stays available during scrolling.
-Only explicit links inside expanded content open the
-full inspector: View all changes selects Source Control, and View in GitHub panel
-selects GitHub. These links never change the center's Chat mode. Inspector requests
+View all changes selects Source Control; activating a PR opens its own full detail tab
+without changing the fixed GitHub selection. These actions never change the center's Chat mode. Inspector requests
 are scoped to session identity and consumed after tab restoration. Clean repositories
 omit the row; unavailable snapshots show an in-card retry note. The transcript's native
 scroll viewport spans the full session panel, with its scrollbar at the outer right
@@ -764,6 +762,13 @@ The composer keeps text entry and send/stop as its strongest interaction. Group
 attachments and queued work in the existing tray; constrain their growth and disclose
 detail in place. Model settings, context usage, and workspace metadata remain
 secondary. Do not move the input or navigation targets merely on hover.
+
+The composer and session rail share the Effort selector. Show pending,
+unsupported, unverified and stale states in its existing slot; refresh stale
+state without repeating a write. Choices represent Hermes-offered inputs, not
+an inferred final provider wire level, and a draft choice never changes the
+global default. Show a differing Hermes route entry mapping beside the selected
+input, including in its accessibility label, without claiming the final wire level.
 
 Within a control tab, use this hierarchy:
 
@@ -1393,6 +1398,14 @@ hides the roster when both panels would crowd the scene.
 
 ### Navigation sidebar
 
+A fixed Search sessions field below the Bot header filters loaded session titles,
+previews, and project names case-insensitively in the selected Bot scope. Nonempty
+search replaces the normal sections with deduplicated results in newest-first order,
+including pins and project sessions, independent of section disclosure and the recent
+row limit. A count and no-match state describe loaded sessions; projection failures
+remain visible. Clearing search or pressing Escape restores existing disclosures.
+Search is transient presentation state and does not fetch transcript history.
+
 The bottom connection indicator opens a quick-action popover in every connection
 state. Show Herm's backend connection separately from the local default-profile
 messaging gateway. Reuse General's gateway status, refresh, confirmed restart,
@@ -1579,8 +1592,16 @@ opens at the top when the category changes.
   Test both HTTP and WebSocket access without changing the active backend.
   Save applies after restart; Save and restart Herm requires confirmation
   because draft text and the current session view are cleared. Startup remote
-  environment overrides are read-only. Gateway's messaging service and local
-  repository/terminal maintenance continue to target this Mac.
+  environment overrides are read-only. The launch mode is the single gate
+  (`GatewayConnectionStore.isLocalBackend`): outside Local, runtime info
+  comes from backend REST, and features that read this Mac's Hermes home or
+  loopback (agent updates, messaging gateway status, Hermes-home quota
+  credentials, Kanban attribution, delivery questions, agent-browser handoff)
+  show an honest remote-host message or stay off. Repository tools continue
+  to target this Mac. In SSH mode terminals open a login shell on the host,
+  and Browser tab `localhost` loads forward the same port with `ssh -L`
+  (`SSHPortForwards`); a port already used on this Mac fails in the tab's
+  error slot rather than showing the wrong server.
 - **Skins gallery.** Compact tiles show a miniature material/type/selection
   specimen, the Herm skin name, a short material signature, and one line for
   the mode plus "Active in Hermes" when it applies. Specimens use the target
@@ -2491,6 +2512,10 @@ events, and main-agent tool activity.
   Copy hash, and Open on GitHub when a GitHub remote exists. Author uses 12pt
   semibold above secondary email and date metadata. A ten-character monospaced hash
   sits beside Copy hash, which copies the full hash; hover reveals the full value.
+  Commit identifiers throughout repository and pull request views use shared scaled
+  code typography. Inline check status requires current evidence for the exact
+  repository and revision; missing checks have no indicator and incomplete checks
+  never imply a pass. Existing commit and compare links retain their destinations.
   Actions wrap in narrow cards. A divider separates the file summary, with counts
   aligned to the trailing edge; empty commits read “No files changed” without +0/−0.
   Header icon actions
@@ -3127,8 +3152,8 @@ empty, loading, stale, unavailable, and retry states retain the same card contai
 Summaries use the shared `MarkdownMessageView` at body size, preserving paragraph
 and list breaks. Generation requests a short overview and 2–3 bullets with bold
 labels, up to 90 words, focusing on concrete changes rather than repeating totals.
-Apple Intelligence attribution uses the shared `OnDeviceAssistNotice`: a small
-neutral inset surface, an orange info icon from `DockAccentColor.orange.color`,
+Apple Intelligence attribution uses the shared `OnDeviceAssistNotice`: a content-width
+neutral badge with 6pt horizontal and 3pt vertical padding, a 12pt orange info icon from `DockAccentColor.orange.color`,
 and unchanged `dockMetadataText` body text. Reuse it for Activity and notch
 summaries, automatic title information, and Apple Intelligence settings.
 Generated summaries show “Generated by Apple Intelligence” with help explaining
@@ -3379,26 +3404,62 @@ cannot replace a newer profile. Pairing and authorization work is cancelled when
 owning context closes. Existing profile-scoped bot/routine repair dialogs are retained.
 
 
-### Chats grid view
+### Chats tiles view
 
-Chats offers List and Grid layouts only through Settings → Chat → Layout. Store the layout preference locally; returning
+Chats offers List and Tiles layouts. Settings → Chat → Layout stores the default layout locally; the header's Tiles layout menu and the sidebar's Chat tiles row switch for the moment without changing that default; returning
 to Chats or reopening Herm restores it. There is one Chats rail destination, selected
-for either layout. Explicit session links and New chat open the conversation workspace
+for either layout. Explicit session links and sidebar New chat open the conversation workspace
 without overwriting the preferred layout. The grid's page title is Chats, with New chat
 and Bot controls and no modal Close action. Use `DockExpandedPage`
-for the title row and a full-width adaptive grid (320pt minimum card width,
-16pt gaps). Filters sit above the grid. Every card exposes its status, project,
-latest activity, pending request details, and a 130pt scrollable Markdown update.
+for the title row and a full-width adaptive grid (320pt minimum card width, no maximum so
+columns always fill the row; 16pt gaps) under collapsible `DockSectionHeader` groups with counts;
+Recent starts collapsed. A quiet two-row toolbar puts a skin-shaped search field
+and project `DockMenuPicker` above the `DockSegmentedPicker` status filters and
+counts. Status filters scroll horizontally when the full set cannot fit. Header
+controls use a single outlined layout menu with a grid icon and Tiles label,
+with List and Tiles choices and a checkmark for the current layout. There is no
+tab strip or selection bar. The bot picker follows, then New chat with a plus icon.
+Refresh, layout, bot, and New chat share the compact 28pt toolbar size and 8pt gaps;
+the selected avatar is 18pt so it fits within that height. Narrow panels split
+controls into navigation and conversation-action rows when needed.
+The outlined bot menu shows the selected avatar beside its name and
+avatars with a selection check in the choices. It reuses sidebar avatar images
+and deterministic fallback faces, with skin-owned shapes and semantic colors.
+A manual refresh keeps loaded tiles current; only a failed refresh marks them not current.
+
+Cards lead with a compact status row: `DockActivityIndicator`, actionable status,
+current tool when working, relative age, and an open `DockIconButton`. Recent
+sessions omit passive idle labels. Below it, a full-width, two-line semibold title
+uses `.dockLink` to open the conversation sheet, with project metadata on its own
+line when available. A fixed 64pt update slot shows up to four lines of the latest
+reply as inline Markdown (links kept), with full text on hover and no nested scroll.
+A pending `DockModel.sessionAttention` request grows this area so answer buttons
+are never clipped (first choice `.dockPrimary`, others `.dockSecondary`, Deny
+destructive). Answers use `answerAttention` and the shared answer-state message.
+The footer uses a 36pt skin-shaped reply field (`dockControlSurface`) with an inline
+prominent send icon via `sendQuickMessage`, disabled with a reason while working
+or unavailable. Working gateway-owned turns offer Stop via
+`HermesWorkflowRPC.stopSession`. Keyboard focus strengthens the input and card
+outline. Errors pass through `safeSummary` and appear in the footer.
 Visible cards read a bounded tail of saved messages without resuming sessions.
 Respond opens a separate conversation sheet; no empty chat pane occupies the grid.
-Cards use shared surface and border tokens, 10pt corners, and 16pt insets. Hover
-lifts a card by 2pt and gently changes its surface and border over 160ms. Status
-changes transition over 200ms. Card positions use stable profile/session identities and a damped 550ms spring
-when refreshes reorder them; insertions and removals fade. Reduce Motion and skins
-without animation disable movement. Runtime aliases reconcile to saved session keys,
+New chat starts a fresh conversation with the selected bot in that same sheet,
+keeping the tiles visible behind it. It renders the regular composer and transcript;
+Open workspace switches to the full conversation workspace. Closing the sheet does
+not send a message or discard its unsent draft. Profile changes dismiss the sheet.
+Cards use shared surface and border tokens, skin-owned pane geometry, and 16pt insets. Hover
+gently changes the surface and border over 160ms; cards do not lift. Status
+changes appear immediately without a fade. Card positions use stable profile/session
+identities and a damped 800ms spring (0.9 damping) when refreshes reorder them. Running
+cards sort by start time, not last update, so polling never reshuffles them. All
+sections share one grid; a card changing section is re-created in its new slot rather
+than gliding, so no outgoing copy keeps a stale status. Insertions and removals appear
+immediately without fading or scaling. Reduce Motion and skins without animation
+disable movement. Clicking anywhere on a card opens its chat; there is no separate open
+button, and the reply field, Stop and approval buttons keep their own clicks. Runtime aliases reconcile to saved session keys,
 so one conversation has one card without merging unrelated chats with matching titles.
-Filters share one toolbar at wide sizes and wrap at narrow sizes. Reply actions
-share the footer with freshness; generated replies use their readable text projection.
+Filters retain their two-row hierarchy across widths. Reply actions stay in the
+footer; generated replies use their readable text projection.
 The title subtitle owns loading and stale notices, keeping content geometry stable.
 
 Order the continuous grid by Needs you (approval, clarification, failure),
@@ -3803,3 +3864,14 @@ check stays in the existing Updates error state and does not replace the install
 User-message bubbles follow the selected text size, including when it changes while a chat is open. Short prompts hug their text from the first layout, without briefly stretching across the chat.
 
 Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.
+
+Pull request details keep navigation tabs in a separate row above a labeled actions row. Actions wrap in narrow panes; review-guide access stays in the actions menu.
+
+Markdown website links reuse an open tab with the exact destination URL. Otherwise,
+an empty primary Browser opens the link; an occupied primary Browser keeps its page
+and the link opens in a selected additional browser tab. Pending agent navigation
+is preserved. GitHub overview links retain their native inspector routing.
+
+Primary and additional Browser tabs show the live webpage title, updating when
+the page name changes. Empty, untitled, and URL-only titles retain the generic
+Browser label (with the existing number for additional tabs).

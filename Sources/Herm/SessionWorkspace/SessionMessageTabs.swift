@@ -53,6 +53,7 @@ enum SessionPreviewContent {
     case activity(ChatMessage, [ActiveToolCall])
     case output(ArtifactRecord)
     case file(URL)
+    case pullRequest(GitHubItemReference)
 
     var key: String {
         switch self {
@@ -63,6 +64,7 @@ enum SessionPreviewContent {
         case .activity(let message, _): "activity:" + message.id.uuidString
         case .output(let record): "output:" + record.id
         case .file(let url): "file:" + url.path
+        case .pullRequest(let reference): "pullRequest:" + reference.id
         }
     }
 
@@ -75,6 +77,7 @@ enum SessionPreviewContent {
         case .activity: "Activity"
         case .output(let record): record.label
         case .file(let url): url.lastPathComponent
+        case .pullRequest(let reference): reference.title
         }
     }
 
@@ -87,6 +90,7 @@ enum SessionPreviewContent {
         case .activity: .chartBarHorizontal
         case .output(let record): record.kind == .interactive ? .squaresFour : record.kind == .link ? .link : .file
         case .file: .file
+        case .pullRequest: .gitPullRequest
         }
     }
 }

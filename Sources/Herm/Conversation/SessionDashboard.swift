@@ -8,13 +8,16 @@ struct SessionDashboard<Conversation: View>: View {
     @ObservedObject private var seen = SidebarSessionSeenStore.shared
     @State private var selection = SessionDashboardSelection()
     @State private var showsConversation = false
+    @State private var isNewConversation = false
     let onNewConversation: () -> Void
     let onOpenWorkspace: () -> Void
+    let onShowList: () -> Void
     @ViewBuilder let conversation: () -> Conversation
 
     init(
         model: DockModel, bots: BotModeModel, control: ControlCenterModel, store: WorkspaceStore,
         onNewConversation: @escaping () -> Void, onOpenWorkspace: @escaping () -> Void,
+        onShowList: @escaping () -> Void,
         @ViewBuilder conversation: @escaping () -> Conversation
     ) {
         self.model = model
@@ -22,6 +25,7 @@ struct SessionDashboard<Conversation: View>: View {
         self.control = control
         self.onNewConversation = onNewConversation
         self.onOpenWorkspace = onOpenWorkspace
+        self.onShowList = onShowList
         self.conversation = conversation
         _sidebar = StateObject(wrappedValue: SessionNavSidebarModel(model: model, control: control, store: store))
     }
@@ -31,6 +35,9 @@ struct SessionDashboard<Conversation: View>: View {
         guard model.isHermesConnected else { return false }
         switch snapshot.inputs.sessionProjectionState {
         case .ready, .empty: return true
+        // A manual refresh marks loaded rows stale; they stay current until it fails,
+        // so tiles do not blank their status and reload on every refresh.
+        case .stale: return model.isLoadingSessions
         default: return false
         }
     }
@@ -39,6 +46,7 @@ struct SessionDashboard<Conversation: View>: View {
         guard model.isHermesConnected else { return "Disconnected · activity is not current" }
         switch snapshot.inputs.sessionProjectionState {
         case .loading: return "Loading sessions…"
+        case .stale where model.isLoadingSessions: return "All projects in the selected bot · updates every 10 seconds"
         case .stale, .unavailable, .failed: return "Activity is not current · refresh to retry"
         case .ready, .empty: return "All projects in the selected bot · updates every 10 seconds"
         }
@@ -49,31 +57,20 @@ struct SessionDashboard<Conversation: View>: View {
     var body: some View {
         DockExpandedPage(
             title: "Chats", subtitle: subtitle,
-            onRefresh: refresh, isRefreshing: model.isLoadingSessions, showsClose: false, close: {}
+            showsClose: false, close: {}
         ) {
-            Button("New chat", action: onNewConversation).buttonStyle(.dockPrimary)
-                .disabled(selection.isLoading)
-            Picker(
-                "Bot",
-                selection: Binding(
-                    get: { bots.selectedProfileID ?? "default" },
-                    set: { bots.selectProfile($0) }
-                )
-            ) {
-                if bots.bots.isEmpty {
-                    Text(model.agentDisplayName).tag(bots.selectedProfileID ?? "default")
-                }
-                ForEach(bots.bots.filter { !$0.isHidden }) { bot in Text(bot.name).tag(bot.id) }
-            }
-            .frame(maxWidth: 180)
-            .disabled(selection.isLoading)
+            SessionDashboardToolbar(
+                bots: bots, fallbackName: model.agentDisplayName,
+                isLoading: selection.isLoading, isRefreshing: model.isLoadingSessions,
+                onRefresh: refresh, onShowList: onShowList, onNewConversation: newConversation)
         } content: {
             sessionList
         }
         .dockSheet(isPresented: $showsConversation) {
             DockExpandedPage(
-                title: selection.session?.displayTitle ?? "Conversation",
-                subtitle: "Respond to this session", close: { showsConversation = false }
+                title: conversationTitle,
+                subtitle: isNewConversation ? "Start a conversation" : "Respond to this session",
+                close: { showsConversation = false }
             ) {
                 conversationPane
             }
@@ -87,6 +84,7 @@ struct SessionDashboard<Conversation: View>: View {
         .onChange(of: snapshot.inputs.sessionProjectionState) { _, _ in baseline() }
         .onChange(of: model.profileScopeID) { _, _ in
             selection = SessionDashboardSelection()
+            isNewConversation = false
             showsConversation = false
         }
     }
@@ -94,15 +92,15 @@ struct SessionDashboard<Conversation: View>: View {
     private var sessionList: some View {
         SessionDashboardList(
             sidebar: sidebar, selection: selection, isCurrent: isCurrent, onSelect: select,
-            client: model.controlRPCClient
+            client: model.controlRPCClient, model: model
         ).equatable().id(model.profileScopeID)
     }
 
     private var conversationPane: some View {
         VStack(spacing: 0) {
-            if let session = selection.session {
+            if isNewConversation || selection.session != nil {
                 HStack {
-                    Text(session.displayTitle).dockFont(.body, weight: .semibold).lineLimit(1)
+                    Text(conversationTitle).dockFont(.body, weight: .semibold).lineLimit(1)
                     Spacer(minLength: 8)
                     Button("Open workspace") {
                         showsConversation = false
@@ -119,7 +117,9 @@ struct SessionDashboard<Conversation: View>: View {
                     conversation()
                 } else {
                     emptyState("Conversation unavailable", detail: "Reload this session before responding.")
-                    Button("Retry") { select(session) }.buttonStyle(.dockSecondary)
+                    if let session = selection.session {
+                        Button("Retry") { select(session) }.buttonStyle(.dockSecondary)
+                    }
                     Spacer()
                 }
             } else {
@@ -130,10 +130,15 @@ struct SessionDashboard<Conversation: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var conversationTitle: String {
+        isNewConversation ? model.currentSessionTitle ?? "New chat" : selection.session?.displayTitle ?? "Conversation"
+    }
+
     private var canRespond: Bool {
-        selection.canRespond(
-            activeSessionID: model.navigationSessionID, activeProfileID: model.sessionProfileID,
-            profileID: model.profileScopeID)
+        isNewConversation
+            || selection.canRespond(
+                activeSessionID: model.navigationSessionID, activeProfileID: model.sessionProfileID,
+                profileID: model.profileScopeID)
     }
 
     private func emptyState(_ title: String, detail: String) -> some View {
@@ -144,7 +149,15 @@ struct SessionDashboard<Conversation: View>: View {
         .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
+    private func newConversation() {
+        selection = SessionDashboardSelection()
+        isNewConversation = true
+        onNewConversation()
+        showsConversation = true
+    }
+
     private func select(_ session: HermesSession) {
+        isNewConversation = false
         let generation = selection.begin(session)
         showsConversation = true
         Task {

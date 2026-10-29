@@ -398,8 +398,8 @@ outputs, pinned messages, and the current workspace alongside Changes and PRs.
 Tasks share the composer's status indicators and ordering: in-progress tasks first,
 pending next, and completed or cancelled tasks last. The active task remains visible
 in the Tasks summary and uses a highlighted row and progress indicator when expanded.
-Empty sections stay hidden. Expand a row for details; **Respond in chat** reveals
-the existing request at the end of chat and focuses the composer, **Show in chat** jumps to a pinned message, and
+Empty sections stay hidden. Expand a section for details; **Respond in chat** reveals
+the existing request at the end of chat and focuses the composer, a pinned item jumps to its message, and
 **View all outputs** opens Artifacts in the third panel. Output rows use the shared
 file-type icons for images, documents, archives, and code. Outputs reuse the shared
 artifact index and refresh after a turn or from the rail's refresh action.
@@ -419,17 +419,16 @@ The icon has no background and highlights when the rail is open. Its floating
 cards sit over the same continuous conversation background, with the conversation's
 scrollbar at the far-right edge beyond the rail. The rail discovers PR
 links in loaded conversation messages and targeted PR tool activity, fetches their GitHub details,
-and expands PR details in place. Refresh updates details; missing access shows
+and shows PR details inline. Refresh updates details; missing access shows
 an unavailable state. The rail uses a quiet repository card with compact PR rows
 and a **Changes** row when that session's repository has local edits. The wider card
 hides the PR section when no PRs are linked, and shows one empty state when no section
 has data. Click Changes to expand the file list, then a file to
-preview its diff in the rail. PR rows expand quick details in the card too. Every
+open it in a session preview tab. PR rows show quick details in the card. Every
 expanded detail area has a 280pt maximum height and scrolls longer content inside
 the card; short content keeps its natural height. **View all changes** remains below the file list.
-Use
-**View all changes** or **View in GitHub panel** inside the expanded section to
-select the existing tab in the third panel; the center stays on Chat. Counts show
+Use **View all changes** to select Source Control, or activate a PR row to open a
+separate, closable PR tab in the third panel; the center stays on Chat. Counts show
 tracked text additions/deletions against HEAD; new and binary files remain included in the file count. The card's actions menu
 refreshes both GitHub and repository data. Hide the rail to give the conversation
 its full width.
@@ -475,32 +474,47 @@ unavailable items, and links to anchors or subpages retain the browser fallback.
 
 ### Chat views
 
-Open **Settings → Chat → Layout → Default chat view** and choose **Grid** to monitor sessions
-across projects in the selected bot profile. The grid is an alternate Chats layout,
-not a separate destination. Choose **List** in the same setting to return to the conversation layout.
-Your choice is remembered when reopening Chats or Herm. **New chat** opens the
-usual composer; **Respond** keeps you in the grid with a conversation sheet. Choose a bot, filter by project, or
-search session titles and previews. Sessions can be filtered by **Needs you**,
-**Ready to review**, **In progress**, and **Recent**, using the same runtime and
-unread states as Chats. The dashboard includes the loaded recent, pinned,
-project, and active-session inventories; it is not a complete historical archive.
+The chat sidebar has a **Search sessions** field for loaded session titles, previews,
+and project names in the selected bot scope. Results include pinned and project
+conversations beyond the ten recent rows. Clear the field or press Escape to restore
+the normal sections. Search does not scan unloaded transcript history.
 
-Grid view fills Chats with an adaptive grid of session cards. Each card
-shows status, project, latest activity, and pending approval or question details.
-Visible cards automatically read the latest eight saved message rows and display
-the most recent reply (up to 8,000 characters) in a scrollable Markdown area,
-without activating the session. Failed reads retain the preview with an unavailable
-notice. Generated replies show readable content instead of their JSON payload.
-Runtime aliases share one card with their saved conversation. Cards glide into new
-positions as priorities change, respecting Reduce Motion and the selected skin.
-The compact toolbar wraps and the grid reduces its columns in narrow windows.
+Chats has two layouts: **List** (one conversation beside your sessions) and **Tiles**
+(every session at once). Switch with the **Tiles** layout menu in the header or
+**Chat tiles** under **New chat** in the sidebar. **Settings → Chat → Layout → Default chat
+view** chooses which layout the Chats rail button opens. Tiles cover the selected bot
+profile's loaded recent, pinned, project, and active sessions; it is not a complete
+historical archive.
 
-**Respond** opens the existing conversation controls in a sheet for approvals,
-clarification answers, attachments, steering, and stopping work. Replies become
-available only after that session loads successfully. **Open workspace** opens
-the selected session's full tools. Unsent drafts follow the existing
-session draft behavior. Activity refreshes with the workspace's ten-second poll;
-disconnected or failed session reads retain the list with a not-current notice.
+Tiles are grouped into **Needs you** (approval, question, failure), **In progress**,
+**Ready to review**, and **Recent** (collapsed by default), using the same runtime and
+unread states as Chats. The status filter shows each group's count; you can also filter
+by project or search titles and previews.
+
+Tiles have a compact status and age row, a two-line linked title, project context,
+and a readable preview of the most recent saved reply (read from the latest eight
+messages without activating the session). Click anywhere on a tile to open its chat.
+Working tiles show the current tool and keep a steady order while they run.
+Search and project controls sit above the status filters, which scroll at narrow
+widths. Reply fields and tile outlines highlight keyboard focus and follow the
+selected skin. Cards appear and change status without fading. The header uses consistently
+sized compact controls, a layout menu, bot avatars in the picker and its choices,
+and New chat at the trailing edge. From a tile you can:
+
+- **Answer requests**: approvals and single-choice questions show their buttons
+  (for example *Allow once* / *Deny*) and send through the same path as the notch.
+  Multi-question requests ask you to open the chat.
+- **Reply** to an idle session without switching chats. Replies to a working session
+  are disabled until its turn finishes.
+- **Stop** a working turn that Herm's gateway owns. Runs started in another process,
+  such as `hermes chat` in a terminal, show progress but cannot be stopped from Herm.
+- **New chat** opens the regular composer in a modal above the tiles, using the
+  selected bot. **Open workspace** moves it into the full conversation workspace.
+- **Open** the full conversation by clicking the title. It opens in a sheet with the
+  regular composer, attachments, and steering; **Open workspace** opens its full tools.
+
+Activity refreshes with the workspace's ten-second poll; disconnected or failed reads
+keep the tiles with a not-current notice.
 
 ### Chat composer
 
@@ -508,6 +522,14 @@ Chat keeps unsent text, attachments, context, and reply quotes with each session
 while Herm is open. Switch sessions, pages, or bots and return to continue your
 draft. Drafts are separate for each bot/profile and are cleared when Herm quits.
 Drafts are saved during navigation; typing continues to update only the composer.
+
+The **Effort** control uses Hermes' model catalog to offer inputs for the selected
+provider and model. Unsupported or unverified availability is shown in place;
+open an unverified control to refresh. Session changes are confirmed by a Hermes
+readback, while a new-chat choice is a draft override and does not change the
+global default. Offered inputs are not a promise of the final provider wire level:
+Hermes or the provider may adjust them. When Hermes reports a different route
+entry mapping, the control shows both values (for example, Ultra → Max).
 
 The composer’s **@** picker shows each bot’s actual name, with its description when available. Hover or click the context gauge to see usage, the estimated category breakdown, and the runtime’s compaction threshold with remaining tokens in a popover, without a separate hover tooltip. Older runtimes show when the threshold is unavailable.
 
@@ -556,7 +578,7 @@ Hermes Agent Desktop [also documents voice mode](https://hermes-agent.nousresear
 
 Wide pull request summaries separate the description/activity column from the details sidebar with a themed vertical hairline.
 
-- The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. The header first compacts into one row, then uses left-aligned tabs above compact actions at phone-like widths, keeping every action available. Compact tabs omit line totals, which remain in the summary. Expand Changes for file categories and partial-coverage notices. The Merge dropdown opens protected landing controls from the toolbar.
+- The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. The header separates the tabs from a labeled pull request actions row, which wraps in narrow panes. Compact tabs omit line totals, which remain in the summary. Expand Changes for file categories and partial-coverage notices. The Merge dropdown opens protected landing controls from the toolbar.
 - On the standalone Pull Requests page, a floating bottom-right **Chat** panel uses the session chat’s composer, message bubbles, activity, and reply actions. Minimized and expanded chat float over the page without reserving a bottom strip. PR content remains visible around the panel in Summary, Changes, and Reviews. Each PR links to its own Hermes session under the default bot profile; reopening the PR, including after restarting Herm, resumes that conversation. PR context accompanies messages, and the selected workspace conversation and attachments stay separate. Minimize the panel or open its linked conversation in the workspace.
 - PR tabs inside a session use the existing session chat instead of a floating panel. **Attach to chat** adds the PR as a removable context chip without sending, switching sessions, or replacing your draft. Reattaching refreshes the chip. The standalone Pull Requests page hides this action.
 - Attached context appears once in the composer’s removable chip tray. PRs, browser pages, files, and other context no longer also insert a copy into your message text. Existing inline context moves to the tray without losing its contents.
@@ -586,6 +608,7 @@ Wide pull request summaries separate the description/activity column from the de
 - Readiness keeps state, check, review, and merge facts in the summary side column. The Merge toolbar dropdown opens requirements and landing controls; narrow panes stack the sections. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
 - Activity and discussion entries show the author’s GitHub avatar when available.
 - Pull request Activity shows a clickable short commit hash. Select it to review that commit’s changed files and diffs in Herm.
+- Commit identifiers use a shared code style. Check status appears only for verified current checks on the exact repository and revision; incomplete or unavailable results are never presented as a pass.
 - Discussion, review bodies, inline threads, replies, thread resolution, approval, and request-changes use the common Markdown renderer. Changed lines have line numbers and a context-menu comment action.
 - GitHub recovery links in readiness and landing use compact themed buttons with an external-link icon.
 - GitHub detail metadata uses compact label/value rows, with wrapping pills and section-specific recovery actions. Merge method and landing actions share a wrapping control row.
@@ -794,11 +817,13 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Share a sign-in.** Sessions of one Hermes profile share its browser and sign-ins. Other profiles (including bots) stay signed out until you share a site: on that site, More → **Share Sign-In for github.com** signs every profile's browser in, including ones already open, so Hermes can work there. More → **Shared Sign-Ins** lists the sites you share and stops sharing one; running browsers stay signed in until you sign out there. Shared cookies are encrypted at rest with a key kept in your Keychain, and browser profiles are readable only by you; deleting a session forgets its tab. More → **Sign Out of All Sites** signs every profile's browser out, including ones that were closed at the time. Regular web view tabs (when the agent browser is offline) always share one sign-in store.
 - **Typing and forms.** Dropdowns open as a native menu, the pointer changes over links and text, ⌘C, ⌘X, ⌘V, ⌘A, ⌘Z and ⌘⇧Z work in fields, and accents and input methods (⌥E E → é, Japanese, Chinese) compose in place.
 - **Downloads and permissions.** Files the agent browser downloads go to `~/Downloads/Herm`. Pages are refused location, notifications, camera, microphone, clipboard reading and similar permissions without a prompt.
-- **Links in chat** open their exact destination in that session's Browser tab, including while the browser is starting.
+- **Links in chat** open their exact destination in that session's Browser, including while the browser is starting. A different URL opens an additional tab without replacing the current page; clicking an already-open exact URL selects its tab. Loaded browser tabs show the webpage name; untitled pages keep the Browser label rather than displaying the URL.
 - **Sharp page rendering.** The shared browser renders at Retina density and streams lossless frames so small text stays clear. Frames decode off the UI thread and do not refresh the toolbar or surrounding workspace. Auto keeps one CSS pixel per point; fixed device previews scale down when the pane is narrower.
 - **Navigation feedback.** A spinner and slim loading track appear while pages load; Reload becomes Stop. Failed navigation offers Retry without shifting the page. Back and Forward reflect the active page’s history.
 - **Responsive browser controls.** The toolbar keeps navigation and the address on one row when space permits; phone-width panels give the address its own full-width row. **Auto** follows the panel’s live width without reloading the page. Phone, Tablet, and Desktop keep a fixed preview width. Annotate and Attach Page stay in the toolbar at every width, without duplicate entries in More; Local Previews is removed from Browser. Use ⌘L for the address and ⌘R to reload. Local addresses such as `localhost:5173` open directly; the actions menu includes Copy Address and Open in Default Browser.
 - **Offline notice.** If the agent browser can't start or keeps closing, a notice says Herm can't browse, and the tab falls back to a regular web view. Browser notices overlay the page below the toolbar so failures do not shift the page layout. Use **Retry**, reopen the tab, or reconnect Hermes to try again.
+- **Remote backends.** Hermes is pointed at the agent browser only in Local mode; with a remote backend its loopback address would reach the remote host instead.
+- **Dev servers over SSH.** In SSH mode, opening `http://localhost:<port>` (or `127.0.0.1`, `[::1]`, `*.localhost`) forwards that port from the SSH host with `ssh -L`, then loads the page. Ports 1024 and up are forwarded; tunnels last until Herm quits. If this Mac already uses the port, the tab says so instead of showing the Mac's server.
 - **Sharing the browser with other tools.** Each session's agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. Hermes follows the selected session's endpoint. A Chrome DevTools MCP configured with `--browserUrl=http://127.0.0.1:9333` stays attached to the session that acquired that port.
 
 ### iOS Simulator and Android Emulator
@@ -811,6 +836,7 @@ Simulator and Emulator tabs show a virtual device's screen live in the session i
 - **Screenshots and app logs.** Send a screenshot to chat or copy it. **App logs** reads a recent excerpt for your app (Errors or All levels), lets you edit it, and attaches only the reviewed text. Nothing is sent automatically.
 - **3D preview.** The cube icon shows the live screen on a rotatable device; drag or use the arrow keys to tilt, scroll to zoom, Escape to return.
 - **Closing a tab disconnects only.** The virtual device keeps running.
+- **Local backend only for the agent.** Devices run on this Mac, so a remote Hermes cannot launch or drive them; you can still open tabs yourself.
 
 Setup: run `Scripts/setup-simulator-bridge.sh` (plus `brew install facebook/fb/idb-companion` for iOS), with Xcode iOS runtimes or the Android SDK Emulator and an AVD. See [Direct simulator tabs](docs/direct-simulators.md) for details and limitations (single touch, limited hardware-keyboard mapping on iOS).
 
@@ -930,7 +956,27 @@ Agent updates share one service across the panel and window. Installation progre
 
 Click the connection indicator at the bottom of the navigation rail for these same gateway controls. Its popover shows the backend connection separately from the local default-profile messaging gateway and offers **Reconnect** when Herm is offline.
 
-**Settings → Gateway** offers Local, Remote URL/token or sign-in, SSH, and Hermes Cloud connections. Remote URLs support path prefixes and require HTTPS, except for localhost, 127.0.0.1, and [::1]. Scheme-less remote addresses default to HTTPS; loopback addresses default to HTTP. Use SSH for remote gateways without HTTPS. Native OAuth uses your browser with PKCE when supported, and password or legacy sign-in uses the gateway's page. Cloud sign-in discovers your organizations and agents. SSH launches and tunnels an owned Hermes backend on Linux, macOS, or Windows; it requires working key-based SSH, a current remote Hermes install, and Node.js 20+ on this Mac (Hermes' bundled Node is detected automatically). **Test connection** checks HTTP and WebSocket access. Save for the next restart, or confirm **Save and restart Herm**. Saved connections can be selected, renamed, or removed. Session tokens and native OAuth credentials stay in Keychain; browser sessions use Herm's separate WebKit store. `HERMES_DESKTOP_REMOTE_URL` and `HERMES_DESKTOP_REMOTE_TOKEN` override saved settings at launch. Repository tools, local terminals, agent updates, and the messaging gateway controls in Gateway continue to operate on this Mac.
+**Settings → Gateway** offers Local, Remote URL/token or sign-in, SSH, and Hermes Cloud connections. Remote URLs support path prefixes and require HTTPS, except for localhost, 127.0.0.1, and [::1]. Scheme-less remote addresses default to HTTPS; loopback addresses default to HTTP. Use SSH for remote gateways without HTTPS. Native OAuth uses your browser with PKCE when supported, and password or legacy sign-in uses the gateway's page. Cloud sign-in discovers your organizations and agents. SSH launches and tunnels an owned Hermes backend on Linux, macOS, or Windows; it requires working key-based SSH, a current remote Hermes install, and Node.js 20+ on this Mac (Hermes' bundled Node is detected automatically). **Test connection** checks HTTP and WebSocket access. Save for the next restart, or confirm **Save and restart Herm**. Saved connections can be selected, renamed, or removed. Session tokens and native OAuth credentials stay in Keychain; browser sessions use Herm's separate WebKit store. `HERMES_DESKTOP_REMOTE_URL` and `HERMES_DESKTOP_REMOTE_TOKEN` override saved settings at launch.
+
+#### Local vs. remote backends
+
+Herm adapts to the saved Gateway mode at launch, so choosing Remote, SSH, or Cloud and restarting is all it takes. Everything Hermes serves follows the backend; features that depend on this Mac's files, Hermes home, or loopback stay local and switch off rather than show this Mac's data as if it were the backend's.
+
+| Feature | Local | Remote, SSH, or Cloud |
+|---|---|---|
+| Chat, sessions, profiles, configuration, skills, cron, Kanban, messaging platforms | Backend | Backend |
+| Attachments (images, PDFs, files) | Sent to the backend | Sent to the backend |
+| Runtime info (model, provider, skills, MCP servers, plugins) | Hermes CLI on this Mac | Backend API; the agent name from `SOUL.md` is not shown |
+| Hermes Agent updates | Runs `hermes update` here | Run `hermes update` on the remote host |
+| Messaging gateway status and restart | This Mac | Manage on the remote host with `hermes gateway` |
+| Quota from Hermes-managed Codex logins and `.env` keys | Read from this Mac's Hermes home | Not read; keys pasted into Herm still work |
+| Kanban session attribution, delivery questions | Available | Off |
+| Agent browser handed to Hermes | Available | Off (the address would point at the remote host); you can still browse |
+| `localhost` pages in the Browser tab | This Mac's servers | SSH: forwarded from the remote host on the same port, so the agent's dev server URLs open as printed. Remote URL and Cloud: this Mac's servers |
+| iOS Simulator and Android Emulator for the agent | Available | Off; devices run on this Mac, out of the agent's reach |
+| Terminals | This Mac | SSH: a shell on the remote host over `ssh`, opened in the project folder (or the remote home). Remote URL and Cloud: this Mac |
+| `@` file mentions | Backend (`complete.path`) | Backend (`complete.path`), so they list the remote host's files |
+| Projects, Source Control, local previews | This Mac | This Mac only; remote project paths show as unavailable |
 
 The SSH helper is bundled from Hermes Desktop's MIT-licensed, Electron-free lifecycle. To update it from an installed Hermes checkout, run `node Scripts/build-hermes-ssh-bridge.mjs /path/to/hermes-agent` with that checkout's existing build dependencies installed. Herm ships the generated helper and its license in its SwiftPM resource bundle.
 
@@ -1050,7 +1096,7 @@ Herm uses Apple's on-device language model (the Foundation Models framework) for
 
 - **Requirements.** macOS 26 or later, a Mac that supports Apple Intelligence, and Apple Intelligence turned on in System Settings. Settings shows whether it is available on your Mac, and the toggles say so when it isn't.
 - **Privacy.** The model runs locally. Summary inputs stay on this Mac; summaries are temporary and are not fed back to the agent. Generated session titles are saved to Hermes, as described above.
-- **Labeled.** Activity and notch summaries share a compact info banner with an orange icon and neutral text. The same component explains automatic titles and Apple Intelligence settings. System approval notifications carry a text attribution and accuracy notice. Session title help explains automatic naming. Generated text can be inaccurate.
+- **Labeled.** Activity and notch summaries share a compact, content-width badge with an orange icon and neutral text. The same component explains automatic titles and Apple Intelligence settings. System approval notifications carry a text attribution and accuracy notice. Session title help explains automatic naming. Generated text can be inaccurate.
 - **Safe fallback.** If the model is unavailable or takes too long (4 seconds for approvals and titles, 6 for replies, 15 for Activity), existing features retain their original text; Activity shows an unavailable message with retry after a failed generation.
 - **Treat it as a hint.** The model can be wrong. Read the original approval before allowing anything, and note that it is instructed to ignore any instructions inside the request.
 - **Other native Mac features.** Composer autocorrect uses macOS spelling services, "Add Text from Image to Message" uses Apple's Vision text recognition, and Touch ID uses the system authentication prompt. These work independently of Apple Intelligence.
@@ -1151,6 +1197,7 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
 - Email and iMessage integrations, and writing to Calendar or Reminders (the Calendar page is read-only)
 - Force-pushing and dispatching GitHub workflows; native conflict editing
+- With a remote backend: browsing remote project files and git, reconnecting a dropped SSH tunnel automatically, and a different backend per profile (see [Local vs. remote backends](#local-vs-remote-backends))
 
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
 

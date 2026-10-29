@@ -125,6 +125,8 @@ struct SessionRailChangeSummary: Equatable {
 struct SessionPullRequestRail: View {
     @ObservedObject var model: DockModel
     @ObservedObject var workflow: DeveloperWorkflowModel
+    /// Its `processes` follow the current session; the composer's process strip keeps them polled.
+    @ObservedObject var control: ControlCenterModel
     let repositoryPath: String?
     let onViewAllChanges: () -> Void
     let onViewPullRequest: (GitHubItemReference) async -> Bool
@@ -149,14 +151,15 @@ struct SessionPullRequestRail: View {
         .make(
             model: model, repositoryPath: repositoryPath, repository: workflow.repository,
             outputs: outputs.records, outputsError: outputs.error,
-            contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [])
+            contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [],
+            processes: control.processes)
     }
 
     var body: some View {
         ScrollView {
             SessionRailCard(
                 repositoryName: repositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent },
-                repositoryPath: repositoryPath, changesRevision: workflow.changes?.refreshedAt,
+                repositoryPath: repositoryPath,
                 changes: changes, lines: lineSnapshot == workflow.changes ? lineSummary : nil,
                 changesUnavailable: repositoryPath == workflow.repository.path && workflow.repository.isStale,
                 references: rail.references, records: details.records, failures: rail.failures,
@@ -167,6 +170,7 @@ struct SessionPullRequestRail: View {
                 onOpenOutput: { SessionMessageTabs.shared.open(.output($0), in: WorkspaceIdentity.session(model)) },
                 onRespondInChat: onRespondInChat, onViewPin: onViewPin
             )
+            .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
             .padding(16)
         }
         .foregroundStyle(Color.dockPrimaryText)
@@ -220,7 +224,7 @@ struct SessionPullRequestRail: View {
 struct SessionRailCard: View {
     let repositoryName: String?
     var repositoryPath: String? = nil
-    var changesRevision: Date? = nil
+
     let changes: SessionRailChangeSummary?
     let lines: RepositoryChangeLineSummary?
     var changesUnavailable = false
@@ -237,9 +241,6 @@ struct SessionRailCard: View {
     var onRespondInChat: () -> Void = {}
     var onViewPin: (PinnedMessage) async -> Bool = { _ in false }
     @State private var expandedChanges = false
-    @State private var expandedPullRequests: Set<String> = []
-    @State private var openingPullRequestID: String?
-    @State private var failedPullRequestID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -270,8 +271,7 @@ struct SessionRailCard: View {
                             SessionRailExpandedContent {
                                 VStack(alignment: .leading, spacing: 8) {
                                     ForEach(changes.files) { file in
-                                        SessionRailFileQuickView(
-                                            path: repositoryPath, file: file, revision: changesRevision)
+                                        SessionRailFileQuickView(path: repositoryPath, file: file)
                                     }
                                 }
                             }
@@ -296,7 +296,9 @@ struct SessionRailCard: View {
                 SessionRailSummarySection(title: "Pull requests", icon: .gitPullRequest, count: references.count) {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(references) { reference in
-                            entry(reference)
+                            SessionRailPullRequestItem(
+                                reference: reference, record: records[reference.id], failure: failures[reference.id],
+                                onViewPullRequest: onViewPullRequest)
                         }
                     }
                 }
@@ -352,80 +354,6 @@ struct SessionRailCard: View {
         .dockFont(.body).monospacedDigit().fixedSize()
         .help("Tracked text changes against HEAD; \(changes.untrackedCount) new files. Binary lines are not counted.")
     }
-
-    private func entry(_ reference: GitHubItemReference) -> some View {
-        let record = records[reference.id]
-        return DisclosureGroup(
-            isExpanded: Binding(
-                get: { expandedPullRequests.contains(reference.id) },
-                set: { expanded in
-                    if expanded {
-                        expandedPullRequests.insert(reference.id)
-                    } else {
-                        expandedPullRequests.remove(reference.id)
-                    }
-                })
-        ) {
-            SessionRailExpandedContent {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let record {
-                        Text(record.repository.id).foregroundStyle(Color.dockMetadataText)
-                        Text("\(record.headBranch) → \(record.baseBranch)")
-                            .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                        Text("By \(record.author)").foregroundStyle(Color.dockSecondaryText)
-                        if let additions = record.additions, let deletions = record.deletions {
-                            HStack(spacing: 6) {
-                                Text("+\(additions.formatted())").foregroundStyle(Color.dockSuccess)
-                                Text("−\(deletions.formatted())").foregroundStyle(Color.dockDestructive)
-                            }.monospacedDigit()
-                        }
-                        if let warning = record.detailWarning {
-                            Text(warning).foregroundStyle(Color.dockWarning)
-                        }
-                    }
-                    if let failure = failures[reference.id] {
-                        Text(record == nil ? "Details unavailable. \(failure)" : "Last fetched details. \(failure)")
-                            .foregroundStyle(Color.dockWarning)
-                    } else if record == nil {
-                        Text("Loading details…").foregroundStyle(Color.dockSecondaryText)
-                    }
-                    Button(openingPullRequestID == reference.id ? "Opening…" : "View in GitHub panel") {
-                        openingPullRequestID = reference.id
-                        failedPullRequestID = nil
-                        Task {
-                            let opened = await onViewPullRequest(reference)
-                            openingPullRequestID = nil
-                            if !opened { failedPullRequestID = reference.id }
-                        }
-                    }
-                    .buttonStyle(.dockLink).disabled(openingPullRequestID != nil)
-                    if failedPullRequestID == reference.id {
-                        Text("Could not open pull request. Refresh and try again.").foregroundStyle(Color.dockWarning)
-                    }
-                }
-            }
-            .dockFont(.body).padding(.top, 8)
-        } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .top, spacing: 8) {
-                    DockIcon(
-                        record?.presentationIcon ?? .gitPullRequest, size: 14,
-                        color: record?.presentationColor ?? .dockSecondaryText)
-                    Text(record?.title ?? "Pull request #\(reference.number)")
-                        .dockFont(.body).multilineTextAlignment(.leading).lineLimit(2)
-                }
-                HStack(spacing: 6) {
-                    Text("#\(String(reference.number))").foregroundStyle(Color.dockMetadataText)
-                    if let record {
-                        Text(record.readinessLabel).foregroundStyle(record.readinessColor)
-                    }
-                }
-                .dockFont(.metadata).padding(.leading, 22)
-            }
-        }
-        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
-        .accessibilityIdentifier("session-rail.pr.\(reference.number)")
-    }
 }
 
 /// Every expanded rail section fits short content and scrolls overflow within the same cap.
@@ -451,49 +379,14 @@ struct SessionRailExpandedContent<Content: View>: View {
 private struct SessionRailFileQuickView: View {
     let path: String
     let file: RepositoryFileChange
-    let revision: Date?
-    @State private var document: DiffDocument?
-    @State private var isLoading = true
-    @State private var isExpanded = false
-    @State private var isTruncated = false
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            SessionRailExpandedContent {
-                VStack(alignment: .leading, spacing: 6) {
-                    if isLoading {
-                        Text("Loading diff…").foregroundStyle(Color.dockSecondaryText)
-                    } else if let document {
-                        if let notice = document.fileNotice {
-                            Text(notice).foregroundStyle(Color.dockSecondaryText)
-                        }
-                        if document.lines.isEmpty {
-                            Text("No text changes to preview.").foregroundStyle(Color.dockSecondaryText)
-                        } else {
-                            NativeDiffCanvas(
-                                document: document, split: false, wraps: true, wordDiffs: true,
-                                findRequest: 0, onNote: nil, onComment: nil
-                            )
-                            .frame(height: min(240, max(100, CGFloat(document.lines.count) * 20)))
-                        }
-                        if isTruncated {
-                            Text("Partial preview. View all changes for the full review.")
-                                .foregroundStyle(Color.dockMetadataText)
-                        }
-                    } else {
-                        Text("Diff unavailable. Collapse and reopen to retry.").foregroundStyle(Color.dockWarning)
-                    }
-                }
-            }
-            .dockFont(.body).padding(.top, 6)
-            .task(id: revision) {
-                isLoading = true
-                let diff = await RepositoryService.diff(path: path, file: file)
-                guard !Task.isCancelled else { return }
-                document = diff.map { DiffDocument(path: file.path, patch: $0.text) }
-                isTruncated = diff?.isTruncated == true
-                isLoading = false
-            }
+        Button {
+            guard let previewWorkspace,
+                let url = RepositoryService.documentURL(repositoryPath: path, filePath: file.path)
+            else { return }
+            SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
         } label: {
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.path).dockFont(.body).foregroundStyle(Color.dockPrimaryText)
@@ -502,6 +395,6 @@ private struct SessionRailFileQuickView: View {
                     .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             }
         }
-        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
+        .buttonStyle(.dockLink)
     }
 }

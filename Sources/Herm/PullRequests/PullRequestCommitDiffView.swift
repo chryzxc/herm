@@ -3,6 +3,7 @@ import SwiftUI
 struct PullRequestCommitDiffView: View {
     let target: PullRequestCommitDiffTarget
     let client: GitHubClient
+    var commitCheckEvidence: DockCommitCheckEvidence? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var result: GitHubPage<PullRequestFile>?
     @State private var selectedPath: String?
@@ -11,9 +12,13 @@ struct PullRequestCommitDiffView: View {
 
     var body: some View {
         DockExpandedPage(
-            title: "Commit \(target.commit.id.prefix(7))",
+            title: "Commit",
             subtitle: target.repository.id + " · " + target.commit.message,
-            close: { dismiss() }
+            close: { dismiss() },
+            trailing: {
+                DockCommitIdentifier(
+                    revision: target.commit.id, repositoryID: target.repository.id, evidence: commitCheckEvidence)
+            }
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 if let result {

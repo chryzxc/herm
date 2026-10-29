@@ -17,7 +17,6 @@ final class SessionDashboardCardContent: ObservableObject {
         let request = UUID()
         generation = request
         loading = true
-        error = nil
         defer { if generation == request { loading = false } }
         do {
             let result = try await HermesControlRPC(client: client).sessionMessages(
@@ -25,6 +24,7 @@ final class SessionDashboardCardContent: ObservableObject {
             let page = try HermesConversationExcerptService.parse(result, session: session)
             guard generation == request, !Task.isCancelled else { return }
             text = Self.latestUpdate(page.messages)
+            error = nil
         } catch {
             guard generation == request, !Task.isCancelled else { return }
             self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)

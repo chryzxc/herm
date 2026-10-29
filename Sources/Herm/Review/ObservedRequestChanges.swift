@@ -28,7 +28,7 @@ final class ObservedRequestChanges: ObservableObject {
     func capture(_ baseline: TurnRepositoryBaseline, concurrent: Bool) {
         guard baseline.eligible, baseline.clean, !concurrent, let head = baseline.head,
             let completionRowID = baseline.completionRowID, completionRowID > 0,
-            GatewayConnectionStore.shared.launchSettings.mode == .local
+            GatewayConnectionStore.isLocalBackend
         else { return }
         let token = UUID()
         generations[baseline.origin.sessionKey] = token
@@ -72,7 +72,7 @@ final class ObservedRequestChanges: ObservableObject {
         }
     }
     func current(for session: HermesSession, replyID: String?) async -> ObservedRequestComparison? {
-        guard GatewayConnectionStore.shared.launchSettings.mode == .local,
+        guard GatewayConnectionStore.isLocalBackend,
             let saved = comparisons.last(where: {
                 String($0.completionRowID) == replyID && $0.origin.sessionID == session.id
                     && ($0.origin.profileID ?? "default") == (session.profileID ?? "default")

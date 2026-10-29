@@ -45,6 +45,8 @@ final class DockModel: ObservableObject {
 
     let composer = ComposerText()
     var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
+    var pendingSessionSends: [SessionPendingSend] = []
+    var sessionStopAttempts: [SessionComposerDraft.Key: SessionStopAttempt] = [:]
     let streamingText = StreamingText()
     /// Unflushed-to-step reasoning, observed only by an open live thought row.
     let liveReasoning = LiveReasoningText()
@@ -238,8 +240,15 @@ final class DockModel: ObservableObject {
     @Published var sessionModelValue: String?
     @Published var isUpdatingSessionModel = false
     @Published var sessionReasoningVariant: HermesReasoningVariant?
+    @Published var sessionReasoningWire: String?
+    var sessionInfoSequencesBySessionID: [String: Int] = [:]
     @Published var isUpdatingSessionReasoning = false
     @Published var defaultReasoningVariant: HermesReasoningVariant?
+    @Published var draftReasoningVariant: HermesReasoningVariant?
+    @Published var sessionReasoningStale = false
+    @Published var effortCatalog: HermesEffortCatalog?
+    var sessionReasoningRevision = 0
+    var sessionReasoningMutationToken, sessionModelMutationToken: UUID?
     @Published var voiceState: HermesVoiceState = .inactive
     @Published var voiceTelemetry = VoiceTurnTelemetry()
     @Published var voiceSpokenCaption: String?
@@ -474,6 +483,12 @@ final class DockModel: ObservableObject {
         self.kanbanAttributionSessionID = initialSessionID
         self.interruptRPC = HermesControlRPC(client: rpcClient ?? gateway)
         self.sessionRPCClient = rpcClient ?? gateway
+        if !GatewayConnectionStore.isLocalBackend {
+            let client = sessionRPCClient
+            runtimeConfigurationRefresh = HermesRuntimeConfigurationRefresh(reader: { _ in
+                await HermesRuntimeInspector.inspectRemote(fetch: client.fetchHTTP)
+            })
+        }
         self.voicePlayback = voicePlayback ?? HermesVoicePlayback()
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.write("model: initialized")

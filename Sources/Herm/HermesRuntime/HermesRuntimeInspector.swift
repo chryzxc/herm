@@ -95,6 +95,40 @@ enum HermesRuntimeInspector {
             initialSignature: initialSignature)
     }
 
+    /// Remote backends: the same projection from the backend's REST routes, since the local CLI
+    /// would describe this Mac's Hermes and `shell.exec` truncates output. SOUL.md and the config
+    /// path stay unknown (no file signature), so every refresh re-reads.
+    @MainActor static func inspectRemote(fetch: (String) async throws -> [String: Any]) async -> HermesRuntimeInspection
+    {
+        func read(_ path: String) async -> [String: Any]? { try? await fetch(path) }
+        let info = await read("/api/model/info")
+        let config = await read("/api/config")
+        let skillRows = await read("/api/skills")?["items"] as? [[String: Any]]
+        let mcpRows = await read("/api/mcp/servers")?["servers"] as? [[String: Any]]
+        let pluginRows = await read("/api/dashboard/plugins/hub")?["plugins"] as? [[String: Any]]
+        func text(_ value: Any?) -> String? { value.flatMap { nonEmpty("\($0)") } }
+        func setting(_ section: String, _ key: String) -> String? {
+            text((config?[section] as? [String: Any])?[key])
+        }
+        let skills = (skillRows ?? []).compactMap { $0["enabled"] as? Bool == true ? $0["name"] as? String : nil }
+        let model = text(info?["model"])
+        let provider = text(info?["provider"])
+        let maxTurns = setting("agent", "max_turns")
+        let terminalTimeout = setting("terminal", "timeout")
+        return HermesRuntimeInspection(
+            configuration: HermesRuntimeConfiguration(
+                agentName: nil, model: model, provider: provider, configPath: nil,
+                maxTurns: maxTurns, terminalTimeout: terminalTimeout,
+                skills: skills,
+                skillsInventory: skillRows == nil ? .unavailable(.unsupportedOutput) : .supported(skills),
+                mcpServers: (mcpRows ?? []).compactMap { $0["name"] as? String },
+                plugins: (pluginRows ?? []).compactMap {
+                    $0["runtime_status"] as? String == "enabled" ? $0["name"] as? String : nil
+                }),
+            isComplete: [model, provider, maxTurns, terminalTimeout].allSatisfy { $0 != nil }
+                && skillRows != nil && mcpRows != nil && pluginRows != nil)
+    }
+
     /// Hermes stores the primary agent identity in SOUL.md beside config.yaml.
     /// Keep this parser deliberately narrow: only a level-one Markdown heading
     /// in the first part of the file becomes UI identity text.

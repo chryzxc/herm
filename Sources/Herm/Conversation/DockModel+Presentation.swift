@@ -150,6 +150,7 @@ extension DockModel {
             $profileScopeID.map { _ in () }.eraseToAnyPublisher(),
             $runtimeConfiguration.map { _ in () }.eraseToAnyPublisher(),
             $status.map { _ in () }.eraseToAnyPublisher(),
+            $isSending.map { _ in () }.eraseToAnyPublisher(),
             $sessions.map { _ in () }.eraseToAnyPublisher(),
             $sessionProjectionState.map { _ in () }.eraseToAnyPublisher(),
             $isLoadingSessions.map { _ in () }.eraseToAnyPublisher(),

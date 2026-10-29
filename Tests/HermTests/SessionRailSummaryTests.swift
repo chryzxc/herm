@@ -84,6 +84,23 @@ struct SessionRailSummaryTests {
         #expect(summary().attention.isEmpty)
     }
 
+    @Test func backgroundProcessesShowAndCountOnlyRunningOnes() {
+        let model = model()
+        let empty = SessionRailSummary.make(
+            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+        #expect(empty.isEmpty)
+        let summary = SessionRailSummary.make(
+            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil,
+            processes: [
+                .init(
+                    id: "proc_1", name: "sh lane.sh 1", state: "running", detail: nil, latestOutput: "LANE 1 · build"),
+                .init(id: "proc_2", name: "sh lane.sh 2", state: "exited", detail: nil),
+            ])
+        #expect(!summary.isEmpty)
+        #expect(summary.processes.map(\.id) == ["proc_1", "proc_2"])
+        #expect(summary.runningProcessCount == 1)
+    }
+
     @Test func detachedLiveActivityCannotSeedAnotherSessionsPullRequests() {
         let model = model()
         let call = ActiveToolCall(

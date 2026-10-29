@@ -384,10 +384,13 @@ struct RepositoryChangesBrowser: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !commit.parents.isEmpty {
-                Text(
-                    "\(commit.parents.count > 1 ? "Merge of" : "Parent") \(commit.parents.map { String($0.prefix(7)) }.joined(separator: ", "))"
-                )
-                .dockFont(.metadata, weight: .regular, design: .monospaced)
+                HStack(spacing: 4) {
+                    Text(commit.parents.count > 1 ? "Merge of" : "Parent").dockFont(.metadata)
+                    ForEach(Array(commit.parents.enumerated()), id: \.offset) { index, parent in
+                        if index > 0 { Text(", ") }
+                        DockCommitIdentifier(revision: parent)
+                    }
+                }
                 .foregroundStyle(Color.dockMetadataText)
                 .textSelection(.enabled)
             }
@@ -396,8 +399,7 @@ struct RepositoryChangesBrowser: View {
             }
             DockChipFlow(spacing: 8) {
                 HStack(spacing: 8) {
-                    Text(String(commit.id.prefix(10)))
-                        .dockFont(.metadata, weight: .regular, design: .monospaced)
+                    DockCommitIdentifier(revision: commit.id, length: 10)
                         .foregroundStyle(Color.dockSecondaryText)
                         .textSelection(.enabled)
                         .help(commit.id)

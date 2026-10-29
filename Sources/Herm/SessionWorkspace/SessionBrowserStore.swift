@@ -29,6 +29,8 @@ final class SessionBrowserWorkspace: ObservableObject {
     let agent: AgentBrowser
     let primary: BrowserController
     @Published private(set) var extras: [BrowserController] = []
+    @Published private var pageTitles: [UUID: String] = [:]
+    private var titleSubscriptions: [UUID: AnyCancellable] = [:]
     /// WebKit tabs share one persistent store, so a sign-in carries across sessions like the agent browser's.
     static let dataStore = WKWebsiteDataStore(forIdentifier: UUID(uuidString: "DA9890F2-CB88-46F5-9F29-97475D8B7B7B")!)
 
@@ -36,17 +38,41 @@ final class SessionBrowserWorkspace: ObservableObject {
         self.key = key
         self.agent = agent ?? AgentBrowser(profileID: key.profileID)
         primary = BrowserController(key: key, dataStore: Self.dataStore)
+        titleSubscriptions[primary.id] = primary.web.publisher(for: \.title)
+            .combineLatest(self.agent.$state, self.agent.$pages, self.agent.$activeTargetID)
+            .map { title, state, pages, target in
+                let usesAgent = state == .starting || state == .running
+                return usesAgent ? pages.first(where: { $0.id == target })?.title ?? "" : title ?? ""
+            }
+            .removeDuplicates()
+            .sink { [weak self] title in
+                guard let self else { return }
+                pageTitles[primary.id] = title
+            }
     }
 
     func addTab() -> BrowserController {
         let tab = BrowserController(key: key, dataStore: Self.dataStore)
+        let id = tab.id
+        titleSubscriptions[id] = tab.web.publisher(for: \.title)
+            .map { $0 ?? "" }
+            .removeDuplicates()
+            .sink { [weak self] title in self?.pageTitles[id] = title }
         extras.append(tab)
         return tab
     }
 
     func closeTab(_ id: UUID) {
+        titleSubscriptions.removeValue(forKey: id)?.cancel()
+        pageTitles.removeValue(forKey: id)
         extras.first { $0.id == id }?.web.stopLoading()
         extras.removeAll { $0.id == id }
+    }
+
+    func tabTitle(for id: UUID? = nil, fallback: String = "Browser") -> String {
+        let title = (pageTitles[id ?? primary.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty || title == "about:blank" || ["http", "https"].contains(URL(string: title)?.scheme)
+            ? fallback : title
     }
 
     /// The closed Browser tab unloads its page. The agent Chrome is the profile's and keeps running.
@@ -64,6 +90,25 @@ final class SessionBrowserWorkspace: ObservableObject {
     func open(_ url: URL) {
         primary.address = url.absoluteString
         if agent.isActive { agent.navigate(url) } else { primary.open(url) }
+    }
+
+    /// Keep the current page when a chat link points somewhere else.
+    /// Nil identifies the built-in Browser tab.
+    func openLink(_ url: URL) -> UUID? {
+        let primaryAddress =
+            agent.isActive
+            ? agent.pendingURL?.absoluteString
+                ?? agent.pages.first(where: { $0.id == agent.activeTargetID })?.url ?? primary.address
+            : primary.address
+        if primaryAddress == url.absoluteString { return nil }
+        if let tab = extras.first(where: { $0.address == url.absoluteString }) { return tab.id }
+        if primaryAddress.isEmpty || primaryAddress == "about:blank" {
+            open(url)
+            return nil
+        }
+        let tab = addTab()
+        tab.open(url)
+        return tab.id
     }
 }
 
@@ -129,13 +174,15 @@ final class SessionBrowserStore: ObservableObject {
         remove(key)
     }
 
-    func present(_ url: URL?, model: DockModel) {
+    @discardableResult
+    func present(_ url: URL?, model: DockModel) -> UUID? {
         guard let key = model.browserSessionKey else {
             if let url { ExternalOpen.open(url) }
-            return
+            return nil
         }
         activate(model: model)
-        if let url { workspace(for: key).open(url) }
+        let tabID = url.flatMap { workspace(for: key).openLink($0) }
         presentation = key
+        return tabID
     }
 }

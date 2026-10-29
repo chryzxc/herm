@@ -57,14 +57,16 @@ extension DockPopover {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { notification in
+                let browserTabID: UUID?
                 if let url = notification.object as? URL {
                     guard !InAppBrowser.handled else { return }
                     InAppBrowser.handled = true
-                    SessionBrowserStore.shared.present(url, model: model)
+                    browserTabID = SessionBrowserStore.shared.present(url, model: model)
                 } else {
                     SessionBrowserStore.shared.present(nil, model: model)
+                    browserTabID = nil
                 }
-                showSessionRailInspector(.browser)
+                showSessionRailInspector(.browser, browserTabID: browserTabID)
             }
             .onReceive(NotificationCenter.default.publisher(for: .hermRevealInspector)) { notification in
                 guard let section = notification.object as? SessionInspector.Section else { return }
@@ -593,7 +595,7 @@ extension DockPopover {
                         .overlay(alignment: .trailing) {
                             if railWidth > 0 {
                                 SessionPullRequestRail(
-                                    model: model, workflow: developerWorkflow,
+                                    model: model, workflow: developerWorkflow, control: controlCenter,
                                     repositoryPath: activeSessionRepositoryScope?.repositoryPath,
                                     onViewAllChanges: { showSessionRailInspector(.changes) },
                                     onViewPullRequest: viewSessionRailPullRequest,

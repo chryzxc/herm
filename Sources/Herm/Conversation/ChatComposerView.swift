@@ -94,6 +94,9 @@ struct ChatComposerView: View {
             .onChange(of: model.attachedContexts) { previous, _ in
                 model.moveContextsToTray(previous: previous)
             }
+            .onChange(of: model.composerIsEmptyForRecovery) { _, isEmpty in
+                if isEmpty { model.restorePendingSendIfPossible(for: model.composerDraftKey) }
+            }
             .dockSheet(item: $inspectingContext) { context in
                 ComposerContextPreview(context: context) { text in
                     guard contextPreviewOwner == WorkspaceIdentity.session(model),
@@ -689,25 +692,19 @@ struct ChatComposerView: View {
                 .fill(DockSkinPresentation.current.composerControlFill)
         )
         .frame(height: 32)
-        .disabled(model.isUpdatingSessionModel)
+        .disabled(model.isUpdatingSessionModel || model.isUpdatingSessionReasoning)
         .help("Select model")
     }
 
     private var composerReasoningPicker: some View {
-        // Thinking depth variant selector menu
-        DockMenu {
-            DockMenuChoices(selection: reasoningVariantSelection) {
-                ForEach(HermesReasoningVariant.allCases) { variant in
-                    DockMenuOption(variant.displayName, value: Optional(variant))
-                }
-            }
-        } label: {
+        ComposerEffortPicker(model: model, modelID: selectedModelOptionID, selection: reasoningVariantSelection) {
+            status in
             // A plain button-style menu renders this SwiftUI
             // label as drawn; a borderless menu keeps only native
             // text and images and drops custom icon views.
             HStack(spacing: 6) {
                 DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
-                Text(sessionReasoningDisplayName)
+                Text(status)
                     .dockFont(.control)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
@@ -722,11 +719,7 @@ struct ChatComposerView: View {
             .frame(height: 32)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.dockHover)
         .fixedSize()
-        .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
-        .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
-        .help("Select thinking depth")
     }
 
     private func beginDictation() {
@@ -850,7 +843,7 @@ struct ChatComposerView: View {
     private var sessionReasoningDisplayName: String {
         let reasoning =
             model.sessionID == nil
-            ? model.defaultReasoningVariant
+            ? (model.draftReasoningVariant ?? model.defaultReasoningVariant)
             : model.sessionReasoningVariant
         return reasoning?.displayName ?? "Loading…"
     }
@@ -866,7 +859,8 @@ struct ChatComposerView: View {
     }
 
     private var selectedReasoningVariant: HermesReasoningVariant? {
-        model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
+        model.sessionID == nil
+            ? (model.draftReasoningVariant ?? model.defaultReasoningVariant) : model.sessionReasoningVariant
     }
 
     private var reasoningVariantSelection: Binding<HermesReasoningVariant?> {
@@ -1301,7 +1295,7 @@ private struct RunningProcessesStrip: View {
     @ObservedObject var control: ControlCenterModel
     var isTurnActive = false
     @State private var isExpanded = false
-    @State private var pending: ProcessSummary?
+    @State private var pending: ProcessStopConfirmation?
 
     var body: some View {
         content
@@ -1315,6 +1309,13 @@ private struct RunningProcessesStrip: View {
             }
     }
 
+    /// Hermes keeps a finished process listed for a while, so the count says which kind it is.
+    private var summary: String {
+        let running = control.processes.filter { $0.state == "running" }.count
+        let count = running > 0 ? running : control.processes.count
+        return "\(count) background process\(count == 1 ? "" : "es") \(running > 0 ? "running" : "finished")"
+    }
+
     @ViewBuilder private var content: some View {
         if !control.processes.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
@@ -1323,10 +1324,8 @@ private struct RunningProcessesStrip: View {
                 } label: {
                     HStack(spacing: 6) {
                         DockIcon(.terminal, size: 12, color: Color.dockSecondaryText)
-                        Text(
-                            "\(control.processes.count) background process\(control.processes.count == 1 ? "" : "es") running"
-                        )
-                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        Text(summary)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                         Spacer(minLength: 0)
                     }
@@ -1336,14 +1335,26 @@ private struct RunningProcessesStrip: View {
                 if isExpanded {
                     ForEach(control.processes) { process in
                         HStack(spacing: 8) {
-                            Text(process.name).lineLimit(1).truncationMode(.middle)
-                                .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
-                                    Color.dockPrimaryText
-                                )
-                                .help(process.detail ?? process.name)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(process.name).lineLimit(1).truncationMode(.middle)
+                                    .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
+                                        Color.dockPrimaryText
+                                    )
+                                    .help(process.detail ?? process.name)
+                                if let latest = process.latestOutput {
+                                    Text(latest).lineLimit(1).truncationMode(.tail)
+                                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                                        .help(latest)
+                                }
+                            }
                             Spacer(minLength: 0)
-                            Button("Stop") { pending = process }
-                                .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
+                            if process.state == "running" {
+                                Button("Stop") { pending = control.processStopConfirmation(process) }
+                                    .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
+                            } else {
+                                Text(process.state.capitalized).dockFont(.metadata)
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
                         }
                         .padding(.leading, 18)
                     }
@@ -1354,10 +1365,10 @@ private struct RunningProcessesStrip: View {
             .confirmationDialog(
                 "Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
             ) {
-                if let process = pending {
-                    Button("Stop \(process.name)", role: .destructive) {
+                if let confirmation = pending {
+                    Button("Stop \(confirmation.process.name)", role: .destructive) {
                         Task {
-                            _ = await control.killProcess(process)
+                            _ = await control.killProcess(confirmation)
                             pending = nil
                         }
                     }

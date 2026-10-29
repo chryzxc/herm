@@ -191,4 +191,40 @@ struct HermesRuntimeInspectorTests {
 
         #expect(request.value == "claude-sonnet-4-6 --provider anthropic --session --reasoning high")
     }
+
+    @MainActor @Test func remoteInspectionProjectsBackendRESTAndFlagsMissingRoutes() async {
+        let routes: [String: [String: Any]] = [
+            "/api/model/info": ["model": "gpt-5", "provider": "openai-codex"],
+            "/api/config": ["agent": ["max_turns": 90], "terminal": ["timeout": 180]],
+            "/api/skills": ["items": [["name": "git", "enabled": true], ["name": "off", "enabled": false]]],
+            "/api/mcp/servers": ["servers": [["name": "github", "enabled": true]]],
+            "/api/dashboard/plugins/hub": [
+                "plugins": [
+                    ["name": "memory", "runtime_status": "enabled"], ["name": "x", "runtime_status": "inactive"],
+                ]
+            ],
+        ]
+        let full = await HermesRuntimeInspector.inspectRemote { path in
+            guard let value = routes[path] else { throw HermesGateway.GatewayError.malformedResponse }
+            return value
+        }
+        #expect(full.isComplete)
+        #expect(full.configuration.model == "gpt-5")
+        #expect(full.configuration.provider == "openai-codex")
+        #expect(full.configuration.maxTurns == "90")
+        #expect(full.configuration.terminalTimeout == "180")
+        #expect(full.configuration.skillsInventory == .supported(["git"]))
+        #expect(full.configuration.mcpServers == ["github"])
+        #expect(full.configuration.plugins == ["memory"])
+        #expect(full.configuration.agentName == nil && full.configuration.configPath == nil)
+
+        let partial = await HermesRuntimeInspector.inspectRemote { path in
+            guard path != "/api/skills", let value = routes[path] else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            return value
+        }
+        #expect(!partial.isComplete)
+        #expect(partial.configuration.skillsInventory == .unavailable(.unsupportedOutput))
+    }
 }

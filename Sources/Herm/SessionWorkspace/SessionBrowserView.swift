@@ -639,7 +639,16 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     func open(_ url: URL) {
         address = url.absoluteString
         navigation.start()
-        activeNavigation = web.load(URLRequest(url: url))
+        guard SSHPortForwards.remotePort(for: url, backend: GatewayConnectionStore.backendSettings) != nil else {
+            activeNavigation = web.load(URLRequest(url: url))
+            return
+        }
+        Task { [weak self] in
+            let failure = await SSHPortForwards.shared.prepare(url)
+            guard let self, self.address == url.absoluteString else { return }
+            if let failure { return self.navigation.fail(failure) }
+            self.activeNavigation = self.web.load(URLRequest(url: url))
+        }
     }
 
     func reload() {

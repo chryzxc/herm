@@ -934,6 +934,8 @@ extension ControlCenterModel {
             }
             if let sessionID = dockModel?.kanbanSessionID, !sessionID.isEmpty,
                 (selectedKanbanBoardSlug ?? "").isEmpty,
+                // The attribution script lives in this Mac's Hermes home; a remote backend has none.
+                GatewayConnectionStore.isLocalBackend,
                 let taskID = Self.kanbanTaskID(fromCreateOutput: result.stdout)
             {
                 try? await cli.kanbanAttributeSession(taskID: taskID, sessionID: sessionID)

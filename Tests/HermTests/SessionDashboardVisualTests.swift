@@ -6,6 +6,25 @@ import Testing
 
 @Suite @MainActor
 struct SessionDashboardVisualTests {
+    @Test func toolbarKeepsCompactHeightAcrossTextSizes() {
+        _ = NSApplication.shared
+        let bots = BotModeModel()
+        let originalTheme = DockThemeRuntime.current
+        defer { DockThemeRuntime.current = originalTheme }
+        for theme in [DockThemeID.clean, .storm, .glass, .mono] {
+            DockThemeRuntime.current = theme
+            for scale in [CGFloat(1), 1.25, 1.5] {
+                let toolbar = SessionDashboardToolbar(
+                    bots: bots, fallbackName: "Nexus", isLoading: false, isRefreshing: false,
+                    onRefresh: {}, onShowList: {}, onNewConversation: {}
+                )
+                .environment(\.dockWorkspaceScale, scale)
+                let host = NSHostingView(rootView: toolbar)
+                #expect(abs(host.fittingSize.height - DockControlMetrics.compactHeight * scale) < 0.5)
+            }
+        }
+    }
+
     @Test func renderSessionListAcrossThemesAndStates() async throws {
         guard let directory = ProcessInfo.processInfo.environment["DASHBOARD_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
@@ -24,11 +43,20 @@ struct SessionDashboardVisualTests {
         let model = DockModel(defaults: defaults)
         defer { model.shutdown() }
         let control = ControlCenterModel()
+        let profileKey = "hermes.dock.selected-profile.v1"
+        let originalProfile = UserDefaults.standard.object(forKey: profileKey)
+        defer { UserDefaults.standard.set(originalProfile, forKey: profileKey) }
+        let bots = BotModeModel()
+        let botClient = DashboardBotVisualRPC()
+        bots.bind(to: botClient, capabilityAvailable: true)
+        await bots.refreshNow(force: true)
         model.isHermesConnected = true
         model.sessions = [
             session("approval", "Fix calendar layout"),
             session("question", "Update the landing page"),
-            session("review", "Investigate scrolling", unread: true),
+            session(
+                "review", "Investigate scrolling and keep the conversation position stable during refresh", unread: true
+            ),
             session("working", "Compare hosting options", working: true),
             session("recent", "Document the release process"),
         ]
@@ -52,30 +80,41 @@ struct SessionDashboardVisualTests {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
             NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            for current in [true, false] {
-                var selection = SessionDashboardSelection()
-                let request = selection.begin(model.sessions[0])
-                if current { selection.finish(request, loaded: true) }
-                let root = SessionDashboardList(
-                    sidebar: source, selection: selection, isCurrent: current, onSelect: { _ in }
-                ).frame(width: current ? 1180 : 380, height: 1000).background(DockWindowBackground()).dockThemedRoot()
+            for width in [CGFloat(1180), 380] {
+                for current in [true, false] {
+                    var selection = SessionDashboardSelection()
+                    let request = selection.begin(model.sessions[0])
+                    if current { selection.finish(request, loaded: true) }
+                    let root = DockExpandedPage(
+                        title: "Chats", subtitle: "All projects in the selected bot", showsClose: false, close: {}
+                    ) {
+                        SessionDashboardToolbar(
+                            bots: bots, fallbackName: "Herm", isLoading: !current, isRefreshing: false,
+                            onRefresh: {}, onShowList: {}, onNewConversation: {})
+                    } content: {
+                        SessionDashboardList(
+                            sidebar: source, selection: selection, isCurrent: current, onSelect: { _ in })
+                    }
+                    .frame(width: width, height: 1000).background(DockWindowBackground()).dockThemedRoot()
                     .environment(\.colorScheme, dark ? .dark : .light)
-                let host = NSHostingView(rootView: root)
-                host.frame = NSRect(x: 0, y: 0, width: current ? 1180 : 380, height: 1000)
-                let window = NSWindow(
-                    contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-                window.contentView = host
-                window.orderFrontRegardless()
-                for _ in 0..<3 {
-                    host.layoutSubtreeIfNeeded()
-                    try await Task.sleep(for: .milliseconds(40))
+                    let host = NSHostingView(rootView: root)
+                    host.frame = NSRect(x: 0, y: 0, width: width, height: 1000)
+                    let window = NSWindow(
+                        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    window.contentView = host
+                    window.orderFrontRegardless()
+                    for _ in 0..<3 {
+                        host.layoutSubtreeIfNeeded()
+                        try await Task.sleep(for: .milliseconds(40))
+                    }
+                    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try data.write(
+                        to: URL(fileURLWithPath: directory).appendingPathComponent(
+                            "\(theme.rawValue)-\(current)-\(Int(width)).png"))
+                    window.orderOut(nil)
                 }
-                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-                host.cacheDisplay(in: host.bounds, to: bitmap)
-                let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                try data.write(
-                    to: URL(fileURLWithPath: directory).appendingPathComponent("\(theme.rawValue)-\(current).png"))
-                window.orderOut(nil)
             }
         }
     }
@@ -86,4 +125,18 @@ struct SessionDashboardVisualTests {
             updatedAt: Date().addingTimeInterval(-120), messageCount: 3, source: "conversation",
             isWorking: working, hasUnreadUpdate: unread)
     }
+}
+
+@MainActor
+private final class DashboardBotVisualRPC: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "profiles.list" {
+            return ["profiles": [["name": "default", "display_name": "Nexus"]]]
+        }
+        return [:]
+    }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
 }

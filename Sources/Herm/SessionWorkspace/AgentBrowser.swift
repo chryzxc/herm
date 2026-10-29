@@ -178,7 +178,8 @@ final class AgentBrowser: ObservableObject {
     /// A restarted Hermes gateway forgets the connection; point it back at this browser.
     @discardableResult
     func reconnectHermes() -> Task<Void, Never>? {
-        guard state == .running, let cdpURL, let model else { return nil }
+        // The CDP address is this Mac's loopback; a remote backend would dial its own host.
+        guard state == .running, GatewayConnectionStore.isLocalBackend, let cdpURL, let model else { return nil }
         let generation = lifecycleGeneration
         let previous = Self.connectionTask
         Self.connectionTask = Task { [weak self] in
@@ -956,7 +957,16 @@ final class AgentBrowser: ObservableObject {
             return
         }
         pendingURL = nil
-        performNavigation("Page.navigate", ["url": url.absoluteString])
+        guard SSHPortForwards.remotePort(for: url, backend: GatewayConnectionStore.backendSettings) != nil else {
+            return performNavigation("Page.navigate", ["url": url.absoluteString])
+        }
+        navigation.start()
+        Task { [weak self] in
+            let failure = await SSHPortForwards.shared.prepare(url)
+            guard let self, self.state == .running else { return }
+            if let failure { return self.navigation.fail(failure) }
+            self.performNavigation("Page.navigate", ["url": url.absoluteString])
+        }
     }
     func answerDialog(accept: Bool, text: String? = nil) {
         var params: [String: Any] = ["accept": accept]

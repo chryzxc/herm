@@ -111,7 +111,7 @@ struct SessionNavSidebarSnapshot: Equatable {
     {
         Inputs(
             activeSessionID: model.navigationSessionID,
-            activeStatus: model.status,
+            activeStatus: model.isSending && model.status == .idle ? .working : model.status,
             profileScopeID: model.profileScopeID,
             agentDisplayName: model.agentDisplayName,
             isLoadingSessions: model.isLoadingSessions,

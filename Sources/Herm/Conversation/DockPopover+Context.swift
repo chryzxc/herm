@@ -109,6 +109,12 @@ extension DockPopover {
                     fullscreenSurface = .issues
                 }
             },
+            onOpenTiles: {
+                leaveIntegrations {
+                    sessionNavNavigation.clearSelection()
+                    fullscreenSurface = .chatGrid
+                }
+            },
             showsFullscreenToggle: true,
             isFullscreen: isFullscreen,
             onFullscreenToggle: toggleFullscreen,
@@ -175,7 +181,6 @@ extension DockPopover {
                     model: model, bots: botMode, control: controlCenter, store: workspaceStore,
                     onNewConversation: {
                         sessionNavNavigation.beginNewConversation()
-                        fullscreenSurface = .conversation
                         inspectorScope = .session
                         model.newChat()
                         model.requestComposerFocus()
@@ -184,6 +189,10 @@ extension DockPopover {
                         sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
                         fullscreenSurface = .conversation
                         inspectorScope = .session
+                    },
+                    onShowList: {
+                        sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
+                        fullscreenSurface = .conversation
                     }
                 ) {
                     chatConversationContent(railWidth: 0)

@@ -146,4 +146,21 @@ struct LocalTerminalSessionTests {
         #expect(LocalTerminalSession.acceptedVerificationRecipe(allowed) == allowed)
         #expect(LocalTerminalSession.acceptedVerificationRecipe(arbitrary) == nil)
     }
+
+    @Test func sshBackendOpensTheShellOnTheRemoteHostInTheQuotedDirectory() {
+        var backend = GatewayConnectionSettings()
+        #expect(LocalTerminalSession.shellArguments(directory: "/tmp", backend: backend) == ["/bin/zsh", "-il"])
+        backend.mode = .ssh
+        backend.sshHost = "vps.example"
+        backend.sshUser = "dev"
+        backend.sshPort = 2222
+        let arguments = LocalTerminalSession.shellArguments(directory: "/srv/it's here", backend: backend)
+        #expect(arguments.first == "/usr/bin/ssh")
+        #expect(!arguments.contains("-i"))
+        #expect(
+            Array(arguments.suffix(3)) == [
+                "--", "dev@vps.example", #"cd '/srv/it'\''s here' 2>/dev/null; exec "$SHELL" -l"#,
+            ])
+        #expect(arguments[arguments.firstIndex(of: "-p")! + 1] == "2222")
+    }
 }

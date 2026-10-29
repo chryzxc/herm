@@ -250,24 +250,30 @@ extension ControlCenterModel {
     /// Cheap `process.list`-only refresh for the composer strip while a turn runs.
     func pollProcesses() async {
         guard let rpc, capabilityAvailable("rpc-activity"),
-            let sessionID = dockModel?.sessionID, !sessionID.isEmpty,
-            let result = try? await rpc.processes(sessionID: sessionID),
-            dockModel?.sessionID == sessionID
+            let sessionID = dockModel?.sessionID, !sessionID.isEmpty
+        else { return }
+        let generation = sessionProcessesGeneration
+        let binding = clientBindingGeneration
+        guard let result = try? await rpc.processes(sessionID: sessionID),
+            acceptsProcessResponse(for: sessionID, generation: generation, binding: binding)
         else { return }
         let parsed = Self.parseProcesses(result)
         if parsed != processes { processes = parsed }
     }
 
-    func killProcess(_ process: ProcessSummary) async -> Bool {
+    func killProcess(_ confirmation: ProcessStopConfirmation) async -> Bool {
         guard rpc != nil, capabilityAvailable("rpc-activity") else {
             reportActionError(
                 "Could not stop process", message: "Process control is unavailable through this Hermes gateway.")
             return false
         }
+        guard canStopCurrentProcess(confirmation) else { return false }
+        let process = confirmation.process
         let actionID = "process.kill:\(process.id)"
         guard beginAction(actionID) else { return false }
         defer { finishAction(actionID) }
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return false }
+        guard let rpc else { return false }
+        let sessionID = confirmation.sessionID
         do {
             _ = try await rpc.killProcess(sessionID: sessionID, processID: process.id)
             refresh()

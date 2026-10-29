@@ -129,6 +129,21 @@ struct SessionBotActivityTests {
         #expect(DockModel.botDispatch(toolName: "terminal", args: ["command": "hermes chat -q hi"]) == nil)
     }
 
+    @Test func chatProfileFollowsEveryFormHermesAccepts() {
+        let alias: (String) -> String? = { $0 == "forge" ? "forge" : nil }
+        func profile(_ command: String) -> String? { DockModel.chatProfile(command, alias: alias) }
+        #expect(profile("hermes --profile Archon chat -Q") == "archon")
+        #expect(profile("/usr/local/bin/hermes chat -p sentry -q 'x'") == "sentry")
+        #expect(profile("hermes --profile=cypher chat") == "cypher")
+        #expect(profile("HERMES_HOME=/Users/a/.hermes/profiles/canvas hermes chat -Q") == "canvas")
+        #expect(profile("sh step.sh run wt build 1 3600 3900 hermes -p forge chat --reasoning high") == "forge")
+        #expect(profile("cd /repo && forge chat -Q --query-file brief.md") == "forge")
+        #expect(profile("hermes chat -q 'ask with -p forge'") == nil)
+        #expect(profile("hermes -p forge kanban list") == nil)
+        #expect(profile("git chat") == nil)
+        #expect(profile("sh step.sh run wt build 1 3600 3900 -p forge") == nil)
+    }
+
     @Test @MainActor func foregroundBotChatCompletesFromItsOwnResult() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(
             "bot-dispatch-\(UUID().uuidString).json")

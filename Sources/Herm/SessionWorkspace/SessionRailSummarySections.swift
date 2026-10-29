@@ -29,6 +29,20 @@ struct SessionRailSummarySections: View {
                 TodoPlanTaskList(plan: plan, isWorking: summary.isWorking)
             }
         }
+        if !summary.processes.isEmpty {
+            let running = summary.runningProcessCount
+            SessionRailSummarySection(
+                title: "Background processes", icon: .terminal,
+                detail: running > 0 ? "\(running) running" : "Finished",
+                subtitle: summary.processes.last { $0.state == "running" }?.latestOutput
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(summary.processes) { process in
+                        SessionRailProcessRow(process: process)
+                    }
+                }
+            }
+        }
         if !summary.outputs.isEmpty || summary.outputsError != nil {
             SessionRailSummarySection(title: "Outputs", icon: .files, count: summary.outputs.count) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -101,7 +115,8 @@ struct SessionRailSummarySections: View {
                             DockIcon(.gitCommit, size: 14, color: .dockMetadataText).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Latest commit").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                                Text(commit).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                                DockCommitSummary(value: commit).foregroundStyle(Color.dockSecondaryText)
+                                    .textSelection(.enabled)
                             }
                         }
                     }
@@ -190,33 +205,6 @@ struct SessionRailSummarySection<Content: View, Footer: View>: View {
     }
 }
 
-private struct SessionRailPinnedItem: View {
-    let pin: PinnedMessage
-    let onView: (PinnedMessage) async -> Bool
-    @State private var opening = false
-    @State private var failed = false
-
-    var body: some View {
-        SessionRailSummarySection(
-            title: pin.preview.isEmpty ? "Message with an attachment" : pin.preview, icon: .chatCircle
-        ) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(pin.role == "user" ? "You" : "Herm").foregroundStyle(Color.dockMetadataText)
-                Text(pin.preview).textSelection(.enabled)
-                Button(opening ? "Opening…" : "Show in chat") {
-                    opening = true
-                    failed = false
-                    Task {
-                        failed = !(await onView(pin))
-                        opening = false
-                    }
-                }.buttonStyle(.dockLink).disabled(opening)
-                if failed { Text("Message unavailable. Refresh and retry.").foregroundStyle(Color.dockWarning) }
-            }
-        }
-    }
-}
-
 private struct SessionRailContextFileRow: View {
     let file: SessionContextFile
 
@@ -242,6 +230,28 @@ private struct SessionRailContextFileRow: View {
             }
         }
         .help((file.path as NSString).abbreviatingWithTildeInPath)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SessionRailProcessRow: View {
+    let process: ProcessSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(process.name).lineLimit(1).truncationMode(.middle)
+                    .dockFont(.metadata, design: .monospaced)
+                Spacer(minLength: 0)
+                Text(process.state.capitalized).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                    .fixedSize()
+            }
+            if let latest = process.latestOutput {
+                Text(latest).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+                    .textSelection(.enabled)
+            }
+        }
+        .help(process.detail ?? process.name)
         .accessibilityElement(children: .combine)
     }
 }
