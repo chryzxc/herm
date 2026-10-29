@@ -159,7 +159,8 @@ extension DockModel {
             $updatingSessionVisibilityID.map { _ in () }.eraseToAnyPublisher(),
             $pinnedSessions.map { _ in () }.eraseToAnyPublisher(),
             $pinningSessionID.map { _ in () }.eraseToAnyPublisher(),
-            $isCreatingSession.map { _ in () }.eraseToAnyPublisher()
+            $isCreatingSession.map { _ in () }.eraseToAnyPublisher(),
+            $allBotSessionsState.map { _ in () }.eraseToAnyPublisher()
         ).eraseToAnyPublisher()
     }
 

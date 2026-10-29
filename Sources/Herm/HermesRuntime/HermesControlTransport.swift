@@ -175,6 +175,14 @@ final class HermesControlRPC {
         }
     }
 
+    /// Every profile's recent sessions in one read. Hermes single-flights and
+    /// briefly caches this scan, so overlapping refreshes share one pass.
+    /// Cron and messaging slices are unused here; ask for the minimum.
+    func allProfileSidebarSessions(limit: Int) async throws -> [String: Any] {
+        try await client.fetchHTTP(
+            "/api/profiles/sessions/sidebar?recents_profile=all&recents_limit=\(limit)&cron_limit=1&messaging_limit=1")
+    }
+
     /// Sessions whose ID or message text matches `query` (Hermes FTS).
     func searchSessions(query: String, limit: Int = 20, profileID: String? = nil) async throws -> [[String: Any]] {
         var components = URLComponents()

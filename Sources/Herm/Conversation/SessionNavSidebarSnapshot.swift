@@ -70,6 +70,8 @@ struct SessionNavSidebarSnapshot: Equatable {
         /// Dock-local session → project folder links for conversations Hermes
         /// has no project for (its cwd-based membership can't be edited from here).
         var localProjectPathBySessionID: [String: String] = [:]
+        /// Every bot's recent sessions, for the multi-bot groupings.
+        var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
     }
 
     let inputs: Inputs
@@ -78,6 +80,9 @@ struct SessionNavSidebarSnapshot: Equatable {
     let attentionDots: [String: SessionAttentionDot]
     let linkedSessionIDs: Set<String>
     let projectNameBySessionID: [String: String]
+    /// Every bot's recent chats merged with the selected bot's fresher rows,
+    /// newest first. Equals `conversations` until the all-bot scan loads.
+    let allBotConversations: [HermesSession]
     /// Real projects an unlinked conversation can be added to.
     var projectTargets: [SidebarProjectTarget] {
         linkedProjectGroups.compactMap { group in
@@ -103,6 +108,13 @@ struct SessionNavSidebarSnapshot: Equatable {
         }
         self.linkedSessionIDs = linkedSessionIDs
         self.projectNameBySessionID = projectNameBySessionID
+        let scanned: [HermesSession] =
+            switch inputs.allBotSessionsState {
+            case .ready(let sessions), .stale(let sessions, _): sessions
+            case .loading, .empty, .unavailable, .failed: []
+            }
+        self.allBotConversations = SidebarAgentGrouping.merged(
+            all: scanned, scoped: self.conversations, scopeProfileID: inputs.profileScopeID)
     }
 
     @MainActor
@@ -137,7 +149,8 @@ struct SessionNavSidebarSnapshot: Equatable {
             latestActivities: control.latestActivities,
             pinnedSessions: model.pinnedSessions,
             pinningSessionID: model.pinningSessionID,
-            localProjectPathBySessionID: localProjectPaths
+            localProjectPathBySessionID: localProjectPaths,
+            allBotSessionsState: model.allBotSessionsState
         )
     }
 

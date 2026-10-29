@@ -55,6 +55,10 @@ struct SessionNavQueue: View {
     @State private var creatingProjectPath: String?
     @State private var isShowingProjectSheet = false
     @State private var isShowingNewGroupChat = false
+    @AppStorage(SidebarGrouping.preferenceKey) private var grouping: SidebarGrouping = .agent
+    /// Per-bot disclosure; unset bots follow "selected bot starts expanded".
+    @State private var botExpansion: [String: Bool] = [:]
+    @State private var botsShowingAllChats: Set<String> = []
     @ObservedObject private var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -162,7 +166,7 @@ struct SessionNavQueue: View {
     private var sidebarSessionStatuses: [String: SidebarSessionStatus] {
         // Pins can sit past the recents page, so they need their own status.
         SidebarSessionStatusResolver.statuses(
-            for: sidebarSnapshot.conversations + pinnedSessionPresentation.sessions,
+            for: sidebarSnapshot.allBotConversations + pinnedSessionPresentation.sessions,
             snapshot: sidebarSnapshot,
             seenStore: sidebarSessionSeenStore,
             fallbackProfileID: model.profileScopeID
@@ -175,6 +179,31 @@ struct SessionNavQueue: View {
             sessionID: session.id,
             at: session.lastUpdatedAt
         )
+    }
+
+    /// Opens a chat from any bot. Another bot's chat switches the profile
+    /// first, synchronously, so the scope change cannot replace the resume.
+    private func openSession(_ session: HermesSession) {
+        markSessionSeen(session)
+        if let profileID = session.profileID, profileID != model.profileScopeID,
+            visibleBots.contains(where: { $0.id == profileID })
+        {
+            onSelectProfile(profileID)
+        }
+        navigationState.selectSession(session.id)
+        onSelectSession(session)
+    }
+
+    /// Other bots' history is baselined from the all-bot scan, once per
+    /// profile, so first use does not mark every old chat unread. The
+    /// selected profile keeps its own baseline from its complete list.
+    private func baselineOtherBotSessions() {
+        guard case .ready = sidebarSnapshot.inputs.allBotSessionsState else { return }
+        let scope = sidebarSnapshot.inputs.profileScopeID
+        let byProfile = Dictionary(grouping: sidebarSnapshot.allBotConversations) { $0.profileID }
+        for (profileID, sessions) in byProfile where profileID != nil && profileID != scope {
+            sidebarSessionSeenStore.baseline(profileID: profileID, sessions: sessions)
+        }
     }
 
     private func baselineSidebarSessionsIfAuthoritative() {
@@ -230,9 +259,12 @@ struct SessionNavQueue: View {
             .onChange(of: sidebar.snapshot.inputs.sessionProjectionState) { _, _ in
                 baselineSidebarSessionsIfAuthoritative()
             }
+            .onChange(of: sidebar.snapshot.inputs.allBotSessionsState) { _, _ in
+                baselineOtherBotSessions()
+            }
             .onChange(of: sidebar.snapshot.inputs.activeSessionID) { _, _ in
                 if let id = sidebar.snapshot.inputs.activeSessionID,
-                    let session = sidebar.snapshot.conversations.first(where: { $0.id == id })
+                    let session = sidebar.snapshot.allBotConversations.first(where: { $0.id == id })
                 {
                     markSessionSeen(session)
                 }
@@ -537,7 +569,11 @@ struct SessionNavQueue: View {
                     onCreate: { isShowingNewGroupChat = true }
                 )
 
-                conversationOutline(allConversations, statuses: statuses, style: style)
+                if visibleBots.count > 1 {
+                    multiBotOutline(statuses: statuses, style: style)
+                } else {
+                    conversationOutline(allConversations, statuses: statuses, style: style)
+                }
 
                 if showsProjectsForSelectedBot {
                     SessionNavProjectList(
@@ -600,6 +636,7 @@ struct SessionNavQueue: View {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
                 await botMode.refreshNow()
+                if visibleBots.count > 1 { model.loadAllBotSessions() }
             }
         }
         .dockSheet(isPresented: $isShowingNewGroupChat) {
@@ -796,20 +833,22 @@ struct SessionNavQueue: View {
             isDeleting: sidebarSnapshot.inputs.deletingSessionID == session.id,
             isUpdatingVisibility: sidebarSnapshot.inputs.updatingSessionVisibilityID == session.id,
             isRenaming: sidebarSnapshot.inputs.renamingSessionID == session.id,
-            onSelect: { selected in
-                markSessionSeen(selected)
-                navigationState.selectSession(selected.id)
-                onSelectSession(selected)
-            },
+            onSelect: openSession,
             onTogglePin: togglePin,
             onRename: { selected, title in
                 let succeeded = await model.renameSession(selected, title: title)
-                if succeeded { controlCenter.refreshProjectNavigation() }
+                if succeeded {
+                    controlCenter.refreshProjectNavigation()
+                    model.loadAllBotSessions(force: true)
+                }
                 return succeeded
             },
             onToggleHidden: { selected, hidden in
                 let succeeded = await model.setSessionHidden(selected, hidden: hidden)
-                if succeeded { controlCenter.refreshProjectNavigation() }
+                if succeeded {
+                    controlCenter.refreshProjectNavigation()
+                    model.loadAllBotSessions(force: true)
+                }
                 return succeeded
             },
             onRequestDelete: { selected in
@@ -876,11 +915,7 @@ struct SessionNavQueue: View {
             isDeleting: sidebarSnapshot.inputs.deletingSessionID == session.id,
             isUpdatingVisibility: sidebarSnapshot.inputs.updatingSessionVisibilityID == session.id,
             isRenaming: sidebarSnapshot.inputs.renamingSessionID == session.id,
-            onSelect: { selected in
-                markSessionSeen(selected)
-                navigationState.selectSession(selected.id)
-                onSelectSession(selected)
-            },
+            onSelect: openSession,
             onTogglePin: togglePin,
             onRename: { selected, title in
                 let succeeded = await model.renameSession(selected, title: title)
@@ -896,6 +931,201 @@ struct SessionNavQueue: View {
             isPinning: sidebarSnapshot.inputs.pinningSessionID == session.id
         )
         .equatable()
+    }
+
+    private func groupingMenu(style: DockThemePalette) -> some View {
+        DockMenu {
+            DockMenuSection("Group by") {
+                ForEach(SidebarGrouping.allCases) { option in
+                    DockMenuCheckRow(title: option.title, isSelected: grouping == option) { grouping = option }
+                }
+            }
+        } label: {
+            Ph.dotsThree.image(size: 15, color: NSColor(style.secondaryText))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .fixedSize()
+        .help("Chat list options")
+        .accessibilityLabel("Chat list options")
+    }
+
+    /// Every visible bot's chats, grouped per bot or as one recency list.
+    /// Emits header and rows as siblings so the rail's LazyVStack owns them.
+    @ViewBuilder
+    private func multiBotOutline(statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+        let conversations = sidebarSnapshot.allBotConversations
+        let isRefreshing = sidebarSnapshot.inputs.isLoadingSessions
+        DockSectionHeader(
+            title: "Chats",
+            count: conversations.count,
+            isExpanded: $navigationState.areConversationsExpanded,
+            style: style
+        ) {
+            if conversations.contains(where: { statuses[$0.id] == .unreadComplete }) {
+                DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
+                    model.markSessionsRead(conversations, seenStore: sidebarSessionSeenStore)
+                }
+            }
+            DockIconButton(
+                icon: .arrowsClockwise,
+                label: isRefreshing ? "Refreshing conversations…" : "Refresh conversations",
+                isBusy: isRefreshing,
+                size: 24,
+                style: style
+            ) {
+                model.loadSessions()
+                model.loadAllBotSessions(force: true)
+                controlCenter.refreshProjectNavigation()
+            }
+            groupingMenu(style: style)
+        }
+        .padding(.top, style.sectionSpacing)
+        .padding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
+
+        if navigationState.areConversationsExpanded {
+            switch grouping {
+            case .agent: agentGroupRows(conversations, statuses: statuses, style: style)
+            case .session: sessionModeRows(conversations, statuses: statuses, style: style)
+            }
+            // Below the rows, so a failed refresh never shifts the list.
+            switch sidebarSnapshot.inputs.allBotSessionsState {
+            case .stale(_, let message), .unavailable(let message), .failed(let message):
+                queueEmpty(message, style: style).padding(.leading, 12)
+            case .loading, .ready, .empty:
+                EmptyView()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func agentGroupRows(
+        _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
+        let botsByID = Dictionary(visibleBots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let groups = SidebarAgentGrouping.groups(
+            conversations, botIDs: visibleBots.map(\.id), scopeProfileID: sidebarSnapshot.inputs.profileScopeID)
+        ForEach(groups) { group in
+            if let bot = botsByID[group.profileID] {
+                let isExpanded = botExpansion[bot.id] ?? (bot.id == selectedBot?.id)
+                agentRow(bot, group: group, isExpanded: isExpanded, statuses: statuses, style: style)
+                if isExpanded {
+                    let showsAll = botsShowingAllChats.contains(bot.id)
+                    let visible = SidebarAgentGrouping.visibleSessions(group.sessions, showsAll: showsAll) {
+                        session in
+                        isSessionSelected(session) || (statuses[session.id] ?? .none) != .none
+                    }
+                    if group.sessions.isEmpty {
+                        queueEmpty(
+                            sidebarSnapshot.inputs.allBotSessionsState == .loading
+                                ? "Loading conversations…" : "No recent chats",
+                            style: style
+                        )
+                        .padding(.leading, 34)
+                    }
+                    ForEach(visible, id: \.[sidebarSection: "agent:\(bot.id)"]) { session in
+                        plainConversationSessionRow(session, statuses: statuses, style: style)
+                            .padding(.leading, 26)
+                    }
+                    if group.sessions.count > visible.count || showsAll {
+                        Button {
+                            if showsAll {
+                                botsShowingAllChats.remove(bot.id)
+                            } else {
+                                botsShowingAllChats.insert(bot.id)
+                            }
+                        } label: {
+                            Text(showsAll ? "Show recent" : "Show all \(group.sessions.count)")
+                                .dockFont(.control)
+                                .foregroundStyle(style.secondaryText)
+                                .frame(minHeight: 28, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockLink)
+                        .padding(.leading, 40)
+                    }
+                }
+            }
+        }
+    }
+
+    /// A bot's summary row: avatar, newest chat, and whether anything is
+    /// running or unread. Tapping discloses its chats.
+    private func agentRow(
+        _ bot: BotSummary, group: SidebarAgentGrouping.Group, isExpanded: Bool,
+        statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
+        let latest = group.sessions.first
+        let isWorking = bot.isWorkingNow || group.sessions.contains { statuses[$0.id] == .working }
+        let hasUnread = group.sessions.contains { statuses[$0.id] == .unreadComplete }
+        return Button {
+            withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) {
+                botExpansion[bot.id] = !isExpanded
+            }
+        } label: {
+            HStack(spacing: 8) {
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28, orbits: isWorking)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(bot.name)
+                            .dockFont(.navigation, weight: hasUnread ? .semibold : .regular)
+                            .foregroundStyle(style.primaryText)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        SessionActivityGlyph(isWorking: isWorking, hasUnreadUpdate: hasUnread)
+                        if let date = latest?.lastUpdatedAt {
+                            Text(SidebarSessionTime.short(date))
+                                .dockFont(.metadata).monospacedDigit()
+                                .foregroundStyle(style.metadataText)
+                                .fixedSize()
+                        }
+                    }
+                    Text(latest.map { $0.displayPreview ?? $0.displayTitle } ?? "No recent chats")
+                        .dockFont(.body)
+                        .foregroundStyle(style.metadataText)
+                        .lineLimit(1)
+                }
+                DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: style.metadataText)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .accessibilityLabel("\(bot.name), \(group.sessions.count) chats")
+        .accessibilityHint(isExpanded ? "Collapse chats" : "Expand chats")
+    }
+
+    /// Every bot's chats newest first, each marked with its bot's avatar.
+    @ViewBuilder
+    private func sessionModeRows(
+        _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
+        let botsByID = Dictionary(visibleBots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let scope = sidebarSnapshot.inputs.profileScopeID ?? selectedBot?.id
+        let visible =
+            navigationState.showsAllConversations ? conversations : Array(conversations.prefix(10))
+        if conversations.isEmpty {
+            queueEmpty(
+                sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No saved conversations",
+                style: style
+            )
+            .padding(.leading, 20)
+        }
+        ForEach(visible, id: \.scopedID) { session in
+            HStack(spacing: 4) {
+                if let bot = botsByID[SidebarAgentGrouping.owner(session, scopeProfileID: scope) ?? ""] {
+                    BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 20, animated: false)
+                        .help(bot.name)
+                }
+                plainConversationSessionRow(session, statuses: statuses, style: style)
+            }
+            .padding(.leading, 4)
+        }
+        if conversations.count > 10 {
+            conversationExpansionButton(style: style)
+                .padding(.leading, 12)
+        }
     }
 
     /// Emits header and rows as siblings so the rail's LazyVStack owns them.

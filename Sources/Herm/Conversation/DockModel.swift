@@ -164,6 +164,10 @@ final class DockModel: ObservableObject {
     /// same flag Hermes Desktop's Pinned section and `hermes sessions pin` use.
     @Published var pinnedSessions: [HermesSession] = []
     @Published var pinningSessionID: String?
+    /// Recent sessions across every bot profile, for the agent-grouped sidebar.
+    @Published var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
+    var allBotSessionsTask: Task<Void, Never>?
+    var allBotSessionsLoadedAt: Date?
     let sessionPinService = HermesSessionPinService()
     var actionErrors = DockActionErrorCenter.shared
     @Published var renamingSessionID: String?

@@ -1484,6 +1484,25 @@ single-line preview; missing values do not leave separators behind. Repository
 identity is inline metadata rather than a capsule so the list remains calm at
 narrow sidebar widths. The Pinned section remains a separate presentation.
 
+With more than one visible bot, a **Chats** outline replaces Recents and lists
+every bot's chats from one all-profile sidebar read merged with the selected
+bot's fresher list. Its header adds a ⋯ **Group by** menu (also Settings → Chat
+→ Layout), stored as a local preference:
+
+- **Agent** (default): one 28pt-avatar row per bot, most recently active first,
+  with name, newest preview, time, and the shared activity glyph. The selected
+  bot starts expanded. Expanded bots show running, unread, attention, and the
+  open chat plus the three newest, indented under the avatar, then
+  Show all N/Show recent.
+- **Session**: every bot's chats newest first, each standard session row led by
+  a 20pt bot avatar, with the usual ten-row Show more.
+
+Other bots' running state comes from their live roster status, not the REST
+recent-write flag. Their history is baselined once from the all-profile read so
+first use shows no unread flood. Opening another bot's chat applies the profile
+switch before resuming it. A failed all-profile read shows its message below the
+list and keeps the last loaded rows.
+
 Session activity uses `session.active_list`, not the REST index’s recent-write
 flag. The visible sidebar refreshes activity every ten seconds for the selected
 profile, including unopened Bot sessions and pins. Successful live snapshots
