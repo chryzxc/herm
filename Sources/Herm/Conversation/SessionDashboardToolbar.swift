@@ -15,43 +15,51 @@ struct SessionDashboardToolbar: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 refreshButton
                 layoutPicker
-                Color.dockBorderLight.frame(width: DockLayout.hairline, height: 20)
                 botPicker.disabled(isLoading)
                 newChatButton
             }
             .fixedSize(horizontal: true, vertical: false)
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     refreshButton
                     layoutPicker
                 }
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     botPicker.disabled(isLoading)
                     newChatButton
                 }
             }
         }
-        .dockButtonSize(.standard)
+        .dockButtonSize(.compact)
     }
 
     private var refreshButton: some View {
         DockIconButton(
-            icon: .arrowsClockwise, label: "Refresh chats", isBusy: isRefreshing, size: 36,
+            icon: .arrowsClockwise, label: "Refresh chats", isBusy: isRefreshing,
+            size: DockControlMetrics.compactHeight,
             style: DockThemePalette(theme: DockThemeRuntime.current), action: onRefresh)
     }
 
     private var layoutPicker: some View {
-        DockSegmentedPicker(
-            selection: Binding(get: { true }, set: { if !$0 { onShowList() } }),
-            options: [(false, "List"), (true, "Tiles")]
-        )
-        .padding(3)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
+        DockMenu(outlined: true) {
+            DockMenuChoices(
+                selection: Binding(get: { true }, set: { if !$0 { onShowList() } })
+            ) {
+                DockMenuOption("List", value: false)
+                DockMenuOption("Tiles", value: true)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                DockIconLabel("Tiles", icon: .squaresFour)
+                DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
+            }
+        }
         .fixedSize(horizontal: true, vertical: false)
-        .accessibilityLabel("Chat layout")
+        .accessibilityLabel("Chat layout, Tiles")
+        .help("Change chat layout")
     }
 
     private var newChatButton: some View {
@@ -86,10 +94,10 @@ struct SessionDashboardToolbar: View {
         } label: {
             HStack(spacing: 8) {
                 if let bot = selectedBot {
-                    BotAvatarView(bot: bot, imageData: bots.avatarImages[bot.id], size: 22, animated: false)
+                    BotAvatarView(bot: bot, imageData: bots.avatarImages[bot.id], size: 18, animated: false)
                         .accessibilityHidden(true)
                 } else {
-                    BotFaceMark(id: selectedID, size: 22, animated: false, mood: .idle)
+                    BotFaceMark(id: selectedID, size: 18, animated: false, mood: .idle)
                         .accessibilityHidden(true)
                 }
                 Text(name).lineLimit(1).truncationMode(.tail).frame(maxWidth: 140)

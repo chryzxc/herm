@@ -53,6 +53,8 @@ struct SessionDashboardCard: View {
         .background(
             DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
                 .fill(hovered ? Color.dockSurface2 : Color.dockSurface)
+                .contentShape(Rectangle())
+                .onTapGesture { if !isLoadingSession { onRespond() } }
         )
         .overlay {
             DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane).stroke(
@@ -124,11 +126,6 @@ struct SessionDashboardCard: View {
                     Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                 }
-                DockIconButton(icon: .arrowSquareOut, label: "Open \(row.session.displayTitle)", size: 24, style: style)
-                {
-                    onRespond()
-                }
-                .disabled(isLoadingSession)
             }
             .foregroundStyle(Color.dockSecondaryText)
             Button(action: onRespond) {

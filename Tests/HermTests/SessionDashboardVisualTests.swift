@@ -6,6 +6,25 @@ import Testing
 
 @Suite @MainActor
 struct SessionDashboardVisualTests {
+    @Test func toolbarKeepsCompactHeightAcrossTextSizes() {
+        _ = NSApplication.shared
+        let bots = BotModeModel()
+        let originalTheme = DockThemeRuntime.current
+        defer { DockThemeRuntime.current = originalTheme }
+        for theme in [DockThemeID.clean, .storm, .glass, .mono] {
+            DockThemeRuntime.current = theme
+            for scale in [CGFloat(1), 1.25, 1.5] {
+                let toolbar = SessionDashboardToolbar(
+                    bots: bots, fallbackName: "Nexus", isLoading: false, isRefreshing: false,
+                    onRefresh: {}, onShowList: {}, onNewConversation: {}
+                )
+                .environment(\.dockWorkspaceScale, scale)
+                let host = NSHostingView(rootView: toolbar)
+                #expect(abs(host.fittingSize.height - DockControlMetrics.compactHeight * scale) < 0.5)
+            }
+        }
+    }
+
     @Test func renderSessionListAcrossThemesAndStates() async throws {
         guard let directory = ProcessInfo.processInfo.environment["DASHBOARD_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)

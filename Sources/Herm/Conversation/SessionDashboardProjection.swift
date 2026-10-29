@@ -25,6 +25,10 @@ struct SessionDashboardRow: Identifiable, Equatable {
     let project: String?
     var id: String { session.id }
     var section: SessionDashboardSection { .section(for: status) }
+    /// A running chat's update time moves every poll; its start keeps tiles from reshuffling.
+    var sortDate: Date {
+        (status == .working ? session.startedAt : nil) ?? session.lastUpdatedAt ?? .distantPast
+    }
 }
 
 enum SessionDashboardProjection {
@@ -88,8 +92,8 @@ enum SessionDashboardProjection {
             return SessionDashboardRow(
                 session: session, status: statuses[session.id] ?? .none, project: name)
         }.sorted {
-            let left = $0.session.lastUpdatedAt ?? .distantPast
-            let right = $1.session.lastUpdatedAt ?? .distantPast
+            let left = $0.sortDate
+            let right = $1.sortDate
             return left == right ? $0.id < $1.id : left > right
         }
     }

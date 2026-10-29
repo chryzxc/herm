@@ -10,7 +10,6 @@ struct SessionDashboardList: View, Equatable {
     var model: DockModel? = nil
     @ObservedObject private var seen = SidebarSessionSeenStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var cardPositions
     @State private var query = ""
     @State private var project: String?
     @State private var section: SessionDashboardSection?
@@ -78,10 +77,11 @@ struct SessionDashboardList: View, Equatable {
                             ? "Choose another bot or refresh the session list."
                             : "Activity is not current. Refresh to retry.")
                 }
-                // One grid keeps every card in the same container, so a card that
-                // changes section glides to its new slot instead of popping.
+                // One grid keeps every card in the same container. A card that changes
+                // section is re-created in its new slot; a matched-geometry ghost of the
+                // old one lingered with the old status.
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 320, maximum: 460), spacing: 16, alignment: .top)],
+                    columns: [GridItem(.adaptive(minimum: 320), spacing: 16, alignment: .top)],
                     alignment: .leading, spacing: 16
                 ) {
                     ForEach(SessionDashboardSection.allCases) { group in
@@ -91,10 +91,6 @@ struct SessionDashboardList: View, Equatable {
                                 if !collapsed.contains(group) {
                                     ForEach(members, id: \.session.scopedID) { row in
                                         sessionRow(row)
-                                            .matchedGeometryEffect(
-                                                id: row.session.scopedID, in: cardPositions, properties: .position
-                                            )
-                                            .transition(.identity)
                                     }
                                 }
                             } header: {
