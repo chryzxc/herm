@@ -181,6 +181,25 @@ struct ModelPickerTests {
 
     @Test
     @MainActor
+    func catalogRefreshCannotCrossProfile() async throws {
+        let client = ModelPickerRefreshRPCClient()
+        let model = DockModel(initialSessionID: "session-7", rpcClient: client)
+        model.profileScopeID = "first"
+        model.sessionProfileID = "first"
+        model.refreshRuntimeModelOptions(sessionID: "session-7")
+        while client.requests.isEmpty { await Task.yield() }
+        #expect(client.requests.first?.params["profile"] as? String == "first")
+        model.sessionProfileID = "second"
+        client.releaseNext(with: [
+            "provider": "openai", "model": "gpt-5",
+            "providers": [["slug": "openai", "models": ["gpt-5"]]],
+        ])
+        while model.isLoadingRuntimeModelOptions { await Task.yield() }
+        #expect(model.runtimeModelOptions.isEmpty)
+    }
+
+    @Test
+    @MainActor
     func refreshUsesGatewayBoundaryAndPublishesSessionCatalog() async throws {
         let client = ModelPickerRefreshRPCClient()
         let model = DockModel(initialSessionID: "session-7", rpcClient: client)

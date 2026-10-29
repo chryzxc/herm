@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Herm
@@ -77,6 +78,28 @@ struct SessionMessageTabsTests {
         #expect(tabs.tabs["workspace"]?.count == 2)
         tabs.close(toolID, in: "workspace")
         #expect(tabs.tabs["workspace"]?.count == 1)
+    }
+
+    @Test func pullRequestsDeduplicateWithinIndependentWorkspaces() throws {
+        let tabs = SessionMessageTabs()
+        let firstRepository = GitHubRepositoryReference(
+            owner: "owner", name: "first", webURL: URL(string: "https://github.com/owner/first")!)
+        let secondRepository = GitHubRepositoryReference(
+            owner: "owner", name: "second", webURL: URL(string: "https://github.com/owner/second")!)
+        let first = GitHubItemReference(repository: firstRepository, number: 42, kind: .pullRequest)
+        let second = GitHubItemReference(repository: secondRepository, number: 42, kind: .pullRequest)
+        tabs.open(.pullRequest(first), in: "workspace-a")
+        let firstID = try #require(tabs.selection["workspace-a"])
+        tabs.open(.pullRequest(second), in: "workspace-a")
+        let secondID = try #require(tabs.selection["workspace-a"])
+        #expect(firstID != secondID)
+        tabs.open(.pullRequest(first), in: "workspace-a")
+        #expect(tabs.tabs["workspace-a"]?.count == 2)
+        #expect(tabs.selection["workspace-a"] == firstID)
+        tabs.open(.pullRequest(first), in: "workspace-b")
+        tabs.close(firstID, in: "workspace-a")
+        #expect(tabs.selection["workspace-a"] == secondID)
+        #expect(tabs.tabs["workspace-b"]?.count == 1)
     }
 
 }

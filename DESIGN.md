@@ -463,7 +463,7 @@ These are disclosures with the same bounded inline scroll area as Changes and PR
 Rail disclosures align their caret and 14pt icon to the first title row, keeping
 wrapped titles, task summaries, and secondary metadata below that shared line.
 Pull requests uses the same section disclosure, icon, count, and 280pt list cap;
-individual PR rows retain their own inline details inside it.
+individual PR rows show inline details without a second disclosure and open dedicated inspector tabs.
 PR membership requires an explicit URL in the selected chat/tool input or a single-PR
 result from a targeted `gh pr` operation. Broad list, search, and history results do
 not establish membership. Live tool activity must have a mounted response owned by
@@ -474,9 +474,9 @@ session ID. Pins retain their existing session/profile/generation guards, and ou
 are filtered by their scoped session identity. Restoring or unselected chats omit summaries.
 Output file rows use the shared `ArtifactFileIcon` renderer at the compact row size;
 links and interactive outputs retain their semantic icons. Output rows preview images
-or local text on expansion; interactive outputs remain in
-Artifacts. View all outputs selects the third panel's Artifacts tab. Pin rows expand
-their preview before an explicit Show in chat jump. Respond in chat reveals the pending
+or local text in a dedicated preview tab. View all outputs selects the third panel's
+Artifacts tab. Pin rows show their preview and author inline and jump directly to the message.
+Respond in chat reveals the pending
 request at the transcript tail and focuses the composer; the rail never duplicates approval or credential submission controls.
 Outputs refresh on mount, after a turn, and on manual refresh using ArtifactIndexStore;
 failures retain prior outputs with an unavailable state. Session/profile identity and
@@ -504,15 +504,13 @@ Git status describes the worktree, so sessions sharing it share local edits; the
 does not infer which session authored each change.
 New files contribute to the file count; the count tooltip explains that untracked
 and binary lines are excluded. Without readable line counts, show the file count.
-Changes and PR rows are disclosures: ordinary rail clicks only expand or collapse
-inline quick views. Changes discloses changed files; each file discloses the shared
-native diff canvas without review/navigation controls. PRs disclose branch, author,
-readiness, and line counts. Every expanded detail area (Changes, PRs, and individual
-files) uses the same 280pt maximum scroll height, shrinking to fit shorter content.
+Changes and the PR group are disclosures. Changes discloses changed files; selecting a file
+opens its session preview tab. PR rows show branch, author, readiness, and line counts
+inline and open closable session-scoped tabs. Expanded Changes and PR details use the
+same 280pt maximum scroll height, shrinking to fit shorter content.
 Keep View all changes below the bounded file list so it stays available during scrolling.
-Only explicit links inside expanded content open the
-full inspector: View all changes selects Source Control, and View in GitHub panel
-selects GitHub. These links never change the center's Chat mode. Inspector requests
+View all changes selects Source Control; activating a PR opens its own full detail tab
+without changing the fixed GitHub selection. These actions never change the center's Chat mode. Inspector requests
 are scoped to session identity and consumed after tab restoration. Clean repositories
 omit the row; unavailable snapshots show an in-card retry note. The transcript's native
 scroll viewport spans the full session panel, with its scrollbar at the outer right
@@ -764,6 +762,13 @@ The composer keeps text entry and send/stop as its strongest interaction. Group
 attachments and queued work in the existing tray; constrain their growth and disclose
 detail in place. Model settings, context usage, and workspace metadata remain
 secondary. Do not move the input or navigation targets merely on hover.
+
+The composer and session rail share the Effort selector. Show pending,
+unsupported, unverified and stale states in its existing slot; refresh stale
+state without repeating a write. Choices represent Hermes-offered inputs, not
+an inferred final provider wire level, and a draft choice never changes the
+global default. Show a differing Hermes route entry mapping beside the selected
+input, including in its accessibility label, without claiming the final wire level.
 
 Within a control tab, use this hierarchy:
 
