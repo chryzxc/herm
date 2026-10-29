@@ -15,6 +15,8 @@ private final class ResponsePersistenceRPCClient: HermesRPCClientProtocol {
     var holdNextConnect = false
     private(set) var connectIsHeld = false
     private var connectContinuation: CheckedContinuation<Void, Never>?
+    var effortContinuation: CheckedContinuation<Void, Never>?
+    var effortReturned = false
     private(set) var requests: [(method: String, params: [String: Any])] = []
 
     func connect() async throws {
@@ -35,6 +37,10 @@ private final class ResponsePersistenceRPCClient: HermesRPCClientProtocol {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requests.append((method, params))
         switch method {
+        case "config.set":
+            await withCheckedContinuation { effortContinuation = $0 }
+            effortReturned = true
+            return ["key": "reasoning", "value": "high", "scope": "session"]
         case "session.resume":
             return [
                 "session_id": params["session_id"] as? String ?? "", "messages": resumeRows, "running": resumeRunning,
@@ -57,6 +63,43 @@ private final class ResponsePersistenceRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 struct SessionResponsePersistenceReproductionTests {
+    @Test func delayedEffortMutationCannotOverwriteRecoveredDestination() async throws {
+        let rpc = ResponsePersistenceRPCClient()
+        let model = DockModel(rpcClient: rpc)
+        defer { model.delegationMonitoringTask?.cancel() }
+        #expect(await model.resumeSession(session("origin"), reportFailure: true))
+        model.updateSessionReasoning(.high)
+        try await waitFor { rpc.effortContinuation != nil }
+
+        let snapshot = SessionComposerDraft(
+            text: "recovered destination draft", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            attachmentError: nil, pdfError: nil)
+        let owner = SessionComposerDraft.Key(profileID: model.composerDraftKey.profileID, sessionID: "other")
+        model.pendingSessionSends.append(
+            SessionPendingSend(
+                id: UUID(), owner: owner, snapshot: snapshot,
+                message: ChatMessage(role: .user, text: snapshot.text), baselineRowID: 0, phase: .notSent))
+        #expect(await model.resumeSession(session("other"), reportFailure: true))
+        model.receiveGatewayEvent(
+            "session.info", params: ["session_id": "other", "payload": ["reasoning_effort": "low"]])
+        expect(model.draft == "recovered destination draft")
+        expect(model.sessionReasoningVariant == .low)
+        let originReads = rpc.requests.filter {
+            $0.method == "config.get" && $0.params["session_id"] as? String == "origin"
+        }.count
+
+        rpc.effortContinuation?.resume()
+        rpc.effortContinuation = nil
+        try await waitFor { rpc.effortReturned }
+        await Task.yield()
+        expect(model.sessionID == "other")
+        expect(model.sessionReasoningVariant == .low)
+        expect(model.draft == "recovered destination draft")
+        expect(
+            rpc.requests.filter {
+                $0.method == "config.get" && $0.params["session_id"] as? String == "origin"
+            }.count == originReads)
+    }
     // Evaluate outside the macro so failure diagnostics cannot reflect the model's cached user history.
     private func expect(_ condition: Bool, sourceLocation: SourceLocation = #_sourceLocation) {
         #expect(condition, sourceLocation: sourceLocation)

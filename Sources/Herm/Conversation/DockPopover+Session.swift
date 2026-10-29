@@ -255,13 +255,14 @@ extension DockPopover {
     var sessionReasoningDisplayName: String {
         let reasoning =
             model.sessionID == nil
-            ? model.defaultReasoningVariant
+            ? (model.draftReasoningVariant ?? model.defaultReasoningVariant)
             : model.sessionReasoningVariant
         return reasoning?.displayName ?? "LOADING…"
     }
 
     var selectedModelOptionID: String? {
         if let id = model.sessionModelOptionID { return id }
+        if model.sessionID == nil, let id = model.defaultModelOptionID { return id }
         guard model.sessionID == nil, let provider = model.runtimeConfiguration?.provider,
             let modelName = model.runtimeConfiguration?.model
         else { return nil }
@@ -269,7 +270,8 @@ extension DockPopover {
     }
 
     var selectedReasoningVariant: HermesReasoningVariant? {
-        model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
+        model.sessionID == nil
+            ? (model.draftReasoningVariant ?? model.defaultReasoningVariant) : model.sessionReasoningVariant
     }
 
     var reasoningVariantSelection: Binding<HermesReasoningVariant?> {
@@ -321,30 +323,21 @@ extension DockPopover {
                 )
             }
             .buttonStyle(.dockHover)
-            .disabled(model.isUpdatingSessionModel)
+            .disabled(model.isUpdatingSessionModel || model.isUpdatingSessionReasoning)
             .help("Change the model for \(configurationScopeLabel)")
             .accessibilityLabel("Model for \(configurationScopeLabel): \(sessionModelDisplayName)")
 
             Color.dockBorderLight
                 .frame(width: 0.5, height: 24)
 
-            DockMenu {
-                DockMenuChoices(selection: reasoningVariantSelection) {
-                    ForEach(HermesReasoningVariant.allCases) { variant in
-                        DockMenuOption(variant.displayName, value: Optional(variant))
-                    }
-                }
-            } label: {
+            ComposerEffortPicker(model: model, modelID: selectedModelOptionID, selection: reasoningVariantSelection) {
+                status in
                 sessionConfigurationLabel(
                     icon: .brain,
-                    title: "THINKING",
-                    value: sessionReasoningDisplayName
+                    title: "EFFORT",
+                    value: status
                 )
             }
-            .buttonStyle(.dockHover)
-            .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
-            .help("Change thinking depth for \(configurationScopeLabel)")
-            .accessibilityLabel("Thinking depth for \(configurationScopeLabel): \(sessionReasoningDisplayName)")
         }
         .foregroundStyle(Color.dockPrimaryText)
         .background(

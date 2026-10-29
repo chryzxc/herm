@@ -107,8 +107,11 @@ extension DockModel {
             createParams["model"] = option.model
             createParams["provider"] = option.provider
         }
-        if let defaultReasoningVariant {
-            createParams["reasoning_effort"] = defaultReasoningVariant.rawValue
+        if let draftReasoningVariant,
+            effortCatalog?.choices(for: sessionModelOptionID ?? defaultModelOptionID)?.contains(draftReasoningVariant)
+                == true
+        {
+            createParams["reasoning_effort"] = draftReasoningVariant.rawValue
         }
         let generation = sessionResumeGeneration
         let result = try await sessionRPCClient.request(

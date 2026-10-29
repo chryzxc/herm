@@ -763,6 +763,13 @@ attachments and queued work in the existing tray; constrain their growth and dis
 detail in place. Model settings, context usage, and workspace metadata remain
 secondary. Do not move the input or navigation targets merely on hover.
 
+The composer and session rail share the Effort selector. Show pending,
+unsupported, unverified and stale states in its existing slot; refresh stale
+state without repeating a write. Choices represent Hermes-offered inputs, not
+an inferred final provider wire level, and a draft choice never changes the
+global default. Show a differing Hermes route entry mapping beside the selected
+input, including in its accessibility label, without claiming the final wire level.
+
 Within a control tab, use this hierarchy:
 
 1. Section label and a compact count or live-state label.
