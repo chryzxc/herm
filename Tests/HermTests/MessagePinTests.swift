@@ -6,11 +6,17 @@ import Testing
 @testable import Herm
 
 @MainActor
-private final class MessagePinRPCClient: HermesRPCClientProtocol {
+final class MessagePinRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var pins: [[String: Any]] = []
     var writes: [(String, [String: Any])] = []
     var failWrite = false
+    var ignoreWrite = false
+    var failReadAfterWrite = false
+    var suspendWrite = false
+    var suspendVerification = false
+    var failSuspendedResponse = false
+    var suspendedResponse: CheckedContinuation<Void, Never>?
     var supported = true
     var readDelay: Duration = .zero
     var deferHistory = false
@@ -51,21 +57,35 @@ private final class MessagePinRPCClient: HermesRPCClientProtocol {
         }
         if path.contains("/timeline") { return ["entries": [], "pagination": ["has_more": false]] }
         if readDelay != .zero { try await Task.sleep(for: readDelay) }
-        return ["supported": true, "requested_session_id": owner, "pins": pins, "pagination": ["has_more": false]]
+        let response: [String: Any] = [
+            "supported": true, "requested_session_id": owner, "pins": pins, "pagination": ["has_more": false],
+        ]
+        if suspendVerification && !writes.isEmpty {
+            suspendVerification = false
+            await withCheckedContinuation { suspendedResponse = $0 }
+            if failSuspendedResponse { throw URLError(.cannotConnectToHost) }
+        }
+        return response
     }
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
         writes.append((path, body))
+        if suspendWrite {
+            suspendWrite = false
+            await withCheckedContinuation { suspendedResponse = $0 }
+            if failSuspendedResponse { throw URLError(.cannotConnectToHost) }
+        }
         if failWrite { throw URLError(.cannotConnectToHost) }
         let parts = path.components(separatedBy: "/")
         let rowID = Int(parts.last!.components(separatedBy: "?")[0])!
-        if body["pinned"] as? Bool == true {
+        if failReadAfterWrite { supported = false }
+        if !ignoreWrite && body["pinned"] as? Bool == true {
             pins = [
                 [
                     "row_id": rowID, "message_uid": rowID == 1 ? "ask" : "reply",
                     "role": rowID == 1 ? "user" : "assistant", "preview": "saved",
                 ]
             ]
-        } else {
+        } else if !ignoreWrite {
             pins = []
         }
         return [
@@ -98,7 +118,7 @@ private struct PinTranscriptParent: View {
 
 @MainActor
 struct MessagePinTests {
-    private func loaded(_ rpc: MessagePinRPCClient) async throws -> DockModel {
+    func loaded(_ rpc: MessagePinRPCClient) async throws -> DockModel {
         let defaults = try #require(UserDefaults(suiteName: "MessagePinTests.\(UUID().uuidString)"))
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
             "message-pin-\(UUID().uuidString)")
@@ -130,6 +150,38 @@ struct MessagePinTests {
         await model.toggleMessagePinned(answer)
         #expect(!model.isMessagePinned(answer))
         #expect(model.messagePinError == nil)
+    }
+
+    @Test func failedBubblePinKeepsErrorAfterPopoverRefresh() async throws {
+        let rpc = MessagePinRPCClient()
+        let model = try await loaded(rpc)
+        defer { model.shutdown() }
+        let actions = ConversationMessageActionState()
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: actions, voice: VoiceOutput(),
+            coordinator: ConversationTranscriptCoordinator())
+        let message = try #require(model.messages.last)
+        rpc.failWrite = true
+        source.perform(.pin, target: .init(sessionID: "chat", messageID: message.id))
+        try await waitUntil { rpc.writes.count == 1 && actions.pendingActions.isEmpty }
+        let failure = try #require(model.messagePinError)
+        #expect(failure.contains("Could not pin message"))
+        // Opening the error popover runs the same refresh from its .task.
+        await model.refreshMessagePins()
+        #expect(model.pinnedMessages.isEmpty)
+        #expect(model.messagePinError == failure)
+    }
+
+    @Test(arguments: [false, true]) func acknowledgedUpdateMustMatchRead(pinned: Bool) async throws {
+        let rpc = MessagePinRPCClient()
+        let model = try await loaded(rpc)
+        defer { model.shutdown() }
+        let message = try #require(model.messages.last)
+        if !pinned { await model.toggleMessagePinned(message) }
+        rpc.ignoreWrite = true
+        await model.toggleMessagePinned(message)
+        #expect(model.messagePinError?.contains("could not be verified") == true)
+        #expect(model.isMessagePinned(message) != pinned)
     }
 
     @Test func unsupportedRuntimeDoesNotExposeMutations() async throws {

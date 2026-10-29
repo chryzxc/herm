@@ -66,6 +66,7 @@ final class DockModel: ObservableObject {
     @Published var updatingMessagePinRowID: Int?
     var isUpdatingMessagePin: Bool { updatingMessagePinRowID != nil }
     @Published var messagePinError: String?
+    @Published var messagePinMutationFeedback: MessagePinMutationFeedback?
     @Published var storedMessageReferences: [UUID: StoredMessageReference] = [:]
     var submittedMessageIDForPin: UUID?
     @Published var pendingImages: [ImageAttachment] = []
