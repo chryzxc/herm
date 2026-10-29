@@ -125,6 +125,8 @@ struct SessionRailChangeSummary: Equatable {
 struct SessionPullRequestRail: View {
     @ObservedObject var model: DockModel
     @ObservedObject var workflow: DeveloperWorkflowModel
+    /// Its `processes` follow the current session; the composer's process strip keeps them polled.
+    @ObservedObject var control: ControlCenterModel
     let repositoryPath: String?
     let onViewAllChanges: () -> Void
     let onViewPullRequest: (GitHubItemReference) async -> Bool
@@ -149,7 +151,8 @@ struct SessionPullRequestRail: View {
         .make(
             model: model, repositoryPath: repositoryPath, repository: workflow.repository,
             outputs: outputs.records, outputsError: outputs.error,
-            contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [])
+            contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [],
+            processes: control.processes)
     }
 
     var body: some View {

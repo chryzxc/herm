@@ -75,6 +75,17 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
         }
         return copy
     }
+
+    /// Options shared by Herm's own `ssh` processes (terminals, port forwards),
+    /// ending at the `--` before the target. Key-based auth only, like the bridge.
+    var sshOptions: [String] {
+        var options = [
+            "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15",
+            "-o", "ServerAliveInterval=30", "-p", String(sshPort),
+        ]
+        if !sshKeyPath.isEmpty { options += ["-i", NSString(string: sshKeyPath).expandingTildeInPath] }
+        return options + ["--", sshUser.isEmpty ? sshHost : sshUser + "@" + sshHost]
+    }
 }
 
 enum GatewayConnectionError: LocalizedError {
@@ -114,12 +125,18 @@ final class GatewayConnectionStore: ObservableObject {
     @Published private(set) var connections: [GatewayConnectionSettings] = []
     @Published private(set) var error: String?
     let launchSettings: GatewayConnectionSettings
+    /// Only Local mode shares this Mac's files, Hermes home, and loopback with
+    /// the backend. Mac-only features gate on this; switching modes relaunches,
+    /// so it is read once and safe off the main actor.
+    nonisolated static let backendSettings =
+        loadLaunchSettings(defaults: .standard, environment: ProcessInfo.processInfo.environment).settings
+    nonisolated static let isLocalBackend = backendSettings.mode == .local
     let environmentOverride: Bool
     let launchToken: String?
     private let defaults: UserDefaults
     private let readToken: (String) async throws -> String?
     private let writeToken: (String, String) async throws -> Void
-    private static let settingsKey = "gateway.connection"
+    private nonisolated static let settingsKey = "gateway.connection"
     private static let connectionsKey = "gateway.savedConnections"
 
     init(
@@ -133,14 +150,26 @@ final class GatewayConnectionStore: ObservableObject {
         self.writeToken = writeToken
         environmentOverride = !(environment["HERMES_DESKTOP_REMOTE_URL"] ?? "").isEmpty
         launchToken = environmentOverride ? environment["HERMES_DESKTOP_REMOTE_TOKEN"] : nil
+        let (settings, loadError) = Self.loadLaunchSettings(defaults: defaults, environment: environment)
+        launchSettings = settings
+        selected = settings
+        error = loadError
+        if let data = defaults.data(forKey: Self.connectionsKey) {
+            connections = (try? JSONDecoder().decode([GatewayConnectionSettings].self, from: data)) ?? []
+        }
+    }
+
+    nonisolated static func loadLaunchSettings(defaults: UserDefaults, environment: [String: String])
+        -> (settings: GatewayConnectionSettings, error: String?)
+    {
         var settings = GatewayConnectionSettings()
         var loadError: String?
-        if let data = defaults.data(forKey: Self.settingsKey) {
+        if let data = defaults.data(forKey: settingsKey) {
             do { settings = try JSONDecoder().decode(GatewayConnectionSettings.self, from: data).validated() } catch {
                 loadError = "Saved gateway settings could not be read. Save a valid connection to recover."
             }
         }
-        if environmentOverride {
+        if !(environment["HERMES_DESKTOP_REMOTE_URL"] ?? "").isEmpty {
             settings.mode = .remote
             settings.name = "Startup override"
             settings.remoteURL = environment["HERMES_DESKTOP_REMOTE_URL"] ?? ""
@@ -150,12 +179,7 @@ final class GatewayConnectionStore: ObservableObject {
                 loadError = nil
             } catch { loadError = error.localizedDescription }
         }
-        launchSettings = settings
-        selected = settings
-        error = loadError
-        if let data = defaults.data(forKey: Self.connectionsKey) {
-            connections = (try? JSONDecoder().decode([GatewayConnectionSettings].self, from: data)) ?? []
-        }
+        return (settings, loadError)
     }
 
     func token(for settings: GatewayConnectionSettings, draft: String = "") async throws -> String {

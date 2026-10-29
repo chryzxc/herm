@@ -1730,6 +1730,23 @@ struct ControlCenterProjectTests {
         #expect(model.lastError == nil)
     }
 
+    @Test func parsesProcessListGatewayShape() {
+        let processes = ControlCenterModel.parseProcesses([
+            "processes": [
+                [
+                    "session_id": "proc_94ccdb69988a", "pid": 93601, "command": "sh lane.sh 1",
+                    "status": "running", "output_preview": "tail",
+                    "output_tail": "LANE 1 · Fix login · plan\n\u{1B}[32mLANE 1 · Fix login · build\u{1B}[0m\n\n",
+                ],
+                ["session_id": "proc_2", "pid": 93610, "command": "npm test", "status": "exited", "output_tail": ""],
+            ]
+        ])
+        #expect(processes.map(\.id) == ["proc_94ccdb69988a", "proc_2"])
+        #expect(processes.map(\.state) == ["running", "exited"])
+        #expect(processes[0].latestOutput == "LANE 1 · Fix login · build")
+        #expect(processes[1].latestOutput == nil)
+    }
+
     @Test func killProcessRequiresActivityCapabilityAndNeverCallsRPC() async {
         let client = ProcessControlClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))

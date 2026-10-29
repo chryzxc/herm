@@ -40,6 +40,7 @@ struct SessionNavQueue: View {
     let onOpenGroupChat: (String) -> Void
     let onOpenPullRequests: () -> Void
     let onOpenIssues: () -> Void
+    let onOpenTiles: (() -> Void)?
     let showsFullscreenToggle: Bool
     let isFullscreen: Bool
     let onFullscreenToggle: () -> Void
@@ -48,6 +49,7 @@ struct SessionNavQueue: View {
     let isDockedWindow: Bool
     let showsWindowTitleRow: Bool
     @Binding var isSidebarCollapsed: Bool
+    @State private var sessionSearchQuery = ""
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
     @State private var creatingProjectPath: String?
@@ -81,6 +83,7 @@ struct SessionNavQueue: View {
         onOpenGroupChat: @escaping (String) -> Void,
         onOpenPullRequests: @escaping () -> Void,
         onOpenIssues: @escaping () -> Void,
+        onOpenTiles: (() -> Void)? = nil,
         showsFullscreenToggle: Bool,
         isFullscreen: Bool,
         onFullscreenToggle: @escaping () -> Void,
@@ -107,6 +110,7 @@ struct SessionNavQueue: View {
         self.isPullRequestsActive = isPullRequestsActive
         self.isIssuesActive = isIssuesActive
         self.onNewConversation = onNewConversation
+        self.onOpenTiles = onOpenTiles
         self.onSelectSession = onSelectSession
         self.onSelectTask = onSelectTask
         self.onOpenGlobal = onOpenGlobal
@@ -271,6 +275,10 @@ struct SessionNavQueue: View {
             }
             .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
             .zIndex(1)
+
+            sessionSearchField
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
 
             HoverPausingScrollView {
                 globalRailBar(style: style)
@@ -495,76 +503,93 @@ struct SessionNavQueue: View {
                 .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
             }
             .buttonStyle(.dockHover)
-
-            let pinned = pinnedSessionPresentation
-            if pinned.status != .empty || !pinned.sessions.isEmpty {
-                pinnedOutline(pinned, statuses: statuses, style: style)
+            if let onOpenTiles {
+                Button(action: onOpenTiles) {
+                    HStack(spacing: 8) {
+                        DockIcon(.squaresFour, size: 14)
+                        Text("Chat tiles")
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 6)
+                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                }
+                .buttonStyle(.dockHover)
+                .help("See every chat's status and answer requests without switching chats")
             }
 
-            GroupChatSidebarSection(
-                store: botMode.groupChats,
-                botMode: botMode,
-                selectedRoomID: {
-                    if case .groupChat(let id) = navigationState.selection.selection { return id }
-                    return nil
-                }(),
-                style: style,
-                onOpen: onOpenGroupChat,
-                onCreate: { isShowingNewGroupChat = true }
-            )
+            if isSearchingSessions {
+                sessionSearchResults(statuses: statuses, style: style)
+            } else {
+                let pinned = pinnedSessionPresentation
+                if pinned.status != .empty || !pinned.sessions.isEmpty {
+                    pinnedOutline(pinned, statuses: statuses, style: style)
+                }
 
-            conversationOutline(allConversations, statuses: statuses, style: style)
-
-            if showsProjectsForSelectedBot {
-                SessionNavProjectList(
-                    groups: projects,
-                    selectedSessionID: navigationState.selectedProjectSessionID,
-                    activeSessionID: sidebarSnapshot.inputs.activeSessionID,
-                    attentionDots: sidebarSnapshot.attentionDots,
-                    sessionStatuses: statuses,
-                    isLoadingProjects: sidebarSnapshot.inputs.isLoadingProjects,
-                    isRefreshing: sidebarSnapshot.inputs.isRefreshingProjectNavigation,
-                    isCreatingChat: sidebarSnapshot.inputs.isCreatingSession,
+                GroupChatSidebarSection(
+                    store: botMode.groupChats,
+                    botMode: botMode,
+                    selectedRoomID: {
+                        if case .groupChat(let id) = navigationState.selection.selection { return id }
+                        return nil
+                    }(),
                     style: style,
-                    isPinned: isPinned,
-                    onTogglePin: togglePin,
-                    onRename: { session, title in
-                        let succeeded = await model.renameSession(session, title: title)
-                        if succeeded { controlCenter.refreshProjectNavigation() }
-                        return succeeded
-                    },
-                    onToggleHidden: { session, hidden in
-                        let succeeded = await model.setSessionHidden(session, hidden: hidden)
-                        if succeeded {
-                            controlCenter.refreshProjectNavigation()
-                        }
-                        return succeeded
-                    },
-                    onRequestDelete: { session in sessionPendingDeletion = session },
-                    deletingSessionID: sidebarSnapshot.inputs.deletingSessionID,
-                    updatingSessionVisibilityID: sidebarSnapshot.inputs.updatingSessionVisibilityID,
-                    renamingSessionID: sidebarSnapshot.inputs.renamingSessionID,
-                    creatingProjectPath: creatingProjectPath,
-                    onSelectSession: { session in
-                        markSessionSeen(session)
-                        navigationState.selectSession(session.id)
-                        onSelectSession(session)
-                    },
-                    onRefresh: {
-                        controlCenter.refreshProjectNavigation()
-                    },
-                    onAddProject: { isShowingProjectSheet = true },
-                    onArchiveProject: { id in
-                        guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
-                        Task { _ = await controlCenter.archiveProject(project) }
-                    },
-                    onAddSourceFolder: { id, folder in
-                        guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
-                        Task { _ = await controlCenter.addProjectFolder(project, folder: folder) }
-                    },
-                    onNewChatInProject: startNewChat(inProject:),
-                    pinningSessionID: sidebarSnapshot.inputs.pinningSessionID
+                    onOpen: onOpenGroupChat,
+                    onCreate: { isShowingNewGroupChat = true }
                 )
+
+                conversationOutline(allConversations, statuses: statuses, style: style)
+
+                if showsProjectsForSelectedBot {
+                    SessionNavProjectList(
+                        groups: projects,
+                        selectedSessionID: navigationState.selectedProjectSessionID,
+                        activeSessionID: sidebarSnapshot.inputs.activeSessionID,
+                        attentionDots: sidebarSnapshot.attentionDots,
+                        sessionStatuses: statuses,
+                        isLoadingProjects: sidebarSnapshot.inputs.isLoadingProjects,
+                        isRefreshing: sidebarSnapshot.inputs.isRefreshingProjectNavigation,
+                        isCreatingChat: sidebarSnapshot.inputs.isCreatingSession,
+                        style: style,
+                        isPinned: isPinned,
+                        onTogglePin: togglePin,
+                        onRename: { session, title in
+                            let succeeded = await model.renameSession(session, title: title)
+                            if succeeded { controlCenter.refreshProjectNavigation() }
+                            return succeeded
+                        },
+                        onToggleHidden: { session, hidden in
+                            let succeeded = await model.setSessionHidden(session, hidden: hidden)
+                            if succeeded {
+                                controlCenter.refreshProjectNavigation()
+                            }
+                            return succeeded
+                        },
+                        onRequestDelete: { session in sessionPendingDeletion = session },
+                        deletingSessionID: sidebarSnapshot.inputs.deletingSessionID,
+                        updatingSessionVisibilityID: sidebarSnapshot.inputs.updatingSessionVisibilityID,
+                        renamingSessionID: sidebarSnapshot.inputs.renamingSessionID,
+                        creatingProjectPath: creatingProjectPath,
+                        onSelectSession: { session in
+                            markSessionSeen(session)
+                            navigationState.selectSession(session.id)
+                            onSelectSession(session)
+                        },
+                        onRefresh: {
+                            controlCenter.refreshProjectNavigation()
+                        },
+                        onAddProject: { isShowingProjectSheet = true },
+                        onArchiveProject: { id in
+                            guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
+                            Task { _ = await controlCenter.archiveProject(project) }
+                        },
+                        onAddSourceFolder: { id, folder in
+                            guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
+                            Task { _ = await controlCenter.addProjectFolder(project, folder: folder) }
+                        },
+                        onNewChatInProject: startNewChat(inProject:),
+                        pinningSessionID: sidebarSnapshot.inputs.pinningSessionID
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -598,6 +623,64 @@ struct SessionNavQueue: View {
                 },
                 failureReason: { controlCenter.lastError }
             )
+        }
+    }
+
+    private var isSearchingSessions: Bool {
+        !sessionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var sessionSearchField: some View {
+        HStack(spacing: 6) {
+            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
+            DockTextField("Search sessions", text: $sessionSearchQuery)
+                .textFieldStyle(.plain)
+                .dockFont(.body)
+                .accessibilityLabel("Search sidebar sessions")
+                .accessibilityIdentifier("sidebar-session-search")
+                .onExitCommand { sessionSearchQuery = "" }
+            if !sessionSearchQuery.isEmpty {
+                DockIconButton(
+                    icon: .x, label: "Clear session search", size: 24,
+                    style: DockThemePalette(theme: dockThemeStore.selectedThemeID)
+                ) {
+                    sessionSearchQuery = ""
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(minHeight: 32)
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
+        .overlay {
+            DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+        }
+    }
+
+    @ViewBuilder
+    private func sessionSearchResults(statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+        let matches = SessionSidebarSearch.sessions(
+            matching: sessionSearchQuery,
+            in: botScopedConversations(sidebarSnapshot.conversations + pinnedSessionPresentation.sessions),
+            projects: sidebarSnapshot.projectNameBySessionID)
+        Text("Loaded sessions · \(matches.count)")
+            .dockFont(.body, weight: .semibold)
+            .foregroundStyle(style.secondaryText)
+            .padding(8)
+        if matches.isEmpty {
+            queueEmpty(
+                sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No matching loaded sessions",
+                style: style)
+        }
+        if case .stale(let message) = pinnedSessionPresentation.status {
+            queueEmpty(message, style: style)
+        } else if case .unavailable(let message) = pinnedSessionPresentation.status {
+            queueEmpty(message, style: style)
+        } else if case .failed(let message) = pinnedSessionPresentation.status {
+            queueEmpty(message, style: style)
+        }
+        ForEach(matches, id: \.[sidebarSection: "search"]) { session in
+            conversationSessionRow(session, statuses: statuses, style: style)
         }
     }
 

@@ -311,15 +311,79 @@ struct SessionBrowserTests {
         let destination = try #require(
             URL(string: "http://localhost:5173/preview_(draft)?next=%2Ffoo%3Fa%3D1&token=a%2Bb#section-2")
         )
-        workspace.primary.address = "https://previous.example/"
         // No model: the asynchronous startup exits before launching Chromium.
         workspace.agent.start()
-        workspace.open(destination)
+        #expect(workspace.openLink(destination) == nil)
         _ = store.workspace(for: SessionBrowserKey(profileID: nil, sessionID: "other"))
         _ = SessionBrowserView(model: DockModel(initialSessionID: "chat"), workspace: workspace)
         #expect(workspace.agent.pendingURL == destination)
         #expect(workspace.primary.address == destination.absoluteString)
         #expect(workspace.primary.web.url == nil)
+    }
+
+    @Test func differentChatLinksKeepExistingPagesAndReuseExactDestinations() throws {
+        let workspace = SessionBrowserWorkspace(key: SessionBrowserKey(profileID: nil, sessionID: "links"))
+        let original = "https://example.invalid/original"
+        workspace.primary.address = original
+        let destination = try #require(URL(string: "https://example.invalid/preview?q=a%2Bb#section"))
+        let id = try #require(workspace.openLink(destination))
+        defer { for tab in workspace.extras { workspace.closeTab(tab.id) } }
+        #expect(workspace.primary.address == original)
+        #expect(workspace.extras.count == 1)
+        #expect(workspace.extras.first?.address == destination.absoluteString)
+        #expect(workspace.openLink(destination) == id)
+        #expect(workspace.extras.count == 1)
+        #expect(workspace.openLink(try #require(URL(string: original))) == nil)
+        #expect(workspace.extras.count == 1)
+        let other = try #require(URL(string: "https://example.invalid/preview?q=a%2Bb#other"))
+        #expect(workspace.openLink(other) != id)
+        #expect(workspace.extras.count == 2)
+        #expect(workspace.extras.first?.address == destination.absoluteString)
+    }
+
+    @Test func differentChatLinkPreservesPendingAgentNavigation() throws {
+        let workspace = SessionBrowserWorkspace(key: SessionBrowserKey(profileID: nil, sessionID: "pending-links"))
+        defer {
+            workspace.agent.stop()
+            for tab in workspace.extras { workspace.closeTab(tab.id) }
+        }
+        let first = try #require(URL(string: "https://example.invalid/first"))
+        let second = try #require(URL(string: "https://example.invalid/second"))
+        workspace.agent.start()
+        #expect(workspace.openLink(first) == nil)
+        #expect(workspace.openLink(first) == nil)
+        #expect(workspace.openLink(second) != nil)
+        #expect(workspace.agent.pendingURL == first)
+        #expect(workspace.primary.address == first.absoluteString)
+    }
+
+    @Test func browserTabTitlesFollowPageNamesAndKeepUntitledTabsGeneric() async throws {
+        let workspace = SessionBrowserWorkspace(key: SessionBrowserKey(profileID: nil, sessionID: "titles"))
+        let extra = workspace.addTab()
+        defer { workspace.closeTab(extra.id) }
+        #expect(workspace.tabTitle() == "Browser")
+        #expect(workspace.tabTitle(for: extra.id, fallback: "Browser 2") == "Browser 2")
+        workspace.primary.web.loadHTMLString("<title>Main page</title><p>Main</p>", baseURL: nil)
+        extra.web.loadHTMLString("<title>Other page</title><p>Other</p>", baseURL: nil)
+        for _ in 0..<100 {
+            if workspace.tabTitle() == "Main page", workspace.tabTitle(for: extra.id) == "Other page" { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(workspace.tabTitle() == "Main page")
+        #expect(workspace.tabTitle(for: extra.id) == "Other page")
+        _ = try await extra.web.evaluateJavaScript("document.title = 'Renamed page'")
+        for _ in 0..<100 {
+            if workspace.tabTitle(for: extra.id) == "Renamed page" { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(workspace.tabTitle(for: extra.id) == "Renamed page")
+        #expect(workspace.tabTitle() == "Main page")
+        _ = try await extra.web.evaluateJavaScript("document.title = 'https://example.invalid/'")
+        for _ in 0..<100 {
+            if workspace.tabTitle(for: extra.id, fallback: "Browser 2") == "Browser 2" { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(workspace.tabTitle(for: extra.id, fallback: "Browser 2") == "Browser 2")
     }
 
     @Test func retryAfterFailedStartupKeepsPendingDestination() async throws {

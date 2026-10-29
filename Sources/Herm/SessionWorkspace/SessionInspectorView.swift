@@ -24,6 +24,7 @@ struct SessionInspector: View {
     struct TabRequest: Equatable {
         let session: String
         let section: Section
+        var browserTabID: UUID? = nil
     }
     // Persisted so collapsing and reopening the panel keeps the open tab.
     @AppStorage("sessionInspector.selectedSection") private var selectedSection = Section.timeline
@@ -570,6 +571,11 @@ struct SessionInspector: View {
         tabRequest = nil
         guard request.session == WorkspaceIdentity.session(model) else { return }
         reopen(request.section)
+        if request.section == .browser,
+            let id = request.browserTabID, browserWorkspace?.extras.contains(where: { $0.id == id }) == true
+        {
+            selectedExtraID = id
+        }
     }
 
     /// Sits right after the last tab, like a browser's new-tab button.
@@ -659,6 +665,7 @@ struct SessionInspector: View {
     }
 
     private func sectionTitle(_ section: Section) -> String {
+        if section == .browser { return browserWorkspace?.tabTitle() ?? section.navigationTitle }
         guard section == .github else { return section.navigationTitle }
         return gitHub.item(for: WorkspaceIdentity.session(model))?.reference?.kind == .issue ? "Issue" : "Pull Request"
     }
@@ -694,8 +701,12 @@ struct SessionInspector: View {
     }
 
     private func extraTab(_ extra: ExtraTab) -> SessionInspectorTabItem {
-        SessionInspectorTabItem(
-            id: "extra:" + extra.id.uuidString, title: "\(extra.kind.navigationTitle) \(extra.number)",
+        let fallback = "\(extra.kind.navigationTitle) \(extra.number)"
+        let title =
+            extra.kind == .browser
+            ? browserWorkspace?.tabTitle(for: extra.id, fallback: fallback) ?? fallback : fallback
+        return SessionInspectorTabItem(
+            id: "extra:" + extra.id.uuidString, title: title,
             icon: extra.kind.icon, isSelected: selectedExtraID == extra.id && selectedPreview == nil,
             select: {
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {

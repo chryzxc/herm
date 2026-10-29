@@ -132,6 +132,13 @@ final class HermesGatewayLifecycleModel: ObservableObject {
     }
 
     private func readStatus() async {
+        // The CLI below runs on this Mac; a remote backend's messaging gateway lives on its host.
+        guard GatewayConnectionStore.isLocalBackend else {
+            hasChecked = true
+            status = .init()
+            error = "The messaging gateway runs on the remote Hermes host. Manage it there with `hermes gateway`."
+            return
+        }
         let result = await run(.status)
         hasChecked = true
         status = result.succeeded ? .parse(result.output) : .init()

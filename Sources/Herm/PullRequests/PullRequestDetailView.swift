@@ -239,28 +239,26 @@ struct PullRequestDetailView: View {
     private func detailHeader(_ pr: PullRequestRecord) -> some View {
         let fileIDs = Set((center.filesByID[pr.id] ?? []).map(\.id))
         return VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
+            HStack(spacing: 0) {
+                ViewThatFits(in: .horizontal) {
                     detailTabs(pr)
-                    Spacer(minLength: 4)
-                        .background { if titleRow != nil { TitlebarDoubleClickArea() } }
-                    detailActions(pr)
-                }
-                HStack(spacing: 12) {
                     detailTabs(pr, compact: true)
-                    Spacer(minLength: 4)
-                        .background { if titleRow != nil { TitlebarDoubleClickArea() } }
-                    detailActions(pr, compact: true)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    detailTabs(pr, compact: true)
-                    detailActions(pr, compact: true, wraps: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 0)
+                    .background { if titleRow != nil { TitlebarDoubleClickArea() } }
             }
             .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
             .padding(.vertical, 12)
-            .background(Color.dockCanvas)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+
+            VStack(alignment: .leading, spacing: 6) {
+                DockSectionLabel(title: "Pull request actions")
+                detailActions(pr, compact: true, wraps: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
+            .padding(.vertical, 10)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
 
             if detailTab == 1 {
                 HStack(spacing: 10) {
@@ -642,10 +640,6 @@ struct PullRequestDetailView: View {
                     .contentShape(Capsule())
             }.buttonStyle(.dockHover).accessibilityAddTraits(detailTab == 1 ? .isSelected : [])
             detailTabButton("Reviews", selected: detailTab == 2) { detailTab = 2 }
-            if hasCurrentGuide(pr) {
-                Button("Read review guide") { readingGuide = true }
-                    .buttonStyle(.dockCompact)
-            }
         }.padding(4)
             .background(Capsule().fill(Color.dockSurface))
             .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))

@@ -17,6 +17,9 @@ enum CodexQuotaService {
     /// fails still appears, with the failure as its detail, so it can be
     /// inspected or removed instead of hiding every other account.
     static func readHermes() async throws -> [String: Any] {
+        guard GatewayConnectionStore.isLocalBackend else {
+            throw CodexQuotaError.unavailable("Codex logins live on the remote Hermes backend, not this Mac.")
+        }
         let accounts = loadAllHermesAuth()
         guard !accounts.isEmpty else {
             throw CodexQuotaError.unavailable("No Hermes-managed Codex login was found.")
@@ -97,8 +100,10 @@ enum CodexQuotaService {
         hermesAuthStore().map(hermesAccounts(fromAuthStore:)) ?? []
     }
 
-    /// `$HERMES_HOME/auth.json`, or nil when Hermes has not stored a login yet.
+    /// `$HERMES_HOME/auth.json`, or nil when Hermes has not stored a login yet
+    /// or the backend is remote (this Mac's file is not the backend's).
     static func hermesAuthStore() -> [String: Any]? {
+        guard GatewayConnectionStore.isLocalBackend else { return nil }
         let home = FileManager.default.homeDirectoryForCurrentUser
         let root =
             ProcessInfo.processInfo.environment["HERMES_HOME"].map {

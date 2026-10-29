@@ -164,9 +164,10 @@ extension DockPopover {
         }
     }
 
-    func showSessionRailInspector(_ section: SessionInspector.Section) {
+    func showSessionRailInspector(_ section: SessionInspector.Section, browserTabID: UUID? = nil) {
         inspectorScope = .session
-        sessionInspectorTabRequest = .init(session: WorkspaceIdentity.session(model), section: section)
+        sessionInspectorTabRequest = .init(
+            session: WorkspaceIdentity.session(model), section: section, browserTabID: browserTabID)
         ensureInspectorPanelVisible()
     }
 

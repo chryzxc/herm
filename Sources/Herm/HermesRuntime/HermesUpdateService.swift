@@ -264,6 +264,8 @@ final class HermesUpdateService: ObservableObject {
         "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest"
     nonisolated static let updateCommandArguments = ["hermes", "update"]
     nonisolated static let updateCommandDisplay = "hermes update"
+    static let remoteBackendMessage =
+        "Hermes Agent runs on the remote backend. Run `hermes update` on that host to update it."
     private static let logLineLimit = 300
     private static let versionReadTimeout: TimeInterval = 10
 
@@ -294,6 +296,11 @@ final class HermesUpdateService: ObservableObject {
 
     func checkForUpdates() {
         guard !isBusy else { return }
+        // The `hermes` on this Mac is not the backend's; only Local mode can check or update it.
+        guard GatewayConnectionStore.isLocalBackend else {
+            phase = .checkFailed(Self.remoteBackendMessage)
+            return
+        }
         phase = .checking
         Task { [weak self] in
             guard let self else { return }
@@ -330,7 +337,7 @@ final class HermesUpdateService: ObservableObject {
     }
 
     func performUpdate() {
-        guard !isBusy else { return }
+        guard !isBusy, GatewayConnectionStore.isLocalBackend else { return }
         phase = .updating
         logLines.removeAll()
         updateStartedAt = Date()

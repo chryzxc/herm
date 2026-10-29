@@ -35,10 +35,20 @@ final class SessionIndexWorkingMergeTests: XCTestCase {
             )
             XCTAssertEqual(status, working ? .working : .none)
             let selectedStatus = SidebarSessionStatusResolver.resolve(
-                session: session, summary: summary, activeSessionID: "a", activeStatus: working ? .idle : .working,
+                session: session, summary: summary, activeSessionID: "a", activeStatus: .idle,
                 attention: nil, seenAt: nil, isProfileBaselined: false
             )
             XCTAssertEqual(selectedStatus, working ? .working : .none)
         }
+    }
+
+    func testOpenChatTurnShowsWorkingBeforeTheLiveListCatchesUp() {
+        let session = HermesSession(
+            id: "a", title: "", preview: "", startedAt: nil, messageCount: 0, source: "herm", isWorking: false)
+        let status = SidebarSessionStatusResolver.resolve(
+            session: session, summary: nil, activeSessionID: "a", activeStatus: .working,
+            attention: nil, seenAt: nil, isProfileBaselined: false
+        )
+        XCTAssertEqual(status, .working)
     }
 }

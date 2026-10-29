@@ -22,16 +22,21 @@ struct SessionRailSummary: Equatable {
     var pinsError: String?
     var workspace: Workspace?
     var contextFiles: [SessionContextFile] = []
+    /// Hermes background processes this session started (`process.list`), newest output last.
+    var processes: [ProcessSummary] = []
 
     var isEmpty: Bool {
         attention.isEmpty && plan == nil && outputs.isEmpty && outputsError == nil
-            && pins.isEmpty && pinsError == nil && workspace == nil && contextFiles.isEmpty
+            && pins.isEmpty && pinsError == nil && workspace == nil && contextFiles.isEmpty && processes.isEmpty
     }
+
+    var runningProcessCount: Int { processes.count { $0.state == "running" } }
 
     @MainActor
     static func make(
         model: DockModel, repositoryPath: String?, repository: RepositorySnapshot,
-        outputs: [ArtifactRecord], outputsError: String?, contextFiles: [SessionContextFile] = []
+        outputs: [ArtifactRecord], outputsError: String?, contextFiles: [SessionContextFile] = [],
+        processes: [ProcessSummary] = []
     ) -> Self {
         guard let sessionID = model.navigationSessionID, !model.isRestoringSession else { return Self() }
         let ids = model.currentSessionIDs
@@ -55,6 +60,7 @@ struct SessionRailSummary: Equatable {
             .sorted { $0.timestamp > $1.timestamp }
         summary.outputsError = outputsError
         summary.contextFiles = contextFiles
+        summary.processes = processes
         summary.pins = model.pinnedMessages
         // Unsupported pins should not advertise a rail section on older runtimes.
         summary.pinsError = model.pinnedMessages.isEmpty ? nil : model.messagePinError

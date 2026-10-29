@@ -29,6 +29,20 @@ struct SessionRailSummarySections: View {
                 TodoPlanTaskList(plan: plan, isWorking: summary.isWorking)
             }
         }
+        if !summary.processes.isEmpty {
+            let running = summary.runningProcessCount
+            SessionRailSummarySection(
+                title: "Background processes", icon: .terminal,
+                detail: running > 0 ? "\(running) running" : "Finished",
+                subtitle: summary.processes.last { $0.state == "running" }?.latestOutput
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(summary.processes) { process in
+                        SessionRailProcessRow(process: process)
+                    }
+                }
+            }
+        }
         if !summary.outputs.isEmpty || summary.outputsError != nil {
             SessionRailSummarySection(title: "Outputs", icon: .files, count: summary.outputs.count) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -216,6 +230,28 @@ private struct SessionRailContextFileRow: View {
             }
         }
         .help((file.path as NSString).abbreviatingWithTildeInPath)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SessionRailProcessRow: View {
+    let process: ProcessSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(process.name).lineLimit(1).truncationMode(.middle)
+                    .dockFont(.metadata, design: .monospaced)
+                Spacer(minLength: 0)
+                Text(process.state.capitalized).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                    .fixedSize()
+            }
+            if let latest = process.latestOutput {
+                Text(latest).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+                    .textSelection(.enabled)
+            }
+        }
+        .help(process.detail ?? process.name)
         .accessibilityElement(children: .combine)
     }
 }

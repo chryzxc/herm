@@ -311,13 +311,23 @@ extension DockModel {
         // covers unopened sessions too, including long turns without new writes.
         let live = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
         let working = (live?["sessions"] as? [[String: Any]]).map { sessions in
-            Set(
+            let gatewayKeys = Set(sessions.compactMap { $0["session_key"] as? String })
+            // The live RPC lists only this gateway's sessions. A `hermes chat` run in
+            // another process is absent from it; Hermes' unended, recently written
+            // flag is the only signal for that run.
+            let elsewhere = rows.compactMap { row -> String? in
+                guard row["is_active"] as? Bool == true, let id = row["id"] as? String,
+                    !gatewayKeys.contains(id)
+                else { return nil }
+                return id
+            }
+            return Set(
                 sessions.compactMap { row -> String? in
                     guard let status = row["status"] as? String,
                         ["starting", "working", "streaming", "waiting"].contains(status)
                     else { return nil }
                     return row["session_key"] as? String
-                })
+                } + elsewhere)
         }
         let pinned = rows.filter { $0["pinned"] as? Bool == true }.compactMap { parseSession($0, profileID: profileID) }
             .map { session in

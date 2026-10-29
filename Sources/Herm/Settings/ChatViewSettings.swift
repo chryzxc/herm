@@ -8,11 +8,11 @@ struct ChatViewSettings: View {
         SettingsPreferenceRow(
             title: "Default chat view",
             detail:
-                "Choose how Chats opens. List shows a conversation beside your sessions; Grid shows updates from multiple chats."
+                "Choose how Chats opens. List shows a conversation beside your sessions; Tiles show every chat's status, requests, and latest reply, with inline answers and replies."
         ) {
             Picker("Default chat view", selection: $gridView) {
                 Text("List").tag(false)
-                Text("Grid").tag(true)
+                Text("Tiles").tag(true)
             }
             .labelsHidden()
             .pickerStyle(.segmented)

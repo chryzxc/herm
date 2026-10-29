@@ -9,7 +9,26 @@
 
 APPINTENTS_ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE:-$0}")/.." && pwd)
 
+# The Metal toolchain mounts at a new path after a reboot or Xcode update, but
+# SwiftPM's build description keeps the old one and fails with "unable to spawn
+# process ... metal". Drop that cached state whenever the path changes.
+reset_stale_metal_cache() {
+    scratch=$APPINTENTS_ROOT/.build
+    while [ $# -gt 0 ]; do
+        [ "$1" = "--scratch-path" ] && scratch=$2
+        shift
+    done
+    metal=$(xcrun --find metal 2>/dev/null) || return 0
+    stamp=$scratch/.metal-toolchain-path
+    [ "$(cat "$stamp" 2>/dev/null)" = "$metal" ] && return 0
+    rm -rf "$scratch/out/XCBuildData" "$scratch/out/Intermediates.noindex/XCBuildData" \
+        "$scratch/out/Intermediates.noindex/SwiftTerm.build" \
+        "$scratch/out/Products/"*/SwiftTerm_SwiftTerm.bundle
+    mkdir -p "$scratch" && printf %s "$metal" > "$stamp"
+}
+
 swift_build_with_appintents() {
+    reset_stale_metal_cache "$@"
     swift build "$@" \
         -Xswiftc -emit-const-values \
         -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file \

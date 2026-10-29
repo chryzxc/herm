@@ -51,7 +51,9 @@ enum SidebarSessionStatusResolver {
             if session.id == activeSessionID, let activeStatus {
                 switch activeStatus {
                 case .needsApproval, .needsClarification: return .stale
-                case .working, .idle: return session.isWorking ? .active : .completed
+                // The open chat's own turn is observed directly, as the composer's Stop shows.
+                case .working: return .active
+                case .idle: return session.isWorking ? .active : .completed
                 case .offline: return .unavailable
                 }
             }
