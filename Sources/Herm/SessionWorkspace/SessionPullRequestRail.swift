@@ -156,7 +156,7 @@ struct SessionPullRequestRail: View {
         ScrollView {
             SessionRailCard(
                 repositoryName: repositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent },
-                repositoryPath: repositoryPath, changesRevision: workflow.changes?.refreshedAt,
+                repositoryPath: repositoryPath,
                 changes: changes, lines: lineSnapshot == workflow.changes ? lineSummary : nil,
                 changesUnavailable: repositoryPath == workflow.repository.path && workflow.repository.isStale,
                 references: rail.references, records: details.records, failures: rail.failures,
@@ -167,6 +167,7 @@ struct SessionPullRequestRail: View {
                 onOpenOutput: { SessionMessageTabs.shared.open(.output($0), in: WorkspaceIdentity.session(model)) },
                 onRespondInChat: onRespondInChat, onViewPin: onViewPin
             )
+            .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
             .padding(16)
         }
         .foregroundStyle(Color.dockPrimaryText)
@@ -220,7 +221,7 @@ struct SessionPullRequestRail: View {
 struct SessionRailCard: View {
     let repositoryName: String?
     var repositoryPath: String? = nil
-    var changesRevision: Date? = nil
+
     let changes: SessionRailChangeSummary?
     let lines: RepositoryChangeLineSummary?
     var changesUnavailable = false
@@ -270,8 +271,7 @@ struct SessionRailCard: View {
                             SessionRailExpandedContent {
                                 VStack(alignment: .leading, spacing: 8) {
                                     ForEach(changes.files) { file in
-                                        SessionRailFileQuickView(
-                                            path: repositoryPath, file: file, revision: changesRevision)
+                                        SessionRailFileQuickView(path: repositoryPath, file: file)
                                     }
                                 }
                             }
@@ -451,49 +451,14 @@ struct SessionRailExpandedContent<Content: View>: View {
 private struct SessionRailFileQuickView: View {
     let path: String
     let file: RepositoryFileChange
-    let revision: Date?
-    @State private var document: DiffDocument?
-    @State private var isLoading = true
-    @State private var isExpanded = false
-    @State private var isTruncated = false
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            SessionRailExpandedContent {
-                VStack(alignment: .leading, spacing: 6) {
-                    if isLoading {
-                        Text("Loading diff…").foregroundStyle(Color.dockSecondaryText)
-                    } else if let document {
-                        if let notice = document.fileNotice {
-                            Text(notice).foregroundStyle(Color.dockSecondaryText)
-                        }
-                        if document.lines.isEmpty {
-                            Text("No text changes to preview.").foregroundStyle(Color.dockSecondaryText)
-                        } else {
-                            NativeDiffCanvas(
-                                document: document, split: false, wraps: true, wordDiffs: true,
-                                findRequest: 0, onNote: nil, onComment: nil
-                            )
-                            .frame(height: min(240, max(100, CGFloat(document.lines.count) * 20)))
-                        }
-                        if isTruncated {
-                            Text("Partial preview. View all changes for the full review.")
-                                .foregroundStyle(Color.dockMetadataText)
-                        }
-                    } else {
-                        Text("Diff unavailable. Collapse and reopen to retry.").foregroundStyle(Color.dockWarning)
-                    }
-                }
-            }
-            .dockFont(.body).padding(.top, 6)
-            .task(id: revision) {
-                isLoading = true
-                let diff = await RepositoryService.diff(path: path, file: file)
-                guard !Task.isCancelled else { return }
-                document = diff.map { DiffDocument(path: file.path, patch: $0.text) }
-                isTruncated = diff?.isTruncated == true
-                isLoading = false
-            }
+        Button {
+            guard let previewWorkspace,
+                let url = RepositoryService.documentURL(repositoryPath: path, filePath: file.path)
+            else { return }
+            SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
         } label: {
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.path).dockFont(.body).foregroundStyle(Color.dockPrimaryText)
@@ -502,6 +467,6 @@ private struct SessionRailFileQuickView: View {
                     .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             }
         }
-        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
+        .buttonStyle(.dockLink)
     }
 }
