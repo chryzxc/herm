@@ -161,6 +161,7 @@ extension DockModel {
                 let projection: HermesProjectionState<[HermesSession]> = merged.isEmpty ? .empty : .ready(merged)
                 if projection != sessionProjectionState { sessionProjectionState = projection }
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
+                loadAllBotSessions()
             } catch {
                 guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
                 sessionProjectionState = Self.failedOrStale(
