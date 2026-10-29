@@ -138,10 +138,16 @@ struct SessionDashboardCard: View {
             .buttonStyle(.dockLink)
             .disabled(isLoadingSession)
             .help("Open \(row.session.displayTitle)")
-            if let project = row.project {
-                DockIconLabel(project, icon: .folder)
-                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+            // Reserved even without a project so every tile has the same height.
+            Group {
+                if let project = row.project {
+                    DockIconLabel(project, icon: .folder)
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                } else {
+                    Color.clear
+                }
             }
+            .frame(maxWidth: .infinity, minHeight: 16, maxHeight: 16, alignment: .leading)
         }
     }
 
