@@ -34,6 +34,7 @@ extension ControlCenterModel {
     func canTriggerRoutine(_ reference: RoutineReference) -> Bool {
         (cronControlAvailable || capabilityAvailable("cron.runNow")) && !unavailableRoutineActions.contains("run")
             && !reference.running && !routineActions.contains(reference.id)
+            && !routineRunRequestIDs.contains(reference.id)
             && !triggeredRoutineIDs.contains(reference.id)
     }
 
@@ -55,24 +56,37 @@ extension ControlCenterModel {
                 throw QuickDraftError.message("This routine still has a known active run. Inspect Automation.")
             }
             triggeredRoutineIDs.remove(reference.id)
+            uncertainRoutineIDs.remove(reference.id)
             triggeredRoutineRevisions.removeValue(forKey: reference.id)
             routineActionErrors[reference.id] =
                 "Review recorded. Starting another run remains a separate confirmed action."
-            if reference.profileID == routineProfileID { cronJobs = jobs }
+            if reference.profileID == routineProfileID {
+                await refreshRoutineInventory(profileID: reference.profileID, fresh: true)
+            }
         } catch {
             routineActionErrors[reference.id] = Self.safeUserDiagnostic(error.localizedDescription)
             DockActionErrorCenter.shared.report("Could not review routine", error: error)
         }
     }
 
-    func recoverRoutine(_ reference: RoutineReference, run: Bool, paused: Bool = false) async {
+    func recoverRoutine(_ reference: RoutineReference, run: Bool, paused: Bool = false, reserved: Bool = false) async {
         guard !routineActions.contains(reference.id), let service = routineService(profileID: reference.profileID)
-        else { return }
-        if run, !canTriggerRoutine(reference) { return }
+        else {
+            if reserved { routineRunRequestIDs.remove(reference.id) }
+            return
+        }
+        if run, !reserved, !canTriggerRoutine(reference) { return }
         let bindingGeneration = clientBindingGeneration
+        if run { routineRunRequestIDs.insert(reference.id) }
         routineActions.insert(reference.id)
         routineActionErrors[reference.id] = nil
-        defer { if clientBindingGeneration == bindingGeneration { routineActions.remove(reference.id) } }
+        defer {
+            if clientBindingGeneration == bindingGeneration {
+                routineActions.remove(reference.id)
+                if run { routineRunRequestIDs.remove(reference.id) }
+            }
+        }
+        var triggerSent = false
         do {
             let jobs = try await service.routineJobs()
             guard clientBindingGeneration == bindingGeneration else { return }
@@ -81,26 +95,37 @@ extension ControlCenterModel {
             else { throw HermesGateway.GatewayError.malformedResponse }
             if run {
                 triggeredRoutineIDs.insert(reference.id)
-                triggeredRoutineRevisions[reference.id] = reference.job.lastRunAt ?? ""
+                triggeredRoutineRevisions[reference.id] = current.lastRunAt ?? ""
+                triggerSent = true
+                let monitor = Task {
+                    while !Task.isCancelled, clientBindingGeneration == bindingGeneration,
+                        routineProfileID == reference.profileID
+                    {
+                        guard await refreshRoutineProgress(jobID: reference.job.id, profileID: reference.profileID)
+                        else { return }
+                        do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                    }
+                }
+                defer { monitor.cancel() }
                 try await service.runRoutine(reference.job.id)
             } else {
                 try await service.setRoutinePaused(reference.job.id, paused: paused)
             }
-            let fresh = try await service.routineJobs()
             guard clientBindingGeneration == bindingGeneration else { return }
             if reference.profileID == routineProfileID {
-                cronJobs = fresh
+                await refreshRoutineInventory(profileID: reference.profileID, fresh: true)
                 refreshCronRuns()
                 refreshCronRuns(jobID: reference.job.id)
             }
         } catch {
             guard clientBindingGeneration == bindingGeneration else { return }
+            if run && triggerSent { uncertainRoutineIDs.insert(reference.id) }
             if BotService.isUnsupportedMethod(error) {
                 unavailableRoutineActions.insert(run ? "run" : paused ? "pause" : "resume")
             }
             DebugLog.write("workflow: routine mutation failed or uncertain")
             routineActionErrors[reference.id] =
-                run
+                run && triggerSent
                 ? "The new run could not be confirmed. Review Automation before triggering again."
                 : Self.safeUserDiagnostic(error.localizedDescription)
             DockActionErrorCenter.shared.report(
@@ -154,7 +179,8 @@ extension ControlCenterModel {
             reportActionError("Could not run automation", message: "Run-now is unavailable or a run needs review.")
             return
         }
-        Task { await recoverRoutine(reference, run: true) }
+        routineRunRequestIDs.insert(reference.id)
+        Task { await recoverRoutine(reference, run: true, reserved: true) }
     }
 
     func refreshCronRuns(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {

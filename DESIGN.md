@@ -1673,6 +1673,8 @@ the name, and one compact action row for Edit, Run now, and More. The labelled
 Run output control belongs beside History and Details, where it opens or hides
 the inspector; it never floats among schedule mutations. Operation
 feedback occupies a fixed single-line slot with the full error in its tooltip.
+Starting denotes a local request, while Running requires reported active execution.
+Refresh and uncertain-request feedback remain in this slot without shifting the page.
 A flat, hairline-separated summary band shows Next run, Last run, and success among confirmed
 outcomes. Summary values use 12pt medium text, with sentence-case metadata labels.
 Violet `DockCategoryTone.automation` identifies scheduling context; green, amber, and red

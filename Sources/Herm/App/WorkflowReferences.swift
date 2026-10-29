@@ -14,8 +14,7 @@ struct RoutineReference: Identifiable, Equatable {
     let run: CronRunSummary?
     var id: String { "routine/\(profileID ?? "")/\(job.id)" }
     @MainActor var running: Bool {
-        ["running", "pending", "claimed"].contains(job.lastStatus ?? "")
-            || (run.map { AutomationWorkspaceRowPresentation.result(for: $0) == .running } ?? false)
+        AutomationWorkspaceRowPresentation.make(job: job, latestRun: run).result == .running
     }
     @MainActor var needsAttention: Bool {
         (!running

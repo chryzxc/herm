@@ -715,6 +715,10 @@ final class HermesWorkflowRPC {
     }
     func routineJobs() async throws -> [CronSummary] {
         let result = try await request(.cronManage, ["action": "list", "include_disabled": true])
+        guard result["success"] as? Bool != false else {
+            throw QuickDraftError.message(
+                result["error"] as? String ?? "Hermes did not return an automation inventory.")
+        }
         if let profileID, result["scoped"] as? String != profileID {
             throw HermesGateway.GatewayError.malformedResponse
         }

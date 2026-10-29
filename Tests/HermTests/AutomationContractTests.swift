@@ -11,10 +11,15 @@ private final class AutomationClient: HermesRPCClientProtocol {
     var calls: [(String, String, [String: Any], TimeInterval?)] = []
     var pendingRead: CheckedContinuation<[String: Any], Error>?
     var suspendReads = false
+    var pendingInventory: CheckedContinuation<[String: Any], Error>?
+    var suspendInventory = false
+    var pendingTrigger: CheckedContinuation<Void, Never>?
+    var suspendTriggers = false
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         calls.append(("RPC", method, params, nil))
+        if suspendInventory { return try await withCheckedThrowingContinuation { pendingInventory = $0 } }
         return rpcResult
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
@@ -30,6 +35,7 @@ private final class AutomationClient: HermesRPCClientProtocol {
         Any]
     {
         calls.append((method, path, body, timeout))
+        if suspendTriggers { await withCheckedContinuation { pendingTrigger = $0 } }
         return httpResult
     }
 }
@@ -101,6 +107,85 @@ struct AutomationContractTests {
         #expect(
             try HermesControlRPC.cronPath(jobID: "job", suffix: "/trigger", profileID: nil)
                 == "/api/cron/jobs/job/trigger")
+    }
+
+    @Test func confirmedRunRefreshesBeforeTriggerCompletes() async throws {
+        let client = AutomationClient()
+        client.rpcResult = [
+            "scoped": "research",
+            "jobs": [["job_id": "job", "name": "Review", "schedule": "daily", "enabled": true]],
+        ]
+        client.httpResult = detail
+        client.suspendTriggers = true
+        let model = control(client)
+        model.routineProfileID = "research"
+        model.cronJobs = [job]
+        model.runCronNow(job)
+        let reference = RoutineReference(profileID: "research", job: job, run: nil)
+        #expect(model.routineFeedback(reference) == "Starting…")
+        #expect(!model.canTriggerRoutine(reference))
+        model.runCronNow(job)
+        for _ in 0..<1_000 where client.pendingTrigger == nil { await Task.yield() }
+        let pending = try #require(client.pendingTrigger)
+        for _ in 0..<1_000 { await Task.yield() }
+        #expect(model.routineActions.contains("routine/research/job"))
+        #expect(client.calls.filter { $0.0 == "POST" }.count == 1)
+        #expect(client.calls.filter { $0.1 == "cron.manage" }.count > 1)
+        #expect(client.calls.contains { $0.0 == "GET" && $0.1.contains("/job/runs?") })
+        pending.resume()
+        for _ in 0..<1_000 where model.routineActions.contains("routine/research/job") { await Task.yield() }
+    }
+
+    @Test func obsoleteInventoryCannotPublishAndConcurrentReadsCoalesce() async throws {
+        let client = AutomationClient()
+        client.suspendInventory = true
+        let model = control(client)
+        model.routineProfileID = "research"
+        model.cronJobs = [job]
+        let first = Task { await model.refreshRoutineInventory(profileID: "research") }
+        for _ in 0..<1_000 where client.pendingInventory == nil { await Task.yield() }
+        let pending = try #require(client.pendingInventory)
+        let second = Task { await model.refreshRoutineInventory(profileID: "research") }
+        for _ in 0..<100 { await Task.yield() }
+        #expect(client.calls.filter { $0.0 == "RPC" }.count == 1)
+        model.routineProfileID = "other"
+        pending.resume(returning: ["scoped": "research", "jobs": []])
+        await first.value
+        await second.value
+        #expect(model.routineProfileID == "other")
+        #expect(model.cronJobs == [job])
+    }
+
+    @Test func currentRunningJobOutranksOlderCompletedHistory() {
+        let current = CronSummary(
+            id: "job", name: "Review", schedule: "daily", enabled: true, nextRun: nil,
+            lastRunAt: "2026-10-29T09:00:00Z", lastStatus: "running")
+        let older = CronRunSummary(
+            id: "older", status: "completed", jobID: current.id, source: "cron",
+            claimedAt: "2026-10-28T09:00:00Z", error: nil)
+        #expect(AutomationWorkspaceRowPresentation.make(job: current, latestRun: older).result == .running)
+    }
+
+    @Test func executionStatusUsesNewestEvidenceAndPreservesActivePausedRuns() {
+        let cases: [(Bool, String?, String?, String, String?, AutomationWorkspaceRowPresentation.Result)] = [
+            (true, "running", "2026-10-29T09:00:00Z", "completed", "2026-10-28T09:00:00Z", .running),
+            (true, "running", "2026-10-29T09:00:00Z", "completed", "2026-10-30T09:00:00Z", .succeeded),
+            (true, "pending", "2026-10-29T09:00:00Z", "completed", "2026-10-29T09:00:00Z", .running),
+            (false, "claimed", nil, "completed", nil, .running),
+            (false, "completed", nil, "running", nil, .running),
+            (false, "completed", nil, "completed", nil, .paused),
+            (true, "finished", nil, "finished", nil, .unknown),
+        ]
+        for (enabled, status, jobDate, runStatus, runDate, expected) in cases {
+            let job = CronSummary(
+                id: "job", name: "Review", schedule: "daily", enabled: enabled, nextRun: nil,
+                lastRunAt: jobDate, lastStatus: status)
+            let run = CronRunSummary(
+                id: "run", status: runStatus, jobID: job.id, source: "cron",
+                claimedAt: runDate, error: nil)
+            #expect(AutomationWorkspaceRowPresentation.make(job: job, latestRun: run).result == expected)
+            #expect(RoutineReference(profileID: nil, job: job, run: run).running == (expected == .running))
+        }
     }
 
     @Test func editingLoadsFullInstructionsAndOnlySendsChangedFields() async throws {

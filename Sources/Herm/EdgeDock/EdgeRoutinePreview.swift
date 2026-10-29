@@ -54,6 +54,8 @@ struct EdgeRoutinePreview: View {
                         }
                         if let error = error ?? control.routineActionErrors[reference.id] {
                             Text(error).foregroundStyle(Color.dockWarning)
+                        } else if let feedback = control.routineFeedback(reference) {
+                            Text(feedback).foregroundStyle(Color.dockSecondaryText)
                         }
                         HStack {
                             Button(reference.job.enabled ? "Pause…" : "Resume…") {
@@ -100,12 +102,16 @@ struct EdgeRoutinePreview: View {
                 Button(confirming ?? "Confirm") {
                     let action = confirming
                     confirming = nil
-                    Task {
-                        if action == "Record reviewed run" {
-                            await control.confirmRoutineReview(reference)
-                        } else {
-                            await control.recoverRoutine(
-                                reference, run: action == "Start a new run", paused: action == "Pause")
+                    if action == "Start a new run" {
+                        control.runCronNow(reference.job)
+                    } else {
+                        Task {
+                            if action == "Record reviewed run" {
+                                await control.confirmRoutineReview(reference)
+                            } else {
+                                await control.recoverRoutine(
+                                    reference, run: false, paused: action == "Pause")
+                            }
                         }
                     }
                 }

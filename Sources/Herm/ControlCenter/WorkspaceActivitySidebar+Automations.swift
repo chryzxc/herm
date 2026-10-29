@@ -408,7 +408,7 @@ extension WorkspaceActivitySidebar {
                     isShowingCronRunConfirmation = true
                 } label: {
                     Group {
-                        if control.isActionPending(control.cronActionID("run", job: job)) {
+                        if control.routineRunRequestIDs.contains(control.routineReference(for: job).id) {
                             ProgressView().controlSize(.small)
                         } else {
                             DockIcon(.play, weight: .fill)
@@ -420,9 +420,10 @@ extension WorkspaceActivitySidebar {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)
-                .disabled(control.isActionPending(control.cronActionID("run", job: job)))
-                .help("Run \(job.name) now")
+                .disabled(!control.canTriggerRoutine(control.routineReference(for: job)))
+                .help(control.routineFeedback(control.routineReference(for: job)) ?? "Run \(job.name) now")
                 .accessibilityLabel("Run \(job.name) now")
+                .accessibilityValue(control.routineFeedback(control.routineReference(for: job)) ?? "")
             }
 
             DockMenu {
@@ -452,6 +453,7 @@ extension WorkspaceActivitySidebar {
                 cronRunRequest = job
                 isShowingCronRunConfirmation = true
             }
+            .disabled(!control.canTriggerRoutine(control.routineReference(for: job)))
         }
         if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
             Button("Edit", icon: .pencilSimple) { cronEditJob = job }
@@ -473,10 +475,11 @@ extension WorkspaceActivitySidebar {
                     isShowingCronRunConfirmation = true
                 } label: {
                     DockActionLabel(
-                        title: "RUN NOW", pendingTitle: "RUNNING…",
-                        isPending: control.isActionPending(control.cronActionID("run", job: job)))
+                        title: "RUN NOW", pendingTitle: "STARTING…",
+                        isPending: control.routineRunRequestIDs.contains(control.routineReference(for: job).id))
                 }
-                .disabled(control.isActionPending(control.cronActionID("run", job: job)))
+                .disabled(!control.canTriggerRoutine(control.routineReference(for: job)))
+                .help(control.routineFeedback(control.routineReference(for: job)) ?? "Run \(job.name) now")
             } else {
                 Text("RUN NOW UNAVAILABLE")
                     .dockFont(.metadata, weight: .semibold)

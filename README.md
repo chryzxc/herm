@@ -1066,6 +1066,10 @@ Herm uses Apple's on-device language model (the Foundation Models framework) for
 
 Automation uses consistent compact actions, quieter two-line schedule titles,
 and a flat run summary. A labelled Run output control sits beside History and Details.
+After a confirmed run, Starting indicates Herm's pending request; Running is shown only
+when Hermes reports active execution. Inventory and history refresh while a request is
+pending and while the selected automation is active. A failed or uncertain request
+remains visible for review rather than being automatically retried.
 The inspector shows readable, selectable script output with Copy and Close actions;
 agent reports retain Markdown formatting and technical run details are expandable. Create and edit sheets share schedule explanations
 and delivery/execution settings.

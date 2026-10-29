@@ -13,9 +13,15 @@ final class ControlCenterModel: ObservableObject {
     @Published var requestedAutomationJobID: String?
     @Published var routineProfileID: String?
     @Published var routineActions = Set<String>()
+    @Published var routineRunRequestIDs = Set<String>()
+    var routineInventoryTask: Task<[CronSummary], Error>?
+    var routineInventoryToken = UUID()
+    var routineInventoryConsumers = 0
+    var routineInventoryProfileID: String?
     @Published var unavailableRoutineActions = Set<String>()
     @Published var routineActionErrors: [String: String] = [:]
     var triggeredRoutineIDs = Set<String>()
+    var uncertainRoutineIDs = Set<String>()
     var triggeredRoutineRevisions: [String: String] = [:]
     var routineReportClient: HermesControlRPC? { rpc }
     let gatewayService = HermesGatewayLifecycleModel()
