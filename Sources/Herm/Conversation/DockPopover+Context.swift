@@ -119,7 +119,13 @@ extension DockPopover {
             isFullscreen: isFullscreen,
             onFullscreenToggle: toggleFullscreen,
             onSelectProfile: { profile in
-                leaveIntegrations { botMode.selectProfile(profile) }
+                leaveIntegrations {
+                    botMode.selectProfile(profile)
+                    // Apply the scope now: a sidebar chat from another bot
+                    // resumes right after, and a deferred scope change would
+                    // start a new chat over it.
+                    handleProfileScopeChange(botMode.selectedProfileID)
+                }
             },
             onOpenWindow: onOpenWindow,
             isDockedWindow: usesWindowChrome,

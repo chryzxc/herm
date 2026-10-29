@@ -383,6 +383,13 @@ beside refresh in the **Recents** header to clear unread updates across the sele
 bot’s loaded Recents, including conversations under Show more. Badge calculations are
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
+With more than one bot, the sidebar's **Chats** section lists every bot's chats.
+Choose **Group by** from its ⋯ menu or **Settings → Chat → Layout → Group chats
+by**: **Agent** (default) shows one row per bot with its avatar, newest chat, and
+running or unread marks, and expands into running, unread, and the three newest
+chats with **Show all**; **Session** lists every bot's chats newest first with the
+bot's avatar. Opening another bot's chat switches to that bot. One Hermes request
+loads recent chats for all bots.
 Startup restoration shares the sidebar's session load, so reopening the latest
 conversation preserves the complete recent list without a manual refresh.
 
