@@ -504,10 +504,10 @@ Git status describes the worktree, so sessions sharing it share local edits; the
 does not infer which session authored each change.
 New files contribute to the file count; the count tooltip explains that untracked
 and binary lines are excluded. Without readable line counts, show the file count.
-Changes and the PR group are disclosures. Changes discloses changed files; each file discloses the shared
-native diff canvas without review/navigation controls. PR rows show branch, author,
-readiness, and line counts inline and open closable session-scoped tabs. Every expanded detail area (Changes, PRs, and individual
-files) uses the same 280pt maximum scroll height, shrinking to fit shorter content.
+Changes and the PR group are disclosures. Changes discloses changed files; selecting a file
+opens its session preview tab. PR rows show branch, author, readiness, and line counts
+inline and open closable session-scoped tabs. Expanded Changes and PR details use the
+same 280pt maximum scroll height, shrinking to fit shorter content.
 Keep View all changes below the bounded file list so it stays available during scrolling.
 View all changes selects Source Control; activating a PR opens its own full detail tab
 without changing the fixed GitHub selection. These actions never change the center's Chat mode. Inspector requests

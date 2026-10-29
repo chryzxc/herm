@@ -87,6 +87,7 @@ struct SessionRailCardVisualTests {
                     && String(describing: $0.accessibilityValue?() ?? "").contains("complete ending")
             })
         try await press("rail-preview.md")
+        #expect(navigations == ["output"])
         try await press("View all outputs")
         try await press("Saved decision")
         try await press("Respond in chat")
@@ -105,20 +106,23 @@ struct SessionRailCardVisualTests {
             GitHubItemReference(repository: repository, number: $0, kind: .pullRequest)
         }
         let file = RepositoryFileChange(path: "file.swift", status: .modified, isStaged: false, renameSource: nil)
+        let other = RepositoryFileChange(path: "other.swift", status: .untracked, isStaged: false, renameSource: nil)
+        let tabs = SessionMessageTabs.shared
+        let workspace = "rail-file-test-\(UUID().uuidString)"
+        defer { for tab in tabs.tabs[workspace] ?? [] { tabs.close(tab.id, in: workspace) } }
         var changesOpened = 0
         var pullRequestsOpened = 0
-        let tabs = SessionMessageTabs()
         let root = SessionRailCard(
             repositoryName: "repo", repositoryPath: "/tmp/rail-ui-test",
-            changes: .init(repositoryName: "repo", fileCount: 1, untrackedCount: 0, files: [file]),
+            changes: .init(repositoryName: "repo", fileCount: 2, untrackedCount: 1, files: [file, other]),
             lines: .init(additions: 1, deletions: 1), references: references, records: [:], failures: [:],
             isRefreshing: false, onRefresh: {}, onViewAllChanges: { changesOpened += 1 },
             onViewPullRequest: { reference in
                 pullRequestsOpened += 1
-                tabs.open(.pullRequest(reference), in: "rail-test")
+                tabs.open(.pullRequest(reference), in: workspace)
                 return true
             }
-        ).frame(width: 330).padding(16).dockThemedRoot()
+        ).environment(\.sessionPreviewWorkspace, workspace).frame(width: 330).padding(16).dockThemedRoot()
         let host = NSHostingView(rootView: root)
         host.frame = NSRect(x: 0, y: 0, width: 362, height: 700)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -173,12 +177,25 @@ struct SessionRailCardVisualTests {
         #expect(changesOpened == 0 && pullRequestsOpened == 0)
         try press("file.swift")
         try await settle()
+        #expect(
+            tabs.tabs[workspace]?.last?.content.key
+                == "file:/tmp/rail-ui-test/file.swift")
+        let firstID = try #require(tabs.selection[workspace])
+        try press("other.swift")
+        try await settle()
+        #expect(tabs.tabs[workspace]?.count == 2)
+        #expect(tabs.tabs[workspace]?.last?.content.key == "file:/tmp/rail-ui-test/other.swift")
+        #expect(tabs.selection[workspace] != firstID)
+        try press("file.swift")
+        try await settle()
+        #expect(tabs.tabs[workspace]?.count == 2)
+        #expect(tabs.selection[workspace] == firstID)
         #expect(changesOpened == 0 && pullRequestsOpened == 0)
         try press("Pull request #42")
         try await settle()
         #expect(changesOpened == 0 && pullRequestsOpened == 1)
-        #expect(tabs.tabs["rail-test"]?.first?.content.key == "pullRequest:" + references[0].id)
-        #expect(tabs.selection["rail-test"] == tabs.tabs["rail-test"]?.first?.id)
+        #expect(tabs.tabs[workspace]?.last?.content.key == "pullRequest:" + references[0].id)
+        #expect(tabs.selection[workspace] == tabs.tabs[workspace]?.last?.id)
         try press("View all changes")
         try await settle()
         #expect(changesOpened == 1 && pullRequestsOpened == 1)

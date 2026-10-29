@@ -424,7 +424,7 @@ an unavailable state. The rail uses a quiet repository card with compact PR rows
 and a **Changes** row when that session's repository has local edits. The wider card
 hides the PR section when no PRs are linked, and shows one empty state when no section
 has data. Click Changes to expand the file list, then a file to
-preview its diff in the rail. PR rows show quick details in the card. Every
+open it in a session preview tab. PR rows show quick details in the card. Every
 expanded detail area has a 280pt maximum height and scrolls longer content inside
 the card; short content keeps its natural height. **View all changes** remains below the file list.
 Use **View all changes** to select Source Control, or activate a PR row to open a
