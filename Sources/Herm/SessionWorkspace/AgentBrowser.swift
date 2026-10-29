@@ -957,7 +957,16 @@ final class AgentBrowser: ObservableObject {
             return
         }
         pendingURL = nil
-        performNavigation("Page.navigate", ["url": url.absoluteString])
+        guard SSHPortForwards.remotePort(for: url, backend: GatewayConnectionStore.backendSettings) != nil else {
+            return performNavigation("Page.navigate", ["url": url.absoluteString])
+        }
+        navigation.start()
+        Task { [weak self] in
+            let failure = await SSHPortForwards.shared.prepare(url)
+            guard let self, self.state == .running else { return }
+            if let failure { return self.navigation.fail(failure) }
+            self.performNavigation("Page.navigate", ["url": url.absoluteString])
+        }
     }
     func answerDialog(accept: Bool, text: String? = nil) {
         var params: [String: Any] = ["accept": accept]

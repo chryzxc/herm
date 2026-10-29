@@ -75,6 +75,17 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
         }
         return copy
     }
+
+    /// Options shared by Herm's own `ssh` processes (terminals, port forwards),
+    /// ending at the `--` before the target. Key-based auth only, like the bridge.
+    var sshOptions: [String] {
+        var options = [
+            "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15",
+            "-o", "ServerAliveInterval=30", "-p", String(sshPort),
+        ]
+        if !sshKeyPath.isEmpty { options += ["-i", NSString(string: sshKeyPath).expandingTildeInPath] }
+        return options + ["--", sshUser.isEmpty ? sshHost : sshUser + "@" + sshHost]
+    }
 }
 
 enum GatewayConnectionError: LocalizedError {
@@ -117,9 +128,9 @@ final class GatewayConnectionStore: ObservableObject {
     /// Only Local mode shares this Mac's files, Hermes home, and loopback with
     /// the backend. Mac-only features gate on this; switching modes relaunches,
     /// so it is read once and safe off the main actor.
-    nonisolated static let isLocalBackend =
-        loadLaunchSettings(defaults: .standard, environment: ProcessInfo.processInfo.environment).settings.mode
-        == .local
+    nonisolated static let backendSettings =
+        loadLaunchSettings(defaults: .standard, environment: ProcessInfo.processInfo.environment).settings
+    nonisolated static let isLocalBackend = backendSettings.mode == .local
     let environmentOverride: Bool
     let launchToken: String?
     private let defaults: UserDefaults

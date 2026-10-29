@@ -94,11 +94,23 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     private var verificationRun: VerificationRun?
     private var verificationTail = ""
 
+    /// SSH mode opens the shell on the backend host, like Hermes Desktop; the
+    /// directory is a remote path and `cd` falls back to the remote home.
+    nonisolated static func shellArguments(directory: String, backend: GatewayConnectionSettings) -> [String] {
+        guard backend.mode == .ssh else { return ["/bin/zsh", "-il"] }
+        let quoted = "'" + directory.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return ["/usr/bin/ssh", "-tt"] + backend.sshOptions + ["cd \(quoted) 2>/dev/null; exec \"$SHELL\" -l"]
+    }
+
     func start(directory: String) {
         close()
+        let backend = GatewayConnectionStore.backendSettings
         let url = URL(fileURLWithPath: directory).standardizedFileURL
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard
+            backend.mode == .ssh
+                || FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+        else {
             state = .failed("Project directory is unavailable.")
             return
         }
@@ -118,8 +130,10 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         // every C string is allocated before forking.
         var environment = ProcessInfo.processInfo.environment
         environment["TERM"] = "xterm-256color"
-        let directoryPath = strdup(url.path)
-        let arguments: [UnsafeMutablePointer<CChar>?] = [strdup("/bin/zsh"), strdup("-il"), nil]
+        // The ssh client itself runs from the Mac home; the remote shell does its own cd.
+        let directoryPath = strdup(backend.mode == .ssh ? NSHomeDirectory() : url.path)
+        let arguments: [UnsafeMutablePointer<CChar>?] =
+            Self.shellArguments(directory: url.path, backend: backend).map { strdup($0) } + [nil]
         let environmentPointers: [UnsafeMutablePointer<CChar>?] =
             environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
