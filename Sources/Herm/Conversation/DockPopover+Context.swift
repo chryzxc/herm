@@ -181,7 +181,6 @@ extension DockPopover {
                     model: model, bots: botMode, control: controlCenter, store: workspaceStore,
                     onNewConversation: {
                         sessionNavNavigation.beginNewConversation()
-                        fullscreenSurface = .conversation
                         inspectorScope = .session
                         model.newChat()
                         model.requestComposerFocus()

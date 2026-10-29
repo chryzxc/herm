@@ -8,6 +8,7 @@ struct SessionDashboard<Conversation: View>: View {
     @ObservedObject private var seen = SidebarSessionSeenStore.shared
     @State private var selection = SessionDashboardSelection()
     @State private var showsConversation = false
+    @State private var isNewConversation = false
     let onNewConversation: () -> Void
     let onOpenWorkspace: () -> Void
     let onShowList: () -> Void
@@ -61,14 +62,15 @@ struct SessionDashboard<Conversation: View>: View {
             SessionDashboardToolbar(
                 bots: bots, fallbackName: model.agentDisplayName,
                 isLoading: selection.isLoading, isRefreshing: model.isLoadingSessions,
-                onRefresh: refresh, onShowList: onShowList, onNewConversation: onNewConversation)
+                onRefresh: refresh, onShowList: onShowList, onNewConversation: newConversation)
         } content: {
             sessionList
         }
         .dockSheet(isPresented: $showsConversation) {
             DockExpandedPage(
-                title: selection.session?.displayTitle ?? "Conversation",
-                subtitle: "Respond to this session", close: { showsConversation = false }
+                title: conversationTitle,
+                subtitle: isNewConversation ? "Start a conversation" : "Respond to this session",
+                close: { showsConversation = false }
             ) {
                 conversationPane
             }
@@ -82,6 +84,7 @@ struct SessionDashboard<Conversation: View>: View {
         .onChange(of: snapshot.inputs.sessionProjectionState) { _, _ in baseline() }
         .onChange(of: model.profileScopeID) { _, _ in
             selection = SessionDashboardSelection()
+            isNewConversation = false
             showsConversation = false
         }
     }
@@ -95,9 +98,9 @@ struct SessionDashboard<Conversation: View>: View {
 
     private var conversationPane: some View {
         VStack(spacing: 0) {
-            if let session = selection.session {
+            if isNewConversation || selection.session != nil {
                 HStack {
-                    Text(session.displayTitle).dockFont(.body, weight: .semibold).lineLimit(1)
+                    Text(conversationTitle).dockFont(.body, weight: .semibold).lineLimit(1)
                     Spacer(minLength: 8)
                     Button("Open workspace") {
                         showsConversation = false
@@ -114,7 +117,9 @@ struct SessionDashboard<Conversation: View>: View {
                     conversation()
                 } else {
                     emptyState("Conversation unavailable", detail: "Reload this session before responding.")
-                    Button("Retry") { select(session) }.buttonStyle(.dockSecondary)
+                    if let session = selection.session {
+                        Button("Retry") { select(session) }.buttonStyle(.dockSecondary)
+                    }
                     Spacer()
                 }
             } else {
@@ -125,10 +130,15 @@ struct SessionDashboard<Conversation: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var conversationTitle: String {
+        isNewConversation ? model.currentSessionTitle ?? "New chat" : selection.session?.displayTitle ?? "Conversation"
+    }
+
     private var canRespond: Bool {
-        selection.canRespond(
-            activeSessionID: model.navigationSessionID, activeProfileID: model.sessionProfileID,
-            profileID: model.profileScopeID)
+        isNewConversation
+            || selection.canRespond(
+                activeSessionID: model.navigationSessionID, activeProfileID: model.sessionProfileID,
+                profileID: model.profileScopeID)
     }
 
     private func emptyState(_ title: String, detail: String) -> some View {
@@ -139,7 +149,15 @@ struct SessionDashboard<Conversation: View>: View {
         .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
+    private func newConversation() {
+        selection = SessionDashboardSelection()
+        isNewConversation = true
+        onNewConversation()
+        showsConversation = true
+    }
+
     private func select(_ session: HermesSession) {
+        isNewConversation = false
         let generation = selection.begin(session)
         showsConversation = true
         Task {
