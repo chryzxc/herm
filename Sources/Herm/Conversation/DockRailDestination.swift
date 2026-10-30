@@ -40,13 +40,28 @@ enum DockRailDestination: String, CaseIterable, Identifiable {
         }
     }
 
-    static func pins(_ raw: String) -> Set<Self> {
-        Set(raw.split(separator: ",").compactMap { Self(rawValue: String($0)) })
+    /// Pinned destinations in the order the user arranged them.
+    static func ordered(_ raw: String) -> [Self] {
+        var seen = Set<Self>()
+        return raw.split(separator: ",").compactMap { Self(rawValue: String($0)) }.filter { seen.insert($0).inserted }
     }
 
+    static func pins(_ raw: String) -> Set<Self> { Set(ordered(raw)) }
+
+    static func raw(_ items: [Self]) -> String { items.map(\.rawValue).joined(separator: ",") }
+
+    /// Pinning appends to the end of the rail; unpinning keeps the rest in place.
     static func toggling(_ item: Self, in raw: String) -> String {
-        var selected = pins(raw)
-        if selected.contains(item) { selected.remove(item) } else { selected.insert(item) }
-        return allCases.filter { selected.contains($0) }.map(\.rawValue).joined(separator: ",")
+        var items = ordered(raw)
+        if let index = items.firstIndex(of: item) { items.remove(at: index) } else { items.append(item) }
+        return Self.raw(items)
+    }
+
+    static func moving(_ item: Self, to index: Int, in items: [Self]) -> [Self] {
+        guard let from = items.firstIndex(of: item) else { return items }
+        var items = items
+        items.remove(at: from)
+        items.insert(item, at: min(max(index, 0), items.count))
+        return items
     }
 }

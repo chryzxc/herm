@@ -20,4 +20,12 @@ struct DockRailDestinationTests {
         #expect(DockRailDestination.pins("unknown,bots,bots") == [.bots])
         #expect(DockRailDestination.toggling(.usage, in: "unknown,bots,bots") == "bots,usage")
     }
+
+    @Test func userOrderIsPreservedAndMovesClamp() {
+        let items = DockRailDestination.ordered("bots,github,automations")
+        #expect(items == [.bots, .github, .automations])
+        #expect(DockRailDestination.moving(.bots, to: 2, in: items) == [.github, .automations, .bots])
+        #expect(DockRailDestination.moving(.bots, to: 9, in: items) == [.github, .automations, .bots])
+        #expect(DockRailDestination.toggling(.usage, in: "bots,github") == "bots,github,usage")
+    }
 }

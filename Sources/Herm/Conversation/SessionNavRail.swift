@@ -148,6 +148,11 @@ struct SessionNavRail: View {
     @ObservedObject var dockThemeStore: DockThemeStore
     @AppStorage(DockRailDestination.pinsKey) private var pinnedDestinations = DockRailDestination.defaultPins
     @State private var showsDestinations = false
+    @State private var dragOrder: [DockRailDestination]?
+    @State private var draggingItem: DockRailDestination?
+    @State private var dragOffset: CGFloat = 0
+    @State private var dragStartIndex = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isChatsActive: Bool
     let isGitHubActive: Bool
     let onOpenChats: () -> Void
@@ -173,7 +178,8 @@ struct SessionNavRail: View {
                             isSelected: isChatsActive, isVisible: isWorkspaceVisible, style: style, action: onOpenChats
                         )
                     }
-                    ForEach(DockRailDestination.allCases.filter { pins.contains($0) }) { item in
+                    ForEach(dragOrder ?? orderedPins) { item in
+                        let isDragging = draggingItem == item
                         destination(
                             item.title, icon: item.icon, isSelected: isSelected(item),
                             showsUpdateBadge: hasUpdate(item), style: style
@@ -182,6 +188,11 @@ struct SessionNavRail: View {
                             Button("Unpin \(item.title) from sidebar", icon: .pushPinSlash) { togglePin(item) }
                         }
                     }
+                        .scaleEffect(isDragging ? 1.12 : 1)
+                        .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 8, y: 3)
+                        .offset(y: isDragging ? dragOffset : 0)
+                        .zIndex(isDragging ? 1 : 0)
+                        .simultaneousGesture(reorderGesture(for: item))
                     destination(
                         "More destinations", icon: .dotsThree,
                         isSelected: DockRailDestination.allCases.contains { !pins.contains($0) && isSelected($0) },
@@ -230,6 +241,44 @@ struct SessionNavRail: View {
         switch item {
         case .github: isGitHubActive
         case .artifacts: navigationState.selection.selection == .artifacts
+    private var orderedPins: [DockRailDestination] { DockRailDestination.ordered(pinnedDestinations) }
+
+    /// One rail slot: button height plus the stack spacing.
+    private static let slotHeight: CGFloat = 42
+
+    /// The lifted button follows the pointer while its neighbours spring aside.
+    private func reorderGesture(for item: DockRailDestination) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .onChanged { value in
+                var order = dragOrder ?? orderedPins
+                guard let current = order.firstIndex(of: item) else { return }
+                if draggingItem != item {
+                    draggingItem = item
+                    dragOrder = order
+                    dragStartIndex = current
+                }
+                let target = min(
+                    max(dragStartIndex + Int((value.translation.height / Self.slotHeight).rounded()), 0),
+                    order.count - 1)
+                if target != current {
+                    order = DockRailDestination.moving(item, to: target, in: order)
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.78)) {
+                        dragOrder = order
+                    }
+                }
+                // Keep the button under the pointer even though its slot moved.
+                dragOffset = value.translation.height - CGFloat(target - dragStartIndex) * Self.slotHeight
+            }
+            .onEnded { _ in
+                let order = dragOrder ?? orderedPins
+                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)) {
+                    dragOffset = 0
+                    draggingItem = nil
+                    pinnedDestinations = DockRailDestination.raw(order)
+                }
+                dragOrder = nil
+            }
+    }
         case .bots: navigationState.selection.selection == .bots
         default: item.tab.map { navigationState.selection.isGlobalSelected($0) } ?? false
         }
