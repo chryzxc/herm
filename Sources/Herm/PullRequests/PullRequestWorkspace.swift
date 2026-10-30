@@ -32,11 +32,12 @@ struct PullRequestWorkspace: View {
                 }
             } else {
                 AdaptiveSplit(
-                    primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true,
+                    primaryMinWidth: 300, primaryIdealWidth: 390, primaryMaxWidth: 460, secondaryMinWidth: 360,
+                    alwaysSplitWhenWide: true,
                     hidesPrimary: isListCollapsed,
                     showsSecondary: showsDetail, onBack: { showsDetail = false }
                 ) {
-                    listPane.frame(idealWidth: 390, maxWidth: 460)
+                    listPane
                 } secondary: {
                     PullRequestDetailView(center: center, onOpenChat: onOpenChat)
                 }
@@ -89,7 +90,7 @@ struct PullRequestWorkspace: View {
                     )
                     .textFieldStyle(.plain)
                 }
-                .padding(.horizontal, 10)
+                .dockPadding(.horizontal, 10)
                 .frame(maxWidth: .infinity, minHeight: 34)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
@@ -100,8 +101,8 @@ struct PullRequestWorkspace: View {
                 PullRequestFilterPicker(selection: $center.filter)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .dockPadding(.horizontal, 14)
+            .dockPadding(.vertical, 10)
             .background(Color.dockCanvas)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             Text(
@@ -111,7 +112,7 @@ struct PullRequestWorkspace: View {
             )
             .dockFont(.metadata).foregroundStyle(
                 center.errorMessage != nil ? Color.dockWarning : Color.dockMetadataText
-            ).lineLimit(2).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).padding(.horizontal, 18)
+            ).lineLimit(2).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).dockPadding(.horizontal, 18)
             ScrollView {
                 LazyVStack(spacing: 2) {
                     if center.isInitialLoad || (center.isRefreshing && center.browsing != loadedBrowse) {
@@ -129,7 +130,7 @@ struct PullRequestWorkspace: View {
                                 refreshID += 1
                             }.buttonStyle(.dockCompact)
                             Button("Retry") { refreshID += 1 }.buttonStyle(.dockCompact)
-                        }.padding(16)
+                        }.dockPadding(16)
                     } else {
                         ForEach(center.visible) { pr in
                             Button {
@@ -153,8 +154,8 @@ struct PullRequestWorkspace: View {
                         }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .dockPadding(.horizontal, 10)
+                .dockPadding(.vertical, 6)
             }
         }.background(Color.dockSurface2.opacity(0.55))
             .onMoveCommand { direction in
@@ -174,8 +175,8 @@ struct PullRequestWorkspace: View {
             RepositoryShimmerBlock(width: index.isMultiple(of: 3) ? 122 : 160, height: 9, cornerRadius: 3)
             RepositoryShimmerBlock(width: 48, height: 8, cornerRadius: 3)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
+        .dockPadding(.horizontal, 12)
+        .dockPadding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).fill(Color.dockSurface2)

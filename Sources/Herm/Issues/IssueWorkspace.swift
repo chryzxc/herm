@@ -21,10 +21,11 @@ struct IssueWorkspace: View {
                 }
             } else {
                 AdaptiveSplit(
-                    primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, hidesPrimary: hidesList,
+                    primaryMinWidth: 340, primaryIdealWidth: 390, primaryMaxWidth: 460, secondaryMinWidth: 480,
+                    alwaysSplitWhenWide: true, hidesPrimary: hidesList,
                     showsSecondary: showsDetail, onBack: { showsDetail = false }
                 ) {
-                    listPane.frame(idealWidth: 390, maxWidth: 460)
+                    listPane
                 } secondary: {
                     IssueDetailView(center: center, onOpenChat: onOpenChat)
                 }
@@ -68,7 +69,7 @@ struct IssueWorkspace: View {
                                 Color.dockMetadataText)
                             Button("Try again") { refresh() }.buttonStyle(.dockCompact).foregroundStyle(
                                 Color.dockAccent)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                        }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(20)
                     } else if center.visible.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(center.hasActiveFilters ? "No issues match this view" : "No open issues")
@@ -84,7 +85,7 @@ struct IssueWorkspace: View {
                                     .buttonStyle(.dockCompact)
                                     .foregroundStyle(Color.dockAccent)
                             }
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                        }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(20)
                     } else {
                         ForEach(center.visibleGroups, id: \.repository) { group in
                             DockSectionHeader(
@@ -93,7 +94,7 @@ struct IssueWorkspace: View {
                                 isExpanded: expansion(for: group.repository),
                                 style: DockThemePalette(theme: DockThemeRuntime.current)
                             )
-                            .padding(.top, 6)
+                            .dockPadding(.top, 6)
                             if !collapsedRepositories.contains(group.repository) {
                                 ForEach(group.issues) { issue in
                                     Button {
@@ -116,7 +117,7 @@ struct IssueWorkspace: View {
                             }
                         }
                     }
-                }.padding(.horizontal, 10).padding(.vertical, 6)
+                }.dockPadding(.horizontal, 10).dockPadding(.vertical, 6)
             }
         }
         .dockPaneTint(Color.dockSurface2.opacity(0.55))
@@ -138,7 +139,7 @@ struct IssueWorkspace: View {
                 TextField("Search issues", text: $center.query)
                     .textFieldStyle(.plain)
             }
-            .padding(.horizontal, 10)
+            .dockPadding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
@@ -168,8 +169,8 @@ struct IssueWorkspace: View {
                 Spacer(minLength: 0)
             }.dockFont(.metadata).lineLimit(2).frame(height: 28, alignment: .leading)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .dockPadding(.horizontal, 14)
+        .dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -184,7 +185,9 @@ struct IssueWorkspace: View {
                     center.filter = filter
                 }
             }
-        }.fixedSize(horizontal: true, vertical: false)
+        }
+        .dockTabTrack()
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var repositoryPicker: some View {
@@ -201,7 +204,7 @@ struct IssueWorkspace: View {
                 DockIcon(.caretDown, size: 9, color: Color.dockMetadataText)
             }
             .foregroundStyle(Color.dockSecondaryText)
-            .padding(.horizontal, 8).frame(height: 28)
+            .dockPadding(.horizontal, 8).frame(height: 28)
             .background(
                 DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
                     Color.dockControlSurface.opacity(0.6)))
@@ -216,7 +219,7 @@ struct IssueWorkspace: View {
                 width: 190, height: 10)
         }
         .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
-        .padding(.horizontal, 14)
+        .dockPadding(.horizontal, 14)
     }
 
     private func expansion(for repository: String) -> Binding<Bool> {

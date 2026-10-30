@@ -15,10 +15,11 @@ struct GitHubRepositoriesView: View {
                 }
             } else {
                 AdaptiveSplit(
-                    primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true,
+                    primaryMinWidth: 340, primaryIdealWidth: 390, primaryMaxWidth: 460, secondaryMinWidth: 480,
+                    alwaysSplitWhenWide: true,
                     showsSecondary: selected != nil, onBack: { selected = nil }
                 ) {
-                    repositoryList.frame(idealWidth: 390, maxWidth: 460)
+                    repositoryList
                 } secondary: {
                     if let selected {
                         GitHubRepositoryOverview(
@@ -55,11 +56,11 @@ struct GitHubRepositoriesView: View {
                         sectionHeader("Pinned", count: pinned.count)
                         rows(pinned)
                         sectionHeader("All repositories", count: model.visible.count - pinned.count)
-                            .padding(.top, 8)
+                            .dockPadding(.top, 8)
                         rows(model.visible.filter { !model.isPinned($0) })
                     }
                     if model.visible.isEmpty { emptyState }
-                }.padding(.horizontal, 10).padding(.vertical, 6)
+                }.dockPadding(.horizontal, 10).dockPadding(.vertical, 6)
             }
         }
     }
@@ -89,7 +90,7 @@ struct GitHubRepositoriesView: View {
                 DockIcon(.magnifyingGlass, size: 15, color: .dockMetadataText)
                 DockTextField("Search repositories", text: $model.query).textFieldStyle(.plain)
             }
-            .padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 34)
+            .dockPadding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 34)
             .background(
                 DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
             ViewThatFits(in: .horizontal) {
@@ -118,7 +119,7 @@ struct GitHubRepositoriesView: View {
             }
             .dockFont(.metadata).frame(minHeight: 22)
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
+        .dockPadding(.horizontal, 14).dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
@@ -149,7 +150,7 @@ struct GitHubRepositoriesView: View {
                 Button("Retry") { Task { await model.refresh() } }
                     .buttonStyle(.dockSecondary).disabled(model.loading)
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+        }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(20)
     }
 }
 
