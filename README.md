@@ -275,7 +275,7 @@ See [Generative UI formats and isolation](docs/generative-ui.md) for the `herm-u
 
 ### Appearance
 
-**Settings → Appearance → Text** sets the Herm window's text size to
+The Herm window's interface scale (its setting is temporarily hidden) is
 **Compact** (100%), **Default** (110%), **Large** (120%), or **Larger** (130%). Icons and controls scale
 with the text, and the choice is saved across launches.
 
@@ -383,13 +383,9 @@ beside refresh in the **Recents** header to clear unread updates across the sele
 bot’s loaded Recents, including conversations under Show more. Badge calculations are
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
-With more than one bot, the sidebar's **Chats** section lists every bot's chats.
-Choose **Group by** from its ⋯ menu or **Settings → Chat → Layout → Group chats
-by**: **Agent** (default) shows one row per bot with its avatar, newest chat, and
-running or unread marks, and expands into running, unread, and the three newest
-chats with **Show all**; **Session** lists every bot's chats newest first with the
-bot's avatar. Opening another bot's chat switches to that bot. One Hermes request
-loads recent chats for all bots.
+The sidebar stacks Pinned, Recents, and Projects for the selected
+bot under its bot header.
+One Hermes request loads recent chats for all bots.
 Startup restoration shares the sidebar's session load, so reopening the latest
 conversation preserves the complete recent list without a manual refresh.
 
@@ -466,7 +462,7 @@ unavailable items, and links to anchors or subpages retain the browser fallback.
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
 - **Working bot**: a larger, borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
 - **Running activity** keeps duration text free of shimmer while elapsed time continues updating, with a separate live-work sweep that pauses when Herm loses focus and stays still under Reduce Motion or motion-free themes. Running and completed tool durations align at the right end of each chat activity row.
-- **Transcript scrolling** follows new output only while you are at the bottom. Scrolling up keeps your reading position through streamed replies, new questions, and transcript refreshes; return to the bottom or choose the floating **Scroll to bottom** arrow above the composer to resume following. The arrow appears whenever you are away from the latest content and shows a count when new messages arrived. Completed assistant replies of every length create nearby text sections as needed while preserving their full height and selected text. History paging reveals eight messages at a time and preserves ongoing scroll movement instead of restoring an earlier offset. Replies with tool activity and hidden entries also continue loading older pages. A session-scoped coordinator owns paging and navigation; unrelated workspace refreshes leave transcript snapshots unchanged. Activity in other sessions and streaming activity outside the mounted history window also leave the visible transcript unchanged; returning to the live reply shows its current activity. Nearby completed Markdown is parsed ahead of paging, and bounded in-memory height measurements survive row remounts. Long streaming replies reuse stable Markdown sections and prepare only changed chunks. Navigator history is reused across activity updates, and ordinary Markdown streaming avoids restarting visual-reply parsing tasks. Find scans full message text off the UI thread, cancels obsolete queries, and reuses matches when Return selects a result. Activity updates reach only the message owning the relevant bot dispatch. During manual scrolling, live replies defer text reflow and show the latest received text when scrolling settles. Jump to latest respects Reduce Motion.
+- **Transcript scrolling** follows new output only while you are at the bottom. Scrolling up keeps your reading position through streamed replies, new questions, and transcript refreshes; return to the bottom or choose the floating **Scroll to bottom** arrow above the composer to resume following. The arrow appears whenever you are away from the latest content and shows a count when new messages arrived, with an opaque background that keeps it legible over the transcript. Completed assistant replies of every length create nearby text sections as needed while preserving their full height and selected text. History paging reveals eight messages at a time and preserves ongoing scroll movement instead of restoring an earlier offset. Replies with tool activity and hidden entries also continue loading older pages. A session-scoped coordinator owns paging and navigation; unrelated workspace refreshes leave transcript snapshots unchanged. Activity in other sessions and streaming activity outside the mounted history window also leave the visible transcript unchanged; returning to the live reply shows its current activity. Nearby completed Markdown is parsed ahead of paging, and bounded in-memory height measurements survive row remounts. Long streaming replies reuse stable Markdown sections and prepare only changed chunks. Navigator history is reused across activity updates, and ordinary Markdown streaming avoids restarting visual-reply parsing tasks. Find scans full message text off the UI thread, cancels obsolete queries, and reuses matches when Return selects a result. Activity updates reach only the message owning the relevant bot dispatch. During manual scrolling, live replies defer text reflow and show the latest received text when scrolling settles. Jump to latest respects Reduce Motion.
 - **Jump to message** sits on the left edge of wide conversations, with hover previews opening to the right. Find opens along the same left edge.
 - **Message actions**: completed replies show Copy, Retry, and More, with timing metadata aligned to the right. More contains read aloud, branch, reply, pin/unpin, open in a tab, and forwarding to a bot. Active playback keeps a Stop control visible.
 - **Bot replies** expand beneath their activity pill into padded cards with vertical breathing room and fully selectable text.
@@ -816,6 +812,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 
 - **Attach browser context.** Click **Attach Page** in the browser toolbar to add the page title, URL, shared Chromium tab ID, and selected text to the session composer. Review or remove the context chip, then type and send your request in chat. Attaching never sends a message or replaces your draft; reattaching the same page refreshes its context. This is a snapshot, so attach again after navigating. More → New Agent Tab opens another shared Chromium tab.
 - **Hermes browses here.** Herm starts a background Chrome (or Brave, Edge or Chromium) and connects Hermes' browser tools to it. When Hermes uses the browser, the inspector opens on the Browser tab, the page gets an accent frame, a status pill shows its current step, and a "Herm" cursor shows where it moves, clicks and types. Its last observed position stays visible between steps and when reopening the pane; taking over, using the page, or navigating clears it.
+- **Embedded pages.** The cursor also follows observed pointer and focus events in supported embedded frames, including cross-origin frames. Page changes made without a pointer or focus event show browser activity without a fabricated cursor position. When a frame cannot be mapped, its cursor events are omitted while browsing continues.
 - **Hermes can show inspector tabs.** Hermes' `focus_pane` (files, terminal, review) and the `herm_inspector` tool from the `herm` plugin (`integrations/herm`) expand the inspector to the requested tab in that chat.
 - **Use Herm's browser** (Settings → Browser, on by default) opens pages Hermes shows (`desktop_preview`) in the Browser tab and blocks terminal `open <url>` or `open -a <browser>`, so "open the page" lands in Herm. Off, those pages open in your default browser; Hermes' browser tools still use Herm's browser.
 - **Take over and hand back.** **Take over** pauses Herm so you can handle a login or captcha yourself. **Hand back to Herm** then tells it to continue from that page. While Herm is working, your clicks and typing are ignored so they can't interfere with it.
@@ -869,10 +866,11 @@ The replying area shows the mentioned bot’s latest reported activity, includin
 
 The forward-message composer keeps the insertion point with newly typed text when a delayed completion update arrives.
 
-- A **Bots page** with avatar-led cards, readable activity previews, quiet model and capability details, and always-visible action menus. Selected profiles are distinct from live working status; hover the model for provider and fallback details.
+- A **Bots page** that lists every bot's main chat, Messenger-style: avatar, name, last message, time, and a working mark, newest first. Click a bot to open its main chat beside the list. The page reopens the bot you last opened there, else the default bot. Main chats live only here; the Chats page lists a bot's other sessions.
+- **Settings → Bots** manages the roster: avatar-led cards, readable activity previews, quiet model and capability details, and always-visible action menus. Selected profiles are distinct from live working status; hover the model for provider and fallback details.
 - Create, clone, edit, duplicate, hide, and permanently delete bots. **Delete Bot…** in More or the context menu confirms removal of the profile and its data; the default bot is protected. Deletion requires Hermes CLI support. Editable fields include avatar, title, model, `SOUL.md`, skills, toolsets, and MCP servers.
 - The bot editor keeps vertical space around model actions so Keep and Edit sit clear of the card border and dividers.
-- **Group chats** bring selected bots into a shared room, with member replies, tool activity, unread indicators, and pending approvals. Errors appear as toast notifications. Rooms and their history stay in Hermes; group chat appears only when the runtime exposes its room driver.
+- **Group chats** bring selected bots into a shared room, with member replies, tool activity, unread indicators, and pending approvals. Errors appear as toast notifications. They live on the Bots page beside the bots' main chats; start one with **+** next to the search field. Rooms and their history stay in Hermes; group chat appears only when the runtime exposes its room driver.
 - **Routines** for each bot, backed by Hermes cron jobs.
 - The welcome screen shares the voice orb’s animated Herm face and pointer reactions for the selected Bot, only when Hermes reports the `hermes-bots` plugin enabled. Disabled or unconfirmed plugin status keeps the plain orb.
 - **Herm Faces**: Bots without uploaded art get a client-side face seeded from their profile ID (body shape, colors, eyes, lean). The face shows what Hermes reports: thinking, running a tool, replying, done, failed, stopped, waiting on you, needs your approval, needs your answer, compressing context, queued, and voice listening. Existing faces update immediately when you switch skins. It follows your skin: hued on most skins, gray on E-Ink and Monochrome, accent-tinted on Terminal and HUD, with ink outlines on Cartoon, Brutalist and E-Ink. Older glossy faces and pre-Herm Faces blobs saved to Hermes are recognized and drawn live; Regenerate All re-saves every Bot's face.
@@ -962,7 +960,7 @@ Agent updates share one service across the panel and window. Installation progre
 
 **Settings → Gateway → Messaging gateway** shows whether the default-profile messaging gateway is running. Status refreshes every 15 seconds while visible, with a manual refresh button. **Restart gateway** runs Hermes' restart command after confirmation and checks status again. This requires a Hermes launchd service; manually launched gateways remain managed in Terminal. Restarting may briefly interrupt messaging channels and scheduled work.
 
-Click the connection indicator at the bottom of the navigation rail for these same gateway controls. Its popover shows the backend connection separately from the local default-profile messaging gateway and offers **Reconnect** when Herm is offline.
+Click the connection indicator at the bottom of the navigation rail for these same gateway controls. Its popover leads with the Hermes Agent backend: whether Herm is connected, which backend it uses (local port or the saved remote, SSH, or cloud connection name), the installed Hermes version for a local backend, and, when offline, the reason from the last failed attempt with **Reconnect**. The local default-profile messaging gateway is shown below it as a separate service.
 
 **Settings → Gateway** offers Local, Remote URL/token or sign-in, SSH, and Hermes Cloud connections. Remote URLs support path prefixes and require HTTPS, except for localhost, 127.0.0.1, and [::1]. Scheme-less remote addresses default to HTTPS; loopback addresses default to HTTP. Use SSH for remote gateways without HTTPS. Native OAuth uses your browser with PKCE when supported, and password or legacy sign-in uses the gateway's page. Cloud sign-in discovers your organizations and agents. SSH launches and tunnels an owned Hermes backend on Linux, macOS, or Windows; it requires working key-based SSH, a current remote Hermes install, and Node.js 20+ on this Mac (Hermes' bundled Node is detected automatically). **Test connection** checks HTTP and WebSocket access. Save for the next restart, or confirm **Save and restart Herm**. Saved connections can be selected, renamed, or removed. Session tokens and native OAuth credentials stay in Keychain; browser sessions use Herm's separate WebKit store. `HERMES_DESKTOP_REMOTE_URL` and `HERMES_DESKTOP_REMOTE_TOKEN` override saved settings at launch.
 
@@ -1257,7 +1255,11 @@ groups that previously rendered smaller buttons.
 The debug launcher and packaging script accept `HERM_CODESIGN_IDENTITY`, passed
 as one quoted argument to `codesign`. Set it to the name or SHA-1 fingerprint of
 a valid code-signing certificate listed by `security find-identity -v -p codesigning`.
-Use the same certificate for successive builds. Signing failures stop the script;
+Use the same certificate for successive builds. When the variable is unset, the
+debug launcher uses a certificate named `Herm Development` if one exists. You can
+create it in Keychain Access → Certificate Assistant → Create a Certificate
+(Identity Type: Self Signed Root, Certificate Type: Code Signing). This also stops
+repeated Keychain prompts for saved credentials. Signing failures stop the script;
 it never silently falls back from a configured certificate to ad-hoc signing.
 
 Without this variable, builds remain ad-hoc signed and print a warning. Their
@@ -1357,9 +1359,7 @@ HTML artwork with explicitly authored styles may override defaults; theme variab
 remain the supported way to match Herm. Switching skins reloads an open HTML preview
 and resets its interactive inputs.
 
-**Settings → Text size** applies across Herm: chat and session lists, workspace pages, previews, generated content, and native code, diff, and terminal text. Titles, body text, controls, and metadata use shared typography roles; window and floating presentations use the same preference.
-
-Text size offers Small, Default, Large, and Larger. Previously saved Compact preferences use Small.
+Settings → Density offers Default and Compact. Compact applies across Herm: text, icons, bot avatars, controls, and every margin and padding shrink in chat and session lists, workspace pages, previews, generated content, and native code, diff, and terminal text. Window and floating presentations use the same preference. Previously saved Small scales open as Compact; Large and Larger open as Default.
 
 Expand/collapse keeps the current workspace mounted: chat-list and inspector
 switches, shared list/detail layouts, and shared disclosure sections preserve
@@ -1388,3 +1388,5 @@ explicit error instead of restoring old sign-ins silently.
 User-message bubbles follow the selected text size, including when it changes while a chat is open. Short prompts hug their text from the first layout, without briefly stretching across the chat.
 
 Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.
+
+The model chip shows the provider mark and current thinking effort. Its picker groups models by provider, marks the active model with a check inside a matching circle, offers catalog search, and includes thinking effort and fast controls alongside model selection, with the selected effort marked by a check. The picker stays open while changing models or refreshing the catalog.

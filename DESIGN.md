@@ -193,7 +193,7 @@ standard point sizes into feature views or renderer defaults. The explicit-size
 modifier is reserved for artwork and specialized presentation sizes.
 
 
-Settings → Text size supplies one inherited native sizing value across window and
+The interface scale preference (its Settings row is temporarily hidden) supplies one inherited native sizing value across window and
 floating chat presentations, with no separate compact font mode, including the session list, conversation, activity,
 and composer, as well as other workspace pages and independent preview panels.
 Code, diffs, terminal text, and chart labels resolve the same scale at their native
@@ -275,7 +275,7 @@ larger surfaces. Status pills and other semantic capsules remain capsules so
 their meaning stays consistent across themes.
 
 Themes also set `DockThemeStyle.material`, `selection`, `chrome`, and
-`animates`. Glass matches macOS Liquid Glass: an 88% neutral window tint in Light
+`animates`. Glass matches macOS Liquid Glass: an 80% neutral window tint in Light
 and 12% in Dark over AppKit
 `NSGlassEffectView` (macOS 26) (page canvases and the sidebar stay clear), frosted
 cards, chips and inputs, shadowless controls and native `glassEffect` floating panels (`dockFloatingSurface`), fine material edges, and
@@ -283,8 +283,9 @@ cards, chips and inputs, shadowless controls and native `glassEffect` floating p
 Popovers and sheets use `dockPopover` and `dockSheet`, which apply the shared
 opaque themed canvas to their content and native presentation background. This
 includes the popover arrow. Layered panes use that same opaque canvas. Light
-Glass cards, fields and floating surfaces have white bodies so warm host fills
-and desktop colors cannot tint them; the main window retains its glass backing.
+Glass cards, fields and floating surfaces have translucent white bodies (60–80%)
+with a bright specular rim and a faint graphite edge, so the desktop reads
+through softly as in macOS; the main window retains its glass backing.
 The window uses one native glass layer, clipped to its panel silhouette; do not
 stack a full-window SwiftUI glass effect over it, which adds broad reflections
 across the reading surface.
@@ -1484,24 +1485,11 @@ single-line preview; missing values do not leave separators behind. Repository
 identity is inline metadata rather than a capsule so the list remains calm at
 narrow sidebar widths. The Pinned section remains a separate presentation.
 
-With more than one visible bot, a **Chats** outline replaces Recents and lists
-every bot's chats from one all-profile sidebar read merged with the selected
-bot's fresher list. Its header adds a ⋯ **Group by** menu (also Settings → Chat
-→ Layout), stored as a local preference:
-
-- **Agent** (default): one 28pt-avatar row per bot, most recently active first,
-  with name, newest preview, time, and the shared activity glyph. The selected
-  bot starts expanded. Expanded bots show running, unread, attention, and the
-  open chat plus the three newest, indented under the avatar, then
-  Show all N/Show recent.
-- **Session**: every bot's chats newest first, each standard session row led by
-  a 20pt bot avatar, with the usual ten-row Show more.
-
-Other bots' running state comes from their live roster status, not the REST
-recent-write flag. Their history is baselined once from the all-profile read so
-first use shows no unread flood. Opening another bot's chat applies the profile
-switch before resuming it. A failed all-profile read shows its message below the
-list and keeps the last loaded rows.
+The sidebar always shows the bot header and the stacked Pinned,
+Recents, and Projects sections for the selected bot. Recents read every bot's
+chats from one all-profile sidebar read merged with the selected bot's fresher
+list. Other bots' history is baselined once from that read so first use shows no
+unread flood.
 
 Session activity uses `session.active_list`, not the REST index’s recent-write
 flag. The visible sidebar refreshes activity every ten seconds for the selected
@@ -2117,7 +2105,30 @@ running card can change hands.
 
 ### Bots
 
-The Bots destination uses a responsive adaptive grid for profiles and a compact
+The Bots destination is a Messenger-style page: the icon rail, a 360pt bot
+list, and the open chat: a bot's main chat (its canonical Bot Chat) with bot
+mode on, or a group room. It has no session sections and no inspector. The
+header shows only the title; a search field above the list filters bots and
+rooms by name without changing the open chat. A + button beside the search
+starts a group chat when Hermes exposes its room driver. Group rooms share the
+list with bots and keep the group row (member avatars, unread, approval and
+working marks, the more-actions menu); the whole list sorts by last activity,
+newest first. Each row shows a 42pt avatar
+that orbits while the bot works, the name, the shared activity glyph, the
+main chat's last-message time, and a one-line preview ("No messages yet" when
+empty). Rows sort by main-chat activity, newest first; idle bots keep roster
+order. The open bot takes the selected fill. On open, the page reopens the
+room last opened here if it still exists, else keeps the open bot's chat, else
+reopens the bot last opened on this page (a local
+preference), else the default bot. Bot rows show no unread marks.
+Working marks here follow only the main chat's live state. The Chats bot
+switcher's working and done badges follow only the bot's other sessions and
+workers, so main-chat work never appears there. Main chats themselves are
+hidden from Chats Recents, Chats search, and the rail Chats badge; they open
+only from the Bots page.
+
+Settings → Bots (Agent group) hosts the roster manager. Its chat actions open
+the Bots page on that bot. The roster uses a responsive adaptive grid for profiles and a compact
 schedule list for routines. The grid uses one column below 600pt, two columns
 from 600pt, and three columns from 900pt, with flexible cards filling the
 workspace width. Cards keep identity and live presence first, a bounded
@@ -2237,7 +2248,8 @@ returns to the bottom or chooses Jump to latest. Streamed output, new blocking
 prompts, and same-session transcript refreshes preserve the reader's position
 above the bottom. While following, content-height changes target the measured
 footer after layout without a second streaming timer. Jump to latest animates
-only when Reduce Motion is off.
+only when Reduce Motion is off. The floating latest-message control has an opaque
+themed background so transcript text cannot show through it.
 
 Transcript snapshots include live activity only while its streaming row is mounted,
 and bot-step inputs are scoped to the selected conversation’s dispatches and mentions.
@@ -3031,6 +3043,12 @@ focused field Hermes produces in the main frame; clicks spread a ring. The
 cursor never takes input. Its last observed position remains visible between tool
 calls and survives reopening or resizing the pane; taking over, using the page,
 or changing pages clears it.
+Pointer and focus events in supported nested and cross-origin frames map into the
+same page coordinates. Unavailable frame geometry suppresses the affected cursor
+event without blocking the browser. The browser owner tracks tool-call identity
+and input control even while the inspector is hidden; page scripts cannot create
+trusted pointer events. JavaScript-only work retains the activity indicator without
+an invented cursor position.
 Reduce Motion jumps the cursor and drops the ring. Auto rounds
 CSS viewport dimensions down to whole pixels and aligns the page origin to the
 backing pixel grid, preserving 1:1 text rendering in fractional panel bounds.
@@ -3852,7 +3870,7 @@ role. Bots filters use shared compact secondary actions and put search above fil
 at narrow widths. Artifact origin is quiet metadata, not a success-colored badge;
 artifact icon geometry follows the active skin.
 
-Text size offers Small, Default, Large, and Larger. Previously saved Compact preferences use Small.
+Density offers Default and Compact, stored as the workspace scale (1.1 / 0.9). Text, icons, icon buttons, button heights, and bot avatars read it through `DockWorkspaceScale.points`; margins and padding use `.dockPadding`, which keeps Default unchanged and tightens Compact to 0.8×. Use `.dockPadding` instead of `.padding` for all view insets. Stack spacing and fixed frame sizes do not change with density yet.
 
 ### Expand/collapse state retention
 
@@ -3898,3 +3916,5 @@ is preserved. GitHub overview links retain their native inspector routing.
 Primary and additional Browser tabs show the live webpage title, updating when
 the page name changes. Empty, untitled, and URL-only titles retain the generic
 Browser label (with the existing number for additional tabs).
+
+The model chip shows the current thinking effort beside the model name. The picker stays open for model selection and catalog refresh, with vertical insets around its contents. The model picker keeps provider marks beside a search field and compact model list. Matching leading circles mark model choices, with a check identifying the active model; available thinking effort choices wrap into a compact grid below the choices, with a check and contour identifying the selected effort, with fast and catalog actions separated by a divider.
