@@ -47,7 +47,7 @@ struct IssueDetailView: View {
                 RepositoryShimmerBlock(width: 76, height: 26, cornerRadius: 7)
                 RepositoryShimmerBlock(width: 104, height: 28, cornerRadius: 7)
             }
-            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
+            .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
             .frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
@@ -59,19 +59,19 @@ struct IssueDetailView: View {
                             .dockFont(.body, weight: .medium)
                             .foregroundStyle(Color.dockMetadataText)
                     }
-                    .padding(.top, 28)
+                    .dockPadding(.top, 28)
 
                     RepositoryShimmerBlock(width: nil, height: 26, cornerRadius: 7)
-                        .padding(.top, 14)
+                        .dockPadding(.top, 14)
                     RepositoryShimmerBlock(width: 420, height: 26, cornerRadius: 7)
-                        .padding(.top, 8)
+                        .dockPadding(.top, 8)
 
                     HStack(spacing: 10) {
                         RepositoryShimmerBlock(width: 64, height: 22, cornerRadius: 11)
                         RepositoryShimmerBlock(width: 248, height: 11, cornerRadius: 4)
                     }
-                    .padding(.top, 16)
-                    .padding(.bottom, 22)
+                    .dockPadding(.top, 16)
+                    .dockPadding(.bottom, 22)
 
                     RepositoryShimmerBlock(width: nil, height: 1, cornerRadius: 0)
 
@@ -81,11 +81,11 @@ struct IssueDetailView: View {
                         RepositoryShimmerBlock(width: 520, height: 11, cornerRadius: 4)
                         RepositoryShimmerBlock(width: 370, height: 11, cornerRadius: 4)
                     }
-                    .padding(.top, 24)
-                    .padding(.bottom, 48)
+                    .dockPadding(.top, 24)
+                    .dockPadding(.bottom, 48)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 28)
+                .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -138,7 +138,7 @@ struct IssueDetailView: View {
                 }
                 AttachToChatMenu(pill: true) { ChatContext(issue: displayedIssue) }
             }
-            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
+            .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
             .frame(height: 52)
             .background(titleRow != nil ? Color.dockSidebar : .clear)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -155,7 +155,7 @@ struct IssueDetailView: View {
                             Spacer(minLength: 0)
                             Text(displayedIssue.state.capitalized)
                                 .foregroundStyle(displayedIssue.presentationColor)
-                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .dockPadding(.horizontal, 10).dockPadding(.vertical, 6)
                                 .background(Capsule().fill(displayedIssue.presentationColor.opacity(0.12)))
                         }.foregroundStyle(Color.dockSecondaryText)
                         Text(displayedIssue.title)
@@ -190,7 +190,8 @@ struct IssueDetailView: View {
                         .id("conversation:" + issue.id)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16).padding(.top, 20).padding(
+                .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16).dockPadding(.top, 20)
+                .dockPadding(
                     .bottom, 32)
             }
             .clipped()

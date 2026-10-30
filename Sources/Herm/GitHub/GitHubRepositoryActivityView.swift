@@ -39,7 +39,7 @@ struct GitHubRepositoryActivityView: View {
                     .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).lineLimit(2)
                     .help(model.error ?? "Branch and user choices are discovered from loaded activity.")
             }
-            .dockButtonSize(.compact).padding(.horizontal, 16).padding(.vertical, 12)
+            .dockButtonSize(.compact).dockPadding(.horizontal, 16).dockPadding(.vertical, 12)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -59,7 +59,7 @@ struct GitHubRepositoryActivityView: View {
                                 Button("Clear filters") { model.filters = GitHubActivityFilters() }.buttonStyle(
                                     .dockSecondary)
                             }
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                        }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(16)
                     }
                     ForEach(model.items) { item in
                         activityRow(item)
@@ -71,7 +71,7 @@ struct GitHubRepositoryActivityView: View {
                     DockThemeShape(cornerRadius: DockLayout.controlRadius).stroke(
                         Color.dockBorderLight, lineWidth: model.items.isEmpty ? 0 : DockLayout.hairline)
                 )
-                .padding(16)
+                .dockPadding(16)
             }
         }
         .dockFont(.body).foregroundStyle(Color.dockPrimaryText).background(Color.dockCanvas)
@@ -173,7 +173,8 @@ struct GitHubRepositoryActivityView: View {
                     .help(error)
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 10).frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .dockPadding(.horizontal, 12).dockPadding(.vertical, 10).frame(
+            maxWidth: .infinity, minHeight: 64, alignment: .leading)
     }
 
     private func action(_ item: GitHubRepositoryActivity, summary: GitHubActivitySummary?) -> String {
@@ -184,7 +185,7 @@ struct GitHubRepositoryActivityView: View {
     private func badge(_ item: GitHubRepositoryActivity) -> some View {
         let color = item.type == "force_push" ? Color.dockWarning : Color.dockMerged
         return Text(item.label).dockFont(.metadata, weight: .medium).foregroundStyle(color)
-            .padding(.horizontal, 6).padding(.vertical, 2)
+            .dockPadding(.horizontal, 6).dockPadding(.vertical, 2)
             .overlay(Capsule().stroke(color.opacity(0.6), lineWidth: DockLayout.hairline))
     }
 

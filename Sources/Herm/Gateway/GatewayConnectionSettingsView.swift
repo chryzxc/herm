@@ -89,7 +89,7 @@ struct GatewayConnectionSettingsView: View {
                                     if connection.id == model.draft.id {
                                         DockIcon(.check, size: 12, color: .dockAccent)
                                     }
-                                }.padding(.vertical, 6).dockListRow(isHighlighted: connection.id == model.draft.id)
+                                }.dockPadding(.vertical, 6).dockListRow(isHighlighted: connection.id == model.draft.id)
                             }.buttonStyle(.dockHover)
                         }
                     }
@@ -213,7 +213,8 @@ struct GatewayConnectionSettingsView: View {
                             if agent.dashboardURL == model.draft.remoteURL {
                                 DockIcon(.check, size: 12, color: .dockAccent)
                             }
-                        }.padding(.vertical, 6).dockListRow(isHighlighted: agent.dashboardURL == model.draft.remoteURL)
+                        }.dockPadding(.vertical, 6).dockListRow(
+                            isHighlighted: agent.dashboardURL == model.draft.remoteURL)
                     }.buttonStyle(.dockHover).disabled(agent.dashboardURL == nil)
                 }
             }

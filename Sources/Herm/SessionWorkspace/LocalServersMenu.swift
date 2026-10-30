@@ -76,7 +76,7 @@ struct LocalPreviewsPanel: View {
                 DockIconButton(
                     icon: .arrowsClockwise, label: "Refresh local previews", isBusy: isRefreshing, size: 24,
                     style: DockThemePalette(theme: DockThemeRuntime.current), action: refresh)
-            }.padding(DockSpacing.group)
+            }.dockPadding(DockSpacing.group)
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             if servers.isEmpty {
                 VStack(alignment: .leading, spacing: DockSpacing.control) {
@@ -95,7 +95,8 @@ struct LocalPreviewsPanel: View {
                     .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading).padding(.horizontal, DockSpacing.group)
+                .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading).dockPadding(
+                    .horizontal, DockSpacing.group)
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -118,7 +119,7 @@ struct LocalPreviewsPanel: View {
                                     Spacer(minLength: 0)
                                     DockIcon(.arrowUpRight).foregroundStyle(Color.dockSecondaryText)
                                 }
-                                .padding(DockSpacing.group).frame(maxWidth: .infinity, alignment: .leading)
+                                .dockPadding(DockSpacing.group).frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.dockHover)
@@ -129,12 +130,12 @@ struct LocalPreviewsPanel: View {
                 }.frame(height: min(248, CGFloat(servers.count) * 64))
                 if let error {
                     Text(error).dockFont(.metadata).foregroundStyle(Color.dockWarning)
-                        .padding(.horizontal, DockSpacing.group).padding(.bottom, DockSpacing.control)
+                        .dockPadding(.horizontal, DockSpacing.group).dockPadding(.bottom, DockSpacing.control)
                 }
             }
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             Text("Opens in the session browser. Nothing starts automatically.")
-                .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).padding(DockSpacing.group)
+                .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).dockPadding(DockSpacing.group)
         }
         .frame(width: 320).foregroundStyle(Color.dockPrimaryText)
         .background(Color.dockCanvas).dockThemedRoot()
