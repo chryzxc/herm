@@ -16,15 +16,18 @@ struct ConversationLatestMessageControl: View {
                     }
                 }
                 .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, unread > 0 ? 14 : 0)
+                .dockPadding(.horizontal, unread > 0 ? 14 : 0)
                 .frame(minWidth: 34, minHeight: 34)
                 .background(
-                    Capsule().fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+                    Capsule()
+                        .fill(Color.dockOpaqueCanvas)
+                        .overlay(Capsule().fill(Color.dockControlSurface))
+                        .overlay(Capsule().stroke(Color.dockBorder, lineWidth: DockLayout.outline)))
             }
             .buttonStyle(.dockHover)
             .help("Scroll to bottom")
             .accessibilityLabel(unread > 0 ? "Scroll to bottom, \(unread) new" : "Scroll to bottom")
-            .padding(.bottom, 12)
+            .dockPadding(.bottom, 12)
         }
     }
 }
