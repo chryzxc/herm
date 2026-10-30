@@ -15,6 +15,8 @@ enum ToolStep {
         func quoted(_ text: String?) -> String? { text.map { "“\($0.prefix(80))”" } }
         let lower = name.lowercased()
         switch lower {
+        case "browser_exec": return (.globe, "Working in the browser", nil)
+        case "browser_cdp": return (.globe, "Working in the browser", nil)
         case "browser_navigate": return (.globe, "Browsing \(host(a["url"]) ?? "the web")", a["url"])
         case "browser_click": return (.cursorClick, "Clicking on the page", nil)
         // Typed text may be a password, so it is never shown here.
@@ -446,8 +448,8 @@ private struct BrowserCard: View {
                         Text(host)
                             .dockFont(.compactStatus, weight: isCurrent ? .semibold : .regular)
                             .lineLimit(1)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
+                            .dockPadding(.horizontal, 6)
+                            .dockPadding(.vertical, 3)
                             .background(Capsule().fill(Color.dockAccent.opacity(isCurrent ? 0.18 : 0.07)))
                             .foregroundStyle(isCurrent ? Color.dockAccent : Color.dockSecondaryText)
                     }
@@ -501,8 +503,8 @@ private struct SearchCard: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
+                    .dockPadding(.horizontal, 8)
+                    .dockPadding(.vertical, 5)
                     .background(RoundedRectangle(cornerRadius: 7).fill(Color.dockAccent.opacity(0.06)))
                     .contentShape(Rectangle())
                 }
@@ -678,8 +680,8 @@ private struct ChipStyle: ViewModifier {
         content
             .dockFont(.metadata, weight: .medium)
             .foregroundStyle(tint)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
+            .dockPadding(.horizontal, 9)
+            .dockPadding(.vertical, 5)
             .background(Capsule().fill(Color.dockSurface6.opacity(0.9)).stroke(tint.opacity(0.3), lineWidth: 0.6))
     }
 }

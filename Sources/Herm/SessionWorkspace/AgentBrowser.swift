@@ -14,32 +14,9 @@ final class AgentBrowser: ObservableObject {
     let profileID: String?
     private static var connectionTask: Task<Void, Never>?
     private static let world = "herm"
-    /// Annotate plus the agent-cursor reporter: pointer moves (one per animation frame),
-    /// presses, and focus not caused by a press, in viewport CSS pixels.
     private static let worldScript =
         BrowserAnnotation.script + """
 
-            (() => {
-              if (window.__hermPointer) return;
-              window.__hermPointer = true;
-              const send = (type, x, y) => {
-                if (typeof window.hermPointer === 'function') window.hermPointer(JSON.stringify({ type, x, y }));
-              };
-              let pending = null, pressed = 0;
-              // Trusted events only: a page's synthetic ones must not move Hermes' cursor.
-              addEventListener('pointermove', (e) => {
-                if (!e.isTrusted) return;
-                const idle = !pending;
-                pending = [e.clientX, e.clientY];
-                if (idle) requestAnimationFrame(() => { send('move', ...pending); pending = null; });
-              }, true);
-              addEventListener('pointerdown', (e) => { if (!e.isTrusted) return; pressed = performance.now(); send('down', e.clientX, e.clientY); }, true);
-              addEventListener('focusin', (e) => {
-                const r = e.target.getBoundingClientRect?.();
-                if (!e.isTrusted || performance.now() - pressed < 300 || !r || !r.width || !r.height) return;
-                send('focus', r.left + Math.min(r.width / 2, 24), r.top + r.height / 2);
-              }, true);
-            })();
             (() => {
               // Your input only, in the top frame: Herm draws dropdowns headless Chrome paints
               // off-screen, mirrors the page's cursor, and anchors IME candidates to the field.
@@ -117,7 +94,9 @@ final class AgentBrowser: ObservableObject {
     /// A page's alert/confirm/prompt/beforeunload; the page is frozen until it's answered.
     @Published private(set) var dialog: Dialog?
     /// You took the page over from Hermes; the pane offers to hand it back.
-    @Published var userHasControl = false
+    @Published var userHasControl = false {
+        didSet { inputLocked = currentBrowserCallID != nil && !userHasControl }
+    }
     /// Hermes is mid-step: your input would race its clicks, so the canvas drops it.
     var inputLocked = false {
         didSet {
@@ -133,6 +112,7 @@ final class AgentBrowser: ObservableObject {
 
     /// Keep the last observed position between tool calls, without replaying a click on remount.
     func updatePointer(_ pointer: AgentPointer?) {
+        if pointer == nil { pointerTracker?.clearPointer() }
         lastPointer = pointer.map { AgentPointer(kind: .move, point: $0.point) }
         onPointer?(pointer)
     }
@@ -156,7 +136,32 @@ final class AgentBrowser: ObservableObject {
     @Published var annotating = false { didSet { if annotating != oldValue { applyAnnotating() } } }
     /// 0 fits the panel; otherwise the emulated CSS width.
     @Published var presetWidth = 0 { didSet { if presetWidth != oldValue { scheduleViewport() } } }
-    weak var model: DockModel?
+    weak var model: DockModel? {
+        didSet {
+            guard model !== oldValue else { return }
+            activityCancellable?.cancel()
+            if let model {
+                activityCancellable = model.$browserActivityID.combineLatest(model.$interruptState)
+                    .sink { [weak self] callID, interrupt in
+                        self?.updateBrowserActivity(callID: callID, interrupt: interrupt)
+                    }
+            } else {
+                updateBrowserActivity(callID: nil, interrupt: .idle)
+            }
+        }
+    }
+    private var activityCancellable: AnyCancellable?
+    private var currentBrowserCallID: String?
+    private var takenOverCallID: String?
+
+    func updateBrowserActivity(callID: String?, interrupt: InterruptState) {
+        if callID != currentBrowserCallID { pointerTracker?.discardPending() }
+        currentBrowserCallID = callID
+        if userHasControl, let callID, callID != takenOverCallID, interrupt != .requesting {
+            userHasControl = false
+        }
+        inputLocked = callID != nil && !userHasControl
+    }
     /// Frames bypass SwiftUI: the canvas draws them directly at screencast rate.
     var onFrame: ((NSImage, CGSize) -> Void)?
     /// A remounted canvas paints this at once; a static page sends no new screencast frame.
@@ -211,6 +216,7 @@ final class AgentBrowser: ObservableObject {
     private var startupTask: Task<Void, Never>?
     private var process: Process?
     private var cdp: CDPConnection?
+    private var pointerTracker: HermesBrowserPointerTracker?
     private var sessionID: String?
     private var mainFrameID: String?
     private var annotateContextID: Int?
@@ -345,6 +351,8 @@ final class AgentBrowser: ObservableObject {
 
     private func teardown() {
         lifecycleGeneration = UUID()
+        pointerTracker?.stop()
+        pointerTracker = nil
         handoffFailed = false
         startupTask?.cancel()
         startupTask = nil
@@ -423,6 +431,11 @@ final class AgentBrowser: ObservableObject {
 
     /// Shows `session`'s tab: the one it last showed, else the current one becomes its tab.
     func show(session: String) {
+        if shownSession != session {
+            updatePointer(nil)
+            takenOverCallID = nil
+            userHasControl = false
+        }
         shownSession = session
         guard state == .running, let target = tabs[session], target != activeTargetID,
             pages.contains(where: { $0.id == target })
@@ -533,6 +546,8 @@ final class AgentBrowser: ObservableObject {
     /// Mirrors `targetID`: one flat CDP session at a time, with the annotate world and screencast.
     private func attach(_ targetID: String) async throws {
         guard let cdp else { return }
+        pointerTracker?.stop()
+        pointerTracker = nil
         if let old = sessionID {
             sessionID = nil
             cdp.fire("Target.detachFromTarget", ["sessionId": old])
@@ -553,7 +568,7 @@ final class AgentBrowser: ObservableObject {
         annotateContextID = nil
         updatePointer(nil)
         _ = try await cdp.send("Page.enable", session: sid)
-        for binding in ["hermAnnotate", "hermPointer", "hermPage"] {
+        for binding in ["hermAnnotate", "hermPage"] {
             _ = try await cdp.send(
                 "Runtime.addBinding", ["name": binding, "executionContextName": Self.world], session: sid)
         }
@@ -575,6 +590,21 @@ final class AgentBrowser: ObservableObject {
                 "Runtime.evaluate", ["expression": Self.worldScript, "contextId": context], session: sid)
         }
         _ = try await cdp.send("Runtime.enable", session: sid)
+        let tracker = HermesBrowserPointerTracker(
+            rootSession: sid,
+            send: { [weak cdp] method, params, session in
+                guard let cdp else { throw CancellationError() }
+                return try await cdp.send(method, params, session: session)
+            },
+            active: { [weak self] in
+                guard let self, let model = self.model, let key = model.browserSessionKey else { return false }
+                return self.inputLocked && self.owns(model) && key.sessionID == self.shownSession
+            },
+            deliver: { [weak self] in self?.updatePointer($0) },
+            invalidatePointer: { [weak self] in self?.updatePointer(nil) })
+        pointerTracker = tracker
+        await tracker.start()
+        guard sessionID == sid else { return }
         if let document = try? await cdp.send(
             "Runtime.evaluate", ["expression": "document.readyState", "returnByValue": true], session: sid),
             sessionID == sid, let readyState = (document["result"] as? [String: Any])?["value"] as? String
@@ -643,6 +673,7 @@ final class AgentBrowser: ObservableObject {
     }
 
     private func handle(_ method: String, _ params: [String: Any], _ session: String?) {
+        pointerTracker?.receive(method, params: params, session: session)
         switch method {
         case "Target.targetCreated", "Target.targetInfoChanged":
             guard let page = (params["targetInfo"] as? [String: Any]).flatMap(Page.init(info:)) else { return }
@@ -657,6 +688,8 @@ final class AgentBrowser: ObservableObject {
             guard let id = params["targetId"] as? String else { return }
             pages.removeAll { $0.id == id }
             guard id == activeTargetID else { return }
+            pointerTracker?.stop()
+            pointerTracker = nil
             updatePointer(nil)
             sessionID = nil
             activeTargetID = nil
@@ -714,14 +747,12 @@ final class AgentBrowser: ObservableObject {
             annotateContextID = nil
             updatePointer(nil)
         case "Runtime.bindingCalled":
-            // Only our isolated world has the binding; the context check drops iframes.
+            // Annotation and manual input remain restricted to the top frame.
             guard params["executionContextId"] as? Int == annotateContextID,
                 let payload = params["payload"] as? String
             else { return }
             switch params["name"] as? String {
             case "hermAnnotate": receive(payload)
-            // The canvas drops your input while Hermes holds the page, so this is Hermes.
-            case "hermPointer": if inputLocked, let pointer = AgentPointer(json: payload) { updatePointer(pointer) }
             case "hermPage": if !inputLocked, let event = AgentPageEvent(json: payload) { onPageEvent?(event) }
             default: break
             }
@@ -977,6 +1008,7 @@ final class AgentBrowser: ObservableObject {
 
     /// Interrupts Hermes so you can finish a step (a login, a captcha) yourself.
     func takeOver() {
+        takenOverCallID = currentBrowserCallID
         _ = model?.stop()
         updatePointer(nil)
         userHasControl = true
@@ -1782,7 +1814,7 @@ struct AgentBrowserPane: View {
                         .center)
                     Button("Try Again") { browser.start() }
                 }
-                .padding(16)
+                .dockPadding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .off, .running:
                 EmptyView()
@@ -1804,13 +1836,13 @@ struct AgentBrowserPane: View {
             Group {
                 if browser.userHasControl { controlPill } else if let step { activityPill(step) }
             }
-            .padding(12)
+            .dockPadding(12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         .overlay {
             if let dialog = browser.dialog {
                 AgentDialogCard(dialog: dialog) { browser.answerDialog(accept: $0, text: $1) }
-                    .padding(16)
+                    .dockPadding(16)
                     .transition(.scale(scale: 0.97).combined(with: .opacity))
             }
         }
@@ -1818,11 +1850,6 @@ struct AgentBrowserPane: View {
         .animation(.dockEase(duration: 0.2), value: browser.userHasControl)
         .animation(.dockEase(duration: 0.16), value: browser.dialog)
         .background(Color.dockCanvas)
-        .onChange(of: step != nil, initial: true) { _, browsing in
-            // A step still finishing after Take over keeps your control; a new one is Hermes driving again.
-            if browsing, browser.userHasControl, model.interruptState != .requesting { browser.userHasControl = false }
-            browser.inputLocked = browsing && !browser.userHasControl
-        }
     }
 
     private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
@@ -1840,9 +1867,9 @@ struct AgentBrowserPane: View {
                 .controlSize(.small)
             DockIconButton(icon: .x, label: "Dismiss", size: 22, style: palette) { browser.userHasControl = false }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
+        .dockPadding(.leading, 12)
+        .dockPadding(.trailing, 4)
+        .dockPadding(.vertical, 4)
         .dockHUDPanel()
         .accessibilityElement(children: .contain)
     }
@@ -1875,9 +1902,9 @@ struct AgentBrowserPane: View {
                 .help("Pause Herm and use the page yourself")
             DockIconButton(icon: .stop, label: "Stop Herm", size: 22, style: palette) { model.stop() }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
+        .dockPadding(.leading, 12)
+        .dockPadding(.trailing, 4)
+        .dockPadding(.vertical, 4)
         .dockHUDPanel()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Herm is browsing: \(step.title)")
@@ -1932,7 +1959,7 @@ private struct AgentDialogCard: View {
             }
             .controlSize(.small)
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(maxWidth: 340)
         .dockHUDPanel()
         .onAppear {

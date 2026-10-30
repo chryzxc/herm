@@ -37,13 +37,13 @@ extension AgentBrowser {
                     """ + "\n" + safetyRules)
         }
         let message =
-            "Blocked by Herm: Use Herm's browser is on. Open the page with the Hermes browser tools (browser_navigate) instead; Herm shows it in this chat's Browser tab, where the user can watch and take over. The user can turn this off in Herm Settings → Browser."
+            "Blocked by Herm: Use Herm's browser is on. Open the page with the available Hermes browser tools; Herm shows it in this chat's Browser tab, where the user can watch and take over. The user can turn this off in Herm Settings → Browser."
         let desktopMessage =
-            "Blocked by Herm: Use Herm's browser is on. A page or tab the user opened in Herm is in the browser your Hermes browser tools control: read it with browser_snapshot and act with the browser tools instead of desktop control. The user can turn this off in Herm Settings → Browser."
+            "Blocked by Herm: Use Herm's browser is on. A page or tab the user opened in Herm is in the browser your Hermes browser tools control: inspect and act on it with the available browser tools. The user can turn this off in Herm Settings → Browser."
         return HermAgentSurface(
             id: "herm.browser",
             rules: """
-                Web pages: to open, show, visit or inspect a page, use the Hermes browser tools (browser_navigate). Herm shows that browser live in this chat's Browser tab, where the user can watch and take over. Do not open pages in an external browser (open <url>, open -a Safari or Chrome); Herm blocks it while its browser setting is on. A page or tab the user says they opened is in that same browser: read it with browser_snapshot and act with the browser tools, not computer_use or other desktop control.
+                Web pages: use the available Hermes browser tools to open, inspect and interact with pages. Herm shows that browser live in this chat's Browser tab, where the user can watch and take over. Do not open pages in an external browser (open <url>, open -a Safari or Chrome); Herm blocks it while its browser setting is on. A page or tab the user says they opened is in that same browser: inspect and act on it with the available browser tools, not computer_use or other desktop control.
                 """ + "\n" + safetyRules,
             guards: [
                 #"(^|[;&|(]\s*)open\s[^;&|\n]*https?://"#,

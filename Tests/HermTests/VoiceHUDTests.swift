@@ -85,6 +85,8 @@ struct VoiceHUDTests {
     }
 
     @Test func toolStepsReadLikeSentences() {
+        #expect(ToolStep.describe(name: "browser_exec", args: ["code": "secret"]).detail == nil)
+        #expect(ToolStep.describe(name: "browser_cdp", args: ["command": "secret"]).detail == nil)
         #expect(
             ToolStep.describe(name: "browser_navigate", args: ["url": "https://www.booking.com/x"]).title
                 == "Browsing booking.com")

@@ -182,9 +182,12 @@ final class DockModel: ObservableObject {
     @Published var isShowingReasoning = false
     var activeToolCalls: [ActiveToolCall] = [] {
         didSet {
+    @Published private(set) var browserActivityID: String?
             guard oldValue != activeToolCalls else { return }
             if streamingMessageID != nil {
                 Self.upsert(
+            let browser = activeToolCalls.last { !$0.isComplete && $0.name.hasPrefix("browser_") }?.id
+            if browserActivityID != browser { browserActivityID = browser }
                     splitOffCallIDs.isEmpty
                         ? activeToolCalls : activeToolCalls.filter { !splitOffCallIDs.contains($0.id) },
                     into: &streamingTurnActivity)

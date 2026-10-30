@@ -51,7 +51,11 @@ struct BrowserPageContextTests {
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         #expect(AgentBrowser.opensInHerm(defaults: defaults))
-        let guards = AgentBrowser.agentSurface(defaults: defaults).guards
+        let surface = AgentBrowser.agentSurface(defaults: defaults)
+        #expect(surface.rules.contains("available Hermes browser tools"))
+        #expect(!surface.rules.contains("browser_navigate"))
+        #expect(!surface.rules.contains("browser_snapshot"))
+        let guards = surface.guards
         func blocked(_ command: String) -> Bool {
             guards.contains { rule in
                 let regex = try? NSRegularExpression(pattern: rule.pattern, options: .caseInsensitive)
