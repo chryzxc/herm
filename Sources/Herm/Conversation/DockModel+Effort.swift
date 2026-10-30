@@ -27,6 +27,7 @@ extension DockModel {
             sessionReasoningWire = wire?.isEmpty == false ? wire : nil
             sessionReasoningStale = false
         }
+        if let fast = payload["fast"] as? Bool { sessionFastEnabled = fast }
         if payload["model"] as? String != nil || payload["provider"] as? String != nil {
             refreshSessionModelOptions()
         }
@@ -89,6 +90,29 @@ extension DockModel {
                 else { return }
                 runtimeConfigurationError = "Could not change effort. Try again."
                 actionErrors.report("Could not change session thinking level", error: error)
+            }
+        }
+    }
+
+    func updateSessionFast(_ enabled: Bool) {
+        guard let sessionID, !sessionID.isEmpty, !isUpdatingSessionFast else { return }
+        let generation = sessionResumeGeneration
+        let params = scopedSessionParams(["key": "fast", "value": enabled ? "fast" : "normal", "session_id": sessionID])
+        isUpdatingSessionFast = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { if sessionID == self.sessionID { isUpdatingSessionFast = false } }
+            do {
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.configSet.rawValue, params: params)
+                guard sessionID == self.sessionID, sessionResumeGeneration == generation else { return }
+                guard result["key"] as? String == "fast", let value = result["value"] as? String else {
+                    throw QuickDraftError.message("Hermes did not acknowledge the fast change.")
+                }
+                sessionFastEnabled = value != "normal"
+            } catch {
+                guard sessionID == self.sessionID, sessionResumeGeneration == generation else { return }
+                runtimeConfigurationError = "Could not change fast mode. Try again."
+                actionErrors.report("Could not change session fast mode", error: error)
             }
         }
     }

@@ -244,14 +244,14 @@ struct ChatComposerView: View {
 
                 if !queuedPrompts.isEmpty {
                     QueuedPromptList(model: model, prompts: queuedPrompts)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .dockPadding(.horizontal, 12)
+                        .dockPadding(.vertical, 8)
                 }
 
                 if let quote = model.replyQuote {
                     ReplyQuoteChip(quote: quote, showsAuthor: false) { model.replyQuote = nil }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .dockPadding(.horizontal, 12)
+                        .dockPadding(.vertical, 6)
                 }
 
                 VStack(spacing: 6) {
@@ -308,13 +308,13 @@ struct ChatComposerView: View {
                             Text(placeholderText)
                                 .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
                                 .foregroundStyle(Color.dockSecondaryText)
-                                .padding(.leading, textContentInset)
+                                .dockPadding(.leading, textContentInset)
                                 .allowsHitTesting(false)
                         }
                     }
                     // Move the native editor and the placeholder together; applying
                     // padding to only the placeholder would reintroduce caret drift.
-                    .padding(.top, textTopPadding)
+                    .dockPadding(.top, textTopPadding)
                     .frame(maxWidth: .infinity)
                     // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
                     // proposal while its intrinsic text height changes. Mask the
@@ -348,8 +348,8 @@ struct ChatComposerView: View {
                                         .buttonStyle(.dockHover)
                                         .help("Remove image")
                                     }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 4)
+                                    .dockPadding(.horizontal, 6)
+                                    .dockPadding(.vertical, 4)
                                     .background(
                                         RoundedRectangle(cornerRadius: 10, style: .continuous).dockSurfaceFill(
                                             Color.dockSurface)
@@ -393,8 +393,8 @@ struct ChatComposerView: View {
                                         .buttonStyle(.dockHover)
                                         .help("Remove context").accessibilityLabel("Remove context: " + context.title)
                                     }
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 5)
+                                    .dockPadding(.horizontal, 8)
+                                    .dockPadding(.vertical, 5)
                                     .background(
                                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                             .dockSurfaceFill(Color.dockSurface)
@@ -424,8 +424,8 @@ struct ChatComposerView: View {
                             .buttonStyle(.dockHover)
                             .help("Remove PDF")
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                        .dockPadding(.horizontal, 8)
+                        .dockPadding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                 .dockSurfaceFill(Color.dockSurface))
@@ -487,8 +487,6 @@ struct ChatComposerView: View {
                                     selectedProvider: selectedModelOptionID?.components(separatedBy: "|").first)
                             }
                             SessionContextRing(model: model)
-
-                            composerReasoningPicker
 
                             if !speechInput.isRecording {
                                 Button {
@@ -607,7 +605,7 @@ struct ChatComposerView: View {
                             )
                         }
                     }
-                    .padding(.top, 0)
+                    .dockPadding(.top, 0)
 
                     // Voice Recording & Steering Status Messages
                     if let error = speechInput.errorMessage ?? dictation.errorMessage {
@@ -630,32 +628,32 @@ struct ChatComposerView: View {
                             .buttonStyle(.dockHover)
                             .accessibilityLabel("Dismiss speech recognition warning")
                         }
-                        .padding(.top, 2)
+                        .dockPadding(.top, 2)
                     }
                     if let steeringError = model.steeringError {
                         Text(steeringError)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
-                            .padding(.top, 2)
+                            .dockPadding(.top, 2)
                     }
                     if let clarificationResponseError = model.clarificationResponseError {
                         Text(clarificationResponseError)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 2)
+                            .dockPadding(.top, 2)
                     }
                 }
-                .padding(.leading, 6)
-                .padding(.trailing, 8)
-                .padding(.top, 6)
-                .padding(.bottom, 6)
+                .dockPadding(.leading, 6)
+                .dockPadding(.trailing, 8)
+                .dockPadding(.top, 6)
+                .dockPadding(.bottom, 6)
                 .modifier(
                     ComposerInputSurface(
                         isFocused: isComposerFocused, isRecording: speechInput.isRecording, isPulsing: isComposerPulsing
                     ))
 
-                if let worktreeBar { worktreeBar.padding(.vertical, 2) }
+                if let worktreeBar { worktreeBar.dockPadding(.vertical, 2) }
             }
             .background {
                 let skin = DockSkinPresentation.current
@@ -665,9 +663,9 @@ struct ChatComposerView: View {
                 }
             }
         }
-        .padding(.horizontal, metrics.composerInset)
-        .padding(.top, metrics.composerTopInset)
-        .padding(.bottom, metrics.composerBottomInset)
+        .dockPadding(.horizontal, metrics.composerInset)
+        .dockPadding(.top, metrics.composerTopInset)
+        .dockPadding(.bottom, metrics.composerBottomInset)
         .frame(maxWidth: metrics.composerMaxWidth)
         .frame(maxWidth: .infinity)
     }
@@ -681,11 +679,13 @@ struct ChatComposerView: View {
             onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID) },
             onSelect: { option in
                 model.updateSessionModel(option)
-            }
+            },
+            effortModel: model,
+            effortSelection: reasoningVariantSelection
         )
         .dockFont(.control)
         .foregroundStyle(Color.dockSecondaryText)
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -694,32 +694,6 @@ struct ChatComposerView: View {
         .frame(height: 32)
         .disabled(model.isUpdatingSessionModel || model.isUpdatingSessionReasoning)
         .help("Select model")
-    }
-
-    private var composerReasoningPicker: some View {
-        ComposerEffortPicker(model: model, modelID: selectedModelOptionID, selection: reasoningVariantSelection) {
-            status in
-            // A plain button-style menu renders this SwiftUI
-            // label as drawn; a borderless menu keeps only native
-            // text and images and drops custom icon views.
-            HStack(spacing: 6) {
-                DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
-                Text(status)
-                    .dockFont(.control)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
-                DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(DockSkinPresentation.current.composerControlFill)
-            )
-            .frame(height: 32)
-            .contentShape(Rectangle())
-        }
-        .fixedSize()
     }
 
     private func beginDictation() {
@@ -982,7 +956,7 @@ private struct SessionContextRing: View {
         }
         .dockFont(.body)
         .foregroundStyle(Color.dockPrimaryText)
-        .padding(16)
+        .dockPadding(16)
         .frame(width: 340, alignment: .leading)
         .dockPaneTint(Color.dockSurface)
     }
@@ -1070,7 +1044,7 @@ private struct SessionContextRing: View {
 
     private func sessionUsage(_ usage: SessionUsageSummary) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Session usage").dockFont(.body, weight: .semibold).padding(.bottom, 2)
+            Text("Session usage").dockFont(.body, weight: .semibold).dockPadding(.bottom, 2)
             detailRow("Input", SessionTokenFormatting.formatCompact(usage.inputTokens))
             detailRow("Output", SessionTokenFormatting.formatCompact(usage.outputTokens))
             if usage.reasoningTokens > 0 {
@@ -1182,9 +1156,9 @@ private struct QueuedPromptList: View {
                         .transition(
                             .asymmetric(insertion: .opacity, removal: .move(edge: .top).combined(with: .opacity))
                         )
-                        .padding(.leading, prompt.images.isEmpty ? 10 : 5)
-                        .padding(.trailing, 4)
-                        .padding(.vertical, 5)
+                        .dockPadding(.leading, prompt.images.isEmpty ? 10 : 5)
+                        .dockPadding(.trailing, 4)
+                        .dockPadding(.vertical, 5)
                         .background(
                             DockThemeShape(cornerRadius: DockLayout.controlRadius)
                                 .fill(Color.dockControlSurface)
@@ -1276,7 +1250,7 @@ private struct PinnedWorkStrip: View {
                                         .foregroundStyle(Color.dockMetadataText)
                                     Spacer(minLength: 0)
                                 }
-                                .padding(.horizontal, 8)
+                                .dockPadding(.horizontal, 8)
                                 .frame(minHeight: 28)
                             }
                         }
@@ -1285,7 +1259,7 @@ private struct PinnedWorkStrip: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(4)
+            .dockPadding(4)
         }
     }
 }
@@ -1356,12 +1330,12 @@ private struct RunningProcessesStrip: View {
                                     .foregroundStyle(Color.dockMetadataText)
                             }
                         }
-                        .padding(.leading, 18)
+                        .dockPadding(.leading, 18)
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 8)
             .confirmationDialog(
                 "Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
             ) {

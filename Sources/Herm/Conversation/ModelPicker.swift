@@ -119,9 +119,13 @@ struct ModelPickerView: View {
     let refreshError: String?
     let onRefresh: () -> Void
     let onSelect: (HermesModelOption) -> Void
+    var effortModel: DockModel? = nil
+    var effortSelection: Binding<HermesReasoningVariant?> = .constant(nil)
 
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @State private var query = ""
     @State private var showingEditor = false
+    @State private var providerFilter: String?
     @State private var disabledModelIDs = ModelPickerPreferences().disabledIDs
 
     private var catalog: ModelPickerCatalog { ModelPickerCatalog(options: options) }
@@ -137,20 +141,38 @@ struct ModelPickerView: View {
         Self.refreshState(isRefreshing: isRefreshing, error: refreshError, optionCount: options.count)
     }
 
+    private var effortStatus: String? {
+        guard let effortModel else { return nil }
+        return ComposerEffortPresentation(
+            selection: effortSelection.wrappedValue, choices: effortModel.effortCatalog?.choices(for: selectedID),
+            wire: effortModel.sessionID == nil ? nil : effortModel.sessionReasoningWire,
+            pending: effortModel.isUpdatingSessionModel || effortModel.isUpdatingSessionReasoning,
+            loading: effortModel.isLoadingRuntimeModelOptions, stale: effortModel.sessionReasoningStale
+        ).status
+    }
+
     var body: some View {
         DockMenu {
             pickerContent
+                .dockPadding(.vertical, 6)
+                .dockMenuKeepOpen()
         } label: {
             // Plain-button menu draws this SwiftUI label as-is, so long
             // provider/model names truncate instead of widening the toolbar.
             HStack(spacing: 4) {
-                // A MoA "model" is a preset name; say which mode is driving the chat.
-                if selectedOption?.provider == "moa" {
-                    DockIcon(.usersThree, size: 12, color: Color.dockAccent)
+                if let provider = selectedOption?.provider {
+                    ProviderMarkBadge(mark: ProviderMark(hermesProvider: provider), size: 16)
                 }
                 Text(selectedOption.map { $0.provider == "moa" ? "MoA · \($0.model)" : $0.model } ?? "Select model")
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let effortStatus {
+                    Text("· \(effortStatus)")
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+                }
                 if let notice = selectedPeakNotice, notice.isPeak {
                     DockIcon(.warning, size: 11, color: Color.dockWarning)
                 }
@@ -160,7 +182,10 @@ struct ModelPickerView: View {
         }
         .buttonStyle(.dockHover)
         .help([selectedOption?.provider, selectedPeakNotice?.text].compactMap { $0 }.joined(separator: " · "))
-        .accessibilityLabel("Select model, currently \(selectedOption?.displayName ?? "none")")
+        .accessibilityLabel(
+            "Select model\(effortStatus == nil ? "" : " and effort"), currently \(selectedOption?.displayName ?? "none")"
+                + (effortStatus.map { ", effort \($0)" } ?? "")
+        )
         .dockSheet(isPresented: $showingEditor) {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
         }
@@ -168,18 +193,118 @@ struct ModelPickerView: View {
         .onChange(of: selectedID) { _, _ in reconcileActiveModelPreference() }
     }
 
-    @ViewBuilder
-    private var pickerContent: some View {
-        DockTextField("Search models", text: $query)
-            .accessibilityLabel("Search models")
-        Button {
-            onRefresh()
-        } label: {
-            Label(isRefreshing ? "Refreshing models…" : "Refresh models", icon: .arrowClockwise)
+    /// Two panes: a provider rail on the left, the chosen provider's models on the right.
+    /// Searching ignores the rail and lists matches from every provider.
+    var pickerContent: some View {
+        let groups = catalog.groups(matching: "", disabledIDs: disabledModelIDs, activeID: selectedID)
+        let railProvider =
+            [providerFilter, selectedOption?.provider].lazy.compactMap { $0 }
+            .first { name in groups.contains { $0.provider == name } } ?? groups.first?.provider
+        return HStack(alignment: .top, spacing: 0) {
+            if groups.count > 1 { providerRail(groups, active: railProvider) }
+            VStack(alignment: .leading, spacing: 8) {
+                if let railProvider, query.isEmpty {
+                    Text(railProvider)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .dockPadding(.horizontal, 8)
+                }
+                HStack(spacing: 8) {
+                    DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
+                    TextField(
+                        "", text: $query,
+                        prompt: Text("Search models").foregroundColor(Color.dockSecondaryText)
+                    )
+                    .textFieldStyle(.plain)
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .accessibilityLabel("Search models")
+                    if !query.isEmpty {
+                        Button {
+                            query = ""
+                        } label: {
+                            DockIcon(.xCircle, size: 13, color: .dockSecondaryText)
+                        }
+                        .buttonStyle(.dockHover)
+                        .help("Clear search")
+                        .accessibilityLabel("Clear search")
+                    }
+                }
+                .dockPadding(.horizontal, 10)
+                .frame(minHeight: 32)
+                .background(
+                    DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                        .dockSurfaceFill(Color.dockControlSurface)
+                )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 1) {
+                        modelPane(provider: query.isEmpty ? railProvider : nil)
+                    }
+                }
+                .frame(maxHeight: 220)
+                if let effortModel {
+                    Color.dockBorderLight.frame(height: DockLayout.hairline)
+                    ComposerEffortControls(model: effortModel, modelID: selectedID, selection: effortSelection)
+                        .dockPadding(.horizontal, 8)
+                }
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
+                HStack(spacing: 4) {
+                    Button {
+                        onRefresh()
+                    } label: {
+                        Label(isRefreshing ? "Refreshing…" : "Refresh", icon: .arrowClockwise)
+                    }
+                    .disabled(isRefreshing)
+                    Button("Edit models…") { showingEditor = true }
+                }
+            }
+            .dockPadding(.leading, 6)
+            .frame(width: 270, alignment: .leading)
         }
-        .disabled(isRefreshing)
-        Divider()
+        .background(alignment: .leading) {
+            if groups.count > 1 {
+                GeometryReader { geometry in
+                    let inset = DockWorkspaceScale.spacing(6, scale: workspaceScale)
+                    Color.dockSurface2
+                        .frame(width: 36 + 2 * inset, height: geometry.size.height + 4 * inset)
+                        .offset(x: -inset, y: -2 * inset)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+    }
 
+    private func providerRail(_ groups: [ModelPickerProviderGroup], active: String?) -> some View {
+        VStack(spacing: 4) {
+            ForEach(groups) { group in
+                Button {
+                    providerFilter = group.provider
+                    query = ""
+                } label: {
+                    ProviderMarkBadge(mark: ProviderMark(hermesProvider: group.provider), size: 28)
+                        .opacity(group.provider == active ? 1 : 0.65)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                                .dockSurfaceFill(group.provider == active ? Color.dockControlSurface : .clear)
+                        )
+                        .overlay(
+                            DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                                .stroke(group.provider == active ? Color.dockBorderStrong : .clear, lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                .accessibilityAddTraits(group.provider == active ? .isSelected : [])
+                .help(group.provider)
+                .accessibilityLabel("\(group.provider) models")
+            }
+        }
+        .dockPadding(.trailing, 6)
+    }
+
+    @ViewBuilder
+    private func modelPane(provider: String?) -> some View {
         switch refreshState {
         case .pending:
             Label("Loading model catalog…", icon: .hourglass)
@@ -189,24 +314,28 @@ struct ModelPickerView: View {
             Label("No models available", icon: .tray)
         case .stale:
             Label("Model catalog unavailable; showing last results", icon: .warning)
-            modelRows
+            modelRows(provider: provider)
         case .success:
-            modelRows
-        }
-        Divider()
-        Button("Edit available models…") {
-            showingEditor = true
+            modelRows(provider: provider)
         }
     }
 
     @ViewBuilder
-    private var modelRows: some View {
+    private func modelRows(provider: String?) -> some View {
         let groups = catalog.groups(matching: query, disabledIDs: disabledModelIDs, activeID: selectedID)
+            .filter { provider == nil || $0.provider == provider }
         if groups.isEmpty {
             Label("No matching models", icon: .magnifyingGlass)
         } else {
             ForEach(groups) { group in
-                DockMenuSection(group.provider) {
+                VStack(alignment: .leading, spacing: 1) {
+                    if provider == nil {
+                        Text(group.provider)
+                            .dockFont(.compactStatus, weight: .semibold)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .dockPadding(.horizontal, 8)
+                            .dockPadding(.top, 6)
+                    }
                     if let notice = ProviderPeakSchedule.quotaID(forProvider: group.provider)
                         .flatMap({ ProviderPeakSchedule.notice(forQuotaID: $0) })
                     {
@@ -215,21 +344,30 @@ struct ModelPickerView: View {
                             DockIcon(notice.isPeak ? .warning : .checkCircle, size: 12, color: color)
                             Text(notice.text).foregroundStyle(color)
                         }
+                        .dockPadding(.horizontal, 8)
                     }
                     ForEach(group.models) { option in
+                        let isSelected = option.id == selectedID
                         Button {
                             onSelect(option)
                         } label: {
-                            HStack {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .stroke(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText, lineWidth: 1)
+                                    .frame(width: 15, height: 15)
+                                    .overlay {
+                                        if isSelected {
+                                            DockIcon(.check, size: 10, color: Color.dockPrimaryText)
+                                        }
+                                    }
                                 Text(option.model)
-                                if option.id == selectedID {
-                                    Spacer()
-                                    DockIcon(.check)
-                                }
+                                    .dockFont(.body, weight: isSelected ? .semibold : .regular)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 8)
                             }
                         }
-                        .accessibilityLabel(
-                            "\(group.provider), \(option.model)\(option.id == selectedID ? ", selected" : "")")
+                        .accessibilityLabel("\(group.provider), \(option.model)\(isSelected ? ", selected" : "")")
                     }
                 }
             }
@@ -277,9 +415,9 @@ private struct ModelPickerEditorView: View {
         ) {
             VStack(spacing: 0) {
                 searchField
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-                    .padding(.bottom, 12)
+                    .dockPadding(.horizontal, 20)
+                    .dockPadding(.top, 16)
+                    .dockPadding(.bottom, 12)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         if groups.isEmpty {
@@ -287,12 +425,12 @@ private struct ModelPickerEditorView: View {
                                 .dockFont(.body)
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 40)
+                                .dockPadding(.vertical, 40)
                         }
                         ForEach(groups) { providerSection($0) }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                    .dockPadding(.horizontal, 20)
+                    .dockPadding(.bottom, 16)
                 }
                 .frame(height: 380)
             }
@@ -344,7 +482,7 @@ private struct ModelPickerEditorView: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 32)
         .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
     }
@@ -377,7 +515,7 @@ private struct ModelPickerEditorView: View {
             VStack(spacing: 0) {
                 ForEach(Array(group.models.enumerated()), id: \.element.id) { index, option in
                     if index > 0 {
-                        Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.leading, 12)
+                        Color.dockBorderLight.frame(height: DockLayout.hairline).dockPadding(.leading, 12)
                     }
                     modelRow(option, provider: group.provider)
                 }
@@ -411,8 +549,8 @@ private struct ModelPickerEditorView: View {
             }
         }
         .toggleStyle(.dockSwitch)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .dockPadding(.horizontal, 12)
+        .dockPadding(.vertical, 7)
         .disabled(isActive)
         .help(isActive ? "The active model always stays in the picker." : "")
         .accessibilityLabel("Show \(provider) \(option.model) in the picker")

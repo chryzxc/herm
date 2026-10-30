@@ -251,6 +251,9 @@ final class DockModel: ObservableObject {
     @Published var sessionReasoningWire: String?
     var sessionInfoSequencesBySessionID: [String: Int] = [:]
     @Published var isUpdatingSessionReasoning = false
+    /// Hermes' live service tier for the session (`fast` in session info); nil until reported.
+    @Published var sessionFastEnabled: Bool?
+    @Published var isUpdatingSessionFast = false
     @Published var defaultReasoningVariant: HermesReasoningVariant?
     @Published var draftReasoningVariant: HermesReasoningVariant?
     @Published var sessionReasoningStale = false
