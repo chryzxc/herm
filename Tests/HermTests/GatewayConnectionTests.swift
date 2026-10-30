@@ -315,6 +315,21 @@ struct GatewayConnectionTests {
             Issue.record("Wrong credentials passed the connection test")
         } catch {}
     }
+
+    @Test func failedConnectReportsOfflineWithAReasonAndNoEndpointURL() async {
+        var settings = GatewayConnectionSettings()
+        settings.name = "Studio"
+        settings.mode = .remote
+        settings.remoteURL = "not a url"
+        let gateway = HermesGateway(connectionSettings: settings, sessionToken: "token")
+        defer { gateway.close() }
+        var changes: [Bool] = []
+        gateway.onConnectionChange = { changes.append($0) }
+        await #expect(throws: (any Error).self) { try await gateway.connect() }
+        #expect(changes == [false])
+        #expect(gateway.lastFailure?.isEmpty == false)
+        #expect(gateway.endpointDescription == "Remote · Studio")
+    }
 }
 
 /// A real loopback HTTP/WS server keeps transport assertions independent of request builders.

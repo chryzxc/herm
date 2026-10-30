@@ -42,6 +42,7 @@ struct HermesGatewaySettingsView: View {
                 .dockFont(.body)
                 .foregroundStyle(service.error == nil ? Color.dockSecondaryText : Color.dockWarning)
                 .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .help(service.detail)
         }

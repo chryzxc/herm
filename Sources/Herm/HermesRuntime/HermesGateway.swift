@@ -50,6 +50,9 @@ final class HermesGateway: NSObject {
 
     var onEvent: ((String, [String: Any]) -> Void)?
     var onConnectionChange: ((Bool) -> Void)?
+    /// Why the last connection attempt or live socket failed; cleared once
+    /// Hermes answers a ping. Already scrubbed for display.
+    private(set) var lastFailure: String?
     private let workingDirectory: URL?
     private let connectionSettings: GatewayConnectionSettings
     private let connectionSettingsError: String?
@@ -105,10 +108,28 @@ final class HermesGateway: NSObject {
             if liveSocket === socket { onConnectionChange?(true) }
             return
         }
-        try await connectionGate.perform { [weak self] in
-            guard let self else { throw GatewayError.disconnected }
-            guard self.socket == nil else { return }
-            try await self.establishConnection()
+        do {
+            try await connectionGate.perform { [weak self] in
+                guard let self else { throw GatewayError.disconnected }
+                guard self.socket == nil else { return }
+                try await self.establishConnection()
+            }
+        } catch {
+            if !(error is CancellationError) {
+                lastFailure = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+                onConnectionChange?(false)
+            }
+            throw error
+        }
+    }
+
+    /// Where Herm reaches Hermes Agent, without URLs or credentials.
+    var endpointDescription: String {
+        switch connectionSettings.mode {
+        case .local: port.map { "Local backend · port \($0)" } ?? "Local backend"
+        case .remote: "Remote · \(connectionSettings.name)"
+        case .cloud: "Cloud · \(connectionSettings.name)"
+        case .ssh: "SSH · \(connectionSettings.name)"
         }
     }
 
@@ -420,6 +441,7 @@ final class HermesGateway: NSObject {
                 }
                 if self.liveSocket !== current {
                     self.liveSocket = current
+                    self.lastFailure = nil
                     self.onConnectionChange?(true)
                 }
                 try? await Task.sleep(for: .seconds(20))
@@ -429,6 +451,7 @@ final class HermesGateway: NSObject {
 
     private func handleReceiveFailure() {
         DebugLog.write("receive: WebSocket failed")
+        lastFailure = GatewayError.disconnected.localizedDescription
         onConnectionChange?(false)
         socket = nil
         urlSession?.invalidateAndCancel()
@@ -578,6 +601,7 @@ final class HermesGateway: NSObject {
                     self.port = nil
                     self.baseURL = nil
                     self.backendOutput = ""
+                    if wasReady { self.lastFailure = "The local Hermes backend stopped." }
                     self.onConnectionChange?(false)
                     let waiters = self.backendStartWaiters
                     self.backendStartWaiters.removeAll()

@@ -454,7 +454,9 @@ extension DockPopover {
             onOpenGitHub: { section in leaveIntegrations { selectGitHubSection(section) } },
             isFullscreen: isFullscreen,
             isHermesConnected: model.isHermesConnected,
-            onReconnect: { Task { try? await model.gateway.connect() } },
+            hermesConnectionIssue: model.hermesConnectionIssue,
+            // A failure lands in `hermesConnectionIssue` through the gateway.
+            onReconnect: { try? await model.gateway.connect() },
             isDockedWindow: usesWindowChrome,
             onFullscreenToggle: toggleFullscreen,
             onOpenWindow: onOpenWindow

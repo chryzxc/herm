@@ -162,7 +162,8 @@ struct SessionNavRail: View {
     let onOpenGitHub: (GitHubWorkspaceSection) -> Void
     let isFullscreen: Bool
     var isHermesConnected = true
-    var onReconnect: () -> Void = {}
+    var hermesConnectionIssue: String?
+    var onReconnect: () async -> Void = {}
     let isDockedWindow: Bool
     let onFullscreenToggle: () -> Void
     let onOpenWindow: (() -> Void)?
@@ -187,12 +188,12 @@ struct SessionNavRail: View {
                         .contextMenu {
                             Button("Unpin \(item.title) from sidebar", icon: .pushPinSlash) { togglePin(item) }
                         }
-                    }
                         .scaleEffect(isDragging ? 1.12 : 1)
                         .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 8, y: 3)
                         .offset(y: isDragging ? dragOffset : 0)
                         .zIndex(isDragging ? 1 : 0)
                         .simultaneousGesture(reorderGesture(for: item))
+                    }
                     destination(
                         "More destinations", icon: .dotsThree,
                         isSelected: DockRailDestination.allCases.contains { !pins.contains($0) && isSelected($0) },
@@ -206,8 +207,12 @@ struct SessionNavRail: View {
             // Global window chrome: applies to the whole workspace, not one chat.
             VStack(spacing: 4) {
                 HermesConnectionButton(
-                    isConnected: isHermesConnected, service: controlCenter.gatewayService,
-                    style: style, onReconnect: onReconnect)
+                    isConnected: isHermesConnected, issue: hermesConnectionIssue,
+                    endpoint: model.gateway.endpointDescription,
+                    // The installed CLI only describes a local backend.
+                    version: GatewayConnectionStore.isLocalBackend
+                        ? agentUpdateService.installed.map { "Hermes \($0.displayVersion)" } : nil,
+                    service: controlCenter.gatewayService, style: style, onReconnect: onReconnect)
                 if let onOpenWindow {
                     destination(
                         isDockedWindow ? "Switch to floating" : "Switch to window",
@@ -216,9 +221,9 @@ struct SessionNavRail: View {
                 }
             }
         }
-        .padding(.horizontal, 7)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .dockPadding(.horizontal, 7)
+        .dockPadding(.top, 12)
+        .dockPadding(.bottom, 8)
         .frame(width: 52)
         .frame(maxHeight: .infinity)
         .background(style.sidebarBackground)
@@ -236,11 +241,6 @@ struct SessionNavRail: View {
     }
 
     private var pins: Set<DockRailDestination> { DockRailDestination.pins(pinnedDestinations) }
-
-    private func isSelected(_ item: DockRailDestination) -> Bool {
-        switch item {
-        case .github: isGitHubActive
-        case .artifacts: navigationState.selection.selection == .artifacts
     private var orderedPins: [DockRailDestination] { DockRailDestination.ordered(pinnedDestinations) }
 
     /// One rail slot: button height plus the stack spacing.
@@ -279,6 +279,11 @@ struct SessionNavRail: View {
                 dragOrder = nil
             }
     }
+
+    private func isSelected(_ item: DockRailDestination) -> Bool {
+        switch item {
+        case .github: isGitHubActive
+        case .artifacts: navigationState.selection.selection == .artifacts
         case .bots: navigationState.selection.selection == .bots
         default: item.tab.map { navigationState.selection.isGlobalSelected($0) } ?? false
         }
@@ -324,7 +329,7 @@ struct SessionNavRail: View {
                                     DockIcon(.arrowCircleUp, size: 14, color: .dockWarning)
                                 }
                             }
-                            .padding(8)
+                            .dockPadding(8)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)
@@ -349,7 +354,7 @@ struct SessionNavRail: View {
                         DockThemeShape(cornerRadius: DockLayout.controlRadius), active: isSelected(item),
                         fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false)
                 }
-            }.padding(8)
+            }.dockPadding(8)
         }
         .frame(width: 260, height: min(440, CGFloat(DockRailDestination.allCases.count) * 38 + 16))
         .foregroundStyle(Color.dockPrimaryText)
@@ -359,16 +364,25 @@ struct SessionNavRail: View {
 
 }
 
-/// Backend connection status with quick access to the local messaging gateway.
+/// Hermes Agent backend status (what every chat depends on), then the
+/// separate local messaging gateway.
 private struct HermesConnectionButton: View {
     let isConnected: Bool
+    let issue: String?
+    let endpoint: String
+    let version: String?
     @ObservedObject var service: HermesGatewayLifecycleModel
     let style: DockThemePalette
-    let onReconnect: () -> Void
+    let onReconnect: () async -> Void
     @State private var showsActions = false
+    @State private var isReconnecting = false
+
+    private var title: String {
+        if isConnected { return "Connected to Hermes Agent" }
+        return isReconnecting ? "Connecting to Hermes Agent…" : "Hermes Agent offline"
+    }
 
     var body: some View {
-        let title = isConnected ? "Connected to Hermes" : "Hermes offline"
         Button {
             showsActions.toggle()
         } label: {
@@ -377,33 +391,58 @@ private struct HermesConnectionButton: View {
                 .overlay(alignment: .topTrailing) {
                     Circle().fill(isConnected ? style.success : style.destructive)
                         .frame(width: 7, height: 7)
-                        .padding(.top, 4).padding(.trailing, 7)
+                        .dockPadding(.top, 4).dockPadding(.trailing, 7)
                 }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
-        .help("\(title) · Gateway actions")
-        .accessibilityLabel("\(title). Gateway actions")
+        .help(issue.map { "\(title) · \($0)" } ?? title)
+        .accessibilityLabel("\(title). Connection details")
         .accessibilityIdentifier("hermes-gateway-actions")
         .dockPopover(isPresented: $showsActions, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(title)
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Spacer()
-                    if !isConnected {
-                        Button("Reconnect", action: onReconnect)
-                            .buttonStyle(.dockCompact)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Circle().fill(isConnected ? Color.dockSuccess : Color.dockDestructive)
+                            .frame(width: 7, height: 7).accessibilityHidden(true)
+                        Text(title)
+                            .dockFont(.body, weight: .semibold)
+                            .foregroundStyle(Color.dockPrimaryText)
+                        Spacer(minLength: 0)
+                        if !isConnected {
+                            Button {
+                                Task {
+                                    isReconnecting = true
+                                    await onReconnect()
+                                    isReconnecting = false
+                                }
+                            } label: {
+                                DockActionLabel(
+                                    title: "Reconnect", pendingTitle: "Connecting…", isPending: isReconnecting)
+                            }
+                            .buttonStyle(.dockPrimary)
+                            .disabled(isReconnecting)
+                        }
+                    }
+                    Text([endpoint, version].compactMap(\.self).joined(separator: " · "))
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockSecondaryText)
+                    if !isConnected, let issue {
+                        Text(issue)
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockWarning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                     }
                 }
+                .dockButtonSize(.compact)
                 Divider()
-                Text("Local messaging gateway · Default profile")
+                Text("Messaging gateway · Default profile")
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                 HermesGatewaySettingsView(service: service)
             }
-            .padding(16)
+            .dockPadding(16)
             .frame(width: 400)
             .background(Color.dockCanvas)
         }

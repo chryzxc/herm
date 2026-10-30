@@ -33,6 +33,8 @@ final class DockModel: ObservableObject {
     var storageIDsByRuntimeID: [String: String] = [:]
     @Published var status: HermesStatus = .idle
     @Published var isHermesConnected = false
+    /// Why Hermes is offline, from the gateway's last failure.
+    @Published private(set) var hermesConnectionIssue: String?
     @Published var messages: [ChatMessage] = [] {
         didSet {
             messagesRevision &+= 1
@@ -180,14 +182,14 @@ final class DockModel: ObservableObject {
     }
     @Published var interruptState: InterruptState = .idle
     @Published var isShowingReasoning = false
+    @Published private(set) var browserActivityID: String?
     var activeToolCalls: [ActiveToolCall] = [] {
         didSet {
-    @Published private(set) var browserActivityID: String?
             guard oldValue != activeToolCalls else { return }
-            if streamingMessageID != nil {
-                Self.upsert(
             let browser = activeToolCalls.last { !$0.isComplete && $0.name.hasPrefix("browser_") }?.id
             if browserActivityID != browser { browserActivityID = browser }
+            if streamingMessageID != nil {
+                Self.upsert(
                     splitOffCallIDs.isEmpty
                         ? activeToolCalls : activeToolCalls.filter { !splitOffCallIDs.contains($0.id) },
                     into: &streamingTurnActivity)
@@ -249,11 +251,11 @@ final class DockModel: ObservableObject {
     @Published var isUpdatingSessionModel = false
     @Published var sessionReasoningVariant: HermesReasoningVariant?
     @Published var sessionReasoningWire: String?
-    var sessionInfoSequencesBySessionID: [String: Int] = [:]
-    @Published var isUpdatingSessionReasoning = false
     /// Hermes' live service tier for the session (`fast` in session info); nil until reported.
     @Published var sessionFastEnabled: Bool?
     @Published var isUpdatingSessionFast = false
+    var sessionInfoSequencesBySessionID: [String: Int] = [:]
+    @Published var isUpdatingSessionReasoning = false
     @Published var defaultReasoningVariant: HermesReasoningVariant?
     @Published var draftReasoningVariant: HermesReasoningVariant?
     @Published var sessionReasoningStale = false
@@ -508,6 +510,7 @@ final class DockModel: ObservableObject {
         }
         gateway.onConnectionChange = { [weak self] connected in
             self?.isHermesConnected = connected
+            self?.hermesConnectionIssue = connected ? nil : self?.gateway.lastFailure
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
             if connected {
                 self?.replayTrackedGatewayEvents()
