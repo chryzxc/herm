@@ -19,6 +19,12 @@ reset_stale_metal_cache() {
         shift
     done
     metal=$(xcrun --find metal 2>/dev/null) || return 0
+    # Xcode updates drop the downloadable Metal Toolchain; SwiftTerm's shaders
+    # then fail deep in the build with an opaque CompileMetalFile error.
+    if ! xcrun metal --version >/dev/null 2>&1; then
+        echo "error: Metal Toolchain missing. Run: xcodebuild -downloadComponent MetalToolchain" >&2
+        return 1
+    fi
     stamp=$scratch/.metal-toolchain-path
     [ "$(cat "$stamp" 2>/dev/null)" = "$metal" ] && return 0
     rm -rf "$scratch/out/XCBuildData" "$scratch/out/Intermediates.noindex/XCBuildData" \
