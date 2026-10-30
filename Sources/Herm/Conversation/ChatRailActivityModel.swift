@@ -42,7 +42,10 @@ final class ChatRailActivityModel: ObservableObject {
         seenStore: SidebarSessionSeenStore, isConnected: Bool
     ) -> ChatRailActivity {
         let statuses = SidebarSessionStatusResolver.statuses(
-            for: (snapshot.conversations + snapshot.inputs.pinnedSessions).filter { !$0.isHidden },
+            for: (snapshot.conversations + snapshot.inputs.pinnedSessions).filter {
+                // Bot main chats belong to the Bots page, not the Chats badge.
+                !$0.isHidden && !BotMentions.mainChatSessionIDs.contains($0.id)
+            },
             snapshot: snapshot, seenStore: seenStore,
             fallbackProfileID: snapshot.inputs.profileScopeID
         )
@@ -94,11 +97,11 @@ struct ChatRailButton: View {
                     .foregroundStyle(Color.dockSuccess)
             }
         }
-        .padding(.horizontal, 3)
+        .dockPadding(.horizontal, 3)
         .frame(minWidth: 14, minHeight: 14)
         .background(Capsule().fill(style.sidebarBackground))
         .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
-        .padding(1)
+        .dockPadding(1)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

@@ -51,12 +51,14 @@ final class BotService {
         return BotInventory(
             availability: roster.availability,
             bots: roster.bots.map { bot in
-                let states = [bot.chat?.sessionID, bot.recentSession?.sessionID, bot.worker?.sessionID].compactMap {
-                    $0
-                }.compactMap { live[$0] }
-                guard !states.isEmpty else { return bot }
                 var bot = bot
-                bot.liveBusy = states.contains(true)
+                let mainID = bot.chat?.sessionID
+                bot.mainChatBusy = mainID.flatMap { live[$0] }
+                let sessionStates = [bot.recentSession?.sessionID, bot.worker?.sessionID].compactMap { $0 }
+                    .filter { $0 != mainID }.compactMap { live[$0] }
+                bot.sessionsBusy = sessionStates.isEmpty ? nil : sessionStates.contains(true)
+                let states = [bot.mainChatBusy].compactMap { $0 } + sessionStates
+                bot.liveBusy = states.isEmpty ? nil : states.contains(true)
                 return bot
             }, diagnostic: roster.diagnostic, isPluginEnabled: roster.isPluginEnabled)
     }
@@ -681,7 +683,10 @@ final class BotModeModel: ObservableObject {
     }
 
     func hasUnread(_ bot: BotSummary) -> Bool {
-        guard bot.id != selectedProfileID, let last = bot.lastActive, let seen = seenAt[bot.id] else { return false }
+        // Chats tracks sessions only; main-chat replies belong to the Bots page.
+        guard bot.id != selectedProfileID, let last = bot.sessionsLastActive, let seen = seenAt[bot.id] else {
+            return false
+        }
         return last > seen
     }
 

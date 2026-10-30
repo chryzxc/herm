@@ -9,13 +9,14 @@ struct SettingsWorkspaceTests {
     func categoryOrder() {
         #expect(
             SettingsCategory.allCases == [
-                .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety,
-                .browser, .memory, .voice, .advanced, .integrations, .session, .diagnostics, .updates,
+                .general, .gateway, .appearance, .notifications, .runtime, .providers, .bots, .chat, .workspace,
+                .safety, .browser, .memory, .voice, .advanced, .integrations, .session, .diagnostics, .updates,
             ])
         let grouped = SettingsCategoryGroup.allCases.flatMap(\.categories)
         #expect(grouped.count == Set(grouped).count)
         #expect(Set(grouped) == Set(SettingsCategory.allCases))
         #expect(SettingsCategoryGroup.app.categories == [.general, .gateway, .appearance, .notifications])
+        #expect(SettingsCategoryGroup.agent.categories.contains(.bots))
         #expect(SettingsCategory.general.title == "General")
         #expect(SettingsCategory.diagnostics.icon == .stethoscope)
     }

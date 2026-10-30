@@ -177,7 +177,7 @@ extension DockPopover {
             // Replaces the shell instead of overlaying it: the AppKit split
             // panes draw above SwiftUI overlays, so side panels showed through.
             if isVoiceImmersive && sessionWorkspaceMode == .voice {
-                immersiveVoiceStage.padding(.top, titlebarInset).transition(
+                immersiveVoiceStage.dockPadding(.top, titlebarInset).transition(
                     .opacity.combined(with: .scale(scale: 1.02)))
             } else {
                 layoutContent
@@ -195,7 +195,7 @@ extension DockPopover {
             width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth),
             height: isFullscreen ? nil : panelPresentation.compactHeight
         )
-        .padding(
+        .dockPadding(
             panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen
                 ? panelPresentation.edgeInsets
                 : EdgeInsets()
@@ -218,7 +218,7 @@ extension DockPopover {
                     openTask: panelPresentation.openIslandTask,
                     openQuota: { panelPresentation.quotaRequest &+= 1 }
                 )
-                .padding(.horizontal, EdgeDockLayout.islandSideInset + 12)
+                .dockPadding(.horizontal, EdgeDockLayout.islandSideInset + 12)
             }
         }
         .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
@@ -375,7 +375,7 @@ extension DockPopover {
                 if DockThemeStyle.current.material != .glass { Color.dockCanvas.overlay(DockBackdrop()) }
             }
             .mask(ToolbarRowAndCardShape(toolbarHeight: titlebarInset, margin: margin, radius: radius))
-            .overlay { card.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline).padding(cardInsets) }
+            .overlay { card.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline).dockPadding(cardInsets) }
         }
         .dockPaneTint(Color.dockSidebar)
     }
@@ -402,10 +402,10 @@ extension DockPopover {
             })
     }
 
-    /// The session lists belong to Chats: a conversation or group chat is open.
+    /// The session lists belong to Chats: a conversation is open.
     var showsChatsPanel: Bool {
         switch fullscreenSurface {
-        case .conversation, .groupChat: true
+        case .conversation: true
         default: false
         }
     }
@@ -444,13 +444,7 @@ extension DockPopover {
                     fullscreenSurface = .artifacts
                 }
             },
-            onOpenBots: {
-                leaveIntegrations {
-                    sessionNavNavigation.selectBots()
-                    Task { await botMode.refreshNow(force: true) }
-                    fullscreenSurface = .bots
-                }
-            },
+            onOpenBots: { leaveIntegrations { openBotsPage() } },
             onOpenGitHub: { section in leaveIntegrations { selectGitHubSection(section) } },
             isFullscreen: isFullscreen,
             isHermesConnected: model.isHermesConnected,
@@ -527,7 +521,7 @@ extension DockPopover {
 
     var isGlobalSurfaceActive: Bool {
         switch fullscreenSurface {
-        case .global, .artifacts, .bots, .groupChat, .pullRequests, .issues, .chatGrid: true
+        case .global, .artifacts, .bots, .pullRequests, .issues, .chatGrid: true
         case .conversation: false
         }
     }
@@ -616,7 +610,7 @@ extension DockPopover {
                                 )
                                 .id(sessionWorkspaceIdentity)
                                 .frame(width: railWidth - DockSpacing.section)
-                                .padding(.trailing, DockSpacing.section)
+                                .dockPadding(.trailing, DockSpacing.section)
                             }
                         }
                 }
@@ -692,7 +686,7 @@ extension DockPopover {
                     )
                 }
             )
-            .padding(.trailing, railWidth)
+            .dockPadding(.trailing, railWidth)
         }
         .overlay(alignment: .top) {
             VStack(spacing: 4) {
@@ -703,7 +697,7 @@ extension DockPopover {
                 }
                 ChatQuotaBanner(control: controlCenter, metrics: conversationMetrics)
             }
-            .padding(.trailing, railWidth)
+            .dockPadding(.trailing, railWidth)
         }
     }
 }

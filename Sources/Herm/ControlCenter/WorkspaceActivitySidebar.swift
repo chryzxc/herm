@@ -41,6 +41,9 @@ struct WorkspaceActivitySidebar: View {
     /// Lets a host with a separate global surface return to the conversation
     /// after a project/session selection has actually been requested.
     var onSessionOpened: (String) -> Void = { _ in }
+    /// Settings › Bots hands its chat buttons back to the host's Bots page.
+    var onOpenBotChat: (BotSummary) -> Void = { _ in }
+    var onOpenRecentBotSession: (BotSummary, BotChatReference) -> Void = { _, _ in }
     var showsHeader = true
     var showsModePicker = true
     @State var selectedMode: ControlTab = .kanban
@@ -162,6 +165,8 @@ struct WorkspaceActivitySidebar: View {
         onRestartDock: @escaping () -> Void = {},
         onOpenArtifacts: @escaping () -> Void = {},
         onSessionOpened: @escaping (String) -> Void = { _ in },
+        onOpenBotChat: @escaping (BotSummary) -> Void = { _ in },
+        onOpenRecentBotSession: @escaping (BotSummary, BotChatReference) -> Void = { _, _ in },
         showsHeader: Bool = true,
         showsModePicker: Bool = true,
         initialMode: ControlTab = .kanban,
@@ -181,6 +186,8 @@ struct WorkspaceActivitySidebar: View {
         self.onRestartDock = onRestartDock
         self.onOpenArtifacts = onOpenArtifacts
         self.onSessionOpened = onSessionOpened
+        self.onOpenBotChat = onOpenBotChat
+        self.onOpenRecentBotSession = onOpenRecentBotSession
         self.showsHeader = showsHeader
         self.showsModePicker = showsModePicker
         self.agentUpdateService = agentUpdateService
@@ -214,12 +221,12 @@ struct WorkspaceActivitySidebar: View {
                         ProgressView().controlSize(.small)
                         Text("Applying change…").dockFont(.body)
                     }
-                    .padding(10)
+                    .dockPadding(10)
                     .dockFloatingSurface(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius), tint: .dockSurface2,
                         stroke: .dockBorderLight
                     )
-                    .padding(12)
+                    .dockPadding(12)
                     .accessibilityElement(children: .combine)
                     .allowsHitTesting(false)
                 }

@@ -15,7 +15,7 @@ extension DockPopover {
                     .truncationMode(.tail)
                 DockIcon(.caretUpDown, size: 12, color: style.metadataText)
             }
-            .padding(.horizontal, 8)
+            .dockPadding(.horizontal, 8)
             .frame(minHeight: 40)
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
@@ -31,11 +31,13 @@ extension DockPopover {
         .help(
             "\(model.currentSessionTitle ?? "Untitled chat") — \(model.status.title)\n\(OnDeviceAssist.sessionTitleHelp)"
         )
-        .accessibilityLabel("Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
+        .accessibilityLabel(
+            "Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)"
+        )
         .dockPopover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             sessionPicker
                 .frame(width: 400, height: 440)
-                .padding(.vertical, 4)
+                .dockPadding(.vertical, 4)
                 .background(Color.dockCanvas)
         }
     }
@@ -378,7 +380,7 @@ extension DockPopover {
                 .dockFont(.compactStatus, weight: .bold)
                 .foregroundStyle(Color.dockSecondaryText)
         }
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
@@ -391,7 +393,7 @@ extension DockPopover {
                     text: "Automatic titles use Apple Intelligence",
                     help: OnDeviceAssist.sessionTitleHelp
                 )
-                .padding(8)
+                .dockPadding(8)
             }
         }
         .background(Color.dockCanvas)
@@ -423,13 +425,13 @@ extension DockPopover {
                     style: style
                 ) { model.loadSessions() }
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 8)
+            .dockPadding(.horizontal, 6)
+            .dockPadding(.top, 8)
 
             if !model.sessions.isEmpty {
                 sessionSearchField(style: style)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 4)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.bottom, 4)
             }
 
             if model.sessions.isEmpty && model.isLoadingSessions {
@@ -441,8 +443,8 @@ extension DockPopover {
                 .dockFont(.body)
                 .foregroundStyle(style.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .dockPadding(.horizontal, 16)
+                .dockPadding(.vertical, 8)
                 Spacer(minLength: 0)
             } else {
                 List {
@@ -492,7 +494,7 @@ extension DockPopover {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .padding(.bottom, 6)
+                .dockPadding(.bottom, 6)
             }
         }
     }
@@ -527,7 +529,7 @@ extension DockPopover {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
@@ -554,7 +556,7 @@ extension DockPopover {
     @ViewBuilder
     func conversation(trailingContentInset: CGFloat) -> some View {
         if speechInput.isRecording {
-            voiceMode.padding(.trailing, trailingContentInset)
+            voiceMode.dockPadding(.trailing, trailingContentInset)
         } else {
             chatScroll(trailingContentInset: trailingContentInset)
         }

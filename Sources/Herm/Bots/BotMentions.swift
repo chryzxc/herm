@@ -12,9 +12,12 @@ enum BotMentions {
     private static var botsByID: [String: BotSummary] = [:]
     private static var avatars: [String: Data] = [:]
     private static var pills: [String: NSImage] = [:]
+    /// Every bot's main-chat session: the Bots page owns these, so Chats hides them.
+    private(set) static var mainChatSessionIDs: Set<String> = []
     private static let pattern = try! NSRegularExpression(pattern: #"(?<![\w@/.])@([A-Za-z0-9][A-Za-z0-9_-]*)"#)
 
     static func update(bots: [BotSummary], avatars: [String: Data]) {
+        mainChatSessionIDs = Set(bots.compactMap(\.chat?.sessionID))
         let index = index(bots)
         guard index != byHandle || avatars != self.avatars else { return }
         byHandle = index

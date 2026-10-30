@@ -35,7 +35,7 @@ extension WorkspaceActivitySidebar {
                         },
                         onOpenAutomations: { select(.automations) }
                     )
-                    .padding(.horizontal, 16)
+                    .dockPadding(.horizontal, 16)
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
             } else if selectedMode == .integrations {
@@ -63,8 +63,8 @@ extension WorkspaceActivitySidebar {
                             alignment: .topLeading
                         )
                         .frame(maxWidth: .infinity, alignment: .top)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                        .dockPadding(.horizontal, 16)
+                        .dockPadding(.bottom, 16)
                     }
                     // Keeps content scrolled past the top from drawing through the title row.
                     .clipped()
@@ -132,19 +132,19 @@ extension WorkspaceActivitySidebar {
                 let layout = SettingsLayoutMode.forWidth(geometry.size.width)
                 Group {
                     if layout == .rail, isSettingsRailCollapsed {
-                        settingsDetailScroll
+                        settingsDetail
                     } else if layout == .rail {
                         HStack(spacing: 0) {
                             settingsCategoryRail
                                 .frame(width: 240)
                             Divider().overlay(Color.dockBorderLight)
-                            settingsDetailScroll
+                            settingsDetail
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 0) {
                             settingsCategoryMenu
                             Divider().overlay(Color.dockBorderLight)
-                            settingsDetailScroll
+                            settingsDetail
                         }
                     }
                 }
@@ -157,16 +157,16 @@ extension WorkspaceActivitySidebar {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(SettingsCategoryGroup.allCases) { group in
                     DockSectionLabel(title: group.rawValue)
-                        .padding(.horizontal, 10)
-                        .padding(.top, group == .app ? 0 : 16)
-                        .padding(.bottom, 6)
+                        .dockPadding(.horizontal, 10)
+                        .dockPadding(.top, group == .app ? 0 : 16)
+                        .dockPadding(.bottom, 6)
                     ForEach(group.categories) { category in
                         settingsCategoryRow(category)
                     }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 14)
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.vertical, 14)
         }
         .scrollIndicators(.hidden)
     }
@@ -181,8 +181,8 @@ extension WorkspaceActivitySidebar {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .dockPadding(.horizontal, 16)
+        .dockPadding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -202,7 +202,7 @@ extension WorkspaceActivitySidebar {
         .overlay(alignment: .trailing) {
             if let badge, badge.kind != .dot {
                 settingsCategoryBadgeView(badge)
-                    .padding(.trailing, 10)
+                    .dockPadding(.trailing, 10)
                     .allowsHitTesting(false)
             }
         }
@@ -238,9 +238,25 @@ extension WorkspaceActivitySidebar {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety,
+        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .bots, .chat, .workspace, .safety,
             .browser, .memory, .voice, .advanced, .diagnostics:
             return nil
+        }
+    }
+
+    /// Settings › Bots is the roster manager; it owns its header and scrolling.
+    @ViewBuilder
+    var settingsDetail: some View {
+        if selectedSettingsCategory == .bots {
+            BotRosterPage(
+                model: botMode,
+                dockModel: model,
+                onSelectBot: onOpenBotChat,
+                onOpenChat: onOpenBotChat,
+                onOpenRecentSession: onOpenRecentBotSession
+            )
+        } else {
+            settingsDetailScroll
         }
     }
 
@@ -257,9 +273,9 @@ extension WorkspaceActivitySidebar {
                 }
                 coreContent
             }
-            .padding(.vertical, 20)
+            .dockPadding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
+            .dockPadding(.horizontal, 20)
         }
         .id(selectedSettingsCategory)
     }
@@ -285,15 +301,15 @@ extension WorkspaceActivitySidebar {
                     control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)
                     await botMode.refreshNow()
                 }
-                .padding(.horizontal, 16)
+                .dockPadding(.horizontal, 16)
             case .spend:
                 GeometryReader { geometry in
                     ScrollView {
                         UsageWorkspaceView(control: control, availableWidth: min(1280, geometry.size.width - 32))
                             .frame(maxWidth: 1280, alignment: .topLeading)
                             .frame(maxWidth: .infinity, alignment: .top)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 16)
+                            .dockPadding(.horizontal, 16)
+                            .dockPadding(.bottom, 16)
                     }
                     .clipped()
                 }
@@ -457,7 +473,7 @@ extension WorkspaceActivitySidebar {
             .dockHitTarget()
             .help("Return to chat")
         }
-        .padding(.horizontal, 16)
+        .dockPadding(.horizontal, 16)
         .frame(height: 50)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -590,8 +606,8 @@ extension WorkspaceActivitySidebar {
                 .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .dockPadding(.horizontal, 12)
+        .dockPadding(.vertical, 6)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -635,7 +651,7 @@ extension WorkspaceActivitySidebar {
         }
         .dockFont(.metadata, weight: .semibold)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(minHeight: 32)
         .dockSelectionBackground(
             DockThemeShape(cornerRadius: DockLayout.controlRadius), active: isSelected,
@@ -734,7 +750,7 @@ extension WorkspaceActivitySidebar {
         }
         .dockFont(.body, weight: .medium)
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
         .dockSelectionBackground(
             DockThemeShape(cornerRadius: DockLayout.controlRadius), active: isSelected,
@@ -776,7 +792,7 @@ extension WorkspaceActivitySidebar {
             }
             .dockFont(.body, weight: .semibold)
             .foregroundStyle(selectedMode == mode ? Color.dockPrimaryText : Color.dockSecondaryText)
-            .padding(.horizontal, 10)
+            .dockPadding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
             .dockSelectionBackground(
                 DockThemeShape(cornerRadius: DockLayout.controlRadius), active: selectedMode == mode,
@@ -795,7 +811,7 @@ extension WorkspaceActivitySidebar {
             .tracking(0)
             .foregroundStyle(isUrgent ? Color.dockOnAccentText : Color.dockPrimaryText)
             .frame(minWidth: 18, minHeight: 18)
-            .padding(.horizontal, 4)
+            .dockPadding(.horizontal, 4)
             .background(Capsule().fill(isUrgent ? Color.dockWarningFill : Color.dockAccent.opacity(0.85)))
     }
 

@@ -136,7 +136,6 @@ struct DockPopover: View {
         case global
         case artifacts
         case bots
-        case groupChat(String)
     }
     @AppStorage(ChatViewSettings.gridViewKey) var prefersChatGrid = false
     @State var fullscreenSurface: FullscreenSurface =
@@ -272,12 +271,12 @@ struct DockPopover: View {
                             .dockFont(.body)
                             .lineLimit(2)
                     }
-                    .padding(10)
+                    .dockPadding(10)
                     .dockFloatingSurface(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius), tint: .dockSurface2,
                         stroke: .dockBorderLight
                     )
-                    .padding(12)
+                    .dockPadding(12)
                     .accessibilityElement(children: .combine)
                     .allowsHitTesting(false)
                 }

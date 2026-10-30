@@ -32,15 +32,7 @@ extension DockPopover {
             isBotsActive: fullscreenSurface == .bots,
             isPullRequestsActive: fullscreenSurface == .pullRequests,
             isIssuesActive: fullscreenSurface == .issues,
-            onNewConversation: {
-                leaveIntegrations {
-                    sessionNavNavigation.beginNewConversation()
-                    fullscreenSurface = .conversation
-                    inspectorScope = .session
-                    model.newChat()
-                    model.requestComposerFocus()
-                }
-            },
+            onNewConversation: startNewConversation,
             onSelectSession: { session in
                 leaveIntegrations {
                     sessionNavNavigation.selectSession(session.id)
@@ -79,22 +71,10 @@ extension DockPopover {
                     fullscreenSurface = .artifacts
                 }
             },
-            onOpenBots: {
-                leaveIntegrations {
-                    sessionNavNavigation.selectBots()
-                    Task { await botMode.refreshNow(force: true) }
-                    fullscreenSurface = .bots
-                }
-            },
+            onOpenBots: { leaveIntegrations { openBotsPage() } },
             onOpenBotChat: { bot, recent in
                 leaveIntegrations {
                     if let recent { openRecentBotSession(bot, recent: recent) } else { openBotChat(bot) }
-                }
-            },
-            onOpenGroupChat: { roomID in
-                leaveIntegrations {
-                    sessionNavNavigation.selection.selectGroupChat(roomID)
-                    fullscreenSurface = .groupChat(roomID)
                 }
             },
             onOpenPullRequests: {
@@ -131,6 +111,17 @@ extension DockPopover {
             isDockedWindow: usesWindowChrome,
             isSidebarCollapsed: chatListCollapsed
         )
+    }
+
+    /// Starts a chat with the selected bot from the sidebar or title picker.
+    func startNewConversation() {
+        leaveIntegrations {
+            sessionNavNavigation.beginNewConversation()
+            fullscreenSurface = .conversation
+            inspectorScope = .session
+            model.newChat()
+            model.requestComposerFocus()
+        }
     }
 
     func handleProfileScopeChange(_ profileID: String?) {
@@ -171,6 +162,8 @@ extension DockPopover {
                 // workspace where that session is visible.
                 fullscreenSurface = .conversation
             },
+            onOpenBotChat: { bot in openBotsPage(with: bot) },
+            onOpenRecentBotSession: openRecentBotSession,
             showsHeader: false,
             showsModePicker: false,
             initialMode: fullscreenGlobalTab,
@@ -234,24 +227,17 @@ extension DockPopover {
                 }
                 .id("fullscreen-artifacts")
             } else if fullscreenSurface == .bots {
-                BotRosterPage(
-                    model: botMode,
-                    dockModel: model,
-                    onSelectBot: { bot in
-                        botMode.selectProfile(bot.id)
-                        sessionNavNavigation.clearSelection()
-                        fullscreenSurface = .conversation
-                    },
-                    onOpenChat: openBotChat,
-                    onOpenRecentSession: openRecentBotSession
-                )
-                .id("fullscreen-bots")
-            } else if case .groupChat(let roomID) = fullscreenSurface {
-                GroupChatView(store: botMode.groupChats, botMode: botMode, roomID: roomID) {
-                    sessionNavNavigation.clearSelection()
-                    fullscreenSurface = .conversation
+                BotChatsPage(
+                    bots: botMode,
+                    groups: botMode.groupChats,
+                    activeBotID: model.activeBotProfileID,
+                    style: DockThemePalette(theme: dockThemeStore.selectedThemeID),
+                    // Stays on Bots: the rail keeps Bots selected while the chat changes.
+                    onOpen: { bot in model.resumeBotChat(bot) }
+                ) {
+                    chatConversationContent(railWidth: 0)
                 }
-                .id("fullscreen-group-\(roomID)")
+                .id("fullscreen-bots")
             } else {
                 fullscreenGlobalControlSurface
             }
@@ -315,6 +301,19 @@ extension DockPopover {
         } else {
             selectGitHubSection(.issues)
             Task { await issueCenter.open(reference) }
+        }
+    }
+
+    /// The Bots page: every bot's main chat beside the open conversation.
+    func openBotsPage(with bot: BotSummary? = nil) {
+        sessionNavNavigation.selectBots()
+        Task { await botMode.refreshNow(force: true) }
+        fullscreenSurface = .bots
+        inspectorScope = .session
+        if let bot {
+            UserDefaults.standard.set(bot.id, forKey: BotChatsOrdering.lastBotKey)
+            UserDefaults.standard.removeObject(forKey: BotChatsOrdering.lastRoomKey)
+            model.resumeBotChat(bot)
         }
     }
 
@@ -420,7 +419,7 @@ extension DockPopover {
                             Label("Back to chat", systemImage: "chevron.left")
                                 .dockFont(.body, weight: .semibold)
                                 .foregroundStyle(Color.dockSecondaryText)
-                                .padding(.horizontal, 8)
+                                .dockPadding(.horizontal, 8)
                                 .frame(height: 28)
                                 .contentShape(Rectangle())
                         }
@@ -428,8 +427,8 @@ extension DockPopover {
                         .accessibilityLabel("Back to chat")
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.top, 8)
+                    .dockPadding(.horizontal, 8)
+                    .dockPadding(.top, 8)
                 }
 
                 Group {
@@ -569,7 +568,7 @@ extension DockPopover {
 
             scopePicker
         }
-        .padding(.horizontal, 16)
+        .dockPadding(.horizontal, 16)
         .frame(height: 64)
         .dockPaneTint(Color.dockSurface2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -716,7 +715,7 @@ extension DockPopover {
                 .accessibilityLabel("Show \(scope.rawValue) workspace")
             }
         }
-        .padding(.horizontal, 2)
+        .dockPadding(.horizontal, 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Workspace scope")
     }
@@ -809,8 +808,8 @@ extension DockPopover {
                         isCollapsed: !inspectorPanelIsVisible, edge: .trailing, action: toggleInspectorPanel)
                 }
             }
-            .padding(.leading, hidesChatList && usesWindowChrome ? DockWindowChrome.sidebarToggleLeading : 12)
-            .padding(.trailing, 12)
+            .dockPadding(.leading, hidesChatList && usesWindowChrome ? DockWindowChrome.sidebarToggleLeading : 12)
+            .dockPadding(.trailing, 12)
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(height: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight)

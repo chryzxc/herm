@@ -34,7 +34,6 @@ enum SessionNavigationSelection: Equatable {
     case global(ControlTab)
     case artifacts
     case bots
-    case groupChat(String)
     case pullRequests
     case issues
 }
@@ -49,7 +48,6 @@ final class SessionNavigationSelectionState: ObservableObject {
     func selectGlobal(_ tab: ControlTab) { selection = .global(tab) }
     func selectArtifacts() { selection = .artifacts }
     func selectBots() { selection = .bots }
-    func selectGroupChat(_ roomID: String) { selection = .groupChat(roomID) }
     func selectPullRequests() { selection = .pullRequests }
     func selectIssues() { selection = .issues }
 

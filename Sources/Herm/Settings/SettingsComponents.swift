@@ -15,7 +15,7 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
     var categories: [SettingsCategory] {
         switch self {
         case .app: [.general, .gateway, .appearance, .notifications]
-        case .agent: [.runtime, .providers, .chat, .memory, .voice, .advanced]
+        case .agent: [.runtime, .providers, .bots, .chat, .memory, .voice, .advanced]
         case .tools: [.workspace, .browser, .safety, .integrations]
         case .activity: [.session, .diagnostics, .updates]
         }
@@ -29,6 +29,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case notifications
     case runtime
     case providers
+    case bots
     case chat
     case workspace
     case safety
@@ -52,6 +53,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .updates: "Updates"
         case .runtime: "Models & tools"
         case .providers: "Providers"
+        case .bots: "Bots"
         case .chat: "Chat"
         case .workspace: "Files & terminal"
         case .safety: "Privacy & safety"
@@ -74,6 +76,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .updates: "Herm and Hermes versions and updates"
         case .runtime: "Models, dispatch, and tools"
         case .providers: "Accounts, API keys, sign-in, and account rotation"
+        case .bots: "Create, edit, and remove bots and their routines"
         case .chat: "Layout, typing, replies, session titles, and attachments"
         case .workspace: "Working directory, shell, file access, and output limits"
         case .safety: "Approvals, screen capture, privacy, and checkpoints"
@@ -96,6 +99,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .updates: .arrowsClockwise
         case .runtime: .gearSix
         case .providers: .key
+        case .bots: .ghost
         case .chat: .chatText
         case .workspace: .folder
         case .safety: .shieldWarning
@@ -150,7 +154,7 @@ struct SettingsSection<Content: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, 2)
+            .dockPadding(.horizontal, 2)
             VStack(alignment: .leading, spacing: 12) {
                 content()
             }
@@ -228,7 +232,7 @@ struct SettingsStatusRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Circle().fill(color).frame(width: 7, height: 7).padding(.top, 4)
+            Circle().fill(color).frame(width: 7, height: 7).dockPadding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
                 if !detail.isEmpty {
@@ -267,12 +271,12 @@ struct SettingsInlineNotice: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Circle().fill(tint).frame(width: 7, height: 7).padding(.top, 4)
+            Circle().fill(tint).frame(width: 7, height: 7).dockPadding(.top, 4)
             Text(text).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).fixedSize(
                 horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 8)
+        .dockPadding(.vertical, 8)
     }
 }
 

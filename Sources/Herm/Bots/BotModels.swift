@@ -59,6 +59,10 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     /// vs `idle`). nil when none of the bot's sessions is live in that process
     /// (kanban or cron workers), where the heartbeat heuristic still applies.
     var liveBusy: Bool?
+    /// The live flag for the canonical main chat alone (the Bots page).
+    var mainChatBusy: Bool?
+    /// The live flag for the bot's other sessions, never its main chat (Chats).
+    var sessionsBusy: Bool?
 
     init(
         id: String, name: String, title: String?, description: String?, model: String?, provider: String? = nil,
@@ -92,6 +96,22 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     }
 
     var isWorkingNow: Bool { liveBusy ?? (worker?.isLive == true) }
+
+    var isMainChatWorking: Bool { mainChatBusy == true }
+
+    /// Newest activity outside the main chat: the last regular session or worker.
+    var sessionsLastActive: Date? {
+        let recent = recentSession?.sessionID == chat?.sessionID ? nil : recentSession?.lastActive
+        return [recent, worker?.lastActive].compactMap { $0 }.max()
+    }
+
+    /// Working in a regular session or worker; the main chat does not count.
+    var isSessionWorking: Bool {
+        if let sessionsBusy { return sessionsBusy }
+        if worker?.isLive == true { return true }
+        guard let sessionsLastActive else { return false }
+        return (0...90).contains(Date().timeIntervalSince(sessionsLastActive))
+    }
 
     /// The kanban/cron worker session while it is live. Worker sessions are
     /// kept out of Recents, so this is the only way to open one.

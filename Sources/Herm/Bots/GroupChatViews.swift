@@ -1,61 +1,8 @@
 import SwiftUI
 
-/// Sidebar group between Pinned and Conversations. Hidden until Hermes
-/// reports a room driver.
-struct GroupChatSidebarSection: View {
-    @ObservedObject var store: GroupChatStore
-    @ObservedObject var botMode: BotModeModel
-    let selectedRoomID: String?
-    let style: DockThemePalette
-    let onOpen: (String) -> Void
-    let onCreate: () -> Void
-    @State private var isExpanded = true
-
-    /// Most recent activity first, like the conversation list.
-    private var rooms: [GroupRoom] {
-        store.rooms.sorted { activity($0) > activity($1) }
-    }
-
-    private func activity(_ room: GroupRoom) -> Date { store.lastMessages[room.id]?.date ?? room.updatedAt }
-
-    var body: some View {
-        if store.isAvailable {
-            VStack(alignment: .leading, spacing: 2) {
-                DockSectionHeader(title: "Group Chats", count: store.rooms.count, isExpanded: $isExpanded, style: style)
-                {
-                    DockIconButton(icon: .plus, label: "New group chat", size: 24, style: style, action: onCreate)
-                }
-                .padding(.top, style.sectionSpacing)
-                if isExpanded {
-                    if store.rooms.isEmpty {
-                        Text("No group chats")
-                            .dockFont(.body)
-                            .foregroundStyle(style.metadataText)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 7)
-                    }
-                    ForEach(rooms) { room in
-                        GroupChatSidebarRow(
-                            room: room, store: store, botMode: botMode, style: style,
-                            isSelected: room.id == selectedRoomID, date: activity(room)
-                        ) { onOpen(room.id) }
-                    }
-                }
-            }
-            .task {
-                // ponytail: 15s room-list poll for unread dots and previews; Hermes has no room push events.
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(15))
-                    await store.refreshRooms()
-                }
-            }
-        }
-    }
-}
-
 /// Mirrors the session row: stacked member avatars, title with its last
 /// activity time, and the newest message underneath.
-private struct GroupChatSidebarRow: View {
+struct GroupChatSidebarRow: View {
     let room: GroupRoom
     @ObservedObject var store: GroupChatStore
     @ObservedObject var botMode: BotModeModel
@@ -119,8 +66,8 @@ private struct GroupChatSidebarRow: View {
                     .truncationMode(.tail)
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
+        .dockPadding(.horizontal, 6)
+        .dockPadding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
                 .dockSelectionFill(
@@ -339,7 +286,7 @@ struct NewGroupChatSheet: View {
                     Color.dockMetadataText)
             }
         }
-        .padding(10)
+        .dockPadding(10)
         .background(RoundedRectangle(cornerRadius: 8).dockSurfaceFill(Color.dockSurface2))
     }
 }
@@ -398,6 +345,7 @@ struct GroupChatView: View {
     @ObservedObject var botMode: BotModeModel
     let roomID: String
     let onDisbanded: () -> Void
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @StateObject private var voiceOutput = VoiceOutput()
     @State private var speakingEventID: String?
     @State private var replyQuote: ReplyQuote?
@@ -577,8 +525,8 @@ struct GroupChatView: View {
             .fixedSize()
             .help("More")
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .dockPadding(.horizontal, 20)
+        .dockPadding(.vertical, 14)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
@@ -630,7 +578,7 @@ struct GroupChatView: View {
                         Text(item.title)
                             .dockFont(.body, weight: item.id == thread ? .semibold : .regular)
                             .lineLimit(1)
-                            .padding(.horizontal, 10)
+                            .dockPadding(.horizontal, 10)
                             .frame(height: 24)
                             .background(Capsule().fill(item.id == thread ? Color.dockAccentMuted : Color.dockSurface2))
                             .foregroundStyle(item.id == thread ? Color.dockPrimaryText : Color.dockSecondaryText)
@@ -645,8 +593,8 @@ struct GroupChatView: View {
                 .buttonStyle(.dockHover)
                 .help("New thread — members only see messages in the same thread")
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
+            .dockPadding(.horizontal, 20)
+            .dockPadding(.vertical, 8)
         }
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
@@ -669,7 +617,7 @@ struct GroupChatView: View {
                         .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, 40)
+                        .dockPadding(.top, 40)
                     }
                     if (store.earliestLoadedSeq[roomID] ?? 0) > 0 {
                         DockAsyncButton("Load earlier messages") { await store.loadEarlier(roomID) }
@@ -700,7 +648,7 @@ struct GroupChatView: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .frame(maxWidth: 820)
-                .padding(20)
+                .dockPadding(20)
                 .frame(maxWidth: .infinity)
             }
             .onChange(of: events.count) { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -723,8 +671,8 @@ struct GroupChatView: View {
                     )
                     .textSelection(.enabled)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
+                .dockPadding(.horizontal, 14)
+                .dockPadding(.vertical, 9)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.dockAccentMuted))
             }
         case .member(let memberID):
@@ -799,7 +747,7 @@ struct GroupChatView: View {
             .frame(width: 28, height: 28)
             .contentShape(Rectangle())
             .help("Reply to this message")
-            Rectangle().fill(Color.dockBorderLight).frame(width: 1, height: 12).padding(.horizontal, 6)
+            Rectangle().fill(Color.dockBorderLight).frame(width: 1, height: 12).dockPadding(.horizontal, 6)
             Text(event.createdAt.formatted(date: .abbreviated, time: .shortened))
                 .dockFont(.machineMetadata)
                 .foregroundStyle(Color.dockMetadataText)
@@ -825,10 +773,10 @@ struct GroupChatView: View {
             Spacer()
             actions()
         }
-        .padding(12)
+        .dockPadding(12)
         .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface2))
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
+        .dockPadding(.horizontal, 20)
+        .dockPadding(.top, 8)
     }
 
     @ViewBuilder
@@ -836,7 +784,8 @@ struct GroupChatView: View {
         if let member, let bot = botMode.botsByID[member.profile] {
             BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28, orbits: working)
         } else {
-            Circle().fill(Color.dockSurface4).frame(width: 28, height: 28)
+            let side = DockWorkspaceScale.points(28, scale: workspaceScale)
+            Circle().fill(Color.dockSurface4).frame(width: side, height: side)
         }
     }
 
@@ -859,10 +808,10 @@ struct GroupChatView: View {
             .disabled(store.pendingRooms.contains(roomID))
             .buttonStyle(.dockPrimary)
         }
-        .padding(12)
+        .dockPadding(12)
         .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface2))
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
+        .dockPadding(.horizontal, 20)
+        .dockPadding(.top, 8)
     }
 
     private var mentionToken: String? { ComposerMentionPresentation.activeToken(in: draft) }
@@ -929,7 +878,7 @@ struct GroupChatView: View {
             // attachment, model or voice controls.
             if let quote = replyQuote {
                 ReplyQuoteChip(quote: quote) { replyQuote = nil }
-                    .padding(.horizontal, 12)
+                    .dockPadding(.horizontal, 12)
             }
             VStack(spacing: 6) {
                 ZStack(alignment: .topLeading) {
@@ -952,11 +901,11 @@ struct GroupChatView: View {
                         Text("Message the group — @ to mention a member")
                             .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
                             .foregroundStyle(Color.dockSecondaryText)
-                            .padding(.leading, 16)
+                            .dockPadding(.leading, 16)
                             .allowsHitTesting(false)
                     }
                 }
-                .padding(.top, 4)
+                .dockPadding(.top, 4)
                 .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight)
                 .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
 
@@ -1023,9 +972,9 @@ struct GroupChatView: View {
                 }
                 .frame(height: 44)
             }
-            .padding(.leading, 6)
-            .padding(.trailing, 8)
-            .padding(.top, 6)
+            .dockPadding(.leading, 6)
+            .dockPadding(.trailing, 8)
+            .dockPadding(.top, 6)
             .background {
                 let shape = DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane)
                 shape
@@ -1038,7 +987,7 @@ struct GroupChatView: View {
             }
         }
         .frame(maxWidth: 820)
-        .padding(20)
+        .dockPadding(20)
         .frame(maxWidth: .infinity)
     }
 
@@ -1087,7 +1036,7 @@ struct GroupChatView: View {
             }
             .dockFont(.control)
             .foregroundStyle(Color.dockSecondaryText)
-            .padding(.horizontal, 8)
+            .dockPadding(.horizontal, 8)
             .frame(height: 28)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
