@@ -35,6 +35,7 @@ struct UsageSpendSummary: View {
                         DockTabButton(title: choice.rawValue, isSelected: grouping == choice) { grouping = choice }
                     }
                 }
+                .dockTabTrack()
                 DockSectionLabel(title: "Top \(grouping.rawValue.lowercased()) by cost")
                 if grouping == .models {
                     ForEach(report.costRankedModels.prefix(4)) { model in modelRow(model) }
@@ -163,7 +164,7 @@ struct UsageSpendTotals: View {
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 8)
+        .dockPadding(.vertical, 8)
     }
 
     @ViewBuilder

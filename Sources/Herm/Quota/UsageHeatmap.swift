@@ -55,6 +55,7 @@ struct UsageHeatmap: View, Equatable {
                         DockTabButton(title: choice.rawValue, isSelected: metric == choice) { metric = choice }
                     }
                 }
+                .dockTabTrack()
             }
 
             Color.clear
@@ -179,6 +180,6 @@ struct UsageHeatmap: View, Equatable {
             }
         }
         .fixedSize()
-        .padding(10)
+        .dockPadding(10)
     }
 }

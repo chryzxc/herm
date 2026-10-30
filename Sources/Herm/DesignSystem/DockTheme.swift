@@ -472,8 +472,8 @@ struct DockThemePalette {
                     "#48484A", "#30D158", "#FF9F0A", "#FF453A"
                 )
                 : (
-                    "#F4F5F7", "#FFFFFF", "#E9EBEF", "#DEE1E6", "#171A1F", "#3E454F", "#515965", "#535557", "#DADCE0",
-                    "#969DA7", "#248A3D", "#C93400", "#D70015"
+                    "#F4F5F7", "#FFFFFF", "#E9EBEF", "#DEE1E6", "#171A1F", "#3E454F", "#424955", "#535557", "#DADCE0",
+                    "#7F8691", "#248A3D", "#C93400", "#D70015"
                 )
         case .clean:
             return isDark
@@ -583,15 +583,16 @@ private struct Tokens {
         info = accents[DockAccentColor.blue.rawValue]
         merged = accents[DockAccentColor.violet.rawValue]
         review = accents[DockAccentColor.teal.rawValue]
-        // Light glass needs a stable reading surface even over a dark desktop.
-        windowBackground = color({ $0.bg }, nativeAlpha: 0.12, nativeLightAlpha: 0.88)
+        // Light glass lets the desktop through; 80% is the floor that keeps
+        // body text and dividers readable over a black desktop.
+        windowBackground = color({ $0.bg }, nativeAlpha: 0.12, nativeLightAlpha: 0.80)
         opaqueBackground = color { $0.bg }
         // Clear so nested page canvases never stack into darker panes; the
         // window tint above is the only layer over the glass.
         background = color({ $0.bg }, nativeAlpha: 0)
-        surface = color({ $0.surface }, nativeAlpha: 0.40, nativeLightAlpha: 1)
-        surface2 = color({ $0.surface2 }, nativeAlpha: 0.32, nativeLightAlpha: 1)
-        surface4 = color({ $0.surface4 }, nativeAlpha: 0.60, nativeLightAlpha: 1)
+        surface = color({ $0.surface }, nativeAlpha: 0.40, nativeLightAlpha: 0.72)
+        surface2 = color({ $0.surface2 }, nativeAlpha: 0.32, nativeLightAlpha: 0.62)
+        surface4 = color({ $0.surface4 }, nativeAlpha: 0.60, nativeLightAlpha: 0.80)
         primaryText = color { $0.primary }
         secondaryText = color { $0.secondary }
         metadataText = color { $0.metadata }
@@ -608,19 +609,26 @@ private struct Tokens {
 }
 
 extension Color {
-    /// A white frost above the material separates light controls from the canvas.
+    /// A translucent white frost above the material lifts light controls off the
+    /// canvas while the desktop still reads through, like macOS Light glass.
     static let dockLightGlassLift = Color(
         nsColor: NSColor(name: nil) {
-            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white : .clear
+            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white.withAlphaComponent(0.6) : .clear
         })
     static let dockLightGlassEdge = Color(
         nsColor: NSColor(name: nil) {
             $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua
-                ? NSColor.black.withAlphaComponent(0.30) : NSColor.white.withAlphaComponent(0.08)
+                ? NSColor.black.withAlphaComponent(0.10) : NSColor.white.withAlphaComponent(0.08)
         })
     static let dockGlassHighlight = Color(
         nsColor: NSColor(name: nil) {
-            NSColor.white.withAlphaComponent($0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? 0.20 : 0.24)
+            NSColor.white.withAlphaComponent($0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? 0.70 : 0.24)
+        })
+    /// Selected glass rows: a soft graphite rim in Light, the bright rim in Dark.
+    static let dockGlassSelectionEdge = Color(
+        nsColor: NSColor(name: nil) {
+            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua
+                ? NSColor.black.withAlphaComponent(0.18) : NSColor(hex: "#D7D8DA").withAlphaComponent(0.75)
         })
 }
 

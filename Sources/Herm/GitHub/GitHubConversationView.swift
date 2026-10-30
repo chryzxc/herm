@@ -238,29 +238,31 @@ struct GitHubConversationView: View {
                 Text("Leave a comment").dockFont(.body, weight: .semibold)
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 4) {
-                        DockTabButton(title: "Write", isSelected: !preview) { preview = false }
-                        DockTabButton(title: "Preview", isSelected: preview) { preview = true }
+                        HStack(spacing: 2) {
+                            DockTabButton(title: "Write", isSelected: !preview) { preview = false }
+                            DockTabButton(title: "Preview", isSelected: preview) { preview = true }
+                        }.dockTabTrack()
                         Spacer(minLength: 0)
-                    }.padding(8)
+                    }.dockPadding(8)
                     Color.dockBorderLight.frame(height: DockLayout.hairline)
                     Group {
                         if preview {
                             if model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Text("Nothing to preview yet.").foregroundStyle(Color.dockSecondaryText)
-                                    .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading).padding(12)
+                                    .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading).dockPadding(12)
                             } else {
                                 MarkdownMessageView(markdown: model.draft)
-                                    .frame(maxWidth: 820, minHeight: 140, alignment: .topLeading).padding(12)
+                                    .frame(maxWidth: 820, minHeight: 140, alignment: .topLeading).dockPadding(12)
                             }
                         } else {
                             TextEditor(text: $model.draft)
                                 .dockFont(.body).scrollContentBackground(.hidden)
-                                .padding(8).frame(minHeight: 164)
+                                .dockPadding(8).frame(minHeight: 164)
                                 .overlay(alignment: .topLeading) {
                                     if model.draft.isEmpty {
                                         Text("Write a comment…")
                                             .foregroundStyle(Color.dockMetadataText)
-                                            .padding(.horizontal, 13).padding(.top, 16)
+                                            .dockPadding(.horizontal, 13).dockPadding(.top, 16)
                                             .allowsHitTesting(false).accessibilityHidden(true)
                                     }
                                 }
@@ -300,6 +302,6 @@ struct GitHubConversationView: View {
 private struct GitHubTimelineRowSurface: ViewModifier {
     let grouped: Bool
     @ViewBuilder func body(content: Content) -> some View {
-        if grouped { content.padding(.vertical, 12) } else { content.dockCard(padding: 12) }
+        if grouped { content.dockPadding(.vertical, 12) } else { content.dockCard(padding: 12) }
     }
 }

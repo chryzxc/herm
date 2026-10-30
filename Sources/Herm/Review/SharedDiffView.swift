@@ -132,7 +132,7 @@ struct SharedDiffView: View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar(isExpanded: expandedPresentation)
             if let notice = document.fileNotice {
-                Text(notice).dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(12)
+                Text(notice).dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(12)
             }
             canvas
                 .frame(
@@ -154,14 +154,14 @@ struct SharedDiffView: View {
             if document.isTruncated {
                 Text("Partial diff · search covers loaded content only").dockFont(.metadata).foregroundStyle(
                     Color.dockWarning
-                ).padding(8)
+                ).dockPadding(8)
             }
             if document.missingFinalNewline {
                 Text("Missing final newline").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-                    .padding(8)
+                    .dockPadding(8)
             }
             if let contextError = state.contextError {
-                Text(contextError).dockFont(.body).foregroundStyle(Color.dockWarning).padding(8)
+                Text(contextError).dockFont(.body).foregroundStyle(Color.dockWarning).dockPadding(8)
             }
             if !state.notes.isEmpty || state.revisionNotes.error != nil { noteTray }
         }
@@ -188,7 +188,7 @@ struct SharedDiffView: View {
                 expandControl(isExpanded: isExpanded)
             }
         }.dockFont(.body)
-            .padding(.horizontal, 12).padding(.vertical, 6)
+            .dockPadding(.horizontal, 12).dockPadding(.vertical, 6)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
     @ViewBuilder private var reviewControls: some View {
@@ -205,6 +205,7 @@ struct SharedDiffView: View {
                     ? "This diff has only one side to display"
                     : canSplit ? "Compare before and after side by side" : "Widen the review to compare side by side")
         }
+        .dockTabTrack()
         .accessibilityElement(children: .contain).accessibilityLabel("Diff layout")
         Color.dockBorderLight.frame(width: DockLayout.hairline, height: 18)
         DockIconButton(

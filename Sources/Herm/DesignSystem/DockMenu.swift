@@ -95,9 +95,9 @@ struct DockMenuSection<Content: View>: View {
             Text(title)
                 .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(Color.dockMetadataText)
-                .padding(.horizontal, 8)
-                .padding(.top, 6)
-                .padding(.bottom, 2)
+                .dockPadding(.horizontal, 8)
+                .dockPadding(.top, 6)
+                .dockPadding(.bottom, 2)
             content
         }
     }
@@ -194,13 +194,14 @@ struct DockSegmentedPicker<Value: Hashable>: View {
     let options: [(value: Value, title: String)]
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(options.indices, id: \.self) { index in
                 DockTabButton(title: options[index].title, isSelected: selection == options[index].value) {
                     selection = options[index].value
                 }
             }
         }
+        .dockTabTrack()
     }
 }
 
@@ -213,6 +214,13 @@ private struct DockMenuDismissKey: EnvironmentKey { nonisolated(unsafe) static v
 private struct DockMenuDepthKey: EnvironmentKey { static let defaultValue = 0 }
 private struct DockMenuSelectionKey: EnvironmentKey {
     nonisolated(unsafe) static var defaultValue: DockMenuSelection? = nil
+}
+
+extension View {
+    /// Keep a menu open while its controls update in place.
+    func dockMenuKeepOpen() -> some View {
+        environment(\.dockMenuDismiss, {})
+    }
 }
 
 extension EnvironmentValues {
@@ -235,7 +243,7 @@ private struct DockMenuHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-private struct DockMenuPanel<Content: View>: View {
+struct DockMenuPanel<Content: View>: View {
     let content: Content
     @State private var contentHeight: CGFloat = 0
 
@@ -247,7 +255,7 @@ private struct DockMenuPanel<Content: View>: View {
                 .labelStyle(DockMenuLabelStyle())
                 .frame(minWidth: 190, maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: true, vertical: false)
-                .padding(6)
+                .dockPadding(6)
                 .background(
                     GeometryReader { Color.clear.preference(key: DockMenuHeightKey.self, value: $0.size.height) })
         }
@@ -274,7 +282,7 @@ private struct DockMenuRowChrome<Content: View>: View {
             .dockFont(.body)
             .foregroundStyle(tint ?? Color.dockPrimaryText)
             .frame(maxWidth: 340, alignment: .leading)
-            .padding(.horizontal, 8)
+            .dockPadding(.horizontal, 8)
             .frame(minHeight: 26)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(

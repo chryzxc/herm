@@ -135,8 +135,9 @@ struct DockThemeContrastTests {
             }
         }
         let glass = DockThemePalette(theme: .glass)
+        // Light glass lets the desktop through, but bodies stay mostly white.
         for surface in [glass.surface, glass.surface2, glass.surface4, Color.dockLightGlassLift] {
-            #expect(resolve(surface, dark: false, opaque: false).alphaComponent == 1)
+            #expect(resolve(surface, dark: false, opaque: false).alphaComponent >= 0.6)
         }
     }
 

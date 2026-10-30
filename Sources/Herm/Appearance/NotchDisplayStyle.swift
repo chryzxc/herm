@@ -35,12 +35,9 @@ struct NotchDisplaySettings: View {
             SettingsPreferenceRow(
                 title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera."
             ) {
-                Picker("Notch position", selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right }))
-                {
-                    Text("Side").tag(false)
-                    Text("Top island").tag(true)
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                DockSegmentedPicker(
+                    selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right }),
+                    options: [(false, "Side"), (true, "Top island")])
             }
             if side == .top {
                 DockCallout(
@@ -76,7 +73,7 @@ struct NotchDisplaySettings: View {
                 }
             }
             .accessibilityLabel("Working animation previews")
-            .padding(.bottom, 8)
+            .dockPadding(.bottom, 8)
         }
     }
 }
@@ -224,7 +221,7 @@ struct EdgeNotchStatusIndicator: View {
             } else if m == .working {
                 Circle().trim(from: 0, to: 0.3)
                     .stroke(c, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .padding(2)
+                    .dockPadding(2)
                     .rotationEffect(.degrees(animates ? phase(t, period: 1.2) * 360 : -90))
                 Circle().fill(c).frame(width: 4, height: 4)
             } else if m == .done, !activity.backgroundCompleted {

@@ -487,7 +487,7 @@ struct PullRequestReviewView: View {
                             model: model, record: record, path: nil, unresolvedOnly: unresolvedOnly)
                     }.frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
                 }
-            }.padding(.horizontal, horizontalPadding).padding(.vertical, 20)
+            }.dockPadding(.horizontal, horizontalPadding).dockPadding(.vertical, 20)
         }
         .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         .confirmationDialog("Allow a deliberate retry?", isPresented: $confirmRetry) {
@@ -650,33 +650,36 @@ struct GitHubMarkdownDraft: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                DockTabButton(title: "Write", isSelected: !preview) { preview = false }
-                DockTabButton(title: "Preview", isSelected: preview) { preview = true }
+                HStack(spacing: 2) {
+                    DockTabButton(title: "Write", isSelected: !preview) { preview = false }
+                    DockTabButton(title: "Preview", isSelected: preview) { preview = true }
+                }.dockTabTrack()
                 Spacer()
                 Text("\(text.count.formatted()) / 10,000")
                     .dockFont(.metadata).monospacedDigit()
                     .foregroundStyle(text.count > 10_000 ? Color.dockWarning : Color.dockMetadataText)
             }
-            .padding(8)
+            .dockPadding(8)
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             Group {
                 if preview {
                     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text("Nothing to preview yet.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                            .padding(12).frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .topLeading)
+                            .dockPadding(12).frame(
+                                maxWidth: .infinity, minHeight: minimumHeight, alignment: .topLeading)
                     } else {
-                        MarkdownMessageView(markdown: text).padding(12)
+                        MarkdownMessageView(markdown: text).dockPadding(12)
                             .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .topLeading)
                     }
                 } else {
                     TextEditor(text: $text)
                         .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
-                        .scrollContentBackground(.hidden).padding(8)
+                        .scrollContentBackground(.hidden).dockPadding(8)
                         .frame(minHeight: minimumHeight)
                         .overlay(alignment: .topLeading) {
                             if text.isEmpty {
                                 Text(placeholder).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                                    .padding(.horizontal, 13).padding(.vertical, 8)
+                                    .dockPadding(.horizontal, 13).dockPadding(.vertical, 8)
                                     .allowsHitTesting(false).accessibilityHidden(true)
                             }
                         }

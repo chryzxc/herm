@@ -419,7 +419,7 @@ extension View {
                     Color.dockMarker.opacity(0.5)
                         .frame(height: 12)
                         .rotationEffect(.degrees(-0.8))
-                        .padding(.bottom, 4)
+                        .dockPadding(.bottom, 4)
                         .frame(maxHeight: .infinity, alignment: .bottom)
                 }
             case .neon where !palette.neonHues.isEmpty:
@@ -442,12 +442,12 @@ extension View {
             if theme != .glass && active
                 && (mode == .bar || mode == .fill || mode == .highlight || (mode == .invert && !allowsInvert))
             {
-                palette.primaryText.frame(width: 2).padding(.vertical, 6)
+                palette.primaryText.frame(width: 2).dockPadding(.vertical, 6)
             }
             if mode == .neon && active && !palette.neonHues.isEmpty {
                 LinearGradient(colors: Array(palette.neonHues.prefix(2)), startPoint: .top, endPoint: .bottom)
                     .frame(width: 2)
-                    .padding(.vertical, 5)
+                    .dockPadding(.vertical, 5)
                     .shadow(color: palette.neonHues[0].opacity(0.9), radius: 4)
             }
         }
@@ -895,9 +895,9 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
             .textFieldStyle(.plain)
             .font(.system(size: DockTypography.size(compact ? .control : .navigation, scale: workspaceScale)))
             .foregroundStyle(Color.dockPrimaryText)
-            .padding(.horizontal, 10)
-            .padding(.trailing, trailingInset)
-            .padding(.vertical, compact ? 4 : 8)
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.trailing, trailingInset)
+            .dockPadding(.vertical, compact ? 4 : 8)
             .frame(minHeight: compact ? DockWorkspaceScale.points(28, scale: workspaceScale) : DockLayout.controlHeight)
             // The shared canvas keeps inputs consistent across panes; the
             // plain field style removes the warm native field fill.
@@ -1007,13 +1007,13 @@ struct DockPageHeader<Trailing: View>: View {
             trailing().fixedSize()
         }
         // Titles and sidebar controls share Calendar’s gutter beside the traffic lights.
-        .padding(.leading, 16 + row.leadingClearance)
-        .padding(.trailing, 12)
+        .dockPadding(.leading, 16 + row.leadingClearance)
+        .dockPadding(.trailing, 12)
         .frame(height: row.height)
         .background(Color.dockSidebar)
         .overlay(alignment: .bottom) { DockWindowChrome.titleRowSeparator }
         // Same gap under the line as the panel header, so every page's content sits alike.
-        .padding(.bottom, 10)
+        .dockPadding(.bottom, 10)
     }
 
     private var panelHeader: some View {
@@ -1037,11 +1037,11 @@ struct DockPageHeader<Trailing: View>: View {
                 HStack(spacing: 8) { trailing() }
             }
         }
-        .padding(.bottom, 10)
+        .dockPadding(.bottom, 10)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-        .padding(.bottom, 10)
-        .padding(.horizontal, horizontalPadding)
-        .padding(.top, 16)
+        .dockPadding(.bottom, 10)
+        .dockPadding(.horizontal, horizontalPadding)
+        .dockPadding(.top, 16)
     }
 }
 
@@ -1248,8 +1248,8 @@ struct DockCallout<Content: View>: View {
                 Spacer(minLength: DockSpacing.control)
                 if let badge { statusPill(badge, tint: tint) }
             }
-            .padding(.horizontal, DockSpacing.group)
-            .padding(.vertical, DockSpacing.control + 2)
+            .dockPadding(.horizontal, DockSpacing.group)
+            .dockPadding(.vertical, DockSpacing.control + 2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(tint.opacity(0.09))
 
@@ -1261,7 +1261,7 @@ struct DockCallout<Content: View>: View {
                     }
                     content()
                 }
-                .padding(DockSpacing.group)
+                .dockPadding(DockSpacing.group)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -1279,8 +1279,8 @@ struct DockCallout<Content: View>: View {
             Text(badge).dockFont(.metadata, weight: .semibold)
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
+        .dockPadding(.horizontal, 8)
+        .dockPadding(.vertical, 3)
         .background(Capsule().fill(tint.opacity(0.14)))
         .fixedSize()
     }
@@ -1325,8 +1325,8 @@ struct DockCalloutDisclosure: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             DockThemeShape(cornerRadius: DockLayout.controlRadius)
@@ -1432,7 +1432,7 @@ struct DockLoadingState: View {
                     .frame(maxWidth: 360)
             }
         }
-        .padding(24)
+        .dockPadding(24)
         .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: .infinity)
         .dockSurfaceReveal()
         .accessibilityElement(children: .combine)
@@ -1515,7 +1515,7 @@ extension Shape {
     func dockSelectionFill(_ isSelected: Bool, fallback: Color) -> some View {
         if isSelected && DockThemeStyle.current.material == .glass {
             Color.clear.dockLiquidGlass(self, interactive: true)
-                .overlay(stroke(Color.dockPrimaryText.opacity(0.75), lineWidth: 1))
+                .overlay(stroke(Color.dockGlassSelectionEdge, lineWidth: 1))
         } else {
             fill(fallback)
                 .overlay(stroke(isSelected ? Color.dockPrimaryText.opacity(0.75) : .clear, lineWidth: 1))
@@ -1602,8 +1602,8 @@ extension View {
         return
             self
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.vertical, 10)
             .dockSelectionBackground(
                 shape, active: isHighlighted, fill: Color.dockAccent.opacity(0.10), allowsInvert: false
             )
@@ -1623,19 +1623,19 @@ extension View {
         let style = DockThemeStyle.current
         if style.chrome == .open {
             // Typographic skins: spacing and type group content, not boxes.
-            self.padding(padding)
+            self.dockPadding(padding)
         } else if style.material == .glass {
             self
-                .padding(padding)
+                .dockPadding(padding)
                 .dockLiquidGlass(shape)
         } else if isQuiet {
             self
-                .padding(padding)
+                .dockPadding(padding)
                 .background(shape.fill(Color.dockSurface))
                 .overlay(shape.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
         } else {
             self
-                .padding(padding)
+                .dockPadding(padding)
                 .background(shape.fill(Color.dockSurface.opacity(style.cardFill)))
                 // A 0-width stroke still draws a hairline, so outline-free skins skip it.
                 .overlay(
@@ -1670,34 +1670,42 @@ struct DockTabButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let isSelected: Bool
+    var showsSelectionMark = false
     let action: () -> Void
 
     var body: some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         Button(action: action) {
-            Text(title)
-                .dockFont(.metadata, weight: isSelected ? .medium : .regular)
-                .foregroundStyle(
-                    isSelected
-                        ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
-                        : Color.dockSecondaryText
-                )
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .dockSelectionBackground(
-                    shape, active: isSelected,
-                    fill: DockThemeStyle.current.material == .glass ? .clear : Color.dockSurface4
-                )
-                .background {
-                    if isSelected && DockThemeStyle.current.material == .glass {
-                        Color.clear.dockLiquidGlass(
-                            shape, tint: colorScheme == .light ? Color.dockAccentMuted : nil, interactive: true)
-                    }
+            HStack(spacing: 4) {
+                if showsSelectionMark && isSelected {
+                    DockIcon(
+                        .check, size: 11,
+                        color: DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
                 }
-                .overlay(
-                    shape.stroke(
-                        isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear,
-                        lineWidth: DockLayout.outline))
+                Text(title)
+            }
+            .dockFont(.metadata, weight: isSelected ? .medium : .regular)
+            .foregroundStyle(
+                isSelected
+                    ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
+                    : Color.dockSecondaryText
+            )
+            .dockPadding(.horizontal, showsSelectionMark ? 6 : 10)
+            .frame(height: 30)
+            .dockSelectionBackground(
+                shape, active: isSelected,
+                fill: DockThemeStyle.current.material == .glass ? .clear : Color.dockSurface4
+            )
+            .background {
+                if isSelected && DockThemeStyle.current.material == .glass {
+                    Color.clear.dockLiquidGlass(
+                        shape, tint: colorScheme == .light ? Color.dockAccentMuted : nil, interactive: true)
+                }
+            }
+            .overlay(
+                shape.stroke(
+                    isSelected && (showsSelectionMark || DockLayout.outline > 1) ? Color.dockBorderStrong : .clear,
+                    lineWidth: DockLayout.outline))
         }
         .buttonStyle(.dockHover)
         .contentShape(shape)
@@ -1713,11 +1721,23 @@ struct DockTabBar<Option: Hashable>: View {
     let title: (Option) -> String
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(options, id: \.self) { option in
                 DockTabButton(title: title(option), isSelected: selection == option) { selection = option }
             }
         }
+        .dockTabTrack()
+    }
+}
+
+extension View {
+    /// Seats a row of `DockTabButton`s in the shared segmented track.
+    func dockTabTrack() -> some View {
+        dockPadding(2)
+            .background(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius + 1)
+                    .dockSurfaceFill(Color.dockSurface4.opacity(0.5))
+            )
     }
 }
 

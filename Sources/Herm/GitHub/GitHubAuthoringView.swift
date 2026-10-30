@@ -246,8 +246,10 @@ struct GitHubItemEditor: View {
             }
             TextField("Title", text: $title).textFieldStyle(.dockGlass)
             HStack {
-                DockTabButton(title: "Write", isSelected: !preview) { preview = false }
-                DockTabButton(title: "Preview", isSelected: preview) { preview = true }
+                HStack(spacing: 2) {
+                    DockTabButton(title: "Write", isSelected: !preview) { preview = false }
+                    DockTabButton(title: "Preview", isSelected: preview) { preview = true }
+                }.dockTabTrack()
                 Spacer()
                 Text("\(text.count)/10000").dockFont(.metadata).foregroundStyle(
                     text.count > 10_000 ? Color.dockWarning : Color.dockMetadataText)
@@ -259,7 +261,7 @@ struct GitHubItemEditor: View {
                             maxWidth: .infinity, alignment: .leading)
                     }
                 } else {
-                    TextEditor(text: $text).dockFont(.body).scrollContentBackground(.hidden).padding(8).background(
+                    TextEditor(text: $text).dockFont(.body).scrollContentBackground(.hidden).dockPadding(8).background(
                         DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)
                     )
                 }

@@ -42,7 +42,7 @@ struct UsageWorkspaceView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.top, 4)
+        .dockPadding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task { control.refreshSpend() }
     }
@@ -208,7 +208,7 @@ struct UsageReportContent: View, Equatable {
                 .frame(width: isWide ? 280 : nil)
             DailyUsageChart(daily: report.daily).equatable()
         }
-        .padding(18)
+        .dockPadding(18)
         .dockCard(padding: 0)
     }
 
@@ -245,7 +245,7 @@ struct UsageReportContent: View, Equatable {
                                     .dockFont(.metadata)
                                     .foregroundStyle(Color.dockSecondaryText)
                                     .lineLimit(1)
-                                    .padding(.horizontal, 7)
+                                    .dockPadding(.horizontal, 7)
                                     .frame(height: 18)
                                     .background(Capsule().fill(Color.dockCanvas))
                                     .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: 1))
@@ -262,7 +262,7 @@ struct UsageReportContent: View, Equatable {
                     .disabled(model.tasks.isEmpty)
 
                     meter(Double(model.totalTokens) / Double(maxTokens), tint: .dockInfoFill)
-                        .padding(.leading, inset(model))
+                        .dockPadding(.leading, inset(model))
 
                     Text(
                         "\(UsageWorkspaceView.tokens(model.inputTokens)) in · \(UsageWorkspaceView.tokens(model.outputTokens)) out · \(model.sessions) sessions · \(model.apiCalls.formatted()) calls · \(model.estimatedCost > 0 ? UsageWorkspaceView.cost(model.estimatedCost) : "no per-token cost")"
@@ -270,7 +270,7 @@ struct UsageReportContent: View, Equatable {
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
-                    .padding(.leading, inset(model))
+                    .dockPadding(.leading, inset(model))
 
                     if expandedModels.contains(model.id) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -278,11 +278,11 @@ struct UsageReportContent: View, Equatable {
                                 taskLine(task)
                             }
                         }
-                        .padding(.leading, inset(model))
-                        .padding(.top, 2)
+                        .dockPadding(.leading, inset(model))
+                        .dockPadding(.top, 2)
                     }
                 }
-                .padding(.vertical, 4)
+                .dockPadding(.vertical, 4)
             }
         }
         .dockCard(padding: 14)
@@ -414,6 +414,7 @@ private struct DailyUsageChart: View, Equatable {
                         DockTabButton(title: choice.rawValue, isSelected: metric == choice) { metric = choice }
                     }
                 }
+                .dockTabTrack()
             }
 
             if daily.isEmpty {
@@ -510,7 +511,7 @@ private struct DailyUsageChart: View, Equatable {
                     }
                 }
                 .frame(height: 240)
-                .padding(.top, 28)
+                .dockPadding(.top, 28)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: metric)
 
                 Text("Main conversation only · sessions grouped by start day · hover for details")
@@ -538,7 +539,7 @@ private struct DailyUsageChart: View, Equatable {
             .dockFont(.machineMetadata)
             .foregroundStyle(Color.dockSecondaryText)
         }
-        .padding(8)
+        .dockPadding(8)
         .dockFloatingSurface(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous), stroke: .dockBorderLight,
             lineWidth: 1)
