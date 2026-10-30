@@ -69,7 +69,11 @@ struct BotAvatarView: View {
     var orbits: Bool?
     @Environment(\.dockBotIndicatorFrame) private var indicatorFrame
     @Environment(\.dockBotIndicatorLive) private var indicatorLive
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @State private var hovering = false
+
+    /// Follows the interface scale like text and icons.
+    private var points: CGFloat { DockWorkspaceScale.points(size, scale: workspaceScale) }
 
     var body: some View {
         let herm = Self.showsHermFace(imageData, id: bot.id)
@@ -92,17 +96,17 @@ struct BotAvatarView: View {
 
     private func canvas(herm: Bool, mood: BotMood, frame: DockBotIndicatorFrame) -> some View {
         DockBotOrbitCanvas(
-            id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded), size: size, mood: mood,
+            id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded), size: points, mood: mood,
             pose: frame.face(id: bot.id, busy: mood.moves, animated: animated))
     }
 
     @ViewBuilder private func standalone(herm: Bool, mood: BotMood) -> some View {
         if !herm, let imageData, let image = Self.decoded(imageData) {
-            BotLiveImage(image: image, id: bot.id, size: size, busy: mood.moves, animated: animated)
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+            BotLiveImage(image: image, id: bot.id, size: points, busy: mood.moves, animated: animated)
+                .frame(width: points, height: points)
+                .clipShape(RoundedRectangle(cornerRadius: points * 0.28, style: .continuous))
         } else {
-            BotFaceMark(id: bot.id, size: size, animated: animated, mood: mood)
+            BotFaceMark(id: bot.id, size: points, animated: animated, mood: mood)
         }
     }
 
@@ -264,7 +268,7 @@ struct BotWorkingAvatarView: View {
                 .offset(x: size * pose.reach, y: -size * 0.2 * pose.lift)
                 // Echo the real activity glyph as the Bot reaches toward the rows above.
                 DockIcon(activityIcon, size: 12, color: .dockAccent)
-                    .padding(3)
+                    .dockPadding(3)
                     .background(
                         Circle().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
                     )
@@ -442,11 +446,11 @@ struct BotHuddle: View {
                         removal: .scale(scale: 0.1).combined(with: .opacity).combined(with: .offset(y: -10))))
             }
         }
-        .padding(.leading, inset)
-        .padding(.trailing, inset)
-        .padding(.bottom, inset)
+        .dockPadding(.leading, inset)
+        .dockPadding(.trailing, inset)
+        .dockPadding(.bottom, inset)
         .frame(height: height, alignment: .bottom)
-        .padding(.top, headroom)
+        .dockPadding(.top, headroom)
     }
 
     /// Top of a member's avatar, in the huddle's coordinates.
@@ -541,7 +545,7 @@ private struct ThoughtBubble: View {
                 .dockFont(.compactStatus, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
-                .padding(.horizontal, 7).padding(.vertical, 3)
+                .dockPadding(.horizontal, 7).dockPadding(.vertical, 3)
                 .background(Capsule().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 2, y: 1))
                 .overlay(Capsule().stroke(Color.dockBorderStrong, lineWidth: 0.75))
             // The tail's dots shrink toward the Bot it belongs to.
@@ -549,8 +553,8 @@ private struct ThoughtBubble: View {
                 Circle().fill(Color.dockSurface)
                     .overlay(Circle().stroke(Color.dockBorderStrong, lineWidth: 0.6))
                     .frame(width: d, height: d)
-                    .padding(.leading, d == 3.5 ? 5 : 8)
-                    .padding(.top, tail > 10 ? 2.5 : 1)
+                    .dockPadding(.leading, d == 3.5 ? 5 : 8)
+                    .dockPadding(.top, tail > 10 ? 2.5 : 1)
             }
         }
         .frame(height: 16 + tail, alignment: .top)
