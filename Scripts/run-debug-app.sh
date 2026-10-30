@@ -9,6 +9,11 @@ PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 APP_IDENTIFIER="io.github.chryzxc.Herm"
 PROCESS_NAME="Herm"
 # Use the same certificate across rebuilds so macOS privacy grants retain identity.
+# A local "Herm Development" certificate is picked up automatically so Keychain
+# "Always Allow" grants survive rebuilds without exporting the variable.
+if [ -z "${HERM_CODESIGN_IDENTITY:-}" ] && security find-identity -p codesigning | grep -q '"Herm Development"'; then
+    HERM_CODESIGN_IDENTITY="Herm Development"
+fi
 SIGNING_IDENTITY="${HERM_CODESIGN_IDENTITY:--}"
 
 cd "$PROJECT_DIR"
