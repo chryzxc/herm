@@ -43,15 +43,15 @@ struct DockModal<Content: View, Footer: View>: View {
             header
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             VStack(alignment: .leading, spacing: 16) { content }
-                .padding(contentPadding)
+                .dockPadding(contentPadding)
                 .dockSurfaceReveal()
                 .frame(maxWidth: .infinity, maxHeight: width == nil ? .infinity : nil, alignment: .topLeading)
             if Footer.self != EmptyView.self {
                 Color.dockBorderLight.frame(height: DockLayout.hairline)
                 HStack(spacing: DockLayout.controlGap) { footer }
                     .dockButtonSize(.standard)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 14)
+                    .dockPadding(.horizontal, 20)
+                    .dockPadding(.vertical, 14)
                     .frame(maxWidth: .infinity)
                     .dockPaneTint(Color.dockSurface.opacity(0.35))
             }
@@ -102,8 +102,8 @@ struct DockModal<Content: View, Footer: View>: View {
             .help("Close")
             .accessibilityLabel("Close")
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .dockPadding(.horizontal, 20)
+        .dockPadding(.vertical, 16)
     }
 }
 

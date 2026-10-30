@@ -38,8 +38,8 @@ struct DockMetadataPill: View {
         .dockFont(compact ? .metadata : .body)
         .fontWeight(.regular)
         .foregroundStyle(navigationIcon == nil ? Color.dockPrimaryText : Color.dockAccent)
-        .padding(.horizontal, compact ? 6 : 10)
-        .padding(.vertical, compact ? 2 : 4)
+        .dockPadding(.horizontal, compact ? 6 : 10)
+        .dockPadding(.vertical, compact ? 2 : 4)
         .background(Capsule().fill(Color.dockSurface4))
         .overlay(
             Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))

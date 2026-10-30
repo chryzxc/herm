@@ -115,7 +115,7 @@ struct KanbanBoardView: View, Equatable {
                             ))
                     }
                 }
-                .padding(.bottom, 8)
+                .dockPadding(.bottom, 8)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
         }
@@ -142,8 +142,8 @@ struct KanbanBoardView: View, Equatable {
                 Text("\(laneTasks.count)")
                     .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(lane.color)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .dockPadding(.horizontal, 6)
+                    .dockPadding(.vertical, 2)
                     .background(lane.color.opacity(0.12))
                     .clipShape(Capsule())
                 Spacer(minLength: 4)
@@ -160,8 +160,8 @@ struct KanbanBoardView: View, Equatable {
                 .help("Collapse \(lane.rawValue) lane")
                 .accessibilityLabel("Collapse \(lane.rawValue) lane")
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 4)
+            .dockPadding(.leading, 10)
+            .dockPadding(.trailing, 4)
             .frame(height: 36)
             Rectangle().fill(lane.color.opacity(0.45)).frame(height: 1)
 
@@ -176,7 +176,7 @@ struct KanbanBoardView: View, Equatable {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
+                .dockPadding(12)
                 Spacer(minLength: 0)
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
@@ -206,7 +206,7 @@ struct KanbanBoardView: View, Equatable {
                         }
                     }
                     .animation(reduceMotion ? nil : .dockEase(duration: 0.2), value: laneTasks.map(\.id))
-                    .padding(8)
+                    .dockPadding(8)
                 }
             }
         }
@@ -314,7 +314,7 @@ private struct KanbanLaneRail: View {
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 0)
             }
-            .padding(.top, 8)
+            .dockPadding(.top, 8)
             .frame(width: KanbanBoardView.railWidth)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(railBackground)
@@ -389,7 +389,7 @@ private struct KanbanTaskCard: View, Equatable {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.trailing, 24)
+                .dockPadding(.trailing, 24)
 
             // Format only mounted cards; task bodies can be large on old boards.
             if let summary = KanbanBoardPresentation.cardDetail(task.detail) ?? nonEmpty(task.detail) {
@@ -423,8 +423,8 @@ private struct KanbanTaskCard: View, Equatable {
             .dockFont(.compactStatus, weight: .medium)
             .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background)
         .overlay {
@@ -435,7 +435,7 @@ private struct KanbanTaskCard: View, Equatable {
         }
         .overlay(alignment: .leading) {
             if lane == .blocked || lane == .running {
-                lane.color.frame(width: 2).padding(.vertical, 8)
+                lane.color.frame(width: 2).dockPadding(.vertical, 8)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
@@ -473,8 +473,8 @@ private struct KanbanTaskCard: View, Equatable {
             // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
             .buttonStyle(.dockHover)
             .fixedSize()
-            .padding(.top, 6)
-            .padding(.trailing, 6)
+            .dockPadding(.top, 6)
+            .dockPadding(.trailing, 6)
             .disabled(isMutationPending)
             .help("More Kanban actions")
             .accessibilityLabel("More actions for \(task.title)")
@@ -507,8 +507,8 @@ private struct KanbanTaskCard: View, Equatable {
         return Text("P\(priority)")
             .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
             .foregroundStyle(tint)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
+            .dockPadding(.horizontal, 5)
+            .dockPadding(.vertical, 2)
             .background(tint.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
     }

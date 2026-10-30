@@ -22,7 +22,7 @@ struct ObservedRequestReview: View {
                         SharedDiffView(
                             patch: patch.text, path: patch.path, projectPath: comparison.path,
                             owningSession: comparison.origin.session
-                        ).padding(12)
+                        ).dockPadding(12)
                     }
                 } else {
                     Text("Choose a changed file.").dockFont(.body).frame(maxWidth: .infinity)

@@ -76,7 +76,7 @@ struct GitHubRepositoryOverview: View {
                 DockIconButton(icon: .x, label: "Close repository details", style: palette, action: close)
                     .keyboardShortcut(.cancelAction)
             }
-            .padding(.horizontal, 16).frame(height: 52)
+            .dockPadding(.horizontal, 16).frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             if tab == "Activity" {
                 GitHubRepositoryActivityView(model: activity)
@@ -99,7 +99,7 @@ struct GitHubRepositoryOverview: View {
             }
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.horizontal, 24).padding(.vertical, 20)
+            .dockPadding(.horizontal, 24).dockPadding(.vertical, 20)
         }
     }
 
@@ -137,7 +137,7 @@ struct GitHubRepositoryOverview: View {
                     .gitPullRequest, value: repository.openIssuesAndPullRequests?.formatted() ?? "—",
                     label: "open issues & PRs")
             }
-            .dockFont(.body).padding(.top, 2)
+            .dockFont(.body).dockPadding(.top, 2)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     actions
@@ -153,7 +153,7 @@ struct GitHubRepositoryOverview: View {
                     navigationLinks
                 }
             }
-            .dockButtonSize(.compact).padding(.top, 4)
+            .dockButtonSize(.compact).dockPadding(.top, 4)
         }
     }
 
@@ -245,7 +245,7 @@ struct GitHubRepositoryOverview: View {
             if let release = details.release {
                 Link(destination: release.url) {
                     HStack(alignment: .top, spacing: 10) {
-                        DockIcon(.tag, size: 14, color: .dockSecondaryText).padding(.top, 1)
+                        DockIcon(.tag, size: 14, color: .dockSecondaryText).dockPadding(.top, 1)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 8) {
                                 Text(release.name).dockFont(.body, weight: .semibold)
@@ -358,7 +358,7 @@ struct GitHubRepositoryOverview: View {
                                 Text(HumanDateFormatting.relative(event.date)).dockFont(.metadata)
                                     .foregroundStyle(Color.dockMetadataText).fixedSize()
                                     .help(event.date.formatted())
-                                DockIcon(.arrowUpRight, size: 12, color: .dockMetadataText).padding(.top, 2)
+                                DockIcon(.arrowUpRight, size: 12, color: .dockMetadataText).dockPadding(.top, 2)
                             }
                             .multilineTextAlignment(.leading).contentShape(Rectangle())
                             .dockListRow()
@@ -374,12 +374,12 @@ struct GitHubRepositoryOverview: View {
     }
 
     private func placeholder(_ text: String) -> some View {
-        Text(text).foregroundStyle(Color.dockMetadataText).padding(.vertical, 4)
+        Text(text).foregroundStyle(Color.dockMetadataText).dockPadding(.vertical, 4)
     }
 
     private func sectionError(_ message: String, retained: Bool) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            DockIcon(.warning, size: 13, color: .dockWarning).padding(.top, 1)
+            DockIcon(.warning, size: 13, color: .dockWarning).dockPadding(.top, 1)
             VStack(alignment: .leading, spacing: 4) {
                 Text(retained ? "Couldn’t refresh. Showing previous data." : "Unavailable")
                     .dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)

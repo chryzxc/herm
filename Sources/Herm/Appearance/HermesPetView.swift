@@ -317,7 +317,7 @@ private struct HermesPetGalleryRow: View {
             Spacer()
             Text(selected ? "Selected" : entry.installed ? "Installed" : "Download").dockFont(.body).foregroundStyle(
                 Color.dockSecondaryText)
-        }.padding(6).background(selected ? Color.dockAccentMuted : Color.clear)
+        }.dockPadding(6).background(selected ? Color.dockAccentMuted : Color.clear)
             .contentShape(Rectangle())
             .task(id: entry.slug) { thumbnail = await pet.thumbnail(entry) }
     }

@@ -17,7 +17,7 @@ struct WorkCommitRow: View {
             }
             Spacer(minLength: 8)
         }
-        .padding(.vertical, 5)
+        .dockPadding(.vertical, 5)
         .contentShape(Rectangle())
     }
 }

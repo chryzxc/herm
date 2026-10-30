@@ -18,7 +18,7 @@ struct EdgeSubagentSteering: View {
                 Text("Steer a live subagent").dockFont(.body, weight: .semibold)
                 Spacer()
                 Button("Back", action: back).buttonStyle(.dockCompact)
-            }.padding(10).frame(height: 40)
+            }.dockPadding(10).frame(height: 40)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -43,14 +43,14 @@ struct EdgeSubagentSteering: View {
                         "Queued steering is not confirmed delivery. Review the parent session for delivered or missed steering."
                     ).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                     Button("Refresh live agents") { revision += 1 }.buttonStyle(.dockCompact).disabled(pending)
-                }.dockFont(.body).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                }.dockFont(.body).dockPadding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider().overlay(Color.dockBorderLight)
             HStack {
                 if pending { ProgressView().controlSize(.mini) }
                 Spacer()
                 Button("Open parent session", action: open).buttonStyle(.dockCompact)
-            }.dockFont(.body).padding(10)
+            }.dockFont(.body).dockPadding(10)
         }.foregroundStyle(Color.dockPrimaryText).task(id: revision) { await load() }
     }
     private func load() async {

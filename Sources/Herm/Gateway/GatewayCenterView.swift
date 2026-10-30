@@ -44,7 +44,7 @@ struct GatewayCenterView: View {
                 }
                 unavailableActions
             }
-            .padding(20)
+            .dockPadding(20)
         }
         .background(Color.dockCanvas)
         .accessibilityIdentifier("gateway-center")

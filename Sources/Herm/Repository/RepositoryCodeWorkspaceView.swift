@@ -80,8 +80,8 @@ struct RepositoryCodeWorkspaceView: View {
                 DockIconLabel(saveError, icon: .warning)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.dockWarning.opacity(0.08))
             }
@@ -121,14 +121,14 @@ struct RepositoryCodeWorkspaceView: View {
                     .keyboardShortcut(.escape, modifiers: [])
             }
             ExplorerFileIcon(path: document.path, size: 13)
-                .padding(.leading, isStandalonePane ? 6 : 0)
-                .padding(.trailing, 6)
+                .dockPadding(.leading, isStandalonePane ? 6 : 0)
+                .dockPadding(.trailing, 6)
             breadcrumbs
             if hasUnsavedChanges {
                 Circle()
                     .fill(Color.dockPrimaryText.opacity(0.75))
                     .frame(width: 7, height: 7)
-                    .padding(.leading, 6)
+                    .dockPadding(.leading, 6)
                     .help("Unsaved changes")
                     .accessibilityLabel("Unsaved changes")
             }
@@ -152,7 +152,7 @@ struct RepositoryCodeWorkspaceView: View {
             .keyboardShortcut("s", modifiers: .command)
             .disabled(!hasUnsavedChanges || isSaving)
         }
-        .padding(.horizontal, 6)
+        .dockPadding(.horizontal, 6)
         .frame(height: ExplorerWorkspaceMetrics.headerHeight)
     }
 
@@ -274,7 +274,7 @@ struct RepositoryCodeWorkspaceView: View {
                 .foregroundStyle(Color.dockMetadataText)
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .frame(width: 280, alignment: .leading)
         .dockFloatingSurface(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous), stroke: .dockBorderStrong
@@ -300,7 +300,7 @@ struct RepositoryCodeWorkspaceView: View {
         .dockFont(.metadata)
         .foregroundStyle(Color.dockMetadataText)
         .lineLimit(1)
-        .padding(.horizontal, 12)
+        .dockPadding(.horizontal, 12)
         .frame(height: 26)
         .dockPaneTint(Color.dockSurface2.opacity(0.5))
     }

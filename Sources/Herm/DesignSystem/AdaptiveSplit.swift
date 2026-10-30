@@ -59,9 +59,9 @@ struct AdaptiveSplit<Primary: View, Secondary: View>: View {
             .help("Close details")
             .accessibilityLabel("Close details")
         }
-        .padding(.horizontal, 8)
-        .padding(.top, DockWindowChrome.titleRowHeight - DockLayout.iconControlSize - 8)
-        .padding(.bottom, 2)
+        .dockPadding(.horizontal, 8)
+        .dockPadding(.top, DockWindowChrome.titleRowHeight - DockLayout.iconControlSize - 8)
+        .dockPadding(.bottom, 2)
     }
 
     private func navigationBar(_ title: String, icon: Ph, action: @escaping () -> Void) -> some View {
@@ -73,8 +73,8 @@ struct AdaptiveSplit<Primary: View, Secondary: View>: View {
                     .foregroundStyle(Color.dockAccent)
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 8)
             Divider().overlay(Color.dockBorderLight)
         }
     }

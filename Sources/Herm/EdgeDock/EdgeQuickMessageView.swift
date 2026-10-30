@@ -111,7 +111,7 @@ struct EdgeQuickMessageView: View {
             messageFeedback
             messageComposer.layoutPriority(1)
         }
-        .padding(DockSpacing.group)
+        .dockPadding(DockSpacing.group)
         .foregroundStyle(Color.dockPrimaryText)
         .accessibilityLabel("Quick message")
     }
@@ -139,24 +139,24 @@ struct EdgeQuickMessageView: View {
                     Text(inline ? "Reply…" : "Message Herm…")
                         .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
                         .foregroundStyle(Color.dockSecondaryText)
-                        .padding(.leading, 16)
+                        .dockPadding(.leading, 16)
                         .allowsHitTesting(false)
                 }
             }
-            .padding(.top, 4)
+            .dockPadding(.top, 4)
             .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
             if hasAttachments {
                 ScrollView {
                     attachments.frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 48)
-                .padding(.horizontal, DockSpacing.control)
+                .dockPadding(.horizontal, DockSpacing.control)
             }
             captureActions
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 8)
-        .padding(.vertical, 6)
+        .dockPadding(.leading, 6)
+        .dockPadding(.trailing, 8)
+        .dockPadding(.vertical, 6)
         .modifier(ComposerInputSurface(isFocused: focused))
     }
 

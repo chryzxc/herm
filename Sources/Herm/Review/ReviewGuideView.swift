@@ -45,7 +45,7 @@ struct ReviewGuideView: View {
                                         .lineLimit(1).truncationMode(.middle)
                                         .help(reference.path)
                                     }
-                                }.padding(.top, 8)
+                                }.dockPadding(.top, 8)
                             }.dockFont(.body)
                         }
                     } else {
@@ -77,7 +77,7 @@ struct ReviewGuideView: View {
                     if let error = content.error {
                         Text("Couldn’t refresh the guide · " + error).dockFont(.body).foregroundStyle(Color.dockWarning)
                     }
-                }.padding(24).frame(maxWidth: 800, alignment: .leading)
+                }.dockPadding(24).frame(maxWidth: 800, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             Divider().overlay(Color.dockBorderLight)
@@ -100,7 +100,7 @@ struct ReviewGuideView: View {
                     }
                 }
                 .buttonStyle(.dockPrimary).disabled(coordinator.session == nil)
-            }.padding(12)
+            }.dockPadding(12)
         }.frame(minWidth: 700, idealWidth: 900, minHeight: 560, idealHeight: 760).background(Color.dockCanvas)
             .task(id: trackingIdentity) {
                 content.reset(session: coordinator.session)

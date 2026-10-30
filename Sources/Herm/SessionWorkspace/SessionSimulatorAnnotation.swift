@@ -27,7 +27,7 @@ struct SessionSimulatorAnnotation: View {
             }
         }
         .dockButtonSize(.compact)
-        .padding(16).frame(width: 340)
+        .dockPadding(16).frame(width: 340)
         .foregroundStyle(Color.dockPrimaryText).background(Color.dockCanvas)
         .onAppear { focused = true }
     }

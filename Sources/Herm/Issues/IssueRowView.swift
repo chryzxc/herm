@@ -62,7 +62,7 @@ struct IssueRowView: View {
                 }.dockFont(.metadata)
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 12)
+        .dockPadding(.horizontal, 12).dockPadding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             DockThemeShape(cornerRadius: DockLayout.controlRadius + 1)
@@ -72,7 +72,7 @@ struct IssueRowView: View {
                         ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
         )
         .overlay(alignment: .leading) {
-            if isSelected { Capsule().fill(Color.dockAccent).frame(width: 3).padding(.vertical, 12) }
+            if isSelected { Capsule().fill(Color.dockAccent).frame(width: 3).dockPadding(.vertical, 12) }
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }

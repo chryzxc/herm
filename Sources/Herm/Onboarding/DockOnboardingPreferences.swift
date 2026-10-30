@@ -52,7 +52,7 @@ struct DockOnboardingAppearance: View {
                     DockIcon(.check).foregroundStyle(Color.dockAccent).opacity(selected ? 1 : 0)
                 }
             }
-            .padding(10)
+            .dockPadding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 selected ? Color.dockAccentMuted : Color.dockSurface2,
@@ -110,7 +110,7 @@ struct DockOnboardingIntelligence: View {
                     detail: "Save generated titles to Hermes so they appear in your other clients too.",
                     value: $namesSessions)
             }
-            .padding(.horizontal, 16)
+            .dockPadding(.horizontal, 16)
             .disabled(!available)
             .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
             .overlay {
@@ -129,6 +129,6 @@ struct DockOnboardingIntelligence: View {
         SettingsPreferenceRow(title: title, detail: detail) {
             Toggle(title, isOn: value).toggleStyle(.dockSwitch).labelsHidden().controlSize(.small)
         }
-        .padding(.vertical, 12)
+        .dockPadding(.vertical, 12)
     }
 }

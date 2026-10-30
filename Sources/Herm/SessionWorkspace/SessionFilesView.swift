@@ -54,7 +54,7 @@ struct SessionFilesView: View {
                         return true
                     }
                 )
-                .padding(.vertical, 8)
+                .dockPadding(.vertical, 8)
             } else if projectPath != nil {
                 explorer
             } else {
@@ -103,8 +103,8 @@ struct SessionFilesView: View {
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .lineLimit(2)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 6)
+                    .dockPadding(.horizontal, 8)
+                    .dockPadding(.bottom, 6)
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -115,7 +115,7 @@ struct SessionFilesView: View {
                         }
                         .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
-                        .padding(12)
+                        .dockPadding(12)
                     } else if entries.isEmpty {
                         empty(
                             .folder, "No files to show",
@@ -126,14 +126,14 @@ struct SessionFilesView: View {
                         Text("No files match “\(filterText)”")
                             .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
-                            .padding(12)
+                            .dockPadding(12)
                     } else {
                         ForEach(visibleEntries) { entry in
                             row(entry)
                         }
                     }
                 }
-                .padding(.bottom, 8)
+                .dockPadding(.bottom, 8)
             }
         }
     }
@@ -173,7 +173,7 @@ struct SessionFilesView: View {
                     ProgressView().controlSize(.mini)
                 } else if let status {
                     if entry.isDirectory {
-                        Circle().fill(Self.color(for: status)).frame(width: 5, height: 5).padding(.trailing, 3)
+                        Circle().fill(Self.color(for: status)).frame(width: 5, height: 5).dockPadding(.trailing, 3)
                     } else {
                         Text(Self.letter(for: status))
                             .dockFont(.metadata, weight: .semibold, design: .monospaced)
@@ -181,8 +181,8 @@ struct SessionFilesView: View {
                     }
                 }
             }
-            .padding(.leading, CGFloat(entry.depth) * Self.indentWidth + 6)
-            .padding(.trailing, 10)
+            .dockPadding(.leading, CGFloat(entry.depth) * Self.indentWidth + 6)
+            .dockPadding(.trailing, 10)
             .frame(maxWidth: .infinity, minHeight: ExplorerWorkspaceMetrics.treeRowHeight, alignment: .leading)
             .background(alignment: .leading) { indentGuides(depth: entry.depth) }
             .background {
@@ -210,10 +210,10 @@ struct SessionFilesView: View {
             ForEach(0..<depth, id: \.self) { _ in
                 Color.dockBorderLight
                     .frame(width: DockLayout.hairline)
-                    .padding(.leading, Self.indentWidth - DockLayout.hairline)
+                    .dockPadding(.leading, Self.indentWidth - DockLayout.hairline)
             }
         }
-        .padding(.leading, 6)
+        .dockPadding(.leading, 6)
     }
 
     private func highlightedName(_ entry: ProjectFileEntry) -> Text {
@@ -314,14 +314,14 @@ struct SessionFilesView: View {
                 .accessibilityLabel("Clear file filter")
             }
         }
-        .padding(.horizontal, 9)
+        .dockPadding(.horizontal, 9)
         .frame(height: 30)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
                 Color.dockSurface2.opacity(0.72))
         )
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
-        .padding(.bottom, 8)
+        .dockPadding(.bottom, 8)
     }
 
     // MARK: Git status
@@ -514,7 +514,7 @@ struct SessionFilesView: View {
             Text(detail).dockFont(.body).foregroundStyle(Color.dockMetadataText)
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .padding(12)
+        .dockPadding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

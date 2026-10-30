@@ -130,8 +130,8 @@ struct SessionInspectorTab: View {
             }
         }
         .dockFont(.control)
-        .padding(.leading, 10)
-        .padding(.trailing, 6)
+        .dockPadding(.leading, 10)
+        .dockPadding(.trailing, 6)
         .frame(height: 32)
     }
 }

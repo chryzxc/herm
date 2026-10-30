@@ -140,7 +140,7 @@ struct PullRequestDetailView: View {
                     GeometryReader { geometry in
                         ScrollView {
                             summary(pr, wide: geometry.size.width >= 840)
-                                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
+                                .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
                         }.clipped()
                     }
                 } else if detailTab == 2 {
@@ -163,7 +163,7 @@ struct PullRequestDetailView: View {
                         }
                     )
                 } else {
-                    code(pr).padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
+                    code(pr).dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -173,7 +173,7 @@ struct PullRequestDetailView: View {
                         chat: chats.chat(for: pr), runtime: model, record: pr, expanded: $chatExpanded
                     )
                     .id(pr.id)
-                    .padding(20)
+                    .dockPadding(20)
                 }
             }
         } else if center.isInitialLoad {
@@ -195,7 +195,7 @@ struct PullRequestDetailView: View {
                 Spacer()
                 RepositoryShimmerBlock(width: 88, height: 28, cornerRadius: 7)
             }
-            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
+            .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
             .frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
@@ -226,9 +226,9 @@ struct PullRequestDetailView: View {
                     RepositoryShimmerBlock(width: nil, height: 82, cornerRadius: 10)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
-                .padding(.top, 24)
-                .padding(.bottom, 40)
+                .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
+                .dockPadding(.top, 24)
+                .dockPadding(.bottom, 40)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -247,8 +247,8 @@ struct PullRequestDetailView: View {
                 Spacer(minLength: 0)
                     .background { if titleRow != nil { TitlebarDoubleClickArea() } }
             }
-            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
-            .padding(.vertical, 12)
+            .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
+            .dockPadding(.vertical, 12)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -256,8 +256,8 @@ struct PullRequestDetailView: View {
                 detailActions(pr, compact: true, wraps: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
-            .padding(.vertical, 10)
+            .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
+            .dockPadding(.vertical, 10)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
 
             if detailTab == 1 {
@@ -278,7 +278,7 @@ struct PullRequestDetailView: View {
                 }
                 .dockFont(.navigation, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
-                .padding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
+                .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
                 .frame(height: 62)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             }
@@ -307,7 +307,7 @@ struct PullRequestDetailView: View {
                     .frame(maxWidth: wide ? 280 : .infinity, alignment: .leading)
             }
         }
-        .padding(.top, 24).padding(.bottom, 28)
+        .dockPadding(.top, 24).dockPadding(.bottom, 28)
         .frame(maxWidth: 1240, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
     }
@@ -433,7 +433,7 @@ struct PullRequestDetailView: View {
         HStack(spacing: 8) {
             DockIcon(.gitBranch, size: 14, color: .dockMerged)
             Text(pr.baseBranch).foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 8).padding(.vertical, 4)
+                .dockPadding(.horizontal, 8).dockPadding(.vertical, 4)
                 .background(
                     DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
             DockIcon(.arrowLeft, size: 13, color: .dockMetadataText)
@@ -472,8 +472,8 @@ struct PullRequestDetailView: View {
                     detailRefreshID += 1
                 }
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 8)
+            .dockPadding(.leading, 12)
+            .dockPadding(.trailing, 8)
             .frame(minHeight: 44)
         } else {
             VStack(spacing: 0) {
@@ -492,9 +492,9 @@ struct PullRequestDetailView: View {
                             .foregroundStyle(Color.dockMetadataText)
                     }
                     .dockFont(.navigation, weight: .medium)
-                    .padding(.horizontal, 12)
+                    .dockPadding(.horizontal, 12)
                     .frame(minHeight: 42)
-                    if check.id != pr.checks.last?.id { Divider().padding(.leading, 47) }
+                    if check.id != pr.checks.last?.id { Divider().dockPadding(.leading, 47) }
                 }
             }
         }
@@ -511,7 +511,7 @@ struct PullRequestDetailView: View {
             Text("Leave a comment").dockFont(.body, weight: .semibold)
             TextEditor(text: center.commentDraft(for: pr.id))
                 .dockFont(.body).scrollContentBackground(.hidden)
-                .padding(4).frame(height: 104)
+                .dockPadding(4).frame(height: 104)
                 .accessibilityLabel("Comment body")
             HStack {
                 Text("\(commentDraft.count)/10000").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
@@ -527,7 +527,7 @@ struct PullRequestDetailView: View {
                             || commentDraft.count > 10_000 || center.isPostingComment)
             }
         }
-        .padding(16)
+        .dockPadding(16)
         .background(DockThemeShape(cornerRadius: DockLayout.paneRadius).dockSurfaceFill(Color.dockCanvas))
         .overlay(
             DockThemeShape(cornerRadius: DockLayout.paneRadius).stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
@@ -589,7 +589,7 @@ struct PullRequestDetailView: View {
             } icon: {
                 DockIcon(pr.presentationIcon, size: 12, color: pr.presentationColor)
             }
-            .dockFont(.body).padding(.horizontal, 10).padding(.vertical, 6)
+            .dockFont(.body).dockPadding(.horizontal, 10).dockPadding(.vertical, 6)
             .background(Capsule().fill(pr.presentationColor.opacity(0.12)))
         } else {
             DockMenu {
@@ -605,7 +605,7 @@ struct PullRequestDetailView: View {
                     Text(center.updatingStatusID == pr.id ? "Updating status…" : current.rawValue)
                     DockIcon(.caretDown, size: 12, color: Color.dockSecondaryText)
                 }
-                .padding(.horizontal, 10)
+                .dockPadding(.horizontal, 10)
                 .frame(height: 28)
                 .background(
                     DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
@@ -635,12 +635,12 @@ struct PullRequestDetailView: View {
                         if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
                     }
                 }.dockFont(.metadata).monospacedDigit()
-                    .padding(.horizontal, 10).frame(height: 28)
+                    .dockPadding(.horizontal, 10).frame(height: 28)
                     .background(Capsule().fill(detailTab == 1 ? Color.dockSurface4 : Color.clear))
                     .contentShape(Capsule())
             }.buttonStyle(.dockHover).accessibilityAddTraits(detailTab == 1 ? .isSelected : [])
             detailTabButton("Reviews", selected: detailTab == 2) { detailTab = 2 }
-        }.padding(4)
+        }.dockPadding(4)
             .background(Capsule().fill(Color.dockSurface))
             .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
             .fixedSize(horizontal: true, vertical: false)
@@ -790,8 +790,8 @@ struct PullRequestDetailView: View {
                 }
             }
         }
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+        .dockPadding(.top, 14)
+        .dockPadding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -810,7 +810,7 @@ struct PullRequestDetailView: View {
             .buttonStyle(.dockSecondary)
             .controlSize(.small)
             .disabled(center.isLoadingDetail(for: center.selectedID ?? ""))
-            .padding(.top, 4)
+            .dockPadding(.top, 4)
         }
         .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
     }
@@ -858,10 +858,10 @@ struct PullRequestDetailView: View {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
                                 Text("Starting review…").dockFont(.body)
-                            }.foregroundStyle(Color.dockSecondaryText).padding(8)
+                            }.foregroundStyle(Color.dockSecondaryText).dockPadding(8)
                         }
                     }
-                    if watches.error != nil { Text("Watch unavailable. Try again.").dockFont(.body).padding(8) }
+                    if watches.error != nil { Text("Watch unavailable. Try again.").dockFont(.body).dockPadding(8) }
                 } label: {
                     PullRequestReviewToolbarIcon(
                         name: .dotsThree, accessibilityLabel: "Review actions", tooltip: "Review actions")
@@ -938,17 +938,17 @@ struct PullRequestDetailView: View {
                 Text("\(files.count)")
                     .dockFont(.metadata, weight: .regular)
                     .foregroundStyle(Color.dockMetadataText)
-                    .padding(.horizontal, 6)
+                    .dockPadding(.horizontal, 6)
                     .frame(height: 18)
                     .background(Capsule().fill(Color.dockSurface4))
                 Spacer(minLength: 4)
                 PullRequestDiffStat(
                     additions: files.reduce(0) { $0 + $1.additions }, deletions: files.reduce(0) { $0 + $1.deletions })
             }
-            .padding(.horizontal, 12)
+            .dockPadding(.horizontal, 12)
             .frame(height: 36)
 
-            TextField("Find changed file", text: $fileQuery).textFieldStyle(.dockGlass).padding(8)
+            TextField("Find changed file", text: $fileQuery).textFieldStyle(.dockGlass).dockPadding(8)
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(
@@ -971,8 +971,8 @@ struct PullRequestDetailView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 6)
-                .padding(.bottom, 8)
+                .dockPadding(.horizontal, 6)
+                .dockPadding(.bottom, 8)
             }
         }
         .frame(width: 240, alignment: .leading)
@@ -1000,7 +1000,7 @@ struct PullRequestDetailView: View {
                     }.dockFont(.metadata, weight: .regular, design: .monospaced)
                 }
                 .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 10)
+                .dockPadding(.horizontal, 10)
                 .frame(height: 34)
                 .contentShape(Rectangle())
             }
@@ -1008,7 +1008,7 @@ struct PullRequestDetailView: View {
             if expanded {
                 fileContent(file)
                 if let pr = center.selected {
-                    PullRequestThreadListView(model: center.review(for: pr), record: pr, path: file.path).padding(8)
+                    PullRequestThreadListView(model: center.review(for: pr), record: pr, path: file.path).dockPadding(8)
                 }
             }
         }
@@ -1028,12 +1028,12 @@ struct PullRequestDetailView: View {
                 Text("CHANGED LINES PREVIEW · OMITTED CONTENT IS NOT SHOWN").dockFont(
                     size: 9, weight: .bold, design: .monospaced
                 ).foregroundStyle(Color.dockMetadataText)
-                MarkdownMessageView(markdown: previewMarkdown(from: patch)).padding(12).frame(
+                MarkdownMessageView(markdown: previewMarkdown(from: patch)).dockPadding(12).frame(
                     maxWidth: .infinity, alignment: .leading
                 ).background(Color.dockSurface2)
                 Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(
                     .compactStatus, weight: .semibold)
-            }.padding(8)
+            }.dockPadding(8)
         } else if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), isImage(file.path),
             let url = file.webURL
         {
@@ -1048,7 +1048,7 @@ struct PullRequestDetailView: View {
                 }
                 Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockCompact).dockFont(
                     .compactStatus, weight: .semibold)
-            }.padding(8)
+            }.dockPadding(8)
         } else if let patch = file.patch {
             diffPatch(patch, file: file)
         } else {
@@ -1056,7 +1056,7 @@ struct PullRequestDetailView: View {
                 Text("Binary or truncated patch").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 Spacer()
                 if let url = file.webURL { Link("Open on GitHub", destination: url).buttonStyle(.dockLink) }
-            }.padding(12)
+            }.dockPadding(12)
         }
     }
 

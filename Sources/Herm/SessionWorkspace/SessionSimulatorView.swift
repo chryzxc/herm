@@ -27,8 +27,8 @@ struct SessionSimulatorView: View {
     var presentation: some View {
         VStack(spacing: 0) {
             deviceToolbar
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .dockPadding(.horizontal, 10)
+                .dockPadding(.vertical, 6)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             GeometryReader { geometry in
                 if let image = diagnostics.snapshot ?? capture.image {
@@ -39,9 +39,9 @@ struct SessionSimulatorView: View {
                     ScrollView {
                         recoveryContent
                             .frame(maxWidth: 480, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 20)
-                            .padding(.bottom, 20)
+                            .dockPadding(.horizontal, 16)
+                            .dockPadding(.top, 20)
+                            .dockPadding(.bottom, 20)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(minHeight: geometry.size.height, alignment: .topLeading)
                     }

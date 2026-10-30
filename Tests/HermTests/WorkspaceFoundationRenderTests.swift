@@ -34,7 +34,7 @@ struct WorkspaceFoundationRenderTests {
         for width: CGFloat in [360, 700] {
             let host = NSHostingView(
                 rootView: VStack {
-                    TextSizeSettings()
+                    DensitySettings()
                     NotchDisplaySettings()
                 }.frame(width: width))
             host.frame = CGRect(origin: .zero, size: host.fittingSize)

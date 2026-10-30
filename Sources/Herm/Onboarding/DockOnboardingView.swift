@@ -25,7 +25,7 @@ struct DockOnboardingView: View {
                     }
                 }
                 .accessibilityLabel("Step \(setup.step + 1) of 4")
-                .padding(.horizontal, 24).padding(.top, 16)
+                .dockPadding(.horizontal, 24).dockPadding(.top, 16)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         switch setup.step {
@@ -36,7 +36,7 @@ struct DockOnboardingView: View {
                         }
                     }
                     .frame(maxWidth: 640, alignment: .leading)
-                    .padding(24)
+                    .dockPadding(24)
                     .frame(maxWidth: .infinity, alignment: .top)
                     .id(setup.step)
                     .transition(.opacity)
@@ -63,7 +63,7 @@ struct DockOnboardingView: View {
                 }
             ) {
                 ScrollView {
-                    GatewayConnectionSettingsView(onRestart: { HermesUpdateService().restartDock() }).padding(24)
+                    GatewayConnectionSettingsView(onRestart: { HermesUpdateService().restartDock() }).dockPadding(24)
                 }
             }.frame(width: 680, height: 560)
         }
@@ -146,7 +146,7 @@ struct DockOnboardingView: View {
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }
-        .padding(16)
+        .dockPadding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
         .overlay {
@@ -253,7 +253,7 @@ struct DockOnboardingView: View {
                     .foregroundStyle(Color.dockAccent)
                     .opacity(bots.selectedProfileID == bot.id ? 1 : 0)
             }
-            .padding(12)
+            .dockPadding(12)
             .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
             .background(
                 bots.selectedProfileID == bot.id ? Color.dockAccentMuted : Color.dockSurface2,
@@ -295,8 +295,8 @@ struct DockOnboardingView: View {
             .keyboardShortcut(.defaultAction)
         }
         .disabled(setup.busy)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .dockPadding(.horizontal, 24)
+        .dockPadding(.vertical, 16)
         .background(Color.dockSurface)
         .overlay(alignment: .top) {
             Color.dockBorderLight.frame(height: DockLayout.hairline)

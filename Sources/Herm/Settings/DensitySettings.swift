@@ -1,28 +1,24 @@
 import SwiftUI
 
-struct TextSizeSettings: View {
+struct DensitySettings: View {
     @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
 
     var body: some View {
         SettingsPreferenceRow(
-            title: "Text size",
-            detail: "Scales text, icons, and controls across Herm, including floating panels."
+            title: "Density",
+            detail:
+                "Compact shrinks text, icons, avatars, controls, and margins across Herm, including floating panels."
         ) {
-            Picker(
-                "Text size",
+            DockSegmentedPicker(
                 selection: Binding(
                     get: { DockWorkspaceScale.supportedTextSize(textSize) },
                     set: { textSize = $0 }
-                )
-            ) {
-                Text("Small").tag(1.0)
-                Text("Default").tag(1.1)
-                Text("Large").tag(1.2)
-                Text("Larger").tag(1.3)
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 300)
+                ),
+                options: [
+                    (DockWorkspaceScale.defaultTextSize, "Default"),
+                    (DockWorkspaceScale.compactTextSize, "Compact"),
+                ]
+            )
         }
     }
 }

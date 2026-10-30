@@ -6,11 +6,16 @@ import Testing
 
 @MainActor
 struct DockWorkspaceScaleTests {
-    @Test func supportedTextSizesIncludeSmall() {
-        #expect(DockWorkspaceScale.supportedTextSize(0.9) == 1.1)
-        for value in [1.0, 1.1, 1.2, 1.3] {
-            #expect(DockWorkspaceScale.supportedTextSize(value) == value)
-        }
+    @Test func savedSizesResolveToDefaultOrCompact() {
+        for value in [0.9, 1.0] { #expect(DockWorkspaceScale.supportedTextSize(value) == 0.9) }
+        for value in [1.1, 1.2, 1.3] { #expect(DockWorkspaceScale.supportedTextSize(value) == 1.1) }
+    }
+
+    @Test func compactTightensSpacingAndDefaultLeavesItAlone() {
+        #expect(DockWorkspaceScale.spacing(16, scale: 1.1) == 16)
+        #expect(DockWorkspaceScale.spacing(16, scale: 1) == 16)
+        #expect(DockWorkspaceScale.spacing(16, scale: 0.9) == 13)
+        #expect(DockWorkspaceScale.spacing(-8, scale: 0.9) == -6)
     }
 
     @Test func typographyRolesShareCompactAndWindowSizes() {
@@ -39,7 +44,7 @@ struct DockWorkspaceScaleTests {
         let suite = "TypographyScale.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(1.2, forKey: DockWorkspaceScale.preferenceKey)
+        defaults.set(0.9, forKey: DockWorkspaceScale.preferenceKey)
         let workspace = NSHostingView(
             rootView: DockWindowWorkspace {
                 FullscreenPanelSplitView(
@@ -92,7 +97,7 @@ struct DockWorkspaceScaleTests {
                 for label in ["Top left", "Top right", "Bottom left", "Bottom right"] {
                     let marker = try #require(
                         descendants(workspace).compactMap { $0 as? MarkerView }.first { $0.label == label })
-                    #expect(marker.workspaceScale == 1.2)
+                    #expect(marker.workspaceScale == 0.9)
                     let rect = marker.convert(marker.bounds, to: nil)
                     let point = NSPoint(x: rect.midX, y: rect.midY)
                     let before = recorder.labels.count

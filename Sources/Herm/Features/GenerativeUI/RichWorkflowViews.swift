@@ -15,8 +15,8 @@ struct RichCodeView: View {
             }
             ScrollView([.horizontal, .vertical]) {
                 Text(code.code).dockFont(.code, design: .monospaced).textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: true).padding(12)
-                    .padding([.bottom, .trailing], 8)
+                    .fixedSize(horizontal: true, vertical: true).dockPadding(12)
+                    .dockPadding([.bottom, .trailing], 8)
             }
             .frame(
                 height: min(

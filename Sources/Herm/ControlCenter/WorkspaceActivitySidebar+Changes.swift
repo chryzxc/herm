@@ -12,7 +12,7 @@ extension WorkspaceActivitySidebar {
                 Text(codeWorkspaceError)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .padding(8)
+                    .dockPadding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.dockWarning.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
@@ -177,7 +177,7 @@ extension WorkspaceActivitySidebar {
                 .dockFont(.metadata)
                 .foregroundStyle(writers.isEmpty ? Color.dockMetadataText : Color.dockAccent)
             }
-            .padding(.top, 5)
+            .dockPadding(.top, 5)
         } label: {
             HStack(spacing: 8) {
                 DockIcon(file.status == .conflicted ? .warningOctagon : .file)
@@ -232,7 +232,7 @@ extension WorkspaceActivitySidebar {
                                 : finding.severity == .warning ? Color.dockWarningFill : Color.dockAccent
                         )
                         .frame(width: 6, height: 6)
-                        .padding(.top, 5)
+                        .dockPadding(.top, 5)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(finding.title)\(finding.line.map { " · LINE \($0)" } ?? "")")
                             .dockFont(.metadata, weight: .semibold)
@@ -244,7 +244,7 @@ extension WorkspaceActivitySidebar {
                 }
             }
         }
-        .padding(.top, 8)
+        .dockPadding(.top, 8)
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
     }
 

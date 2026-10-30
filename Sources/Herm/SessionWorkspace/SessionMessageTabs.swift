@@ -130,7 +130,7 @@ struct SessionMessageTabView: View {
                     .buttonStyle(.dockSecondary)
             }
             .foregroundStyle(Color.dockPrimaryText)
-            .padding(.horizontal, DockSpacing.inspectorInset)
+            .dockPadding(.horizontal, DockSpacing.inspectorInset)
             .frame(height: 48)
             .dockButtonSize(.compact)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -173,7 +173,7 @@ struct SessionMessageTabView: View {
             }
             .foregroundStyle(Color.dockPrimaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(DockSpacing.inspectorInset)
+            .dockPadding(DockSpacing.inspectorInset)
         }
     }
 }

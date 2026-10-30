@@ -43,7 +43,7 @@ struct SavedPromptLibrary: View {
                             }
                         ).dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                         Divider().overlay(Color.dockBorderLight)
-                    }.padding(.vertical, 8)
+                    }.dockPadding(.vertical, 8)
                 }
                 if prompts.isEmpty {
                     Text("Save a draft to reuse its text and attachments later.").dockFont(.body)

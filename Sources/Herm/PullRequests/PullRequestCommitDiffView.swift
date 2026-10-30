@@ -24,7 +24,7 @@ struct PullRequestCommitDiffView: View {
                 if let result {
                     if let notice = result.coverage.label {
                         Text(HermesDiagnosticsService.safeSummary(notice))
-                            .dockFont(.metadata).foregroundStyle(Color.dockWarning).padding(12)
+                            .dockFont(.metadata).foregroundStyle(Color.dockWarning).dockPadding(12)
                     }
                     if result.items.isEmpty {
                         status("No changed files in this commit.")
@@ -43,7 +43,7 @@ struct PullRequestCommitDiffView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(error).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         Button("Retry") { attempt += 1 }.buttonStyle(.dockSecondary)
-                    }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }.dockPadding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     ProgressView("Loading commit diff…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -68,12 +68,12 @@ struct PullRequestCommitDiffView: View {
             if let url = target.commit.webURL {
                 Link("GitHub", destination: url).buttonStyle(.dockLink)
             }
-        }.dockFont(.body).padding(12)
+        }.dockFont(.body).dockPadding(12)
     }
 
     private func status(_ message: String) -> some View {
         Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-            .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .dockPadding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func load() async {

@@ -150,10 +150,10 @@ struct ConversationTranscriptView: View, Equatable {
                                     try? await Task.sleep(for: .seconds(5))
                                 } while !Task.isCancelled && !model.workingBotDispatches.isEmpty
                             }
-                            .padding(.vertical, 12)
+                            .dockPadding(.vertical, 12)
                             .frame(maxWidth: conversationMetrics.readingWidth)
                             .frame(maxWidth: .infinity)
-                            .padding(.trailing, trailingContentInset)
+                            .dockPadding(.trailing, trailingContentInset)
                             Color.clear.frame(height: 1).id("conversation-bottom")
                         }
                         .background {
@@ -180,7 +180,7 @@ struct ConversationTranscriptView: View, Equatable {
                     ConversationLatestMessageControl(presentation: coordinator.presentation) {
                         coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
                     }
-                    .padding(.trailing, trailingContentInset)
+                    .dockPadding(.trailing, trailingContentInset)
                     let showsMap =
                         snapshot.navigatorItems.count >= MessageNavigator.minimumMessagesToShowNavigator
                         && viewport.size.width - trailingContentInset >= 820
@@ -196,7 +196,7 @@ struct ConversationTranscriptView: View, Equatable {
                             onSelect: { jumpToMessage($0, proxy: proxy) }
                         )
                         .frame(width: 286, height: viewport.size.height)
-                        .padding(.leading, 24)
+                        .dockPadding(.leading, 24)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
                 }
@@ -291,8 +291,8 @@ struct ConversationTranscriptView: View, Equatable {
                     .transition(.opacity.combined(with: .offset(y: 6)))
                 }
             }
-            .padding(.horizontal, conversationMetrics.contentInset + 4)
-            .padding(.top, replying.isEmpty && partners.isEmpty ? 0 : 8)
+            .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
+            .dockPadding(.top, replying.isEmpty && partners.isEmpty ? 0 : 8)
             .id("bot-handoff")
         }
     }
@@ -343,8 +343,8 @@ struct ConversationTranscriptView: View, Equatable {
                 liveReasoning: isStreaming ? model.liveReasoning : nil
             )
             .equatable()
-            .padding(.horizontal, conversationMetrics.contentInset + 4)
-            .padding(.top, 8)
+            .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
+            .dockPadding(.top, 8)
         }
         if message.role == .hermes && !message.hasBodyText && message.images.isEmpty && !isStreaming {
             EmptyView()

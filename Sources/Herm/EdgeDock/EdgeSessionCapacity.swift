@@ -50,7 +50,7 @@ struct EdgeSessionCapacity: View {
                 Text(destination.displayTitle).dockFont(.body, weight: .semibold).lineLimit(1)
                 Spacer()
                 Button("Back", action: back).buttonStyle(.dockCompact)
-            }.padding(10).frame(height: 40)
+            }.dockPadding(10).frame(height: 40)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -90,13 +90,13 @@ struct EdgeSessionCapacity: View {
                     }
                     if let error { Text(error).foregroundStyle(Color.dockWarning) }
                     Button("Refresh") { revision += 1 }.buttonStyle(.dockCompact).disabled(pending)
-                }.dockFont(.body).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                }.dockFont(.body).dockPadding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider().overlay(Color.dockBorderLight)
             HStack {
                 Spacer()
                 Button("Open session", action: open).buttonStyle(.dockCompact)
-            }.dockFont(.body).padding(10)
+            }.dockFont(.body).dockPadding(10)
         }.foregroundStyle(Color.dockPrimaryText)
             .task(id: revision) { await load() }
             .confirmationDialog(

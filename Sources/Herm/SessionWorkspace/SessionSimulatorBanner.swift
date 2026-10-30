@@ -33,15 +33,15 @@ struct SessionSimulatorBanner: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 8)
             .frame(maxWidth: metrics.readingWidth)
             .dockFloatingSurface(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous),
                 tint: .dockSurface2, stroke: .dockBorderLight
             )
-            .padding(.horizontal, metrics.contentInset)
-            .padding(.top, 8)
+            .dockPadding(.horizontal, metrics.contentInset)
+            .dockPadding(.top, 8)
         }
     }
 }

@@ -87,8 +87,8 @@ struct CalendarWorkspaceView: View {
                 }
             }
         }
-        .padding(.top, 4)
-        .padding(.bottom, 16)
+        .dockPadding(.top, 4)
+        .dockPadding(.bottom, 16)
         .frame(maxWidth: 1600, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task(id: range) {
@@ -128,7 +128,7 @@ struct CalendarWorkspaceView: View {
                 calendarControls
             }
         }
-        .padding(.bottom, 12)
+        .dockPadding(.bottom, 12)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
@@ -159,7 +159,7 @@ struct CalendarWorkspaceView: View {
                     displayedComponents: .date
                 )
                 .datePickerStyle(.graphical)
-                .padding(16)
+                .dockPadding(16)
             }
             DockIconButton(icon: .caretLeft, label: "Previous \(scope == .month ? "month" : "week")", style: style) {
                 shift(-1)
@@ -196,7 +196,7 @@ struct CalendarWorkspaceView: View {
                 }
                 .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
-                .padding(.horizontal, 10)
+                .dockPadding(.horizontal, 10)
                 .frame(height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
@@ -245,7 +245,7 @@ struct CalendarWorkspaceView: View {
                     Text(isFiltering ? "No matching items this week" : "Nothing scheduled this week")
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
-                        .padding(16)
+                        .dockPadding(16)
                 }
                 ForEach(agenda.keys.sorted(), id: \.self) { day in
                     VStack(alignment: .leading, spacing: 4) {
@@ -280,7 +280,7 @@ struct CalendarWorkspaceView: View {
                                 }
                                 .dockFont(.body)
                                 .multilineTextAlignment(.leading)
-                                .padding(10)
+                                .dockPadding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                             }
@@ -288,7 +288,7 @@ struct CalendarWorkspaceView: View {
                             .help("Show this day's agenda and actions")
                         }
                     }
-                    .padding(12)
+                    .dockPadding(12)
                     .background {
                         DockThemeShape(cornerRadius: DockLayout.paneRadius)
                             .dockSelectionFill(day == selected, fallback: Color.dockSurface)
@@ -368,7 +368,7 @@ struct CalendarWorkspaceView: View {
         VStack(alignment: .leading, spacing: 12) {
             grid(agenda)
             legend
-                .padding(.horizontal, 4)
+                .dockPadding(.horizontal, 4)
         }
     }
 
@@ -392,7 +392,7 @@ struct CalendarWorkspaceView: View {
                 .dockFont(.sectionLabel)
                 .tracking(0.6)
                 .foregroundStyle(Color.dockMetadataText)
-                .padding(.vertical, 12)
+                .dockPadding(.vertical, 12)
                 ForEach(weeks, id: \.first) { week in
                     HStack(spacing: 0) {
                         ForEach(Array(week.enumerated()), id: \.element) { column, day in
@@ -437,7 +437,7 @@ struct CalendarWorkspaceView: View {
                             .foregroundStyle(Color.dockMetadataText)
                     }
                 }
-                .padding(.bottom, 3)
+                .dockPadding(.bottom, 3)
                 if compact {
                     HStack(spacing: 3) {
                         ForEach(items.prefix(3)) { item in
@@ -450,11 +450,11 @@ struct CalendarWorkspaceView: View {
                         Text("\(items.count - cap) more")
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockMetadataText)
-                            .padding(.leading, 4)
+                            .dockPadding(.leading, 4)
                     }
                 }
             }
-            .padding(8)
+            .dockPadding(8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(
                 isSelected ? Color.dockAccentMuted : (calendar.isDateInWeekend(day) ? Color.dockSurface2 : Color.clear)
@@ -488,8 +488,8 @@ struct CalendarWorkspaceView: View {
                     .lineLimit(scope == .week ? 2 : 1)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 5)
+        .dockPadding(.vertical, 4)
+        .dockPadding(.horizontal, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(color.opacity(0.08)))
@@ -539,7 +539,7 @@ struct CalendarWorkspaceView: View {
                             .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
                         }
-                        .padding(.top, 4)
+                        .dockPadding(.top, 4)
                     } else {
                         ForEach([true, false], id: \.self) { allDay in
                             let sectionItems = dayItems.filter { $0.isAllDay == allDay }
@@ -560,7 +560,7 @@ struct CalendarWorkspaceView: View {
             }
             .scrollIndicators(.hidden)
         }
-        .padding(stacked ? .top : .leading, 20)
+        .dockPadding(stacked ? .top : .leading, 20)
         .frame(maxHeight: .infinity, alignment: .top)
         .overlay(alignment: stacked ? .top : .leading) {
             if stacked {
@@ -617,7 +617,7 @@ struct CalendarWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 16)
+            .dockPadding(.top, 16)
             .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         }
     }
@@ -642,7 +642,7 @@ struct CalendarWorkspaceView: View {
                         .monospacedDigit()
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 66, alignment: .leading)
-                        .padding(.top, 2)
+                        .dockPadding(.top, 2)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(item.title)
                             .dockFont(.body, weight: .semibold)
@@ -663,17 +663,17 @@ struct CalendarWorkspaceView: View {
                     }
                     Spacer(minLength: 0)
                     DockIcon(isSelected ? .caretUp : .caretDown, size: 10, color: Color.dockMetadataText)
-                        .padding(.top, 3)
+                        .dockPadding(.top, 3)
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 14)
-                .padding(.horizontal, 8)
+                .dockPadding(.vertical, 14)
+                .dockPadding(.horizontal, 8)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
             .accessibilityValue(isSelected ? "Expanded" : "Collapsed")
             if isSelected {
-                itemPanel(item).padding(.horizontal, 8).padding(.bottom, 14)
+                itemPanel(item).dockPadding(.horizontal, 8).dockPadding(.bottom, 14)
             }
         }
         .background {
@@ -715,7 +715,7 @@ struct CalendarWorkspaceView: View {
                     .lineLimit(2)
             }
         }
-        .padding(.top, 10)
+        .dockPadding(.top, 10)
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -856,7 +856,7 @@ private struct CalendarPrepSheet: View {
                 .dockFont(.body)
                 .frame(minHeight: 160)
                 .scrollContentBackground(.hidden)
-                .padding(6)
+                .dockPadding(6)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
                         Color.dockControlSurface.opacity(0.6)))
@@ -875,7 +875,7 @@ private struct CalendarPrepSheet: View {
                         schedule == nil || isSaving || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(16)
+        .dockPadding(16)
         .frame(width: 480)
     }
 

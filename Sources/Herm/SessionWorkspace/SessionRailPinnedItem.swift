@@ -28,13 +28,13 @@ struct SessionRailPinnedItem: View {
             if !pin.preview.isEmpty {
                 Text(pin.preview)
                     .textSelection(.enabled)
-                    .padding(.leading, 22)
+                    .dockPadding(.leading, 22)
             }
             Text(pin.role == "user" ? "You" : "Herm")
-                .foregroundStyle(Color.dockMetadataText).padding(.leading, 22)
+                .foregroundStyle(Color.dockMetadataText).dockPadding(.leading, 22)
             if failed {
                 Text("Message unavailable. Refresh and retry.")
-                    .foregroundStyle(Color.dockWarning).padding(.leading, 22)
+                    .foregroundStyle(Color.dockWarning).dockPadding(.leading, 22)
             }
         }
         .dockFont(.body)

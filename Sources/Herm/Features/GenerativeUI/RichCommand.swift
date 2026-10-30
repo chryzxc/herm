@@ -24,8 +24,8 @@ struct RichCommandView: View {
         VStack(alignment: .leading, spacing: 8) {
             ScrollView(.horizontal) {
                 Text(command.command).dockFont(.code, design: .monospaced)
-                    .textSelection(.enabled).fixedSize(horizontal: true, vertical: false).padding(12)
-                    .padding(.bottom, 8)
+                    .textSelection(.enabled).fixedSize(horizontal: true, vertical: false).dockPadding(12)
+                    .dockPadding(.bottom, 8)
             }
             .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 8))
             HStack(spacing: 8) {

@@ -29,7 +29,7 @@ extension WorkspaceActivitySidebar {
                     .help("Clear search")
                 }
             }
-            .padding(.horizontal, 10)
+            .dockPadding(.horizontal, 10)
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -44,7 +44,7 @@ extension WorkspaceActivitySidebar {
                         .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                 }
-                .padding(.top, 2)
+                .dockPadding(.top, 2)
             } else if control.isSearching {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -129,7 +129,7 @@ extension WorkspaceActivitySidebar {
                 .foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .dockPadding(10)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .dockSurfaceFill(Color.dockSurface.opacity(0.34))
@@ -238,7 +238,7 @@ extension WorkspaceActivitySidebar {
             .dockFont(.body, weight: .semibold)
             .foregroundStyle(Color.dockAccent)
         }
-        .padding(12)
+        .dockPadding(12)
         .dockGlassPane()
     }
 
@@ -276,7 +276,7 @@ extension WorkspaceActivitySidebar {
             }
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .dockPadding(12)
         .dockGlassPane()
         .overlay(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(
@@ -402,7 +402,7 @@ extension WorkspaceActivitySidebar {
                     .lineLimit(1)
             }
             .frame(width: 82, alignment: .leading)
-            .padding(8)
+            .dockPadding(8)
             .background(selectedAgentID == id ? color.opacity(0.12) : Color.dockSurface4)
             .overlay(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(
@@ -445,7 +445,7 @@ extension WorkspaceActivitySidebar {
 
     func capabilityStatusRow(_ capability: CapabilityState) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Circle().fill(capabilityReadinessColor(capability)).frame(width: 6, height: 6).padding(.top, 4)
+            Circle().fill(capabilityReadinessColor(capability)).frame(width: 6, height: 6).dockPadding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(capability.title).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)

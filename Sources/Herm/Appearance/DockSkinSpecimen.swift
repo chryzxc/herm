@@ -25,7 +25,7 @@ struct DockSkinSpecimen: View {
                 Circle().fill(palette.secondaryText.opacity(0.3)).frame(width: 6, height: 6)
                 Spacer(minLength: 0)
             }
-            .padding(.top, 12)
+            .dockPadding(.top, 12)
             .frame(width: 38)
             .frame(maxHeight: .infinity)
             .background(palette.surface2)
@@ -44,7 +44,7 @@ struct DockSkinSpecimen: View {
                     Spacer(minLength: 0)
                     Circle().fill(palette.accent).frame(width: 7, height: 7)
                 }
-                .padding(10)
+                .dockPadding(10)
                 .background { surface }
                 HStack(spacing: 0) {
                     ForEach(Self.faces, id: \.id) { face in
@@ -54,10 +54,10 @@ struct DockSkinSpecimen: View {
                         BotFaceMark(id: face.id, size: 24, mood: face.mood, theme: theme)
                     }
                 }
-                .padding(.leading, 2)
+                .dockPadding(.leading, 2)
                 .frame(maxWidth: 128)
             }
-            .padding(12)
+            .dockPadding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(height: 148)

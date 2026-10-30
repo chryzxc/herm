@@ -23,7 +23,7 @@ extension DockPopover {
                 .textSelection(.enabled)
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .dockPadding(.vertical, 4)
         } label: {
             HStack(spacing: 5) {
                 DockIcon(.brain)
@@ -39,8 +39,8 @@ extension DockPopover {
             .foregroundStyle(Color.dockSecondaryText)
         }
         .disclosureGroupStyle(DockDisclosureGroupStyle())
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .dockSurfaceFill(Color.dockSurface, stroke: Color.dockBorderLight, lineWidth: 0.5)
@@ -56,7 +56,7 @@ extension DockPopover {
         .buttonStyle(.dockCompact)
         .dockFont(.body, weight: .medium)
         .foregroundStyle(isAvailable ? Color.dockSecondaryText : Color.dockMetadataText)
-        .padding(.horizontal, 9)
+        .dockPadding(.horizontal, 9)
         .frame(minHeight: 26)
         .fixedSize(horizontal: true, vertical: false)
         .background(Capsule().fill(Color.dockSurface4).stroke(Color.dockBorderLight, lineWidth: 0.5))
@@ -76,7 +76,7 @@ extension DockPopover {
             DockIconLabel("More", icon: .dotsThree)
                 .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
-                .padding(.horizontal, 9)
+                .dockPadding(.horizontal, 9)
                 .frame(minHeight: 26)
                 .background(Capsule().fill(Color.dockSurface4).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }

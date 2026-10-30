@@ -21,7 +21,7 @@ struct ChatVideoPreview: View {
                         .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                         .multilineTextAlignment(.center)
-                        .padding(16)
+                        .dockPadding(16)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.dockCanvas)
                 }

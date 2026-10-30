@@ -14,8 +14,8 @@ struct OnDeviceAssistNotice: View {
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .dockPadding(.horizontal, 6)
+        .dockPadding(.vertical, 3)
         .background(
             DockThemeShape(cornerRadius: DockLayout.controlRadius, role: .control)
                 .fill(Color.dockSurface2)

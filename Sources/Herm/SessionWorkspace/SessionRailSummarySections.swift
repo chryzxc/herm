@@ -171,7 +171,7 @@ struct SessionRailSummarySection<Content: View, Footer: View>: View {
             VStack(alignment: .leading, spacing: 8) {
                 SessionRailExpandedContent { content() }
                 footer()
-            }.padding(.top, 8)
+            }.dockPadding(.top, 8)
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Group {

@@ -50,7 +50,7 @@ struct SessionInspectorEmptyView: View {
                             }
                             .foregroundStyle(Color.dockPrimaryText)
                             .multilineTextAlignment(.leading)
-                            .padding(12)
+                            .dockPadding(12)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .background(Color.dockSurface)
                             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius))
@@ -66,8 +66,8 @@ struct SessionInspectorEmptyView: View {
                 }
             }
             .frame(maxWidth: 480)
-            .padding(DockSpacing.inspectorInset)
-            .padding(.top, 24)
+            .dockPadding(DockSpacing.inspectorInset)
+            .dockPadding(.top, 24)
             .frame(maxWidth: .infinity)
         }
         .background(Color.dockCanvas)

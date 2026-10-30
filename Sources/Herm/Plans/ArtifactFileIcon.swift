@@ -145,7 +145,7 @@ struct FileTypeIcon: View {
                 DockIcon(.file, size: size * 0.5, color: .dockSecondaryText)
             }
         }
-        .padding(size * 0.18)
+        .dockPadding(size * 0.18)
         .frame(width: size, height: size)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(

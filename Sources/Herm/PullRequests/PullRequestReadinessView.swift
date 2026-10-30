@@ -123,7 +123,7 @@ struct PullRequestReadinessView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(warning ? Color.dockWarning : color)
             }.frame(maxWidth: .infinity, alignment: .leading)
-        }.padding(.vertical, 2)
+        }.dockPadding(.vertical, 2)
     }
     private var reviewLabel: String {
         if !record.isOpenForWork { return record.reviews.isEmpty ? "No reviews" : "\(record.reviews.count) reviews" }

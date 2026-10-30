@@ -106,8 +106,8 @@ struct RichSurfaceView: View {
                 .buttonStyle(.dockHover).accessibilityLabel("Visual reply actions")
             }
             .dockButtonSize(.compact)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .dockPadding(.horizontal, 16)
+            .dockPadding(.vertical, 12)
             .background(DockThemeStyle.current.chrome == .open ? Color.clear : Color.dockSurface2)
             Divider().overlay(Color.dockBorderLight)
             if let metadata = surface.metadata {
@@ -121,8 +121,8 @@ struct RichSurfaceView: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .dockPadding(.horizontal, 16)
+                .dockPadding(.vertical, 12)
                 .background(DockThemeStyle.current.chrome == .open ? Color.clear : Color.dockSurface2)
                 Divider().overlay(Color.dockBorderLight)
             }
@@ -140,7 +140,7 @@ struct RichSurfaceView: View {
                 }
                 if let exportError { Text(exportError).foregroundStyle(Color.dockWarning) }
             }
-            .padding(16)
+            .dockPadding(16)
         }
         .dockFont(.body)
         .foregroundStyle(Color.dockPrimaryText)
@@ -158,7 +158,7 @@ struct RichSurfaceView: View {
         }
         .dockSheet(isPresented: $showingSource) {
             DockExpandedPage(title: "Visual reply source", subtitle: surface.title, close: { showingSource = false }) {
-                ScrollView { RichSourceDisclosure(source: source, initiallyExpanded: true).padding(16) }
+                ScrollView { RichSourceDisclosure(source: source, initiallyExpanded: true).dockPadding(16) }
             }.frame(minWidth: 400, minHeight: 300).modifier(ReviewSheetContext())
         }
         .dockSheet(isPresented: $showingExpanded) {
@@ -219,7 +219,7 @@ struct RichSurfaceView: View {
                     .environment(\.richReplyContext, context)
                     .environment(\.richReplyState, state)
                     .environment(\.richHostActionRouter, hostRouter)
-                    .environment(\.richCommandCompletion, close).padding(16)
+                    .environment(\.richCommandCompletion, close).dockPadding(16)
             }
         }
     }
@@ -346,10 +346,10 @@ struct RichSourceDisclosure: View {
                                 .foregroundStyle(Color.dockPrimaryText).frame(
                                     maxWidth: .infinity, alignment: .leading
                                 )
-                                .padding(4)
+                                .dockPadding(4)
                         }.frame(maxHeight: 220)
                     }
-                    .padding(12)
+                    .dockPadding(12)
                     .background {
                         DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
                             .dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight)

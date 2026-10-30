@@ -20,7 +20,7 @@ struct MemoryCorrectionView: View {
                 if let selected {
                     Text(selected.label).dockFont(.body, weight: .semibold)
                     TextEditor(text: $content).dockFont(.body).scrollContentBackground(.hidden)
-                        .padding(8).frame(height: 120).disabled(pending)
+                        .dockPadding(8).frame(height: 120).disabled(pending)
                         .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockInputFill())
                     HStack {
                         Button {
@@ -33,7 +33,7 @@ struct MemoryCorrectionView: View {
                     }.disabled(pending)
                 }
                 if let status { Text(status).foregroundStyle(Color.dockSecondaryText) }
-            }.padding(.top, 8)
+            }.dockPadding(.top, 8)
         }.dockFont(.body)
             .disclosureGroupStyle(DockDisclosureGroupStyle())
             .onDisappear {

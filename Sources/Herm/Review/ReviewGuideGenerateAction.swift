@@ -44,7 +44,7 @@ private struct ReviewGuideReviewerMenu: View {
                     DockIcon(.caretDown, size: 10, color: Color.dockSecondaryText)
                 }
                 .dockFont(.control)
-                .padding(menuRow ? 0 : 6)
+                .dockPadding(menuRow ? 0 : 6)
                 .background(menuRow ? Color.clear : Color.dockControlSurface, in: RoundedRectangle(cornerRadius: 6))
             }
         } else {

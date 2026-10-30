@@ -34,9 +34,9 @@ extension WorkspaceActivitySidebar {
                 SettingsSection(title: "Theme", subtitle: "Colors and skins", tint: .dockAccent) {
                     appearanceSection
                 }
-                SettingsSection(title: "Text", subtitle: "", tint: .dockAccent) {
-                    TextSizeSettings()
-                        .padding(.vertical, -8)
+                SettingsSection(title: "Density", subtitle: "", tint: .dockAccent) {
+                    DensitySettings()
+                        .dockPadding(.vertical, -8)
                 }
                 SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
                     NotchDisplaySettings()
@@ -48,19 +48,19 @@ extension WorkspaceActivitySidebar {
             if selectedSettingsCategory == .chat {
                 SettingsSection(title: "Layout", subtitle: "", tint: .dockAccent) {
                     ChatViewSettings()
-                        .padding(.vertical, -8)
+                        .dockPadding(.vertical, -8)
                 }
                 SettingsSection(title: "Typing", subtitle: "", tint: .dockAccent) {
                     ComposerTypingSettings()
-                        .padding(.vertical, -8)
+                        .dockPadding(.vertical, -8)
                 }
                 SettingsSection(title: "Replies", subtitle: "Visual content", tint: .dockAccent) {
                     GenerativeUISettings()
-                        .padding(.vertical, -8)
+                        .dockPadding(.vertical, -8)
                 }
                 SettingsSection(title: "Simulators", subtitle: "Device launch", tint: .dockAccent) {
                     SimulatorSettings()
-                        .padding(.vertical, -8)
+                        .dockPadding(.vertical, -8)
                 }
                 chatAssistancePreferencesSection
                 chatQuotaPreferencesSection
@@ -69,7 +69,7 @@ extension WorkspaceActivitySidebar {
                 privacyPreferencesSection
                 SettingsSection(title: "Window capture", subtitle: "", tint: .dockAccent) {
                     DesktopCaptureSettings()
-                        .padding(.vertical, -8)
+                        .dockPadding(.vertical, -8)
                 }
                 approvalPreferencesSection
             }
@@ -79,7 +79,7 @@ extension WorkspaceActivitySidebar {
                 }
                 SettingsSection(title: "Voice stage", subtitle: "", tint: .dockAccent) {
                     VoiceStageSettings()
-                        .padding(.vertical, -8)
+                        .dockPadding(.vertical, -8)
                 }
             }
             if selectedSettingsCategory == .updates {
@@ -113,7 +113,7 @@ extension WorkspaceActivitySidebar {
             if selectedSettingsCategory == .browser {
                 SettingsSection(title: "Agent browsing", subtitle: "Where pages open", tint: .dockAccent) {
                     HermBrowserSettings()
-                        .padding(.vertical, -8)
+                        .dockPadding(.vertical, -8)
                 }
             }
 
@@ -425,7 +425,7 @@ extension WorkspaceActivitySidebar {
                             Circle()
                                 .fill(diagnostic.isAvailable ? Color.dockSecondaryText : Color.dockWarningFill)
                                 .frame(width: 6, height: 6)
-                                .padding(.top, 4)
+                                .dockPadding(.top, 4)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(diagnostic.title)
                                     .dockFont(.body, weight: .medium)
@@ -585,7 +585,7 @@ extension WorkspaceActivitySidebar {
                                 .dockFont(.body, weight: .semibold)
                                 .foregroundStyle(Color.dockSecondaryText)
                         }
-                        .padding(.horizontal, 10)
+                        .dockPadding(.horizontal, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .frame(height: 36)
                         .background(
@@ -633,7 +633,7 @@ extension WorkspaceActivitySidebar {
                             .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
-                    .padding(.horizontal, 10)
+                    .dockPadding(.horizontal, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 36)
                     .background(
@@ -863,7 +863,7 @@ extension WorkspaceActivitySidebar {
                             ))
                     }
                 }
-                .padding(.vertical, -8)
+                .dockPadding(.vertical, -8)
                 .onAppear { opensAtLogin = SMAppService.mainApp.status == .enabled }
             }
             SettingsSection(title: "Keyboard shortcuts", subtitle: "", tint: .dockAccent) {
@@ -907,7 +907,7 @@ extension WorkspaceActivitySidebar {
                         }.labelsHidden().frame(width: 140)
                     }
                 }
-                .padding(.vertical, -8)
+                .dockPadding(.vertical, -8)
             }
         }
     }
@@ -938,7 +938,7 @@ extension WorkspaceActivitySidebar {
                         ))
                 }
             }
-            .padding(.vertical, -8)
+            .dockPadding(.vertical, -8)
         }
     }
 
@@ -960,7 +960,7 @@ extension WorkspaceActivitySidebar {
                     settingsSwitch(isOn: $showsSessionsInSpotlight)
                 }
             }
-            .padding(.vertical, -8)
+            .dockPadding(.vertical, -8)
         }
     }
 
@@ -986,13 +986,13 @@ extension WorkspaceActivitySidebar {
                     text: "Apple Intelligence runs on this Mac. Generated text may be inaccurate."
                 )
             }
-            .padding(.vertical, -8)
+            .dockPadding(.vertical, -8)
         }
     }
 
     var chatAssistancePreferencesSection: some View {
         SettingsSection(title: "Reply summaries & session titles", subtitle: "", tint: .dockAccent) {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
                 SettingsPreferenceRow(
                     title: "Summarize replies with Apple Intelligence",
                     detail: OnDeviceAssist.isAvailable
@@ -1014,7 +1014,7 @@ extension WorkspaceActivitySidebar {
                     text: "Apple Intelligence runs on this Mac. Generated text may be inaccurate."
                 )
             }
-            .padding(.vertical, -8)
+            .dockPadding(.vertical, -8)
         }
     }
 
@@ -1028,7 +1028,7 @@ extension WorkspaceActivitySidebar {
                     settingsSwitch(isOn: $keepsAwakeWhileWorking)
                 }
             }
-            .padding(.vertical, -8)
+            .dockPadding(.vertical, -8)
         }
     }
 
@@ -1049,7 +1049,7 @@ extension WorkspaceActivitySidebar {
                     settingsSwitch(isOn: $showsQuotaDropBanner)
                 }
             }
-            .padding(.vertical, -8)
+            .dockPadding(.vertical, -8)
         }
     }
 
@@ -1152,7 +1152,7 @@ extension WorkspaceActivitySidebar {
                     .lineLimit(1)
                 }
             }
-            .padding(10)
+            .dockPadding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -1236,7 +1236,7 @@ extension WorkspaceActivitySidebar {
                 color: control.attention.contains(where: { $0.state == .open }) ? .dockWarning : .dockSuccess
             )
         }
-        .padding(.vertical, 2)
+        .dockPadding(.vertical, 2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -1271,7 +1271,7 @@ extension WorkspaceActivitySidebar {
             .foregroundStyle(Color.dockAccent)
             .accessibilityLabel("Refresh Settings")
         }
-        .padding(.vertical, 2)
+        .dockPadding(.vertical, 2)
     }
 
     func coreSummaryMetric(title: String, value: String, color: Color) -> some View {
@@ -1285,7 +1285,7 @@ extension WorkspaceActivitySidebar {
                 .foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 10)
+        .dockPadding(.vertical, 10)
     }
 
     func settingsDisclosure<Content: View>(
@@ -1335,8 +1335,8 @@ extension WorkspaceActivitySidebar {
             .buttonStyle(.dockHover)
             if isExpanded.wrappedValue {
                 content()
-                    .padding(.top, 10)
-                    .padding(.bottom, 8)
+                    .dockPadding(.top, 10)
+                    .dockPadding(.bottom, 8)
             }
         }
     }
@@ -1363,8 +1363,8 @@ extension WorkspaceActivitySidebar {
             .dockFont(.conversation, weight: .medium)
             .foregroundStyle(Color.dockSectionText)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 16)
-            .padding(.bottom, 10)
+            .dockPadding(.top, 16)
+            .dockPadding(.bottom, 10)
             .overlay(alignment: .bottom) {
                 Color.dockBorderLight.frame(height: 0.5)
             }
@@ -1377,7 +1377,7 @@ extension WorkspaceActivitySidebar {
             .dockFont(.metadata, weight: .semibold)
             .foregroundStyle(Color.dockSecondaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 4)
+            .dockPadding(.top, 4)
     }
 
     @ViewBuilder
@@ -1404,7 +1404,7 @@ extension WorkspaceActivitySidebar {
             Circle()
                 .fill(nativeAgentColor(agent.status))
                 .frame(width: 7, height: 7)
-                .padding(.top, 4)
+                .dockPadding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 Text(agent.goal)
                     .dockFont(.body, weight: .medium)
@@ -1431,7 +1431,7 @@ extension WorkspaceActivitySidebar {
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
+        .dockPadding(.vertical, 4)
         .overlay(alignment: .bottom) { Color.dockBorderLight.opacity(0.7).frame(height: 0.5) }
     }
 

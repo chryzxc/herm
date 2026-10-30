@@ -246,8 +246,8 @@ struct ArtifactsInspectorView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .dockPadding(.horizontal, 16)
+        .dockPadding(.vertical, 16)
     }
 
     private var pageBody: some View {
@@ -282,8 +282,8 @@ struct ArtifactsInspectorView: View {
                 }
             }
         }
-        .padding(.horizontal, contentHorizontalPadding)
-        .padding(.bottom, 12)
+        .dockPadding(.horizontal, contentHorizontalPadding)
+        .dockPadding(.bottom, 12)
     }
 
     private var searchField: some View {
@@ -305,7 +305,7 @@ struct ArtifactsInspectorView: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(height: 32)
         .background(
             shape.dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.outline))
@@ -360,8 +360,8 @@ struct ArtifactsInspectorView: View {
                             .foregroundStyle(Color.dockAccent)
                             Spacer()
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .dockPadding(.horizontal, 12)
+                        .dockPadding(.vertical, 8)
                         Divider().overlay(Color.dockBorderLight)
                         artifactDetail.frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -393,16 +393,16 @@ struct ArtifactsInspectorView: View {
                             }
                             .dockFont(.sectionLabel)
                             .foregroundStyle(Color.dockSectionText)
-                            .padding(.horizontal, 10)
-                            .padding(.top, 12)
-                            .padding(.bottom, 6)
+                            .dockPadding(.horizontal, 10)
+                            .dockPadding(.top, 12)
+                            .dockPadding(.bottom, 6)
                             .background(Color.dockCanvas)
                             .accessibilityAddTraits(.isHeader)
                         }
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 12)
+                .dockPadding(.horizontal, 8)
+                .dockPadding(.bottom, 12)
             }
             .scrollIndicators(.automatic)
             .focusable()
@@ -467,8 +467,8 @@ struct ArtifactsInspectorView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .dockPadding(.horizontal, 8)
+        .dockPadding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockSelectionBackground(shape, active: isSelected, fill: Color.dockAccent.opacity(0.14), allowsInvert: false)
         .overlay(shape.stroke(isSelected ? Color.dockAccent.opacity(0.35) : Color.clear, lineWidth: DockLayout.outline))
@@ -524,7 +524,7 @@ struct ArtifactsInspectorView: View {
             .resizable()
             .interpolation(.high)
             .scaledToFit()
-            .padding(4)
+            .dockPadding(4)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 DockThemeShape(cornerRadius: DockLayout.controlRadius - 2).dockSurfaceFill(
@@ -543,7 +543,7 @@ struct ArtifactsInspectorView: View {
                     detailPreview(record)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(24)
+                .dockPadding(24)
             }
             .background(Color.dockCanvas)
             .task(id: record.id) { await loadTextPreview(for: record) }
@@ -651,14 +651,14 @@ struct ArtifactsInspectorView: View {
                     }
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .dockPadding(16)
                     if truncated {
                         Divider().overlay(Color.dockBorderLight)
                         Text("Preview truncated — open the file to see the rest.")
                             .dockFont(.compactStatus, weight: .regular)
                             .foregroundStyle(Color.dockMetadataText)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
+                            .dockPadding(.horizontal, 16)
+                            .dockPadding(.vertical, 8)
                     }
                 }
                 .background(
@@ -704,7 +704,7 @@ struct ArtifactsInspectorView: View {
                     .truncationMode(.middle)
             }
         }
-        .padding(20)
+        .dockPadding(20)
         .frame(maxWidth: .infinity, minHeight: 180)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(
@@ -806,7 +806,7 @@ struct ArtifactsInspectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
+        .dockPadding(24)
     }
 
     private var pageSummaryText: String {
@@ -901,7 +901,7 @@ struct ArtifactsInspectorView: View {
                     pagination(current: min(filePage, filePageCount), total: filePageCount) { filePage = $0 }
                 }
             }
-            .padding(14)
+            .dockPadding(14)
         }
     }
 
@@ -911,7 +911,7 @@ struct ArtifactsInspectorView: View {
                 filterSegment(item)
             }
         }
-        .padding(3)
+        .dockPadding(3)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).dockSurfaceFill(
                 Color.dockSurface2)
@@ -959,7 +959,7 @@ struct ArtifactsInspectorView: View {
                     .foregroundStyle(selected ? Color.dockAccent : Color.dockMetadataText)
             }
             .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
-            .padding(.horizontal, 10)
+            .dockPadding(.horizontal, 10)
             .frame(height: 26)
             .dockSelectionBackground(
                 DockThemeShape(cornerRadius: DockLayout.controlRadius - 2), active: selected,
@@ -987,8 +987,8 @@ struct ArtifactsInspectorView: View {
         .dockFont(.metadata, weight: .semibold)
         .buttonStyle(.dockHover)
         .foregroundStyle(filter == item ? Color.dockPrimaryText : Color.dockSecondaryText)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.vertical, 7)
         .background(filter == item ? Color.dockAccent : Color.dockSurface2, in: Capsule())
         .accessibilityLabel("\(item.rawValue), \(count(for: item)) artifacts")
         .accessibilityAddTraits(filter == item ? .isSelected : [])
@@ -1048,7 +1048,7 @@ struct ArtifactsInspectorView: View {
                 artifactAction("Open") { open(record.value) }
             }
         }
-        .padding(10)
+        .dockPadding(10)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                 Color.dockSurface2.opacity(0.55))
@@ -1115,7 +1115,7 @@ struct ArtifactsInspectorView: View {
             artifactCopyAction(record.value)
             artifactAction("Open") { open(record.value) }
         }
-        .padding(10)
+        .dockPadding(10)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                 Color.dockSurface2.opacity(0.55))
@@ -1178,7 +1178,7 @@ struct ArtifactsInspectorView: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(18)
+        .dockPadding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

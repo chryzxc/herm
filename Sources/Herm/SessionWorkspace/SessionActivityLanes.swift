@@ -288,7 +288,7 @@ struct SessionActivityLaneChart: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 4)
+            .dockPadding(.horizontal, 4)
             .frame(width: labelWidth, height: laneHeight, alignment: .leading)
             .contentShape(Rectangle())
         }

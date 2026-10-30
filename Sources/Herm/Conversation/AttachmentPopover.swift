@@ -147,7 +147,7 @@ struct AttachmentPopover: View {
                 }
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .frame(width: 250)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(

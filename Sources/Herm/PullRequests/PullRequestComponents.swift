@@ -33,7 +33,7 @@ struct PullRequestRowView: View {
                     Text(pullRequest.readinessLabel)
                         .dockFont(.metadata)
                         .foregroundStyle(pullRequest.readinessColor)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .dockPadding(.horizontal, 7).dockPadding(.vertical, 3)
                         .background(Capsule().fill(pullRequest.readinessColor.opacity(0.12)))
                     Spacer(minLength: 0)
                     if let adds = pullRequest.additions, let dels = pullRequest.deletions {
@@ -45,8 +45,8 @@ struct PullRequestRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
+        .dockPadding(.horizontal, 12)
+        .dockPadding(.vertical, 12)
         .background(
             DockThemeShape(cornerRadius: DockLayout.controlRadius + 1).dockSelectionFill(
                 isSelected,
@@ -55,7 +55,7 @@ struct PullRequestRowView: View {
         )
         .overlay(alignment: .leading) {
             if isSelected {
-                Capsule().fill(Color.dockAccent).frame(width: 3).padding(.vertical, 12)
+                Capsule().fill(Color.dockAccent).frame(width: 3).dockPadding(.vertical, 12)
             }
         }
         .contentShape(Rectangle())
@@ -100,8 +100,8 @@ struct PullRequestFileTreeRow: View {
                 Spacer(minLength: 6)
                 if let file { PullRequestDiffStat(additions: file.additions, deletions: file.deletions) }
             }
-            .padding(.leading, CGFloat(node.depth) * 12 + 8)
-            .padding(.trailing, 8)
+            .dockPadding(.leading, CGFloat(node.depth) * 12 + 8)
+            .dockPadding(.trailing, 8)
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
@@ -166,7 +166,7 @@ struct PullRequestDiffLineView: View {
             diffWords(content, counterpart: counterpartContent, tint: tint)
         }
         .frame(maxWidth: .infinity, minHeight: 19, alignment: .leading)
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .background(fill)
         .overlay(alignment: .leading) { if line.kind != .context { tint.frame(width: 2) } }
     }

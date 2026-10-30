@@ -84,7 +84,7 @@ struct LocalReviewWorkspace: View {
                 }
                 Toggle("Ignore whitespace", isOn: $ignoreWhitespace).toggleStyle(.dockSwitch)
                 TextField("Filter files or loaded changes", text: $query).textFieldStyle(.dockGlass)
-            }.dockFont(.body).padding(.horizontal, 16).padding(.bottom, 12)
+            }.dockFont(.body).dockPadding(.horizontal, 16).dockPadding(.bottom, 12)
             HStack {
                 TextField("Find in loaded comparison", text: $search).textFieldStyle(.dockGlass).focused($searchFocused)
                     .onSubmit { moveMatch(1) }
@@ -93,7 +93,7 @@ struct LocalReviewWorkspace: View {
                 ).dockFont(.metadata)
                 Button("Previous") { moveMatch(-1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
                 Button("Next") { moveMatch(1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
-            }.padding(.horizontal, 16).padding(.bottom, 10)
+            }.dockPadding(.horizontal, 16).dockPadding(.bottom, 10)
             Divider().overlay(Color.dockBorderLight)
             FullscreenPanelSplitView(
                 leading: List(files, id: \.self, selection: $selected) { file in
@@ -121,14 +121,14 @@ struct LocalReviewWorkspace: View {
                             if diff.isTruncated {
                                 Text("Partial diff · display limit reached").foregroundStyle(Color.dockWarning)
                             }
-                        }.padding(12)
+                        }.dockPadding(12)
                     } else {
                         Text(
                             review.loading
                                 ? "Loading changes…"
                                 : files.isEmpty ? "No changes in this comparison." : "Choose a changed file."
                         )
-                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(20)
+                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(20)
                     }
                 }.frame(minWidth: 400), leadingFraction: nil, initialLeadingWidth: navigatorWidth,
                 minimumLeadingWidth: 220,
@@ -157,15 +157,15 @@ struct LocalReviewWorkspace: View {
                     .disabled(
                         review.loading || guide.requesting || guide.uncertain || review.patches.isEmpty
                             || review.error != nil)
-            }.padding(12)
+            }.dockPadding(12)
             if let source = guide.sourceIdentity, source != review.comparison?.identity {
                 Text("Review guide source changed · generate a new guide after reviewing this comparison.")
-                    .dockFont(.body).foregroundStyle(Color.dockWarning).padding(.horizontal, 12)
+                    .dockFont(.body).foregroundStyle(Color.dockWarning).dockPadding(.horizontal, 12)
             }
             if let message = guide.message {
-                Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(
+                Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(
                     .horizontal, 12
-                ).padding(.bottom, 8)
+                ).dockPadding(.bottom, 8)
             }
         }.dockSheet(isPresented: $readingGuide) {
             ReviewGuideView(

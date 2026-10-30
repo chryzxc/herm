@@ -37,7 +37,7 @@ struct EdgeDigestView: View {
                 Text("While quiet").dockFont(.body, weight: .semibold)
                 Spacer()
                 Button("Back", action: back).buttonStyle(.dockCompact)
-            }.padding(10).frame(height: 40)
+            }.dockPadding(10).frame(height: 40)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
@@ -60,7 +60,7 @@ struct EdgeDigestView: View {
                                         : "\(entry.profileID ?? "Launch profile") · \(entry.source == .repository ? URL(fileURLWithPath: entry.sourceID).lastPathComponent : entry.sourceID)"
                                 )
                                 .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
-                            }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                            }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(8)
                         }.buttonStyle(.dockHover).disabled(entry.unavailable && !entry.canCheckCompletedSession)
                             .accessibilityLabel(
                                 "\(entry.kind.title). \(entry.unavailable && !entry.canCheckCompletedSession ? "Source unavailable" : "Open source")"
@@ -70,14 +70,14 @@ struct EdgeDigestView: View {
                         Text("\(coordinator.overflow) earlier updates. Open activity to review their sources.")
                             .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                     }
-                }.padding(10)
+                }.dockPadding(10)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider().overlay(Color.dockBorderLight)
             HStack {
                 Button("Clear…") { confirmsClear = true }.buttonStyle(.dockCompact)
                 Spacer()
                 Button("Open Herm", action: openActivity).buttonStyle(.dockCompact)
-            }.dockFont(.body, weight: .medium).padding(10)
+            }.dockFont(.body, weight: .medium).dockPadding(10)
         }
         .foregroundStyle(Color.dockPrimaryText)
         .confirmationDialog("Clear this digest?", isPresented: $confirmsClear) {

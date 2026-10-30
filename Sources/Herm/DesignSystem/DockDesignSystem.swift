@@ -170,7 +170,7 @@ struct DockStatusPill: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(height: 24)
         .background(Capsule().fill(tone.color.opacity(0.16)))
         .overlay(Capsule().stroke(tone.color.opacity(0.45), lineWidth: 0.5))
@@ -294,13 +294,13 @@ struct DockNavRow: View {
                     Text("Update")
                         .dockFont(.compactStatus, weight: .semibold)
                         .foregroundStyle(inverted ? style.background : style.warning)
-                        .padding(.horizontal, 6)
+                        .dockPadding(.horizontal, 6)
                         .frame(height: 18)
                         .background(Capsule().fill(style.warning.opacity(0.16)))
                         .accessibilityLabel("Update available")
                 }
             }
-            .padding(.horizontal, 8)
+            .dockPadding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)
             .background(shape.fill(!isSelected && isHovering ? style.surface4.opacity(0.6) : .clear))
@@ -337,7 +337,7 @@ struct DockRailButton: View {
             .background(shape.fill(!isSelected && isHovering ? style.accent.opacity(0.14) : .clear))
             .overlay(alignment: .topTrailing) {
                 if showsUpdateBadge {
-                    Circle().fill(style.warning).frame(width: 7, height: 7).padding(7)
+                    Circle().fill(style.warning).frame(width: 7, height: 7).dockPadding(7)
                 }
             }
             .contentShape(Rectangle())
@@ -562,8 +562,8 @@ struct DockSectionHeader<Actions: View>: View {
             }
             actions()
         }
-        .padding(.leading, isContentHeader ? 0 : 8)
-        .padding(.trailing, isContentHeader ? 0 : 2)
+        .dockPadding(.leading, isContentHeader ? 0 : 8)
+        .dockPadding(.trailing, isContentHeader ? 0 : 2)
         .frame(minHeight: 30)
         .onHover { isHovering = $0 }
     }
@@ -592,7 +592,7 @@ struct DockSectionHeader<Actions: View>: View {
                 Text(count > 99 ? "99+" : "\(count)")
                     .dockFont(.metadata, weight: .semibold).monospacedDigit()
                     .foregroundStyle(style.secondaryText)
-                    .padding(.horizontal, 6)
+                    .dockPadding(.horizontal, 6)
                     .frame(minHeight: 16)
                     .background(Capsule().fill(tint.opacity(0.14)))
             } else if let count {

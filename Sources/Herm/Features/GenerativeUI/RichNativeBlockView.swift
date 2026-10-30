@@ -87,7 +87,7 @@ struct RichNativeBlockView: View {
                         }
                     }
                     if selected == option.id, let detail = option.detail { Text(detail).textSelection(.enabled) }
-                }.padding(12).dockCard(padding: 0)
+                }.dockPadding(12).dockCard(padding: 0)
                     .overlay {
                         RoundedRectangle(cornerRadius: 8)
                             .strokeBorder(selected == option.id ? Color.dockAccent : .clear, lineWidth: 1.5)
@@ -112,7 +112,7 @@ struct RichNativeBlockView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(item.title, isOn: state.checked(blockID + ":" + item.id)).toggleStyle(.checkbox)
                     if let detail = item.detail {
-                        Text(detail).foregroundStyle(Color.dockSecondaryText).padding(.leading, 20)
+                        Text(detail).foregroundStyle(Color.dockSecondaryText).dockPadding(.leading, 20)
                             .textSelection(.enabled)
                     }
                 }
@@ -147,7 +147,7 @@ struct RichNativeBlockView: View {
                             }
                         }
                     }
-                }.padding(.vertical, 8)
+                }.dockPadding(.vertical, 8)
                 Divider().overlay(Color.dockBorderLight)
             }
         }
@@ -196,7 +196,7 @@ struct RichDatasetTableView: View {
                                     maxWidth: .infinity,
                                     alignment: dataset.columns[index].type == .number ? .trailing : .leading
                                 )
-                                .padding(.vertical, 4)
+                                .dockPadding(.vertical, 4)
                                 .background(
                                     state.snapshot.selected[RichSelectionIdentity.dataset(dataset.id)] == row.id
                                         ? Color.dockControlSurface : Color.clear
@@ -205,9 +205,9 @@ struct RichDatasetTableView: View {
                             }
                         }
                     }
-                }.padding(4).padding([.bottom, .trailing], 16)
+                }.dockPadding(4).dockPadding([.bottom, .trailing], 16)
             }.frame(height: min(320, CGFloat(rows.count + 1) * 34 + 32))
-                .padding(.bottom, 4)
+                .dockPadding(.bottom, 4)
             if state.snapshot.sortColumns[blockID] != nil {
                 Button("Restore source order") {
                     state.snapshot.sortColumns.removeValue(forKey: blockID)
@@ -275,7 +275,7 @@ private struct RichGraphView: View {
                             .accessibilityAddTraits(selection == node.id ? .isSelected : [])
                     }
                 }.frame(width: 540, height: max(100, CGFloat((graph.nodes.count + 2) / 3) * 100))
-                    .padding([.bottom, .trailing], 20)
+                    .dockPadding([.bottom, .trailing], 20)
             }.frame(height: min(400, max(100, CGFloat((graph.nodes.count + 2) / 3) * 100) + 40))
             if let node = graph.nodes.first(where: { $0.id == selection }) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -317,7 +317,7 @@ private struct RichTreeView: View {
                             item.title + (item.value.map { ": " + $0 } ?? ""),
                             isExpanded: state.expanded(blockID + ":" + item.id)
                         ) {
-                            children(item.id).padding(.leading, 12)
+                            children(item.id).dockPadding(.leading, 12)
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                     } else {
@@ -342,9 +342,9 @@ private struct RichImageComparisonView: View {
                     image(images.after).mask(alignment: .leading) { Rectangle().frame(width: 480 * fraction) }
                 }.frame(width: 480, height: 300).scaleEffect(zoom, anchor: .topLeading)
                     .frame(width: 480 * zoom, height: 300 * zoom, alignment: .topLeading)
-                    .padding([.bottom, .trailing], 20)
+                    .dockPadding([.bottom, .trailing], 20)
             }.frame(height: 340)
-                .padding(.bottom, 4)
+                .dockPadding(.bottom, 4)
             Text("\(images.before.title) / \(images.after.title)").foregroundStyle(Color.dockSecondaryText)
             Slider(value: state.number(blockID + ":fraction", default: 0.5), in: 0...1) { Text("Comparison position") }
             Slider(value: state.number(blockID + ":zoom", default: 1), in: 1...4) { Text("Zoom") }

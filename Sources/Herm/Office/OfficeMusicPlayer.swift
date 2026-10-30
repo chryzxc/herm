@@ -137,7 +137,7 @@ struct OfficeMusicControl: View {
         }
         .buttonStyle(.dockHover)
         .disabled(music.isBusy)
-        .padding(.horizontal, 10).padding(.vertical, 8)
+        .dockPadding(.horizontal, 10).dockPadding(.vertical, 8)
         .dockHUDPanel()
         .fixedSize()
     }

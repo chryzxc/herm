@@ -66,8 +66,8 @@ struct WorkActivityView: View {
                                     gridCard(index, wide: true)
                                     summaryCard
                                 }
-                                .padding(.bottom, 16)
-                                .padding(.trailing, 16)
+                                .dockPadding(.bottom, 16)
+                                .dockPadding(.trailing, 16)
                             }
                             .scrollIndicators(.hidden)
                             .frame(width: min(560, proxy.size.width * 0.45))
@@ -97,7 +97,7 @@ struct WorkActivityView: View {
                 )
             }
         }
-        .padding(.top, 4)
+        .dockPadding(.top, 4)
         // Centered like the other monitoring pages, so wide windows don't stretch the cells.
         .frame(maxWidth: 1480, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -184,8 +184,8 @@ struct WorkActivityView: View {
                             title: month.formatted(.dateTime.month(.wide).year()))
                     }
                 }
-                .padding(.bottom, 16)
-                .padding(.trailing, 16)
+                .dockPadding(.bottom, 16)
+                .dockPadding(.trailing, 16)
             }
             .scrollIndicators(.hidden)
             .id(scope == .day ? selected : (scope == .week ? weekBounds.start : month))
@@ -227,7 +227,7 @@ struct WorkActivityView: View {
                     .dockFont(.metric, weight: .regular)
                     .foregroundStyle(Color.dockMetadataText)
             }
-            .padding(.leading, 4)
+            .dockPadding(.leading, 4)
             if !calendar.isDate(month, equalTo: Date(), toGranularity: .month)
                 || selected != calendar.startOfDay(for: Date())
             {
@@ -389,7 +389,7 @@ private struct CalendarGridCard: View, Equatable {
                 monthStat("Active days", index.activeDays, Color.dockSecondaryText)
                 Spacer(minLength: 0)
             }
-            .padding(.bottom, 6)
+            .dockPadding(.bottom, 6)
             HStack(spacing: 6) {
                 ForEach(Array(ordered.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol.uppercased()).frame(maxWidth: .infinity)
@@ -422,10 +422,10 @@ private struct CalendarGridCard: View, Equatable {
                     weekTotal(weekTotals[row], max: maxWeek)
                 }
             }
-            Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.top, 4)
+            Color.dockBorderLight.frame(height: DockLayout.hairline).dockPadding(.top, 4)
             footer
         }
-        .padding(12)
+        .dockPadding(12)
         // Keep the strip at its natural height; the day detail below gets the rest.
         .fixedSize(horizontal: false, vertical: true)
         .dockCard(padding: 0)
@@ -452,7 +452,7 @@ private struct CalendarGridCard: View, Equatable {
                             width: proxy.size.width * CGFloat(total) / CGFloat(max))
                     }
                 }
-                .padding(.horizontal, 6)
+                .dockPadding(.horizontal, 6)
         }
         .frame(width: 44, height: 56)
         .help("\(total) shipped this week")
@@ -478,7 +478,7 @@ private struct CalendarGridCard: View, Equatable {
                         .frame(minWidth: 96)
                     stepButton(.caretRight, "Next week") { onMove(7) }
                 }
-                .padding(2)
+                .dockPadding(2)
                 .background(Capsule().fill(Color.dockPrimaryText.opacity(0.04)))
                 .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
             }
@@ -534,7 +534,7 @@ private struct CalendarRangePane: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                DockSectionLabel(title: title).padding(.leading, 2)
+                DockSectionLabel(title: title).dockPadding(.leading, 2)
                 Spacer(minLength: 8)
             }
             if range.isEmpty {
@@ -547,7 +547,7 @@ private struct CalendarRangePane: View, Equatable {
             } else {
                 overview
                 CalendarHourlyRhythm(hours: range.hours)
-                    .padding(14)
+                    .dockPadding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .dockCard(padding: 0)
                 CalendarActivityDetails(
@@ -555,7 +555,7 @@ private struct CalendarRangePane: View, Equatable {
                     avatarImages: avatarImages, onOpenTask: onOpenTask, onOpenSession: onOpenSession
                 )
                 CalendarDayBars(points: range.points, onOpenDay: onOpenDay)
-                    .padding(14)
+                    .dockPadding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .dockCard(padding: 0)
                 if range.weekdayMeans.contains(where: { $0 > 0 }) { weekdayPattern }
@@ -599,7 +599,7 @@ private struct CalendarRangePane: View, Equatable {
                 }
             }
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockCard(padding: 0)
     }
@@ -649,7 +649,7 @@ private struct CalendarRangePane: View, Equatable {
             Text(value).dockFont(.metric).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
             Text(detail ?? " ").dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
@@ -757,7 +757,7 @@ private struct CalendarLeaderboard<Label: View>: View {
             }
         }
         if carded {
-            content.padding(14).frame(maxWidth: .infinity, alignment: .topLeading).dockCard(padding: 0)
+            content.dockPadding(14).frame(maxWidth: .infinity, alignment: .topLeading).dockCard(padding: 0)
         } else {
             content
         }
@@ -856,7 +856,7 @@ private struct CalendarDayPane: View, Equatable {
                 }
             }
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockCard(padding: 0)
     }
@@ -953,7 +953,7 @@ private struct CalendarActivityDetails: View {
                     CalendarLeaderboard(
                         title: nil, rows: activity.pullRequestsByRepository, unit: "PRs merged", carded: false
                     ) { CalendarRepoLabel(id: $0) }
-                    .padding(.vertical, 4)
+                    .dockPadding(.vertical, 4)
                     capped("prs", activity.pullRequests) { pr in
                         Button {
                             if let url = pr.url { NSWorkspace.shared.open(url) }
@@ -978,14 +978,14 @@ private struct CalendarActivityDetails: View {
                     CalendarLeaderboard(title: nil, rows: activity.repos, unit: "commits", carded: false) {
                         CalendarRepoLabel(id: $0)
                     }
-                    .padding(.vertical, 4)
+                    .dockPadding(.vertical, 4)
                     capped("commits", activity.commits) { commit in
                         WorkCommitRow(commit: commit, timestamp: timestamp(commit.date), tint: CalendarInk.shipped)
                     }
                 }
             }
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockCard(padding: 0)
     }
@@ -1026,7 +1026,7 @@ private struct CalendarActivityDetails: View {
             }
             WorkActivityUsageView(activity: activity)
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockCard(padding: 0)
     }
@@ -1066,7 +1066,7 @@ private struct CalendarActivityDetails: View {
             .buttonStyle(.dockCompact)
             .dockFont(.control)
             .foregroundStyle(Color.dockAccent)
-            .padding(.top, 6)
+            .dockPadding(.top, 6)
         }
     }
 
@@ -1093,7 +1093,7 @@ private struct CalendarActivityDetails: View {
                         .foregroundStyle(Color.dockMetadataText)
                 }
             }
-            .padding(.vertical, 5)
+            .dockPadding(.vertical, 5)
             .contentShape(Rectangle())
         }
         .buttonStyle(CalendarRowButtonStyle())
@@ -1126,7 +1126,7 @@ private struct CalendarActivityDetails: View {
                     Color.dockMetadataText)
             }
         }
-        .padding(.vertical, 5)
+        .dockPadding(.vertical, 5)
         .contentShape(Rectangle())
     }
 }
@@ -1204,11 +1204,11 @@ private struct CalendarRowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 2, role: .control)
         return configuration.label
-            .padding(.horizontal, 6)
+            .dockPadding(.horizontal, 6)
             .background(
                 shape.fill(Color.dockPrimaryText.opacity(configuration.isPressed ? 0.08 : isHovering ? 0.05 : 0))
             )
-            .padding(.horizontal, -6)
+            .dockPadding(.horizontal, -6)
             .onHover { isHovering = $0 }
     }
 }
@@ -1245,14 +1245,14 @@ private struct CalendarDayCell: View, Equatable {
                     .frame(width: isToday ? 24 : nil, height: 24)
                     .background { if isToday { Circle().fill(Color.dockAccent) } }
                 if day?.hasFailedRun == true {
-                    Circle().fill(CalendarInk.failedFill).frame(width: 5, height: 5).padding(.leading, 4)
+                    Circle().fill(CalendarInk.failedFill).frame(width: 5, height: 5).dockPadding(.leading, 4)
                 }
                 Spacer(minLength: 2)
             }
             Spacer(minLength: 0)
             if let day, day.activityCount > 0 { mixBar(day) }
         }
-        .padding(7)
+        .dockPadding(7)
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
         .background(shape.fill(CalendarInk.shippedFill.opacity(heat > 0 ? 0.035 + heat * 0.035 : 0)))
         .background(shape.fill(Color.dockAccent.opacity(isToday || isInScope ? 0.1 : 0)))
@@ -1353,7 +1353,7 @@ private struct CalendarDayPreview: View {
                 .foregroundStyle(Color.dockMetadataText)
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .frame(width: 210, alignment: .leading)
     }
 }

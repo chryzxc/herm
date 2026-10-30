@@ -147,7 +147,7 @@ extension WorkspaceActivitySidebar {
                                 .foregroundStyle(Color.dockAccent)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 10)
+                        .dockPadding(.vertical, 10)
                         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                         .contentShape(Rectangle())
                     }
@@ -166,7 +166,7 @@ extension WorkspaceActivitySidebar {
                     .buttonStyle(.dockCompact)
                     .foregroundStyle(Color.dockAccent)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 4)
+                    .dockPadding(.top, 4)
                 }
             }
         }
@@ -282,10 +282,10 @@ extension WorkspaceActivitySidebar {
             }
             .buttonStyle(.dockCompact)
             .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
-            .padding(.top, 4)
+            .dockPadding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 4)
+        .dockPadding(.bottom, 4)
     }
 
     func projectDisplayName(_ project: ProjectSummary) -> String {
@@ -392,7 +392,7 @@ extension WorkspaceActivitySidebar {
                 .foregroundStyle(Color.dockAccent)
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .dockGlassPane()
     }
 }

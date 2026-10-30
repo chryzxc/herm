@@ -353,13 +353,13 @@ private struct PetWindowContent: View {
                 Circle().strokeBorder(
                     DockThemePalette(theme: DockThemeRuntime.current).accent,
                     style: StrokeStyle(lineWidth: 2, dash: [4, 3])
-                ).padding(2)
+                ).dockPadding(2)
             }
         }
         .overlay {
             Circle().stroke(DockThemePalette(theme: DockThemeRuntime.current).accent, lineWidth: 2).scaleEffect(
                 0.8 + ring * 0.7
-            ).opacity(ring == 0 ? 0 : 0.8 * (1 - ring)).padding(4).allowsHitTesting(false)
+            ).opacity(ring == 0 ? 0 : 0.8 * (1 - ring)).dockPadding(4).allowsHitTesting(false)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: motion.nearNotch)
         .onChange(of: motion.pulse) {

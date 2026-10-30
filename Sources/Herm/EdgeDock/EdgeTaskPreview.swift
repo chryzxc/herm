@@ -278,11 +278,11 @@ struct EdgeTaskPreview: View {
                                                 DockSectionLabel(title: "Quota")
                                                 EdgeQuotaChangeCard(change: quotaChange, compact: true)
                                                     .id(quotaChange.current.updatedAt)
-                                                    .padding(.horizontal, 10)
+                                                    .dockPadding(.horizontal, 10)
                                             }
                                         }
                                     }
-                                    .padding(.vertical, 12)
+                                    .dockPadding(.vertical, 12)
                                 }
                             }
                             .scrollIndicators(.never)
@@ -309,7 +309,7 @@ struct EdgeTaskPreview: View {
                 footer
             }
             .foregroundStyle(Color.dockPrimaryText)
-            .padding(.horizontal, 6)
+            .dockPadding(.horizontal, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onAppear { reconcileKeyboard(previous: keyboardItems) }
             .onChange(of: keyboardItems) { old, _ in reconcileKeyboard(previous: old) }
@@ -322,11 +322,11 @@ struct EdgeTaskPreview: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(tasks, id: \.presentationID) { card($0, bots: bots, now: .now) }
             if let quotaChange {
-                EdgeQuotaChangeCard(change: quotaChange, compact: true).padding(.horizontal, 10)
+                EdgeQuotaChangeCard(change: quotaChange, compact: true).dockPadding(.horizontal, 10)
             }
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .padding(.horizontal, 6)
+        .dockPadding(.horizontal, 6)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) {
             $0.size.height
@@ -361,8 +361,8 @@ struct EdgeTaskPreview: View {
                         task.session != nil || task.isCurrent
                     {
                         replyToggle(task, isReplying: isReplying, visible: showsReply, reply: reply)
-                            .padding(.top, 5)
-                            .padding(.trailing, 4)
+                            .dockPadding(.top, 5)
+                            .dockPadding(.trailing, 4)
                             .frame(width: 34, alignment: .trailing)
                     }
                 }
@@ -377,8 +377,8 @@ struct EdgeTaskPreview: View {
                         model: quickModel, control: quotaControl, state: quickState, inline: true,
                         close: closeReply, openDock: openDock
                     )
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
+                    .dockPadding(.horizontal, 8)
+                    .dockPadding(.bottom, 8)
                     .id("reply-\(task.presentationID)")
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -425,8 +425,8 @@ struct EdgeTaskPreview: View {
                     .lineLimit(isApproval ? 5 : 4)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, isApproval ? 8 : 0)
-                    .padding(.vertical, isApproval ? 6 : 0)
+                    .dockPadding(.horizontal, isApproval ? 8 : 0)
+                    .dockPadding(.vertical, isApproval ? 6 : 0)
                     .background {
                         if isApproval {
                             DockThemeShape(cornerRadius: DockLayout.controlRadius)
@@ -487,8 +487,8 @@ struct EdgeTaskPreview: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 8)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -590,7 +590,7 @@ struct EdgeTaskPreview: View {
                 }
                 .overlay(alignment: .bottomTrailing) {
                     statusMark(task, size: 11)
-                        .background(Circle().fill(Color.dockOpaqueCanvas).padding(-1))
+                        .background(Circle().fill(Color.dockOpaqueCanvas).dockPadding(-1))
                         .offset(x: 3, y: 3)
                 }
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -606,7 +606,7 @@ struct EdgeTaskPreview: View {
                 .overlay(alignment: .bottomTrailing) {
                     if !working || !BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) {
                         statusMark(task, size: 11)
-                            .background(Circle().fill(Color.dockOpaqueCanvas).padding(-1))
+                            .background(Circle().fill(Color.dockOpaqueCanvas).dockPadding(-1))
                             .offset(x: 3, y: 3)
                     }
                 }
@@ -649,12 +649,12 @@ struct EdgeTaskPreview: View {
                     OnDeviceAssistNotice()
                 }
                 if task.tone == .working {
-                    DockShimmerTrack(tone: task.tone, muted: true).padding(.top, 3)
+                    DockShimmerTrack(tone: task.tone, muted: true).dockPadding(.top, 3)
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -673,7 +673,7 @@ struct EdgeTaskPreview: View {
             Text("Current")
                 .dockFont(.metadata, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
-                .padding(.horizontal, 6)
+                .dockPadding(.horizontal, 6)
                 .frame(height: 16)
                 .background(Capsule().fill(Color.dockSurface4.opacity(0.8)))
                 .fixedSize()
@@ -694,8 +694,8 @@ struct EdgeTaskPreview: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 10)
-        .padding(.top, DockSpacing.group)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.top, DockSpacing.group)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -722,7 +722,7 @@ struct EdgeTaskPreview: View {
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 12)
+                    .dockPadding(.horizontal, 12)
                     .frame(maxWidth: .infinity, minHeight: 30)
                     .background(Capsule().fill(Color.dockSurface4.opacity(0.6)))
                     .contentShape(Capsule())
@@ -734,7 +734,7 @@ struct EdgeTaskPreview: View {
             }
             secondaryActions
         }
-        .padding(.vertical, 8)
+        .dockPadding(.vertical, 8)
     }
 
     @ViewBuilder private var secondaryActions: some View {
@@ -789,13 +789,13 @@ struct EdgePreviewFooterButton: View {
                     Text(shortcut)
                         .dockFont(.compactStatus, weight: .medium, design: .rounded)
                         .foregroundStyle(Color.dockMetadataText)
-                        .padding(.horizontal, 5)
+                        .dockPadding(.horizontal, 5)
                         .frame(height: 16)
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dockBorder, lineWidth: 0.5))
                         .help(shortcutHelp ?? "")
                 }
             }
-            .padding(.horizontal, 10)
+            .dockPadding(.horizontal, 10)
             .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 30, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)

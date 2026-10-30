@@ -194,8 +194,8 @@ struct SessionBrowserView: View {
                 .buttonStyle(DockSecondaryButtonStyle())
                 .controlSize(.small)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.vertical, 6)
         .background(Color.dockWarning.opacity(0.08))
         .background(Color.dockOpaqueCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -205,8 +205,8 @@ struct SessionBrowserView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-                .padding(.horizontal, DockSpacing.inspectorInset)
-                .padding(.vertical, 8)
+                .dockPadding(.horizontal, DockSpacing.inspectorInset)
+                .dockPadding(.vertical, 8)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                 .overlay(alignment: .bottom) {
                     if navigation.isLoading { DockShimmerTrack(tone: .working, muted: true) }
@@ -230,8 +230,8 @@ struct SessionBrowserView: View {
                             Button("Retry") { agent.reconnectHermes() }
                                 .buttonStyle(DockSecondaryButtonStyle())
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .dockPadding(.horizontal, 10)
+                        .dockPadding(.vertical, 6)
                         .background(Color.dockOpaqueCanvas)
                     }
                 }
@@ -348,7 +348,7 @@ struct SessionBrowserView: View {
             .help(navigation.isLoading ? "Loading page…" : "Search or enter address (⌘L)")
             .overlay(alignment: .trailing) {
                 if navigation.isLoading, !isEditingAddress {
-                    ProgressView().controlSize(.mini).padding(.trailing, 8)
+                    ProgressView().controlSize(.mini).dockPadding(.trailing, 8)
                         .accessibilityLabel("Loading page")
                         .allowsHitTesting(false)
                 }
@@ -399,7 +399,7 @@ struct SessionBrowserView: View {
                 }
             }
             .foregroundStyle(Color.dockPrimaryText)
-            .padding(.horizontal, compact ? 0 : 8)
+            .dockPadding(.horizontal, compact ? 0 : 8)
             .frame(minWidth: controlHeight, minHeight: controlHeight)
             .background(DockThemeShape(cornerRadius: 7).fill(Color.dockControlSurface))
         }
@@ -498,7 +498,7 @@ struct SessionBrowserView: View {
                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                         .multilineTextAlignment(.center)
                     Button("Enter Address") { isEditingAddress = true }.buttonStyle(.dockSecondary)
-                }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.dockCanvas)
+                }.dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.dockCanvas)
             }
         }
         .background(Color.dockCanvas)
@@ -518,7 +518,7 @@ struct SessionBrowserView: View {
                 if showsAgent { agent.clearNavigationError() } else { browser.clearNavigationError() }
             }
         }
-        .padding(10).background(Color.dockOpaqueCanvas)
+        .dockPadding(10).background(Color.dockOpaqueCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 

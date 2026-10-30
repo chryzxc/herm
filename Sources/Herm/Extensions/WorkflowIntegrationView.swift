@@ -803,7 +803,7 @@ struct WorkflowIntegrationView: View {
                                 }
                             }
                         }
-                    }.padding(.top, 8)
+                    }.dockPadding(.top, 8)
                 }.dockFont(.body).task { await model.loadCatalog() }
                     .disclosureGroupStyle(DockDisclosureGroupStyle())
             }
@@ -840,7 +840,7 @@ struct WorkflowIntegrationView: View {
                 }
                 if let preview = model.preview {
                     Text(preview).dockFont(.body).textSelection(.enabled)
-                        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .dockPadding(12).frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
                 }
                 MemoryCorrectionView(service: model.service)
@@ -886,7 +886,7 @@ struct WorkflowIntegrationView: View {
                             request = ("Custom server", WorkflowIntegrationItem(id: customName, detail: customURL))
                         }.buttonStyle(.dockSecondary).disabled(
                             model.busy || customName.isEmpty || customURL.isEmpty)
-                    }.padding(.top, 8)
+                    }.dockPadding(.top, 8)
                 }.dockFont(.body)
                     .disclosureGroupStyle(DockDisclosureGroupStyle())
                 HStack {
@@ -905,7 +905,7 @@ struct WorkflowIntegrationView: View {
             if !model.status.isEmpty {
                 Text(model.status).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             }
-        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        }.dockPadding(20).frame(maxWidth: .infinity, alignment: .leading)
     }
     // MARK: Capabilities page
     // One list per kind with an Installed / Discover scope, a themed inspector beside it.
@@ -933,7 +933,7 @@ struct WorkflowIntegrationView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(grouped(list), id: \.0) { name, rows in
                             if !name.isEmpty {
-                                DockSectionLabel(title: name.uppercased(), count: rows.count).padding(.top, 6)
+                                DockSectionLabel(title: name.uppercased(), count: rows.count).dockPadding(.top, 6)
                             }
                             IntegrationCardGrid {
                                 ForEach(rows) { entry in
@@ -944,9 +944,9 @@ struct WorkflowIntegrationView: View {
                         if list.isEmpty {
                             emptyList(section, loading: model.busy || (discover && model.catalogLoading))
                         }
-                    }.padding(.bottom, 14)
+                    }.dockPadding(.bottom, 14)
                 }
-            }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
         } secondary: {
             VStack(spacing: 0) {
                 ScrollView {
@@ -958,7 +958,7 @@ struct WorkflowIntegrationView: View {
                         } else {
                             emptyList(section, loading: model.busy)
                         }
-                    }.padding(24).frame(maxWidth: 600, alignment: .leading).frame(
+                    }.dockPadding(24).frame(maxWidth: 600, alignment: .leading).frame(
                         maxWidth: .infinity, alignment: .leading)
                 }
                 if hasPendingEdits {
@@ -969,10 +969,10 @@ struct WorkflowIntegrationView: View {
                             discardEditors()
                             workspace?.isDirty = false
                         }.buttonStyle(.dockSecondary)
-                    }.padding(12)
+                    }.dockPadding(12)
                 }
                 Text(model.sectionStatus(section)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(2).frame(maxWidth: .infinity, minHeight: 40, alignment: .leading).padding(
+                    .lineLimit(2).frame(maxWidth: .infinity, minHeight: 40, alignment: .leading).dockPadding(
                         .horizontal, 20)
             }
             .task(id: section == .skills && !discover ? [model.service.profileID, current?.id] : nil) {
@@ -1100,7 +1100,7 @@ struct WorkflowIntegrationView: View {
                                 : "Refresh the inventory or browse Discover where available."
                 )
                 .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(12)
         }
     }
     /// Installed rows for a tab; Discover swaps in hub, catalog, or not-yet-added MCP servers.
@@ -1371,7 +1371,7 @@ struct WorkflowIntegrationView: View {
                             MarkdownMessageView(
                                 markdown: Self.withoutFrontmatter(preview), cacheKey: "skill:\(skill.id)"
                             )
-                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .dockPadding(16).frame(maxWidth: .infinity, alignment: .leading)
                             .background(
                                 DockThemeShape(cornerRadius: DockLayout.paneRadius).fill(Color.dockSurface2))
                         } else if model.inspecting {
@@ -1379,7 +1379,7 @@ struct WorkflowIntegrationView: View {
                         } else {
                             Label("Skill preview unavailable. Refresh to try again.", systemImage: "doc.text")
                                 .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                                .padding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
+                                .dockPadding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     appliesNote
@@ -1412,7 +1412,7 @@ struct WorkflowIntegrationView: View {
                                 ForEach(toolset.tools, id: \.self) { tool in
                                     Text(tool).dockFont(.metadata, design: .monospaced)
                                         .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                                        .padding(.horizontal, 7).padding(.vertical, 3)
+                                        .dockPadding(.horizontal, 7).dockPadding(.vertical, 3)
                                         .background(Capsule().fill(Color.dockSurface4))
                                 }
                             }
@@ -1568,13 +1568,13 @@ struct WorkflowIntegrationView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .dockFont(.body).padding(.vertical, 10)
+                    .dockFont(.body).dockPadding(.vertical, 10)
                     if label != rows.last?.0 {
                         Color.dockBorderLight.frame(height: DockLayout.hairline)
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .dockPadding(.horizontal, 12)
             .background(DockThemeShape(cornerRadius: DockLayout.paneRadius).fill(Color.dockSurface2))
         }
     }
@@ -1638,7 +1638,7 @@ struct WorkflowIntegrationView: View {
                             }
                         }
                     }
-                }.padding(.leading, 12).padding(.bottom, 8)
+                }.dockPadding(.leading, 12).dockPadding(.bottom, 8)
             }
         }
     }
@@ -1692,7 +1692,7 @@ struct WorkflowIntegrationView: View {
     }
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0, content: content)
-            .padding(.horizontal, 12)
+            .dockPadding(.horizontal, 12)
             .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
@@ -1714,7 +1714,7 @@ struct WorkflowIntegrationView: View {
             Spacer(minLength: 8)
             trailing()
         }
-        .padding(.vertical, 9)
+        .dockPadding(.vertical, 9)
         .overlay(alignment: .bottom) { Rectangle().fill(Color.dockBorderLight).frame(height: 0.5) }
     }
     /// Reversible on/off, so it applies directly rather than through the confirmation dialog.
@@ -1782,7 +1782,7 @@ struct WorkflowIntegrationView: View {
                     }
                 }
             }.buttonStyle(.dockSecondary).disabled(model.busy || !hasPendingEdits)
-        }.dockFont(.body).padding(10)
+        }.dockFont(.body).dockPadding(10)
     }
     private func action(_ action: String, _ item: WorkflowIntegrationItem, confirm: Bool = true)
         -> some View

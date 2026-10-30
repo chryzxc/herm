@@ -20,13 +20,13 @@ struct RichRevisionComparisonView: View {
                         MarkdownMessageView(markdown: String(previous.surface.plainText.prefix(48_000)))
                         Text("Current").fontWeight(.semibold)
                         MarkdownMessageView(markdown: String(current.surface.plainText.prefix(48_000)))
-                    }.padding(16)
+                    }.dockPadding(16)
                 }
             } else if comparison.identical {
                 Text(
                     "The readable results are identical. Use View source on each version to inspect presentation changes."
                 )
-                .dockFont(.body).foregroundStyle(Color.dockSecondaryText).padding(16)
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(16)
             } else {
                 SharedDiffView(
                     patch: Self.patch(

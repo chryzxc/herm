@@ -214,8 +214,8 @@ struct PeakNoticeBadge: View {
                         .foregroundStyle(color)
                         .lineLimit(1)
                 }
-                .padding(.horizontal, compact ? 7 : 10)
-                .padding(.vertical, compact ? 3 : 5)
+                .dockPadding(.horizontal, compact ? 7 : 10)
+                .dockPadding(.vertical, compact ? 3 : 5)
                 .background(Capsule().fill(color.opacity(0.14)))
                 .help(notice.help)
             }

@@ -58,7 +58,7 @@ struct ProjectFolderSheet: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(minHeight: folder == nil ? 110 : 60)
         .background(isDropTargeted ? Color.dockAccentMuted : Color.dockSurface4, in: DockThemeShape(cornerRadius: 10))
         .overlay(

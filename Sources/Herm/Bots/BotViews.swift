@@ -263,13 +263,13 @@ struct BotRosterPage: View {
                         botFilters
                     }
                 }
-                .padding(.horizontal, DockLayout.contentInset)
-                .padding(.vertical, DockLayout.tight)
+                .dockPadding(.horizontal, DockLayout.contentInset)
+                .dockPadding(.vertical, DockLayout.tight)
             } else {
                 sectionPicker
                     .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, DockLayout.contentInset)
-                    .padding(.vertical, DockLayout.tight)
+                    .dockPadding(.horizontal, DockLayout.contentInset)
+                    .dockPadding(.vertical, DockLayout.tight)
             }
             if selectedSection == .bots { botsContent } else { routinesContent }
         }
@@ -306,7 +306,7 @@ struct BotRosterPage: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .frame(minWidth: 140)
         }
-        .padding(.horizontal, DockLayout.compactInset)
+        .dockPadding(.horizontal, DockLayout.compactInset)
         .frame(maxWidth: .infinity, minHeight: DockLayout.controlHeight)
         .background(
             DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
@@ -384,8 +384,8 @@ struct BotRosterPage: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, DockLayout.contentInset)
-                .padding(.vertical, DockLayout.tight)
+                .dockPadding(.horizontal, DockLayout.contentInset)
+                .dockPadding(.vertical, DockLayout.tight)
             }
         }
     }
@@ -441,21 +441,21 @@ struct BotRosterPage: View {
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                 }
-                .padding(.horizontal, DockLayout.compactInset)
-                .padding(.vertical, 10)
+                .dockPadding(.horizontal, DockLayout.compactInset)
+                .dockPadding(.vertical, 10)
 
                 if model.isLoadingRoutines {
                     Text("Loading routines…")
                         .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                        .padding(.horizontal, DockLayout.compactInset)
+                        .dockPadding(.horizontal, DockLayout.compactInset)
                 } else if model.routines.isEmpty {
                     Text("No routines yet — a routine is a recurring Hermes cron job that runs in its Bot’s chat.")
                         .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-                        .padding(.horizontal, DockLayout.compactInset)
+                        .dockPadding(.horizontal, DockLayout.compactInset)
                 } else {
                     ForEach(model.routines) { routine in
                         BotRoutineRow(
@@ -469,8 +469,8 @@ struct BotRosterPage: View {
                     }
                 }
             }
-            .padding(.horizontal, DockLayout.contentInset)
-            .padding(.vertical, DockLayout.tight)
+            .dockPadding(.horizontal, DockLayout.contentInset)
+            .dockPadding(.vertical, DockLayout.tight)
         }
     }
 
@@ -508,10 +508,10 @@ struct BotRosterPage: View {
                 }
                 .controlSize(.regular)
                 .disabled(!model.canCreateBots)
-                .padding(.top, 2)
+                .dockPadding(.top, 2)
             }
         }
-        .padding(16)
+        .dockPadding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -523,8 +523,8 @@ struct BotRosterPage: View {
             Button("Reveal hidden Bots", icon: .eye) { showsHiddenBots = true }
                 .controlSize(.small)
         }
-        .padding(.horizontal, DockLayout.compactInset)
-        .padding(.vertical, 12)
+        .dockPadding(.horizontal, DockLayout.compactInset)
+        .dockPadding(.vertical, 12)
     }
 
     private func unavailableContent(title: String, detail: String, showsRetry: Bool) -> some View {
@@ -558,9 +558,9 @@ struct BotRosterPage: View {
                     .controlSize(.regular)
                 }
             }
-            .padding(.top, 2)
+            .dockPadding(.top, 2)
         }
-        .padding(16)
+        .dockPadding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -689,7 +689,7 @@ private struct BotActivityHistorySheet: View {
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(DockLayout.contentInset)
+                .dockPadding(DockLayout.contentInset)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -700,7 +700,7 @@ private struct BotActivityHistorySheet: View {
                             }
                         }
                     }
-                    .padding(.horizontal, DockLayout.contentInset)
+                    .dockPadding(.horizontal, DockLayout.contentInset)
                 }
             }
         } footer: {
@@ -716,7 +716,7 @@ private struct BotActivityHistorySheet: View {
             Circle()
                 .fill(statusColor(for: record.state))
                 .frame(width: 7, height: 7)
-                .padding(.top, 6)
+                .dockPadding(.top, 6)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text(record.state.label.uppercased())
@@ -740,7 +740,7 @@ private struct BotActivityHistorySheet: View {
                 }
             }
         }
-        .padding(.vertical, 10)
+        .dockPadding(.vertical, 10)
     }
 
     private func statusColor(for state: BotActivityState) -> Color {
@@ -868,7 +868,7 @@ private struct BotRoutineRow: View, Equatable {
             .disabled(isRemoving)
             .help("More routine actions")
         }
-        .padding(.horizontal, DockLayout.compactInset)
+        .dockPadding(.horizontal, DockLayout.compactInset)
         .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
         .background(isHovering ? Color.dockSurface4 : Color.clear)
         .contentShape(Rectangle())
@@ -942,7 +942,7 @@ struct SessionNavBotRow: View, Equatable {
             footer
             runtimeDetails
         }
-        .padding(16)
+        .dockPadding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(rowBackground)
         .disabled(isDeleting)
@@ -1067,8 +1067,8 @@ struct SessionNavBotRow: View, Equatable {
             .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.middle)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .dockPadding(.horizontal, 6)
+            .dockPadding(.vertical, 2)
             .background(Capsule().fill(color.opacity(0.12)))
     }
 
@@ -1195,7 +1195,7 @@ private struct BotAvatarGeneratorTip: View {
                     icon: .arrowsClockwise, action: onRegenerateAll)
             }
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(width: 280, alignment: .leading)
     }
 }
@@ -1228,7 +1228,7 @@ private struct BotAvatarOptionCard: View {
                         if let badge {
                             Text(badge).dockFont(.compactStatus, weight: .semibold, design: .rounded)
                                 .foregroundStyle(Color.dockAccent)
-                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .dockPadding(.horizontal, 5).dockPadding(.vertical, 1)
                                 .background(Capsule().fill(Color.dockAccent.opacity(0.14)))
                         }
                     }
@@ -1245,7 +1245,7 @@ private struct BotAvatarOptionCard: View {
                         .offset(x: hovering ? 2 : 0)
                 }
             }
-            .padding(8)
+            .dockPadding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

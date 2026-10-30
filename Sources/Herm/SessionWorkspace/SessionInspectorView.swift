@@ -171,8 +171,8 @@ struct SessionInspector: View {
                         .lineLimit(2)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .dockPadding(.horizontal, 16)
+                .dockPadding(.vertical, 8)
                 .background(Color.dockWarning.opacity(0.08))
                 .overlay(alignment: .bottom) {
                     Color.dockWarning.opacity(0.25).frame(height: 0.5)
@@ -200,7 +200,7 @@ struct SessionInspector: View {
                 ForEach(extras) { extra in
                     extraContent(extra)
                         .opacity(isVisible(extra) && selectedPreview == nil ? 1 : 0)
-                        .padding(.horizontal, extra.kind == .browser ? 0 : DockSpacing.inspectorInset)
+                        .dockPadding(.horizontal, extra.kind == .browser ? 0 : DockSpacing.inspectorInset)
                         .opacity(selectedExtraID == extra.id ? 1 : 0)
                         .allowsHitTesting(selectedExtraID == extra.id && selectedPreview == nil)
                 }
@@ -359,7 +359,7 @@ struct SessionInspector: View {
             || selectedSection == .artifacts || selectedSection == .iosSimulator || selectedSection == .androidEmulator
         {
             inspectorContent
-                .padding(
+                .dockPadding(
                     .horizontal,
                     selectedSection == .github || selectedSection == .browser ? 0 : DockSpacing.inspectorInset
                 )
@@ -367,8 +367,8 @@ struct SessionInspector: View {
         } else {
             ScrollView {
                 inspectorContent
-                    .padding(.horizontal, DockSpacing.inspectorInset)
-                    .padding(.bottom, 12)
+                    .dockPadding(.horizontal, DockSpacing.inspectorInset)
+                    .dockPadding(.bottom, 12)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
@@ -616,7 +616,7 @@ struct SessionInspector: View {
                     newTabRow(newTabTitle(section), icon: section.icon) { reopen(section) }
                 }
             }
-            .padding(6)
+            .dockPadding(6)
             .frame(minWidth: 180)
             .task {
                 iosSetupProbe.selectDevice("")
@@ -641,7 +641,7 @@ struct SessionInspector: View {
                 Text(title).dockFont(.body, weight: .medium)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
+            .dockPadding(.horizontal, 8)
             .frame(height: 28)
             .contentShape(Rectangle())
         }
@@ -656,7 +656,7 @@ struct SessionInspector: View {
             newTabMenu
             if let onToggle {
                 DockSidebarToggle(isCollapsed: false, edge: .trailing, action: onToggle)
-                    .padding(.horizontal, 8)
+                    .dockPadding(.horizontal, 8)
             }
         }
         .frame(height: headerHeight)
@@ -752,7 +752,7 @@ struct SessionInspector: View {
                 .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(model.status == .working ? Color.dockAccent : Color.dockSecondaryText)
         }
-        .padding(.horizontal, 16)
+        .dockPadding(.horizontal, 16)
         .frame(height: sessionProjectName == nil ? 50 : 58)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -904,7 +904,7 @@ struct SessionInspector: View {
                         if items.contains(where: { $0.id != "branch" }) {
                             Divider()
                                 .frame(height: 24)
-                                .padding(.horizontal, 10)
+                                .dockPadding(.horizontal, 10)
                         }
                     }
 
@@ -925,12 +925,12 @@ struct SessionInspector: View {
                             if item.id != items.filter({ $0.id != "branch" }).last?.id {
                                 Divider()
                                     .frame(height: 24)
-                                    .padding(.horizontal, 10)
+                                    .dockPadding(.horizontal, 10)
                             }
                         }
                     }
                 }
-                .padding(10)
+                .dockPadding(10)
                 .dockGlassPane()
             }
         }
@@ -972,7 +972,7 @@ struct SessionInspector: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .dockPadding(12)
         .dockGlassPane()
     }
 
@@ -999,7 +999,7 @@ struct SessionInspector: View {
                     .lineLimit(2)
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .dockGlassPane()
     }
 }

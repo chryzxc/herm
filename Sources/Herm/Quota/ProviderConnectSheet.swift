@@ -384,7 +384,7 @@ struct ProviderConnectSheet: View {
                         )
                         .buttonStyle(.dockPress)
                     }
-                    .padding(.horizontal, 10)
+                    .dockPadding(.horizontal, 10)
                     .frame(minHeight: DockLayout.controlHeight)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

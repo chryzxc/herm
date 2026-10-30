@@ -48,7 +48,7 @@ struct SessionDashboardCard: View {
             footer
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .padding(16)
+        .dockPadding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
@@ -229,8 +229,8 @@ struct SessionDashboardCard: View {
                             || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 4)
+            .dockPadding(.leading, 10)
+            .dockPadding(.trailing, 4)
             .frame(height: 36)
             .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
             .overlay {

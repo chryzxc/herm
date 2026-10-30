@@ -24,7 +24,7 @@ struct IntegrationsWorkspaceView: View {
                                 }
                             }
                             .disabled(state.navigationLocked)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading).dockPadding(12)
                             Color.dockBorderLight.frame(height: DockLayout.hairline)
                         }
                         if state.category == .messaging {
@@ -91,13 +91,13 @@ struct IntegrationsWorkspaceView: View {
             categoryGroup("Connections", [.connectors, .mcp, .messaging])
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12).padding(.top, 24)
+        .dockPadding(.horizontal, 12).dockPadding(.top, 24)
         .background(Color.dockSidebar)
     }
 
     private func categoryGroup(_ title: String, _ categories: [IntegrationsCategory]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            DockSectionLabel(title: title.uppercased()).padding(.horizontal, 10).padding(.bottom, 4)
+            DockSectionLabel(title: title.uppercased()).dockPadding(.horizontal, 10).dockPadding(.bottom, 4)
             ForEach(categories) { category in
                 Button {
                     state.selectCategory(category)
@@ -114,7 +114,7 @@ struct IntegrationsWorkspaceView: View {
                         }
                     }
                     .foregroundStyle(Color.dockPrimaryText)
-                    .padding(.horizontal, 10).padding(.vertical, 12)
+                    .dockPadding(.horizontal, 10).dockPadding(.vertical, 12)
                     .dockSelectionBackground(
                         DockThemeShape(cornerRadius: DockLayout.controlRadius),
                         active: state.category == category, fill: Color.dockSurface4, allowsInvert: false

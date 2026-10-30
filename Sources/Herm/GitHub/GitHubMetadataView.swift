@@ -180,7 +180,7 @@ struct GitHubMetadataView: View {
                         .accessibilityHint(error)
                 }
             }
-            .padding(.top, 5)
+            .dockPadding(.top, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             if editable {
                 DockIconButton(icon: .pencil, label: "Edit \(section.rawValue.lowercased())", size: 24, style: style) {
@@ -188,7 +188,7 @@ struct GitHubMetadataView: View {
                 }.disabled(!model.loading.isEmpty)
             }
         }
-        .padding(.vertical, 6)
+        .dockPadding(.vertical, 6)
     }
 }
 

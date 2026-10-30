@@ -37,7 +37,7 @@ struct SessionSimulatorStage: View {
                     HStack(spacing: 8) {
                         Button("Reset view") { resetPreview += 1 }.buttonStyle(.dockSecondary)
                     }
-                    .padding(.bottom, 8)
+                    .dockPadding(.bottom, 8)
                 }
             } else {
                 SessionSimulatorCanvas(

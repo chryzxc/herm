@@ -82,7 +82,7 @@ struct ProvidersSettingsView: View {
                     DockTextField("Search providers", text: $query)
                         .textFieldStyle(.plain)
                 }
-                .padding(.horizontal, 10)
+                .dockPadding(.horizontal, 10)
                 .frame(height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -188,8 +188,8 @@ struct ProvidersSettingsView: View {
                     DockIcon(isExpanded ? .caretDown : .caretRight)
                         .foregroundStyle(Color.dockMetadataText)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
+                .dockPadding(.horizontal, 12)
+                .dockPadding(.vertical, 9)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockPress)
@@ -197,10 +197,10 @@ struct ProvidersSettingsView: View {
 
             if isExpanded {
                 detail(row)
-                    .padding(.top, 12)
-                    .padding(.horizontal, 12)
-                    .padding(.leading, 34)
-                    .padding(.bottom, 12)
+                    .dockPadding(.top, 12)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.leading, 34)
+                    .dockPadding(.bottom, 12)
             }
         }
     }
@@ -225,7 +225,7 @@ struct ProvidersSettingsView: View {
         Text(text)
             .dockFont(.compactStatus, weight: .semibold)
             .foregroundStyle(color)
-            .padding(.horizontal, 6)
+            .dockPadding(.horizontal, 6)
             .frame(height: 18)
             .background(Capsule().fill(Color.dockSurface4))
     }

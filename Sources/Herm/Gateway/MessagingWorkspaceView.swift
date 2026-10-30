@@ -66,7 +66,7 @@ struct MessagingWorkspaceView: View {
                 } else {
                     platformGrid
                 }
-            }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
         } secondary: {
             if let current {
                 detail(current)
@@ -119,7 +119,7 @@ struct MessagingWorkspaceView: View {
             if !search.isEmpty {
                 Button("Clear search") { search = "" }.buttonStyle(.dockCompact)
             }
-        }.padding(20)
+        }.dockPadding(20)
     }
 
     private var platformGrid: some View {
@@ -143,7 +143,7 @@ struct MessagingWorkspaceView: View {
                     .disabled(model.busy || model.loading || hasPendingEdits)
                 }
             }
-            .padding(.bottom, 14)
+            .dockPadding(.bottom, 14)
         }
     }
 
@@ -166,7 +166,7 @@ struct MessagingWorkspaceView: View {
                     if !advanced.isEmpty {
                         DisclosureGroup(isExpanded: $showsAdvanced) {
                             fields(advanced).frame(maxWidth: .infinity, alignment: .leading)
-                                .dockCard(padding: 12, isQuiet: true).padding(.top, 8)
+                                .dockCard(padding: 12, isQuiet: true).dockPadding(.top, 8)
                                 .disabled(model.busy || model.loading || model.isStale)
                         } label: {
                             sectionLabel("Advanced")
@@ -174,7 +174,7 @@ struct MessagingWorkspaceView: View {
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                     }
                 }
-                .padding(24)
+                .dockPadding(24)
                 .frame(maxWidth: 600, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -216,7 +216,7 @@ struct MessagingWorkspaceView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         if let image = MessagingQRCode.image(pairing.qrPayload) {
                             Image(nsImage: image).interpolation(.none).resizable().frame(width: 160, height: 160)
-                                .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(.white))
+                                .dockPadding(8).background(RoundedRectangle(cornerRadius: 8).fill(.white))
                         }
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 6) {
@@ -387,7 +387,7 @@ struct MessagingWorkspaceView: View {
         }
         .disabled(model.loading || model.busy)
         .dockButtonSize(.standard)
-        .padding(.horizontal, 20).padding(.vertical, 10)
+        .dockPadding(.horizontal, 20).dockPadding(.vertical, 10)
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 

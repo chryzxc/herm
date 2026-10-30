@@ -355,7 +355,7 @@ struct AutomationWorkspaceView: View {
                 .help("Close run output")
                 .accessibilityLabel("Close run output")
             }
-            .padding(.horizontal, 16)
+            .dockPadding(.horizontal, 16)
             .frame(height: 64)
             .dockPaneTint(Color.dockSurface2)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -378,7 +378,7 @@ struct AutomationWorkspaceView: View {
                 {
                     VStack(alignment: .leading, spacing: 12) {
                         placeholder("Automations unavailable", detail: error)
-                        Button("Retry") { refreshWorkspace() }.buttonStyle(.dockSecondary).padding(
+                        Button("Retry") { refreshWorkspace() }.buttonStyle(.dockSecondary).dockPadding(
                             .horizontal, 22)
                     }
                 } else if control.cronJobs.isEmpty, !control.cronControlAvailable {
@@ -406,8 +406,8 @@ struct AutomationWorkspaceView: View {
                                         DockMenuOption($0.name, value: Optional($0.id))
                                     }
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                                .dockPadding(.horizontal, 16)
+                                .dockPadding(.vertical, 8)
                                 Divider().overlay(Color.dockBorderLight)
                             }
                             Group {
@@ -475,7 +475,7 @@ struct AutomationWorkspaceView: View {
                 tint)
             Text(label).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
         }
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
         .frame(height: 24)
 
     }
@@ -490,20 +490,20 @@ struct AutomationWorkspaceView: View {
                     .textFieldStyle(.plain)
                     .dockFont(.body)
             }
-            .padding(10)
+            .dockPadding(10)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
                     Color.dockControlSurface)
             )
-            .padding(12)
+            .dockPadding(12)
             HStack {
                 Text("SCHEDULES").dockFont(.sectionLabel)
                 Spacer()
                 Text("\(filteredJobs.count)").dockFont(.machineMetadata)
             }
             .foregroundStyle(Color.dockMetadataText)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 10)
+            .dockPadding(.horizontal, 20)
+            .dockPadding(.bottom, 10)
             ScrollView(.vertical) {
                 LazyVStack(spacing: 4) {
                     if filteredJobs.isEmpty {
@@ -512,7 +512,7 @@ struct AutomationWorkspaceView: View {
                     }
                     ForEach(filteredJobs) { job in jobRow(job) }
                 }
-                .padding(8)
+                .dockPadding(8)
             }
         }
         .dockPaneTint(Color.dockSidebar)
@@ -527,7 +527,7 @@ struct AutomationWorkspaceView: View {
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 statusDot(result.result)
-                    .padding(.top, 5)
+                    .dockPadding(.top, 5)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(job.name)
                         .dockFont(.body, weight: .medium)
@@ -556,8 +556,8 @@ struct AutomationWorkspaceView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSelectionFill(
@@ -565,7 +565,7 @@ struct AutomationWorkspaceView: View {
             )
             .overlay(alignment: .leading) {
                 if selected {
-                    Capsule().fill(Color.dockAccent).frame(width: 3).padding(.vertical, 12)
+                    Capsule().fill(Color.dockAccent).frame(width: 3).dockPadding(.vertical, 12)
                 }
             }
             .contentShape(Rectangle())
@@ -581,7 +581,7 @@ struct AutomationWorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             jobHeader(job)
             statStrip(job)
-                .padding(.horizontal, 20)
+                .dockPadding(.horizontal, 20)
             HStack(spacing: 12) {
                 DockTabBar(
                     options: AutomationWorkspaceTab.allCases, selection: $tab, title: \.title)
@@ -596,8 +596,8 @@ struct AutomationWorkspaceView: View {
                 .accessibilityLabel(isRunPanelOpen ? "Hide run output" : "Show run output")
                 .accessibilityValue(isRunPanelOpen ? "Expanded" : "Collapsed")
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
+            .dockPadding(.horizontal, 20)
+            .dockPadding(.vertical, 10)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 if tab == .history {
@@ -680,9 +680,9 @@ struct AutomationWorkspaceView: View {
             .help(control.routineFeedback(reference) ?? "")
             .accessibilityLabel("\(job.name): \(control.routineFeedback(reference) ?? "")")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 8)
+        .dockPadding(.horizontal, 20)
+        .dockPadding(.top, 18)
+        .dockPadding(.bottom, 8)
     }
 
     private func statStrip(_ job: CronSummary) -> some View {
@@ -704,7 +704,7 @@ struct AutomationWorkspaceView: View {
                     ? Color.dockMetadataText
                     : (overdue ? Color.dockWarning : DockCategoryTone.automation.color)
             )
-            Divider().overlay(Color.dockBorderLight).padding(.vertical, 12)
+            Divider().overlay(Color.dockBorderLight).dockPadding(.vertical, 12)
             statTile(
                 "Last run",
                 icon: .clockCounterClockwise,
@@ -712,7 +712,7 @@ struct AutomationWorkspaceView: View {
                 detail: result.detail.map { HumanDateFormatting.relative($0) },
                 tint: statusColor(result.result)
             )
-            Divider().overlay(Color.dockBorderLight).padding(.vertical, 12)
+            Divider().overlay(Color.dockBorderLight).dockPadding(.vertical, 12)
             statTile(
                 "Success rate",
                 icon: .checkCircle,
@@ -750,7 +750,7 @@ struct AutomationWorkspaceView: View {
                     .help(state?.error ?? "Reported execution status")
             }
             .foregroundStyle(Color.dockMetadataText)
-            .padding(.horizontal, 20)
+            .dockPadding(.horizontal, 20)
             .frame(height: 32)
             .dockPaneTint(Color.dockSurface2)
             if jobRuns.isEmpty {
@@ -761,10 +761,10 @@ struct AutomationWorkspaceView: View {
                     }
                     .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
-                    .padding(20)
+                    .dockPadding(20)
                 } else if let error = state?.error {
                     callout("Run history unavailable", message: error, tint: Color.dockWarning)
-                        .padding(20)
+                        .dockPadding(20)
                 } else {
                     placeholder(
                         "No runs yet",
@@ -809,8 +809,8 @@ struct AutomationWorkspaceView: View {
                 statePill(run.status.capitalized, tint: statusColor(result))
                 DockIcon(.caretRight, size: 12, color: .dockMetadataText)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
+            .dockPadding(.horizontal, 20)
+            .dockPadding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Rectangle().dockSelectionFill(
@@ -846,7 +846,7 @@ struct AutomationWorkspaceView: View {
                             .foregroundStyle(Color.dockSecondaryText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(10)
+                            .dockPadding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
                                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2)
@@ -882,7 +882,7 @@ struct AutomationWorkspaceView: View {
                 }
             }
         }
-        .padding(20)
+        .dockPadding(20)
     }
 
     // MARK: Shared pieces
@@ -921,8 +921,8 @@ struct AutomationWorkspaceView: View {
             Text(title).dockFont(.metadata, weight: .semibold)
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
+        .dockPadding(.horizontal, 7)
+        .dockPadding(.vertical, 3)
     }
 
     private func statTile(_ title: String, icon: Ph, value: String, detail: String?, tint: Color)
@@ -945,8 +945,8 @@ struct AutomationWorkspaceView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 10)
+        .dockPadding(.vertical, 12)
+        .dockPadding(.horizontal, 10)
     }
 
     private func callout(_ title: String, message: String, tint: Color) -> some View {
@@ -967,7 +967,7 @@ struct AutomationWorkspaceView: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 12)
+        .dockPadding(.bottom, 12)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -981,7 +981,7 @@ struct AutomationWorkspaceView: View {
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(22)
+        .dockPadding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1055,7 +1055,7 @@ struct AutomationWorkspaceView: View {
                 .disabled(!control.cronControlAvailable)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(28)
+        .dockPadding(28)
     }
 
     private func reconcileSelection() {
@@ -1140,7 +1140,7 @@ private struct AutomationRunDetailPanel: View {
                     .accessibilityLabel("Close run output")
                 }
             }
-            .padding(.horizontal, 16)
+            .dockPadding(.horizontal, 16)
             .frame(height: 64)
             .dockPaneTint(Color.dockSurface2)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -1151,7 +1151,7 @@ private struct AutomationRunDetailPanel: View {
                         AutomationCallout(
                             title: "Error", message: error, tint: Color.dockDestructive
                         )
-                        .padding(18)
+                        .dockPadding(18)
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         Text(run.source == "cron_output" ? "OUTPUT PREVIEW" : "OUTPUT")
@@ -1159,7 +1159,7 @@ private struct AutomationRunDetailPanel: View {
                             .foregroundStyle(Color.dockMetadataText)
                         output
                     }
-                    .padding(18)
+                    .dockPadding(18)
                     Divider().overlay(Color.dockBorderLight)
                     DisclosureGroup("Run details") {
                         VStack(alignment: .leading, spacing: 6) {
@@ -1178,12 +1178,12 @@ private struct AutomationRunDetailPanel: View {
                                     label: "Session", value: sessionID, monospaced: true)
                             }
                         }
-                        .padding(.top, 12)
+                        .dockPadding(.top, 12)
                     }
                     .disclosureGroupStyle(DockDisclosureGroupStyle())
                     .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
-                    .padding(18)
+                    .dockPadding(18)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1280,7 +1280,7 @@ private struct AutomationCallout: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .dockPadding(10)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(tint.opacity(0.08))
         )
@@ -1342,7 +1342,7 @@ private struct AutomationCreationSheet: View {
                     CronConfigurationFields(draft: $configuration)
                     if let error { ModalNote(text: error, icon: .warning, tone: .dockWarning) }
                 }
-                .padding(2)
+                .dockPadding(2)
                 .disabled(isSubmitting)
             }.frame(height: 440)
         } footer: {

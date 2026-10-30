@@ -24,7 +24,7 @@ struct PullRequestInlineReview: View {
                     if let source = activeTarget.source(in: document) {
                         ScrollView(.horizontal) {
                             Text(DiffDocument.source(source)).dockFont(.body, weight: .regular, design: .monospaced)
-                                .textSelection(.enabled).padding(8)
+                                .textSelection(.enabled).dockPadding(8)
                         }.background(Color.dockSurface2)
                     }
                     GitHubMarkdownDraft(
@@ -50,7 +50,7 @@ struct PullRequestInlineReview: View {
                         }
                     }
                 }
-                .padding(12)
+                .dockPadding(12)
                 .id("inline-review:" + document.path)
                 .background(Color.dockSurface)
                 .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -59,7 +59,7 @@ struct PullRequestInlineReview: View {
                 PullRequestReviewDraftRow(model: model, record: record, comment: comment) {
                     if model.beginInline(comment.target, record: record) { target = comment.target }
                 }
-                .padding(.horizontal, 12).padding(.bottom, 8)
+                .dockPadding(.horizontal, 12).dockPadding(.bottom, 8)
             }
         }.dockFont(.body).foregroundStyle(Color.dockPrimaryText)
     }

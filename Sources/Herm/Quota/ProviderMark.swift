@@ -111,7 +111,7 @@ struct ProviderMarkBadge: View {
                             .interpolation(.high)
                             .scaledToFit()
                             .foregroundStyle(Color.dockPrimaryText)
-                            .padding(size * 0.18)
+                            .dockPadding(size * 0.18)
                     } else {
                         monogram(String(name.prefix(1)).uppercased())
                     }
@@ -121,36 +121,36 @@ struct ProviderMarkBadge: View {
                     ProviderMarkShape(path: ProviderMarkShape.claude)
                         // Claude's coral reads on both light and dark canvases.
                         .fill(Color(red: 0.851, green: 0.467, blue: 0.341))
-                        .padding(size * 0.18)
+                        .dockPadding(size * 0.18)
                 case .openAI:
                     ProviderMarkShape(path: ProviderMarkShape.openAI)
                         .fill(Color.dockPrimaryText)
-                        .padding(size * 0.18)
+                        .dockPadding(size * 0.18)
                 case .openCode:
                     ProviderMarkShape(path: ProviderMarkShape.openCode)
                         .fill(Color.dockPrimaryText)
-                        .padding(size * 0.22)
+                        .dockPadding(size * 0.22)
                 case .zai:
                     ProviderMarkShape(path: ProviderMarkShape.zai)
                         .fill(Color.dockPrimaryText)
-                        .padding(size * 0.2)
+                        .dockPadding(size * 0.2)
                 case .antigravity:
                     ProviderMarkShape(path: ProviderMarkShape.antigravity)
                         .fill(Color.dockPrimaryText)
-                        .padding(size * 0.18)
+                        .dockPadding(size * 0.18)
                 case .deepSeek:
                     // DeepSeek's whale blue reads on both light and dark canvases.
                     ProviderMarkShape(path: ProviderMarkShape.deepSeek)
                         .fill(Color(red: 0.302, green: 0.420, blue: 0.996), style: FillStyle(eoFill: true))
-                        .padding(size * 0.18)
+                        .dockPadding(size * 0.18)
                 case .kimi:
                     ProviderMarkShape(path: ProviderMarkShape.kimi)
                         .fill(Color.dockPrimaryText, style: FillStyle(eoFill: true))
-                        .padding(size * 0.2)
+                        .dockPadding(size * 0.2)
                 case .openRouter:
                     ProviderMarkShape(path: ProviderMarkShape.openRouter)
                         .fill(Color.dockPrimaryText, style: FillStyle(eoFill: true))
-                        .padding(size * 0.18)
+                        .dockPadding(size * 0.18)
                 }
             }
             .frame(width: size, height: size)

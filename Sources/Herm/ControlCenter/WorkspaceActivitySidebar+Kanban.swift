@@ -55,13 +55,13 @@ extension WorkspaceActivitySidebar {
                                             }
                                             .dockFont(.metadata)
                                             .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(.vertical, 5)
+                                            .dockPadding(.vertical, 5)
                                         }
                                         .buttonStyle(.dockHover)
                                         .disabled(diagnostic.taskID == nil)
                                     }
                                 }
-                                .padding(.top, 5)
+                                .dockPadding(.top, 5)
                             } label: {
                                 HStack(spacing: 7) {
                                     DockIcon(.stethoscope)
@@ -94,8 +94,8 @@ extension WorkspaceActivitySidebar {
                                 }
                             }
                             .disclosureGroupStyle(DockDisclosureGroupStyle())
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
+                            .dockPadding(.horizontal, 10)
+                            .dockPadding(.vertical, 7)
                             .background(Color.dockWarning.opacity(0.06))
                             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                         }
@@ -118,8 +118,8 @@ extension WorkspaceActivitySidebar {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             .foregroundStyle(Color.dockWarning)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 9)
+                            .dockPadding(.horizontal, 10)
+                            .dockPadding(.vertical, 9)
                             .background(Color.dockWarning.opacity(0.07))
                             .overlay(
                                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
@@ -128,8 +128,8 @@ extension WorkspaceActivitySidebar {
                             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
+                    .dockPadding(.horizontal, 16)
+                    .dockPadding(.bottom, 12)
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -213,8 +213,8 @@ extension WorkspaceActivitySidebar {
 
     var kanbanToolbar: some View {
         kanbanToolbarControls
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.vertical, 8)
             .dockPaneTint(Color.dockSurface.opacity(0.28))
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -307,8 +307,8 @@ extension WorkspaceActivitySidebar {
         }
         .dockFont(.metadata, weight: .semibold)
         .foregroundStyle(Color.dockSecondaryText)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .dockPadding(.horizontal, 8)
+        .dockPadding(.vertical, 6)
         .background(Capsule().dockSurfaceFill(Color.dockSurface2.opacity(0.76)))
         .clipShape(Capsule())
     }
@@ -385,8 +385,8 @@ extension WorkspaceActivitySidebar {
                 .dockFont(size: 8, weight: .bold)
         }
         .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .dockPadding(.horizontal, 9)
+        .dockPadding(.vertical, 7)
         .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.dockSurface.opacity(0.72))
         .clipShape(Capsule())
         .overlay {
@@ -409,8 +409,8 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 11)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             ScrollView {
@@ -420,7 +420,7 @@ extension WorkspaceActivitySidebar {
                         kanbanStatusRow(lane, title: lane.rawValue, isSelected: kanbanStatusFilter == lane.rawValue)
                     }
                 }
-                .padding(8)
+                .dockPadding(8)
             }
             .frame(maxHeight: 320)
         }
@@ -459,8 +459,8 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockAccent)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.vertical, 5)
             .background(isSelected ? Color.dockAccent.opacity(0.11) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
@@ -483,8 +483,8 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 11)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             ScrollView {
@@ -494,7 +494,7 @@ extension WorkspaceActivitySidebar {
                         kanbanAssigneeRow(assignee, isSelected: kanbanAssigneeFilter == assignee)
                     }
                 }
-                .padding(8)
+                .dockPadding(8)
             }
             .frame(maxHeight: 320)
         }
@@ -538,8 +538,8 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockAccent)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.vertical, 5)
             .background(isSelected ? Color.dockAccent.opacity(0.11) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
@@ -596,15 +596,15 @@ extension WorkspaceActivitySidebar {
                 .textFieldStyle(.plain)
                 .dockFont(.navigation)
                 .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .dockPadding(.horizontal, 10)
+                .dockPadding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                         Color.dockSurface)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         }
-        .padding(12)
+        .dockPadding(12)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).dockSurfaceFill(
                 Color.dockSurface2)
@@ -646,8 +646,8 @@ extension WorkspaceActivitySidebar {
             .dockFont(.compactStatus, weight: .semibold)
             .foregroundStyle(tint)
             .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
+            .dockPadding(.horizontal, 7)
+            .dockPadding(.vertical, 4)
             .background(tint.opacity(0.10))
             .clipShape(Capsule())
     }
@@ -667,9 +667,9 @@ extension WorkspaceActivitySidebar {
         }
         .dockFont(.compactStatus, weight: .semibold)
         .foregroundStyle(Color.dockSecondaryText)
-        .padding(.leading, 3)
-        .padding(.trailing, 8)
-        .padding(.vertical, 3)
+        .dockPadding(.leading, 3)
+        .dockPadding(.trailing, 8)
+        .dockPadding(.vertical, 3)
         .background(Color.dockSecondaryText.opacity(0.10))
         .clipShape(Capsule())
     }
@@ -748,9 +748,9 @@ extension WorkspaceActivitySidebar {
                 }
             }
             .foregroundStyle(Color.dockSecondaryText)
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
+            .dockPadding(.horizontal, 16)
+            .dockPadding(.top, 16)
+            .dockPadding(.bottom, 12)
 
             HStack(spacing: 0) {
                 ForEach(KanbanInspectorTab.allCases) { tab in
@@ -829,7 +829,7 @@ extension WorkspaceActivitySidebar {
                             }
                     }
                 }
-                .padding(16)
+                .dockPadding(16)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
@@ -861,7 +861,7 @@ extension WorkspaceActivitySidebar {
                     }
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
-                    .padding(.vertical, 5)
+                    .dockPadding(.vertical, 5)
                     .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                 }
             }
@@ -928,7 +928,7 @@ extension WorkspaceActivitySidebar {
                                     .enabled)
                             }
                         }
-                        .padding(.vertical, 6)
+                        .dockPadding(.vertical, 6)
                         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                     }
                 }
@@ -957,7 +957,7 @@ extension WorkspaceActivitySidebar {
                                 Text(summary).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                             }
                         }
-                        .padding(.vertical, 7)
+                        .dockPadding(.vertical, 7)
                         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                     }
                 }
@@ -978,7 +978,7 @@ extension WorkspaceActivitySidebar {
                 }
             }
             .textSelection(.enabled)
-            .padding(10)
+            .dockPadding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.dockWarning.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }

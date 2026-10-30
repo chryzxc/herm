@@ -79,7 +79,7 @@ struct QuotaWorkspaceView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.top, 4)
+        .dockPadding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockSheet(item: $connectTarget) { descriptor in
             ProviderConnectSheet(descriptor: descriptor, control: control)
@@ -203,7 +203,7 @@ struct QuotaWorkspaceView: View {
                 }
             }
         }
-        .padding(.bottom, DockSpacing.group)
+        .dockPadding(.bottom, DockSpacing.group)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
@@ -284,7 +284,7 @@ struct QuotaWorkspaceView: View {
                     .foregroundStyle(Color.dockSecondaryText)
                 DockIcon(.caretDown, size: 12, color: Color.dockMetadataText)
             }
-            .padding(.horizontal, DockSpacing.control)
+            .dockPadding(.horizontal, DockSpacing.control)
             .dockHitTarget()
         }
         .fixedSize()
@@ -372,9 +372,9 @@ struct QuotaWorkspaceView: View {
             .frame(minWidth: 620)
             VStack(alignment: .leading, spacing: 0) {
                 headroom
-                Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.horizontal, 12)
+                Color.dockBorderLight.frame(height: DockLayout.hairline).dockPadding(.horizontal, 12)
                 needsAttention
-                Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.horizontal, 12)
+                Color.dockBorderLight.frame(height: DockLayout.hairline).dockPadding(.horizontal, 12)
                 nextReset
             }
         }
@@ -384,7 +384,7 @@ struct QuotaWorkspaceView: View {
     private var overviewDivider: some View {
         Color.dockBorderLight
             .frame(width: DockLayout.hairline)
-            .padding(.vertical, 12)
+            .dockPadding(.vertical, 12)
     }
 
     private func overviewMetric(title: String, value: String, valueColor: Color, detail: String, help: String?)
@@ -402,7 +402,7 @@ struct QuotaWorkspaceView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .padding(14)
+        .dockPadding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .help(help ?? "")
@@ -413,7 +413,7 @@ struct QuotaWorkspaceView: View {
     private func providerList(_ snapshots: [ProviderQuotaSnapshot], now: Date) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             DockSectionLabel(title: "Connected", count: snapshots.count)
-                .padding(.top, 4)
+                .dockPadding(.top, 4)
             ForEach(snapshots, id: \.provider) { snapshot in
                 providerCard(snapshot, now: now)
                     .onDrop(
@@ -458,7 +458,7 @@ struct QuotaWorkspaceView: View {
                 }
             }
         }
-        .padding(14)
+        .dockPadding(14)
         .background(
             RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
                 .dockSurfaceFill(Color.dockSurface)
@@ -584,8 +584,8 @@ struct QuotaWorkspaceView: View {
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .dockPadding(.horizontal, 12)
+                .dockPadding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
                         .dockSurfaceFill(Color.dockSurface4)
@@ -661,7 +661,7 @@ struct QuotaWorkspaceView: View {
             .onChange(of: renameFieldFocused) { _, focused in
                 if !focused { commitRename(snapshot.provider) }
             }
-            .padding(.horizontal, 6)
+            .dockPadding(.horizontal, 6)
             .frame(maxWidth: 280, minHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
@@ -826,8 +826,8 @@ struct QuotaWorkspaceView: View {
     private func availableSection(_ descriptors: [QuotaProviderDescriptor]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             DockSectionLabel(title: "Available to connect", count: descriptors.count)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+                .dockPadding(.top, 8)
+                .dockPadding(.bottom, 4)
             ForEach(descriptors) { descriptor in
                 availableRow(descriptor)
             }
@@ -957,7 +957,7 @@ private struct QuotaHealthPill: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
         .frame(height: 22)
         .background(Capsule().fill(Color.dockSurface4))
         .accessibilityElement(children: .combine)

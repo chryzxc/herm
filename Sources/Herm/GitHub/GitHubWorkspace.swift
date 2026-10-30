@@ -85,7 +85,7 @@ struct GitHubWorkspace<Content: View>: View {
                     }
                 }
             }
-            .padding(.horizontal, 10)
+            .dockPadding(.horizontal, 10)
             Spacer(minLength: 0)
         }
         .background(Color.dockSidebar)

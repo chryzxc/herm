@@ -17,8 +17,8 @@ struct SessionExplorerSurface: View {
                 isCompact: isCompact,
                 onOpenFile: onOpenFile
             )
-            .padding(.horizontal, 6)
-            .padding(.vertical, isCompact ? 4 : 8)
+            .dockPadding(.horizontal, 6)
+            .dockPadding(.vertical, isCompact ? 4 : 8)
             .background(Color.dockCanvas)
         }
     }
@@ -46,7 +46,7 @@ struct SessionSourceControlSurface: View {
                     selectedFilePath: selectedFilePath,
                     showsBranch: false
                 )
-                .padding(16)
+                .dockPadding(16)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .background(Color.dockCanvas)
@@ -84,8 +84,8 @@ struct SessionPullRequestsSurface: View {
                 Text(error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .padding(.horizontal, DockSpacing.section)
-                    .padding(.vertical, DockSpacing.control)
+                    .dockPadding(.horizontal, DockSpacing.section)
+                    .dockPadding(.vertical, DockSpacing.control)
             }
             ScrollView {
                 LazyVStack(spacing: 2) {
@@ -97,7 +97,7 @@ struct SessionPullRequestsSurface: View {
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
+                        .dockPadding(.vertical, 32)
                     } else {
                         ForEach(center.visible) { pullRequest in
                             Button {
@@ -112,8 +112,8 @@ struct SessionPullRequestsSurface: View {
                         }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .dockPadding(.horizontal, 10)
+                .dockPadding(.vertical, 6)
             }
         }
     }
@@ -128,8 +128,8 @@ struct SessionPullRequestsSurface: View {
             }
         }
         .dockFont(.body)
-        .padding(.horizontal, DockSpacing.section)
-        .padding(.vertical, 10)
+        .dockPadding(.horizontal, DockSpacing.section)
+        .dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
@@ -143,7 +143,7 @@ struct SessionPullRequestsSurface: View {
             .textFieldStyle(.plain)
             .accessibilityLabel("Search pull requests")
         }
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34)
         .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
         .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
@@ -177,8 +177,8 @@ struct SessionIssuesSurface: View {
                         Text(error)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
-                            .padding(.horizontal, DockSpacing.section)
-                            .padding(.vertical, DockSpacing.control)
+                            .dockPadding(.horizontal, DockSpacing.section)
+                            .dockPadding(.vertical, DockSpacing.control)
                     }
                     ScrollView {
                         LazyVStack(spacing: 2) {
@@ -190,7 +190,7 @@ struct SessionIssuesSurface: View {
                                         .foregroundStyle(Color.dockMetadataText)
                                 }
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 32)
+                                .dockPadding(.vertical, 32)
                             } else {
                                 ForEach(center.visible) { issue in
                                     Button {
@@ -204,8 +204,8 @@ struct SessionIssuesSurface: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .dockPadding(.horizontal, 10)
+                        .dockPadding(.vertical, 6)
                     }
                 }
             }
@@ -230,7 +230,7 @@ struct SessionIssuesSurface: View {
                 .textFieldStyle(.plain)
                 .accessibilityLabel("Search issues")
             }
-            .padding(.horizontal, 10)
+            .dockPadding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
             .background(
                 DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface)
@@ -251,8 +251,8 @@ struct SessionIssuesSurface: View {
             }
         }
         .dockFont(.body)
-        .padding(.horizontal, DockSpacing.section)
-        .padding(.vertical, 10)
+        .dockPadding(.horizontal, DockSpacing.section)
+        .dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
@@ -288,8 +288,8 @@ struct SessionProjectRequiredState: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 4)
-        .padding(.top, 20)
+        .dockPadding(.horizontal, 4)
+        .dockPadding(.top, 20)
         .background(Color.dockCanvas)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("No project selected. Choose a project from Projects to use this session workspace.")
@@ -339,8 +339,8 @@ struct SessionChangeDiffPreview: View {
                 .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.dockWarning)
         }
-        .padding(.horizontal, DockSpacing.section)
-        .padding(.vertical, 10)
+        .dockPadding(.horizontal, DockSpacing.section)
+        .dockPadding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -353,28 +353,28 @@ struct SessionChangeDiffPreview: View {
                     .foregroundStyle(Color.dockMetadataText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
+            .dockPadding(14)
         } else if let diff {
             SharedDiffView(patch: diff.text, path: diff.path)
             if diff.text.isEmpty {
                 Text("No textual diff is available for this file.")
                     .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
-                    .padding(.horizontal, DockSpacing.section)
-                    .padding(.top, 8)
+                    .dockPadding(.horizontal, DockSpacing.section)
+                    .dockPadding(.top, 8)
             }
             if diff.isTruncated {
                 Text("Diff truncated for safe display.")
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .padding(.horizontal, DockSpacing.section)
-                    .padding(.vertical, 8)
+                    .dockPadding(.horizontal, DockSpacing.section)
+                    .dockPadding(.vertical, 8)
             }
         } else {
             Text("This file has no readable diff.")
                 .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
-                .padding(14)
+                .dockPadding(14)
         }
     }
 
@@ -461,7 +461,7 @@ struct WorktreePicker: View {
                 branch
             }
         }
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
         .frame(height: 28)
         .confirmationDialog("Start a task in a new worktree?", isPresented: $isConfirmingNewTask) {
             Button("Create Worktree") {
@@ -489,7 +489,7 @@ struct WorktreePicker: View {
                 .lineLimit(1).truncationMode(.middle)
         }
         .dockFont(.metadata)
-        .padding(.horizontal, 4)
+        .dockPadding(.horizontal, 4)
         .accessibilityElement(children: .combine)
     }
 
@@ -510,7 +510,7 @@ struct WorktreePicker: View {
             }
         }
         .dockFont(.metadata)
-        .padding(.horizontal, 4)
+        .dockPadding(.horizontal, 4)
         .frame(height: 24)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -519,7 +519,7 @@ struct WorktreePicker: View {
     @ViewBuilder
     private var menu: some View {
         if worktrees.count > 6 {
-            DockTextField("Search worktrees", text: $query).textFieldStyle(.dockGlass).padding(.bottom, 4)
+            DockTextField("Search worktrees", text: $query).textFieldStyle(.dockGlass).dockPadding(.bottom, 4)
         }
         DockMenuSection("Worktrees") {
             ForEach(filtered) { tree in
@@ -533,7 +533,7 @@ struct WorktreePicker: View {
             }
         }
         if canStartTask {
-            Divider().padding(.vertical, 4)
+            Divider().dockPadding(.vertical, 4)
             Button {
                 isConfirmingNewTask = true
             } label: {
@@ -571,7 +571,7 @@ struct WorktreePicker: View {
                 Text("\(changed) changed").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             }
         }
-        .padding(.vertical, 4)
+        .dockPadding(.vertical, 4)
         .frame(minWidth: 260)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(

@@ -1879,9 +1879,9 @@ struct EdgeNotchView: View {
                         // Keep the preview close to it so its content does not float
                         // in the middle of the expanded notch.
                         preview.frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(.horizontal, state.side == .top ? 34 : 8)
-                            .padding(.top, state.side == .top ? 8 : 26)
-                            .padding(.bottom, state.side == .top ? 16 : 26)
+                            .dockPadding(.horizontal, state.side == .top ? 34 : 8)
+                            .dockPadding(.top, state.side == .top ? 8 : 26)
+                            .dockPadding(.bottom, state.side == .top ? 16 : 26)
                             .transition(
                                 reduceMotion
                                     ? .opacity
@@ -2022,7 +2022,7 @@ struct EdgeNotchView: View {
                             onQuotaRequested()
                         }
                     }
-                    .padding(2)
+                    .dockPadding(2)
                     .background(DockThemeShape(cornerRadius: 14).dockSurfaceFill(Color.dockSurface4.opacity(0.6)))
                     if isIsland {
                         // Leave the camera housing clear; the controls sit in the ears either side.
@@ -2043,7 +2043,7 @@ struct EdgeNotchView: View {
                     }
                 }
                 .frame(height: isIsland ? max(state.notchSize.height, 34) : 40)
-                .padding(.horizontal, isIsland ? 0 : 6)
+                .dockPadding(.horizontal, isIsland ? 0 : 6)
                 if !isIsland { Divider().overlay(Color.dockBorderLight) }
             }
             if let target = state.steeringTarget, let model = quickMessageModel {
@@ -2149,7 +2149,7 @@ struct EdgeNotchView: View {
             }
         }
         // Presentations without the tab row still leave the camera housing clear.
-        .padding(.top, (state.glimpsing || showsQuickMessage) && isIsland ? state.notchSize.height : 0)
+        .dockPadding(.top, (state.glimpsing || showsQuickMessage) && isIsland ? state.notchSize.height : 0)
     }
 
     private func resultPreview(_ target: EdgeResultTarget, model quickMessageModel: DockModel) -> some View {
@@ -2234,7 +2234,7 @@ struct EdgeNotchView: View {
             Text(title)
                 .dockFont(.body, weight: isSelected ? .semibold : .medium)
                 .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .padding(.horizontal, 10)
+                .dockPadding(.horizontal, 10)
                 .frame(height: 24)
                 .background(
                     DockThemeShape(cornerRadius: 12).dockSelectionFill(

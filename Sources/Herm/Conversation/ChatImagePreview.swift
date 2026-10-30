@@ -17,7 +17,7 @@ struct ChatImagePreviewModal: View {
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: 900, maxHeight: 700)
-                .padding(28)
+                .dockPadding(28)
             Button(action: { dismiss() }) {
                 DockIcon(.x)
                     .dockFont(.navigation, weight: .bold)
@@ -27,7 +27,7 @@ struct ChatImagePreviewModal: View {
             }
             .buttonStyle(.dockHover)
             .help("Close image preview")
-            .padding(16)
+            .dockPadding(16)
         }
         .frame(minWidth: 520, minHeight: 420)
     }

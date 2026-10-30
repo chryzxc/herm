@@ -39,7 +39,7 @@ struct ForwardToBotPopover: View {
                 .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(5)
-                .padding(8)
+                .dockPadding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(field.dockSurfaceFill(.dockControlSurface, stroke: .dockBorderLight))
             ComposerInputEditor(
@@ -72,7 +72,7 @@ struct ForwardToBotPopover: View {
                     .disabled(isForwarding)
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .frame(width: 340)
         .onAppear {
             isFocused = true

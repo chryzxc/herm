@@ -175,8 +175,8 @@ extension WorkspaceActivitySidebar {
                         .disabled(!agentUpdateService.canStartUpdate)
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
+            .dockPadding(.horizontal, 9)
+            .dockPadding(.vertical, 7)
             .background(statusColor.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
             Text(
@@ -194,7 +194,7 @@ extension WorkspaceActivitySidebar {
                 diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.dockMetadataText)
             }
             HStack(alignment: .top, spacing: 8) {
-                Circle().fill(Color.dockWarningFill).frame(width: 6, height: 6).padding(.top, 5)
+                Circle().fill(Color.dockWarningFill).frame(width: 6, height: 6).dockPadding(.top, 5)
                 Text(reason)
                     .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)
@@ -306,7 +306,7 @@ extension WorkspaceActivitySidebar {
                         }
                     }
                     .textSelection(.enabled)
-                    .padding(.vertical, 2)
+                    .dockPadding(.vertical, 2)
                 }
                 .frame(maxHeight: 150)
             }

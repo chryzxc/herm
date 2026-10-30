@@ -547,7 +547,7 @@ struct HermesConfigCategoryView: View {
                                         HermesConfigFieldRow(editor: editor, field: field)
                                     }
                                 }
-                                .padding(.vertical, -8)
+                                .dockPadding(.vertical, -8)
                             }
                         }
                     }
@@ -591,7 +591,7 @@ private struct HermesConfigFieldRow: View {
                     .dockFont(.body, weight: .regular, design: .monospaced)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 54, maxHeight: 120)
-                    .padding(6)
+                    .dockPadding(6)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                             Color.dockControlSurface)
@@ -601,7 +601,7 @@ private struct HermesConfigFieldRow: View {
                             Color.dockBorder, lineWidth: 0.5)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                    .padding(.bottom, 10)
+                    .dockPadding(.bottom, 10)
             }
             .onAppear { listDraft = listText }
             .onChange(of: listText) { _, text in listDraft = text }

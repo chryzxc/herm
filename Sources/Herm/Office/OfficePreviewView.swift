@@ -118,7 +118,7 @@ struct OfficePreviewView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
             }
-            .padding(12)
+            .dockPadding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             if let selection {
@@ -126,7 +126,7 @@ struct OfficePreviewView: View {
                     .frame(width: min(340, max(0, size.width - 24)))
                     .frame(maxHeight: panelHeight, alignment: .top)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(12)
+                    .dockPadding(12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -139,7 +139,7 @@ struct OfficePreviewView: View {
                 onShowBoard: { withAnimation(hudAnimation) { selection = selection == .board ? nil : .board } },
                 onResetCamera: resetCamera
             )
-            .padding(.bottom, 12)
+            .dockPadding(.bottom, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
         .animation(hudAnimation, value: selection)
@@ -280,7 +280,7 @@ private struct OfficeCrewStatusBar: View {
                 }
             }
             .dockButtonSize(.accessible)
-            .padding(3)
+            .dockPadding(3)
         }
         .fixedSize()
     }
@@ -304,7 +304,7 @@ private struct OfficeRosterPanel: View {
                         .dockFont(.metadata, weight: .semibold).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
                 }
-                .padding(.horizontal, 12)
+                .dockPadding(.horizontal, 12)
                 .frame(height: 34)
                 Divider().overlay(Color.dockBorderLight)
                 if agents.isEmpty {
@@ -315,13 +315,13 @@ private struct OfficeRosterPanel: View {
                             .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
                     }
-                    .padding(12)
+                    .dockPadding(12)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             ForEach(agents) { agent in row(agent) }
                         }
-                        .padding(4)
+                        .dockPadding(4)
                     }
                 }
             }
@@ -351,7 +351,7 @@ private struct OfficeRosterPanel: View {
                     .dockFont(.metadata, weight: .medium)
                     .foregroundStyle(Color.dockMetadataText)
             }
-            .padding(.horizontal, 8)
+            .dockPadding(.horizontal, 8)
             .frame(height: 44)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(
@@ -393,13 +393,13 @@ private struct OfficeToolbar: View {
                 separator
                 iconButton(.arrowCounterClockwise, help: "Reset camera", isOn: false, action: onResetCamera)
             }
-            .padding(5)
+            .dockPadding(5)
         }
         .fixedSize()
     }
 
     private var separator: some View {
-        Rectangle().fill(Color.dockBorder).frame(width: 1, height: 18).padding(.horizontal, 2)
+        Rectangle().fill(Color.dockBorder).frame(width: 1, height: 18).dockPadding(.horizontal, 2)
     }
 
     private func iconButton(_ symbol: Ph, help: String, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -451,8 +451,8 @@ private struct OfficeInspectorHeader<Leading: View>: View {
             .help("Close details")
             .accessibilityLabel("Close details")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .dockPadding(.horizontal, 14)
+        .dockPadding(.vertical, 12)
     }
 }
 
@@ -501,7 +501,7 @@ private struct OfficeAgentInspector: View {
                         taskContent
                     }
                 }
-                .padding(14)
+                .dockPadding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -602,7 +602,7 @@ private struct OfficeAgentInspector: View {
             OfficeCard(title: "Other assigned tasks · \(agent.tasks.count - 1)") {
                 ForEach(Array(agent.tasks.dropFirst())) { task in
                     DisclosureGroup {
-                        OfficeTaskFields(task: task).padding(.top, 6)
+                        OfficeTaskFields(task: task).dockPadding(.top, 6)
                     } label: {
                         Text(task.title)
                             .dockFont(.body)
@@ -636,7 +636,7 @@ private struct OfficeBoardInspector: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(lanes) { lane in laneCard(lane) }
                 }
-                .padding(14)
+                .dockPadding(14)
             }
         }
     }
@@ -656,7 +656,7 @@ private struct OfficeBoardInspector: View {
                     Text("\(lane.tasks.count)")
                         .dockFont(.metadata, weight: .semibold).monospacedDigit()
                         .foregroundStyle(Color.dockSecondaryText)
-                        .padding(.horizontal, 7)
+                        .dockPadding(.horizontal, 7)
                         .frame(height: 18)
                         .background(Capsule().fill(Color.dockControlSurface))
                     DockIcon(.caretRight)
@@ -664,7 +664,7 @@ private struct OfficeBoardInspector: View {
                         .foregroundStyle(Color.dockMetadataText)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
-                .padding(.horizontal, 10)
+                .dockPadding(.horizontal, 10)
                 .frame(height: 34)
                 .contentShape(Rectangle())
             }
@@ -687,7 +687,7 @@ private struct OfficeBoardInspector: View {
                                     .dockFont(.metadata)
                                     .foregroundStyle(Color.dockMetadataText)
                             }
-                            .padding(8)
+                            .dockPadding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
                                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface2)
@@ -695,10 +695,10 @@ private struct OfficeBoardInspector: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)
-                        if selectedTaskID == task.id { OfficeTaskFields(task: task).padding(.horizontal, 8) }
+                        if selectedTaskID == task.id { OfficeTaskFields(task: task).dockPadding(.horizontal, 8) }
                     }
                 }
-                .padding([.horizontal, .bottom], 10)
+                .dockPadding([.horizontal, .bottom], 10)
             }
         }
         .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
@@ -736,7 +736,7 @@ private struct OfficeCard<Content: View>: View {
                 .foregroundStyle(Color.dockMetadataText)
             content()
         }
-        .padding(10)
+        .dockPadding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
         .overlay(
@@ -763,7 +763,7 @@ private struct OfficeTaskFields: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                    .padding(.top, 2)
+                    .dockPadding(.top, 2)
             }
         }
     }

@@ -82,7 +82,7 @@ struct RepositoryCommitReferencePill: View {
                 DockIcon(.cloud, size: 10, color: accent.color)
             }
         }
-        .padding(.horizontal, 6)
+        .dockPadding(.horizontal, 6)
         .frame(height: 18)
         .background(Capsule().fill(accent.fill.opacity(0.14)))
         .overlay(

@@ -56,7 +56,7 @@ private struct PullRequestSessionChatView: View {
                         label: expanded ? "Minimize PR chat" : "Show PR chat", size: 28, style: style
                     ) { expanded.toggle() }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
+                .dockPadding(.horizontal, 14).dockPadding(.vertical, 10)
                 Color.dockBorderLight.frame(height: DockLayout.hairline)
                 ConversationTranscriptView(
                     model: model, controlCenter: control, botMode: chatBots, messageActionState: actions,

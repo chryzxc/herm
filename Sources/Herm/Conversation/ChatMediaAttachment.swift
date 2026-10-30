@@ -201,7 +201,7 @@ struct ChatMediaAttachmentCard: View {
             }
             .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(10)
+        .dockPadding(10)
         .background(
             Color.dockSurface2.opacity(grouped ? 0 : 0.55),
             in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -283,7 +283,7 @@ struct SessionAttachmentDiffTab: View {
                         Text("Staged changes")
                             .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
-                            .padding(.horizontal, 14)
+                            .dockPadding(.horizontal, 14)
                     }
                     SessionChangeDiffPreview(file: file, diff: diffs[file.id], isLoading: isLoading)
                 }

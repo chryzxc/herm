@@ -45,7 +45,7 @@ struct GitHubAccessRecoveryView: View {
                     Text(requirement.command())
                         .dockFont(.metadata, design: .monospaced).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .dockPadding(12).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.dockSurface, in: RoundedRectangle(cornerRadius: 8))
                     Text(
                         "Run this in Terminal, complete GitHub authorization, then retry. Updated credentials may take a minute to appear."
@@ -73,7 +73,7 @@ struct GitHubAccessRecoveryView: View {
                 }
             }
             .dockFont(.body).foregroundStyle(Color.dockPrimaryText)
-            .frame(maxWidth: 440, alignment: .leading).padding(28)
+            .frame(maxWidth: 440, alignment: .leading).dockPadding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

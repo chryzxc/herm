@@ -701,10 +701,10 @@ struct BotCrewRow: View {
                                 .asymmetric(insertion: .offset(y: 6).combined(with: .opacity), removal: .opacity))
                     }
                 }
-                .padding(.leading, BotHuddle.leadInset)
+                .dockPadding(.leading, BotHuddle.leadInset)
                 .animation(.easeOut(duration: 0.25), value: stepped.map(\.step))
             }
-            .padding(.vertical, 6)
+            .dockPadding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -769,8 +769,8 @@ struct BotDispatchCard: View {
                             DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.vertical, 5)
                     .background(Capsule().fill(Color.dockSurface2))
                     .contentShape(Capsule())
                 }
@@ -786,7 +786,7 @@ struct BotDispatchCard: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(DockSpacing.group)
+                        .dockPadding(DockSpacing.group)
                         .background {
                             RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
                                 .dockSurfaceFill(Color.dockSurface2)
@@ -798,7 +798,7 @@ struct BotDispatchCard: View {
                         .transition(.opacity)
                 }
             }
-            .padding(.vertical, DockSpacing.control)
+            .dockPadding(.vertical, DockSpacing.control)
         }
     }
 
@@ -947,9 +947,9 @@ struct TurnActivityView: View, Equatable {
                                 .foregroundStyle(Color.dockMetadataText)
                             }
                         }
-                        .padding(.leading, crew.isEmpty ? 0 : BotHuddle.leadInset)
+                        .dockPadding(.leading, crew.isEmpty ? 0 : BotHuddle.leadInset)
                     }
-                    .padding(.vertical, 6)
+                    .dockPadding(.vertical, 6)
                 }
                 .transition(.opacity)
             } else {
@@ -962,7 +962,7 @@ struct TurnActivityView: View, Equatable {
                             DockIcon(isExpanded ? .caretDown : .caretRight, size: 10)
                         }
                         .foregroundStyle(Color.dockSecondaryText)
-                        .padding(.vertical, 6)
+                        .dockPadding(.vertical, 6)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.dockHover)
@@ -1068,7 +1068,7 @@ struct TurnActivityView: View, Equatable {
             }
             .transition(stepMotion == nil ? .identity : .opacity.combined(with: .offset(y: 6)))
         }
-        .padding(.vertical, 4)
+        .dockPadding(.vertical, 4)
     }
 
     private func thoughtRow(_ call: ActiveToolCall) -> some View {
@@ -1106,7 +1106,7 @@ struct TurnActivityView: View, Equatable {
                 .foregroundStyle(Color.dockMetadataText)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 28)
+                .dockPadding(.leading, 28)
             }
         }
     }
@@ -1154,7 +1154,7 @@ struct TurnActivityView: View, Equatable {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
                             Color.dockBorderLight, lineWidth: 0.5)
                     )
-                    .padding(.leading, 24)
+                    .dockPadding(.leading, 24)
                 }
             }
         } else {

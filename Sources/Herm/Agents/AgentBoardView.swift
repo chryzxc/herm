@@ -110,7 +110,7 @@ struct AgentBoardView: View {
                 pipelineList(pipelineItems)
             }
         }
-        .padding(embedded ? 0 : 20)
+        .dockPadding(embedded ? 0 : 20)
     }
 
     private var ambientLight: some View {
@@ -177,7 +177,7 @@ struct AgentBoardView: View {
                     .accessibilityAddTraits(agentScope == scope ? .isSelected : [])
                 }
             }
-            .padding(2)
+            .dockPadding(2)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                     Color.dockSurface4)
@@ -209,9 +209,9 @@ struct AgentBoardView: View {
 
                     if let agent, expandedAgentID == subagent.id {
                         expandedActivity(for: agent)
-                            .padding(.horizontal, 12)
-                            .padding(.top, 2)
-                            .padding(.bottom, 12)
+                            .dockPadding(.horizontal, 12)
+                            .dockPadding(.top, 2)
+                            .dockPadding(.bottom, 12)
                     }
                 }
                 .background(Color.dockSurface4.opacity(expandedAgentID == subagent.id ? 1 : 0.72))
@@ -268,8 +268,8 @@ struct AgentBoardView: View {
                 .dockFont(.compactStatus, weight: .semibold)
                 .foregroundStyle(Color.dockMetadataText)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .dockPadding(.horizontal, 12)
+        .dockPadding(.vertical, 9)
     }
 
     private func agentListDetail(for agent: HermesSubagent, displayName: String) -> String {
@@ -312,7 +312,7 @@ struct AgentBoardView: View {
             .help("Return to chat")
             .frame(width: 62, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
+        .dockPadding(.horizontal, 16)
         .frame(height: 40)
         .dockPaneTint(Color.dockSurface2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -351,7 +351,7 @@ struct AgentBoardView: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 4)
+        .dockPadding(.vertical, 4)
     }
 
     private func expandedActivity(for agent: Agent) -> some View {
@@ -388,7 +388,7 @@ struct AgentBoardView: View {
                 activityGroup("COMPLETED", items: completed, color: Color.dockSuccess, agentColor: agent.agentColor)
             }
         }
-        .padding(.top, 2)
+        .dockPadding(.top, 2)
     }
 
     @ViewBuilder
@@ -406,7 +406,7 @@ struct AgentBoardView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .top, spacing: 7) {
-                                Circle().fill(color).frame(width: 5, height: 5).padding(.top, 4)
+                                Circle().fill(color).frame(width: 5, height: 5).dockPadding(.top, 4)
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
                                         Text(activity.status.uppercased())
@@ -455,8 +455,8 @@ struct AgentBoardView: View {
                 pipelineHeader("AGENT", width: 88)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
-            .padding(.bottom, 8)
+            .dockPadding(.horizontal, 4)
+            .dockPadding(.bottom, 8)
 
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 7) {
@@ -493,8 +493,8 @@ struct AgentBoardView: View {
                 }
                 .dockFont(.body)
                 .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 10)
+                .dockPadding(.horizontal, 4)
+                .dockPadding(.vertical, 10)
                 .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
             }
         }
@@ -543,9 +543,9 @@ struct AgentBoardView: View {
                 miniDiffPreview(diffPreview)
             }
         }
-        .padding(.leading, 12)
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
+        .dockPadding(.leading, 12)
+        .dockPadding(.vertical, 6)
+        .dockPadding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
                 Color.dockSurface4)
@@ -585,9 +585,9 @@ struct AgentBoardView: View {
                 miniDiffPreview(diffPreview)
             }
         }
-        .padding(.leading, 12)
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
+        .dockPadding(.leading, 12)
+        .dockPadding(.vertical, 6)
+        .dockPadding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
                 Color.dockSurface4)
@@ -630,8 +630,8 @@ struct AgentBoardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .dockPadding(.horizontal, 8)
+        .dockPadding(.vertical, 6)
         .dockPaneTint(Color.dockSurface4)
         .overlay(alignment: .leading) { Color.dockAccent.opacity(0.55).frame(width: 1) }
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))

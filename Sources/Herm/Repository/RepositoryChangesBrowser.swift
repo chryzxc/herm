@@ -85,7 +85,7 @@ struct RepositoryChangesBrowser: View {
                 .help("Review working-tree, staged, branch, or commit comparisons")
                 Spacer()
                 if !showsBranch { refreshButton }
-            }.padding(.vertical, 8)
+            }.dockPadding(.vertical, 8)
                 .dockSheet(isPresented: $showingReview) {
                     if let projectPath {
                         LocalReviewWorkspace(path: projectPath, model: model).modifier(ReviewSheetContext())
@@ -191,16 +191,16 @@ struct RepositoryChangesBrowser: View {
                     if files.isEmpty {
                         Text(staged ? "No staged changes" : "No unstaged changes")
                             .dockFont(.body).foregroundStyle(Color.dockMetadataText)
-                            .padding(.horizontal, 8).padding(.vertical, 6)
+                            .dockPadding(.horizontal, 8).dockPadding(.vertical, 6)
                     }
                     LazyVStack(spacing: 0) {
                         ForEach(files) { file in fileRow(file) }
                     }
                 }
-                .padding(.leading, 12)
+                .dockPadding(.leading, 12)
             }
         }
-        .padding(.top, 8)
+        .dockPadding(.top, 8)
     }
 
     private var commitPopover: some View {
@@ -228,7 +228,7 @@ struct RepositoryChangesBrowser: View {
             .keyboardShortcut(.return, modifiers: .command)
             .disabled(actionsDisabled || isEmpty)
         }
-        .padding(12)
+        .dockPadding(12)
         .frame(width: 300)
     }
 
@@ -244,10 +244,10 @@ struct RepositoryChangesBrowser: View {
             if isCommitsExpanded {
                 VStack(alignment: .leading, spacing: 0) {
                     if let error = workflow.commitsError {
-                        Text(error).dockFont(.body).foregroundStyle(Color.dockWarning).padding(8)
+                        Text(error).dockFont(.body).foregroundStyle(Color.dockWarning).dockPadding(8)
                     } else if workflow.commits.isEmpty {
                         Text(workflow.isRefreshing ? "Loading commits…" : "No commits on this branch yet")
-                            .dockFont(.body).foregroundStyle(Color.dockMetadataText).padding(8)
+                            .dockFont(.body).foregroundStyle(Color.dockMetadataText).dockPadding(8)
                     }
                     if let ahead = workflow.repository.aheadCount, let behind = workflow.repository.behindCount {
                         HStack(spacing: 8) {
@@ -260,7 +260,7 @@ struct RepositoryChangesBrowser: View {
                             Text("· as of last fetch")
                         }
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                        .padding(.horizontal, 8).padding(.bottom, 6)
+                        .dockPadding(.horizontal, 8).dockPadding(.bottom, 6)
                     }
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(zip(workflow.commits, rows)), id: \.0.id) { commit, row in
@@ -270,13 +270,13 @@ struct RepositoryChangesBrowser: View {
                     if workflow.commits.count == 50 {
                         Text("Showing the latest 50 commits").dockFont(.metadata).foregroundStyle(
                             Color.dockMetadataText
-                        ).padding(8)
+                        ).dockPadding(8)
                     }
                 }
-                .padding(.leading, 12)
+                .dockPadding(.leading, 12)
             }
         }
-        .padding(.top, 12)
+        .dockPadding(.top, 12)
     }
 
     /// Fetch, pull, and push. Pull and push need an upstream branch to target.
@@ -333,7 +333,7 @@ struct RepositoryChangesBrowser: View {
                     Text(commit.author.split(separator: " ").first.map(String.init) ?? commit.author)
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                 }
-                .padding(.trailing, 6)
+                .dockPadding(.trailing, 6)
                 .frame(minHeight: RepositoryCommitGraphLanes.rowHeight).contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
@@ -345,14 +345,14 @@ struct RepositoryChangesBrowser: View {
             )
             if isExpanded { commitDetail(commit, references: references, accent: accent) }
         }
-        .padding(.leading, graphWidth)
+        .dockPadding(.leading, graphWidth)
         .background(alignment: .leading) {
             RepositoryCommitGraphLanes(
                 row: row, isHead: references.contains(where: \.isHead), isMerge: commit.parents.count > 1
             )
             .frame(width: graphWidth)
         }
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
     }
 
     @ViewBuilder
@@ -428,7 +428,7 @@ struct RepositoryChangesBrowser: View {
                 }
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
@@ -438,7 +438,7 @@ struct RepositoryChangesBrowser: View {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(
                 Color.dockBorderLight, lineWidth: 0.5)
         )
-        .padding(.top, 2).padding(.bottom, 8)
+        .dockPadding(.top, 2).dockPadding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -460,7 +460,7 @@ struct RepositoryChangesBrowser: View {
                 }
             }
             .dockFont(.metadata, weight: .semibold).monospacedDigit()
-            .padding(.bottom, 2)
+            .dockPadding(.bottom, 2)
             ForEach(showsAll ? detail.files : Array(detail.files.prefix(12))) { file in
                 let name = file.path.split(separator: "/").last.map(String.init) ?? file.path
                 let directory = file.path.split(separator: "/").dropLast().joined(separator: "/")
@@ -492,7 +492,7 @@ struct RepositoryChangesBrowser: View {
             if detail.files.count > 12 && !showsAll {
                 Button("Show all \(detail.files.count) files") { allFilesCommitIDs.insert(commit.id) }
                     .buttonStyle(.dockLink)
-                    .padding(.top, 2)
+                    .dockPadding(.top, 2)
             }
         }
     }
@@ -527,7 +527,7 @@ struct RepositoryChangesBrowser: View {
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 10)
+                    .dockPadding(.vertical, 10)
             } else {
                 ForEach(workflow.githubPullRequests.prefix(5)) { pullRequest in
                     HStack(spacing: 8) {
@@ -553,12 +553,12 @@ struct RepositoryChangesBrowser: View {
                                 .foregroundStyle(Color.dockAccent)
                         }
                     }
-                    .padding(.vertical, 8)
+                    .dockPadding(.vertical, 8)
                     .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                 }
             }
         }
-        .padding(.top, 12)
+        .dockPadding(.top, 12)
     }
 
     private var refreshButton: some View {
@@ -602,7 +602,7 @@ struct RepositoryChangesBrowser: View {
 
                 if !isInspector { githubConnectionRow }
             }
-            .padding(.bottom, 11)
+            .dockPadding(.bottom, 11)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         }
     }
@@ -633,7 +633,7 @@ struct RepositoryChangesBrowser: View {
                         .accessibilityLabel("GitHub device code \(code)")
                 }
             }
-            .padding(.vertical, 2)
+            .dockPadding(.vertical, 2)
         } else if workflow.isSigningOutGitHub {
             HStack(spacing: 7) {
                 ProgressView()
@@ -682,7 +682,7 @@ struct RepositoryChangesBrowser: View {
                             .tracking(2.2)
                             .foregroundStyle(Color.dockPrimaryText)
                             .textSelection(.enabled)
-                            .padding(.vertical, 2)
+                            .dockPadding(.vertical, 2)
                             .accessibilityLabel("GitHub device code \(code)")
                     }
                 } else {
@@ -845,7 +845,7 @@ struct RepositoryChangesBrowser: View {
                     ProgressView().controlSize(.small)
                     Text("Loading diff…").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 }
-                .padding(10)
+                .dockPadding(10)
             } else {
                 diffNotice("This file has no readable diff.")
             }
@@ -860,16 +860,16 @@ struct RepositoryChangesBrowser: View {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(
                 Color.dockBorderLight, lineWidth: 0.5)
         )
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .dockPadding(.top, 4)
+        .dockPadding(.bottom, 8)
     }
 
     private func diffNotice(_ text: String, color: Color = .dockMetadataText) -> some View {
         Text(text)
             .dockFont(.metadata)
             .foregroundStyle(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.vertical, 8)
     }
 
     private static let maxDiffHeight: CGFloat = 360
@@ -901,7 +901,7 @@ struct RepositoryChangesBrowser: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 6)
+        .dockPadding(.horizontal, 6)
         .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
         .background(
             showsSelection ? Color.dockAccent.opacity(0.13) : .clear,
@@ -1045,7 +1045,7 @@ struct RepositoryChangesBrowser: View {
             Text(detail).dockFont(.body).foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .dockPadding(12)
 
     }
 }

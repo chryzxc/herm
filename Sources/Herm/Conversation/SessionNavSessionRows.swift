@@ -84,8 +84,8 @@ struct SessionNavConversationSessionRow: View, Equatable {
                 DockIconLabel(badge.label, icon: .gitBranch)
                     .dockFont(.metadata, weight: .medium)
                     .foregroundStyle(style.accent)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    .dockPadding(.horizontal, 7)
+                    .dockPadding(.vertical, 3)
                     .background(Capsule(style: .continuous).fill(style.selectedFill))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(1)
@@ -106,8 +106,8 @@ struct SessionNavConversationSessionRow: View, Equatable {
                     .lineLimit(1)
             }
         }
-        .padding(.leading, 12)
-        .padding(.vertical, 7)
+        .dockPadding(.leading, 12)
+        .dockPadding(.vertical, 7)
     }
 }
 
@@ -205,8 +205,8 @@ struct SessionNavProjectList: View {
                 action: onRefresh
             )
         }
-        .padding(.top, style.sectionSpacing)
-        .padding(.bottom, isExpanded ? 2 : 0)
+        .dockPadding(.top, style.sectionSpacing)
+        .dockPadding(.bottom, isExpanded ? 2 : 0)
 
         if isExpanded {
             if groups.isEmpty {
@@ -244,8 +244,8 @@ struct SessionNavProjectList: View {
                         .layoutPriority(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, 8)
-                .padding(.trailing, 8)
+                .dockPadding(.leading, 8)
+                .dockPadding(.trailing, 8)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -260,7 +260,7 @@ struct SessionNavProjectList: View {
                     Text(compactCount(sessionCount))
                         .dockFont(.metadata).monospacedDigit()
                         .foregroundStyle(style.metadataText)
-                        .padding(.trailing, 14)
+                        .dockPadding(.trailing, 14)
                         .opacity(showsActions ? 0 : 1)
                 }
                 if let projectPath = group.projectPath, !projectPath.isEmpty {
@@ -323,10 +323,10 @@ struct SessionNavProjectList: View {
         if !isCollapsed {
             if group.sessions.isEmpty {
                 projectStatusRow(sessionCount == 0 ? "No conversations yet" : "Loading linked sessions…", leading: 0)
-                    .padding(.leading, 12)
+                    .dockPadding(.leading, 12)
             } else {
                 ForEach(sessions, id: \.[sidebarSection: group.id]) { session in
-                    sessionRow(session).padding(.leading, 12)
+                    sessionRow(session).dockPadding(.leading, 12)
                 }
                 if group.sessions.count > sessionLimit {
                     Button {
@@ -354,7 +354,7 @@ struct SessionNavProjectList: View {
                             ? "Show recent sessions for \(group.title)"
                             : "Show \(group.sessions.count - sessionLimit) more sessions for \(group.title)"
                     )
-                    .padding(.leading, 12)
+                    .dockPadding(.leading, 12)
                 }
             }
         }
@@ -365,7 +365,7 @@ struct SessionNavProjectList: View {
             .dockFont(.body)
             .foregroundStyle(style.metadataText)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .padding(.leading, leading)
+            .dockPadding(.leading, leading)
     }
 
     private func sessionRow(_ session: HermesSession) -> some View {
@@ -484,8 +484,8 @@ struct SessionNavBotSessionRow: View, Equatable {
                     Text("BOT")
                         .dockFont(.metadata, weight: .bold)
                         .foregroundStyle(style.accent)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
+                        .dockPadding(.horizontal, 5)
+                        .dockPadding(.vertical, 1)
                         .background(Capsule().fill(style.selectedFill))
                     Spacer(minLength: 4)
                     SessionActivityGlyph(isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate)
@@ -504,8 +504,8 @@ struct SessionNavBotSessionRow: View, Equatable {
                 }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
+        .dockPadding(.horizontal, 6)
+        .dockPadding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
                 .fill(isSelected ? style.selectedFill : style.selectedFill.opacity(0.35))
@@ -598,8 +598,8 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                                     .dockFont(.metadata, weight: .medium)
                             }
                             .foregroundStyle(Color.dockDiscord)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
+                            .dockPadding(.horizontal, 6)
+                            .dockPadding(.vertical, 1)
                             .background(Capsule().fill(Color.dockDiscord.opacity(0.16)))
                             .fixedSize()
                             .accessibilityLabel("Source: \(source)")
@@ -618,9 +618,9 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                 }
             }
         }
-        .padding(.leading, 2)
-        .padding(.trailing, 4)
-        .padding(.vertical, 5)
+        .dockPadding(.leading, 2)
+        .dockPadding(.trailing, 4)
+        .dockPadding(.vertical, 5)
         .frame(minHeight: Self.rowHeight)
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
@@ -715,8 +715,8 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                 .lineLimit(1)
         }
         .foregroundStyle(style.accent)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 1)
+        .dockPadding(.horizontal, 6)
+        .dockPadding(.vertical, 1)
         .background(Capsule().fill(style.accent.opacity(0.14)))
         .fixedSize()
         .accessibilityLabel("Project: \(name)")

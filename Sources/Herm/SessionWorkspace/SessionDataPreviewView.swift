@@ -21,7 +21,7 @@ struct SessionDataPreviewView: View {
                         previewContent
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(DockSpacing.inspectorInset)
+                    .dockPadding(DockSpacing.inspectorInset)
                 }
             }
         }
@@ -181,7 +181,7 @@ struct SessionDataPreviewView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
+        .dockPadding(.vertical, 4)
     }
 
     private func group<Content: View>(_ title: String, icon: Ph, @ViewBuilder content: () -> Content) -> some View {

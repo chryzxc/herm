@@ -57,7 +57,7 @@ struct SessionTerminalView: View {
                 } else {
                     pane(terminal)
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(.top, 8)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity).dockPadding(.top, 8)
 
         }
         .background(Color.dockCanvas)
@@ -115,7 +115,7 @@ struct SessionTerminalView: View {
                                 .frame(width: 32, height: 32)
                                 .background(isHoveringNewShell ? Color.dockSurface2 : Color.clear)
                                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
-                                .padding(.horizontal, 6)
+                                .dockPadding(.horizontal, 6)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -143,9 +143,9 @@ struct SessionTerminalView: View {
             }
             .accessibilityLabel("Terminal options")
         }
-        .padding(.horizontal, 0)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .dockPadding(.horizontal, 0)
+        .dockPadding(.top, 8)
+        .dockPadding(.bottom, 8)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -169,7 +169,7 @@ struct SessionTerminalView: View {
             .help("Close terminal")
         }
         .foregroundStyle(terminalTabs.selectedID == session.id ? Color.dockPrimaryText : Color.dockSecondaryText)
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -223,7 +223,7 @@ struct SessionTerminalView: View {
             LocalServersMenu(processIDs: terminalTabs.sessions.map(\.shellProcessID), active: discoveryActive)
 
         }
-        .padding(.horizontal, 14)
+        .dockPadding(.horizontal, 14)
         .frame(height: 44)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -249,8 +249,8 @@ struct SessionTerminalView: View {
                 .accessibilityLabel("Rerun \(recipe.title)")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 5)
+        .dockPadding(.horizontal, 14)
+        .dockPadding(.vertical, 5)
         .accessibilityLabel(
             run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
     }

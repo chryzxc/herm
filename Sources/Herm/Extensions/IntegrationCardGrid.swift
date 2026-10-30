@@ -62,13 +62,13 @@ struct IntegrationCard<Icon: View>: View {
                     .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 }
             }
-            .padding(14)
+            .dockPadding(14)
             .frame(maxWidth: .infinity, minHeight: detail.isEmpty ? 72 : 112, alignment: .topLeading)
             .background {
                 if selected { shape.dockSurfaceFill(Color.dockSurface4) }
             }
             .overlay(alignment: .bottom) {
-                Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.horizontal, 14)
+                Color.dockBorderLight.frame(height: DockLayout.hairline).dockPadding(.horizontal, 14)
                     .opacity(selected ? 0 : 1)
             }
             .overlay(shape.stroke(Color.dockAccent, lineWidth: 1).opacity(selected ? 1 : 0))
@@ -113,7 +113,7 @@ struct IntegrationLibraryHeader: View {
             Text(summary).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.bottom, 6)
+        .dockPadding(.bottom, 6)
         .accessibilityElement(children: .combine)
     }
 }

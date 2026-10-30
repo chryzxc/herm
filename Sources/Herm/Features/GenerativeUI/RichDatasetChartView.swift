@@ -18,8 +18,8 @@ struct RichDatasetChartView: View {
                         width: max(
                             geometry.size.width, CGFloat(dataset.rows.count) * 80 + 40)
                     )
-                    .padding(.top, 8)
-                    .padding(.bottom, 20)
+                    .dockPadding(.top, 8)
+                    .dockPadding(.bottom, 20)
                 }
             }.frame(height: 248)
             legend

@@ -68,7 +68,7 @@ struct FilePreviewPane: View {
             if kind != .image, text != nil { AnnotateToggle(isOn: $isAnnotating) }
             openInMenu
         }
-        .padding(.horizontal, 16)
+        .dockPadding(.horizontal, 16)
         .frame(height: 48)
         .dockButtonSize(.compact)
         .dockPaneTint(Color.dockSurface2)
@@ -93,7 +93,7 @@ struct FilePreviewPane: View {
     @ViewBuilder
     private var bodyContent: some View {
         if kind == .image {
-            ScrollView { AttachmentThumbnailView(url: url, maximumPixelSize: 2_400).padding(16) }
+            ScrollView { AttachmentThumbnailView(url: url, maximumPixelSize: 2_400).dockPadding(16) }
         } else {
             switch content {
             case .text(let text, let truncated):
@@ -198,8 +198,8 @@ struct TextAnnotator: View {
                     .dockFont(.compactStatus, weight: .regular)
                     .foregroundStyle(Color.dockMetadataText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
+                    .dockPadding(.horizontal, 16)
+                    .dockPadding(.vertical, 6)
             }
             if isAnnotating {
                 Group {
@@ -417,7 +417,7 @@ struct TextAnnotator: View {
             }
         }
         .dockButtonSize(.compact)
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(height: 44)
     }
 
@@ -442,7 +442,7 @@ struct TextAnnotator: View {
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(8)
+                        .dockPadding(8)
                     }
                     if !drafts.isEmpty {
                         sectionLabel("NOT SENT")
@@ -456,13 +456,13 @@ struct TextAnnotator: View {
                                 .buttonStyle(.dockCompact)
                                 .dockFont(.compactStatus, weight: .regular)
                                 .foregroundStyle(Color.dockSecondaryText)
-                                .padding(.trailing, 8)
+                                .dockPadding(.trailing, 8)
                         }
                         ForEach(sent) { noteRow($0) }
                     }
                     if !changes.isEmpty { changesSection }
                 }
-                .padding(6)
+                .dockPadding(6)
             }
             .frame(maxHeight: 360)
             .fixedSize(horizontal: false, vertical: true)
@@ -475,8 +475,8 @@ struct TextAnnotator: View {
             }
             .buttonStyle(.dockCompact)
             .foregroundStyle(Color.dockSecondaryText)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .dockPadding(.horizontal, 14)
+            .dockPadding(.vertical, 10)
         }
         .frame(width: 340)
     }
@@ -485,9 +485,9 @@ struct TextAnnotator: View {
         Text(title)
             .dockFont(.sectionLabel)
             .foregroundStyle(Color.dockMetadataText)
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.top, 8)
+            .dockPadding(.bottom, 2)
     }
 
     private func noteRow(_ annotation: FileAnnotation) -> some View {
@@ -512,7 +512,7 @@ struct TextAnnotator: View {
                 }
             }
             .frame(width: 18)
-            .padding(.top, 1)
+            .dockPadding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
                 Text(annotation.note)
                     .dockFont(.body)
@@ -535,7 +535,7 @@ struct TextAnnotator: View {
                 .accessibilityLabel("Delete note")
             }
         }
-        .padding(8)
+        .dockPadding(8)
         .background(
             annotation.id == composing?.id ? Color.dockAccent.opacity(0.12) : Color.clear,
             in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
@@ -557,8 +557,8 @@ struct TextAnnotator: View {
                 .foregroundStyle(Color.dockMetadataText)
             }
             .buttonStyle(.dockHover)
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.top, 8)
             if showsChanges {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(Array(changes.enumerated()), id: \.offset) { _, line in
@@ -570,7 +570,7 @@ struct TextAnnotator: View {
                     }
                 }
                 .textSelection(.enabled)
-                .padding(.horizontal, 8)
+                .dockPadding(.horizontal, 8)
             }
         }
     }
@@ -626,7 +626,7 @@ private struct AnnotationEditor: View {
                 footer
             }
         }
-        .padding(14)
+        .dockPadding(14)
         .onAppear {
             // Popover content attaches to its window a beat after appearing.
             DispatchQueue.main.async { isFocused = !isSent }
@@ -638,14 +638,14 @@ private struct AnnotationEditor: View {
         if let quote = annotation.quote {
             HStack(alignment: .top, spacing: 8) {
                 DockIcon(.quotes, size: 12, color: .dockAccent)
-                    .padding(.top, 1)
+                    .dockPadding(.top, 1)
                 Text(quote)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(10)
+            .dockPadding(10)
             .background(
                 Color.dockAccent.opacity(0.07),
                 in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
@@ -680,7 +680,7 @@ private struct AnnotationEditor: View {
             .foregroundStyle(Color.dockPrimaryText)
             .lineLimit(3...8)
             .focused($isFocused)
-            .padding(10)
+            .dockPadding(10)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .dockSurfaceFill(

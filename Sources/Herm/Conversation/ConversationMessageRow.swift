@@ -238,8 +238,8 @@ struct ConversationMessageRow: View, Equatable {
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(Color.dockPrimaryText)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .dockPadding(.horizontal, 14)
+                        .dockPadding(.vertical, 10)
                         .background(
                             Self.userBubbleShape.fill(
                                 DockSkinPresentation.current.transcript == .document
@@ -272,8 +272,8 @@ struct ConversationMessageRow: View, Equatable {
                             if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
                         }
                     }
-                    .padding(.horizontal, 4)
-                    .padding(.top, 2)
+                    .dockPadding(.horizontal, 4)
+                    .dockPadding(.top, 2)
                 }
                 .onHover { hoverPresentation.isHovering = $0 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
@@ -314,7 +314,7 @@ struct ConversationMessageRow: View, Equatable {
                                     .dockFont(.metadata, weight: .medium).foregroundStyle(Color.dockSecondaryText)
                             }
                         }
-                        .padding(.horizontal, 4)
+                        .dockPadding(.horizontal, 4)
                         .accessibilityElement(children: .contain)
                         .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
                     }
@@ -353,7 +353,7 @@ struct ConversationMessageRow: View, Equatable {
                                 // A teammate's answer, quoted: it informs this
                                 // chat but is not the assistant speaking.
                                 assistantBody
-                                    .padding(.leading, 12)
+                                    .dockPadding(.leading, 12)
                                     .overlay(alignment: .leading) {
                                         Capsule()
                                             .fill(DockAccentColor.identity(for: message.botProfileID ?? "").fill)
@@ -364,8 +364,8 @@ struct ConversationMessageRow: View, Equatable {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 6)
+                        .dockPadding(.horizontal, 4)
+                        .dockPadding(.vertical, 6)
                         .foregroundStyle(Color.dockPrimaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -389,9 +389,9 @@ struct ConversationMessageRow: View, Equatable {
                 .onHover { hoverPresentation.isHovering = $0 }
             }
         }
-        .padding(.horizontal, metrics.contentInset)
-        .padding(.vertical, message.systemEvent != nil || message.kanbanNotice != nil ? 1 : 8)
-        .padding(.top, message.role == .user ? 12 : 0)
+        .dockPadding(.horizontal, metrics.contentInset)
+        .dockPadding(.vertical, message.systemEvent != nil || message.kanbanNotice != nil ? 1 : 8)
+        .dockPadding(.top, message.role == .user ? 12 : 0)
     }
 
     /// The tail corner points toward the sender edge so consecutive prompts
@@ -593,7 +593,7 @@ struct ConversationMessageRow: View, Equatable {
         .dockFont(.machineMetadata)
         .foregroundStyle(Color.dockMetadataText)
         .lineLimit(1)
-        .padding(.leading, 4)
+        .dockPadding(.leading, 4)
     }
 
     @ViewBuilder
@@ -694,7 +694,7 @@ struct SystemEventCard: View {
                     }
                 }
                 .dockFont(.machineMetadata)
-                .padding(.horizontal, 8)
+                .dockPadding(.horizontal, 8)
                 .frame(height: 26)
                 .background(
                     ConversationRowHoverBackground(hover: hoverPresentation, isExpanded: isExpanded)
@@ -712,12 +712,12 @@ struct SystemEventCard: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 10)
+                    .dockPadding(.leading, 10)
                     .overlay(alignment: .leading) {
                         Rectangle().fill(event.tone.color.opacity(0.5)).frame(width: 2)
                     }
-                    .padding(.leading, 14)
-                    .padding(.bottom, 4)
+                    .dockPadding(.leading, 14)
+                    .dockPadding(.bottom, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -783,7 +783,7 @@ struct FeedEventRow: View {
                 }
                 .dockFont(.machineMetadata)
                 .foregroundStyle(Color.dockMetadataText)
-                .padding(.horizontal, 8)
+                .dockPadding(.horizontal, 8)
                 .frame(height: isExpanded ? nil : 28)
                 .clipped()
                 .background(
@@ -801,12 +801,12 @@ struct FeedEventRow: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 10)
+                    .dockPadding(.leading, 10)
                     .overlay(alignment: .leading) {
                         Rectangle().fill(event.tone.color.opacity(0.5)).frame(width: 2)
                     }
-                    .padding(.leading, 14)
-                    .padding(.bottom, 4)
+                    .dockPadding(.leading, 14)
+                    .dockPadding(.bottom, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -852,7 +852,7 @@ struct BotChip: View {
         .dockFont(.body, weight: .medium)
         .foregroundStyle(Color.dockSecondaryText)
         .lineLimit(1)
-        .padding(.leading, 2).padding(.trailing, 6).padding(.vertical, 1)
+        .dockPadding(.leading, 2).dockPadding(.trailing, 6).dockPadding(.vertical, 1)
         .background(Capsule().fill(Color.dockPrimaryText.opacity(0.06)))
         .fixedSize()
     }
@@ -903,7 +903,7 @@ struct KanbanNoticeCard: View {
                 .dockFont(.machineMetadata)
                 .lineLimit(1)
                 .foregroundStyle(Color.dockMetadataText)
-                .padding(.horizontal, 8)
+                .dockPadding(.horizontal, 8)
                 .frame(height: 28)
                 .clipped()
                 .background(
@@ -947,12 +947,12 @@ struct KanbanNoticeCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.leading, 10)
+                .dockPadding(.leading, 10)
                 .overlay(alignment: .leading) {
                     Rectangle().fill(notice.tone.color.opacity(0.5)).frame(width: 2)
                 }
-                .padding(.leading, 14)
-                .padding(.bottom, 4)
+                .dockPadding(.leading, 14)
+                .dockPadding(.bottom, 4)
                 .task {
                     guard card == nil, let loadDetail else { return }
                     card = await loadDetail()

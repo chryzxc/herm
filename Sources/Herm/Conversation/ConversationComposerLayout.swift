@@ -17,8 +17,8 @@ struct ConversationComposerLayout<Transcript: View, Composer: View>: View {
                         .frame(maxHeight: .infinity)
                     StartupAssistantView(hermFaceID: hermFaceID)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.trailing, trailingContentInset)
-                        .padding(.bottom, 12)
+                        .dockPadding(.trailing, trailingContentInset)
+                        .dockPadding(.bottom, 12)
                         .transition(.opacity)
                 } else {
                     transcript

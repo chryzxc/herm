@@ -172,8 +172,8 @@ struct ProviderSignInFlow: View {
                             DockCopyButton(code, accessibilityLabel: "Copy code", presentation: .icon)
                                 .buttonStyle(.dockPress)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .dockPadding(.horizontal, 12)
+                        .dockPadding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                 .dockSurfaceFill(
@@ -246,7 +246,7 @@ struct ProviderSignInFlow: View {
                     .background(Circle().fill(Color.dockSurface))
                     .offset(x: 6, y: 6)
             }
-            .padding(.top, 12)
+            .dockPadding(.top, 12)
             Text("\(providerName) account added")
                 .dockFont(.rowTitle, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
@@ -290,7 +290,7 @@ struct ProviderSignInFlow: View {
                         .textSelection(.enabled)
                 }
             }
-            .padding(10)
+            .dockPadding(10)
         }
         .frame(maxHeight: 150)
         .background(
@@ -298,7 +298,7 @@ struct ProviderSignInFlow: View {
                 .dockSurfaceFill(
                     Color.dockSurface.opacity(0.4), stroke: Color.dockBorderLight, lineWidth: DockLayout.hairline)
         )
-        .padding(.top, 6)
+        .dockPadding(.top, 6)
     }
 
     private func sendReply() {

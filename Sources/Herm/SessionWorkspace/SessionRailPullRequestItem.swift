@@ -31,7 +31,7 @@ struct SessionRailPullRequestItem: View {
                     HStack(spacing: 6) {
                         Text("#\(String(reference.number))").foregroundStyle(Color.dockMetadataText)
                         if let record { Text(record.readinessLabel).foregroundStyle(record.readinessColor) }
-                    }.dockFont(.metadata).padding(.leading, 22)
+                    }.dockFont(.metadata).dockPadding(.leading, 22)
                 }
             }
             .buttonStyle(.dockHover).disabled(opening)
@@ -60,7 +60,7 @@ struct SessionRailPullRequestItem: View {
                 if failed {
                     Text("Could not open pull request. Refresh and try again.").foregroundStyle(Color.dockWarning)
                 }
-            }.padding(.leading, 22)
+            }.dockPadding(.leading, 22)
         }
         .dockFont(.body)
     }

@@ -36,10 +36,10 @@ struct RepositoryStashSection: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 0) {
                     if let error = workflow.stashesError {
-                        Text(error).dockFont(.body).foregroundStyle(Color.dockWarning).padding(8)
+                        Text(error).dockFont(.body).foregroundStyle(Color.dockWarning).dockPadding(8)
                     } else if workflow.stashes.isEmpty {
                         Text(workflow.isRefreshing ? "Loading stashes…" : "No stashes")
-                            .dockFont(.body).foregroundStyle(Color.dockMetadataText).padding(8)
+                            .dockFont(.body).foregroundStyle(Color.dockMetadataText).dockPadding(8)
                     } else {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(workflow.stashes) { stash in
@@ -54,10 +54,10 @@ struct RepositoryStashSection: View {
                         }
                     }
                 }
-                .padding(.leading, 12)
+                .dockPadding(.leading, 12)
             }
         }
-        .padding(.top, 12)
+        .dockPadding(.top, 12)
         .confirmationDialog(
             "\(operation.rawValue) stash?", isPresented: $showingConfirmation, titleVisibility: .visible
         ) {
@@ -102,7 +102,7 @@ struct RepositoryStashSection: View {
             .buttonStyle(.dockPrimary)
             .disabled(actionsDisabled)
         }
-        .padding(12)
+        .dockPadding(12)
         .frame(width: 300)
     }
 }
@@ -130,7 +130,7 @@ private struct RepositoryStashRow: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 6)
+                .dockPadding(.horizontal, 6)
                 .frame(minHeight: 30).contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
@@ -170,7 +170,7 @@ private struct RepositoryStashRow: View {
                         Text("Stash changes are unavailable.").dockFont(.body).foregroundStyle(Color.dockWarning)
                     }
                 }
-                .padding(8)
+                .dockPadding(8)
             }
         }
         .task(id: isExpanded) {

@@ -55,7 +55,7 @@ struct DockActionErrorPopup: View {
             .help("Dismiss error")
             .accessibilityLabel("Dismiss error")
         }
-        .padding(16)
+        .dockPadding(16)
         .background {
             let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
             shape.fill(Color.dockOpaqueCanvas)

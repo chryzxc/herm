@@ -79,7 +79,7 @@ struct SessionBotActivityView: View {
                 Text(snapshot.emptyMessage)
                     .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
-                    .padding(.vertical, 8)
+                    .dockPadding(.vertical, 8)
                     .transition(.opacity)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -100,7 +100,7 @@ struct SessionBotActivityView: View {
         .animation(
             .spring(response: 0.35, dampingFraction: 0.85), value: snapshot.list.map { "\($0.id)|\($0.state.rawValue)" }
         )
-        .padding(embedded ? 0 : 12)
+        .dockPadding(embedded ? 0 : 12)
         .modifier(BotActivityGlassModifier(isEmbedded: embedded))
         .task(id: sessionID) {
             await botMode.refreshNow(force: true)
@@ -164,8 +164,8 @@ private struct BotActivityRow: View {
                     DockIcon(.caretDown, size: 10, color: hovering ? .dockSecondaryText : .dockMetadataText)
                         .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
+                .dockPadding(.horizontal, 12)
+                .dockPadding(.vertical, 9)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -187,9 +187,9 @@ private struct BotActivityRow: View {
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
-                .padding(.leading, 56)
-                .padding(.trailing, 12)
-                .padding(.bottom, 10)
+                .dockPadding(.leading, 56)
+                .dockPadding(.trailing, 12)
+                .dockPadding(.bottom, 10)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -213,8 +213,8 @@ private struct BotActivityRow: View {
                 .contentTransition(.interpolate)
         }
         .foregroundStyle(stateColor)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
+        .dockPadding(.horizontal, 7)
+        .dockPadding(.vertical, 3)
         .background(Capsule().fill(stateColor.opacity(0.14)))
     }
 }

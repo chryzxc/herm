@@ -68,7 +68,7 @@ struct DockActivityIndicator: View {
                 Circle().fill(tint ?? state.color).frame(width: size * 0.6, height: size * 0.6)
             } else if state.icon != nil {
                 // Solid disc with a knocked-out glyph so nothing behind it shows through.
-                Circle().fill(tint ?? state.color).padding(size * 0.06)
+                Circle().fill(tint ?? state.color).dockPadding(size * 0.06)
                     .overlay { DockIcon(state.mark, size: size * 0.65, weight: .fill, color: .dockCanvas) }
             } else {
                 spinner(tint ?? state.color)
@@ -97,7 +97,7 @@ struct DockActivityIndicator: View {
                 Circle().trim(from: 0, to: 0.7).stroke(color, style: StrokeStyle(lineWidth: line, lineCap: .round))
                     .rotationEffect(.degrees(turn * 360))
             }
-            .padding(line / 2)
+            .dockPadding(line / 2)
     }
 }
 

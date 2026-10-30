@@ -178,9 +178,9 @@ struct ComposerCompletionPopover: View {
                                     .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                                     .tracking(0.6)
                                     .foregroundStyle(Color.dockMetadataText)
-                                    .padding(.horizontal, 12)
-                                    .padding(.top, index == 0 ? 8 : 10)
-                                    .padding(.bottom, 4)
+                                    .dockPadding(.horizontal, 12)
+                                    .dockPadding(.top, index == 0 ? 8 : 10)
+                                    .dockPadding(.bottom, 4)
                             }
                             row(item, isSelected: index == selectedIndex)
                                 .id(item.id)
@@ -199,8 +199,8 @@ struct ComposerCompletionPopover: View {
                 .foregroundStyle(notice == nil ? Color.dockMetadataText : Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .dockPadding(.horizontal, 12)
+                .dockPadding(.vertical, 6)
                 .dockPaneTint(Color.dockSurface6.opacity(0.5))
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -243,8 +243,8 @@ struct ComposerCompletionPopover: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
             .contentShape(Rectangle())

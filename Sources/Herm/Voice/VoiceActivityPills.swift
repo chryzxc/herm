@@ -369,8 +369,8 @@ private struct VoicePillCard: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .dockPadding(.horizontal, 12)
+        .dockPadding(.vertical, 10)
         .frame(maxWidth: maxWidth, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
@@ -422,7 +422,7 @@ struct VoiceRecentTranscript: View {
                         .id(message.id)
                     }
                 }
-                .padding(14)
+                .dockPadding(14)
             }
             .onAppear { proxy.scrollTo(recent.last?.id, anchor: .bottom) }
             .onChange(of: recent.last?.id) { _, id in proxy.scrollTo(id, anchor: .bottom) }

@@ -118,7 +118,7 @@ struct EdgeResultPeek: View {
                     .buttonStyle(.dockCompact)
                 }
             }
-            .padding(10)
+            .dockPadding(10)
             .frame(height: 48)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
@@ -149,7 +149,7 @@ struct EdgeResultPeek: View {
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
-                .padding(10)
+                .dockPadding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -171,7 +171,7 @@ struct EdgeResultPeek: View {
                 Button("Open session", action: openSession).buttonStyle(.dockCompact)
             }
             .dockFont(.body, weight: .medium)
-            .padding(10)
+            .dockPadding(10)
         }
         .foregroundStyle(Color.dockPrimaryText)
         .onDisappear { showingComparison = false }
@@ -235,7 +235,7 @@ struct EdgeResultPeek: View {
             }
         }
         .dockFont(.metadata)
-        .padding(8)
+        .dockPadding(8)
         .background(
             Color.dockSurface4.opacity(0.5), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
     }

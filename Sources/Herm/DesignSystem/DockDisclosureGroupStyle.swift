@@ -29,7 +29,7 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
             DockRetainedDisclosureContent(isExpanded: configuration.isExpanded) {
                 configuration.content
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 16)
+                    .dockPadding(.leading, 16)
             }
         }
     }

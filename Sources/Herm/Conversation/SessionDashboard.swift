@@ -108,7 +108,7 @@ struct SessionDashboard<Conversation: View>: View {
                     }
                     .buttonStyle(.dockCompact).disabled(!canRespond)
                 }
-                .padding(12)
+                .dockPadding(12)
                 Color.dockBorderLight.frame(height: DockLayout.hairline)
                 if selection.isLoading {
                     DockLoadingState(title: "Loading conversation…", minHeight: 120)
@@ -146,7 +146,7 @@ struct SessionDashboard<Conversation: View>: View {
             Text(title).dockFont(.body, weight: .semibold)
             Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
         }
-        .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private func newConversation() {

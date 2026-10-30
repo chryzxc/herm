@@ -22,7 +22,7 @@ struct SessionModeTabStrip: View {
                     Text(mode == .pullRequests ? "PRs" : mode.label)
                         .dockFont(.control, weight: isSelected ? .semibold : .medium)
                         .foregroundStyle(isSelected ? selectedInk : style.secondaryText)
-                        .padding(.horizontal, 8)
+                        .dockPadding(.horizontal, 8)
                         .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight - 4)
                         .dockSelectionBackground(
                             segment, active: isSelected, fill: style.selectedFill, theme: style.theme
@@ -36,7 +36,7 @@ struct SessionModeTabStrip: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 2)
+        .dockPadding(.horizontal, 2)
         .background {
             shape.dockSurfaceFill(style.surface4.opacity(0.5))
                 .frame(height: DockControlMetrics.compactHeight)

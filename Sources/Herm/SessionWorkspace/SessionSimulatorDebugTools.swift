@@ -59,12 +59,12 @@ struct SessionSimulatorDebugTools: View {
                 .dockPopover(isPresented: $showsFeedback, arrowEdge: .leading) {
                     Text(statusText).dockFont(.body)
                         .foregroundStyle(Color.dockPrimaryText)
-                        .padding(12).frame(width: 260, alignment: .leading)
+                        .dockPadding(12).frame(width: 260, alignment: .leading)
                         .background(Color.dockCanvas)
                 }
             }
         }
-        .padding(6)
+        .dockPadding(6)
         .background(Color.dockSurface, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius)
@@ -189,13 +189,13 @@ struct SessionSimulatorDebugTools: View {
                     TextEditor(text: $diagnostics.excerpt)
                         .dockFont(.code, design: .monospaced)
                         .scrollContentBackground(.hidden)
-                        .padding(8)
+                        .dockPadding(8)
                         .accessibilityLabel("Editable app log excerpt")
                     if diagnostics.excerpt.isEmpty {
                         Text(diagnostics.pending == "logs" ? "Reading app logs…" : "Read logs to preview them here.")
                             .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
-                            .padding(12)
+                            .dockPadding(12)
                             .allowsHitTesting(false)
                     }
                 }

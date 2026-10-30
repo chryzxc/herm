@@ -27,7 +27,7 @@ struct EdgeRoutinePreview: View {
                     Text(reference.job.name).dockFont(.body, weight: .semibold).lineLimit(1)
                     Spacer()
                     Button("Back", action: back).buttonStyle(.dockCompact)
-                }.padding(.horizontal, 10).frame(width: geometry.size.width, height: 40)
+                }.dockPadding(.horizontal, 10).frame(width: geometry.size.width, height: 40)
                 Divider().overlay(Color.dockBorderLight)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
@@ -91,14 +91,14 @@ struct EdgeRoutinePreview: View {
                                 profileID: reference.profileID)
                             openAutomation()
                         }.buttonStyle(.dockCompact)
-                    }.dockFont(.body).padding(10).frame(
+                    }.dockFont(.body).dockPadding(10).frame(
                         width: geometry.size.width, alignment: .leading)
                 }.frame(width: geometry.size.width, height: max(0, geometry.size.height - 86))
                 Divider().overlay(Color.dockBorderLight)
                 HStack {
                     Spacer()
                     Button("Open Automation", action: openAutomation).buttonStyle(.dockCompact)
-                }.dockFont(.body).padding(.horizontal, 10).frame(
+                }.dockFont(.body).dockPadding(.horizontal, 10).frame(
                     width: geometry.size.width, height: 44)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)

@@ -24,8 +24,8 @@ extension DockPopover {
         let generativeReply = voiceGenerativeReply
         let stage = VStack(spacing: 0) {
             VoiceStatusStrip(model: model, repositoryPath: activeSessionRepositoryPath)
-                .padding(.top, 12)
-                .padding(.horizontal, 16)
+                .dockPadding(.top, 12)
+                .dockPadding(.horizontal, 16)
             Spacer(minLength: 12)
             Button(action: handleVoiceOrbTap) {
                 VoiceMeteredOrb(
@@ -70,11 +70,11 @@ extension DockPopover {
                 }
             }
             .frame(maxWidth: 480, minHeight: 76, maxHeight: 76)
-            .padding(.horizontal, 16)
+            .dockPadding(.horizontal, 16)
 
             if !model.activeSubagents.isEmpty {
                 VoiceSubagentOrbs(agents: model.activeSubagents)
-                    .padding(.bottom, 8)
+                    .dockPadding(.bottom, 8)
             }
 
             if hasPendingVoicePrompt {
@@ -86,7 +86,7 @@ extension DockPopover {
                         color: (model.approvalText != nil ? Color.dockWarning : Color.dockAccent).opacity(0.35),
                         radius: 28
                     )
-                    .padding(.horizontal, 16)
+                    .dockPadding(.horizontal, 16)
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             } else {
                 VStack(spacing: 8) {
@@ -106,11 +106,11 @@ extension DockPopover {
                 }
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: immersive ? 560 : 360, minHeight: 96, alignment: .top)
-                .padding(.horizontal, 16)
+                .dockPadding(.horizontal, 16)
             }
 
             voiceControls(style: style)
-                .padding(.top, 10)
+                .dockPadding(.top, 10)
             Spacer(minLength: 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -119,7 +119,7 @@ extension DockPopover {
             VoiceActivityPillsLayer(
                 model: model, cardWidth: immersive ? 280 : 200, cronJobs: controlCenter.cronJobs
             )
-            .padding(immersive ? 24 : 12)
+            .dockPadding(immersive ? 24 : 12)
             .opacity(hasPendingVoicePrompt ? 0.2 : 1)
         }
         // A reply with generative UI slides in on the right and pushes the
@@ -161,7 +161,7 @@ extension DockPopover {
         let content = GenerativeUIIntegration.renderReply(message.text) { MarkdownMessageView(markdown: message.text) }
             .generativeUIMessage(model: model, message: message)
             .textSelection(.enabled)
-            .padding(18)
+            .dockPadding(18)
         return ViewThatFits(in: .vertical) {
             content.fixedSize(horizontal: false, vertical: true)
             ScrollView { content }.scrollIndicators(.never)
@@ -170,8 +170,8 @@ extension DockPopover {
         .clipShape(shape)
         .dockFloatingSurface(shape, stroke: Color.dockBorderLight)
         .shadow(color: .black.opacity(0.22), radius: 28, y: 12)
-        .padding(.vertical, immersive ? 56 : 40)
-        .padding(.trailing, immersive ? 40 : 24)
+        .dockPadding(.vertical, immersive ? 56 : 40)
+        .dockPadding(.trailing, immersive ? 40 : 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -409,7 +409,7 @@ extension DockPopover {
                 .lineLimit(1)
         }
         .foregroundStyle(Color.dockAccent)
-        .padding(.horizontal, 13)
+        .dockPadding(.horizontal, 13)
         .frame(height: 32)
         .background(Capsule().fill(Color.dockSurface6).stroke(Color.dockAccent.opacity(0.25), lineWidth: 0.5))
         .shadow(color: Color.dockAccent.opacity(0.12), radius: 10)
@@ -439,7 +439,7 @@ private struct VoiceMeteredOrb: View {
         VoiceOrbView(mode: mode, audioLevel: max(speech.level, mic.level), hermFaceID: hermFaceID)
             .frame(width: 320, height: 320)
             .overlay {
-                if showsRing { VoiceListeningRing(progress: mic.turnProgress).padding(36) }
+                if showsRing { VoiceListeningRing(progress: mic.turnProgress).dockPadding(36) }
             }
     }
 }

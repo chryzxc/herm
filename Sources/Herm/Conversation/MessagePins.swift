@@ -66,7 +66,7 @@ struct MessagePinsView: View {
                 }
                 .disabled(model.isLoadingMessagePins)
             }
-            .padding(12)
+            .dockPadding(12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if model.pinnedMessages.isEmpty {
@@ -93,7 +93,7 @@ struct MessagePinsView: View {
                                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.trailing, 18)
+                                .dockPadding(.trailing, 18)
                                 .overlay(alignment: .trailing) {
                                     DockIcon(.caretRight, size: 12, color: .dockSecondaryText)
                                 }
@@ -110,10 +110,10 @@ struct MessagePinsView: View {
                             }
                             .disabled(model.isUpdatingMessagePin || !model.messagePinsSupported)
                         }
-                        .padding(8)
+                        .dockPadding(8)
                     }
                 }
-                .padding(12)
+                .dockPadding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Text(model.messagePinError ?? "")
@@ -122,7 +122,7 @@ struct MessagePinsView: View {
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: 48, alignment: .topLeading)
-                .padding(.horizontal, 12)
+                .dockPadding(.horizontal, 12)
                 .help(model.messagePinError ?? "")
         }
         .foregroundStyle(Color.dockPrimaryText)

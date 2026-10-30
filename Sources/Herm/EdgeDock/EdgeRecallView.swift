@@ -66,7 +66,7 @@ struct EdgeRecallView: View {
                     .dockGlass
                 ).focused($focused)
                 if search.loading { ProgressView().controlSize(.mini) }
-            }.padding(10).frame(height: 48)
+            }.dockPadding(10).frame(height: 48)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -90,14 +90,14 @@ struct EdgeRecallView: View {
                             }.dockFont(.metadata)
                         }
                     }
-                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                }.dockPadding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider().overlay(Color.dockBorderLight)
             HStack {
                 Button("Back", action: back).buttonStyle(.dockCompact)
                 Spacer()
                 Text("Opens a conversation").foregroundStyle(Color.dockSecondaryText)
-            }.dockFont(.metadata).padding(10)
+            }.dockFont(.metadata).dockPadding(10)
         }.foregroundStyle(Color.dockPrimaryText)
             .onAppear { focused = true }
             .task(id: query) { await search.search(query, profileID: profileID, client: client) }

@@ -25,7 +25,7 @@ struct StartupAssistantView: View {
             Spacer(minLength: 0)
         }
         .multilineTextAlignment(.center)
-        .padding(.horizontal, 24)
+        .dockPadding(.horizontal, 24)
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 6)
         .onAppear {
@@ -473,7 +473,7 @@ struct CronConfigurationFields: View {
                         }
                     }
                 }
-            }.padding(.top, 8)
+            }.dockPadding(.top, 8)
         }
         .disclosureGroupStyle(DockDisclosureGroupStyle())
         .dockFont(.body)
@@ -612,7 +612,7 @@ struct CronReportDetailSheet: View {
                     ScrollView {
                         MarkdownMessageView(markdown: report.markdown)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
+                            .dockPadding(20)
                     }
                 } else {
                     VStack(spacing: 10) {
@@ -627,7 +627,7 @@ struct CronReportDetailSheet: View {
                             .buttonStyle(.dockSecondary)
                             .controlSize(.small)
                     }
-                    .padding(30)
+                    .dockPadding(30)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -766,8 +766,8 @@ struct DockActionPalette: View {
                             }
                             .foregroundStyle(command.isAvailable ? Color.dockPrimaryText : Color.dockMetadataText)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
+                            .dockPadding(.horizontal, 6)
+                            .dockPadding(.vertical, 4)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockPress)

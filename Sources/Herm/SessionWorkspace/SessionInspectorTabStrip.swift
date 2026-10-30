@@ -63,7 +63,7 @@ struct SessionInspectorTabStrip: View {
                         }
                     }
                     .frame(minWidth: max(0, geometry.size.width - 20), alignment: .leading)
-                    .padding(.horizontal, 10)
+                    .dockPadding(.horizontal, 10)
                 }
                 .onChange(of: selectedID, initial: true) { _, _ in revealSelection(proxy) }
                 .onChange(of: workspace) { _, _ in revealSelection(proxy) }

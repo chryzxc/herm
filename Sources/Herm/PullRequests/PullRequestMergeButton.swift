@@ -49,7 +49,7 @@ struct PullRequestMergeButton: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-                        .frame(width: 280, alignment: .leading).padding(.vertical, 6)
+                        .frame(width: 280, alignment: .leading).dockPadding(.vertical, 6)
                     }
                     .accessibilityAddTraits(method == option ? .isSelected : [])
                 }

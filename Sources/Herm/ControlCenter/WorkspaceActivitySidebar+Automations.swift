@@ -174,7 +174,7 @@ extension WorkspaceActivitySidebar {
                     .foregroundStyle(Color.dockAccent)
             }
         }
-        .padding(.bottom, 6)
+        .dockPadding(.bottom, 6)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -206,7 +206,7 @@ extension WorkspaceActivitySidebar {
                 Spacer()
                 DockTabBar(options: AutomationHistoryScope.allCases, selection: $automationHistoryScope, title: \.title)
             }
-            .padding(.bottom, 5)
+            .dockPadding(.bottom, 5)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             if let state = control.refreshState(for: "cron.history"), state.isStale {
@@ -265,7 +265,7 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 3)
+                    .dockPadding(.bottom, 3)
             }
             if !control.cronHistoryAvailable && control.cronRuns.isEmpty {
                 Text("Hermes automation history is unavailable through the installed CLI.")
@@ -312,7 +312,7 @@ extension WorkspaceActivitySidebar {
                 .foregroundStyle(Color.dockMetadataText)
             Spacer()
         }
-        .padding(.bottom, 5)
+        .dockPadding(.bottom, 5)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -386,7 +386,7 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 18)
+                .dockPadding(.trailing, 18)
                 .overlay(alignment: .trailing) {
                     DockIcon(.caretRight, size: 12, color: .dockSecondaryText)
                 }
@@ -437,8 +437,8 @@ extension WorkspaceActivitySidebar {
             }
             .help("More actions for \(job.name)")
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 2)
+        .dockPadding(.leading, 10)
+        .dockPadding(.trailing, 2)
         .frame(minHeight: 66)
         .background(isSelected ? Color.dockAccent.opacity(0.12) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
@@ -538,7 +538,7 @@ extension WorkspaceActivitySidebar {
 
             Divider()
                 .overlay(Color.dockBorderLight)
-                .padding(.vertical, 5)
+                .dockPadding(.vertical, 5)
 
             reportRow("SCHEDULE", value: CronScheduleFormatting.humanReadable(job.schedule))
             reportRow("AUTOMATION", value: job.schedule)
@@ -591,7 +591,7 @@ extension WorkspaceActivitySidebar {
                 .buttonStyle(.dockHover)
                 if expandedCronReportIDs.contains(job.id) {
                     MarkdownMessageView(markdown: report)
-                        .padding(10)
+                        .dockPadding(10)
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                 .dockSurfaceFill(Color.dockSurface2.opacity(0.72))
@@ -653,7 +653,7 @@ extension WorkspaceActivitySidebar {
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(2)
         }
-        .padding(.vertical, 2)
+        .dockPadding(.vertical, 2)
         .dockFont(.metadata)
     }
 
@@ -667,7 +667,7 @@ extension WorkspaceActivitySidebar {
             Circle()
                 .fill(cronRunIsSuccessful(run) ? Color.dockSuccessFill : Color.dockWarningFill)
                 .frame(width: 7, height: 7)
-                .padding(.top, 4)
+                .dockPadding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(run.status.uppercased())
@@ -709,8 +709,8 @@ extension WorkspaceActivitySidebar {
                 }
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 4)
+        .dockPadding(.vertical, 10)
+        .dockPadding(.horizontal, 4)
         .contentShape(Rectangle())
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -720,8 +720,8 @@ extension WorkspaceActivitySidebar {
             .textFieldStyle(.plain)
             .dockFont(.navigation)
             .foregroundStyle(Color.dockPrimaryText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.vertical, 8)
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

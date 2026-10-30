@@ -67,7 +67,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
                 .accessibilityAddTraits(selection == option ? .isSelected : [])
             }
         }
-        .padding(2)
+        .dockPadding(2)
         .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
     }
 }
@@ -144,7 +144,7 @@ struct EdgeQuotaPreview: View {
                         .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
                     }
-                    .padding(.top, 12)
+                    .dockPadding(.top, 12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     ScrollView {
@@ -160,7 +160,7 @@ struct EdgeQuotaPreview: View {
         }
         .dockFont(.body)
         .foregroundStyle(Color.dockPrimaryText)
-        .padding(.horizontal, 12)
+        .dockPadding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -189,7 +189,7 @@ struct EdgeQuotaPreview: View {
             .buttonStyle(.dockCompact)
         }
         .lineLimit(1)
-        .padding(.vertical, 6)
+        .dockPadding(.vertical, 6)
     }
 
     // MARK: List
@@ -197,7 +197,7 @@ struct EdgeQuotaPreview: View {
     private var list: some View {
         VStack(spacing: 0) {
             ForEach(Array(quotas.enumerated()), id: \.element.provider) { index, snapshot in
-                if index > 0 { Divider().overlay(Color.dockBorderLight).padding(.leading, 28) }
+                if index > 0 { Divider().overlay(Color.dockBorderLight).dockPadding(.leading, 28) }
                 HStack(alignment: .top, spacing: 8) {
                     ProviderMarkBadge(
                         mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName))
@@ -219,7 +219,7 @@ struct EdgeQuotaPreview: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
+                .dockPadding(.vertical, 8)
             }
         }
     }
@@ -297,8 +297,8 @@ struct EdgeQuotaPreview: View {
                         }
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 10)
+                .dockPadding(.horizontal, 8)
+                .dockPadding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
@@ -309,7 +309,7 @@ struct EdgeQuotaPreview: View {
                         Color.dockBorderLight, lineWidth: DockLayout.hairline))
             }
         }
-        .padding(.vertical, 8)
+        .dockPadding(.vertical, 8)
     }
 
     private func ring(_ label: String, _ window: ProviderQuotaWindow) -> some View {
@@ -487,7 +487,7 @@ struct EdgeQuotaChangeCard: View {
             }
         }
         .lineLimit(1)
-        .padding(.vertical, compact ? 0 : 14)
+        .dockPadding(.vertical, compact ? 0 : 14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .task {
             guard !reduceMotion else {
@@ -626,8 +626,8 @@ struct ChatQuotaBanner: View {
             if let change {
                 EdgeQuotaChangeCard(change: change, compact: true, inline: true)
                     .id(change.current.updatedAt)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.vertical, 8)
                     .frame(maxWidth: metrics.readingWidth)
                     .dockFloatingSurface(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous),
@@ -636,8 +636,8 @@ struct ChatQuotaBanner: View {
                     .shadow(
                         color: .black.opacity(DockThemeStyle.current.material == .glass ? 0 : 0.12), radius: 8, y: 2
                     )
-                    .padding(.horizontal, metrics.contentInset)
-                    .padding(.top, 8)
+                    .dockPadding(.horizontal, metrics.contentInset)
+                    .dockPadding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .onTapGesture { self.change = nil }
             }

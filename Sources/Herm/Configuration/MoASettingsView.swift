@@ -161,7 +161,7 @@ struct MoASettingsView: View {
                     Spacer(minLength: 4)
                     DockIcon(.caretUpDown, size: 10, color: Color.dockMetadataText)
                 }
-                .padding(.horizontal, 8)
+                .dockPadding(.horizontal, 8)
                 .frame(height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(

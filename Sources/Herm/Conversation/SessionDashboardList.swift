@@ -67,8 +67,8 @@ struct SessionDashboardList: View, Equatable {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .dockPadding(.horizontal, 20)
+            .dockPadding(.vertical, 16)
             ScrollView {
                 if rows.isEmpty {
                     emptyState(
@@ -104,8 +104,8 @@ struct SessionDashboardList: View, Equatable {
                         ? .spring(response: 0.8, dampingFraction: 0.9) : nil,
                     value: rows.map { "\($0.section.rawValue)/\($0.session.scopedID)" } + collapsed.map(\.rawValue)
                 )
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
+                .dockPadding(.horizontal, 20)
+                .dockPadding(.bottom, 20)
             }
         }
     }
@@ -144,7 +144,7 @@ struct SessionDashboardList: View, Equatable {
                 .dockFont(.body)
                 .accessibilityLabel("Search sessions")
         }
-        .padding(.horizontal, 10)
+        .dockPadding(.horizontal, 10)
         .frame(minWidth: 140, maxWidth: 320, minHeight: 32)
         .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
         .overlay {
@@ -176,7 +176,7 @@ struct SessionDashboardList: View, Equatable {
             Text(title).dockFont(.body, weight: .semibold)
             Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
         }
-        .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
 }

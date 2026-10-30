@@ -121,7 +121,7 @@ struct EdgeIslandStatusStrip: View {
                 Image(systemName: symbol).foregroundStyle(tint)
                 Text(text).monospacedDigit()
             }
-            .padding(.horizontal, 6)
+            .dockPadding(.horizontal, 6)
             .contentShape(Rectangle())
         }
     }

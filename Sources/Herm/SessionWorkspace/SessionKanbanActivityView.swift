@@ -88,7 +88,7 @@ struct SessionKanbanActivityView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .dockPadding(12)
         .dockGlassPane()
     }
 
@@ -189,7 +189,7 @@ struct SessionKanbanActivityView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, DockLayout.tight)
+        .dockPadding(.bottom, DockLayout.tight)
         .dockGlassPane()
     }
 
@@ -248,8 +248,8 @@ struct SessionKanbanActivityView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 9)
+                    .dockPadding(.horizontal, 10)
+                    .dockPadding(.vertical, 9)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                             Color.dockSurface4.opacity(0.68))
@@ -271,7 +271,7 @@ struct SessionKanbanActivityView: View {
                     onOpenTask?(row.taskID)
                 } label: {
                     HStack(alignment: .top, spacing: 8) {
-                        Circle().fill(statusColor(row.status)).frame(width: 7, height: 7).padding(.top, 4)
+                        Circle().fill(statusColor(row.status)).frame(width: 7, height: 7).dockPadding(.top, 4)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(row.botName).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
                             Text(row.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
@@ -285,7 +285,7 @@ struct SessionKanbanActivityView: View {
                             Color.dockMetadataText)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .dockPadding(.horizontal, 10).dockPadding(.vertical, 8)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                             Color.dockSurface4.opacity(0.68))
@@ -311,7 +311,7 @@ struct SessionKanbanActivityView: View {
                 Circle()
                     .fill(statusColor(row.status))
                     .frame(width: 7, height: 7)
-                    .padding(.top, 4)
+                    .dockPadding(.top, 4)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(row.title)
                         .dockFont(.body, weight: .semibold)
@@ -335,11 +335,11 @@ struct SessionKanbanActivityView: View {
                 DockIcon(.caretRight)
                     .dockFont(.compactStatus, weight: .semibold)
                     .foregroundStyle(Color.dockMetadataText)
-                    .padding(.top, 3)
+                    .dockPadding(.top, 3)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                     Color.dockSurface4.opacity(0.68))

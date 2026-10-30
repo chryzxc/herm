@@ -79,8 +79,8 @@ struct ConversationPromptRows: View {
                 }
                 .frame(maxHeight: 160)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .dockPadding(.horizontal, 10)
+                .dockPadding(.vertical, 8)
                 .background(
                     DockThemeShape(cornerRadius: DockLayout.controlRadius)
                         .dockSurfaceFill(
@@ -142,8 +142,8 @@ struct ConversationPromptRows: View {
             }
         }
         .dockButtonSize(.accessible)
-        .padding(.horizontal, conversationMetrics.contentInset + 4)
-        .padding(.vertical, 8)
+        .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
+        .dockPadding(.vertical, 8)
     }
 
     /// The question itself stays in the transcript as Hermes' message; this
@@ -235,8 +235,8 @@ struct ConversationPromptRows: View {
             }
         }
         .dockButtonSize(.accessible)
-        .padding(.horizontal, conversationMetrics.contentInset + 4)
-        .padding(.vertical, 8)
+        .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
+        .dockPadding(.vertical, 8)
     }
 
     func valuePromptRow(_ prompt: ValuePrompt) -> some View {
@@ -303,8 +303,8 @@ struct ConversationPromptRows: View {
             }
         }
         .dockButtonSize(.accessible)
-        .padding(.horizontal, conversationMetrics.contentInset + 4)
-        .padding(.vertical, 8)
+        .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
+        .dockPadding(.vertical, 8)
     }
 
 }

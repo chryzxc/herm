@@ -142,7 +142,7 @@ struct AttachToChatMenu: View {
                     }
                     .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
-                    .padding(.horizontal, 10)
+                    .dockPadding(.horizontal, 10)
                     .frame(height: 28)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)

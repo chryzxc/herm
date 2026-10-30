@@ -43,7 +43,7 @@ struct RevisionNoteExcerpt: View {
                     Text(note.selection.excerpt).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                 }
                 .dockFont(.body, weight: .regular, design: .monospaced).fontDesign(.monospaced).lineSpacing(3)
-                .padding(DockSpacing.group).frame(minWidth: geometry.size.width, alignment: .leading)
+                .dockPadding(DockSpacing.group).frame(minWidth: geometry.size.width, alignment: .leading)
             }
         }
         .frame(height: min(132, max(44, CGFloat(lines.count) * 18 + 24)))
@@ -70,10 +70,10 @@ struct RevisionNotesTray: View {
                     title
                     sendButton
                 }
-            }.padding(DockSpacing.group)
+            }.dockPadding(DockSpacing.group)
             if let error = state.revisionNotes.error {
                 Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
-                    .padding(.horizontal, DockSpacing.group).padding(.bottom, DockSpacing.control)
+                    .dockPadding(.horizontal, DockSpacing.group).dockPadding(.bottom, DockSpacing.control)
             }
             ForEach(state.notes) { note in
                 VStack(alignment: .leading, spacing: DockSpacing.control) {
@@ -94,7 +94,7 @@ struct RevisionNotesTray: View {
                     if state.revisionNotes.isStale(note) { RevisionNoteStaleLabel() }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(DockSpacing.group)
+                .dockPadding(DockSpacing.group)
                 .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             }
             Text(
@@ -102,7 +102,7 @@ struct RevisionNotesTray: View {
                     ? "Adds notes to your conversation draft." : "Open this review from a conversation to send notes."
             )
             .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-            .padding(.horizontal, DockSpacing.group).padding(.bottom, DockSpacing.group)
+            .dockPadding(.horizontal, DockSpacing.group).dockPadding(.bottom, DockSpacing.group)
         }
         .foregroundStyle(Color.dockPrimaryText)
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }

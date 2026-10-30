@@ -5,9 +5,19 @@ enum DockWorkspaceScale {
     static let window: CGFloat = 1
     static let preferenceKey = "herm.textSize"
     static let defaultTextSize = 1.1
+    /// Density "Compact": smaller text and icons, plus tighter padding via `spacing`.
+    static let compactTextSize = 0.9
+    static let compactSpacing: CGFloat = 0.8
 
     static func supportedTextSize(_ value: Double) -> Double {
-        [1.0, defaultTextSize, 1.2, 1.3].contains(value) ? value : defaultTextSize
+        value < defaultTextSize ? compactTextSize : defaultTextSize
+    }
+
+    static func isCompact(_ scale: CGFloat) -> Bool { scale < 1 }
+
+    /// Margins and padding: unchanged by default, tightened in Compact.
+    static func spacing(_ value: CGFloat, scale: CGFloat) -> CGFloat {
+        isCompact(scale) ? (value * compactSpacing).rounded() : value
     }
 
     static func points(_ value: CGFloat, scale: CGFloat) -> CGFloat {
@@ -59,6 +69,41 @@ private struct DockSemanticFont: ViewModifier {
 extension View {
     func dockFont(_ role: DockTypography.Role, weight: Font.Weight? = nil, design: Font.Design? = nil) -> some View {
         modifier(DockSemanticFont(role: role, weight: weight, design: design))
+    }
+}
+
+private struct DockScaledPadding: ViewModifier {
+    @Environment(\.dockWorkspaceScale) private var scale
+    let insets: EdgeInsets?
+    let edges: Edge.Set
+    let length: CGFloat?
+
+    func body(content: Content) -> some View {
+        if let insets {
+            content.padding(
+                EdgeInsets(
+                    top: DockWorkspaceScale.spacing(insets.top, scale: scale),
+                    leading: DockWorkspaceScale.spacing(insets.leading, scale: scale),
+                    bottom: DockWorkspaceScale.spacing(insets.bottom, scale: scale),
+                    trailing: DockWorkspaceScale.spacing(insets.trailing, scale: scale)))
+        } else {
+            content.padding(edges, length.map { DockWorkspaceScale.spacing($0, scale: scale) })
+        }
+    }
+}
+
+extension View {
+    /// `padding` that follows the Density setting. Use it for every margin and inset.
+    nonisolated func dockPadding(_ edges: Edge.Set = .all, _ length: CGFloat? = nil) -> some View {
+        modifier(DockScaledPadding(insets: nil, edges: edges, length: length))
+    }
+
+    nonisolated func dockPadding(_ length: CGFloat) -> some View {
+        modifier(DockScaledPadding(insets: nil, edges: .all, length: length))
+    }
+
+    nonisolated func dockPadding(_ insets: EdgeInsets) -> some View {
+        modifier(DockScaledPadding(insets: insets, edges: .all, length: nil))
     }
 }
 

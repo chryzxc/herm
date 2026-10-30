@@ -19,7 +19,7 @@ struct ConversationContextPicker: View {
                     if sessions.isEmpty {
                         Text(model.sessions.isEmpty ? "No conversations available." : "No matching conversations.")
                             .dockFont(.body)
-                            .foregroundStyle(Color.dockSecondaryText).padding(12)
+                            .foregroundStyle(Color.dockSecondaryText).dockPadding(12)
                     }
                 }.frame(minWidth: 180)
                 ScrollView {
@@ -32,7 +32,7 @@ struct ConversationContextPicker: View {
                                     : "No messages available in this conversation."
                             )
                             .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading).dockPadding(12)
                         }
                         ForEach(excerpts.messages.indices, id: \.self) { index in
                             Toggle(
@@ -41,7 +41,7 @@ struct ConversationContextPicker: View {
                                     set: { if $0 { selected.insert(index) } else { selected.remove(index) } })
                             ) {
                                 Text(excerpts.messages[index]).dockFont(.body).lineLimit(8)
-                            }.toggleStyle(.checkbox).padding(.vertical, 6)
+                            }.toggleStyle(.checkbox).dockPadding(.vertical, 6)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(minWidth: 280)

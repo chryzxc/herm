@@ -579,7 +579,7 @@ struct StreamingResponseMetadata: View {
             }
             .dockFont(.machineMetadata)
             .foregroundStyle(Color.dockMetadataText)
-            .padding(.horizontal, 4)
+            .dockPadding(.horizontal, 4)
         }
     }
 }

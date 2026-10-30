@@ -97,7 +97,7 @@ private struct SessionTraceExpanded: View {
                     open(id, profile)
                 }
             )
-            .padding(.horizontal, 16)
+            .dockPadding(.horizontal, 16)
         }
         .onAppear { trace.isExpanded = true }
         .onDisappear { trace.isExpanded = false }
@@ -218,7 +218,7 @@ struct SessionTraceCanvas: View {
                         )
                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     }
-                    .padding(.vertical, 20)
+                    .dockPadding(.vertical, 20)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
@@ -295,7 +295,7 @@ struct SessionTraceCanvas: View {
                     style: DockThemePalette(theme: DockThemeRuntime.current), action: expand)
             }
         }
-        .padding(.vertical, 10)
+        .dockPadding(.vertical, 10)
     }
 
     /// Search, Fit and Live act only on the steps, so they sit on the Steps header.
@@ -334,7 +334,7 @@ struct SessionTraceCanvas: View {
                 }
             if search.isEmpty {
                 Text("⌘F").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .dockPadding(.horizontal, 4).dockPadding(.vertical, 1)
                     .overlay(
                         RoundedRectangle(cornerRadius: 4).stroke(
                             Color.dockBorderLight, lineWidth: 0.5))
@@ -352,7 +352,7 @@ struct SessionTraceCanvas: View {
                 .buttonStyle(.dockHover).accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 8).frame(minWidth: 110, maxWidth: .infinity).frame(height: 26)
+        .dockPadding(.horizontal, 8).frame(minWidth: 110, maxWidth: .infinity).frame(height: 26)
         .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 6))
         .background {
             Button("Search steps") { searchFocused = true }
@@ -464,10 +464,10 @@ struct SessionTraceCanvas: View {
                                 select(SessionTraceNavigation.nextFailure(in: turn.rows, after: selectedRowID))
                             }.buttonStyle(.dockCompact)
                         }
-                    }.padding(.horizontal, 4).padding(.vertical, 6)
+                    }.dockPadding(.horizontal, 4).dockPadding(.vertical, 6)
                     HStack(spacing: 0) {
                         Text("Step").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                            .padding(.leading, 4)
+                            .dockPadding(.leading, 4)
                             .frame(width: labelWidth, alignment: .leading)
                         Color.dockBorderLight.frame(width: 0.5)
                         clock(live) { now in
@@ -499,7 +499,7 @@ struct SessionTraceCanvas: View {
                                     set: { replay = SessionTraceReplay(position: $0, speed: speed) }),
                                 in: 0...span
                             ).accessibilityLabel("Replay position")
-                                .padding(.horizontal, 8).padding(.bottom, 6)
+                                .dockPadding(.horizontal, 8).dockPadding(.bottom, 6)
                         }
                     }
                 }
@@ -524,8 +524,8 @@ struct SessionTraceCanvas: View {
                     .frame(width: 380, height: 340)
                     .clipShape(shape)
                     .dockFloatingSurface(shape, tint: Color.dockSurface2)
-                    .padding(12)
-                    .padding(.bottom, 38)  // clears the replay footer
+                    .dockPadding(12)
+                    .dockPadding(.bottom, 38)  // clears the replay footer
             }
         }
     }
@@ -557,7 +557,7 @@ struct SessionTraceCanvas: View {
                 tint: turn.errorCount > 0 ? .dockDestructive : nil)
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.vertical, 8)
+        .dockPadding(.vertical, 8)
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -571,7 +571,7 @@ struct SessionTraceCanvas: View {
                 .foregroundStyle(tint ?? Color.dockPrimaryText).lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 8)
+        .dockPadding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(help ?? "")
         .accessibilityElement(children: .combine)
@@ -632,7 +632,7 @@ struct SessionTraceCanvas: View {
                     .id("trace-vertical-tail")
                 if items.isEmpty {
                     Text("No matching steps").dockFont(.body)
-                        .foregroundStyle(Color.dockSecondaryText).padding(20)
+                        .foregroundStyle(Color.dockSecondaryText).dockPadding(20)
                 }
             }
             .frame(maxHeight: .infinity)
@@ -736,8 +736,8 @@ struct SessionTraceCanvas: View {
             titleRole: .conversation,
             actions: actions
         )
-        .padding(.leading, 4)
-        .padding(.top, 4)
+        .dockPadding(.leading, 4)
+        .dockPadding(.top, 4)
     }
 
     private func stepLabel(_ row: SessionTraceRow, depth: Int, hasChildren: Bool) -> some View {
@@ -803,8 +803,8 @@ struct SessionTraceCanvas: View {
                 .accessibilityLabel("Open \(row.title)'s conversation")
             }
         }
-        .padding(.leading, CGFloat(min(depth, 5)) * 14)
-        .padding(.trailing, 8)
+        .dockPadding(.leading, CGFloat(min(depth, 5)) * 14)
+        .dockPadding(.trailing, 8)
         .background {
             Canvas { context, size in
                 guard depth > 0 else { return }
@@ -859,7 +859,7 @@ struct SessionTraceCanvas: View {
                                 ? "Show this step earlier in the timeline" : "Show this step later in the timeline")
                         if side == .earlier { Spacer(minLength: 0) }
                     }
-                    .padding(.horizontal, 6)
+                    .dockPadding(.horizontal, 6)
                 } else {
                     Button {
                         select(row.id)
@@ -874,7 +874,7 @@ struct SessionTraceCanvas: View {
                         if slowest, replayTime.map({ $0 >= offset + (full ?? 0) }) ?? true {
                             Text("Slowest").dockFont(.metadata, weight: .medium)
                                 .foregroundStyle(DockAccentColor.amber.color)
-                                .padding(.horizontal, 6).padding(.vertical, 1)
+                                .dockPadding(.horizontal, 6).dockPadding(.vertical, 1)
                                 .background(Capsule().fill(DockAccentColor.amber.fill.opacity(0.14)))
                                 .overlay(Capsule().stroke(DockAccentColor.amber.fill.opacity(0.4)))
                         }
@@ -886,7 +886,7 @@ struct SessionTraceCanvas: View {
                 // Missing intervals stay explicit; future replay steps remain hidden.
                 Text(row.active ? "Running · timing unavailable" : "No timing")
                     .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-                    .padding(.leading, 8)
+                    .dockPadding(.leading, 8)
             }
         }
         .frame(width: viewport.width, height: rowHeight, alignment: .leading)
@@ -928,7 +928,7 @@ struct SessionTraceCanvas: View {
             }
             .overlay(alignment: .trailing) {
                 if row.active {
-                    Capsule().fill(tone(row).color).frame(width: 2).padding(.vertical, 2)
+                    Capsule().fill(tone(row).color).frame(width: 2).dockPadding(.vertical, 2)
                 }
             }
             .overlay {
@@ -1021,7 +1021,7 @@ struct SessionTraceCanvas: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .background(Color.dockSurface2)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
@@ -1034,7 +1034,7 @@ struct SessionTraceCanvas: View {
             : row.failed ? "Failed" : row.outcome == "Succeeded" ? "Done" : "Finished"
         return Text(label).dockFont(.metadata, weight: .medium)
             .foregroundStyle(color)
-            .padding(.horizontal, 6).padding(.vertical, 2)
+            .dockPadding(.horizontal, 6).dockPadding(.vertical, 2)
             .background(Capsule().fill(color.opacity(0.12)))
             .overlay(Capsule().stroke(color.opacity(0.3), lineWidth: 0.5))
             .lineLimit(1).fixedSize()
@@ -1072,7 +1072,7 @@ struct SessionTraceCanvas: View {
                 .accessibilityElement(children: .combine)
             }
         }
-        .padding(10)
+        .dockPadding(10)
         .background(Color.dockSurface4, in: RoundedRectangle(cornerRadius: 8))
     }
 

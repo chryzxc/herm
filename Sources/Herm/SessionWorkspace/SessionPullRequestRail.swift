@@ -171,7 +171,7 @@ struct SessionPullRequestRail: View {
                 onRespondInChat: onRespondInChat, onViewPin: onViewPin
             )
             .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
-            .padding(16)
+            .dockPadding(16)
         }
         .foregroundStyle(Color.dockPrimaryText)
         .onChange(of: model.messagesRevision, initial: true) { _, _ in
@@ -277,9 +277,9 @@ struct SessionRailCard: View {
                             }
                         }
                         Button("View all changes", action: onViewAllChanges)
-                            .buttonStyle(.dockLink).padding(.top, 4)
+                            .buttonStyle(.dockLink).dockPadding(.top, 4)
                     }
-                    .padding(.top, 8)
+                    .dockPadding(.top, 8)
                 } label: {
                     changesRow(changes)
                 }
@@ -324,7 +324,7 @@ struct SessionRailCard: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 changesLabel
-                changeCounts(changes).padding(.leading, 22)
+                changeCounts(changes).dockPadding(.leading, 22)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

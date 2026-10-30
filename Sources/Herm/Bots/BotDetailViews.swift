@@ -44,7 +44,7 @@ struct BotProfileEditorSheet: View {
             contentPadding: 0
         ) {
             if detail == nil {
-                BotEditorLoadingState().padding(20)
+                BotEditorLoadingState().dockPadding(20)
             } else {
                 editorForm
             }
@@ -100,7 +100,7 @@ struct BotProfileEditorSheet: View {
                 modalSection("CAPABILITIES") {
                     Button("Manage integrations…") { showsIntegrationSetup = true }
                         .buttonStyle(.dockSecondary)
-                        .padding(.top, 8)
+                        .dockPadding(.top, 8)
                     VStack(alignment: .leading, spacing: 10) {
                         DisclosureGroup(isExpanded: $showsSkills) {
                             toggleSection(items: skillBinding)
@@ -127,14 +127,14 @@ struct BotProfileEditorSheet: View {
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                     }
-                    .padding(12)
+                    .dockPadding(12)
                     .background(cardBackground)
                 }
                 if let editError {
                     ModalNote(text: editError, icon: .warning, tone: .dockWarning)
                 }
             }
-            .padding(20)
+            .dockPadding(20)
         }
         .frame(maxHeight: 560)
     }
@@ -220,7 +220,7 @@ struct BotProfileEditorSheet: View {
                     .buttonStyle(.dockSecondary)
                     .controlSize(.small)
             }
-            .padding(.vertical, 8)
+            .dockPadding(.vertical, 8)
             if isChangingModel {
                 HStack(spacing: 8) {
                     DockMenuPicker(
@@ -238,7 +238,7 @@ struct BotProfileEditorSheet: View {
                     }
                 }
                 .labelsHidden()
-                .padding(.bottom, 8)
+                .dockPadding(.bottom, 8)
             }
             Divider()
             fallbackSection
@@ -270,7 +270,7 @@ struct BotProfileEditorSheet: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .dockPadding(.horizontal, 12)
         .background(cardBackground)
     }
 
@@ -339,7 +339,7 @@ struct BotProfileEditorSheet: View {
                         .disabled(runtime == nil)
                 }
             }
-            .padding(.vertical, 8)
+            .dockPadding(.vertical, 8)
             if fallbackDraft != nil {
                 HStack(spacing: 8) {
                     DockMenuPicker(
@@ -367,7 +367,7 @@ struct BotProfileEditorSheet: View {
                     .disabled(fallbackProvider.isEmpty || fallbackModel.isEmpty)
                 }
                 .labelsHidden()
-                .padding(.bottom, 8)
+                .dockPadding(.bottom, 8)
             }
         }
     }
@@ -378,7 +378,7 @@ struct BotProfileEditorSheet: View {
             value().dockFont(.body).foregroundStyle(Color.dockPrimaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 9)
+        .dockPadding(.vertical, 9)
     }
 
     private func modelText(_ model: String, provider: String?) -> some View {
@@ -416,7 +416,7 @@ struct BotProfileEditorSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2))
             }
         }
-        .padding(12)
+        .dockPadding(12)
         .background(cardBackground)
     }
 
@@ -455,7 +455,7 @@ struct BotProfileEditorSheet: View {
                         )
                     )
                     .controlSize(.small)
-                    .padding(.horizontal, 4)
+                    .dockPadding(.horizontal, 4)
                 }
             }
         }
@@ -484,7 +484,7 @@ struct BotProfileEditorSheet: View {
                         .controlSize(.small)
                         Spacer()
                     }
-                    .padding(.horizontal, 4)
+                    .dockPadding(.horizontal, 4)
                 }
             }
         }
@@ -605,7 +605,7 @@ private struct BotEditorLoadingState: View {
                     .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)
             }
-            .padding(.bottom, 4)
+            .dockPadding(.bottom, 4)
             ForEach(0..<3, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                     .fill(Color.dockControlSurface)
@@ -614,13 +614,13 @@ private struct BotEditorLoadingState: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(Color.dockSurface4)
                             .frame(width: 110, height: 8)
-                            .padding(.horizontal, 12)
+                            .dockPadding(.horizontal, 12)
                     }
             }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
-        .padding(.top, 8)
+        .dockPadding(.top, 8)
     }
 }
 
@@ -686,7 +686,7 @@ struct BotRoutineFormSheet: View {
                         ForEach(bots) { bot in DockMenuOption(bot.name, value: bot.id) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
+                    .dockPadding(.horizontal, 10)
                     .frame(minHeight: DockLayout.controlHeight)
                     .background(
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
