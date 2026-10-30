@@ -545,8 +545,10 @@ struct BotServiceTests {
         let model = BotModeModel()
         let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
         model.bind(to: client, capabilityAvailable: false)
+        model.setCapabilityAvailable(false)
         await model.refreshNow()
-        #expect(model.inventory.availability == .unavailable)
+        #expect(model.inventory.availability == .unsupported)
+        #expect(client.methods.isEmpty)
     }
 
     @Test func staleCapabilitySnapshotDoesNotClobberReadyRoster() async {
