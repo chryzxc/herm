@@ -46,7 +46,7 @@ struct ComposerTodoPlanView: View {
                     DockIcon(.caretRight, size: 10, color: .dockMetadataText)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
-                .padding(.horizontal, 8)
+                .dockPadding(.horizontal, 8)
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
@@ -65,8 +65,8 @@ struct ComposerTodoPlanView: View {
                 .defaultScrollAnchor(.top)
                 .frame(maxHeight: 220)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
-                .padding(.bottom, 8)
+                .dockPadding(.horizontal, 4)
+                .dockPadding(.bottom, 8)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -111,12 +111,16 @@ struct TodoPlanTaskList: View {
                     Circle().trim(from: 0, to: 0.7)
                         .stroke(Color.dockAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .frame(width: 12, height: 12)
-                } else if completed {
-                    DockIcon(.checkCircle, size: 14, color: Color.dockSuccess)
-                } else if cancelled {
-                    DockIcon(.xCircle, size: 14, color: .dockMetadataText)
                 } else {
-                    Circle().stroke(Color.dockBorderStrong, lineWidth: 1.5).frame(width: 14, height: 14)
+                    let color: Color = completed ? .dockSuccess : (cancelled ? .dockMetadataText : .dockBorderStrong)
+                    Circle()
+                        .stroke(color, lineWidth: 1.5)
+                        .frame(width: 14, height: 14)
+                        .overlay {
+                            if completed || cancelled {
+                                DockIcon(completed ? .check : .x, size: 9, color: color)
+                            }
+                        }
                 }
             }
             .frame(width: 16, height: 16)
@@ -140,8 +144,8 @@ struct TodoPlanTaskList: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .dockPadding(.horizontal, 8)
+        .dockPadding(.vertical, 6)
         .dockSelectionBackground(
             RoundedRectangle(cornerRadius: DockThemeStyle.current.controlRadius), active: active, fill: .dockSurface4,
             allowsInvert: false
