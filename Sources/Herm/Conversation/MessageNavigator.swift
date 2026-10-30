@@ -340,7 +340,7 @@ struct MessageNavigatorView: View {
                     if isSearchPresented {
                         searchPanel
                             .frame(width: 300, alignment: .leading)
-                            .padding(.top, 10)
+                            .dockPadding(.top, 10)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
@@ -433,8 +433,8 @@ struct MessageNavigatorView: View {
                 .help("Close search (Esc)")
                 .accessibilityLabel("Close search")
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 6)
+            .dockPadding(.leading, 12)
+            .dockPadding(.trailing, 6)
             .frame(height: 38)
 
             if hasSearchQuery {
@@ -448,8 +448,8 @@ struct MessageNavigatorView: View {
                     .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.vertical, 10)
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
@@ -475,8 +475,8 @@ struct MessageNavigatorView: View {
                                             .lineLimit(2)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
+                                    .dockPadding(.horizontal, 8)
+                                    .dockPadding(.vertical, 6)
                                     .background(
                                         item.target == hoveredResult ? Color.dockSurface4 : Color.clear,
                                         in: RoundedRectangle(
@@ -491,7 +491,7 @@ struct MessageNavigatorView: View {
                                 .buttonStyle(.dockHover)
                             }
                         }
-                        .padding(4)
+                        .dockPadding(4)
                     }
                     .frame(maxHeight: 280)
                 }
@@ -580,10 +580,10 @@ struct MessageNavigatorView: View {
                     Self.dispatchSelection(markers[index], onSelect: onSelect)
                 }
             )
-            // The whole rail block, not just the bars: SwiftUI's hit area for
-            // the bars sat left of their drawing, so cover a wide band too.
-            .frame(width: 120, height: markerTrackHeight(in: size.height) + hoverZoneHeight + 24)
-            .position(x: 60, y: size.height / 2)
+            // Exactly the marker column (28pt): the preview card starts at x=27,
+            // so a wider strip would treat hovering the card as hovering the rail.
+            .frame(width: 28, height: markerTrackHeight(in: size.height) + hoverZoneHeight + 24)
+            .position(x: 14, y: size.height / 2)
 
             if let previewItem {
                 VStack(alignment: .leading, spacing: 4) {
@@ -595,8 +595,8 @@ struct MessageNavigatorView: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(2)
                 }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
+                .dockPadding(.horizontal, 9)
+                .dockPadding(.vertical, 7)
                 .frame(width: 160, alignment: .leading)
                 .dockFloatingSurface(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), lineWidth: 0.5
