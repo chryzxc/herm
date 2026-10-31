@@ -20,6 +20,8 @@ struct ConversationTranscriptView: View, Equatable {
     @Binding var selectedChatImage: ChatImagePreview?
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @StateObject var source: ConversationTranscriptSource
+    /// Message a jump just landed on; shown with a brief spotlight so it is easy to find.
+    @State private var spotlightMessageID: UUID?
     var coordinator: ConversationTranscriptCoordinator { source.coordinator }
     private let themeRevision: Int
     private let searchPresented: Bool
@@ -105,6 +107,7 @@ struct ConversationTranscriptView: View, Equatable {
                                     VStack(spacing: 0) {
                                         messageRow(message, dispatches: dispatches, defaultBot: defaultBot)
                                     }
+                                    .opacity(spotlightMessageID == nil || spotlightMessageID == message.id ? 1 : 0.3)
                                     .background {
                                         GeometryReader { geometry in
                                             Color.clear.preference(
@@ -242,6 +245,16 @@ struct ConversationTranscriptView: View, Equatable {
     private func jumpToMessage(_ item: MessageNavigatorItem, proxy: ScrollViewProxy) {
         coordinator.select(item, model: model) { messageID in
             proxy.scrollTo(messageID, anchor: .center)
+            spotlight(messageID)
+        }
+    }
+
+    private func spotlight(_ id: UUID) {
+        withAnimation(reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.3)) { spotlightMessageID = id }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.2))
+            guard spotlightMessageID == id else { return }
+            withAnimation(reduceMotion ? nil : .dockEase(duration: 0.6)) { spotlightMessageID = nil }
         }
     }
 
@@ -383,6 +396,7 @@ struct ConversationTranscriptView: View, Equatable {
                     && message.systemEvent == nil && message.kanbanNotice == nil && !message.isError,
                 isPinAvailable: model.canPinMessage(message),
                 isPinned: model.isMessagePinned(message),
+                isSpotlit: spotlightMessageID == message.id,
                 onPin: { source.perform(.pin, target: target) },
                 onOpenInTab: {
                     guard let current = source.message(for: target) else { return }

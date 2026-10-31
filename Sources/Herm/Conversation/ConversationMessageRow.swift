@@ -62,6 +62,9 @@ struct ConversationMessageRow: View, Equatable {
     let showsPinAction: Bool
     let isPinAvailable: Bool
     let isPinned: Bool
+    /// A jump just landed here; the bubble plays the spotlight effect.
+    let isSpotlit: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onOpenInTab: (() -> Void)?
     let showsOpenInTabAction: Bool
     let onPin: () -> Void
@@ -98,6 +101,7 @@ struct ConversationMessageRow: View, Equatable {
         showsPinAction: Bool = false,
         isPinAvailable: Bool = false,
         isPinned: Bool = false,
+        isSpotlit: Bool = false,
         onPin: @escaping () -> Void = {},
         onOpenInTab: (() -> Void)? = nil,
         forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)? = nil,
@@ -127,6 +131,7 @@ struct ConversationMessageRow: View, Equatable {
         self.showsPinAction = showsPinAction
         self.isPinAvailable = isPinAvailable
         self.isPinned = isPinned
+        self.isSpotlit = isSpotlit
         self.onOpenInTab = onOpenInTab
         self.showsOpenInTabAction = onOpenInTab != nil
         self.onPin = onPin
@@ -164,7 +169,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.isSpeaking == rhs.isSpeaking
             && lhs.showsPinAction == rhs.showsPinAction
             && lhs.isPinAvailable == rhs.isPinAvailable
-            && lhs.isPinned == rhs.isPinned
+            && lhs.isPinned == rhs.isPinned && lhs.isSpotlit == rhs.isSpotlit
             && lhs.showsOpenInTabAction == rhs.showsOpenInTabAction
             && lhs.metrics == rhs.metrics
             && lhs.actionTarget == rhs.actionTarget
@@ -245,6 +250,7 @@ struct ConversationMessageRow: View, Equatable {
                                 DockSkinPresentation.current.transcript == .document
                                     ? Color.dockSurface : Color.dockUserMessageBubble)
                         )
+                        .messageSpotlight(isSpotlit, shape: Self.userBubbleShape, reduceMotion: reduceMotion)
                         .overlay {
                             Self.userBubbleShape
                                 .stroke(
@@ -366,6 +372,10 @@ struct ConversationMessageRow: View, Equatable {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .dockPadding(.horizontal, 4)
                         .dockPadding(.vertical, 6)
+                        .messageSpotlight(
+                            isSpotlit, shape: AnyShape(RoundedRectangle(cornerRadius: 14, style: .continuous)),
+                            lifts: false, reduceMotion: reduceMotion
+                        )
                         .foregroundStyle(Color.dockPrimaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
