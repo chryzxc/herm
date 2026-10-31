@@ -138,6 +138,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
+        _ = NSScrollView.installDockScrollers
         actionErrorPresenter = DockActionErrorPresenter()
         Task {
             for service in ["io.github.chryzxc.Herm.gateway", "io.github.chryzxc.Herm.browser"] {
