@@ -112,6 +112,10 @@ enum DesktopWorkspaceFractions {
     static func minimumConversationWidth(isFullscreen: Bool) -> CGFloat {
         isFullscreen ? 520 : 360
     }
+    /// Rail + list + conversation no longer fit: the list yields to the chat.
+    static func listCannotFit(width: CGFloat, isFullscreen: Bool) -> Bool {
+        width < 52 + 300 + minimumConversationWidth(isFullscreen: isFullscreen) + 1
+    }
     static func shouldCollapseQueue(width: CGFloat, isFullscreen: Bool) -> Bool {
         width < 52 + 300 + minimumConversationWidth(isFullscreen: isFullscreen) + 360 + 3
     }

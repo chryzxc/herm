@@ -48,18 +48,19 @@ enum BotChatsOrdering {
     }
 }
 
-/// Messenger-style Bots destination: every bot's main chat and every group
-/// room in one list beside the open conversation. No session sections and no
-/// inspector.
-struct BotChatsPage<Conversation: View>: View {
+/// The Bots page's left panel: every bot's main chat and every group room in
+/// one list. The chat, toolbar and workspace beside it are the Sessions layout's.
+struct BotChatsPage: View {
     @ObservedObject var bots: BotModeModel
     @ObservedObject var groups: GroupChatStore
     let activeBotID: String?
     let style: DockThemePalette
+    let usesWindowChrome: Bool
+    @Binding var openRoomID: String
+    @Binding var isCollapsed: Bool
+    let onShowSessions: () -> Void
     let onOpen: (BotSummary) -> Void
-    @ViewBuilder let conversation: () -> Conversation
     @State private var query = ""
-    @State private var openRoomID = UserDefaults.standard.string(forKey: BotChatsOrdering.lastRoomKey)
     @State private var isShowingNewGroupChat = false
 
     private var visibleBots: [BotSummary] { bots.bots.filter { !$0.isHidden } }
@@ -80,35 +81,37 @@ struct BotChatsPage<Conversation: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DockPageHeader(title: "Bots", subtitle: "")
+            // Same strip as the Sessions list: the sidebar toggle beside the traffic lights.
             HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    HStack(spacing: 6) {
-                        searchField
-                        if groups.isAvailable {
-                            DockIconButton(icon: .plus, label: "New group chat", size: 28, style: style) {
-                                isShowingNewGroupChat = true
-                            }
-                        }
-                    }
-                    .dockPadding(.horizontal, 12)
-                    .dockPadding(.top, 8)
-                    botList
+                DockSidebarToggle(isCollapsed: $isCollapsed)
+                Spacer(minLength: 0)
+                    .frame(maxHeight: .infinity)
+                    .background { if usesWindowChrome { TitlebarDoubleClickArea() } }
+                Button(action: onShowSessions) {
+                    DockIcon(.chatsCircle, size: DockLayout.toolbarIconSize, color: style.secondaryText)
+                        .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                        .contentShape(Rectangle())
                 }
-                .frame(width: 360)
-                .background(style.sidebarBackground)
-                Divider().overlay(Color.dockBorderLight)
-                Group {
-                    if let openRoom {
-                        GroupChatView(store: groups, botMode: bots, roomID: openRoom.id) { closeRoom() }
-                            .id(openRoom.id)
-                    } else {
-                        conversation()
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .buttonStyle(.dockHover)
+                .help("Show sessions")
+                .accessibilityLabel("Show sessions")
             }
+            .dockPadding(.leading, usesWindowChrome ? DockWindowChrome.sidebarToggleLeading : 6)
+            .dockPadding(.trailing, 8)
+            .frame(height: usesWindowChrome ? DockWindowChrome.titleRowHeight : 44)
+            HStack(spacing: 6) {
+                searchField
+                if groups.isAvailable {
+                    DockIconButton(icon: .plus, label: "New group chat", size: 28, style: style) {
+                        isShowingNewGroupChat = true
+                    }
+                }
+            }
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 8)
+            botList
         }
+        .dockShellPane()
         .dockSheet(isPresented: $isShowingNewGroupChat) {
             NewGroupChatSheet(store: groups, bots: visibleBots, onCreated: openRoom)
         }
@@ -199,15 +202,9 @@ struct BotChatsPage<Conversation: View>: View {
         onOpen(bot)
     }
 
-    private func openRoom(_ id: String) {
-        openRoomID = id
-        UserDefaults.standard.set(id, forKey: BotChatsOrdering.lastRoomKey)
-    }
+    private func openRoom(_ id: String) { openRoomID = id }
 
-    private func closeRoom() {
-        openRoomID = nil
-        UserDefaults.standard.removeObject(forKey: BotChatsOrdering.lastRoomKey)
-    }
+    private func closeRoom() { openRoomID = "" }
 
     private func row(_ bot: BotSummary) -> some View {
         let isSelected = openRoom == nil && bot.id == activeBotID

@@ -129,6 +129,12 @@ extension DockPopover {
 
     func observerLayerThree<V: View>(_ view: V) -> some View {
         view
+            // Settled destinations only: opening a session changes the surface before the session id.
+            .task(id: currentNavigationDestination) {
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled else { return }
+                navHistory.record(currentNavigationDestination)
+            }
             .onChange(of: model.sessionID) { oldValue, newValue in
                 filePreview.attachmentDiff = nil
                 handleSessionIDChange(oldValue: oldValue, newValue: newValue)
@@ -202,10 +208,14 @@ extension DockPopover {
         )
         .background {
             // Continue the sidebar surface through the corner clearance instead of exposing a decorative frame.
-            if panelPresentation.isEdgeAttached, panelPresentation.edgeSide != .top,
+            if panelPresentation.isEdgeAttached, !usesWindowChrome, !isFullscreen {
+                Color.dockSidebar
+            }
+            // The camera-housing band is always black, whatever skin the window wears.
+            if panelPresentation.isEdgeAttached, panelPresentation.edgeSide == .top,
                 !usesWindowChrome, !isFullscreen
             {
-                Color.dockSidebar
+                Color.black.frame(height: panelPresentation.edgeInsets.top).frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .overlay(alignment: .top) {
@@ -219,6 +229,7 @@ extension DockPopover {
                     openQuota: { panelPresentation.quotaRequest &+= 1 }
                 )
                 .dockPadding(.horizontal, EdgeDockLayout.islandSideInset + 12)
+                .environment(\.colorScheme, .dark)
             }
         }
         .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
@@ -353,36 +364,31 @@ extension DockPopover {
     /// Applies to both the fullscreen and the windowed/minimized popover
     /// presentations, since both route through this shell.
     var desktopWorkspaceShell: some View {
-        HStack(spacing: 0) {
-            sessionNavRail
-            // Every destination sits in one rounded card below the toolbar row, which stays flat.
-            let flat = DockThemeStyle.current.flatShell
-            let margin: CGFloat = flat ? 0 : 8
-            let radius: CGFloat = flat ? 0 : 12
-            let cardInsets = EdgeInsets(top: titlebarInset, leading: 0, bottom: margin, trailing: margin)
-            let card = RoundedRectangle(cornerRadius: radius, style: .continuous)
-            FullscreenPanelSplitView(
-                leading: sessionNavQueue,
-                trailing: desktopTrailingWorkspace,
-                leadingFraction: DesktopWorkspaceFractions.queue,
-                minimumLeadingWidth: 300,
-                minimumTrailingWidth: desktopTrailingMinimumWidth,
-                isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList
-            )
-            // The sidebar tint above is opaque, so the card carries its own canvas and skin backdrop
-            // (Hermes Desktop paints its backdrop inside the chat surface the same way).
-            .background {
-                if DockThemeStyle.current.material != .glass { Color.dockCanvas.overlay(DockBackdrop()) }
-            }
-            .mask(ToolbarRowAndCardShape(toolbarHeight: titlebarInset, margin: margin, radius: radius))
-            .overlay { card.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline).dockPadding(cardInsets) }
-        }
-        .dockPaneTint(Color.dockSidebar)
+        DockWorkspaceShell(
+            toolbarHeight: titlebarInset, rail: { sessionNavRail },
+            content: {
+                FullscreenPanelSplitView(
+                    leading: desktopLeadingPanel,
+                    trailing: desktopTrailingWorkspace,
+                    leadingFraction: DesktopWorkspaceFractions.queue,
+                    minimumLeadingWidth: 300,
+                    minimumTrailingWidth: desktopTrailingMinimumWidth,
+                    isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList
+                )
+            })
     }
 
+    /// Sessions in Chats; every bot and group room on the Bots page.
+    var desktopLeadingPanel: AnyView {
+        fullscreenSurface == .bots ? AnyView(botsListPanel) : AnyView(sessionNavQueue)
+    }
+
+    var openGroupRoom: GroupRoom? { botMode.groupChats.rooms.first { $0.id == openGroupRoomID } }
+
     var hidesChatList: Bool {
-        guard fullscreenSurface == .conversation, !isNarrowLayout else { return false }
+        guard fullscreenSurface == .conversation || fullscreenSurface == .bots, !isNarrowLayout else { return false }
         return isChatListCollapsed
+            || DesktopWorkspaceFractions.listCannotFit(width: workspaceLayoutWidth, isFullscreen: isFullscreen)
             || (isInspectorVisibleForDesktopWorkspace
                 && DesktopWorkspaceFractions.shouldCollapseQueue(
                     width: workspaceLayoutWidth, isFullscreen: isFullscreen))
@@ -405,7 +411,7 @@ extension DockPopover {
     /// The session lists belong to Chats: a conversation is open.
     var showsChatsPanel: Bool {
         switch fullscreenSurface {
-        case .conversation: true
+        case .conversation, .bots: true
         default: false
         }
     }
@@ -444,7 +450,6 @@ extension DockPopover {
                     fullscreenSurface = .artifacts
                 }
             },
-            onOpenBots: { leaveIntegrations { openBotsPage() } },
             onOpenGitHub: { section in leaveIntegrations { selectGitHubSection(section) } },
             isFullscreen: isFullscreen,
             isHermesConnected: model.isHermesConnected,
@@ -521,8 +526,8 @@ extension DockPopover {
 
     var isGlobalSurfaceActive: Bool {
         switch fullscreenSurface {
-        case .global, .artifacts, .bots, .pullRequests, .issues, .chatGrid: true
-        case .conversation: false
+        case .global, .artifacts, .pullRequests, .issues, .chatGrid: true
+        case .conversation, .bots: false
         }
     }
 
@@ -578,77 +583,90 @@ extension DockPopover {
 
     var conversationColumn: some View {
         VStack(spacing: 0) {
-            header
-            switch sessionWorkspaceMode {
-            case .chat:
-                GeometryReader { geometry in
-                    let railWidth =
-                        isSessionRailVisible
-                        ? ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) : 0
-                    chatConversationContent(railWidth: railWidth)
-                        .overlay(alignment: .trailing) {
-                            if railWidth > 0 {
-                                SessionPullRequestRail(
-                                    model: model, workflow: developerWorkflow, control: controlCenter,
-                                    repositoryPath: activeSessionRepositoryScope?.repositoryPath,
-                                    onViewAllChanges: { showSessionRailInspector(.changes) },
-                                    onViewPullRequest: viewSessionRailPullRequest,
-                                    onRefreshChanges: refreshSessionRailChanges,
-                                    onViewAllOutputs: { showSessionRailInspector(.artifacts) },
-                                    onRespondInChat: {
-                                        sessionRailReplyRequest &+= 1
-                                        model.requestComposerFocus()
-                                    },
-                                    onViewPin: { pin in
-                                        let identity = WorkspaceIdentity.session(model)
-                                        guard let id = await model.messageID(forPin: pin),
-                                            identity == WorkspaceIdentity.session(model)
-                                        else { return false }
-                                        pinnedMessageJumpID = id
-                                        return true
-                                    }
-                                )
-                                .id(sessionWorkspaceIdentity)
-                                .frame(width: railWidth - DockSpacing.section)
-                                .dockPadding(.trailing, DockSpacing.section)
-                            }
-                        }
-                }
-            case .voice:
-                if isVoiceImmersive {
-                    // Full voice mode renders the stage over the whole shell.
-                    Color.clear
-                } else {
-                    voiceMode
-                }
-            case .explorer:
-                SessionExplorerSurface(
-                    scope: activeSessionRepositoryScope,
-                    isCompact: isNarrowLayout,
-                    onRefresh: { await refreshSessionWorkflow() },
-                    onOpenFile: { scope, document in
-                        guard scope == activeSessionRepositoryScope else { return }
-                        explorerSelection = ScopedRepositoryDocument(scope: scope, document: document)
-                        if isNarrowLayout { isNarrowControlVisible = true }
+            if fullscreenSurface == .bots, let room = openGroupRoom {
+                GroupChatView(
+                    store: botMode.groupChats, botMode: botMode, roomID: room.id,
+                    toolbar: { identity, actions in
+                        AnyView(conversationToolbar(identity: identity, groupActions: actions))
                     }
-                )
-            case .sourceControl:
-                SessionSourceControlSurface(
-                    model: model,
-                    workflow: developerWorkflow,
-                    scope: activeSessionRepositoryScope,
-                    onRefresh: { await refreshSessionWorkflow() },
-                    onSelectFile: selectChangeFile,
-                    selectedFilePath: selectedChange?.file.path
-                )
-            case .pullRequests:
-                SessionPullRequestsSurface(
-                    center: sessionPullRequestCenter,
-                    repositoryPath: activeSessionRepositoryPath,
-                    onOpenChat: openPullRequestChat
-                )
-            case .issues:
-                SessionIssuesSurface(center: sessionIssueCenter, repositoryPath: activeSessionRepositoryPath)
+                ) {
+                    openGroupRoomID = ""
+                }
+                .id(room.id)
+            } else {
+                header
+                switch sessionWorkspaceMode {
+                case .chat:
+                    GeometryReader { geometry in
+                        let railWidth =
+                            isSessionRailVisible
+                            ? ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) : 0
+                        chatConversationContent(railWidth: railWidth)
+                            .overlay(alignment: .trailing) {
+                                if railWidth > 0 {
+                                    SessionPullRequestRail(
+                                        model: model, workflow: developerWorkflow, control: controlCenter,
+                                        repositoryPath: activeSessionRepositoryScope?.repositoryPath,
+                                        onViewAllChanges: { showSessionRailInspector(.changes) },
+                                        onViewPullRequest: viewSessionRailPullRequest,
+                                        onRefreshChanges: refreshSessionRailChanges,
+                                        onViewAllOutputs: { showSessionRailInspector(.artifacts) },
+                                        onViewTimeline: { showSessionRailInspector(.timeline) },
+                                        onRespondInChat: {
+                                            sessionRailReplyRequest &+= 1
+                                            model.requestComposerFocus()
+                                        },
+                                        onViewPin: { pin in
+                                            let identity = WorkspaceIdentity.session(model)
+                                            guard let id = await model.messageID(forPin: pin),
+                                                identity == WorkspaceIdentity.session(model)
+                                            else { return false }
+                                            pinnedMessageJumpID = id
+                                            return true
+                                        }
+                                    )
+                                    .id(sessionWorkspaceIdentity)
+                                    .frame(width: railWidth - DockSpacing.section)
+                                    .dockPadding(.trailing, DockSpacing.section)
+                                }
+                            }
+                    }
+                case .voice:
+                    if isVoiceImmersive {
+                        // Full voice mode renders the stage over the whole shell.
+                        Color.clear
+                    } else {
+                        voiceMode
+                    }
+                case .explorer:
+                    SessionExplorerSurface(
+                        scope: activeSessionRepositoryScope,
+                        isCompact: isNarrowLayout,
+                        onRefresh: { await refreshSessionWorkflow() },
+                        onOpenFile: { scope, document in
+                            guard scope == activeSessionRepositoryScope else { return }
+                            explorerSelection = ScopedRepositoryDocument(scope: scope, document: document)
+                            if isNarrowLayout { isNarrowControlVisible = true }
+                        }
+                    )
+                case .sourceControl:
+                    SessionSourceControlSurface(
+                        model: model,
+                        workflow: developerWorkflow,
+                        scope: activeSessionRepositoryScope,
+                        onRefresh: { await refreshSessionWorkflow() },
+                        onSelectFile: selectChangeFile,
+                        selectedFilePath: selectedChange?.file.path
+                    )
+                case .pullRequests:
+                    SessionPullRequestsSurface(
+                        center: sessionPullRequestCenter,
+                        repositoryPath: activeSessionRepositoryPath,
+                        onOpenChat: openPullRequestChat
+                    )
+                case .issues:
+                    SessionIssuesSurface(center: sessionIssueCenter, repositoryPath: activeSessionRepositoryPath)
+                }
             }
         }
     }

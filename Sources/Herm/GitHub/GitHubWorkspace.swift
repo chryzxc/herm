@@ -88,7 +88,7 @@ struct GitHubWorkspace<Content: View>: View {
             .dockPadding(.horizontal, 10)
             Spacer(minLength: 0)
         }
-        .background(Color.dockSidebar)
+        .dockShellPane()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("GitHub navigation")
     }

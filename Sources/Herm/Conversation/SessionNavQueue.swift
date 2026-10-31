@@ -40,6 +40,7 @@ struct SessionNavQueue: View {
     let onOpenPullRequests: () -> Void
     let onOpenIssues: () -> Void
     let onOpenTiles: (() -> Void)?
+    let onShowBots: (() -> Void)?
     let showsFullscreenToggle: Bool
     let isFullscreen: Bool
     let onFullscreenToggle: () -> Void
@@ -47,6 +48,7 @@ struct SessionNavQueue: View {
     let onOpenWindow: (() -> Void)?
     let isDockedWindow: Bool
     let showsWindowTitleRow: Bool
+    let history: (canGoBack: Bool, canGoForward: Bool, back: () -> Void, forward: () -> Void)?
     @Binding var isSidebarCollapsed: Bool
     @State private var sessionSearchQuery = ""
     @State private var isProfileSelectorPresented = false
@@ -81,6 +83,7 @@ struct SessionNavQueue: View {
         onOpenPullRequests: @escaping () -> Void,
         onOpenIssues: @escaping () -> Void,
         onOpenTiles: (() -> Void)? = nil,
+        onShowBots: (() -> Void)? = nil,
         showsFullscreenToggle: Bool,
         isFullscreen: Bool,
         onFullscreenToggle: @escaping () -> Void,
@@ -88,6 +91,7 @@ struct SessionNavQueue: View {
         onOpenWindow: (() -> Void)? = nil,
         isDockedWindow: Bool = false,
         showsWindowTitleRow: Bool = true,
+        history: (canGoBack: Bool, canGoForward: Bool, back: () -> Void, forward: () -> Void)? = nil,
         isSidebarCollapsed: Binding<Bool> = .constant(false)
     ) {
         self.model = model
@@ -107,7 +111,6 @@ struct SessionNavQueue: View {
         self.isPullRequestsActive = isPullRequestsActive
         self.isIssuesActive = isIssuesActive
         self.onNewConversation = onNewConversation
-        self.onOpenTiles = onOpenTiles
         self.onSelectSession = onSelectSession
         self.onSelectTask = onSelectTask
         self.onOpenGlobal = onOpenGlobal
@@ -116,6 +119,8 @@ struct SessionNavQueue: View {
         self.onOpenBotChat = onOpenBotChat
         self.onOpenPullRequests = onOpenPullRequests
         self.onOpenIssues = onOpenIssues
+        self.onOpenTiles = onOpenTiles
+        self.onShowBots = onShowBots
         self.showsFullscreenToggle = showsFullscreenToggle
         self.isFullscreen = isFullscreen
         self.onFullscreenToggle = onFullscreenToggle
@@ -123,6 +128,7 @@ struct SessionNavQueue: View {
         self.onOpenWindow = onOpenWindow
         self.isDockedWindow = isDockedWindow
         self.showsWindowTitleRow = showsWindowTitleRow
+        self.history = history
         self._isSidebarCollapsed = isSidebarCollapsed
     }
 
@@ -217,7 +223,7 @@ struct SessionNavQueue: View {
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         listPanel(style: style)
-            .background(style.sidebarBackground)
+            .dockShellPane()
             // This queue can move between AppKit split-view hosts as the center
             // destination changes. Loading the index is an initial-popover task,
             // not a navigation side effect; otherwise selecting a project or
@@ -264,6 +270,50 @@ struct SessionNavQueue: View {
             .accessibilityLabel("Herm control queue")
     }
 
+    @ViewBuilder
+    private func botsSwitchButton(style: DockThemePalette) -> some View {
+        if let onShowBots {
+            Button(action: onShowBots) {
+                DockIcon(.robot, size: DockLayout.toolbarIconSize, color: style.secondaryText)
+                    .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .help("Show each bot's main chat")
+            .accessibilityLabel("Show bots")
+        }
+    }
+
+    @ViewBuilder
+    private func tilesButton(style: DockThemePalette) -> some View {
+        if let onOpenTiles {
+            Button(action: onOpenTiles) {
+                DockIcon(.squaresFour, size: DockLayout.toolbarIconSize, color: style.secondaryText)
+                    .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .help("Show all chats as tiles")
+            .accessibilityLabel("Chat tiles")
+        }
+    }
+
+    private func historyButton(
+        _ icon: Ph, _ label: String, _ key: KeyEquivalent, enabled: Bool, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            DockIcon(icon, size: DockLayout.toolbarIconSize)
+                .foregroundStyle(enabled ? Color.dockPrimaryText : Color.dockMetadataText)
+                .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .disabled(!enabled)
+        .keyboardShortcut(key, modifiers: .command)
+        .help("\(label) (⌘\(String(describing: key.character)))")
+        .accessibilityLabel(label)
+    }
+
     /// Secondary panel: identity, new conversation, and the session lists.
     private func listPanel(style: DockThemePalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -271,13 +321,20 @@ struct SessionNavQueue: View {
             if isDockedWindow && showsWindowTitleRow {
                 HStack(spacing: 0) {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
+                    if let history {
+                        historyButton(.caretLeft, "Back", "[", enabled: history.canGoBack, action: history.back)
+                        historyButton(.caretRight, "Forward", "]", enabled: history.canGoForward, action: history.forward)
+                    }
                     Spacer(minLength: 0)
                         .frame(maxHeight: .infinity)
                         .background { TitlebarDoubleClickArea() }
+                    botsSwitchButton(style: style)
+                    tilesButton(style: style)
                 }
                 .dockPadding(.leading, DockWindowChrome.sidebarToggleLeading)
+                .dockPadding(.trailing, 8)
                 .frame(height: DockWindowChrome.titleRowHeight)
-                .background(style.sidebarBackground)
+                .dockShellChrome()
             }
             // Header: identity. Window chrome lives in the footer.
             HStack(spacing: 2) {
@@ -285,6 +342,10 @@ struct SessionNavQueue: View {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
                 }
                 profileHeader(style: style)
+                if !isDockedWindow {
+                    botsSwitchButton(style: style)
+                    tilesButton(style: style)
+                }
             }
             .dockPadding(.horizontal, 6)
             .frame(height: 56)
@@ -310,7 +371,7 @@ struct SessionNavQueue: View {
                     .dockPadding(.vertical, 8)
             }
         }
-        .background(style.sidebarBackground)
+        .dockShellPane()
         .frame(maxWidth: .infinity)
     }
 
@@ -527,19 +588,6 @@ struct SessionNavQueue: View {
                 .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
             }
             .buttonStyle(.dockHover)
-            if let onOpenTiles {
-                Button(action: onOpenTiles) {
-                    HStack(spacing: 8) {
-                        DockIcon(.squaresFour, size: 14)
-                        Text("Chat tiles")
-                        Spacer(minLength: 0)
-                    }
-                    .dockPadding(.leading, 6)
-                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-                }
-                .buttonStyle(.dockHover)
-                .help("See every chat's status and answer requests without switching chats")
-            }
 
             if isSearchingSessions {
                 sessionSearchResults(statuses: statuses, style: style)

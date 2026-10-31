@@ -128,7 +128,8 @@ struct WorkspaceActivitySidebar: View {
     /// Read on appear: `status` is a blocking XPC call, and a `@State` default re-runs on every init.
     @State var opensAtLogin = false
     @State var isShowingEmergencyStopConfirmation = false
-    @State var selectedSettingsCategory: SettingsCategory = .general
+    // Persisted so a skin change, which can rebuild this view, keeps the open Settings tab.
+    @AppStorage("herm.settings.category") var selectedSettingsCategory: SettingsCategory = .general
     @State var isShowingEmergencyResumeConfirmation = false
     @State var checkpointForRestore: RestoreCheckpoint?
     @State var pendingProjectMutation: ProjectMutation?

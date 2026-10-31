@@ -92,7 +92,7 @@ struct IntegrationsWorkspaceView: View {
             Spacer(minLength: 0)
         }
         .dockPadding(.horizontal, 12).dockPadding(.top, 24)
-        .background(Color.dockSidebar)
+        .dockShellPane()
     }
 
     private func categoryGroup(_ title: String, _ categories: [IntegrationsCategory]) -> some View {

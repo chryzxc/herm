@@ -95,6 +95,13 @@ extension DockPopover {
                     fullscreenSurface = .chatGrid
                 }
             },
+            onShowBots: {
+                // Land on a bot's main chat rather than carrying the open session across.
+                let visible = botMode.bots.filter { !$0.isHidden }
+                let lastID = UserDefaults.standard.string(forKey: BotChatsOrdering.lastBotKey)
+                let bot = visible.first { $0.id == lastID } ?? visible.first(where: \.isDefault) ?? visible.first
+                leaveIntegrations { openBotsPage(with: bot) }
+            },
             showsFullscreenToggle: true,
             isFullscreen: isFullscreen,
             onFullscreenToggle: toggleFullscreen,
@@ -109,8 +116,48 @@ extension DockPopover {
             },
             onOpenWindow: onOpenWindow,
             isDockedWindow: usesWindowChrome,
+            history: (navHistory.canGoBack, navHistory.canGoForward, goBack, goForward),
             isSidebarCollapsed: chatListCollapsed
         )
+    }
+
+    var currentNavigationDestination: NavigationDestination {
+        NavigationDestination(
+            surface: fullscreenSurface,
+            tab: fullscreenSurface == .global ? fullscreenGlobalTab : nil,
+            sessionID: fullscreenSurface == .conversation ? model.navigationSessionID : nil)
+    }
+
+    func goBack() { if let destination = navHistory.back() { navigate(to: destination) } }
+    func goForward() { if let destination = navHistory.forward() { navigate(to: destination) } }
+
+    /// Reopens a visited destination through the same owners the sidebar uses.
+    func navigate(to destination: NavigationDestination) {
+        leaveIntegrations {
+            switch destination.surface {
+            case .conversation:
+                if let id = destination.sessionID, let session = model.sessions.first(where: { $0.id == id }) {
+                    sessionNavNavigation.selectSession(id)
+                    inspectorScope = .session
+                    model.resumeSession(session)
+                }
+                fullscreenSurface = .conversation
+            case .global:
+                let tab = destination.tab ?? .kanban
+                sessionNavNavigation.selectGlobal(tab)
+                fullscreenGlobalTab = tab
+                fullscreenSurface = .global
+            case .artifacts:
+                sessionNavNavigation.selectArtifacts()
+                fullscreenSurface = .artifacts
+            case .bots: openBotsPage()
+            case .pullRequests: selectGitHubSection(.pullRequests)
+            case .issues: selectGitHubSection(.issues)
+            case .chatGrid:
+                sessionNavNavigation.clearSelection()
+                fullscreenSurface = .chatGrid
+            }
+        }
     }
 
     /// Starts a chat with the selected bot from the sidebar or title picker.
@@ -192,6 +239,11 @@ extension DockPopover {
                     onShowList: {
                         sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
                         fullscreenSurface = .conversation
+                    },
+                    onSelectProfile: { profile in
+                        botMode.selectProfile(profile)
+                        // Apply the scope now so the chat resumes in its own bot.
+                        handleProfileScopeChange(botMode.selectedProfileID)
                     }
                 ) {
                     chatConversationContent(railWidth: 0)
@@ -226,18 +278,6 @@ extension DockPopover {
                     model.resumeSession(session)
                 }
                 .id("fullscreen-artifacts")
-            } else if fullscreenSurface == .bots {
-                BotChatsPage(
-                    bots: botMode,
-                    groups: botMode.groupChats,
-                    activeBotID: model.activeBotProfileID,
-                    style: DockThemePalette(theme: dockThemeStore.selectedThemeID),
-                    // Stays on Bots: the rail keeps Bots selected while the chat changes.
-                    onOpen: { bot in model.resumeBotChat(bot) }
-                ) {
-                    chatConversationContent(railWidth: 0)
-                }
-                .id("fullscreen-bots")
             } else {
                 fullscreenGlobalControlSurface
             }
@@ -304,6 +344,38 @@ extension DockPopover {
         }
     }
 
+    var botsListPanel: some View {
+        BotChatsPage(
+            bots: botMode,
+            groups: botMode.groupChats,
+            activeBotID: model.activeBotProfileID,
+            style: DockThemePalette(theme: dockThemeStore.selectedThemeID),
+            usesWindowChrome: usesWindowChrome,
+            openRoomID: $openGroupRoomID,
+            isCollapsed: chatListCollapsed,
+            onShowSessions: startNewConversation,
+            // Stays on Bots: the rail keeps Bots selected while the chat changes.
+            onOpen: { bot in model.resumeBotChat(bot) }
+        )
+    }
+
+    /// Left side of the conversation toolbar: the bot on the Bots page, else the session title.
+    @ViewBuilder
+    func toolbarIdentity(style: DockThemePalette) -> some View {
+        if fullscreenSurface == .bots, let bot = botMode.botsByID[model.activeBotProfileID ?? ""] {
+            HStack(spacing: 8) {
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 24)
+                Text(bot.name)
+                    .dockFont(.navigation, weight: .semibold)
+                    .foregroundStyle(style.primaryText)
+                    .lineLimit(1)
+            }
+            .dockPadding(.horizontal, 8)
+        } else {
+            sessionIdentity(style: style)
+        }
+    }
+
     /// The Bots page: every bot's main chat beside the open conversation.
     func openBotsPage(with bot: BotSummary? = nil) {
         sessionNavNavigation.selectBots()
@@ -312,7 +384,7 @@ extension DockPopover {
         inspectorScope = .session
         if let bot {
             UserDefaults.standard.set(bot.id, forKey: BotChatsOrdering.lastBotKey)
-            UserDefaults.standard.removeObject(forKey: BotChatsOrdering.lastRoomKey)
+            openGroupRoomID = ""
             model.resumeBotChat(bot)
         }
     }
@@ -742,7 +814,10 @@ extension DockPopover {
         }
     }
 
-    var header: some View {
+    var header: some View { conversationToolbar(identity: nil, groupActions: nil) }
+
+    /// The conversation toolbar; a group room swaps the name and the session controls for its own.
+    func conversationToolbar(identity: AnyView?, groupActions: AnyView?) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         return GeometryReader { geometry in
             let showsInspector = geometry.size.width >= 440
@@ -751,57 +826,62 @@ extension DockPopover {
                 if hidesChatList {
                     DockSidebarToggle(isCollapsed: chatListCollapsed)
                 }
-                sessionIdentity(style: style)
+                if let identity { identity } else { toolbarIdentity(style: style) }
                 Spacer(minLength: 12)
                     .frame(maxHeight: .infinity)
                     .background { if usesWindowChrome { TitlebarDoubleClickArea() } }
 
-                if sessionWorkspaceMode == .chat, !model.messageNavigatorItems.isEmpty {
-                    // Pinned messages open from the "…" menu; the popover anchors here.
-                    Color.clear.frame(width: 0, height: 0)
-                        .dockPopover(isPresented: $isShowingMessagePins, arrowEdge: .bottom) {
-                            MessagePinsView(model: model) { pin in
-                                let sessionID = model.sessionID
-                                Task { @MainActor in
-                                    guard let id = await model.messageID(forPin: pin), model.sessionID == sessionID
-                                    else { return }
-                                    isShowingMessagePins = false
-                                    pinnedMessageJumpID = id
+                if let groupActions {
+                    groupActions
+                } else {
+                    if sessionWorkspaceMode == .chat, !model.messageNavigatorItems.isEmpty {
+                        // Pinned messages open from the "…" menu; the popover anchors here.
+                        Color.clear.frame(width: 0, height: 0)
+                            .dockPopover(isPresented: $isShowingMessagePins, arrowEdge: .bottom) {
+                                MessagePinsView(model: model) { pin in
+                                    let sessionID = model.sessionID
+                                    Task { @MainActor in
+                                        guard let id = await model.messageID(forPin: pin), model.sessionID == sessionID
+                                        else { return }
+                                        isShowingMessagePins = false
+                                        pinnedMessageJumpID = id
+                                    }
                                 }
+                                .task { await model.refreshMessagePins() }
                             }
-                            .task { await model.refreshMessagePins() }
-                        }
-                    // Search lives in the "…" menu; this keeps ⌘F working.
-                    Button("") { isShowingMessageSearch.toggle() }
-                        .keyboardShortcut("f", modifiers: .command)
-                        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
-                }
-
-                sessionModeSwitcher(style: style)
-
-                if sessionWorkspaceMode == .chat,
-                    ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) > 0
-                {
-                    Button {
-                        isSessionRailVisible.toggle()
-                    } label: {
-                        DockIcon(
-                            .cardsThree, size: DockLayout.toolbarIconSize,
-                            weight: isSessionRailVisible ? .fill : .regular,
-                            color: isSessionRailVisible ? style.primaryText : style.secondaryText
-                        )
-                        .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
-                        .accessibilityAddTraits(isSessionRailVisible ? .isSelected : [])
-                        .contentShape(Rectangle())
+                        // Search lives in the "…" menu; this keeps ⌘F working.
+                        Button("") { isShowingMessageSearch.toggle() }
+                            .keyboardShortcut("f", modifiers: .command)
+                            .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
                     }
-                    .buttonStyle(.dockHover)
-                    .help(isSessionRailVisible ? "Hide session rail" : "Show session rail")
-                    .accessibilityLabel(isSessionRailVisible ? "Hide session rail" : "Show session rail")
-                    .accessibilityValue(isSessionRailVisible ? "Shown" : "Hidden")
-                }
 
-                sessionViewMenu(includesInspector: !showsInspector, style: style)
-                    .fixedSize()
+                    sessionModeSwitcher(style: style)
+
+                    if sessionWorkspaceMode == .chat,
+                        ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) > 0
+                    {
+                        Button {
+                            isSessionRailVisible.toggle()
+                        } label: {
+                            DockIcon(
+                                .cardsThree, size: DockLayout.toolbarIconSize,
+                                weight: isSessionRailVisible ? .fill : .regular,
+                                color: isSessionRailVisible ? style.primaryText : style.secondaryText
+                            )
+                            .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                            .accessibilityAddTraits(isSessionRailVisible ? .isSelected : [])
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .help(isSessionRailVisible ? "Hide session rail" : "Show session rail")
+                        .accessibilityLabel(isSessionRailVisible ? "Hide session rail" : "Show session rail")
+                        .accessibilityValue(isSessionRailVisible ? "Shown" : "Hidden")
+                    }
+
+                    sessionViewMenu(includesInspector: !showsInspector, style: style)
+                        .fixedSize()
+
+                }
 
                 if showsInspector && !inspectorHasOwnToggle {
                     DockSidebarToggle(

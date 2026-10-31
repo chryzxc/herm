@@ -23,7 +23,7 @@ struct GroupChatSidebarRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 10) {
             avatars
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -114,12 +114,14 @@ struct GroupChatSidebarRow: View {
     }
 
     /// Up to three avatars; each names its member on hover.
+    /// A fixed 42pt tile (the bot row's avatar size): up to four faces in a 2×2 grid, the last slot turning into "+N".
     private var avatars: some View {
-        let shown = room.members.prefix(3)
+        let slots = room.members.count > 4 ? 3 : 4
+        let shown = Array(room.members.prefix(slots))
+        let extra = room.members.count - shown.count
         let tile = RoundedRectangle(cornerRadius: 20 * 0.28, style: .continuous)
-        // Faces sit side by side: an overlap would need a cut-out border.
-        return HStack(spacing: 2) {
-            ForEach(Array(shown), id: \.memberID) { member in
+        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(20), spacing: 2), count: 2), spacing: 2) {
+            ForEach(shown, id: \.memberID) { member in
                 Group {
                     if let bot = botMode.botsByID[member.profile] {
                         BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 20, orbits: isWorking)
@@ -133,15 +135,16 @@ struct GroupChatSidebarRow: View {
                 }
                 .help("\(member.displayName) · @\(member.handle)")
             }
-            if room.members.count > shown.count {
-                Text("+\(room.members.count - shown.count)")
+            if extra > 0 {
+                Text("+\(extra)")
                     .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 20, height: 20)
                     .background(tile.fill(Color.dockSurface2))
-                    .help(room.members.dropFirst(3).map(\.displayName).joined(separator: ", "))
+                    .help(room.members.dropFirst(slots).map(\.displayName).joined(separator: ", "))
             }
         }
+        .frame(width: 42, height: 42)
     }
 }
 
@@ -235,7 +238,7 @@ struct NewGroupChatSheet: View {
                         ) {
                             Text(bot.name) + Text("  @\(bot.id)").foregroundColor(Color.dockMetadataText)
                         }
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.dockCheckbox)
                         .disabled(!selected.contains(bot.id) && memberCount >= GroupChatStore.memberLimits.upperBound)
                     }
                 }
@@ -344,6 +347,8 @@ struct GroupChatView: View {
     @ObservedObject var store: GroupChatStore
     @ObservedObject var botMode: BotModeModel
     let roomID: String
+    /// Wraps the room's name and actions in the app's conversation toolbar.
+    let toolbar: (AnyView, AnyView) -> AnyView
     let onDisbanded: () -> Void
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @StateObject private var voiceOutput = VoiceOutput()
@@ -366,6 +371,8 @@ struct GroupChatView: View {
     @State private var isConfirmingDisband = false
     @State private var thread = GroupChatStore.mainThreadID
     @State private var newThreads: [String] = []
+    /// Threads hidden from the bar; their messages stay in the room. Cleared when the room changes.
+    @State private var closedThreads: Set<String> = []
     @State private var showingInsertPopover = false
     @State private var modelOptions: [HermesModelOption] = []
     @State private var modelMemberID: String?
@@ -383,12 +390,24 @@ struct GroupChatView: View {
     /// Threads in first-seen order; Hermes has no thread names, so each is titled by its first message.
     private var threads: [(id: String, title: String)] {
         var ids = [GroupChatStore.mainThreadID]
-        for id in allEvents.compactMap(\.threadID) + newThreads where !ids.contains(id) { ids.append(id) }
+        for id in allEvents.compactMap(\.threadID) + newThreads where !ids.contains(id) && !closedThreads.contains(id) {
+            ids.append(id)
+        }
         return ids.map { id in
             guard id != GroupChatStore.mainThreadID else { return (id, "Main") }
             let first = allEvents.first { $0.threadID == id && $0.kind == .user }?.text ?? "New thread"
             return (id, String(first.prefix(28)))
         }
+    }
+    /// Threads newest-activity first, each labelled with its title and last activity (✓ marks the open one).
+    private var recentThreads: [(id: String, label: String)] {
+        var rows: [(id: String, label: String, last: Date)] = []
+        for item in threads {
+            let last = allEvents.last { ($0.threadID ?? GroupChatStore.mainThreadID) == item.id }?.createdAt
+            let when = last.map { " · " + $0.formatted(.relative(presentation: .named)) } ?? ""
+            rows.append((item.id, (item.id == thread ? "✓ " : "") + item.title + when, last ?? .distantPast))
+        }
+        return rows.sorted { $0.last > $1.last }.map { ($0.id, $0.label) }
     }
     private var isWorking: Bool { store.workingRooms.contains(roomID) }
 
@@ -436,6 +455,7 @@ struct GroupChatView: View {
         .onChange(of: roomID) {
             thread = GroupChatStore.mainThreadID
             newThreads = []
+            closedThreads = []
         }
         .onChange(of: room == nil) { _, gone in if gone, store.isAvailable { onDisbanded() } }
         .task {
@@ -478,56 +498,61 @@ struct GroupChatView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(room?.name ?? "Group Chat")
-                    .dockFont(.pageTitle)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                HStack(spacing: 8) {
-                    memberAvatars
-                    Text(headerSubtitle)
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                    if store.pendingRooms.contains(roomID) {
-                        ProgressView().controlSize(.mini).accessibilityLabel("Updating group")
-                    } else if isWorking {
-                        ThinkingDots()
-                    }
-                }
+        toolbar(AnyView(headerIdentity), AnyView(headerActions))
+    }
+
+    /// The room's name with its members, where a bot chat shows the bot.
+    private var headerIdentity: some View {
+        HStack(spacing: 8) {
+            memberAvatars
+            Text(room?.name ?? "Group Chat")
+                .dockFont(.navigation, weight: .semibold)
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+            Text(headerSubtitle)
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
+            if store.pendingRooms.contains(roomID) {
+                ProgressView().controlSize(.mini).accessibilityLabel("Updating group")
+            } else if isWorking {
+                ThinkingDots()
             }
-            Spacer(minLength: 12)
+        }
+        .dockPadding(.horizontal, 8)
+    }
+
+    private var headerActions: some View {
+        HStack(spacing: 4) {
             if isWorking {
                 DockAsyncButton(action: { await store.stop(roomID) }) { DockIconLabel("Stop", icon: .stop) }
             }
-            DockAsyncButton(action: { await store.poll(roomID) }) {
-                DockIcon(.arrowsClockwise)
-                    .dockFont(.conversation, weight: .medium)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.dockHover)
-            .help("Refresh")
             DockMenu {
                 Button("New thread") { startThread() }
+                if threads.count > 1 {
+                    DockMenu("Recent threads") {
+                        ForEach(recentThreads, id: \.id) { item in
+                            Button {
+                                thread = item.id
+                            } label: {
+                                Text(item.label)
+                            }
+                        }
+                    }
+                }
                 Button("Rename…") {
                     renameText = room?.name ?? ""
                     isRenaming = true
                 }
                 Button("Disband…", role: .destructive) { isConfirmingDisband = true }
             } label: {
-                DockIcon(.dotsThree)
-                    .dockFont(.pageTitle, weight: .bold)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(width: 28, height: 28)
+                DockIcon(.dotsThree, size: DockLayout.toolbarIconSize, color: Color.dockSecondaryText)
+                    .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                    .contentShape(Rectangle())
             }
             .fixedSize()
-            .help("More")
+            .help("Group actions")
         }
-        .dockPadding(.horizontal, 20)
-        .dockPadding(.vertical, 14)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
     private var headerSubtitle: String {
@@ -572,18 +597,30 @@ struct GroupChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(threads, id: \.id) { item in
-                    Button {
-                        thread = item.id
-                    } label: {
-                        Text(item.title)
-                            .dockFont(.body, weight: item.id == thread ? .semibold : .regular)
-                            .lineLimit(1)
-                            .dockPadding(.horizontal, 10)
-                            .frame(height: 24)
-                            .background(Capsule().fill(item.id == thread ? Color.dockAccentMuted : Color.dockSurface2))
-                            .foregroundStyle(item.id == thread ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    HStack(spacing: 2) {
+                        Button {
+                            thread = item.id
+                        } label: {
+                            Text(item.title)
+                                .dockFont(.body, weight: item.id == thread ? .semibold : .regular)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.dockHover)
+                        if item.id != GroupChatStore.mainThreadID {
+                            Button {
+                                closeThread(item.id)
+                            } label: {
+                                DockIcon(.x, size: 10, color: Color.dockSecondaryText).frame(width: 16, height: 16)
+                            }
+                            .buttonStyle(.dockHover)
+                            .help("Close thread")
+                            .accessibilityLabel("Close \(item.title)")
+                        }
                     }
-                    .buttonStyle(.dockHover)
+                    .dockPadding(.horizontal, 10)
+                    .frame(height: 24)
+                    .background(Capsule().fill(item.id == thread ? Color.dockAccentMuted : Color.dockSurface2))
+                    .foregroundStyle(item.id == thread ? Color.dockPrimaryText : Color.dockSecondaryText)
                 }
                 Button {
                     startThread()
@@ -597,6 +634,12 @@ struct GroupChatView: View {
             .dockPadding(.vertical, 8)
         }
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+    }
+
+    private func closeThread(_ id: String) {
+        closedThreads.insert(id)
+        newThreads.removeAll { $0 == id }
+        if thread == id { thread = GroupChatStore.mainThreadID }
     }
 
     private func startThread() {

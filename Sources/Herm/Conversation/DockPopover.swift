@@ -141,6 +141,7 @@ struct DockPopover: View {
     @State var fullscreenSurface: FullscreenSurface =
         UserDefaults.standard.bool(forKey: ChatViewSettings.gridViewKey) ? .chatGrid : .conversation
     @State var fullscreenGlobalTab: ControlTab = .kanban
+    @State var navHistory = NavigationHistory()
 
     enum SessionWorkspaceMode: CaseIterable, Identifiable {
         case chat
@@ -305,6 +306,8 @@ struct DockPopover: View {
     var narrowPaneWidth: CGFloat { min(500, panelPresentation.compactWidth) - 52 }
 
     @AppStorage("herm.chatListCollapsed") var isChatListCollapsed = false
+    /// The group room open on the Bots page; empty means the selected bot's chat.
+    @AppStorage(BotChatsOrdering.lastRoomKey) var openGroupRoomID = ""
     @State var workspaceLayoutWidth: CGFloat = 1200
     var desktopRequiredWidth: CGFloat { 1_110 }
     var conversationMessageMaxWidth: CGFloat { conversationMetrics.readingWidth }

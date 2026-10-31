@@ -158,7 +158,6 @@ struct SessionNavRail: View {
     let onOpenChats: () -> Void
     let onOpenGlobal: (ControlTab) -> Void
     let onOpenArtifacts: () -> Void
-    let onOpenBots: () -> Void
     let onOpenGitHub: (GitHubWorkspaceSection) -> Void
     let isFullscreen: Bool
     var isHermesConnected = true
@@ -226,7 +225,7 @@ struct SessionNavRail: View {
         .dockPadding(.bottom, 8)
         .frame(width: 52)
         .frame(maxHeight: .infinity)
-        .background(style.sidebarBackground)
+        .dockShellChrome()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Herm navigation")
     }
@@ -284,7 +283,6 @@ struct SessionNavRail: View {
         switch item {
         case .github: isGitHubActive
         case .artifacts: navigationState.selection.selection == .artifacts
-        case .bots: navigationState.selection.selection == .bots
         default: item.tab.map { navigationState.selection.isGlobalSelected($0) } ?? false
         }
     }
@@ -303,7 +301,6 @@ struct SessionNavRail: View {
         case .github:
             onOpenGitHub(navigationState.selectedGitHubSection)
         case .artifacts: onOpenArtifacts()
-        case .bots: onOpenBots()
         default:
             if let tab = item.tab {
                 onOpenGlobal(tab)
