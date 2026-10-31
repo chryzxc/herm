@@ -7,6 +7,38 @@ import WebKit
 
 @MainActor
 struct SessionBrowserTests {
+    @Test func copiedSignInsOnlyReachTheirOwnSite() throws {
+        let cookie = { (domain: String) in
+            BrowserCookie(cdp: ["name": "sid", "value": "v", "domain": domain, "path": "/", "secure": true])!
+        }
+        #expect(cookie(".onlinejobs.ph").matches(host: "www.onlinejobs.ph"))
+        #expect(cookie(".onlinejobs.ph").matches(host: "onlinejobs.ph"))
+        #expect(!cookie(".onlinejobs.ph").matches(host: "evilonlinejobs.ph"))
+        #expect(cookie("www.onlinejobs.ph").matches(host: "www.onlinejobs.ph"))
+        #expect(!cookie("www.onlinejobs.ph").matches(host: "app.www.onlinejobs.ph"))
+        let http = try #require(cookie(".onlinejobs.ph").httpCookie)
+        #expect(http.isSecure && http.domain == ".onlinejobs.ph")
+        #expect(BrowserCookie(http: http) == cookie(".onlinejobs.ph"))
+    }
+
+    @Test func webKitSignInsStayWithinTheirProfile() {
+        let main = SessionBrowserWorkspace.dataStoreID(for: nil)
+        let bot = SessionBrowserWorkspace.dataStoreID(for: "bot")
+        #expect(main == UUID(uuidString: "DA9890F2-CB88-46F5-9F29-97475D8B7B7B"))
+        #expect(bot != main && bot != SessionBrowserWorkspace.dataStoreID(for: "work"))
+        #expect(bot == SessionBrowserWorkspace.dataStoreID(for: "bot"))
+        #expect(SessionBrowserWorkspace.isDataStoreID(main) && SessionBrowserWorkspace.isDataStoreID(bot))
+        #expect(!SessionBrowserWorkspace.isDataStoreID(UUID(uuidString: "3F8FB5D9-46ED-4CB8-95AE-3B0E38EB30F5")!))
+    }
+
+    @Test func chromeOwnTabsAreUnsolicited() {
+        let page = { (url: String) in AgentBrowser.Page(info: ["type": "page", "targetId": "t", "url": url])! }
+        #expect(page("chrome://settings/help").isUnsolicited)
+        #expect(page("chrome://whats-new/").isUnsolicited)
+        #expect(!page("https://www.onlinejobs.ph/apply").isUnsolicited)
+        #expect(!page("about:blank").isUnsolicited)
+    }
+
     @Test func startupNeverAttachesToUnrelatedFixedPort() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -96,6 +128,22 @@ struct SessionBrowserTests {
                600     1 /usr/sbin/cfprefsd agent
             """
         #expect(AgentBrowser.orphanPIDs(psOutput: ps, profileRoot: root) == [3099])
+    }
+
+    @Test func prunesOnlyWeekOldUnusedProfileFolders() {
+        let root = "/Users/me/Library/Application Support/Herm/AgentBrowser"
+        let now = Date()
+        let old = now.addingTimeInterval(-8 * 86_400)
+        let (stale, live, fresh) = (
+            String(repeating: "a", count: 64), String(repeating: "b", count: 64),
+            String(repeating: "c", count: 64)
+        )
+        let entries = [
+            (name: stale, modified: old), (name: live, modified: old), (name: fresh, modified: now),
+            (name: "SharedLogins.sealed", modified: old), (name: "Default", modified: old),
+        ]
+        let ps = "  3099     1 Google Chrome --user-data-dir=\(root)/\(live) --no-first-run"
+        #expect(AgentBrowser.staleProfiles(entries, psOutput: ps, profileRoot: root, now: now) == [stale])
     }
 
     @Test func botProfilesHaveSeparateBrowserIdentities() {

@@ -29,6 +29,37 @@ struct BrowserCookie: Codable, Hashable {
         sameSite = cdp["sameSite"] as? String
     }
 
+    init?(http cookie: HTTPCookie) {
+        var cdp: [String: Any] = [
+            "name": cookie.name, "value": cookie.value, "domain": cookie.domain, "path": cookie.path,
+            "expires": cookie.expiresDate?.timeIntervalSince1970 ?? -1, "session": cookie.isSessionOnly,
+            "httpOnly": cookie.isHTTPOnly, "secure": cookie.isSecure,
+        ]
+        // CDP spells these "Lax"/"Strict"; WebKit reports "lax"/"strict".
+        if let policy = cookie.sameSitePolicy?.rawValue {
+            cdp["sameSite"] = policy.prefix(1).uppercased() + policy.dropFirst()
+        }
+        self.init(cdp: cdp)
+    }
+
+    /// Sent to `host`: a domain cookie reaches its subdomains, a host-only one just its host.
+    func matches(host: String) -> Bool {
+        let domain = domain.lowercased()
+        guard domain.hasPrefix(".") else { return host == domain }
+        return host == domain.dropFirst() || host.hasSuffix(domain)
+    }
+
+    var httpCookie: HTTPCookie? {
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .name: name, .value: value, .domain: domain, .path: path,
+        ]
+        if secure { properties[.secure] = "TRUE" }
+        if httpOnly { properties[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+        if let expires { properties[.expires] = Date(timeIntervalSince1970: expires) }
+        if let sameSite { properties[.sameSitePolicy] = sameSite.lowercased() }
+        return HTTPCookie(properties: properties)
+    }
+
     /// `Storage.setCookies` form. Host-only cookies (no leading dot) are set by URL, since a
     /// Domain attribute would widen them to subdomains and `__Host-` cookies reject one.
     /// An expired copy deletes the cookie.
@@ -227,9 +258,12 @@ final class SharedBrowserLogins: ObservableObject {
     func clear() {
         guard save(BrowserCookieJar(sites: jar.sites, signOuts: jar.signOuts + 1)) else { return }
         changes.send((nil, .cleared))
-        SessionBrowserWorkspace.dataStore.removeData(
-            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast
-        ) {}
+        Task {
+            for id in await WKWebsiteDataStore.allDataStoreIdentifiers where SessionBrowserWorkspace.isDataStoreID(id) {
+                await WKWebsiteDataStore(forIdentifier: id).removeData(
+                    ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+            }
+        }
     }
 
     @discardableResult

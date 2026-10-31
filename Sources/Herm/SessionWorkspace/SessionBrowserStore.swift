@@ -31,13 +31,37 @@ final class SessionBrowserWorkspace: ObservableObject {
     @Published private(set) var extras: [BrowserController] = []
     @Published private var pageTitles: [UUID: String] = [:]
     private var titleSubscriptions: [UUID: AnyCancellable] = [:]
-    /// WebKit tabs share one persistent store, so a sign-in carries across sessions like the agent browser's.
-    static let dataStore = WKWebsiteDataStore(forIdentifier: UUID(uuidString: "DA9890F2-CB88-46F5-9F29-97475D8B7B7B")!)
+    /// WebKit tabs' persistent store, shared by the sessions of one Hermes profile like its agent
+    /// Chrome, so signing in on one profile never reaches another's browser.
+    let dataStore: WKWebsiteDataStore
+    private static var dataStores: [String?: WKWebsiteDataStore] = [:]
+    nonisolated private static let defaultDataStoreID = UUID(uuidString: "DA9890F2-CB88-46F5-9F29-97475D8B7B7B")!
+
+    /// Every profile's ID starts like the default one's, so Sign Out of All Sites finds them all
+    /// (and never the gateway sign-in store).
+    nonisolated static func dataStoreID(for profileID: String?) -> UUID {
+        guard let profileID else { return defaultDataStoreID }
+        var bytes = [UInt8](SHA256.hash(data: Data(profileID.utf8)).prefix(16))
+        bytes.replaceSubrange(0..<4, with: [0xDA, 0x98, 0x90, 0xF2])
+        return NSUUID(uuidBytes: bytes) as UUID
+    }
+
+    nonisolated static func isDataStoreID(_ id: UUID) -> Bool {
+        id.uuidString.hasPrefix(defaultDataStoreID.uuidString.prefix(8))
+    }
+
+    static func dataStore(for profileID: String?) -> WKWebsiteDataStore {
+        if let existing = dataStores[profileID] { return existing }
+        let store = WKWebsiteDataStore(forIdentifier: dataStoreID(for: profileID))
+        dataStores[profileID] = store
+        return store
+    }
 
     init(key: SessionBrowserKey, agent: AgentBrowser? = nil) {
         self.key = key
         self.agent = agent ?? AgentBrowser(profileID: key.profileID)
-        primary = BrowserController(key: key, dataStore: Self.dataStore)
+        dataStore = Self.dataStore(for: key.profileID)
+        primary = BrowserController(key: key, dataStore: dataStore)
         titleSubscriptions[primary.id] = primary.web.publisher(for: \.title)
             .combineLatest(self.agent.$state, self.agent.$pages, self.agent.$activeTargetID)
             .map { title, state, pages, target in
@@ -52,7 +76,10 @@ final class SessionBrowserWorkspace: ObservableObject {
     }
 
     func addTab() -> BrowserController {
-        let tab = BrowserController(key: key, dataStore: Self.dataStore)
+        let tab = BrowserController(key: key, dataStore: dataStore)
+        let cookies = dataStore.httpCookieStore
+        tab.prepareLoad = { [weak agent] url in await agent?.copySignIns(for: url, into: cookies) }
+        tab.didLoad = { [weak agent] url in await agent?.receiveSignIns(for: url, from: cookies) }
         let id = tab.id
         titleSubscriptions[id] = tab.web.publisher(for: \.title)
             .map { $0 ?? "" }
@@ -123,9 +150,7 @@ final class SessionBrowserStore: ObservableObject {
 
     func workspace(for key: SessionBrowserKey) -> SessionBrowserWorkspace {
         if let existing = workspaces[key] { return existing }
-        let agent = agents[key.profileID] ?? AgentBrowser(profileID: key.profileID)
-        agents[key.profileID] = agent
-        let workspace = SessionBrowserWorkspace(key: key, agent: agent)
+        let workspace = SessionBrowserWorkspace(key: key, agent: agent(for: key.profileID))
         workspaces[key] = workspace
         subscriptions[key] = workspace.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         return workspace
@@ -151,8 +176,22 @@ final class SessionBrowserStore: ObservableObject {
         }
     }
 
+    private func agent(for profileID: String?) -> AgentBrowser {
+        if let existing = agents[profileID] { return existing }
+        let agent = AgentBrowser(profileID: profileID)
+        agents[profileID] = agent
+        return agent
+    }
+
     func activate(model: DockModel, reconnect: Bool = false) {
-        guard let key = model.browserSessionKey else { return }
+        guard let key = model.browserSessionKey else {
+            // A new chat has no session until its first turn starts: launch the profile's Chrome
+            // now so Hermes' first browser call doesn't race the launch.
+            let agent = agent(for: model.profileScopeID)
+            agent.model = model
+            if !agent.isActive { agent.start() } else if reconnect { agent.reconnectHermes() }
+            return
+        }
         // Create first, so releasing the previous session never quits the Chrome this one shares.
         let agent = workspace(for: key).agent
         if let activeKey, activeKey != key { releaseIfUnused(activeKey) }

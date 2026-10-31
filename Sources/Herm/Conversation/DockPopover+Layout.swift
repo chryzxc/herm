@@ -51,6 +51,10 @@ extension DockPopover {
                 guard model.isHermesConnected else { return }
                 SessionBrowserStore.shared.activate(model: model)
             }
+            .onChange(of: model.profileScopeID) { _, _ in
+                guard model.isHermesConnected, model.browserSessionKey == nil else { return }
+                SessionBrowserStore.shared.activate(model: model)
+            }
             .onChange(of: model.activeBrowserCall != nil) { _, browsing in
                 if browsing, AgentBrowser.opensInHerm() {
                     NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil)

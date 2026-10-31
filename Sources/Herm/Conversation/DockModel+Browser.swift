@@ -3,7 +3,7 @@ import Foundation
 extension DockModel {
     /// Points Hermes' browser tools at a profile's CDP endpoint; nil disconnects.
     func setHermesBrowser(cdpURL: String?) async throws {
-        let profile = browserSessionKey?.profileID
+        let profile = profileScopeID
         var scope: [String: Any] = [:]
         if let profile, !profile.isEmpty { scope["profile"] = profile }
         if let cdpURL {

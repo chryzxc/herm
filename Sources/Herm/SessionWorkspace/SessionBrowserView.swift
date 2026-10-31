@@ -113,11 +113,14 @@ struct BrowserAnnotation: Decodable {
         return ChatContext(id: "browser:\(UUID().uuidString)", title: label, body: lines.joined(separator: "\n"))
     }
 
+    /// Sends like simulator annotation; if staging or the send is blocked (busy, restoring)
+    /// it stays attached in the composer for the user to send.
     @MainActor
     static func deliver(_ context: ChatContext, image: NSImage?, to model: DockModel) {
         model.attachedContexts.append(context)
-        if let image { model.stageImage(image) }
+        let staged = image.map { model.stageImage($0) } ?? true
         model.requestComposerFocus()
+        if staged { model.send() }
     }
 }
 
@@ -449,8 +452,6 @@ struct SessionBrowserView: View {
                 .disabled(!logins.isPrepared)
                 .help("Clear the cookies every session's browser shares")
             if showsAgent {
-                Button("New Agent Tab", icon: .plus) { agent.newTab() }
-                    .disabled(agent.state != .running || model.status == .working)
                 DockMenuSection("Agent Tabs") {
                     ForEach(agent.pages) { page in
                         Button {
@@ -589,6 +590,11 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     @Published var consoleErrors: [String] = []
     @Published var annotating = false { didSet { if annotating != oldValue { applyAnnotating() } } }
     weak var model: DockModel?
+    /// Runs before each `open` loads, e.g. to bring sign-ins over from the agent browser.
+    var prepareLoad: ((URL) async -> Void)?
+    private var pendingLoad: UUID?
+    /// Runs after each finished load, e.g. to carry a sign-in back to the agent browser.
+    var didLoad: ((URL) async -> Void)?
     private var themeCancellable: AnyCancellable?
     private var webObservations: [AnyCancellable] = []
     private var activeNavigation: WKNavigation?
@@ -639,6 +645,27 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     func open(_ url: URL) {
         address = url.absoluteString
         navigation.start()
+        guard let prepareLoad else { return load(url) }
+        let token = UUID()
+        pendingLoad = token
+        Task { [weak self] in
+            await prepareLoad(url)
+            self?.finishLoad(url, token: token)
+        }
+        // A stalled agent browser must not hold the tab: load without its sign-ins.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            self?.finishLoad(url, token: token)
+        }
+    }
+
+    private func finishLoad(_ url: URL, token: UUID) {
+        guard pendingLoad == token else { return }
+        pendingLoad = nil
+        load(url)
+    }
+
+    private func load(_ url: URL) {
         guard SSHPortForwards.remotePort(for: url, backend: GatewayConnectionStore.backendSettings) != nil else {
             activeNavigation = web.load(URLRequest(url: url))
             return
@@ -687,6 +714,7 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
         if let url = webView.url { address = url.absoluteString }
         currentURL = webView.url?.absoluteString
         applyAnnotating()
+        if let didLoad, let url = webView.url { Task { await didLoad(url) } }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

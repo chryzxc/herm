@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import ImageIO
 import SwiftUI
+import WebKit
 
 /// A headless Chromium shared with Hermes: Herm launches it, points Hermes' browser
 /// tools at it (`browser.manage connect`, same as `/browser connect`) and mirrors the
@@ -83,6 +84,12 @@ final class AgentBrowser: ObservableObject {
             self.id = id
             title = info["title"] as? String ?? ""
             url = info["url"] as? String ?? ""
+        }
+
+        /// Chrome's own tabs (update check, What's New) open into the agent browser when the
+        /// headless Chrome is the only one running; nobody asked for them, so they're closed.
+        var isUnsolicited: Bool {
+            ["chrome://settings", "chrome://whats-new", "chrome://welcome"].contains { url.hasPrefix($0) }
         }
     }
 
@@ -176,6 +183,8 @@ final class AgentBrowser: ObservableObject {
     var isActive: Bool { state == .starting || state == .running }
     /// Navigation requested before the browser finished starting.
     private(set) var pendingURL: URL?
+    /// New tabs' cookies per host as last copied or received, the baseline for `receiveSignIns`.
+    private var webKitSignIns: [String: BrowserCookieJar] = [:]
     private var cdpURL: String?
     private var lifecycleGeneration = UUID()
     @Published private(set) var handoffFailed = false
@@ -241,7 +250,7 @@ final class AgentBrowser: ObservableObject {
     private var tabs: [String: String] = [:]
 
     private func owns(_ model: DockModel?) -> Bool {
-        model?.browserSessionKey.map { $0.profileID == profileID } ?? false
+        model.map { $0.profileScopeID == profileID } ?? false
     }
 
     private var profileDirectory: String { SessionBrowserKey.browserDirectory(profileID: profileID) }
@@ -289,12 +298,21 @@ final class AgentBrowser: ObservableObject {
                     at: Self.downloadsFolder, withIntermediateDirectories: true)
                 cdp.fire(
                     "Browser.setDownloadBehavior", ["behavior": "allow", "downloadPath": Self.downloadsFolder.path])
-                await restoreLogins(cdp)
+                // A Keychain prompt must never hold the page: unlocked later, `.prepared` restores sign-ins.
+                if SharedBrowserLogins.shared.isPrepared {
+                    await restoreLogins(cdp)
+                } else {
+                    Task { await SharedBrowserLogins.shared.prepare() }
+                }
                 _ = try await cdp.send("Target.setDiscoverTargets", ["discover": true])
                 let infos = try await cdp.send("Target.getTargets")["targetInfos"] as? [[String: Any]] ?? []
                 try Task.checkCancellation()
                 for page in infos.compactMap(Page.init(info:)) where !pages.contains(where: { $0.id == page.id }) {
-                    pages.append(page)
+                    if page.isUnsolicited {
+                        cdp.fire("Target.closeTarget", ["targetId": page.id])
+                    } else {
+                        pages.append(page)
+                    }
                 }
                 if let first = pages.first {
                     try await attach(first.id)
@@ -321,7 +339,7 @@ final class AgentBrowser: ObservableObject {
         let profileID = profileID
         Self.connectionTask = Task {
             await previous?.value
-            guard model?.browserSessionKey.map({ $0.profileID == profileID }) == true else { return }
+            guard model.map({ $0.profileScopeID == profileID }) == true else { return }
             try? await model?.setHermesBrowser(cdpURL: nil)
         }
         teardown()
@@ -337,7 +355,9 @@ final class AgentBrowser: ObservableObject {
         relaunches = relaunches.filter { $0.timeIntervalSinceNow > -60 } + [Date()]
         guard relaunches.count <= 3 else { return fail("The browser keeps closing.") }
         let url = activePage.flatMap { URL(string: $0.url) }.flatMap { $0.scheme == "about" ? nil : $0 }
+        let frame = lastFrame
         teardown()
+        lastFrame = frame  // keep showing the page while Chrome comes back
         state = .off
         start()
         if let url { navigate(url) }
@@ -416,6 +436,36 @@ final class AgentBrowser: ObservableObject {
             let count = orphans.count
             Task { @MainActor in DebugLog.write("agent browser: reaped \(count) orphaned Chrome processes") }
         }
+        pruneStaleProfiles(psOutput: output)
+    }
+
+    /// Chrome rewrites a profile folder on every launch, so one untouched for a week belongs to a
+    /// removed Hermes profile or an older per-session layout. Shared sign-ins live in the root
+    /// (`SharedLogins.sealed`) and are pushed back into any profile that is recreated.
+    nonisolated static func pruneStaleProfiles(psOutput: String) {
+        let fm = FileManager.default
+        let root = profileRoot
+        let entries = ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).compactMap { name in
+            (try? fm.attributesOfItem(atPath: root.appendingPathComponent(name).path)[.modificationDate] as? Date)
+                .map { (name: name, modified: $0) }
+        }
+        let stale = staleProfiles(entries, psOutput: psOutput, profileRoot: root.path, now: Date())
+        for name in stale { try? fm.removeItem(at: root.appendingPathComponent(name, isDirectory: true)) }
+        if !stale.isEmpty {
+            let count = stale.count
+            Task { @MainActor in DebugLog.write("agent browser: pruned \(count) unused browser profiles") }
+        }
+    }
+
+    /// Profile folders (64-hex `browserDirectory` names) unused for 7 days and not open in a live Chrome.
+    nonisolated static func staleProfiles(
+        _ entries: [(name: String, modified: Date)], psOutput: String, profileRoot: String, now: Date
+    ) -> [String] {
+        entries.filter { entry in
+            entry.name.count == 64 && entry.name.allSatisfy(\.isHexDigit)
+                && now.timeIntervalSince(entry.modified) > 7 * 86_400
+                && !psOutput.contains("--user-data-dir=\(profileRoot)/\(entry.name)")
+        }.map(\.name)
     }
 
     /// Top-level Chromes (parent is launchd) on a Herm agent-browser profile. Helpers die with them.
@@ -677,6 +727,11 @@ final class AgentBrowser: ObservableObject {
         switch method {
         case "Target.targetCreated", "Target.targetInfoChanged":
             guard let page = (params["targetInfo"] as? [String: Any]).flatMap(Page.init(info:)) else { return }
+            // Its targetDestroyed then drops it and moves the view back to a real page.
+            if page.isUnsolicited {
+                cdp?.fire("Target.closeTarget", ["targetId": page.id])
+                return
+            }
             if let index = pages.firstIndex(where: { $0.id == page.id }) {
                 pages[index] = page
             } else {
@@ -825,6 +880,40 @@ final class AgentBrowser: ObservableObject {
         Self.push(changes, to: cdp)
         current.apply(changes)
         loginBaseline = current
+    }
+
+    /// New tabs are WebKit with their own cookie store: carry this browser's sign-in for `url` over first.
+    func copySignIns(for url: URL, into store: WKHTTPCookieStore) async {
+        guard let host = Self.signInHost(url), state == .running, let cdp,
+            let result = try? await cdp.send("Storage.getCookies")
+        else { return }
+        for cookie in (result["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:))
+        where cookie.matches(host: host) {
+            if let http = cookie.httpCookie { await store.setCookie(http) }
+        }
+        webKitSignIns[host] = await Self.cookies(for: host, in: store)
+    }
+
+    /// The way back: what a new tab's page changed on its site (signing in or out) reaches this
+    /// browser. Diffed against what the tab last had, so a cookie it never got is not a sign-out.
+    func receiveSignIns(for url: URL, from store: WKHTTPCookieStore) async {
+        guard let host = Self.signInHost(url), state == .running, let cdp else { return }
+        let current = await Self.cookies(for: host, in: store)
+        guard self.cdp === cdp else { return }
+        let changes = (webKitSignIns[host] ?? BrowserCookieJar()).changes(to: current)
+        webKitSignIns[host] = current
+        Self.push(changes, to: cdp)
+    }
+
+    /// Only what a browser itself would send this host; `secure` cookies still never go over http.
+    private static func signInHost(_ url: URL) -> String? {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return url.host?.lowercased()
+    }
+
+    private static func cookies(for host: String, in store: WKHTTPCookieStore) async -> BrowserCookieJar {
+        let cookies = await store.allCookies().compactMap(BrowserCookie.init(http:))
+        return BrowserCookieJar(cookies.filter { $0.matches(host: host) })
     }
 
     /// Shares (or stops sharing) a site's sign-in with every session, from this browser's cookies.
@@ -1077,7 +1166,6 @@ final class AgentBrowser: ObservableObject {
         }
     }
     func select(_ page: Page) { Task { try? await attach(page.id) } }
-    func newTab() { fire("Target.createTarget", ["url": "about:blank"], browserLevel: true) }
 
     func mouse(
         _ type: String, at point: CGPoint, button: String = "none", buttons: Int = 0, clicks: Int = 0,
@@ -1098,11 +1186,9 @@ final class AgentBrowser: ObservableObject {
     func insertText(_ text: String) { fire("Input.insertText", ["text": text]) }
 
     /// Fire-and-forget keeps input events in order (each awaits nothing).
-    private func fire(_ method: String, _ params: [String: Any] = [:], browserLevel: Bool = false) {
+    private func fire(_ method: String, _ params: [String: Any] = [:]) {
         if method.hasPrefix("Input.") { updatePointer(nil) }
-        guard let cdp else { return }
-        if browserLevel { return cdp.fire(method, params) }
-        guard let sid = sessionID else { return }
+        guard let cdp, let sid = sessionID else { return }
         cdp.fire(method, params, session: sid)
     }
 }
@@ -1411,7 +1497,10 @@ final class AgentBrowserCanvas: NSView {
             cursor.animator().setFrameOrigin(origin)
             cursor.animator().alphaValue = 1
         }
-        if pointer.kind == .down, !reduceMotion { ripple(at: point) }
+        if pointer.kind == .down, !reduceMotion {
+            ripple(at: point)
+            pulse(from: point)
+        }
     }
 
     /// A rect in viewport CSS pixels, in canvas coordinates.
@@ -1506,6 +1595,65 @@ final class AgentBrowserCanvas: NSView {
         } completionHandler: {
             MainActor.assumeIsolated { ripple.removeFromSuperview() }
         }
+    }
+
+    /// The action pulse: a wave leaves Herm's click and the page edge flares as it lands,
+    /// so the frame only moves when Herm just did something.
+    private func pulse(from point: CGPoint) {
+        var accent = NSColor.controlAccentColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { accent = NSColor(Color.dockAccent).cgColor }
+        let pulse = AgentClickPulse(frame: bounds)
+        pulse.wantsLayer = true
+        pulse.layer?.masksToBounds = true  // the edge glow falls inward only
+        addSubview(pulse, positioned: .below, relativeTo: cursor)
+
+        let reach = hypot(max(point.x, bounds.width - point.x), max(point.y, bounds.height - point.y))
+        let circle = { (radius: CGFloat) in
+            CGPath(
+                ellipseIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2),
+                transform: nil)
+        }
+        let wave = CAShapeLayer()
+        wave.frame = bounds
+        wave.path = circle(reach)
+        wave.fillColor = nil
+        wave.strokeColor = accent
+        wave.lineWidth = 1.5
+        wave.opacity = 0
+
+        let edge = CAShapeLayer()
+        edge.frame = bounds
+        edge.path = CGPath(rect: bounds, transform: nil)
+        edge.fillColor = nil
+        edge.strokeColor = accent
+        edge.lineWidth = 4
+        edge.shadowColor = accent
+        edge.shadowOpacity = 0.9
+        edge.shadowRadius = 13
+        edge.shadowOffset = .zero
+        edge.opacity = 0
+        pulse.layer?.addSublayer(wave)
+        pulse.layer?.addSublayer(edge)
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { pulse.removeFromSuperview() } }
+        let grow = CABasicAnimation(keyPath: "path")
+        grow.fromValue = circle(8)
+        grow.toValue = wave.path
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.9
+        fade.toValue = 0
+        let spread = CAAnimationGroup()
+        spread.animations = [grow, fade]
+        spread.duration = 0.9
+        spread.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.6, 0.3, 1)
+        wave.add(spread, forKey: "spread")
+        let flare = CAKeyframeAnimation(keyPath: "opacity")
+        flare.values = [0, 1, 0]
+        flare.keyTimes = [0, 0.22, 1]
+        flare.duration = 1.15
+        edge.add(flare, forKey: "flare")
+        CATransaction.commit()
     }
 
     override func layout() {
@@ -1771,6 +1919,10 @@ final class AgentCursorView: NSView {
 }
 
 /// The ring that spreads from a point Hermes clicked.
+private final class AgentClickPulse: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 private final class AgentClickRipple: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -1795,7 +1947,7 @@ private struct AgentCanvasView: NSViewRepresentable {
     }
 }
 
-/// The Browser tab in agent mode: live view, start/failure states, and what Hermes is doing.
+/// The Browser tab in agent mode: live view, failure state, and what Hermes is doing.
 struct AgentBrowserPane: View {
     @ObservedObject var browser: AgentBrowser
     @ObservedObject var model: DockModel
@@ -1804,10 +1956,6 @@ struct AgentBrowserPane: View {
         ZStack(alignment: .bottom) {
             AgentCanvasView(browser: browser)
             switch browser.state {
-            case .starting:
-                ProgressView("Starting the agent browser…")
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
                 VStack(spacing: 8) {
                     Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(
@@ -1816,7 +1964,7 @@ struct AgentBrowserPane: View {
                 }
                 .dockPadding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .off, .running:
+            case .off, .starting, .running:
                 EmptyView()
             }
         }
@@ -1824,10 +1972,10 @@ struct AgentBrowserPane: View {
             if step != nil { DockShimmerTrack(tone: .working).transition(.opacity) }
         }
         .overlay {
-            // Frames the page while it belongs to Hermes, so you can tell before you click.
+            // A quiet frame while the page belongs to Hermes; each of its clicks flares it (the canvas pulse).
             if step != nil, !browser.userHasControl {
                 Rectangle()
-                    .strokeBorder(Color.dockAccent.opacity(0.55), lineWidth: 2)
+                    .strokeBorder(Color.dockAccent.opacity(0.3), lineWidth: 1)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
