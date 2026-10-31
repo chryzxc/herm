@@ -255,9 +255,65 @@ extension ControlCenterModel {
         // Intentionally empty.
     }
 
-    func createCron(name: String, schedule: String, prompt: String, configuration: CronConfigurationDraft? = nil) async
+    /// Delivery destinations and model overrides for the create form. A failed read yields an empty list, so the
+    /// form offers only `local` and the default model rather than inventing choices.
+    func cronDeliveryTargets(profileID: String?) async -> [CronDeliveryTarget] {
+        (try? await rpc?.cronDeliveryTargets(profileID: profileID)) ?? []
+    }
+
+    func cronBlueprints(profileID: String?) async -> [CronBlueprint] {
+        (try? await rpc?.cronBlueprints(profileID: profileID)) ?? []
+    }
+
+    /// Creates a job from a blueprint's filled slots. Slot errors from Hermes (HTTP 422) are shown as sent.
+    func createCronFromBlueprint(_ blueprint: CronBlueprint, values: [String: String], profileID: String? = nil) async
         -> Bool
     {
+        guard cronControlAvailable, let rpc else {
+            reportActionError(
+                "Could not create automation", message: "Automation control is unavailable through this Hermes gateway."
+            )
+            return false
+        }
+        let actionID = "cron.create"
+        guard beginAction(actionID) else { return false }
+        let viewedProfile = routineProfileID
+        let profile = profileID ?? viewedProfile
+        let bindingGeneration = clientBindingGeneration
+        defer { if clientBindingGeneration == bindingGeneration { finishAction(actionID) } }
+        lastCreatedCronJobID = nil
+        lastError = nil
+        do {
+            let created = try await rpc.instantiateCronBlueprint(
+                key: blueprint.key, values: values, profileID: profile)
+            if clientBindingGeneration == bindingGeneration, routineProfileID == viewedProfile {
+                lastCreatedCronJobID = created.id
+                if profile == viewedProfile {
+                    cronJobs.removeAll { $0.id == created.id }
+                    cronJobs.append(created)
+                }
+                refresh()
+            }
+            return true
+        } catch {
+            if clientBindingGeneration == bindingGeneration {
+                reportActionError(
+                    "Could not create automation",
+                    message: HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)))
+            }
+            return false
+        }
+    }
+
+    func cronModelProviders(profileID: String?) async -> [CronModelProvider] {
+        (try? await rpc?.cronModelProviders()) ?? []
+    }
+
+    /// `profileID` creates the job under another bot's profile; nil keeps the profile the list is showing.
+    func createCron(
+        name: String, schedule: String, prompt: String, configuration: CronConfigurationDraft? = nil,
+        profileID: String? = nil
+    ) async -> Bool {
         guard cronControlAvailable else {
             reportActionError(
                 "Could not create automation", message: "Automation control is unavailable through this Hermes gateway."
@@ -267,12 +323,10 @@ extension ControlCenterModel {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let originalSchedule = schedule
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanName.isEmpty, !originalSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            !cleanPrompt.isEmpty
-        else {
+        guard !originalSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !cleanPrompt.isEmpty else {
             reportActionError(
                 "Could not create automation",
-                message: "Name, schedule, and request are required to create an automation.")
+                message: "Schedule and request are required to create an automation.")
             return false
         }
         guard CronSchedule.isValid(originalSchedule) else {
@@ -282,7 +336,8 @@ extension ControlCenterModel {
         }
         let actionID = "cron.create"
         guard beginAction(actionID) else { return false }
-        let profile = routineProfileID
+        let viewedProfile = routineProfileID
+        let profile = profileID ?? viewedProfile
         let bindingGeneration = clientBindingGeneration
         defer { if clientBindingGeneration == bindingGeneration { finishAction(actionID) } }
         lastCreatedCronJobID = nil
@@ -293,19 +348,21 @@ extension ControlCenterModel {
                 let created = try await rpc.createCron(
                     name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, configuration: configuration,
                     profileID: profile)
-                if clientBindingGeneration == bindingGeneration, routineProfileID == profile {
+                if clientBindingGeneration == bindingGeneration, routineProfileID == viewedProfile {
                     lastCreatedCronJobID = created.id
-                    cronJobs.removeAll { $0.id == created.id }
-                    cronJobs.append(created)
+                    if profile == viewedProfile {
+                        cronJobs.removeAll { $0.id == created.id }
+                        cronJobs.append(created)
+                    }
                 }
             } else {
                 let result = try await rpc.createCron(
                     name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, profileID: profile)
-                if clientBindingGeneration == bindingGeneration, routineProfileID == profile {
+                if clientBindingGeneration == bindingGeneration, routineProfileID == viewedProfile {
                     lastCreatedCronJobID = result["job_id"] as? String
                 }
             }
-            if clientBindingGeneration == bindingGeneration, routineProfileID == profile { refresh() }
+            if clientBindingGeneration == bindingGeneration, routineProfileID == viewedProfile { refresh() }
             return true
         } catch {
             if clientBindingGeneration == bindingGeneration {

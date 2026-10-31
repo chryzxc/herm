@@ -116,11 +116,12 @@ struct AutomationWorkspaceRowPresentation: Equatable {
 
 struct AutomationWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
+    var bots: [BotSummary] = []
 
     @State private var selectedJobID: String?
     @State private var selectedRunID: String?
-    @State private var isRunPanelOpen = true
-    @State private var isCompactList = false
+    @State private var isRunPanelOpen = false
+    @State private var showingOverview = true
     @State private var tab: AutomationWorkspaceTab = .history
     @State private var searchText = ""
     @State private var isShowingCreationSheet = false
@@ -169,16 +170,6 @@ struct AutomationWorkspaceView: View {
         control.routinePresentation(control.routineReference(for: job))
     }
 
-    @AppStorage("herm.automationListCollapsed") private var isJobListCollapsed = false
-    /// Narrow widths or the sidebar toggle swap the list for a picker.
-    private var hidesJobList: Bool { isCompactList || isJobListCollapsed }
-
-    private var activeCount: Int { control.cronJobs.filter(\.enabled).count }
-
-    private var attentionCount: Int {
-        control.cronJobs.filter { presentation(for: $0).result == .failed }.count
-    }
-
     private var overdueCount: Int {
         control.cronJobs.filter { AutomationWorkspaceRowPresentation.isOverdue($0) }.count
     }
@@ -219,14 +210,15 @@ struct AutomationWorkspaceView: View {
                         page
                     }
                 }
-                .onChange(of: wide, initial: true) { _, wide in isRunPanelOpen = wide }
+                .onChange(of: wide) { _, _ in isRunPanelOpen = false }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .dockSheet(isPresented: $isShowingCreationSheet) {
-            AutomationCreationSheet(control: control) { id in
+            AutomationCreationSheet(control: control, bots: bots) { id in
                 pendingCreatedJobID = id
                 selectedJobID = id
+                showingOverview = false
                 refreshWorkspace()
             }
         }
@@ -366,71 +358,40 @@ struct AutomationWorkspaceView: View {
     }
 
     private var page: some View {
-        GeometryReader { geometry in
-            VStack(spacing: 0) {
-                if control.cronJobs.isEmpty,
-                    control.refreshState(for: "cron.jobs")?.isRefreshing == true
-                {
-                    DockLoadingState(
-                        title: "Loading schedules…", detail: "Reading recurring jobs from Hermes.")
-                } else if control.cronJobs.isEmpty,
-                    let error = control.refreshState(for: "cron.jobs")?.error
-                {
-                    VStack(alignment: .leading, spacing: 12) {
-                        placeholder("Automations unavailable", detail: error)
-                        Button("Retry") { refreshWorkspace() }.buttonStyle(.dockSecondary).dockPadding(
-                            .horizontal, 22)
-                    }
-                } else if control.cronJobs.isEmpty, !control.cronControlAvailable {
-                    placeholder(
-                        "Automations unavailable",
-                        detail:
-                            "Connect to Hermes and refresh to load schedules and their available controls."
-                    )
-                } else if control.cronJobs.isEmpty {
-                    emptyWorkspace
+        VStack(spacing: 0) {
+            if control.cronJobs.isEmpty,
+                control.refreshState(for: "cron.jobs")?.isRefreshing == true
+            {
+                DockLoadingState(
+                    title: "Loading schedules…", detail: "Reading recurring jobs from Hermes.")
+            } else if control.cronJobs.isEmpty,
+                let error = control.refreshState(for: "cron.jobs")?.error
+            {
+                VStack(alignment: .leading, spacing: 12) {
+                    placeholder("Automations unavailable", detail: error)
+                    Button("Retry") { refreshWorkspace() }.buttonStyle(.dockSecondary).dockPadding(
+                        .horizontal, 22)
+                }
+            } else if control.cronJobs.isEmpty, !control.cronControlAvailable {
+                placeholder(
+                    "Automations unavailable",
+                    detail:
+                        "Connect to Hermes and refresh to load schedules and their available controls."
+                )
+            } else if control.cronJobs.isEmpty {
+                emptyWorkspace
+            } else {
+                if showingOverview {
+                    jobList
+                } else if let selectedJob {
+                    jobPanel(selectedJob)
                 } else {
-                    HStack(spacing: 0) {
-                        if !hidesJobList {
-                            jobList
-                                .frame(width: AutomationWorkspaceLayout.listWidth)
-                            Divider().overlay(Color.dockBorderLight)
-                        }
-                        VStack(spacing: 0) {
-                            if hidesJobList {
-                                DockMenuPicker(
-                                    title: selectedJob?.name ?? "Select an automation",
-                                    selection: $selectedJobID
-                                ) {
-                                    ForEach(control.cronJobs) {
-                                        DockMenuOption($0.name, value: Optional($0.id))
-                                    }
-                                }
-                                .dockPadding(.horizontal, 16)
-                                .dockPadding(.vertical, 8)
-                                Divider().overlay(Color.dockBorderLight)
-                            }
-                            Group {
-                                if let selectedJob {
-                                    jobPanel(selectedJob)
-                                } else {
-                                    placeholder(
-                                        "Select an automation",
-                                        detail: "Choose a schedule to see its run history.")
-                                }
-                            }
-                            .frame(
-                                maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        }
-                    }
+                    jobList
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.dockCanvas)
-            .onChange(of: geometry.size.width < 760, initial: true) { _, compact in
-                isCompactList = compact
-            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.dockCanvas)
     }
 
     // MARK: Header
@@ -446,21 +407,14 @@ struct AutomationWorkspaceView: View {
                     : "Recurring work Hermes runs on your behalf"),
             onRefresh: refreshWorkspace,
             isRefreshing: isRefreshing,
-            sidebarCollapsed: $isJobListCollapsed
+            windowBottomPadding: 0
         ) {
-            HStack(spacing: 6) {
-                summaryChip("\(activeCount)", label: "active", tint: Color.dockSuccess)
-                if attentionCount > 0 {
-                    summaryChip("\(attentionCount)", label: "failing", tint: Color.dockDestructive)
-                }
-            }
             Button {
                 isShowingCreationSheet = true
             } label: {
                 DockIconLabel("New automation", icon: .plus)
             }
-            .buttonStyle(.dockSecondary)
-            .controlSize(.small)
+            .buttonStyle(.dockPrimary)
             .disabled(!control.cronControlAvailable)
             .help(
                 control.cronControlAvailable
@@ -469,109 +423,95 @@ struct AutomationWorkspaceView: View {
         }
     }
 
-    private func summaryChip(_ value: String, label: String, tint: Color) -> some View {
-        HStack(spacing: 4) {
-            Text(value).dockFont(.metadata, weight: .semibold, design: .monospaced).foregroundStyle(
-                tint)
-            Text(label).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-        }
-        .dockPadding(.horizontal, 8)
-        .frame(height: 24)
-
-    }
-
     // MARK: Job list
 
     private var jobList: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                DockIcon(.magnifyingGlass, size: 14, color: .dockMetadataText)
-                TextField("Filter automations", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .dockFont(.body)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Schedules")
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text("\(filteredJobs.count)")
+                        .dockFont(.metadata).monospacedDigit()
+                        .foregroundStyle(Color.dockMetadataText)
+                    Spacer()
+                }
+                HStack(spacing: 8) {
+                    DockIcon(.magnifyingGlass, size: 14, color: .dockMetadataText)
+                    DockTextField("Filter automations", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .dockFont(.body)
+                }
+                .dockPadding(.horizontal, 10)
+                .frame(height: 34)
+                .frame(maxWidth: 360)
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius)
+                        .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder)
+                )
             }
-            .dockPadding(10)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
-                    Color.dockControlSurface)
-            )
-            .dockPadding(12)
-            HStack {
-                Text("SCHEDULES").dockFont(.sectionLabel)
-                Spacer()
-                Text("\(filteredJobs.count)").dockFont(.machineMetadata)
-            }
-            .foregroundStyle(Color.dockMetadataText)
             .dockPadding(.horizontal, 20)
-            .dockPadding(.bottom, 10)
-            ScrollView(.vertical) {
-                LazyVStack(spacing: 4) {
+            .dockPadding(.vertical, 14)
+            Divider().overlay(Color.dockBorderLight)
+            ScrollView {
+                LazyVStack(spacing: 0) {
                     if filteredJobs.isEmpty {
-                        placeholder(
-                            "No matching automations", detail: "Try a different name or job ID.")
+                        placeholder("No matching automations", detail: "Try a different name or job ID.")
                     }
                     ForEach(filteredJobs) { job in jobRow(job) }
                 }
-                .dockPadding(8)
             }
         }
-        .dockPaneTint(Color.dockSidebar)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func jobRow(_ job: CronSummary) -> some View {
         let result = presentation(for: job)
         let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
-        let selected = job.id == selectedJobID
         return Button {
             selectedJobID = job.id
+            selectedRunID = nil
+            isRunPanelOpen = false
+            showingOverview = false
         } label: {
-            HStack(alignment: .top, spacing: 10) {
-                statusDot(result.result)
-                    .dockPadding(.top, 5)
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(job.name)
-                        .dockFont(.body, weight: .medium)
-                        .foregroundStyle(
-                            job.enabled ? Color.dockPrimaryText : Color.dockSecondaryText
-                        )
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                     Text(CronScheduleFormatting.humanReadable(job.schedule))
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
-                    HStack(spacing: 6) {
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+                VStack(alignment: .trailing, spacing: 5) {
+                    HStack(spacing: 5) {
+                        statusDot(result.result)
                         Text(result.result.title)
                             .foregroundStyle(statusColor(result.result))
-                        if job.enabled, let next = job.nextRun {
-                            Text("·")
-                            Text(overdue ? "Overdue" : "Next \(HumanDateFormatting.relative(next))")
-                                .foregroundStyle(
-                                    overdue ? Color.dockWarning : Color.dockMetadataText)
-                        }
                     }
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
+                    if job.enabled, let next = job.nextRun {
+                        Text(overdue ? "Overdue" : "Next \(HumanDateFormatting.relative(next))")
+                            .foregroundStyle(overdue ? Color.dockWarning : Color.dockMetadataText)
+                    }
                 }
-                Spacer(minLength: 0)
+                .dockFont(.metadata)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                DockIcon(.caretRight, size: 12, color: .dockMetadataText)
             }
-            .dockPadding(.horizontal, 12)
-            .dockPadding(.vertical, 10)
+            .dockPadding(.horizontal, 20)
+            .dockPadding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius).dockSelectionFill(
-                    selected, fallback: selected ? Color.dockAccentMuted : Color.clear)
-            )
-            .overlay(alignment: .leading) {
-                if selected {
-                    Capsule().fill(Color.dockAccent).frame(width: 3).dockPadding(.vertical, 12)
-                }
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         .contextMenu { menuActions(for: job) }
     }
 
@@ -579,6 +519,15 @@ struct AutomationWorkspaceView: View {
 
     private func jobPanel(_ job: CronSummary) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            Button {
+                showingOverview = true
+                isRunPanelOpen = false
+            } label: {
+                DockIconLabel("All automations", icon: .caretLeft)
+            }
+            .buttonStyle(.dockLink)
+            .dockPadding(.horizontal, 20)
+            .dockPadding(.top, 16)
             jobHeader(job)
             statStrip(job)
                 .dockPadding(.horizontal, 20)
@@ -816,9 +765,6 @@ struct AutomationWorkspaceView: View {
                 Rectangle().dockSelectionFill(
                     selected, fallback: selected ? Color.dockAccentMuted : Color.clear)
             )
-            .overlay(alignment: .leading) {
-                if selected { Color.dockAccent.frame(width: 2) }
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -1035,6 +981,8 @@ struct AutomationWorkspaceView: View {
             control.cronJobs.contains(where: { $0.id == id })
         else { return }
         selectedJobID = id
+        showingOverview = false
+        isRunPanelOpen = false
         control.requestedAutomationJobID = nil
         control.requestedAutomationOwner = nil
         control.requestedAutomationDidNavigate = false
@@ -1295,60 +1243,159 @@ extension String {
 
 private struct AutomationCreationSheet: View {
     @ObservedObject var control: ControlCenterModel
+    let bots: [BotSummary]
     let onSuccess: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var schedule = ""
+    @State private var schedule = CronSchedulePreset.daily.expression ?? ""
+    @State private var preset = CronSchedulePreset.daily
     @State private var prompt = ""
     @State private var configuration = CronConfigurationDraft()
+    @State private var deliveryTargets: [CronDeliveryTarget] = []
+    @State private var modelProviders: [CronModelProvider] = []
+    @State private var blueprints: [CronBlueprint] = []
+    @State private var blueprintKey = ""
+    @State private var slotValues: [String: String] = [:]
     @State private var error: String?
     @State private var isSubmitting = false
     @State private var creationBindingGeneration: UInt64?
     @State private var creationProfileID: String?
+    @State private var botID = ""
+    @State private var initialBotID = ""
+
+    private static let defaultModel = ""
+
+    private var blueprint: CronBlueprint? { blueprints.first { $0.key == blueprintKey } }
 
     private var valid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !schedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !configuration.delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        blueprint != nil
+            || (!schedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var modelChoice: Binding<String> {
+        Binding(
+            get: {
+                configuration.model.isEmpty ? Self.defaultModel : "\(configuration.provider)\n\(configuration.model)"
+            },
+            set: { choice in
+                let parts = choice.split(separator: "\n", maxSplits: 1).map(String.init)
+                configuration.provider = parts.count == 2 ? parts[0] : ""
+                configuration.model = parts.count == 2 ? parts[1] : ""
+            })
+    }
+
+    private var modelTitle: String { configuration.model.isEmpty ? "Default model" : configuration.model }
+
+    private func menuFrame<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .dockPadding(.horizontal, 10)
+            .frame(minHeight: DockLayout.controlHeight)
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder, lineWidth: 0.5)
+            )
     }
 
     var body: some View {
         DockModal(
             icon: .magicWand, title: "New automation",
-            subtitle: "Define when Hermes should run and what it should do.", width: 560
+            subtitle: "Schedule a prompt to run on a cron expression and deliver the results.", width: 560
         ) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    labeledField("Name") {
-                        DockTextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
+                    if bots.count > 1 {
+                        labeledField("Bot", hint: "The profile that owns and runs this automation") {
+                            menuFrame {
+                                DockMenuPicker(
+                                    title: bots.first { $0.id == botID }?.name ?? "Choose…", selection: $botID
+                                ) {
+                                    ForEach(bots) { bot in DockMenuOption(bot.name, value: bot.id) }
+                                }
+                            }
+                        }
                     }
-                    labeledField("Schedule", hint: "every 2h or 0 9 * * *") {
-                        DockTextField("When should Hermes run this?", text: $schedule)
-                            .textFieldStyle(
-                                .dockGlass)
+                    if !blueprints.isEmpty {
+                        labeledField("Start from") {
+                            menuFrame {
+                                DockMenuPicker(title: blueprint?.title ?? "Custom", selection: blueprintSelection) {
+                                    DockMenuOption("Custom", value: "")
+                                    ForEach(blueprints) { item in
+                                        DockMenuOption(
+                                            item.plugin.map { "\(item.title) · \($0)" } ?? item.title, value: item.key)
+                                    }
+                                }
+                            }
+                            if let description = blueprint?.description, !description.isEmpty {
+                                Text(description).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                            }
+                        }
                     }
-                    ModalNote(
-                        text: schedule.isEmpty
-                            ? "Enter an interval or a cron expression."
-                            : CronScheduleFormatting.humanReadable(schedule), icon: .clock
-                    )
-                    .frame(minHeight: 24, alignment: .leading)
-                    labeledField("Request") {
-                        DockTextField("What should Hermes do?", text: $prompt, axis: .vertical)
-                            .lineLimit(4...8)
-                            .textFieldStyle(.dockGlass)
+                    if let blueprint {
+                        ForEach(blueprint.fields) { field in blueprintField(field) }
+                    } else {
+                        labeledField("Name", hint: "Optional") {
+                            DockTextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
+                        }
+                        labeledField("Prompt") {
+                            DockTextField("What should Hermes do?", text: $prompt, axis: .vertical)
+                                .lineLimit(4...8)
+                                .textFieldStyle(.dockGlass)
+                        }
+                        labeledField("Frequency") {
+                            menuFrame {
+                                DockMenuPicker(title: preset.title, selection: presetSelection) {
+                                    ForEach(CronSchedulePreset.allCases) { DockMenuOption($0.title, value: $0) }
+                                }
+                            }
+                        }
+                        if preset == .custom {
+                            labeledField(
+                                "Custom schedule", hint: "Cron syntax or natural language, e.g. every 2h or 0 9 * * *"
+                            ) {
+                                DockTextField("0 9 * * *", text: $schedule).textFieldStyle(.dockGlass)
+                            }
+                            ModalNote(
+                                text: schedule.isEmpty
+                                    ? "Enter an interval or a cron expression."
+                                    : CronScheduleFormatting.humanReadable(schedule), icon: .clock
+                            )
+                            .frame(minHeight: 24, alignment: .leading)
+                        } else {
+                            ModalNote(text: "\(preset.hint) · \(schedule)", icon: .clock)
+                                .frame(minHeight: 24, alignment: .leading)
+                        }
+                        labeledField("Deliver to", hint: "Choose one or more destinations") {
+                            deliveryChecklist(
+                                selected: configuration,
+                                onToggle: { target, on in configuration.setDelivery(target, enabled: on) })
+                        }
+                        if !modelProviders.isEmpty {
+                            labeledField("Model", hint: "Optional; blank follows the Hermes default") {
+                                menuFrame {
+                                    DockMenuPicker(title: modelTitle, selection: modelChoice) {
+                                        DockMenuOption("Default model", value: Self.defaultModel)
+                                        ForEach(modelProviders) { provider in
+                                            ForEach(provider.models, id: \.self) { model in
+                                                DockMenuOption(
+                                                    "\(model) · \(provider.name)", value: "\(provider.slug)\n\(model)")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    CronConfigurationFields(draft: $configuration)
                     if let error { ModalNote(text: error, icon: .warning, tone: .dockWarning) }
                 }
                 .dockPadding(2)
                 .disabled(isSubmitting)
-            }.frame(height: 440)
+            }.frame(height: 480)
         } footer: {
             modalActions(
-                primaryTitle: "Create automation",
-                pendingTitle: "Creating…",
+                primaryTitle: blueprint == nil ? "Create automation" : "Schedule it",
+                pendingTitle: blueprint == nil ? "Creating…" : "Scheduling…",
                 isDisabled: !valid || isSubmitting || !control.cronControlAvailable,
                 isPending: isSubmitting,
                 onCancel: { dismiss() }
@@ -1358,7 +1405,105 @@ private struct AutomationCreationSheet: View {
         .onAppear {
             creationBindingGeneration = control.clientBindingGeneration
             creationProfileID = control.routineProfileID
+            if botID.isEmpty {
+                initialBotID = bots.first { $0.id == creationProfileID }?.id ?? bots.first(where: \.isDefault)?.id ?? ""
+                botID = initialBotID
+            }
         }
+        .task(id: botID) {
+            let profile = botID == initialBotID || botID.isEmpty ? control.routineProfileID : botID
+            blueprints = await control.cronBlueprints(profileID: profile)
+            if blueprint == nil { blueprintKey = "" }
+            deliveryTargets = await control.cronDeliveryTargets(profileID: profile)
+            if modelProviders.isEmpty { modelProviders = await control.cronModelProviders(profileID: profile) }
+        }
+    }
+
+    /// Picking a blueprint seeds every slot with its default; Custom returns to the manual form.
+    private var blueprintSelection: Binding<String> {
+        Binding(
+            get: { blueprintKey },
+            set: { key in
+                blueprintKey = key
+                slotValues = blueprints.first { $0.key == key }?.initialValues ?? [:]
+                error = nil
+            })
+    }
+
+    @ViewBuilder
+    private func blueprintField(_ field: CronBlueprintField) -> some View {
+        let value = Binding(
+            get: { slotValues[field.name] ?? "" }, set: { slotValues[field.name] = $0 })
+        labeledField(field.label, hint: field.kind == .text || field.isDelivery ? nil : field.help) {
+            if field.isDelivery {
+                deliveryChecklist(
+                    selected: CronConfigurationDraft(delivery: slotValues[field.name] ?? "local"),
+                    onToggle: { target, on in
+                        var draft = CronConfigurationDraft(delivery: slotValues[field.name] ?? "local")
+                        draft.setDelivery(target, enabled: on)
+                        slotValues[field.name] = draft.delivery
+                    })
+            } else if field.kind == .enum || field.kind == .weekdays {
+                menuFrame {
+                    DockMenuPicker(title: value.wrappedValue.isEmpty ? "Choose…" : value.wrappedValue, selection: value)
+                    {
+                        ForEach(field.options, id: \.self) { DockMenuOption($0, value: $0) }
+                    }
+                }
+            } else if field.kind == .time {
+                DockTimePicker(time: timeBinding(value))
+            } else {
+                DockTextField(field.help.isEmpty ? field.label : field.help, text: value).textFieldStyle(.dockGlass)
+            }
+        }
+    }
+
+    /// Hermes time slots are `HH:mm` strings.
+    private func timeBinding(_ value: Binding<String>) -> Binding<Date> {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "HH:mm"
+        return Binding(
+            get: { format.date(from: value.wrappedValue) ?? format.date(from: "09:00") ?? Date() },
+            set: { value.wrappedValue = format.string(from: $0) })
+    }
+
+    private func deliveryChecklist(selected: CronConfigurationDraft, onToggle: @escaping (String, Bool) -> Void)
+        -> some View
+    {
+        let known = Set(deliveryTargets.map(\.id))
+        let local =
+            deliveryTargets.contains { $0.id == "local" }
+            ? [] : [CronDeliveryTarget(id: "local", name: "Local", homeTargetSet: true)]
+        let options =
+            local + deliveryTargets
+            + selected.deliveryTargets.filter { $0 != "local" && !known.contains($0) }.map {
+                CronDeliveryTarget(id: $0, name: $0, homeTargetSet: true)
+            }
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(options) { target in
+                Toggle(
+                    target.title,
+                    isOn: Binding(
+                        get: { selected.deliveryTargets.contains(target.id) }, set: { onToggle(target.id, $0) })
+                ).toggleStyle(.dockCheckbox)
+            }
+        }
+    }
+
+    /// Choosing a preset writes its expression; Custom keeps what was typed unless it was a preset's expression.
+    private var presetSelection: Binding<CronSchedulePreset> {
+        Binding(
+            get: { preset },
+            set: { next in
+                if let expression = next.expression {
+                    schedule = expression
+                } else if CronSchedulePreset.allCases.contains(where: { $0.expression == schedule }) {
+                    schedule = ""
+                }
+                preset = next
+                error = nil
+            })
     }
 
     private func submit() {
@@ -1374,21 +1519,31 @@ private struct AutomationCreationSheet: View {
         isSubmitting = true
         error = nil
         Task {
-            let succeeded = await control.createCron(
-                name: submittedName, schedule: schedule, prompt: prompt,
-                configuration: configuration)
+            let targetProfile = botID == initialBotID || botID.isEmpty ? nil : botID
+            let succeeded: Bool
+            if let blueprint {
+                succeeded = await control.createCronFromBlueprint(
+                    blueprint, values: slotValues, profileID: targetProfile)
+            } else {
+                succeeded = await control.createCron(
+                    name: submittedName, schedule: schedule, prompt: prompt,
+                    configuration: configuration, profileID: targetProfile)
+            }
             await MainActor.run {
                 isSubmitting = false
                 if succeeded {
                     if creationBindingGeneration == control.clientBindingGeneration,
-                        creationProfileID == control.routineProfileID,
+                        creationProfileID == control.routineProfileID, botID == initialBotID,
                         let createdID = control.lastCreatedCronJobID
                     {
                         onSuccess(createdID)
                     }
                     dismiss()
                 } else {
-                    error = control.lastError ?? "Hermes could not create this automation."
+                    error =
+                        (control.lastError?.replacingOccurrences(
+                            of: #"^\d+:\s*"#, with: "", options: .regularExpression))
+                        ?? "Hermes could not create this automation."
                 }
             }
         }

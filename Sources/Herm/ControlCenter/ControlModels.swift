@@ -1318,6 +1318,119 @@ struct CronConfigurationDraft: Equatable {
         }
         return result
     }
+
+    /// Hermes accepts several comma-separated delivery targets; none selected falls back to `local`.
+    var deliveryTargets: [String] {
+        let targets = delivery.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return targets.isEmpty ? ["local"] : targets.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+    }
+
+    /// Checking adds a target; unchecking removes it but always leaves at least one, as Hermes desktop does.
+    mutating func setDelivery(_ target: String, enabled: Bool) {
+        let current = deliveryTargets
+        if enabled {
+            if !current.contains(target) { delivery = (current + [target]).joined(separator: ",") }
+        } else if current.contains(target), current.count > 1 {
+            delivery = current.filter { $0 != target }.joined(separator: ",")
+        }
+    }
+}
+
+/// The frequency presets in Hermes desktop's New cron dialog.
+enum CronSchedulePreset: String, CaseIterable, Identifiable {
+    case daily, weekdays, weekly, monthly, hourly, everyFifteenMinutes, custom
+
+    var id: String { rawValue }
+
+    var expression: String? {
+        switch self {
+        case .daily: "0 9 * * *"
+        case .weekdays: "0 9 * * 1-5"
+        case .weekly: "0 9 * * 1"
+        case .monthly: "0 9 1 * *"
+        case .hourly: "0 * * * *"
+        case .everyFifteenMinutes: "*/15 * * * *"
+        case .custom: nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .daily: "Daily"
+        case .weekdays: "Weekdays"
+        case .weekly: "Weekly"
+        case .monthly: "Monthly"
+        case .hourly: "Hourly"
+        case .everyFifteenMinutes: "Every 15 minutes"
+        case .custom: "Custom"
+        }
+    }
+
+    var hint: String {
+        switch self {
+        case .daily: "Every day at 9:00 AM"
+        case .weekdays: "Monday through Friday at 9:00 AM"
+        case .weekly: "Every Monday at 9:00 AM"
+        case .monthly: "The first day of each month at 9:00 AM"
+        case .hourly: "At the top of every hour"
+        case .everyFifteenMinutes: "Every 15 minutes"
+        case .custom: "Cron syntax or natural language"
+        }
+    }
+}
+
+/// A delivery destination from `/api/cron/delivery-targets`: `local` plus each configured gateway platform.
+struct CronDeliveryTarget: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let homeTargetSet: Bool
+
+    var title: String { id == "local" ? "This desktop" : homeTargetSet ? name : "\(name) (no home channel)" }
+}
+
+/// One slot of a Hermes automation blueprint; the type decides which control the form shows.
+struct CronBlueprintField: Equatable, Identifiable {
+    enum Kind: String { case `enum`, text, time, weekdays }
+
+    let name: String
+    let kind: Kind
+    let label: String
+    let defaultValue: String?
+    let options: [String]
+    let help: String
+
+    var id: String { name }
+    var isDelivery: Bool { name == "deliver" }
+}
+
+/// A ready-made automation from the "Start from" menu; its fields replace the manual prompt/schedule form.
+struct CronBlueprint: Equatable, Identifiable {
+    let key: String
+    let title: String
+    let description: String
+    let plugin: String?
+    let fields: [CronBlueprintField]
+
+    var id: String { key }
+
+    /// Each field's default; an empty or `origin` delivery becomes `local`, as in Hermes desktop.
+    var initialValues: [String: String] {
+        Dictionary(
+            uniqueKeysWithValues: fields.map { field in
+                let seeded = field.defaultValue ?? ""
+                return (field.name, field.isDelivery && (seeded.isEmpty || seeded == "origin") ? "local" : seeded)
+            })
+    }
+}
+
+/// A provider and its selectable models for a per-job model override.
+struct CronModelProvider: Equatable, Identifiable {
+    let slug: String
+    let name: String
+    let models: [String]
+
+    var id: String { slug }
 }
 
 struct CronEditDraft: Equatable {

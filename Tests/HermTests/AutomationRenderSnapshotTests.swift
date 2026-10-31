@@ -54,7 +54,7 @@ struct AutomationRenderSnapshotTests {
             )
         }
         for (theme, dark) in [
-            (DockThemeID.clean, false), (.clean, true), (.glass, true), (.mono, true),
+            (DockThemeID.clean, false), (.clean, true), (.glass, false), (.glass, true), (.mono, true),
             (.eInk, false),
         ] {
             DockThemeRuntime.current = theme
@@ -64,6 +64,7 @@ struct AutomationRenderSnapshotTests {
                     .defaultAppStorage(defaults)
                     .frame(width: width, height: 900)
                     .background(Color.dockCanvas)
+                    .background(dark ? Color.black : Color.white)
                     .dockThemedRoot()
                     .environment(\.colorScheme, dark ? .dark : .light)
                     .environment(\.dockWorkspaceScale, DockWorkspaceScale.window)

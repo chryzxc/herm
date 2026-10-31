@@ -123,6 +123,55 @@ struct AutomationContractTests {
         await refuses { _ = try await rpc.cronJob(job, profileID: "research") }
     }
 
+    @Test func creationCanTargetAnotherBotWithoutAName() async {
+        let client = AutomationClient()
+        client.httpResult = detail
+        let model = control(client)
+        model.routineProfileID = "research"
+        let configuration = CronConfigurationDraft(delivery: "local,telegram", model: "m", provider: "p")
+        #expect(
+            await model.createCron(
+                name: " ", schedule: "0 9 * * *", prompt: "Review", configuration: configuration, profileID: "writer"))
+        let call = client.calls.first { $0.0 == "POST" }
+        #expect(call?.1 == "/api/cron/jobs?profile=writer")
+        #expect(call?.2["deliver"] as? String == "local,telegram")
+        #expect(call?.2["provider"] as? String == "p")
+        #expect(model.routineProfileID == "research")
+    }
+
+    @Test func blueprintSlotsSeedFromDefaultsAndInstantiateOnTheChosenProfile() async {
+        let blueprint = CronBlueprint(
+            key: "on-this-day", title: "On-this-day discovery", description: "", plugin: nil,
+            fields: [
+                CronBlueprintField(
+                    name: "kind", kind: .enum, label: "What kind?", defaultValue: "event", options: ["event", "word"],
+                    help: ""),
+                CronBlueprintField(
+                    name: "deliver", kind: .enum, label: "Deliver", defaultValue: "origin", options: [], help: ""),
+            ])
+        #expect(blueprint.initialValues == ["kind": "event", "deliver": "local"])
+        let client = AutomationClient()
+        client.httpResult = detail
+        let model = control(client)
+        #expect(await model.createCronFromBlueprint(blueprint, values: blueprint.initialValues, profileID: "writer"))
+        let call = client.calls.first { $0.0 == "POST" }
+        #expect(call?.1 == "/api/cron/blueprints/instantiate?profile=writer")
+        #expect(call?.2["blueprint"] as? String == "on-this-day")
+        #expect((call?.2["values"] as? [String: String])?["kind"] == "event")
+    }
+
+    @Test func deliveryTargetsToggleLikeHermesDesktop() {
+        var draft = CronConfigurationDraft(delivery: "")
+        #expect(draft.deliveryTargets == ["local"])
+        draft.setDelivery("telegram", enabled: true)
+        #expect(draft.delivery == "local,telegram")
+        draft.setDelivery("local", enabled: false)
+        draft.setDelivery("telegram", enabled: false)
+        #expect(draft.delivery == "telegram")
+        #expect(CronSchedulePreset.weekdays.expression == "0 9 * * 1-5")
+        #expect(CronSchedulePreset.custom.expression == nil)
+    }
+
     @Test func configuredCreationSendsBackendFieldsToTheCapturedProfile() async {
         let client = AutomationClient()
         client.httpResult = detail

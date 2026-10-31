@@ -396,6 +396,62 @@ final class HermesControlRPC {
         return path + suffix + query
     }
 
+    func cronDeliveryTargets(profileID: String?) async throws -> [CronDeliveryTarget] {
+        let path = try Self.cronPath(profileID: profileID).replacingOccurrences(
+            of: "/api/cron/jobs", with: "/api/cron/delivery-targets")
+        guard let rows = try await client.fetchHTTP(path)["targets"] as? [[String: Any]] else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        return rows.compactMap { row in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+            return CronDeliveryTarget(
+                id: id, name: row["name"] as? String ?? id, homeTargetSet: row["home_target_set"] as? Bool ?? true)
+        }
+    }
+
+    func cronBlueprints(profileID: String?) async throws -> [CronBlueprint] {
+        let path = try Self.cronPath(profileID: profileID).replacingOccurrences(
+            of: "/api/cron/jobs", with: "/api/cron/blueprints")
+        guard let rows = try await client.fetchHTTP(path)["blueprints"] as? [[String: Any]] else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        return rows.compactMap { row in
+            guard let key = row["key"] as? String, let title = row["title"] as? String else { return nil }
+            let fields = (row["fields"] as? [[String: Any]] ?? []).compactMap { field -> CronBlueprintField? in
+                guard let name = field["name"] as? String else { return nil }
+                return CronBlueprintField(
+                    name: name, kind: (field["type"] as? String).flatMap(CronBlueprintField.Kind.init) ?? .text,
+                    label: field["label"] as? String ?? name, defaultValue: field["default"] as? String,
+                    options: field["options"] as? [String] ?? [], help: field["help"] as? String ?? "")
+            }
+            return CronBlueprint(
+                key: key, title: title, description: row["description"] as? String ?? "",
+                plugin: row["plugin"] as? String, fields: fields)
+        }
+    }
+
+    /// Hermes fills the blueprint's slots into a prompt and schedule, then creates the job in `profileID`.
+    func instantiateCronBlueprint(key: String, values: [String: String], profileID: String?) async throws
+        -> CronSummary
+    {
+        let path = try Self.cronPath(profileID: profileID ?? "default").replacingOccurrences(
+            of: "/api/cron/jobs", with: "/api/cron/blueprints/instantiate")
+        let result = try await client.sendHTTP("POST", path: path, body: ["blueprint": key, "values": values])
+        guard let id = result["id"] as? String else { throw HermesGateway.GatewayError.malformedResponse }
+        return try Self.parseCronJobDetail(result, expectedID: id, profileID: profileID)
+    }
+
+    func cronModelProviders() async throws -> [CronModelProvider] {
+        let result = try await client.request(
+            HermesFeatureIDs.ID.modelOptions.rawValue, params: ["explicit_only": true])
+        return (result["providers"] as? [[String: Any]] ?? []).compactMap { row in
+            guard let slug = row["slug"] as? String ?? row["name"] as? String else { return nil }
+            let models = row["models"] as? [String] ?? []
+            return models.isEmpty
+                ? nil : CronModelProvider(slug: slug, name: row["name"] as? String ?? slug, models: models)
+        }
+    }
+
     func cronJob(_ job: CronSummary, profileID: String?) async throws -> CronSummary {
         let row = try await client.fetchHTTP(Self.cronPath(jobID: job.id, profileID: profileID))
         return try Self.parseCronJobDetail(row, expectedID: job.id, profileID: profileID)
