@@ -1020,7 +1020,11 @@ struct DockPageHeader<Trailing: View>: View {
     /// line, title then status, actions trailing, like a native toolbar.
     private func windowTitleRow(_ row: DockTitleRow) -> some View {
         HStack(spacing: 8) {
-            sidebarToggle
+            HStack(spacing: 0) {
+                sidebarToggle
+                // Only the leftmost title row; GitHub's detail header sits beside its own navigation.
+                if row.leadingClearance > 0 { DockHistoryButtons() }
+            }
             Text(title)
                 .dockFont(.navigation, weight: .semibold, design: DockThemeStyle.current.fontDesign)
                 .foregroundStyle(Color.dockPrimaryText)

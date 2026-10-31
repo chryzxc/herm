@@ -130,6 +130,7 @@ extension DockPopover {
     func observerLayerThree<V: View>(_ view: V) -> some View {
         view
             // Settled destinations only: opening a session changes the surface before the session id.
+            .background { historyShortcuts }
             .task(id: currentNavigationDestination) {
                 try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled else { return }
@@ -293,6 +294,7 @@ extension DockPopover {
         )
         .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
         .dockThemedRoot()
+        .environment(\.dockNavigationHistory, navigationHistoryControls)
         .modifier(
             ExpandedReviewHost(
                 model: model, router: expandedReviewRouter,
@@ -380,7 +382,9 @@ extension DockPopover {
 
     /// Sessions in Chats; every bot and group room on the Bots page.
     var desktopLeadingPanel: AnyView {
-        fullscreenSurface == .bots ? AnyView(botsListPanel) : AnyView(sessionNavQueue)
+        AnyView(
+            (fullscreenSurface == .bots ? AnyView(botsListPanel) : AnyView(sessionNavQueue))
+                .environment(\.dockNavigationHistory, navigationHistoryControls))
     }
 
     var openGroupRoom: GroupRoom? { botMode.groupChats.rooms.first { $0.id == openGroupRoomID } }

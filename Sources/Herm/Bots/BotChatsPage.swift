@@ -84,6 +84,7 @@ struct BotChatsPage: View {
             // Same strip as the Sessions list: the sidebar toggle beside the traffic lights.
             HStack(spacing: 0) {
                 DockSidebarToggle(isCollapsed: $isCollapsed)
+                DockHistoryButtons()
                 Spacer(minLength: 0)
                     .frame(maxHeight: .infinity)
                     .background { if usesWindowChrome { TitlebarDoubleClickArea() } }

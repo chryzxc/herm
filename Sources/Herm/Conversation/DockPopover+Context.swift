@@ -116,7 +116,6 @@ extension DockPopover {
             },
             onOpenWindow: onOpenWindow,
             isDockedWindow: usesWindowChrome,
-            history: (navHistory.canGoBack, navHistory.canGoForward, goBack, goForward),
             isSidebarCollapsed: chatListCollapsed
         )
     }
@@ -126,6 +125,21 @@ extension DockPopover {
             surface: fullscreenSurface,
             tab: fullscreenSurface == .global ? fullscreenGlobalTab : nil,
             sessionID: fullscreenSurface == .conversation ? model.navigationSessionID : nil)
+    }
+
+    var navigationHistoryControls: DockNavigationHistory {
+        DockNavigationHistory(
+            canGoBack: navHistory.canGoBack, canGoForward: navHistory.canGoForward, back: goBack, forward: goForward)
+    }
+
+    /// One pair of window-wide shortcuts, so the visible buttons never compete for them.
+    var historyShortcuts: some View {
+        Group {
+            Button("Back", action: goBack).keyboardShortcut("[", modifiers: .command).disabled(!navHistory.canGoBack)
+            Button("Forward", action: goForward).keyboardShortcut("]", modifiers: .command)
+                .disabled(!navHistory.canGoForward)
+        }
+        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
     }
 
     func goBack() { if let destination = navHistory.back() { navigate(to: destination) } }
@@ -825,6 +839,7 @@ extension DockPopover {
                 // Leading like a native toolbar title; actions sit at the trailing edge.
                 if hidesChatList {
                     DockSidebarToggle(isCollapsed: chatListCollapsed)
+                    DockHistoryButtons()
                 }
                 if let identity { identity } else { toolbarIdentity(style: style) }
                 Spacer(minLength: 12)
@@ -895,5 +910,6 @@ extension DockPopover {
         .frame(height: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight)
         .background(usesWindowChrome ? Color.dockSidebar : Color.dockCanvas)
         .overlay(alignment: .bottom) { if usesWindowChrome { DockWindowChrome.titleRowSeparator } }
+        .environment(\.dockNavigationHistory, navigationHistoryControls)
     }
 }

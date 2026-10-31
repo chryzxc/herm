@@ -48,7 +48,6 @@ struct SessionNavQueue: View {
     let onOpenWindow: (() -> Void)?
     let isDockedWindow: Bool
     let showsWindowTitleRow: Bool
-    let history: (canGoBack: Bool, canGoForward: Bool, back: () -> Void, forward: () -> Void)?
     @Binding var isSidebarCollapsed: Bool
     @State private var sessionSearchQuery = ""
     @State private var isProfileSelectorPresented = false
@@ -91,7 +90,6 @@ struct SessionNavQueue: View {
         onOpenWindow: (() -> Void)? = nil,
         isDockedWindow: Bool = false,
         showsWindowTitleRow: Bool = true,
-        history: (canGoBack: Bool, canGoForward: Bool, back: () -> Void, forward: () -> Void)? = nil,
         isSidebarCollapsed: Binding<Bool> = .constant(false)
     ) {
         self.model = model
@@ -128,7 +126,6 @@ struct SessionNavQueue: View {
         self.onOpenWindow = onOpenWindow
         self.isDockedWindow = isDockedWindow
         self.showsWindowTitleRow = showsWindowTitleRow
-        self.history = history
         self._isSidebarCollapsed = isSidebarCollapsed
     }
 
@@ -298,22 +295,6 @@ struct SessionNavQueue: View {
         }
     }
 
-    private func historyButton(
-        _ icon: Ph, _ label: String, _ key: KeyEquivalent, enabled: Bool, action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            DockIcon(icon, size: DockLayout.toolbarIconSize)
-                .foregroundStyle(enabled ? Color.dockPrimaryText : Color.dockMetadataText)
-                .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.dockHover)
-        .disabled(!enabled)
-        .keyboardShortcut(key, modifiers: .command)
-        .help("\(label) (⌘\(String(describing: key.character)))")
-        .accessibilityLabel(label)
-    }
-
     /// Secondary panel: identity, new conversation, and the session lists.
     private func listPanel(style: DockThemePalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -321,11 +302,7 @@ struct SessionNavQueue: View {
             if isDockedWindow && showsWindowTitleRow {
                 HStack(spacing: 0) {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
-                    if let history {
-                        historyButton(.caretLeft, "Back", "[", enabled: history.canGoBack, action: history.back)
-                        historyButton(
-                            .caretRight, "Forward", "]", enabled: history.canGoForward, action: history.forward)
-                    }
+                    DockHistoryButtons()
                     Spacer(minLength: 0)
                         .frame(maxHeight: .infinity)
                         .background { TitlebarDoubleClickArea() }
