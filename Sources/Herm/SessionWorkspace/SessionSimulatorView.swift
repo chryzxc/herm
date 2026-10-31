@@ -10,16 +10,47 @@ struct SessionSimulatorView: View {
     @State private var refreshRequest = 0
     @State private var consumedCallID: String?
     @State private var showSetup = false
+    @State private var resumed = false
     @State private var connectionOwner = UUID()
 
     init(
         platform: SessionSimulatorPlatform, sessionKey: String, isActive: Bool,
-        capture: SessionSimulatorCapture = SessionSimulatorCapture()
+        capture: SessionSimulatorCapture? = nil
     ) {
         self.platform = platform
         self.sessionKey = sessionKey
         self.isActive = isActive
-        _capture = StateObject(wrappedValue: capture)
+        _capture = StateObject(wrappedValue: capture ?? Self.retainedCapture(platform, sessionKey))
+    }
+
+    /// Tab switches rebuild this view; the live connection outlives it so returning
+    /// shows the running device instead of reconnecting.
+    /// ponytail: one retained device per platform, a different session replaces (stops) it.
+    private static var retained: [SessionSimulatorPlatform: (key: String, capture: SessionSimulatorCapture)] = [:]
+
+    private static var idleStops: [SessionSimulatorPlatform: Task<Void, Never>] = [:]
+
+    /// A hidden device is released after a minute; returning sooner cancels this.
+    private static func scheduleIdleStop(_ platform: SessionSimulatorPlatform) {
+        idleStops[platform]?.cancel()
+        idleStops[platform] = Task { @MainActor in
+            do { try await Task.sleep(for: .seconds(60)) } catch { return }
+            retained[platform]?.capture.stop()
+        }
+    }
+
+    private static func cancelIdleStop(_ platform: SessionSimulatorPlatform) {
+        idleStops.removeValue(forKey: platform)?.cancel()
+    }
+
+    private static func retainedCapture(_ platform: SessionSimulatorPlatform, _ key: String) -> SessionSimulatorCapture
+    {
+        cancelIdleStop(platform)
+        if let held = retained[platform], held.key == key { return held.capture }
+        retained[platform]?.capture.stop()
+        let capture = SessionSimulatorCapture()
+        retained[platform] = (key, capture)
+        return capture
     }
 
     private var diagnostics: SessionSimulatorDiagnostics { capture.diagnostics }
@@ -58,13 +89,21 @@ struct SessionSimulatorView: View {
             .task(id: "\(isActive)-\(refreshRequest)-\(capture.selectedID)-\(launchRequest?.callID ?? "")") {
                 guard isActive else {
                     reportConnection(false)
-                    capture.stop()
+                    Self.scheduleIdleStop(platform)
                     return
                 }
+                Self.cancelIdleStop(platform)
                 var preferredID: String?
                 if let request = launchRequest, consumedCallID != request.callID {
                     consumedCallID = request.callID
                     preferredID = request.receipt.deviceID
+                }
+                // Returning to a still-connected device: keep it, only re-announce.
+                let isReturn = !resumed
+                resumed = true
+                if isReturn, preferredID == nil, refreshRequest == 0, capture.inputAllowed {
+                    reportConnection(true)
+                    return
                 }
                 reportConnection(false)
                 capture.refresh(platform, preferredID: preferredID)
@@ -74,7 +113,7 @@ struct SessionSimulatorView: View {
             }
             .onDisappear {
                 reportConnection(false)
-                capture.stop()
+                Self.scheduleIdleStop(platform)
             }
     }
 
@@ -89,7 +128,11 @@ struct SessionSimulatorView: View {
                 + "\nSelected bounds (normalized): \(selection)\n"
                 + (diagnostics.selectedElement?.description ?? "Screenshot region; element details unavailable.")
                 + "\nRequested change: \(comment)")
-        return model.attachSimulator(context, image: image, owner: sessionKey)
+        guard model.attachSimulator(context, image: image, owner: sessionKey) else { return false }
+        // Send submits the annotation; if the send is blocked (busy, restoring)
+        // it stays attached in the composer for the user to send.
+        model.send()
+        return true
     }
 
     private func reportConnection(_ connected: Bool) {
@@ -120,25 +163,22 @@ struct SessionSimulatorView: View {
     }
 
     private var devicePicker: some View {
-        Picker(
-            "Device",
+        var options = [("", "Choose device…")]
+        options += capture.devices.map { ($0.id, $0.name + ($0.isRunning ? "" : " — Stopped")) }
+        if !capture.selectedID.isEmpty && !capture.devices.contains(where: { $0.id == capture.selectedID }) {
+            options.append((capture.selectedID, "Selected device unavailable"))
+        }
+        return DockOptionPicker(
             selection: Binding(
                 get: { capture.selectedID },
                 set: { id in
                     consumedCallID = launchRequest?.callID
                     capture.selectDevice(id)
-                })
-        ) {
-            Text("Choose device…").tag("")
-            ForEach(capture.devices) { device in
-                Text(device.name + (device.isRunning ? "" : " — Stopped")).tag(device.id)
-            }
-            if !capture.selectedID.isEmpty && !capture.devices.contains(where: { $0.id == capture.selectedID }) {
-                Text("Selected device unavailable").tag(capture.selectedID)
-            }
-        }
+                }),
+            options: options
+        )
+        .accessibilityLabel("Device")
         .disabled(capture.isStarting)
-        .labelsHidden()
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

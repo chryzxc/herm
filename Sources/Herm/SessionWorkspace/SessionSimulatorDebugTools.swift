@@ -158,12 +158,8 @@ struct SessionSimulatorDebugTools: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Severity").dockFont(.body, weight: .semibold)
-                    Picker("Severity", selection: $severity) {
-                        Text("Errors").tag("errors")
-                        Text("All levels").tag("all")
-                    }
-                    .labelsHidden()
-                    .frame(width: 120)
+                    DockOptionPicker(selection: $severity, options: [("errors", "Errors"), ("all", "All levels")])
+                        .accessibilityLabel("Severity")
                 }
             }
             HStack(spacing: 12) {
