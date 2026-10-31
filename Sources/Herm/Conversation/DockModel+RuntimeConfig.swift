@@ -55,7 +55,7 @@ extension DockModel {
     /// True until the first model-options fetch settles, so the effort label reads
     /// "Loading…" instead of "Unavailable" before the initial request starts.
     var isEffortCatalogPending: Bool {
-        isLoadingRuntimeModelOptions
+        (isLoadingRuntimeModelOptions && effortCatalog == nil)
             || (effortCatalog == nil && runtimeModelOptions.isEmpty && runtimeModelOptionsError == nil)
     }
 
@@ -66,12 +66,14 @@ extension DockModel {
         runtimeModelOptionsError = nil
     }
 
-    func refreshRuntimeModelOptions(sessionID: String? = nil) {
+    /// `keepingCatalog` leaves the current effort catalog visible while the refresh runs, so the
+    /// effort controls do not blink to "Loading…" after a model switch.
+    func refreshRuntimeModelOptions(sessionID: String? = nil, keepingCatalog: Bool = false) {
         runtimeModelOptionsRefreshGeneration += 1
         let generation = runtimeModelOptionsRefreshGeneration
         let resumeGeneration = sessionResumeGeneration
         let profile = sessionID == nil ? profileScopeID : (sessionProfileID ?? profileScopeID)
-        effortCatalog = nil
+        if !keepingCatalog { effortCatalog = nil }
         isLoadingRuntimeModelOptions = true
         runtimeModelOptionsError = nil
         Task { [weak self] in
@@ -151,9 +153,9 @@ extension DockModel {
         }
     }
 
-    func refreshSessionModelOptions() {
+    func refreshSessionModelOptions(keepingCatalog: Bool = false) {
         guard let sessionID, !sessionID.isEmpty else { return }
-        refreshRuntimeModelOptions(sessionID: sessionID)
+        refreshRuntimeModelOptions(sessionID: sessionID, keepingCatalog: keepingCatalog)
     }
 
     func refreshSessionReasoningVariant() {
@@ -277,7 +279,10 @@ extension DockModel {
             Self.sessionRuntimeModelSwitchRequest(
                 option: option, sessionID: sessionID, reasoning: reasoning
             ).parameters)
-        effortCatalog = nil
+        // Show the pick immediately; roll back if Hermes rejects it.
+        let previous = (id: sessionModelOptionID, value: sessionModelValue)
+        sessionModelOptionID = option.id
+        sessionModelValue = option.displayName
         isUpdatingSessionModel = true
         runtimeConfigurationError = nil
 
@@ -301,7 +306,7 @@ extension DockModel {
                     throw QuickDraftError.message(
                         "Hermes has not acknowledged the model change. Refresh before retrying.")
                 }
-                refreshSessionModelOptions()
+                refreshSessionModelOptions(keepingCatalog: true)
                 refreshSessionReasoningVariant()
             } catch {
                 guard self.sessionResumeGeneration == generation, self.sessionID == sessionID,
@@ -310,7 +315,9 @@ extension DockModel {
                 runtimeConfigurationError =
                     "Hermes could not apply the session provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
                 actionErrors.report("Could not change session model", error: error)
-                refreshSessionModelOptions()
+                sessionModelOptionID = previous.id
+                sessionModelValue = previous.value
+                refreshSessionModelOptions(keepingCatalog: true)
             }
 
         }
