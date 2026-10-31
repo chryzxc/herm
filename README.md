@@ -1398,3 +1398,5 @@ Generated HTML previews inherit the selected text size and update without resett
 The model chip shows the provider mark and current thinking effort. Its picker groups models by provider, marks the active model with a check inside a matching circle, offers catalog search, and includes thinking effort and fast controls alongside model selection, with the selected effort marked by a check. The picker stays open while changing models or refreshing the catalog.
 
 Automation opens with a searchable schedule overview; select a schedule to inspect its history, configuration, and run output.
+
+The windowed session list offers Back and Forward buttons (⌘[ and ⌘]) for revisiting recent workspace destinations.

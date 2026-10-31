@@ -323,7 +323,8 @@ struct SessionNavQueue: View {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
                     if let history {
                         historyButton(.caretLeft, "Back", "[", enabled: history.canGoBack, action: history.back)
-                        historyButton(.caretRight, "Forward", "]", enabled: history.canGoForward, action: history.forward)
+                        historyButton(
+                            .caretRight, "Forward", "]", enabled: history.canGoForward, action: history.forward)
                     }
                     Spacer(minLength: 0)
                         .frame(maxHeight: .infinity)
