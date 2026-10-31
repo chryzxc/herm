@@ -3042,7 +3042,7 @@ and selected text as untrusted page context. Reattaching the same page refreshes
 its chip; navigation does not silently change attached context. Async selection
 capture is discarded if the session, page, or tab changes. The action shows pending
 feedback and is disabled on blank pages. Annotation and attachment stay in the
-toolbar at every width; More retains New Agent Tab and console-context actions.
+toolbar at every width; More retains agent tab switching and console-context actions.
 
 The Browser toolbar uses 28pt controls and a compact themed address field. It
 first collapses viewport labels; phone-width
@@ -3090,6 +3090,11 @@ Chrome paints them where the screencast can't see. When Hermes starts browsing o
 shows a page, the inspector expands to the Browser tab; Settings → Browser →
 Use Herm's browser (a switch, on by default) turns that off and sends shown
 pages to the default browser.
+While Hermes drives the page it keeps a 1pt accent frame at 30%. Each Hermes
+click adds an action pulse: a ring grows from the click past the farthest
+corner and the page edge flares with an inward accent glow, then both fade
+(Core Animation, about 1s). Nothing moves between actions; Reduce Motion
+skips the pulse and Take over clears the frame.
 Hermes' `focus_pane` and the `herm_inspector` tool reveal other tabs the same
 way, through the session tab request; they never add a tab the chat can't show.
 

@@ -814,16 +814,16 @@ Review actions group pull-request watching and guide actions in a compact menu. 
 
 The session inspector's **Browser** tab is a real Chromium browser that you and Hermes share, so you can watch it work.
 
-- **Attach browser context.** Click **Attach Page** in the browser toolbar to add the page title, URL, shared Chromium tab ID, and selected text to the session composer. Review or remove the context chip, then type and send your request in chat. Attaching never sends a message or replaces your draft; reattaching the same page refreshes its context. This is a snapshot, so attach again after navigating. More → New Agent Tab opens another shared Chromium tab.
+- **Attach browser context.** Click **Attach Page** in the browser toolbar to add the page title, URL, shared Chromium tab ID, and selected text to the session composer. Review or remove the context chip, then type and send your request in chat. Attaching never sends a message or replaces your draft; reattaching the same page refreshes its context. This is a snapshot, so attach again after navigating.
 - **Hermes browses here.** Herm starts a background Chrome (or Brave, Edge or Chromium) and connects Hermes' browser tools to it. When Hermes uses the browser, the inspector opens on the Browser tab, the page gets an accent frame, a status pill shows its current step, and a "Herm" cursor shows where it moves, clicks and types. Its last observed position stays visible between steps and when reopening the pane; taking over, using the page, or navigating clears it.
 - **Embedded pages.** The cursor also follows observed pointer and focus events in supported embedded frames, including cross-origin frames. Page changes made without a pointer or focus event show browser activity without a fabricated cursor position. When a frame cannot be mapped, its cursor events are omitted while browsing continues.
-- **Hermes can show inspector tabs.** Hermes' `focus_pane` (files, terminal, review) and the `herm_inspector` tool from the `herm` plugin (`integrations/herm`) expand the inspector to the requested tab in that chat.
+- **Hermes can show inspector tabs.** Hermes' `focus_pane` (files, terminal, review) and the `herm_inspector` tool from the `herm` plugin (`Sources/Herm/Resources/HermesPlugins/herm`) expand the inspector to the requested tab in that chat.
 - **Use Herm's browser** (Settings → Browser, on by default) opens pages Hermes shows (`desktop_preview`) in the Browser tab and blocks terminal `open <url>` or `open -a <browser>`, so "open the page" lands in Herm. Off, those pages open in your default browser; Hermes' browser tools still use Herm's browser.
-- **Take over and hand back.** **Take over** pauses Herm so you can handle a login or captcha yourself. **Hand back to Herm** then tells it to continue from that page. While Herm is working, your clicks and typing are ignored so they can't interfere with it.
+- **Take over and hand back.** **Take over** pauses Herm so you can handle a login or captcha yourself. **Hand back to Herm** then tells it to continue from that page. While Herm is working, your clicks and typing are ignored so they can't interfere with it. While Herm is in control the page has a faint accent frame, and each Herm click sends a wave out from its cursor that briefly lights the page edge.
 - **Page dialogs** (alerts, confirmations, prompts, "Leave this page?") appear as a card in the panel, so a page can't stay frozen waiting for an answer. If Hermes answers a dialog itself, the card closes.
 - **Annotate** (cursor icon): click any element, describe the change, and Herm sends the element's selector, styles, HTML and a screenshot to the chat. The popup uses your Herm theme.
 - **One browser per profile.** Each Hermes profile (and bot profile) runs one agent Chrome, matching Hermes' profile-wide browser connection. Its sessions share it and its sign-ins; each session returns to the tab it last showed, and switching sessions doesn't reconnect Hermes. Switching sessions or closing the inspector keeps live pages and form state without reloading. The browser quits once no session of that profile remains open.
-- **Share a sign-in.** Sessions of one Hermes profile share its browser and sign-ins. Other profiles (including bots) stay signed out until you share a site: on that site, More → **Share Sign-In for github.com** signs every profile's browser in, including ones already open, so Hermes can work there. More → **Shared Sign-Ins** lists the sites you share and stops sharing one; running browsers stay signed in until you sign out there. Shared cookies are encrypted at rest with a key kept in your Keychain, and browser profiles are readable only by you; deleting a session forgets its tab. More → **Sign Out of All Sites** signs every profile's browser out, including ones that were closed at the time. Regular web view tabs (when the agent browser is offline) always share one sign-in store.
+- **Share a sign-in.** Sessions of one Hermes profile share its browser and sign-ins. Other profiles (including bots) stay signed out until you share a site: on that site, More → **Share Sign-In for github.com** signs every profile's browser in, including ones already open, so Hermes can work there. More → **Shared Sign-Ins** lists the sites you share and stops sharing one; running browsers stay signed in until you sign out there. Shared cookies are encrypted at rest with a key kept in your Keychain, and browser profiles are readable only by you; deleting a session forgets its tab. More → **Sign Out of All Sites** signs every profile's browser out, including ones that were closed at the time. Regular web view tabs (extra tabs, or the Browser tab while the agent browser is offline) share one sign-in store per Hermes profile, like the agent browser; opening a site in one copies the agent browser's sign-in for that site first, and signing in or out there carries back to the agent browser after the page loads.
 - **Typing and forms.** Dropdowns open as a native menu, the pointer changes over links and text, ⌘C, ⌘X, ⌘V, ⌘A, ⌘Z and ⌘⇧Z work in fields, and accents and input methods (⌥E E → é, Japanese, Chinese) compose in place.
 - **Downloads and permissions.** Files the agent browser downloads go to `~/Downloads/Herm`. Pages are refused location, notifications, camera, microphone, clipboard reading and similar permissions without a prompt.
 - **Links in chat** open their exact destination in that session's Browser, including while the browser is starting. A different URL opens an additional tab without replacing the current page; clicking an already-open exact URL selects its tab. Loaded browser tabs show the webpage name; untitled pages keep the Browser label rather than displaying the URL.
@@ -839,9 +839,9 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 
 Simulator and Emulator tabs show a virtual device's screen live in the session inspector, so you can watch Hermes run your app and step in yourself. Herm streams device pixels and sends input directly; it never mirrors the Simulator.app or emulator window and needs no Screen Recording or Accessibility permission.
 
-- **Hermes launches the device.** Ask "Run this app on the iPhone simulator" or "Open the Android emulator for this project". With the [Herm simulator tool](integrations/herm-simulator/README.md) installed, Hermes picks or boots the right device and the matching tab opens in that session. A banner at the top of the chat shows when the session's device is connected, with **Open tab**. iOS boots without opening Simulator.app; new Android emulators start headless. Turn this off in **Settings → Chat → Simulators → Open simulators in Herm**.
+- **Hermes launches the device.** Ask "Run this app on the iPhone simulator" or "Open the Android emulator for this project". With the [Herm simulator tool](Sources/Herm/Resources/HermesPlugins/herm-simulator/README.md) installed, Hermes picks the right device, booting one if none is running, and the matching tab opens in that session. A banner at the top of the chat shows when the session's device is connected, with **Open tab**. iOS boots without opening Simulator.app; new Android emulators start headless. Turn this off in **Settings → Chat → Simulators → Open simulators in Herm**.
 - **Drive it yourself.** Click to focus, drag to swipe, and type to send keys. Home and Power on both platforms; Back and Recent apps on Android. Open a tab manually from the inspector's **+** menu, pick a running or stopped device, and **Start device** if needed.
-- **Annotate the UI.** Annotate freezes the frame and reads the device's accessibility hierarchy. Click an element or drag a region, write a comment, and **Send** adds the cropped image and the element's label, identifier, role, value, and bounds to the chat draft.
+- **Annotate the UI.** Annotate freezes the frame and reads the device's accessibility hierarchy. Click an element or drag a region, write a comment, and **Send** sends the cropped image and the element's label, identifier, role, value, and bounds to the chat (they stay in the draft if the session is busy).
 - **Screenshots and app logs.** Send a screenshot to chat or copy it. **App logs** reads a recent excerpt for your app (Errors or All levels), lets you edit it, and attaches only the reviewed text. Nothing is sent automatically.
 - **3D preview.** The cube icon shows the live screen on a rotatable device; drag or use the arrow keys to tilt, scroll to zoom, Escape to return.
 - **Closing a tab disconnects only.** The virtual device keeps running.
@@ -1263,9 +1263,10 @@ a valid code-signing certificate listed by `security find-identity -v -p codesig
 Use the same certificate for successive builds. When the variable is unset, the
 debug launcher uses a certificate named `Herm Development` if one exists, otherwise
 the free `Apple Development` certificate Xcode creates under Settings → Accounts →
-Manage Certificates. You can create `Herm Development` in Keychain Access → Certificate Assistant → Create a Certificate
-(Identity Type: Self Signed Root, Certificate Type: Code Signing). This also stops
-repeated Keychain prompts for saved credentials. Signing failures stop the script;
+Manage Certificates. If neither exists, it creates a self-signed `Herm Development`
+certificate in your login keychain on first launch (macOS asks once whether
+codesign may use it; choose Always Allow). This also stops repeated Keychain
+prompts for saved credentials. Signing failures stop the script;
 it never silently falls back from a configured certificate to ad-hoc signing.
 
 Without this variable, builds remain ad-hoc signed and print a warning. Their
@@ -1355,8 +1356,9 @@ weights so this distinction works across skins. Pin labels describe the availabl
 The simulator plugin now supports direct agent navigation through
 `herm_simulator_interact`: capture, inspect, tap, swipe, device buttons, and
 navigation keys against the exact launched device. The existing simulator tab
-shows the device live. Update the [plugin and bridge](integrations/herm-simulator/README.md)
-and start a new Hermes session to expose the tool. Desktop computer use is not required.
+shows the device live. Herm ships the [plugin](Sources/Herm/Resources/HermesPlugins/herm-simulator/README.md)
+and installs or updates it, with the device bridge, when it connects to Hermes Agent on this Mac. Start a
+new Hermes session to expose the tool. Desktop computer use is not required.
 
 Generated HTML defaults inherit the selected skin's font family, light/dark control
 appearance, and motion preference, with font and corner-radius CSS variables for

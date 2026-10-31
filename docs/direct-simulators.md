@@ -60,7 +60,7 @@ the bridge and release held input without shutting down the virtual device.
 
 ```sh
 "$HOME/Library/Application Support/Herm/simulator-bridge/bin/python3" -B Scripts/test-simulator-bridge.py
-python3 -B integrations/herm-simulator/test_plugin.py
+python3 -B Sources/Herm/Resources/HermesPlugins/herm-simulator/test_plugin.py
 swift test --disable-automatic-resolution --no-parallel --filter SessionSimulatorTests
 make guard
 ```
@@ -160,8 +160,9 @@ hardware buttons, or navigation keys. Every successful action returns a fresh
 capture for verification. The connected simulator tab shows that same device
 live. Desktop `computer_use` is a separate capability and is not required.
 
-Run the setup script again to copy the agent bridge resources, update the
-plugin from `integrations/herm-simulator`, and use a new Hermes session to load
-the added tool. Neither setup nor the code change restarts Herm or Hermes.
+Herm bundles the plugin and, on connecting to a local Hermes Agent, installs it
+through `plugins.manage install` when its version differs, then prepares the
+bridge environment and resources. Bump `plugin.yaml`'s version to ship a plugin
+change. Use a new Hermes session to load an added tool. Neither setup nor the code change restarts Herm or Hermes.
 Input delivery is not a verified UI outcome; the agent must capture again after
 an ambiguous failure before retrying. Concurrent manual input should be avoided.
