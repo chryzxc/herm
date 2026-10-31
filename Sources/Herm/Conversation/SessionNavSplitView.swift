@@ -205,7 +205,11 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
                 .disabled(isTrailingCollapsed).accessibilityHidden(isTrailingCollapsed)
                 .overlay(alignment: .leading) {
                     // The collapsed leading pane leaves the rail's rule adjacent; don't double it.
-                    if !isLeadingCollapsed { Color.dockBorder.frame(width: DockLayout.hairline) }
+                    if !isLeadingCollapsed {
+                        // Starts below the shell's title row so the rule never cuts the frame.
+                        Color.dockBorder.frame(width: DockLayout.hairline)
+                            .padding(.top, context.environment.dockShellToolbarHeight)
+                    }
                 }
         )
         context.coordinator.leadingWidth = leadingWidth
