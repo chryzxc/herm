@@ -1400,3 +1400,5 @@ The model chip shows the provider mark and current thinking effort. Its picker g
 Automation opens with a searchable schedule overview; select a schedule to inspect its history, configuration, and run output.
 
 The windowed session list offers Back and Forward buttons (⌘[ and ⌘]) for revisiting recent workspace destinations.
+
+History controls follow the visible page header, including collapsed lists. Model switches keep effort choices visible while refreshing and restore the previous model if Hermes rejects the change. Group chats use the conversation's reading width, and automation delivery choices show bot avatars where available.

@@ -3947,3 +3947,5 @@ The model chip shows the current thinking effort beside the model name. The pick
 ### Automation overview
 
 Automation starts with a full-width searchable schedule list. Selecting a schedule opens its details and history; All automations returns to the list. Run output opens on request, keeping the overview and details focused.
+
+Shared history buttons inherit their actions from the window shell; keyboard shortcuts are registered once per window. Shell dividers begin below the title row. Modal headers show their title, subtitle, close control, and optional identity badge. Group-chat transcripts and composers use the same reading widths as regular conversations; thread chips reveal longer titles on hover and respect Reduce Motion.
