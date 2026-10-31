@@ -117,6 +117,7 @@ struct AutomationWorkspaceRowPresentation: Equatable {
 struct AutomationWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
     var bots: [BotSummary] = []
+    var avatarImages: [String: Data] = [:]
 
     @State private var selectedJobID: String?
     @State private var selectedRunID: String?
@@ -215,7 +216,7 @@ struct AutomationWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .dockSheet(isPresented: $isShowingCreationSheet) {
-            AutomationCreationSheet(control: control, bots: bots) { id in
+            AutomationCreationSheet(control: control, bots: bots, avatarImages: avatarImages) { id in
                 pendingCreatedJobID = id
                 selectedJobID = id
                 showingOverview = false
@@ -1244,6 +1245,7 @@ extension String {
 private struct AutomationCreationSheet: View {
     @ObservedObject var control: ControlCenterModel
     let bots: [BotSummary]
+    let avatarImages: [String: Data]
     let onSuccess: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -1468,6 +1470,13 @@ private struct AutomationCreationSheet: View {
             set: { value.wrappedValue = format.string(from: $0) })
     }
 
+    /// Bot Chat targets are named "Bot Chat (<profile>)"; other destinations have no Bot.
+    private func bot(for target: CronDeliveryTarget) -> BotSummary? {
+        guard target.name.hasPrefix("Bot Chat (") else { return nil }
+        let profile = target.name.dropFirst("Bot Chat (".count).dropLast()
+        return bots.first { $0.id == profile }
+    }
+
     private func deliveryChecklist(selected: CronConfigurationDraft, onToggle: @escaping (String, Bool) -> Void)
         -> some View
     {
@@ -1483,10 +1492,16 @@ private struct AutomationCreationSheet: View {
         return VStack(alignment: .leading, spacing: 8) {
             ForEach(options) { target in
                 Toggle(
-                    target.title,
                     isOn: Binding(
                         get: { selected.deliveryTargets.contains(target.id) }, set: { onToggle(target.id, $0) })
-                ).toggleStyle(.dockCheckbox)
+                ) {
+                    HStack(spacing: 8) {
+                        if let bot = bot(for: target) {
+                            BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 20, animated: false)
+                        }
+                        Text(target.title)
+                    }
+                }.toggleStyle(.dockCheckbox)
             }
         }
     }

@@ -21,7 +21,8 @@ extension WorkspaceActivitySidebar {
             } else if selectedMode == .officePreview {
                 officePreviewContent
             } else if selectedMode == .automations {
-                AutomationWorkspaceView(control: control, bots: botMode.visibleBots)
+                AutomationWorkspaceView(
+                    control: control, bots: botMode.visibleBots, avatarImages: botMode.avatarImages)
             } else if selectedMode == .usage {
                 activityContent
             } else if selectedMode == .calendar {
