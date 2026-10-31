@@ -71,9 +71,6 @@ struct IssueRowView: View {
                     fallback: isSelected
                         ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
         )
-        .overlay(alignment: .leading) {
-            if isSelected { Capsule().fill(Color.dockAccent).frame(width: 3).dockPadding(.vertical, 12) }
-        }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
     }

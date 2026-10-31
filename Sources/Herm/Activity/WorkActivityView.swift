@@ -97,7 +97,6 @@ struct WorkActivityView: View {
                 )
             }
         }
-        .dockPadding(.top, 4)
         // Centered like the other monitoring pages, so wide windows don't stretch the cells.
         .frame(maxWidth: 1480, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -261,6 +260,7 @@ struct WorkActivityView: View {
             }
         }
         .frame(minHeight: DockControlMetrics.hitTarget)
+        .dockPadding(.bottom, 16)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 

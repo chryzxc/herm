@@ -56,7 +56,7 @@ struct OfficePreviewView: View {
         VStack(alignment: .leading, spacing: 0) {
             DockPageHeader(
                 title: "Office", subtitle: subtitle,
-                onRefresh: onRefresh, isRefreshing: isRefreshing)
+                onRefresh: onRefresh, isRefreshing: isRefreshing, windowBottomPadding: 0)
 
             GeometryReader { geometry in
                 ZStack {
@@ -102,7 +102,7 @@ struct OfficePreviewView: View {
                     OfficeCrewStatusBar(counts: statusCounts, onSelect: focusNext(in:))
                 }
                 .scrollIndicators(.hidden)
-                .frame(height: 50)
+                .frame(height: 34)
                 .frame(maxWidth: max(0, size.width - (selection == nil ? 24 : 376)), alignment: .leading)
                 .opacity(compact && selection != nil ? 0 : 1)
                 .allowsHitTesting(!compact || selection == nil)
@@ -113,7 +113,7 @@ struct OfficePreviewView: View {
                         selectedID: selectedAgentID, onSelect: { focus($0) }
                     )
                     .frame(width: 244)
-                    .frame(maxHeight: max(0, panelHeight - 58), alignment: .top)
+                    .frame(maxHeight: max(0, panelHeight - 42), alignment: .top)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
@@ -279,7 +279,7 @@ private struct OfficeCrewStatusBar: View {
                     .accessibilityLabel("\(status.label): \(count) bots")
                 }
             }
-            .dockButtonSize(.accessible)
+            .dockButtonSize(.compact)
             .dockPadding(3)
         }
         .fixedSize()
