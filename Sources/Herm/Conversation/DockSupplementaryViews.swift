@@ -405,7 +405,7 @@ struct KanbanMutationEditor: View {
     }
 
     var body: some View {
-        DockModal(icon: .kanban, title: request.kind.title, subtitle: request.task.title, width: 440) {
+        DockModal(title: request.kind.title, subtitle: request.task.title, width: 440) {
             TextField(placeholder, text: $value, axis: .vertical)
                 .lineLimit(2...5)
                 .textFieldStyle(.dockGlass)
@@ -500,7 +500,7 @@ struct CronEditEditor: View {
     }
 
     var body: some View {
-        DockModal(icon: .clock, title: "Edit automation", subtitle: job.name, width: 560) {
+        DockModal(title: "Edit automation", subtitle: job.name, width: 560) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if isLoading {
@@ -593,7 +593,6 @@ struct CronReportDetailSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .fileText,
             title: job.name,
             subtitle: "\(CronScheduleFormatting.humanReadable(job.schedule))  ·  \(job.id)",
             width: nil,
@@ -738,7 +737,7 @@ struct DockActionPalette: View {
 
     var body: some View {
         DockModal(
-            icon: .command, title: "Command Center", subtitle: "Search actions  ·  ⌘K", width: 480, contentPadding: 16
+            title: "Command Center", subtitle: "Search actions  ·  ⌘K", width: 480, contentPadding: 16
         ) {
             DockTextField("Search actions", text: $query)
                 .textFieldStyle(.dockGlass)

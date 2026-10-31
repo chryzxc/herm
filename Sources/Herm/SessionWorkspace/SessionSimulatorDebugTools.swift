@@ -145,7 +145,7 @@ struct SessionSimulatorDebugTools: View {
 
     private var logSheet: some View {
         DockModal(
-            icon: .bugBeetle, title: "App logs",
+            title: "App logs",
             subtitle: "Review an excerpt and attach it to this chat.", width: 520
         ) {
             HStack(alignment: .bottom, spacing: 12) {

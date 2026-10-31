@@ -1300,7 +1300,7 @@ private struct AutomationCreationSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .magicWand, title: "New automation",
+            title: "New automation",
             subtitle: "Schedule a prompt to run on a cron expression and deliver the results.", width: 560
         ) {
             ScrollView {

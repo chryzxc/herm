@@ -60,7 +60,6 @@ struct AddPoolAccountSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .plus,
             title: accountAdded ? "Account added" : "Add pool account",
             subtitle: "Connect another account to a Hermes provider pool."
         ) {

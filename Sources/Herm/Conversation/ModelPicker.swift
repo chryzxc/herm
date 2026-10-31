@@ -409,7 +409,7 @@ private struct ModelPickerEditorView: View {
 
     var body: some View {
         DockModal(
-            icon: .cpu, title: "Available Models",
+            title: "Available Models",
             subtitle: "Choose which Hermes models appear in the picker.",
             width: 440, contentPadding: 0
         ) {

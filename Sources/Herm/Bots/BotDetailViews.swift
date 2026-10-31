@@ -635,7 +635,7 @@ struct BotDuplicateSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .copy, title: "Duplicate \(bot.name)",
+            title: "Duplicate \(bot.name)",
             subtitle: "Clones config, skills, SOUL, and memory into a new profile.", width: 400
         ) {
             labeledField("New profile name", hint: "Lowercase letters, numbers, dashes, or underscores") {
@@ -676,7 +676,7 @@ struct BotRoutineFormSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .calendarBlank, title: "New Routine", subtitle: "Recurring work a Bot runs on a schedule.", width: 440
+            title: "New Routine", subtitle: "Recurring work a Bot runs on a schedule.", width: 440
         ) {
             modalSection("ASSIGNMENT") {
                 labeledField("Bot", hint: "The profile that owns this routine") {

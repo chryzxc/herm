@@ -589,7 +589,7 @@ struct BotCreationSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .ghost, title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.",
+            title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.",
             width: 420
         ) {
             modalSection("IDENTITY") {
@@ -676,7 +676,7 @@ private struct BotActivityHistorySheet: View {
 
     var body: some View {
         DockModal(
-            icon: .clockCounterClockwise, title: "\(bot.name) activity", subtitle: "Work Herm dispatched to this Bot",
+            title: "\(bot.name) activity", subtitle: "Work Herm dispatched to this Bot",
             width: nil, contentPadding: 0
         ) {
             if records.isEmpty {

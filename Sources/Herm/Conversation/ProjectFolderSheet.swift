@@ -19,7 +19,7 @@ struct ProjectFolderSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .folderPlus, title: "New Project",
+            title: "New Project",
             subtitle: "Name your project and optionally choose a source folder.",
             width: 440
         ) {

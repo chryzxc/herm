@@ -318,7 +318,7 @@ extension WorkspaceActivitySidebar {
 
     var automationComposer: some View {
         DockModal(
-            icon: .magicWand, title: "New Automation", subtitle: "Set the intent once; Hermes will keep the cadence.",
+            title: "New Automation", subtitle: "Set the intent once; Hermes will keep the cadence.",
             width: 520
         ) {
             HStack(alignment: .top, spacing: 10) {

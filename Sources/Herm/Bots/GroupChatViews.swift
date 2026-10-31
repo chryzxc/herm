@@ -182,7 +182,6 @@ struct NewGroupChatSheet: View {
 
     var body: some View {
         DockModal(
-            icon: .users,
             title: mode == .create ? "New Group Chat" : "Share a Bot",
             subtitle: mode == .create
                 ? "Bring several Bots into one conversation." : "Answer another Mac's request with one of your Bots.",

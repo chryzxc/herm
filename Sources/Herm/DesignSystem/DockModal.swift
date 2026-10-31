@@ -1,11 +1,10 @@
 import SwiftUI
 
 /// The single sheet chrome for every custom modal: a header with an optional
-/// icon tile, title, subtitle, and close button; a padded body; and a tinted
+/// badge, title, subtitle, and close button; a padded body; and a tinted
 /// footer bar for actions. Sheets supply only their content and actions so
 /// spacing, background, and button treatments never drift between modals.
 struct DockModal<Content: View, Footer: View>: View {
-    let icon: Ph?
     let badge: AnyView?
     let title: String
     let subtitle: String?
@@ -19,7 +18,6 @@ struct DockModal<Content: View, Footer: View>: View {
     @Environment(\.isEnabled) private var isEnabled
 
     init(
-        icon: Ph? = nil,
         badge: AnyView? = nil,
         title: String,
         subtitle: String? = nil,
@@ -28,7 +26,6 @@ struct DockModal<Content: View, Footer: View>: View {
         @ViewBuilder content: () -> Content,
         @ViewBuilder footer: () -> Footer
     ) {
-        self.icon = icon
         self.badge = badge
         self.title = title
         self.subtitle = subtitle
@@ -66,15 +63,6 @@ struct DockModal<Content: View, Footer: View>: View {
         HStack(alignment: .center, spacing: 12) {
             if let badge {
                 badge
-            } else if let icon {
-                DockIcon(icon)
-                    .dockFont(size: 15, weight: .semibold)
-                    .foregroundStyle(Color.dockAccent)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .fill(Color.dockAccent.opacity(0.14))
-                    )
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -109,7 +97,6 @@ struct DockModal<Content: View, Footer: View>: View {
 
 extension DockModal where Footer == EmptyView {
     init(
-        icon: Ph? = nil,
         badge: AnyView? = nil,
         title: String,
         subtitle: String? = nil,
@@ -118,7 +105,7 @@ extension DockModal where Footer == EmptyView {
         @ViewBuilder content: () -> Content
     ) {
         self.init(
-            icon: icon, badge: badge, title: title, subtitle: subtitle, width: width, contentPadding: contentPadding,
+            badge: badge, title: title, subtitle: subtitle, width: width, contentPadding: contentPadding,
             content: content
         ) { EmptyView() }
     }
