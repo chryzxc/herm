@@ -46,7 +46,7 @@ struct ComposerEffortControls: View {
             selection: selection, choices: model.effortCatalog?.choices(for: modelID),
             wire: model.sessionID == nil ? nil : model.sessionReasoningWire,
             pending: model.isUpdatingSessionModel || model.isUpdatingSessionReasoning,
-            loading: model.isLoadingRuntimeModelOptions, stale: model.sessionReasoningStale)
+            loading: model.isEffortCatalogPending, stale: model.sessionReasoningStale)
     }
 
     private var fastBinding: Binding<Bool> {
@@ -121,7 +121,7 @@ struct ComposerEffortPicker<Label: View>: View {
             selection: selection, choices: model.effortCatalog?.choices(for: modelID),
             wire: model.sessionID == nil ? nil : model.sessionReasoningWire,
             pending: model.isUpdatingSessionModel || model.isUpdatingSessionReasoning,
-            loading: model.isLoadingRuntimeModelOptions, stale: model.sessionReasoningStale)
+            loading: model.isEffortCatalogPending, stale: model.sessionReasoningStale)
     }
 
     var body: some View {

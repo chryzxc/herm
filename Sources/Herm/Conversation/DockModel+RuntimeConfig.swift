@@ -52,6 +52,13 @@ extension DockModel {
         case malformedResponse
     }
 
+    /// True until the first model-options fetch settles, so the effort label reads
+    /// "Loading…" instead of "Unavailable" before the initial request starts.
+    var isEffortCatalogPending: Bool {
+        isLoadingRuntimeModelOptions
+            || (effortCatalog == nil && runtimeModelOptions.isEmpty && runtimeModelOptionsError == nil)
+    }
+
     func invalidateRuntimeModelOptionsRefresh() {
         runtimeModelOptionsRefreshGeneration &+= 1
         effortCatalog = nil

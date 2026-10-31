@@ -147,7 +147,7 @@ struct ModelPickerView: View {
             selection: effortSelection.wrappedValue, choices: effortModel.effortCatalog?.choices(for: selectedID),
             wire: effortModel.sessionID == nil ? nil : effortModel.sessionReasoningWire,
             pending: effortModel.isUpdatingSessionModel || effortModel.isUpdatingSessionReasoning,
-            loading: effortModel.isLoadingRuntimeModelOptions, stale: effortModel.sessionReasoningStale
+            loading: effortModel.isEffortCatalogPending, stale: effortModel.sessionReasoningStale
         ).status
     }
 
