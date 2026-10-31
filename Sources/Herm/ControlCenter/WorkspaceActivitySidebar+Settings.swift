@@ -1078,8 +1078,6 @@ extension WorkspaceActivitySidebar {
                     themeOption(option)
                 }
             }
-            .disabled(notchSide == .top)
-            .opacity(notchSide == .top ? 0.5 : 1)
             if !control.appearanceProjectionAvailable {
                 SettingsInlineNotice(
                     text: "Hermes skin status unavailable. Refresh Settings to retry.", tint: Color.dockWarning)
