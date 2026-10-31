@@ -24,19 +24,35 @@ struct SessionRailSummary: Equatable {
     var contextFiles: [SessionContextFile] = []
     /// Hermes background processes this session started (`process.list`), newest output last.
     var processes: [ProcessSummary] = []
+    /// Workers this session delegated, live and finished, newest first.
+    var subagents: [HermesSubagent] = []
+    /// `rollback.list` checkpoints for this session's workspace, newest first.
+    var checkpoints: [RestoreCheckpoint] = []
+    var isRestoringCheckpoint = false
 
     var isEmpty: Bool {
         attention.isEmpty && plan == nil && outputs.isEmpty && outputsError == nil
             && pins.isEmpty && pinsError == nil && workspace == nil && contextFiles.isEmpty && processes.isEmpty
+            && subagents.isEmpty && checkpoints.isEmpty
     }
 
     var runningProcessCount: Int { processes.count { $0.state == "running" } }
+    var runningSubagentCount: Int { subagents.count { AgentActivityPresentation.isActiveStatus($0.status) } }
+
+    /// Live rows override their history copy; nested workers stay listed under the same session.
+    static func subagents(history: [HermesSubagent], live: [HermesSubagent]) -> [HermesSubagent] {
+        var byID: [String: HermesSubagent] = [:]
+        for agent in history + live { byID[agent.id] = agent }
+        return byID.values.sorted {
+            ($0.startedAt ?? .distantPast, $0.id) > ($1.startedAt ?? .distantPast, $1.id)
+        }
+    }
 
     @MainActor
     static func make(
         model: DockModel, repositoryPath: String?, repository: RepositorySnapshot,
         outputs: [ArtifactRecord], outputsError: String?, contextFiles: [SessionContextFile] = [],
-        processes: [ProcessSummary] = []
+        processes: [ProcessSummary] = [], checkpoints: [RestoreCheckpoint] = []
     ) -> Self {
         guard let sessionID = model.navigationSessionID, !model.isRestoringSession else { return Self() }
         let ids = model.currentSessionIDs
@@ -61,6 +77,9 @@ struct SessionRailSummary: Equatable {
         summary.outputsError = outputsError
         summary.contextFiles = contextFiles
         summary.processes = processes
+        // Displayed history settles stale non-terminal rows so the rail never shows a ghost "Running".
+        summary.subagents = subagents(history: model.displayedSubagents, live: model.activeSubagents)
+        summary.checkpoints = checkpoints.filter { ids.contains($0.sessionID) }
         summary.pins = model.pinnedMessages
         // Unsupported pins should not advertise a rail section on older runtimes.
         summary.pinsError = model.pinnedMessages.isEmpty ? nil : model.messagePinError

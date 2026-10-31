@@ -132,6 +132,7 @@ struct SessionPullRequestRail: View {
     let onViewPullRequest: (GitHubItemReference) async -> Bool
     let onRefreshChanges: () async -> Void
     let onViewAllOutputs: () -> Void
+    let onViewTimeline: () -> Void
     let onRespondInChat: () -> Void
     let onViewPin: (PinnedMessage) async -> Bool
     @StateObject private var rail = SessionPullRequestRailModel()
@@ -142,17 +143,20 @@ struct SessionPullRequestRail: View {
     @State private var contextFiles: (sessionID: String, files: [SessionContextFile])?
     @State private var lineSummary: RepositoryChangeLineSummary?
     @State private var lineSnapshot: RepositoryChangeSnapshot?
+    @State private var checkpointForRestore: RestoreCheckpoint?
 
     private var changes: SessionRailChangeSummary? {
         .make(path: repositoryPath, repository: workflow.repository, changes: workflow.changes)
     }
 
     private var summary: SessionRailSummary {
-        .make(
+        var summary = SessionRailSummary.make(
             model: model, repositoryPath: repositoryPath, repository: workflow.repository,
             outputs: outputs.records, outputsError: outputs.error,
             contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [],
-            processes: control.processes)
+            processes: control.processes, checkpoints: control.restoreCheckpoints)
+        summary.isRestoringCheckpoint = control.restoreCheckpointState.isPending
+        return summary
     }
 
     var body: some View {
@@ -168,7 +172,8 @@ struct SessionPullRequestRail: View {
                 onViewAllChanges: onViewAllChanges, onViewPullRequest: onViewPullRequest,
                 summary: summary, onViewAllOutputs: onViewAllOutputs,
                 onOpenOutput: { SessionMessageTabs.shared.open(.output($0), in: WorkspaceIdentity.session(model)) },
-                onRespondInChat: onRespondInChat, onViewPin: onViewPin
+                onRespondInChat: onRespondInChat, onViewPin: onViewPin, onViewTimeline: onViewTimeline,
+                onRestoreCheckpoint: { checkpointForRestore = $0 }
             )
             .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
             .dockPadding(16)
@@ -196,6 +201,7 @@ struct SessionPullRequestRail: View {
                 title: model.currentSessionTitle ?? "Session", preview: "", startedAt: nil,
                 updatedAt: model.messages.last?.timestamp, messageCount: model.messages.count,
                 source: HermesFeatureIDs.sessionSource)
+            control.refreshCheckpoints(sessionID: id)
             async let pins: Void = model.refreshMessagePins()
             async let context = model.fetchSessionContextDetails()
             await outputs.refresh(session: session) {
@@ -215,6 +221,28 @@ struct SessionPullRequestRail: View {
             guard !Task.isCancelled else { return }
             lineSummary = lines
             lineSnapshot = snapshot
+        }
+        .confirmationDialog(
+            "Restore Session Checkpoint?",
+            // The rail only begins a restore on confirm, so dismissing has nothing to cancel.
+            isPresented: Binding(get: { checkpointForRestore != nil }, set: { if !$0 { checkpointForRestore = nil } })
+        ) {
+            if let checkpoint = checkpointForRestore {
+                Button("Restore Checkpoint", role: .destructive) {
+                    checkpointForRestore = nil
+                    Task {
+                        guard await control.restoreCheckpoint(checkpoint) else { return }
+                        // Hermes rewinds the transcript along with the files; reload it.
+                        await model.refreshCurrentSession()
+                        refreshID = UUID()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { checkpointForRestore = nil }
+        } message: {
+            Text(
+                "Hermes will restore this workspace’s files to this checkpoint and rewind the latest turn. Your own edits are kept."
+            )
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Session rail")
@@ -240,6 +268,8 @@ struct SessionRailCard: View {
     var onOpenOutput: (ArtifactRecord) -> Void = { _ in }
     var onRespondInChat: () -> Void = {}
     var onViewPin: (PinnedMessage) async -> Bool = { _ in false }
+    var onViewTimeline: () -> Void = {}
+    var onRestoreCheckpoint: (RestoreCheckpoint) -> Void = { _ in }
     @State private var expandedChanges = false
 
     var body: some View {
@@ -263,7 +293,8 @@ struct SessionRailCard: View {
             }
             SessionRailSummarySections(
                 summary: summary, onViewAllOutputs: onViewAllOutputs, onOpenOutput: onOpenOutput,
-                onRespondInChat: onRespondInChat, onViewPin: onViewPin)
+                onRespondInChat: onRespondInChat, onViewPin: onViewPin, onViewTimeline: onViewTimeline,
+                onRestoreCheckpoint: onRestoreCheckpoint)
             if let changes {
                 DisclosureGroup(isExpanded: $expandedChanges) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -290,9 +321,6 @@ struct SessionRailCard: View {
                     .dockFont(.body).foregroundStyle(Color.dockWarning)
             }
             if !references.isEmpty {
-                if changes != nil || changesUnavailable {
-                    Color.dockBorderLight.frame(height: DockLayout.hairline)
-                }
                 SessionRailSummarySection(title: "Pull requests", icon: .gitPullRequest, count: references.count) {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(references) { reference in

@@ -6,6 +6,8 @@ struct SessionRailSummarySections: View {
     let onOpenOutput: (ArtifactRecord) -> Void
     let onRespondInChat: () -> Void
     let onViewPin: (PinnedMessage) async -> Bool
+    var onViewTimeline: () -> Void = {}
+    var onRestoreCheckpoint: (RestoreCheckpoint) -> Void = { _ in }
 
     var body: some View {
         if !summary.attention.isEmpty {
@@ -39,6 +41,39 @@ struct SessionRailSummarySections: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(summary.processes) { process in
                         SessionRailProcessRow(process: process)
+                    }
+                }
+            }
+        }
+        if !summary.subagents.isEmpty {
+            let running = summary.runningSubagentCount
+            SessionRailSummarySection(
+                title: "Subagents", icon: .usersThree, count: summary.subagents.count,
+                detail: running > 0 ? "\(running) running" : nil,
+                subtitle: summary.subagents.lazy.compactMap(SessionRailSubagentRow.activity).first
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(summary.subagents) { agent in
+                        SessionRailSubagentRow(agent: agent)
+                    }
+                }
+            } footer: {
+                Button("View in timeline", action: onViewTimeline).buttonStyle(.dockLink)
+            }
+        }
+        if !summary.checkpoints.isEmpty {
+            SessionRailSummarySection(
+                title: "Checkpoints", icon: .clockCounterClockwise, count: summary.checkpoints.count,
+                subtitle: summary.checkpoints.first.flatMap(SessionRailCheckpointRow.relativeTime).map {
+                    "Latest \($0)"
+                }
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(summary.checkpoints) { checkpoint in
+                        SessionRailCheckpointRow(
+                            checkpoint: checkpoint,
+                            canRestore: !summary.isWorking && !summary.isRestoringCheckpoint,
+                            onRestore: { onRestoreCheckpoint(checkpoint) })
                     }
                 }
             }
@@ -238,21 +273,116 @@ private struct SessionRailProcessRow: View {
     let process: ProcessSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .top, spacing: 8) {
-                Text(process.name).lineLimit(1).truncationMode(.middle)
-                    .dockFont(.metadata, design: .monospaced)
-                Spacer(minLength: 0)
-                Text(process.state.capitalized).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                    .fixedSize()
+        HStack(alignment: .top, spacing: 8) {
+            Group {
+                if process.state == "running" {
+                    DockStatusDot(tone: .working, size: 7, pulses: true)
+                } else {
+                    // An exit is not a success claim; stopped and exited stay neutral.
+                    DockIcon(
+                        process.state == "killed" ? .minusCircle : .checkCircle, size: 14, color: .dockMetadataText)
+                }
             }
-            if let latest = process.latestOutput {
-                Text(latest).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
-                    .textSelection(.enabled)
+            .frame(width: 14, height: 14).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(process.name).lineLimit(1).truncationMode(.middle).dockFont(.body, design: .monospaced)
+                if process.state == "running", let latest = process.latestOutput {
+                    Text(latest).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                        .textSelection(.enabled)
+                }
             }
+            Spacer(minLength: 0)
+            Text(process.state.capitalized).foregroundStyle(Color.dockMetadataText).fixedSize()
         }
         .help(process.detail ?? process.name)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SessionRailSubagentRow: View {
+    let agent: HermesSubagent
+
+    private var isActive: Bool { AgentActivityPresentation.isActiveStatus(agent.status) }
+    private var failed: Bool {
+        let status = agent.status.lowercased()
+        return status.contains("fail") || status.contains("error")
+    }
+    private var finished: Bool { ["complete", "completed", "done"].contains(agent.status.lowercased()) }
+
+    /// Live progress only; raw tool payloads and compaction handoffs are not progress.
+    static func activity(_ agent: HermesSubagent) -> String? {
+        guard AgentActivityPresentation.isActiveStatus(agent.status),
+            let text = agent.latestActivity?.trimmingCharacters(in: .whitespacesAndNewlines),
+            let first = text.first, first != "{", first != "["
+        else { return nil }
+        return SessionTraceProjection.taskTitle(text)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Group {
+                if isActive {
+                    DockStatusDot(tone: .working, size: 7, pulses: true)
+                } else {
+                    DockIcon(
+                        failed ? .warningCircle : finished ? .checkCircle : .minusCircle, size: 14,
+                        color: failed ? .dockWarning : finished ? .dockSuccess : .dockMetadataText)
+                }
+            }
+            .frame(width: 14, height: 14).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(agent.name ?? agent.role ?? SessionTraceProjection.taskTitle(agent.goal))
+                    .lineLimit(1).truncationMode(.tail)
+                if let activity = Self.activity(agent) {
+                    Text(activity).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            Group {
+                if finished, let duration = agent.durationSeconds, duration.isFinite, duration >= 0 {
+                    Text(TurnActivityView.stepDuration(duration))
+                } else if !finished {
+                    Text(agent.status.replacingOccurrences(of: "_", with: " ").capitalized)
+                }
+            }
+            .foregroundStyle(failed ? Color.dockWarning : Color.dockMetadataText).monospacedDigit().fixedSize()
+        }
+        .padding(.leading, CGFloat(min(agent.depth, 3)) * 12)
+        .help(agent.goal)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SessionRailCheckpointRow: View {
+    let checkpoint: RestoreCheckpoint
+    let canRestore: Bool
+    let onRestore: () -> Void
+
+    private static let iso8601 = ISO8601DateFormatter()
+
+    /// Hermes stamps checkpoints with git's strict ISO-8601 author date.
+    static func relativeTime(_ checkpoint: RestoreCheckpoint) -> String? {
+        iso8601.date(from: checkpoint.timestamp)?.formatted(.relative(presentation: .named))
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            DockIcon(.gitCommit, size: 14, color: .dockMetadataText).frame(width: 14, height: 14)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(checkpoint.message.isEmpty ? String(checkpoint.hash.prefix(7)) : checkpoint.message)
+                    .lineLimit(1).truncationMode(.tail).help(checkpoint.hash)
+                if let time = Self.relativeTime(checkpoint) {
+                    Text(time).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                }
+            }
+            Spacer(minLength: 0)
+            Button("Restore…", action: onRestore).buttonStyle(.dockLink).dockFont(.metadata).disabled(!canRestore)
+                .help(
+                    canRestore
+                        ? "Restore files and rewind the chat to this checkpoint"
+                        : "Wait for the turn to finish")
+        }
     }
 }
 

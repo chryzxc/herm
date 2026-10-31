@@ -231,4 +231,32 @@ struct SessionRailSummaryTests {
         await delayed.value
         #expect(outputs.records.map(\.sessionID) == ["next"])
     }
+
+    @Test func subagentsMergeLiveOverHistoryNewestFirst() {
+        let old = HermesSubagent(
+            id: "a", goal: "Audit", status: "completed", startedAt: .init(timeIntervalSince1970: 1))
+        let stale = HermesSubagent(
+            id: "b", goal: "Build", status: "running", startedAt: .init(timeIntervalSince1970: 2))
+        let live = HermesSubagent(id: "b", goal: "Build", status: "failed", startedAt: .init(timeIntervalSince1970: 2))
+        let model = model()
+        model.sessionAgents = [old, stale]
+        model.activeSubagents = [live]
+        let summary = SessionRailSummary.make(
+            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+        #expect(summary.subagents.map(\.id) == ["b", "a"])
+        #expect(summary.subagents.first?.status == "failed")
+        #expect(summary.runningSubagentCount == 0)
+        #expect(!summary.isEmpty)
+    }
+
+    @Test func checkpointsFromAnotherSessionAreDropped() {
+        let checkpoints = [
+            RestoreCheckpoint(sessionID: "session", hash: "abc")!,
+            RestoreCheckpoint(sessionID: "other", hash: "def")!,
+        ]
+        let summary = SessionRailSummary.make(
+            model: model(), repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil,
+            checkpoints: checkpoints)
+        #expect(summary.checkpoints.map(\.hash) == ["abc"])
+    }
 }

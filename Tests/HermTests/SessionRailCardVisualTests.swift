@@ -83,8 +83,9 @@ struct SessionRailCardVisualTests {
         #expect(heights.contains { $0 >= 279 })
         #expect(
             elements(host).contains {
-                $0.accessibilityRole?() == .staticText
-                    && String(describing: $0.accessibilityValue?() ?? "").contains("complete ending")
+                // The pin's full preview is its button label, not a duplicate text row.
+                $0.accessibilityRole?() == .button
+                    && (($0.accessibilityTitle?() ?? "") + ($0.accessibilityLabel?() ?? "")).contains("complete ending")
             })
         try await press("rail-preview.md")
         #expect(navigations == ["output"])
