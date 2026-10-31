@@ -849,6 +849,9 @@ extension DockModel {
             return true
         } catch {
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+            if effortCatalog == nil, !isLoadingRuntimeModelOptions {
+                runtimeModelOptionsError = "Hermes could not load its model catalog."
+            }
             sessionProjectionState = Self.failedOrStale(
                 sessionProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
             if reportFailure, !isRefreshingActiveSession {
@@ -880,8 +883,9 @@ extension DockModel {
         }
         stopVoiceConversation()
         saveComposerDraft()
-        invalidateRuntimeModelOptionsRefresh()
         sessionResumeGeneration &+= 1
+        // A new chat has no session catalog; reload the global one or effort stays unavailable.
+        refreshRuntimeModelOptions()
         resetEffortTransition()
         restoreGeneration &+= 1
         interruptGeneration &+= 1

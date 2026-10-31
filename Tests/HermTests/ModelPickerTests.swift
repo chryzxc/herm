@@ -248,7 +248,7 @@ struct ModelPickerTests {
 
     @Test
     @MainActor
-    func switchingToNewChatInvalidatesPendingModelRefresh() async {
+    func switchingToNewChatReplacesPendingSessionRefreshWithGlobalCatalog() async {
         let client = ModelPickerRefreshRPCClient()
         let model = DockModel(initialSessionID: "session-old", rpcClient: client)
 
@@ -256,13 +256,20 @@ struct ModelPickerTests {
         while client.requests.isEmpty { await Task.yield() }
 
         model.newChat()
-        #expect(model.isLoadingRuntimeModelOptions == false)
+        #expect(model.isLoadingRuntimeModelOptions)
         #expect(model.runtimeModelOptionsError == nil)
+        while client.requests.count < 2 { await Task.yield() }
+        #expect(client.requests.last?.params["session_id"] == nil)
 
         client.releaseNext(with: [
             "providers": [["slug": "openai", "models": ["stale-model"]]]
         ])
         await Task.yield()
         #expect(model.runtimeModelOptions.isEmpty)
+        client.releaseNext(with: [
+            "providers": [["slug": "openai", "models": ["fresh-model"]]]
+        ])
+        while model.isLoadingRuntimeModelOptions { await Task.yield() }
+        #expect(model.runtimeModelOptions.map(\.id) == ["openai|fresh-model"])
     }
 }

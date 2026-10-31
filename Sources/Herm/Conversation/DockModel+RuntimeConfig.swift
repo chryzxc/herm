@@ -52,11 +52,10 @@ extension DockModel {
         case malformedResponse
     }
 
-    /// True until the first model-options fetch settles, so the effort label reads
-    /// "Loading…" instead of "Unavailable" before the initial request starts.
+    /// True until a model-options fetch settles after the catalog was cleared (startup, session
+    /// switch, new chat), so the effort label reads "Loading…" instead of "Unavailable".
     var isEffortCatalogPending: Bool {
-        (isLoadingRuntimeModelOptions && effortCatalog == nil)
-            || (effortCatalog == nil && runtimeModelOptions.isEmpty && runtimeModelOptionsError == nil)
+        effortCatalog == nil && runtimeModelOptionsError == nil
     }
 
     func invalidateRuntimeModelOptionsRefresh() {
