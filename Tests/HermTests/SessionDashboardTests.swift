@@ -12,6 +12,21 @@ struct SessionDashboardTests {
             updatedAt: Date(timeIntervalSince1970: date), messageCount: 1, source: "conversation", isHidden: hidden)
     }
 
+    @Test @MainActor func boardIncludesEveryBotsSessions() {
+        let suite = "DashboardAllBots.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults)
+        defer { model.shutdown() }
+        model.sessions = [session("mine")]
+        model.allBotSessionsState = .ready([session("theirs", profile: "other"), session("also", profile: "third")])
+        let snapshot = SessionNavSidebarSnapshot(
+            inputs: SessionNavSidebarSnapshot.inputs(model: model, control: ControlCenterModel()))
+        let rows = SessionDashboardProjection.rows(
+            sessions: SessionDashboardProjection.sessions(in: snapshot), statuses: [:], projects: [:])
+        #expect(Set(rows.map(\.id)) == ["mine", "theirs", "also"])
+    }
+
     @Test @MainActor func includesActiveSessionsOutsideRecentsWithoutRevivingHiddenRows() {
         let suite = "DashboardProjectionTests.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
@@ -28,7 +43,7 @@ struct SessionDashboardTests {
             inputs: SessionNavSidebarSnapshot.inputs(model: model, control: control))
         let sessions = SessionDashboardProjection.sessions(in: snapshot)
         let rows = SessionDashboardProjection.rows(
-            sessions: sessions, statuses: [:], projects: [:], profileID: model.profileScopeID)
+            sessions: sessions, statuses: [:], projects: [:])
         #expect(Set(rows.map(\.id)) == ["active", "known"])
         #expect(rows.first { $0.id == "active" }?.session.isWorking == true)
     }
@@ -56,9 +71,9 @@ struct SessionDashboardTests {
             inputs: SessionNavSidebarSnapshot.inputs(model: model, control: control))
         let rows = SessionDashboardProjection.rows(
             sessions: SessionDashboardProjection.sessions(in: snapshot),
-            statuses: [:], projects: [:], profileID: model.profileScopeID)
-        #expect(Set(rows.map(\.id)) == ["saved", "new-saved"])
-        #expect(rows.count == 2)
+            statuses: [:], projects: [:])
+        #expect(Set(rows.map(\.id)) == ["saved", "new-saved", "foreign"])
+        #expect(rows.count == 3)
     }
 
     @Test func identicalTitlesAreStillDistinctConversations() {
@@ -68,7 +83,7 @@ struct SessionDashboardTests {
                 messageCount: 1, source: "conversation")
         }
         let rows = SessionDashboardProjection.rows(
-            sessions: sessions, statuses: [:], projects: [:], profileID: nil)
+            sessions: sessions, statuses: [:], projects: [:])
         #expect(rows.count == 2)
     }
 
@@ -81,14 +96,14 @@ struct SessionDashboardTests {
         #expect(SessionDashboardSection.section(for: .none) == .recent)
     }
 
-    @Test func filtersProfileHiddenAndDuplicatesWithStableOrdering() {
+    @Test func keepsEveryBotsSessionsAndFiltersHiddenAndDuplicatesWithStableOrdering() {
         let rows = SessionDashboardProjection.rows(
             sessions: [
                 session("b", date: 20), session("a", date: 20), session("old"),
                 session("a", date: 100), session("hidden", hidden: true), session("hidden"),
                 session("foreign", profile: "another"), session("default", profile: "default"),
-            ], statuses: ["a": .needsApproval, "b": .working], projects: [:], profileID: nil)
-        #expect(rows.map(\.id) == ["a", "b", "default", "old"])
+            ], statuses: ["a": .needsApproval, "b": .working], projects: [:])
+        #expect(rows.map(\.id) == ["a", "b", "default", "foreign", "old"])
         #expect(rows[0].section == .attention)
         #expect(rows[1].section == .working)
     }
@@ -97,12 +112,12 @@ struct SessionDashboardTests {
         let sessions = [session("one"), session("two"), session("three")]
         let projects = ["one": "Herm", "two": "Website"]
         let rows = SessionDashboardProjection.rows(
-            sessions: sessions, statuses: [:], projects: projects, profileID: nil,
+            sessions: sessions, statuses: [:], projects: projects,
             query: " REVIEW ", project: "Herm")
         #expect(rows.map(\.id) == ["one"])
         #expect(
             SessionDashboardProjection.rows(
-                sessions: sessions, statuses: [:], projects: projects, profileID: nil, query: "website"
+                sessions: sessions, statuses: [:], projects: projects, query: "website"
             ).map(\.id) == ["two"])
     }
 

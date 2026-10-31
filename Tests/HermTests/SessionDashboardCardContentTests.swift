@@ -63,7 +63,10 @@ struct SessionDashboardCardContentTests {
         #expect(client.requests.isEmpty)
         #expect(!content.loading && content.error == nil)
         client.response = ["session_id": "other", "data": []]
-        await content.load(session: session, profileID: "bot", client: client)
+        let updated = HermesSession(
+            id: "session", title: "Work", preview: "", startedAt: nil, updatedAt: Date(timeIntervalSince1970: 1),
+            messageCount: 3, source: "conversation")
+        await content.load(session: updated, profileID: "bot", client: client)
         #expect(content.error != nil)
         #expect(content.text == "**Latest** update")
     }

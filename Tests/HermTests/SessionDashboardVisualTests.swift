@@ -15,8 +15,8 @@ struct SessionDashboardVisualTests {
             DockThemeRuntime.current = theme
             for scale in [CGFloat(1), 1.25, 1.5] {
                 let toolbar = SessionDashboardToolbar(
-                    bots: bots, fallbackName: "Nexus", isLoading: false, isRefreshing: false,
-                    onRefresh: {}, onShowList: {}, onNewConversation: {}
+                    isLoading: false, isRefreshing: false,
+                    onRefresh: {}, onNewConversation: {}
                 )
                 .environment(\.dockWorkspaceScale, scale)
                 let host = NSHostingView(rootView: toolbar)
@@ -89,8 +89,8 @@ struct SessionDashboardVisualTests {
                         title: "Chats", subtitle: "All projects in the selected bot", showsClose: false, close: {}
                     ) {
                         SessionDashboardToolbar(
-                            bots: bots, fallbackName: "Herm", isLoading: !current, isRefreshing: false,
-                            onRefresh: {}, onShowList: {}, onNewConversation: {})
+                            isLoading: !current, isRefreshing: false,
+                            onRefresh: {}, onNewConversation: {})
                     } content: {
                         SessionDashboardList(
                             sidebar: source, selection: selection, isCurrent: current, onSelect: { _ in })

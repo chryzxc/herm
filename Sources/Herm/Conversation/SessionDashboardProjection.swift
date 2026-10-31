@@ -44,9 +44,8 @@ enum SessionDashboardProjection {
     static func sessions(in snapshot: SessionNavSidebarSnapshot) -> [HermesSession] {
         let aliases = aliases(in: snapshot)
         // Saved records own identity and visibility; a live runtime alias is not another chat.
-        let saved = (snapshot.inputs.sessions + snapshot.inputs.pinnedSessions + snapshot.conversations).filter {
-            $0.profileID == nil || ($0.profileID ?? "default") == (snapshot.inputs.profileScopeID ?? "default")
-        }
+        // Every bot's chats share one board; the all-bot scan covers the unselected bots.
+        let saved = snapshot.inputs.sessions + snapshot.inputs.pinnedSessions + snapshot.allBotConversations
         let savedIDs = Set(saved.map(\.id))
         let known = saved.filter { session in
             guard let storedID = aliases[session.id], storedID != session.id else { return true }
@@ -74,13 +73,12 @@ enum SessionDashboardProjection {
 
     static func rows(
         sessions: [HermesSession], statuses: [String: SidebarSessionStatus],
-        projects: [String: String], profileID: String?, query: String = "", project: String? = nil
+        projects: [String: String], query: String = "", project: String? = nil
     ) -> [SessionDashboardRow] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        var seen = Set<String>()
+        var seen = Set<ProfileScopedID>()
         return sessions.compactMap { session in
-            guard session.profileID == nil || (session.profileID ?? "default") == (profileID ?? "default"),
-                seen.insert(session.id).inserted, !session.isHidden,
+            guard seen.insert(session.scopedID).inserted, !session.isHidden,
                 project == nil || projects[session.id] == project
             else { return nil }
             let name = projects[session.id]

@@ -8,14 +8,25 @@ final class SessionDashboardCardContent: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var loading = false
     private var generation = UUID()
+    private static var cache: [String: String] = [:]
 
     func load(session: HermesSession, profileID: String?, client: HermesRPCClientProtocol) async {
+        let stamp = session.lastUpdatedAt?.timeIntervalSince1970 ?? 0
         let session = HermesSession(
             id: session.id, profileID: session.profileID ?? profileID, title: session.title,
             preview: session.preview, startedAt: session.startedAt, messageCount: session.messageCount,
             source: session.source)
         let request = UUID()
         generation = request
+        let key = "\(session.scopedID)|\(stamp)"
+        // A tile scrolled out and back reuses its last read instead of calling Hermes again.
+        if let cached = Self.cache[key] {
+            text = cached
+            return
+        }
+        // Fast scrolling cancels tiles before they cost a request.
+        try? await Task.sleep(for: .milliseconds(250))
+        guard generation == request, !Task.isCancelled else { return }
         loading = true
         defer { if generation == request { loading = false } }
         do {
@@ -24,6 +35,10 @@ final class SessionDashboardCardContent: ObservableObject {
             let page = try HermesConversationExcerptService.parse(result, session: session)
             guard generation == request, !Task.isCancelled else { return }
             text = Self.latestUpdate(page.messages)
+            if let text {
+                if Self.cache.count > 300 { Self.cache.removeAll() }
+                Self.cache[key] = text
+            }
             error = nil
         } catch {
             guard generation == request, !Task.isCancelled else { return }

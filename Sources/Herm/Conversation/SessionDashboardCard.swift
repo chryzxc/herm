@@ -15,6 +15,8 @@ struct SessionDashboardCard: View {
     var isGatewayLive = false
     /// Not observed: tiles take only attention, answer and activity changes.
     var model: DockModel?
+    /// Set only when several bots share the board.
+    var bot: SessionDashboardBot?
     let onRespond: () -> Void
     @StateObject private var content = SessionDashboardCardContent()
     @State private var attention: DockModel.SessionAttention?
@@ -68,26 +70,30 @@ struct SessionDashboardCard: View {
             guard let client, isCurrent else { return }
             await content.load(session: row.session, profileID: profileID, client: client)
         }
-        .onReceive(attentionChanges) { all in
-            attention = ids.lazy.compactMap { all[$0] }.first
-            answer = attention?.responseTarget.flatMap { model?.attentionAnswers[$0] }
+        .onReceive(attentionChanges) { value in
+            attention = value
+            answer = value?.responseTarget.flatMap { model?.attentionAnswers[$0] }
         }
         .onReceive(answerChanges) { all in
             answer = attention?.responseTarget.flatMap { all[$0] }
         }
-        .onReceive(activityChanges) { labels in
-            liveActivity = ids.lazy.compactMap { labels[$0] }.first
-        }
+        .onReceive(activityChanges) { liveActivity = $0 }
     }
 
-    private var attentionChanges: AnyPublisher<[String: DockModel.SessionAttention], Never> {
-        model?.$sessionAttention.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
+    // Each tile reduces the shared model streams to its own value, so a change to
+    // another chat's state does not touch every tile.
+    private var attentionChanges: AnyPublisher<DockModel.SessionAttention?, Never> {
+        let ids = ids
+        return model?.$sessionAttention.map { all in ids.lazy.compactMap { all[$0] }.first }
+            .removeDuplicates().eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
     }
     private var answerChanges: AnyPublisher<[AttentionRequest: AttentionAnswerState], Never> {
         model?.$attentionAnswers.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
     }
-    private var activityChanges: AnyPublisher<[String: String], Never> {
-        model?.sessionActivityLabelChanges ?? Empty().eraseToAnyPublisher()
+    private var activityChanges: AnyPublisher<String?, Never> {
+        let ids = ids
+        return model?.sessionActivityLabelChanges.map { labels in ids.lazy.compactMap { labels[$0] }.first }
+            .removeDuplicates().eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
     }
 
     @ViewBuilder
@@ -115,22 +121,22 @@ struct SessionDashboardCard: View {
                     DockActivityIndicator(state: state, size: 12, unreadDot: true)
                 }
                 if !isCurrent || row.status != .none {
-                    Text(statusText).dockFont(.metadata, weight: .medium).lineLimit(1)
+                    Text(statusText).dockFont(.body, weight: .medium).lineLimit(1)
                 }
                 if isWorking, let label = liveActivity ?? activity?.activityName {
                     Text("·")
-                    Text(label).dockFont(.metadata).lineLimit(1)
+                    Text(label).dockFont(.body).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if let date = row.session.lastUpdatedAt {
                     Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                        .dockFont(.body).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                 }
             }
             .foregroundStyle(Color.dockSecondaryText)
             Button(action: onRespond) {
                 Text(row.session.displayTitle)
-                    .dockFont(.body, weight: .semibold)
+                    .dockFont(.navigation, weight: .semibold)
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,15 +145,22 @@ struct SessionDashboardCard: View {
             .disabled(isLoadingSession)
             .help("Open \(row.session.displayTitle)")
             // Reserved even without a project so every tile has the same height.
-            Group {
-                if let project = row.project {
-                    DockIconLabel(project, icon: .folder)
-                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
-                } else {
-                    Color.clear
+            HStack(spacing: 10) {
+                if let bot {
+                    HStack(spacing: 6) {
+                        BotAvatarView(bot: bot.summary, imageData: bot.image, size: 16, animated: false)
+                            .accessibilityHidden(true)
+                        Text(bot.summary.name).fontWeight(.medium).lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
+                if let project = row.project {
+                    DockIconLabel(project, icon: .folder).lineLimit(1)
+                }
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, minHeight: 16, maxHeight: 16, alignment: .leading)
+            .dockFont(.body).foregroundStyle(Color.dockMetadataText)
+            .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
         }
     }
 

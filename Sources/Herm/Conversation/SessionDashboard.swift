@@ -12,12 +12,13 @@ struct SessionDashboard<Conversation: View>: View {
     let onNewConversation: () -> Void
     let onOpenWorkspace: () -> Void
     let onShowList: () -> Void
+    let onSelectProfile: (String) -> Void
     @ViewBuilder let conversation: () -> Conversation
 
     init(
         model: DockModel, bots: BotModeModel, control: ControlCenterModel, store: WorkspaceStore,
         onNewConversation: @escaping () -> Void, onOpenWorkspace: @escaping () -> Void,
-        onShowList: @escaping () -> Void,
+        onShowList: @escaping () -> Void, onSelectProfile: @escaping (String) -> Void,
         @ViewBuilder conversation: @escaping () -> Conversation
     ) {
         self.model = model
@@ -26,6 +27,7 @@ struct SessionDashboard<Conversation: View>: View {
         self.onNewConversation = onNewConversation
         self.onOpenWorkspace = onOpenWorkspace
         self.onShowList = onShowList
+        self.onSelectProfile = onSelectProfile
         self.conversation = conversation
         _sidebar = StateObject(wrappedValue: SessionNavSidebarModel(model: model, control: control, store: store))
     }
@@ -46,9 +48,9 @@ struct SessionDashboard<Conversation: View>: View {
         guard model.isHermesConnected else { return "Disconnected · activity is not current" }
         switch snapshot.inputs.sessionProjectionState {
         case .loading: return "Loading sessions…"
-        case .stale where model.isLoadingSessions: return "All projects in the selected bot · updates every 10 seconds"
+        case .stale where model.isLoadingSessions: return "All bots and projects · updates every 10 seconds"
         case .stale, .unavailable, .failed: return "Activity is not current · refresh to retry"
-        case .ready, .empty: return "All projects in the selected bot · updates every 10 seconds"
+        case .ready, .empty: return "All bots and projects · updates every 10 seconds"
         }
     }
 
@@ -57,12 +59,12 @@ struct SessionDashboard<Conversation: View>: View {
     var body: some View {
         DockExpandedPage(
             title: "Chats", subtitle: subtitle,
+            onShowList: onShowList,
             showsClose: false, close: {}
         ) {
             SessionDashboardToolbar(
-                bots: bots, fallbackName: model.agentDisplayName,
                 isLoading: selection.isLoading, isRefreshing: model.isLoadingSessions,
-                onRefresh: refresh, onShowList: onShowList, onNewConversation: newConversation)
+                onRefresh: refresh, onNewConversation: newConversation)
         } content: {
             sessionList
         }
@@ -72,9 +74,19 @@ struct SessionDashboard<Conversation: View>: View {
                 subtitle: isNewConversation ? "Start a conversation" : "Respond to this session",
                 close: { showsConversation = false }
             ) {
+                Button {
+                    showsConversation = false
+                    onOpenWorkspace()
+                } label: {
+                    DockIconLabel("Open workspace", icon: .cornersOut)
+                }
+                .buttonStyle(.dockSecondary)
+                .disabled(!canRespond)
+            } content: {
                 conversationPane
             }
-            .frame(minWidth: 540, idealWidth: 760, minHeight: 560, idealHeight: 780)
+            .environment(\.dockTitleRow, nil)
+            .frame(minWidth: 540, idealWidth: 760, maxWidth: 760, minHeight: 560, idealHeight: 680, maxHeight: 680)
         }
         .task {
             baseline()
@@ -82,34 +94,27 @@ struct SessionDashboard<Conversation: View>: View {
             control.refreshProjectNavigation()
         }
         .onChange(of: snapshot.inputs.sessionProjectionState) { _, _ in baseline() }
-        .onChange(of: model.profileScopeID) { _, _ in
-            selection = SessionDashboardSelection()
-            isNewConversation = false
-            showsConversation = false
-        }
     }
 
     private var sessionList: some View {
         SessionDashboardList(
             sidebar: sidebar, selection: selection, isCurrent: isCurrent, onSelect: select,
-            client: model.controlRPCClient, model: model
-        ).equatable().id(model.profileScopeID)
+            client: model.controlRPCClient, model: model, tileBots: tileBots
+        ).equatable()
+    }
+
+    /// Bots only label tiles when more than one could own them.
+    private var tileBots: [String: SessionDashboardBot] {
+        let visible = bots.bots.filter { !$0.isHidden }
+        guard visible.count > 1 else { return [:] }
+        return Dictionary(
+            visible.map { ($0.id, SessionDashboardBot(summary: $0, image: bots.avatarImages[$0.id])) },
+            uniquingKeysWith: { first, _ in first })
     }
 
     private var conversationPane: some View {
         VStack(spacing: 0) {
             if isNewConversation || selection.session != nil {
-                HStack {
-                    Text(conversationTitle).dockFont(.body, weight: .semibold).lineLimit(1)
-                    Spacer(minLength: 8)
-                    Button("Open workspace") {
-                        showsConversation = false
-                        onOpenWorkspace()
-                    }
-                    .buttonStyle(.dockCompact).disabled(!canRespond)
-                }
-                .dockPadding(12)
-                Color.dockBorderLight.frame(height: DockLayout.hairline)
                 if selection.isLoading {
                     DockLoadingState(title: "Loading conversation…", minHeight: 120)
                         .frame(maxHeight: .infinity)
@@ -158,6 +163,8 @@ struct SessionDashboard<Conversation: View>: View {
 
     private func select(_ session: HermesSession) {
         isNewConversation = false
+        // A chat from another bot opens in that bot's scope, as in the sidebar.
+        if let owner = session.profileID, owner != model.profileScopeID { onSelectProfile(owner) }
         let generation = selection.begin(session)
         showsConversation = true
         Task {
