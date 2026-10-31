@@ -14,7 +14,10 @@ enum DockWindowChrome {
     /// Leading inset of the sidebar toggle in every title row, so it never moves as panes collapse.
     static let sidebarToggleLeading: CGFloat = trafficLightClearance + 16
     /// Hairline under the title row, drawn by each column so it runs the full window width.
-    static var titleRowSeparator: some View { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+    /// Drawn only on flat skins; the rounded card's own edge divides the row everywhere else.
+    static var titleRowSeparator: some View {
+        Color.dockBorderLight.frame(height: DockLayout.hairline).opacity(DockShell.isFlat ? 1 : 0)
+    }
 }
 
 extension View {
@@ -25,7 +28,7 @@ extension View {
             .overlay(alignment: .top) {
                 if inset > 0 {
                     TitlebarDoubleClickArea().frame(height: inset)
-                        .background(Color.dockSidebar)
+                        .dockShellChrome()
                         .overlay(alignment: .bottom) { if separator { DockWindowChrome.titleRowSeparator } }
                 }
             }

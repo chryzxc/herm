@@ -360,6 +360,8 @@ struct DockIconButton: View {
     let label: String
     var isProminent = false
     var isBusy = false
+    /// Toolbars draw bare icons; the background belongs to icon buttons inside content.
+    var hasBackground = true
     var size: CGFloat = 28
     let style: DockThemePalette
     let action: () -> Void
@@ -374,7 +376,7 @@ struct DockIconButton: View {
                 } else {
                     DockIcon(
                         icon, size: size * 0.5,
-                        color: isProminent ? style.accent : isHovering ? style.primaryText : style.secondaryText)
+                        color: isProminent ? style.onAccent : isHovering ? style.primaryText : style.secondaryText)
                 }
             }
             .frame(
@@ -383,9 +385,11 @@ struct DockIconButton: View {
             )
             .background(
                 shape.fill(
-                    isProminent
-                        ? style.accent.opacity(isHovering ? 0.24 : 0.14)
-                        : style.surface4.opacity(isHovering ? 0.9 : 0.6))
+                    !hasBackground
+                        ? Color.clear
+                        : isProminent
+                            ? style.accent.opacity(isHovering ? 0.9 : 1)
+                            : style.surface4.opacity(isHovering ? 0.9 : 0.6))
             )
             .contentShape(Rectangle())
         }

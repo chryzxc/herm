@@ -168,6 +168,23 @@ struct DockMenuPicker<Value: Hashable, Content: View>: View {
     }
 }
 
+/// A themed stand-in for a native `Picker`: choices are plain value/title pairs.
+/// `placeholder` shows when the selection matches no option.
+struct DockOptionPicker<Value: Hashable>: View {
+    var label: String?
+    var placeholder = "Choose…"
+    @Binding var selection: Value
+    let options: [(value: Value, title: String)]
+
+    var body: some View {
+        DockMenuPicker(
+            label, title: options.first { $0.value == selection }?.title ?? placeholder, selection: $selection
+        ) {
+            ForEach(options.indices, id: \.self) { DockMenuOption(options[$0].title, value: options[$0].value) }
+        }
+    }
+}
+
 /// Scopes the `DockMenuOption`s inside it to one selection binding.
 struct DockMenuChoices<Value: Hashable, Content: View>: View {
     @Binding var selection: Value

@@ -391,6 +391,7 @@ extension View {
         foregroundStyle(Color.dockPrimaryText)
             .tint(Color.dockAccent)
             .buttonStyle(.dockCompact)
+            .toggleStyle(.dockCheckbox)
             .fontDesign(DockThemeStyle.current.fontDesign)
             // Native controls (placeholders, carets, menus) follow the colour
             // scheme, not our tokens; pin it so a light skin under dark macOS
@@ -437,19 +438,6 @@ extension View {
         }
         .overlay(alignment: .bottom) {
             if mode == .underline && active { palette.accent.frame(height: 2) }
-        }
-        .overlay(alignment: .leading) {
-            if theme != .glass && active
-                && (mode == .bar || mode == .fill || mode == .highlight || (mode == .invert && !allowsInvert))
-            {
-                palette.primaryText.frame(width: 2).dockPadding(.vertical, 6)
-            }
-            if mode == .neon && active && !palette.neonHues.isEmpty {
-                LinearGradient(colors: Array(palette.neonHues.prefix(2)), startPoint: .top, endPoint: .bottom)
-                    .frame(width: 2)
-                    .dockPadding(.vertical, 5)
-                    .shadow(color: palette.neonHues[0].opacity(0.9), radius: 4)
-            }
         }
     }
 
@@ -885,6 +873,36 @@ struct DockToggleStyle: ToggleStyle {
     }
 }
 
+/// Themed checkbox: a rounded square that fills with a check when on. Replaces
+/// the native macOS checkbox for every unstyled `Toggle`.
+struct DockCheckboxStyle: ToggleStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+                shape.fill(configuration.isOn ? Color.dockPrimaryText : Color.dockSurface4)
+                    .overlay(shape.stroke(Color.dockBorderStrong, lineWidth: DockLayout.hairline))
+                    .overlay {
+                        if configuration.isOn { DockIcon(.check, size: 10, color: .dockCanvas) }
+                    }
+                    .frame(width: 16, height: 16)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+                configuration.label
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .opacity(isEnabled ? 1 : 0.4)
+        .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.12), value: configuration.isOn)
+    }
+}
+
 struct DockGlassTextFieldStyle: TextFieldStyle {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     var compact = false
@@ -927,8 +945,11 @@ struct DockPageHeader<Trailing: View>: View {
     let onRefresh: (() -> Void)?
     let isRefreshing: Bool
     let horizontalPadding: CGFloat
+    let windowBottomPadding: CGFloat
     /// Pages with a list column pass this to get the sidebar toggle before the title.
     let sidebarCollapsed: Binding<Bool>?
+    /// Pages that replace a list column (chat tiles) get an action that brings it back instead of a toggle.
+    let onShowList: (() -> Void)?
     @ViewBuilder let trailing: () -> Trailing
 
     init(
@@ -937,7 +958,9 @@ struct DockPageHeader<Trailing: View>: View {
         onRefresh: (() -> Void)? = nil,
         isRefreshing: Bool = false,
         sidebarCollapsed: Binding<Bool>? = nil,
+        onShowList: (() -> Void)? = nil,
         horizontalPadding: CGFloat = 16,
+        windowBottomPadding: CGFloat = 10,
         @ViewBuilder trailing: @escaping () -> Trailing
     ) {
         self.title = title
@@ -945,12 +968,20 @@ struct DockPageHeader<Trailing: View>: View {
         self.onRefresh = onRefresh
         self.isRefreshing = isRefreshing
         self.horizontalPadding = horizontalPadding
+        self.windowBottomPadding = windowBottomPadding
         self.sidebarCollapsed = sidebarCollapsed
+        self.onShowList = onShowList
         self.trailing = trailing
     }
 
     @ViewBuilder private var sidebarToggle: some View {
-        if let sidebarCollapsed { DockSidebarToggle(isCollapsed: sidebarCollapsed) }
+        if let onShowList {
+            DockIconButton(
+                icon: .chatsCircle, label: "Show chat list", hasBackground: false,
+                style: DockThemePalette(theme: DockThemeRuntime.current), action: onShowList)
+        } else if let sidebarCollapsed {
+            DockSidebarToggle(isCollapsed: sidebarCollapsed)
+        }
     }
 
     private var titleBlock: some View {
@@ -969,7 +1000,7 @@ struct DockPageHeader<Trailing: View>: View {
         Group {
             if let onRefresh {
                 DockIconButton(
-                    icon: .arrowsClockwise, label: "Refresh", isBusy: isRefreshing,
+                    icon: .arrowsClockwise, label: "Refresh", isBusy: isRefreshing, hasBackground: false,
                     style: DockThemePalette(theme: DockThemeRuntime.current), action: onRefresh)
             }
         }
@@ -1010,10 +1041,10 @@ struct DockPageHeader<Trailing: View>: View {
         .dockPadding(.leading, 16 + row.leadingClearance)
         .dockPadding(.trailing, 12)
         .frame(height: row.height)
-        .background(Color.dockSidebar)
+        .dockShellChrome()
         .overlay(alignment: .bottom) { DockWindowChrome.titleRowSeparator }
         // Same gap under the line as the panel header, so every page's content sits alike.
-        .dockPadding(.bottom, 10)
+        .dockPadding(.bottom, windowBottomPadding)
     }
 
     private var panelHeader: some View {
@@ -1058,11 +1089,13 @@ extension EnvironmentValues {
 extension DockPageHeader where Trailing == EmptyView {
     init(
         title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false,
-        sidebarCollapsed: Binding<Bool>? = nil, horizontalPadding: CGFloat = 16
+        sidebarCollapsed: Binding<Bool>? = nil, onShowList: (() -> Void)? = nil, horizontalPadding: CGFloat = 16,
+        windowBottomPadding: CGFloat = 10
     ) {
         self.init(
             title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing,
-            sidebarCollapsed: sidebarCollapsed, horizontalPadding: horizontalPadding
+            sidebarCollapsed: sidebarCollapsed, onShowList: onShowList, horizontalPadding: horizontalPadding,
+            windowBottomPadding: windowBottomPadding
         ) { EmptyView() }
     }
 }
@@ -1076,6 +1109,9 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
     var help: String? = nil
     var onRefresh: (() -> Void)? = nil
     var isRefreshing = false
+    /// Pages beside a list column get its toggle before the title.
+    var sidebarCollapsed: Binding<Bool>? = nil
+    var onShowList: (() -> Void)? = nil
     var showsClose = true
     var close: (() -> Void)? = nil
     @ViewBuilder var trailing: () -> Trailing
@@ -1084,7 +1120,9 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
     // A required closure preserves legacy close/content trailing-closure resolution.
     init(
         title: String, subtitle: String, help: String? = nil, onRefresh: (() -> Void)? = nil,
-        isRefreshing: Bool = false, showsClose: Bool = true, close: @escaping () -> Void,
+        isRefreshing: Bool = false, sidebarCollapsed: Binding<Bool>? = nil, onShowList: (() -> Void)? = nil,
+        showsClose: Bool = true,
+        close: @escaping () -> Void,
         @ViewBuilder trailing: @escaping () -> Trailing, @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
@@ -1092,6 +1130,8 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
         self.help = help
         self.onRefresh = onRefresh
         self.isRefreshing = isRefreshing
+        self.sidebarCollapsed = sidebarCollapsed
+        self.onShowList = onShowList
         self.showsClose = showsClose
         self.close = close
         self.trailing = trailing
@@ -1100,7 +1140,10 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DockPageHeader(title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) {
+            DockPageHeader(
+                title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing,
+                sidebarCollapsed: sidebarCollapsed, onShowList: onShowList
+            ) {
                 HStack(spacing: 8) {
                     trailing()
                     if showsClose, let close {
@@ -1491,6 +1534,10 @@ extension ToggleStyle where Self == DockToggleStyle {
     static var dockSwitch: Self { Self() }
 }
 
+extension ToggleStyle where Self == DockCheckboxStyle {
+    static var dockCheckbox: Self { Self() }
+}
+
 extension Shape {
     /// Theme-aware box/control fill: Liquid Glass on the glass skin, else `fallback`.
     /// Use it for any card, field, chip or segmented track instead of `fill(Color.dockSurface…)`.
@@ -1530,9 +1577,11 @@ extension Shape {
 extension View {
     /// Theme-aware full-width tint for headers, list columns and footers: clear on
     /// the glass skin (the window glass is the only layer), else `color`.
-    @MainActor @ViewBuilder
+    /// One modifier chain for every skin: branching on `self` would change the view's
+    /// identity and rebuild the whole pane (scroll offsets, selection) on a glass switch.
+    @MainActor
     func dockPaneTint(_ color: Color) -> some View {
-        if DockThemeStyle.current.material == .glass { self } else { background(color) }
+        background(DockThemeStyle.current.material == .glass ? Color.clear : color)
     }
 }
 
@@ -1559,7 +1608,7 @@ extension View {
                 .background(shape.fill(Color.dockLightGlassLift))
                 .background(shape.fill(.thinMaterial))
                 .background(shape.fill(Color.dockSurface))
-                .overlay(shape.stroke(Color.dockLightGlassEdge, lineWidth: DockLayout.hairline))
+                .overlay(shape.stroke(Color.dockLightGlassEdge, lineWidth: 1))
                 .overlay(
                     shape.stroke(
                         LinearGradient(
@@ -1700,6 +1749,9 @@ struct DockTabButton: View {
                 if isSelected && DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(
                         shape, tint: colorScheme == .light ? Color.dockAccentMuted : nil, interactive: true)
+                    // Glass over a glass track barely reads; lift the selected tab.
+                    shape.fill(Color.dockPrimaryText.opacity(colorScheme == .light ? 0.06 : 0.16))
+                    shape.stroke(Color.dockGlassSelectionEdge, lineWidth: 1)
                 }
             }
             .overlay(
