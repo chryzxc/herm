@@ -245,6 +245,20 @@ struct SessionTraceTests {
         #expect(rows.first { $0.kind == .agent }?.duration == 4)
     }
 
+    @Test func untimedDelegateStartsComeFromHermesCompletionAndDuration() {
+        let worker = HermesSubagent(
+            id: "a", goal: "Audit", status: "complete", completedAt: origin.addingTimeInterval(10),
+            durationSeconds: 4)
+        let legacy = AgentActivity(
+            id: UUID(), timestamp: origin, agentID: "a", kind: "subagent.start", text: "",
+            toolName: nil, handoffTarget: nil)
+        let row = SessionTraceProjection.make(
+            turns: [.init(id: "t", title: "", start: origin)], live: [], agents: [worker],
+            working: false, connected: true, activities: [legacy])[0].rows.first { $0.kind == .agent }
+        #expect(row?.start == origin.addingTimeInterval(6))
+        #expect(row?.timing == .runtime)
+    }
+
     @Test func longTurnMergesEveryLiveCompletionWithoutDuplicateRows() {
         let history = (0..<1_000).map { call("call-\($0)", Double($0)) }
         let completed = (0..<1_000).map { call("call-\($0)", Double($0), duration: 1) }

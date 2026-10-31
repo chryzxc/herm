@@ -92,7 +92,11 @@ extension DockModel {
         guard let rows = value as? [[String: Any]] else { return }
         var delegationCalls: [(id: String, args: [String: Any])] = []
         var resultsByID: [String: String] = [:]
+        // Hermes' row clock places restored delegates; load time would stretch them to now.
+        var timestamps: [String: Date] = [:]
         for row in rows {
+            let calls = delegationCalls.count
+            let results = Set(resultsByID.keys)
             scanForDelegation(in: row["content"], calls: &delegationCalls, results: &resultsByID)
             scanForDelegation(in: row["tool_calls"], calls: &delegationCalls, results: &resultsByID)
             scanForDelegation(in: row["parts"], calls: &delegationCalls, results: &resultsByID)
@@ -101,10 +105,17 @@ extension DockModel {
             {
                 resultsByID[id] = (row["content"] as? String) ?? Self.messageText(row["content"])
             }
+            guard let timestamp = (row["timestamp"] as? NSNumber).map({ Date(timeIntervalSince1970: $0.doubleValue) })
+            else { continue }
+            for call in delegationCalls[calls...] { timestamps["call:" + call.id] = timestamp }
+            for id in resultsByID.keys where !results.contains(id) { timestamps["result:" + id] = timestamp }
         }
         for (id, args) in delegationCalls {
             if !synthesizedSubagentIDs.contains(id) {
-                synthesizeSubagent(toolCallID: id, args: args)
+                let start = timestamps["call:" + id]
+                synthesizeSubagent(
+                    toolCallID: id, args: args, startedAt: start ?? Date(),
+                    timing: start == nil ? .unavailable : .runtime)
             }
             let matchingIDs = synthesizedSubagentIDs.filter { $0 == id || $0.hasPrefix("\(id):") }
             let needsCompletion = matchingIDs.contains { matchingID in
@@ -113,7 +124,10 @@ extension DockModel {
                 } ?? false
             }
             if needsCompletion, let result = resultsByID[id] {
-                completeSynthesizedSubagent(toolCallID: id, result: result, payload: [:])
+                let end = timestamps["result:" + id]
+                completeSynthesizedSubagent(
+                    toolCallID: id, result: result, payload: [:], completedAt: end,
+                    timing: end == nil ? .unavailable : .runtime)
             }
         }
     }

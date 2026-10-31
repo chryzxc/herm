@@ -220,6 +220,15 @@ struct AgentProjectionTests {
         #expect(agents.first?.name != "Leaf")
     }
 
+    @Test func delegationManagementCallsStartNoWorker() {
+        for action in ["list", "stop"] {
+            #expect(
+                DockModel.projectedDelegationAgents(
+                    toolCallID: "manage", args: ["action": action], startedAt: .distantPast
+                ).isEmpty)
+        }
+    }
+
     @Test func backgroundAcknowledgementDoesNotMeanAgentCompleted() {
         #expect(
             DockModel.isBackgroundDelegationDispatch(

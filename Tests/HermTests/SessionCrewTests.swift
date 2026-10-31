@@ -136,7 +136,7 @@ struct SessionCrewTests {
             let record = BotActivityRecord(
                 id: "pending", originSessionID: "origin", botID: "builder", botName: "Builder",
                 summary: "Task", state: state, createdAt: origin, updatedAt: origin)
-            let turns = SessionCrewProjection.botTurns([record], connected: true)
+            let turns = SessionCrewProjection.botTurns([record], connected: true, now: origin)
             let actor = try #require(SessionCrewProjection(rows: turns.flatMap(\.rows)).actors.last)
             #expect(actor.row.active)
             #expect(actor.row.status == state.label)
@@ -145,6 +145,20 @@ struct SessionCrewTests {
             #expect(display.label == state.label)
             #expect(!display.moving)
         }
+    }
+
+    @Test func staleBotRequestsStopTheClock() {
+        let later = origin.addingTimeInterval(SessionCrewProjection.staleBotActivity + 1)
+        let orphan = BotActivityRecord(
+            id: "orphan", originSessionID: "origin", botID: "cypher", botName: "Cypher",
+            summary: "Audit", state: .working, createdAt: origin, updatedAt: origin)
+        let card = BotActivityRecord(
+            id: "card", originSessionID: "origin", botID: "forge", botName: "Forge",
+            summary: "Build", state: .queued, createdAt: origin, updatedAt: origin, linkedCardID: "t_1")
+        let rows = SessionCrewProjection.botTurns([orphan, card], connected: true, now: later).flatMap(\.rows)
+        #expect(rows.allSatisfy { !$0.active })
+        #expect(rows.filter { $0.id.contains("orphan") }.allSatisfy { $0.status == "Not current" })
+        #expect(rows.filter { $0.id.contains("card") }.allSatisfy { $0.status == "Queued" })
     }
 
     @Test func compressedReplayUsesTheSameShiftedRows() throws {

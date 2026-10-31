@@ -174,7 +174,7 @@ enum SessionTraceProjection {
                 let startEvent = activities.first {
                     $0.agentID == agent.id && $0.kind == "subagent.start"
                 }
-                let timing = startEvent.map { $0.traceTiming ?? .unavailable } ?? .observed
+                let eventTiming = startEvent.map { $0.traceTiming ?? .unavailable } ?? .observed
                 let endEvent = activities.last {
                     $0.agentID == agent.id && $0.kind == "subagent.complete"
                 }
@@ -182,6 +182,11 @@ enum SessionTraceProjection {
                     endEvent.map {
                         $0.traceTiming == nil || $0.traceTiming == .unavailable ? nil : $0.timestamp
                     } ?? agent.completedAt
+                let duration = agent.durationSeconds.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+                // Hermes often omits startedAt but reports when a delegate finished and how
+                // long it ran; that places an untimed (replayed or legacy) start honestly.
+                let measuredStart = end.flatMap { end in duration.map { end.addingTimeInterval(-$0) } }
+                let timing = eventTiming == .unavailable && measuredStart != nil ? .runtime : eventTiming
                 return SessionTraceRow(
                     id: "agent:" + agent.id,
                     parentID: agent.parentID.flatMap {
@@ -190,9 +195,10 @@ enum SessionTraceProjection {
                         ?? rootID,
                     kind: .agent, title: agent.name ?? agent.role ?? taskTitle(agent.goal),
                     model: agent.model,
-                    start: timing == .unavailable ? nil : startEvent?.timestamp ?? agent.startedAt,
+                    start: eventTiming == .unavailable
+                        ? measuredStart : startEvent?.timestamp ?? agent.startedAt ?? measuredStart,
                     end: end,
-                    duration: agent.durationSeconds.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
+                    duration: duration,
                     timing: timing, active: active,
                     outcome: active
                         ? nil

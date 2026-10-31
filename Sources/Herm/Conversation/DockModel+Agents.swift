@@ -402,6 +402,12 @@ extension DockModel {
     static func projectedDelegationAgents(toolCallID: String, args: [String: Any], startedAt: Date) -> [HermesSubagent]
     {
         let taskRows = args["tasks"] as? [[String: Any]]
+        // `delegate_task(action: "list" | "stop" | …)` manages existing workers; it starts none.
+        if taskRows == nil, let action = args["action"] as? String,
+            !["spawn", "start", "create", "delegate", "run"].contains(action.lowercased())
+        {
+            return []
+        }
         let rows = taskRows?.isEmpty == false ? taskRows! : [args]
 
         return rows.enumerated().map { index, task in
@@ -683,8 +689,9 @@ extension DockModel {
             || lower == "launch_agent" || lower == "create_subagent" || lower == "dispatch_agent"
     }
 
-    func synthesizeSubagent(toolCallID: String, args: [String: Any]) {
-        let startedAt = Date()
+    func synthesizeSubagent(
+        toolCallID: String, args: [String: Any], startedAt: Date = Date(), timing: SessionTraceTiming = .observed
+    ) {
         let agents = Self.projectedDelegationAgents(toolCallID: toolCallID, args: args, startedAt: startedAt)
         guard !agents.isEmpty, agents.contains(where: { !synthesizedSubagentIDs.contains($0.id) }) else { return }
 
@@ -700,7 +707,8 @@ extension DockModel {
                     kind: "subagent.start",
                     text: agent.goal,
                     toolName: nil,
-                    handoffTarget: nil
+                    handoffTarget: nil,
+                    traceTiming: timing
                 ))
         }
         if agentActivities.count > 250 {
@@ -721,7 +729,10 @@ extension DockModel {
         synthesizeSubagent(toolCallID: toolCallID, args: args)
     }
 
-    func completeSynthesizedSubagent(toolCallID: String, result: String, payload: [String: Any]) {
+    func completeSynthesizedSubagent(
+        toolCallID: String, result: String, payload: [String: Any], completedAt: Date? = nil,
+        timing: SessionTraceTiming = .observed
+    ) {
         // Modern Hermes returns immediately after background dispatch. Native
         // subagent.complete events, not this acknowledgement, own completion.
         guard !Self.isBackgroundDelegationDispatch(result) else { return }
@@ -731,7 +742,7 @@ extension DockModel {
         for id in matchingIDs {
             guard let index = activeSubagents.firstIndex(where: { $0.id == id }) else { continue }
             activeSubagents[index].status = "complete"
-            activeSubagents[index].completedAt = Date()
+            activeSubagents[index].completedAt = timing == .unavailable ? nil : completedAt ?? Date()
             if let sessionID { activeSubagents[index].childSessionID = sessionID }
             if let summary { activeSubagents[index].summary = summary }
             if let sessionIndex = sessionAgents.firstIndex(where: { $0.id == id }) {
@@ -740,12 +751,13 @@ extension DockModel {
             agentActivities.append(
                 AgentActivity(
                     id: UUID(),
-                    timestamp: Date(),
+                    timestamp: completedAt ?? Date(),
                     agentID: id,
                     kind: "subagent.complete",
                     text: summary ?? "Delegated agent finished",
                     toolName: nil,
-                    handoffTarget: nil
+                    handoffTarget: nil,
+                    traceTiming: timing
                 ))
         }
         if agentActivities.count > 250 {

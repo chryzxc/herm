@@ -260,7 +260,7 @@ struct SessionTraceCanvas: View {
 
     private func header(_ turn: SessionTraceTurn?) -> some View {
         HStack(spacing: 8) {
-            Menu {
+            DockMenu {
                 Button("All activity") { selectedTurnID = SessionTraceProjection.allTurnsID }
                 Divider()
                 ForEach(turns.reversed()) { item in
@@ -283,8 +283,6 @@ struct SessionTraceCanvas: View {
                 }
                 .dockFont(.body, weight: .semibold)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
             .fixedSize(horizontal: false, vertical: true)
             .disabled(turns.isEmpty)
             .help("Choose a request")
@@ -493,11 +491,11 @@ struct SessionTraceCanvas: View {
                     if replay != nil {
                         clock(false) { now in
                             let span = bounds.span(at: now)
-                            Slider(
+                            DockSlider(
                                 value: Binding(
                                     get: { replay?.time(at: now, span: span) ?? 0 },
                                     set: { replay = SessionTraceReplay(position: $0, speed: speed) }),
-                                in: 0...span
+                                range: 0...span
                             ).accessibilityLabel("Replay position")
                                 .dockPadding(.horizontal, 8).dockPadding(.bottom, 6)
                         }
@@ -1143,7 +1141,7 @@ struct SessionTraceCanvas: View {
             }
             .buttonStyle(.dockHover).disabled(!finished)
             .help("Replay from the start").accessibilityLabel("Replay from the start")
-            Menu {
+            DockMenu {
                 ForEach(speeds, id: \.self) { value in
                     Button {
                         speed = value
@@ -1163,7 +1161,7 @@ struct SessionTraceCanvas: View {
                 }
                 .dockFont(.metadata)
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             .disabled(!finished).help("Replay speed")
             if replay != nil {
                 Button("Exit replay") { replay = nil }.buttonStyle(.dockCompact)

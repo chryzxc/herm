@@ -139,13 +139,23 @@ struct SessionCrewProjection {
 
     /// Direct requests have their own exact dispatch identity. Do not attach them to a
     /// nearby transcript turn by timestamp or mistake a generic delegate for a Bot.
-    static func botTurns(_ records: [BotActivityRecord], connected: Bool) -> [SessionTraceTurn] {
+    /// A pending record untouched this long no longer runs the clock: in-flight tracking
+    /// is lost on relaunch, and a card can sit queued on the board for days.
+    static let staleBotActivity: TimeInterval = 3 * 3600
+
+    static func botTurns(_ records: [BotActivityRecord], connected: Bool, now: Date = Date())
+        -> [SessionTraceTurn]
+    {
         var seen = Set<String>()
         return records.filter { !$0.isKanbanReference && seen.insert($0.id).inserted }.map { record in
             let id = dispatchPrefix + record.id
             let terminal = [.completed, .failed, .canceled].contains(record.state)
-            let active = connected && !terminal
-            let status = !connected && !terminal ? "Not current" : record.state.label
+            let stale = now.timeIntervalSince(record.updatedAt) > staleBotActivity
+            // Process- and card-backed records are still reconciled from Hermes; others never resolve.
+            let tracked = record.processID != nil || record.linkedCardID != nil
+            let active = connected && !terminal && !stale
+            let status =
+                !terminal && (!connected || (stale && !tracked)) ? "Not current" : record.state.label
             let root = SessionTraceRow(
                 id: "turn:" + id, kind: .turn, title: record.summary, start: record.createdAt,
                 end: terminal ? record.updatedAt : nil, timing: .observed, active: active, outcome: status)
